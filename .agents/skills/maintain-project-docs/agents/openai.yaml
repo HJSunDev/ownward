@@ -1,0 +1,4 @@
+interface:
+  display_name: "项目文档体系"
+  short_description: "按需维护项目级与模块级文档的目录结构、放置位置及职责边界"
+  default_prompt: "使用 $maintain-project-docs 按项目文档规范处理我当前涉及的文档。"
