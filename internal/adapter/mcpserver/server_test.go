@@ -50,6 +50,24 @@ func TestServerExposesUnifiedCoreOperations(t *testing.T) {
 	if len(tools.Tools) != 6 {
 		t.Fatalf("unexpected tool count: %d", len(tools.Tools))
 	}
+	toolsByName := make(map[string]*mcp.Tool, len(tools.Tools))
+	for _, tool := range tools.Tools {
+		toolsByName[tool.Name] = tool
+		if tool.Annotations == nil || tool.Annotations.OpenWorldHint == nil || *tool.Annotations.OpenWorldHint {
+			t.Fatalf("tool %s must declare its closed-world boundary: %#v", tool.Name, tool.Annotations)
+		}
+	}
+	for _, name := range []string{"ownward_rules", "ownward_read", "ownward_search", "ownward_navigate"} {
+		if tool := toolsByName[name]; tool == nil || !tool.Annotations.ReadOnlyHint || !tool.Annotations.IdempotentHint {
+			t.Fatalf("tool %s must be declared read-only and idempotent: %#v", name, tool)
+		}
+	}
+	if tool := toolsByName["ownward_create"]; tool == nil || tool.Annotations.ReadOnlyHint || tool.Annotations.DestructiveHint == nil || *tool.Annotations.DestructiveHint {
+		t.Fatalf("create must be declared additive: %#v", tool)
+	}
+	if tool := toolsByName["ownward_update"]; tool == nil || tool.Annotations.ReadOnlyHint || tool.Annotations.DestructiveHint == nil || !*tool.Annotations.DestructiveHint {
+		t.Fatalf("update must retain its write boundary: %#v", tool)
+	}
 	created, err := clientSession.CallTool(ctx, &mcp.CallToolParams{
 		Name: "ownward_create",
 		Arguments: map[string]any{
