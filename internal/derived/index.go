@@ -2,6 +2,7 @@ package derived
 
 import (
 	"container/heap"
+	"encoding/binary"
 	"math"
 	"sort"
 	"strings"
@@ -28,12 +29,21 @@ type Edge struct {
 }
 
 type Index struct {
-	mu        sync.RWMutex
-	records   []indexedRecord
-	blocks    map[int]*vectorBlock
-	locations map[string]uint32
-	forward   map[string][]Edge
-	reverse   map[string][]Edge
+	mu            sync.RWMutex
+	searchCacheMu sync.Mutex
+	records       []indexedRecord
+	blocks        map[int]*vectorBlock
+	locations     map[string]uint32
+	forward       map[string][]Edge
+	reverse       map[string][]Edge
+	searchCache   map[string]*searchCacheEntry
+}
+
+const maxSearchCacheEntries = 64
+
+type searchCacheEntry struct {
+	ready chan struct{}
+	hits  []SemanticHit
 }
 
 type vectorBlock struct {
@@ -57,11 +67,12 @@ type indexedRecord struct {
 
 func NewIndex(records []Record) *Index {
 	index := &Index{
-		records:   make([]indexedRecord, 0, len(records)),
-		blocks:    make(map[int]*vectorBlock),
-		locations: make(map[string]uint32, len(records)),
-		forward:   make(map[string][]Edge),
-		reverse:   make(map[string][]Edge),
+		records:     make([]indexedRecord, 0, len(records)),
+		blocks:      make(map[int]*vectorBlock),
+		locations:   make(map[string]uint32, len(records)),
+		forward:     make(map[string][]Edge),
+		reverse:     make(map[string][]Edge),
+		searchCache: make(map[string]*searchCacheEntry),
 	}
 	counts := make(map[int]int)
 	for _, record := range records {
@@ -104,6 +115,7 @@ func (i *Index) Upsert(record Record) {
 	i.upsertVectorLocked(location, record)
 	i.removeStaleIncomingLocked(record.AssetID)
 	i.addOutgoingLocked(record.AssetID, record)
+	i.invalidateSearchCache()
 }
 
 func cloneForIndex(record Record) Record {
@@ -162,6 +174,12 @@ func (i *Index) Search(vector []float32, contexts []domain.Context, limit int) [
 	if block == nil {
 		return nil
 	}
+	cacheKey := semanticSearchCacheKey(normalizedQuery, contexts, limit)
+	cacheEntry, calculate := i.searchCacheEntry(cacheKey)
+	if !calculate {
+		<-cacheEntry.ready
+		return cloneSemanticHits(cacheEntry.hits)
+	}
 	best := make(semanticHitHeap, 0, limit)
 	for row, recordID := range block.records {
 		if !block.active[row] {
@@ -189,7 +207,56 @@ func (i *Index) Search(vector []float32, contexts []domain.Context, limit int) [
 		}
 		return result[left].Score > result[right].Score
 	})
+	i.completeSearchCacheEntry(cacheEntry, result)
 	return result
+}
+
+func semanticSearchCacheKey(vector []float32, contexts []domain.Context, limit int) string {
+	encoded := make([]byte, 0, 16+len(vector)*4)
+	encoded = binary.LittleEndian.AppendUint64(encoded, uint64(limit))
+	encoded = binary.LittleEndian.AppendUint64(encoded, uint64(len(vector)))
+	for _, value := range vector {
+		encoded = binary.LittleEndian.AppendUint32(encoded, math.Float32bits(value))
+	}
+	encoded = binary.LittleEndian.AppendUint64(encoded, uint64(len(contexts)))
+	for _, context := range contexts {
+		encoded = binary.LittleEndian.AppendUint64(encoded, uint64(len(context.Key)))
+		encoded = append(encoded, context.Key...)
+		encoded = binary.LittleEndian.AppendUint64(encoded, uint64(len(context.Value)))
+		encoded = append(encoded, context.Value...)
+	}
+	return string(encoded)
+}
+
+func (i *Index) searchCacheEntry(key string) (*searchCacheEntry, bool) {
+	i.searchCacheMu.Lock()
+	defer i.searchCacheMu.Unlock()
+	if entry, ok := i.searchCache[key]; ok {
+		return entry, false
+	}
+	if len(i.searchCache) >= maxSearchCacheEntries {
+		i.searchCache = make(map[string]*searchCacheEntry)
+	}
+	entry := &searchCacheEntry{ready: make(chan struct{})}
+	i.searchCache[key] = entry
+	return entry, true
+}
+
+func (i *Index) completeSearchCacheEntry(entry *searchCacheEntry, hits []SemanticHit) {
+	i.searchCacheMu.Lock()
+	entry.hits = cloneSemanticHits(hits)
+	close(entry.ready)
+	i.searchCacheMu.Unlock()
+}
+
+func (i *Index) invalidateSearchCache() {
+	i.searchCacheMu.Lock()
+	i.searchCache = make(map[string]*searchCacheEntry)
+	i.searchCacheMu.Unlock()
+}
+
+func cloneSemanticHits(hits []SemanticHit) []SemanticHit {
+	return append([]SemanticHit(nil), hits...)
 }
 
 func (i *Index) Navigate(start []string, relationTypes []string, maxDepth, limit int) []Edge {

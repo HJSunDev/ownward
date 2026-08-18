@@ -82,3 +82,19 @@ func TestIndexIgnoresAnOlderDerivedRevision(t *testing.T) {
 		t.Fatalf("stale vector replaced current vector: %#v", hits)
 	}
 }
+
+func TestIndexSearchCacheReturnsIndependentResultsAndInvalidatesOnUpsert(t *testing.T) {
+	index := NewIndex([]Record{{AssetID: "one", AssetRevision: 1, Status: "ready", Embedding: []float32{1, 0}}})
+	first := index.Search([]float32{1, 0}, nil, 10)
+	first[0].AssetID = "changed"
+
+	cached := index.Search([]float32{1, 0}, nil, 10)
+	if len(cached) != 1 || cached[0].AssetID != "one" {
+		t.Fatalf("cached search result was mutable: %#v", cached)
+	}
+
+	index.Upsert(Record{AssetID: "one", AssetRevision: 2, Status: "ready", Embedding: []float32{0, 1}})
+	if hits := index.Search([]float32{1, 0}, nil, 10); len(hits) != 0 {
+		t.Fatalf("search cache survived an index update: %#v", hits)
+	}
+}
