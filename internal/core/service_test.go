@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -128,6 +129,54 @@ func TestSearchByStableIdentityDoesNotCallTheSemanticProvider(t *testing.T) {
 	}
 	if provider.embedCalls != 0 {
 		t.Fatalf("identity lookup unnecessarily called the semantic provider %d times", provider.embedCalls)
+	}
+}
+
+func TestSearchKeepsDirectEvidenceAheadOfAccumulatedRelations(t *testing.T) {
+	root := t.TempDir()
+	store, err := assetlog.Open(filepath.Join(root, "assets"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := derived.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewOrganized(store, state, fusionProvider{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer service.Close()
+	target, err := service.Create(context.Background(), CreateInput{Content: "unrelated target"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	direct, err := service.Create(context.Background(), CreateInput{Content: "needle needle needle exact answer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index := 0; index < 4; index++ {
+		_, err = service.Create(context.Background(), CreateInput{
+			Content:   "needle lexical source " + string(rune('a'+index)),
+			Relations: []domain.ExplicitRelation{{Type: "related_to", TargetID: target.Information.ID}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = service.Create(context.Background(), CreateInput{
+			Content:   "semantic source " + string(rune('a'+index)),
+			Relations: []domain.ExplicitRelation{{Type: "related_to", TargetID: target.Information.ID}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	results, err := service.Search(context.Background(), SearchInput{Query: "needle", Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) == 0 || results[0].ID != direct.Information.ID {
+		t.Fatalf("accumulated relation evidence displaced the direct answer: %#v", results)
 	}
 }
 
@@ -304,6 +353,30 @@ func TestConcurrentUpdatesCannotOverwriteTheSameRevision(t *testing.T) {
 type relationProvider struct {
 	targetID   string
 	embedCalls int
+}
+
+type fusionProvider struct{}
+
+func (fusionProvider) Name() string { return "test-fusion-provider" }
+
+func (fusionProvider) Embed(_ context.Context, values []string) ([][]float32, error) {
+	result := make([][]float32, len(values))
+	for index, value := range values {
+		if value == "needle" || strings.HasPrefix(value, "semantic source") {
+			result[index] = []float32{1, 0}
+		} else {
+			result[index] = []float32{0, 1}
+		}
+	}
+	return result, nil
+}
+
+func (fusionProvider) Analyze(_ context.Context, value domain.Information, _ []semantics.Candidate) (semantics.Analysis, error) {
+	relations := make([]semantics.Relation, 0, len(value.Relations))
+	for _, relation := range value.Relations {
+		relations = append(relations, semantics.Relation{Type: relation.Type, TargetID: relation.TargetID, Confidence: 1})
+	}
+	return semantics.Analysis{Kind: value.Kind, Summary: value.Content, Relations: relations}, nil
 }
 
 func (p *relationProvider) Name() string { return "test-relation-provider" }

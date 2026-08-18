@@ -49,6 +49,18 @@ func TestGenerationRolloverKeepsOnlyCurrentTermsSearchable(t *testing.T) {
 	}
 }
 
+func TestSearchPrioritizesNamedTermsOverGenericQuestionWording(t *testing.T) {
+	index := NewLexical([]domain.Information{
+		{ID: "fiber", Content: "Fiber 是 React 协调器的工作单元结构，使渲染工作能够被拆分、排序、暂停和恢复。"},
+		{ID: "generic", Content: "复杂问题应根据中间证据改变线索并继续搜索。"},
+		{ID: "react", Content: "React 使用声明式组件描述界面。"},
+	})
+	results := index.Search("Fiber 在 React 中解决什么问题？", nil, 10)
+	if len(results) == 0 || results[0].Information.ID != "fiber" {
+		t.Fatalf("named terms did not dominate generic question wording: %#v", results)
+	}
+}
+
 func BenchmarkSearch100K(b *testing.B) {
 	values := make([]domain.Information, 100_000)
 	for index := range values {

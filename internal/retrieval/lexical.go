@@ -95,7 +95,7 @@ func (l *Lexical) Search(query string, contexts []domain.Context, limit int) []R
 		if documentFrequency == 0 || documentFrequency > maxDocumentFrequency {
 			continue
 		}
-		idf := math.Log(1 + (float64(len(l.documents)-documentFrequency)+0.5)/(float64(documentFrequency)+0.5))
+		idf := math.Log(1+(float64(len(l.documents)-documentFrequency)+0.5)/(float64(documentFrequency)+0.5)) * queryTermWeight(term)
 		queryTerms = append(queryTerms, weightedTerm{id: termID, idf: idf})
 		candidateCapacity += documentFrequency
 	}
@@ -158,6 +158,23 @@ func (l *Lexical) Search(query string, contexts []domain.Context, limit int) []R
 		return results[i].Score > results[j].Score
 	})
 	return results
+}
+
+func queryTermWeight(term string) float64 {
+	runes := []rune(term)
+	if len(runes) == 1 {
+		current := runes[0]
+		if unicode.Is(unicode.Han, current) || unicode.Is(unicode.Hiragana, current) || unicode.Is(unicode.Katakana, current) || unicode.Is(unicode.Hangul, current) {
+			return 0.25
+		}
+		return 1
+	}
+	for _, current := range runes {
+		if unicode.Is(unicode.Han, current) || unicode.Is(unicode.Hiragana, current) || unicode.Is(unicode.Katakana, current) || unicode.Is(unicode.Hangul, current) {
+			return 1
+		}
+	}
+	return 1.5
 }
 
 type resultHeap []Result

@@ -315,7 +315,8 @@ func (s *Service) Search(ctx context.Context, input SearchInput) ([]SearchResult
 		default:
 			continue
 		}
-		add(target, "relation", rank+1, 0.5*edge.Confidence)
+		// 关系证据用于补充直接命中，不能压过明确的词法或语义证据。
+		add(target, "relation", rank+1, 0.1*edge.Confidence)
 	}
 	results := make([]SearchResult, 0, len(fusedByID))
 	for id, item := range fusedByID {
