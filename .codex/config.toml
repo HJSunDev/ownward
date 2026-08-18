@@ -1,6 +1,6 @@
 [mcp_servers.ownward]
 command = "go"
-args = ["run", "./cmd/ownward", "mcp"]
+args = ["run", "./cmd/ownward", "mcp", "--data-dir", ".ownward/development"]
 cwd = "."
 env_vars = [
   "OWNWARD_DATA_DIR",

@@ -7,6 +7,7 @@ import sys
 import tempfile
 import types
 import unittest
+from unittest.mock import patch
 
 
 def _load_adapter():
@@ -43,6 +44,42 @@ def _load_adapter():
 
 
 class OwnwardMemoryTest(unittest.TestCase):
+    def test_active_mode_creates_an_isolated_authentication_environment(self) -> None:
+        adapter = _load_adapter()
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            ownward = root_path / "ownward.exe"
+            codex = root_path / "codex.exe"
+            auth = root_path / "auth.json"
+            ownward.write_bytes(b"")
+            codex.write_bytes(b"")
+            auth.write_text("{}", encoding="utf-8")
+            workspace = root_path / "workspace"
+            with patch.dict(
+                os.environ,
+                {
+                    "OWNWARD_BENCHMARK_CODEX_AUTH_FILE": str(auth),
+                    "OPENAI_API_KEY": "must-not-reach-codex",
+                },
+            ):
+                memory = adapter.OwnwardMemory(
+                    {
+                        "workspace_dir": str(workspace),
+                        "ownward_binary": str(ownward),
+                        "query_mode": "codex",
+                        "require_model": False,
+                        "codex_binary": str(codex),
+                    }
+                )
+                codex_home = workspace / "temporary-codex-home"
+                environment = memory._codex_environment(codex_home)
+
+            self.assertEqual(environment["CODEX_HOME"], str(codex_home))
+            self.assertEqual((codex_home / "auth.json").read_text(encoding="utf-8"), "{}")
+            self.assertFalse(any(memory.agent_dir.iterdir()))
+            self.assertNotIn("OWNWARD_BENCHMARK_CODEX_AUTH_FILE", environment)
+            self.assertNotIn("OPENAI_API_KEY", environment)
+
     def test_mcp_evidence_gate_requires_a_successful_ownward_call(self) -> None:
         adapter = _load_adapter()
         failed = (
@@ -136,8 +173,8 @@ class OwnwardMemoryTest(unittest.TestCase):
                     "require_model": False,
                     "max_chunk_chars": 1000,
                     "codex_binary": os.environ["OWNWARD_BENCHMARK_CODEX_BINARY"],
-                    "codex_model": os.environ.get("OWNWARD_BENCHMARK_CODEX_MODEL", "gpt-5.4"),
-                    "codex_reasoning_effort": os.environ.get("OWNWARD_BENCHMARK_CODEX_EFFORT", "high"),
+                    "codex_model": os.environ.get("OWNWARD_BENCHMARK_CODEX_MODEL", "gpt-5.4-mini"),
+                    "codex_reasoning_effort": os.environ.get("OWNWARD_BENCHMARK_CODEX_EFFORT", "xhigh"),
                     "codex_timeout_seconds": 300,
                 }
             )

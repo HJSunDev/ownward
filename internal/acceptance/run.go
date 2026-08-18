@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/HJSunDev/ownward/internal/assetlog"
+	"github.com/HJSunDev/ownward/internal/candidate"
 	"github.com/HJSunDev/ownward/internal/config"
 	"github.com/HJSunDev/ownward/internal/core"
 	"github.com/HJSunDev/ownward/internal/derived"
@@ -23,13 +24,14 @@ import (
 	"github.com/HJSunDev/ownward/internal/semantics"
 )
 
-const reportSchema = "ownward.acceptance-report/v1"
+const reportSchema = "ownward.acceptance-report/v2"
 
 type Options struct {
 	BaselinePath string
 	OutputPath   string
 	DataDir      string
 	Candidate    string
+	BinaryPath   string
 }
 
 type Check struct {
@@ -51,6 +53,8 @@ type QueryResult struct {
 type Report struct {
 	Schema         string            `json:"schema"`
 	Candidate      string            `json:"candidate"`
+	BinaryVersion  string            `json:"release_binary_version"`
+	BinarySHA256   string            `json:"release_binary_sha256"`
 	Baseline       string            `json:"baseline"`
 	BaselineSHA256 string            `json:"baseline_sha256"`
 	DataSHA256     map[string]string `json:"data_sha256"`
@@ -78,6 +82,10 @@ type queryMetrics struct {
 
 func Run(ctx context.Context, options Options) (Report, error) {
 	started := time.Now().UTC()
+	binary, err := candidate.Inspect(ctx, options.BinaryPath, options.Candidate)
+	if err != nil {
+		return Report{}, err
+	}
 	fixtures, err := loadFixtures(options.BaselinePath)
 	if err != nil {
 		return Report{}, err
@@ -122,15 +130,14 @@ func Run(ctx context.Context, options Options) (Report, error) {
 	}
 	defer service.Close()
 	report := Report{
-		Schema:      reportSchema,
-		Candidate:   strings.TrimSpace(options.Candidate),
-		Baseline:    fixtures.Descriptor.Schema,
-		Provider:    provider.Name(),
-		StartedAt:   started,
-		Environment: map[string]string{"os": runtime.GOOS, "arch": runtime.GOARCH, "go": runtime.Version()},
-	}
-	if report.Candidate == "" {
-		report.Candidate = "unspecified"
+		Schema:        reportSchema,
+		Candidate:     strings.TrimSpace(options.Candidate),
+		BinaryVersion: binary.Version,
+		BinarySHA256:  binary.SHA256,
+		Baseline:      fixtures.Descriptor.Schema,
+		Provider:      provider.Name(),
+		StartedAt:     started,
+		Environment:   map[string]string{"os": runtime.GOOS, "arch": runtime.GOARCH, "go": runtime.Version()},
 	}
 	report.BaselineSHA256, report.DataSHA256, err = fixtureDigests(options.BaselinePath, fixtures.Descriptor)
 	if err != nil {

@@ -10,7 +10,7 @@
     "max_context_chars": 100000,
     "command_timeout_seconds": 300,
     "codex_binary": "codex",
-    "codex_model": "gpt-5.4",
+    "codex_model": "gpt-5.4-mini",
     "codex_reasoning_effort": "xhigh",
     "codex_timeout_seconds": 900
   }

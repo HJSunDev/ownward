@@ -115,6 +115,7 @@ class OwnwardMemory(Memory):
         require(self.command_timeout_seconds > 0, "command_timeout_seconds must be positive")
 
         self.codex_binary: Path | None = None
+        self.codex_auth_file: Path | None = None
         self.codex_model = str(memory_params.get("codex_model", "gpt-5.4")).strip()
         self.codex_reasoning_effort = str(memory_params.get("codex_reasoning_effort", "xhigh")).strip()
         self.codex_timeout_seconds = float(memory_params.get("codex_timeout_seconds", 900))
@@ -123,6 +124,13 @@ class OwnwardMemory(Memory):
                 memory_params.get("codex_binary", "codex"),
                 environment_name="OWNWARD_BENCHMARK_CODEX_BINARY",
                 label="Codex",
+            )
+            auth_value = os.environ.get("OWNWARD_BENCHMARK_CODEX_AUTH_FILE", "").strip()
+            require(bool(auth_value), "active retrieval requires OWNWARD_BENCHMARK_CODEX_AUTH_FILE")
+            self.codex_auth_file = Path(auth_value).expanduser().resolve()
+            require(
+                self.codex_auth_file.exists() and self.codex_auth_file.is_file(),
+                f"Codex auth file does not exist: {self.codex_auth_file}",
             )
             require(bool(self.codex_model), "codex_model must be non-empty")
             require(bool(self.codex_reasoning_effort), "codex_reasoning_effort must be non-empty")
@@ -216,29 +224,16 @@ class OwnwardMemory(Memory):
         )
         workspace_dir.mkdir(parents=True, exist_ok=True)
         self.agent_dir.mkdir(parents=True, exist_ok=True)
-        if self.query_mode == "codex":
-            self._write_codex_config()
 
-    def _write_codex_config(self) -> None:
-        config_dir = self.agent_dir / ".codex"
-        config_dir.mkdir(parents=True, exist_ok=True)
-        env_names = [
-            "OWNWARD_MODEL_BASE_URL",
-            "OWNWARD_MODEL_API_KEY",
-            "OWNWARD_CHAT_MODEL",
-            "OWNWARD_EMBEDDING_MODEL",
-            "OWNWARD_EMBEDDING_DIMENSIONS",
-        ]
-        lines = [
-            "[mcp_servers.ownward]",
-            f"command = {json.dumps(str(self.ownward_binary))}",
-            f"args = {json.dumps(['mcp', '--data-dir', str(self.data_dir)])}",
-            f"env_vars = {json.dumps(env_names)}",
-            "startup_timeout_sec = 30",
-            f"tool_timeout_sec = {max(30, int(self.command_timeout_seconds))}",
-            "",
-        ]
-        (config_dir / "config.toml").write_text("\n".join(lines), encoding="utf-8")
+    def _codex_environment(self, codex_home: Path) -> dict[str, str]:
+        require(self.codex_auth_file is not None, "Codex auth file is not configured")
+        codex_home.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(self.codex_auth_file, codex_home / "auth.json")
+        environment = os.environ.copy()
+        environment["CODEX_HOME"] = str(codex_home)
+        environment.pop("OWNWARD_BENCHMARK_CODEX_AUTH_FILE", None)
+        environment.pop("OPENAI_API_KEY", None)
+        return environment
 
     def _run(self, args: list[str], *, timeout: float | None = None) -> Any:
         command = _command_prefix(self.ownward_binary) + args
@@ -366,8 +361,6 @@ class OwnwardMemory(Memory):
             str(self.agent_dir),
             "--skip-git-repo-check",
             "--ephemeral",
-            "--ignore-user-config",
-            "--ignore-rules",
             "--json",
             "--sandbox",
             "workspace-write",
@@ -392,20 +385,37 @@ class OwnwardMemory(Memory):
                     "OWNWARD_EMBEDDING_DIMENSIONS",
                 ]
             ),
+            "-c",
+            "features.apps=false",
+            "-c",
+            "features.multi_agent=false",
+            "-c",
+            "features.personality=false",
+            "-c",
+            "features.plugins=false",
+            "-c",
+            "features.shell_snapshot=false",
+            "-c",
+            "features.shell_tool=false",
+            "-c",
+            'web_search="disabled"',
         ]
         if query_image is not None:
             image_path = Path(query_image).resolve()
             require(image_path.exists(), f"query image does not exist: {image_path}")
             command.extend(["-i", str(image_path)])
         command.append(prompt)
-        completed = subprocess.run(
-            command,
-            check=False,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            timeout=self.codex_timeout_seconds,
-        )
+        require(self.workspace_dir is not None, "Ownward workspace is not configured")
+        with tempfile.TemporaryDirectory(prefix="codex-home-", dir=self.workspace_dir) as temporary:
+            completed = subprocess.run(
+                command,
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=self.codex_timeout_seconds,
+                env=self._codex_environment(Path(temporary)),
+            )
         events_path.write_text(completed.stdout, encoding="utf-8")
         errors_path.write_text(completed.stderr, encoding="utf-8")
         require(
