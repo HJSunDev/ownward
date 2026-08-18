@@ -36,7 +36,14 @@ jobs:
       - name: Test with race detector
         run: go test -race ./...
       - name: Test benchmark adapters
-        run: python -m unittest discover -s benchmarks/longmemeval_v2 -p "test_*.py"
+        shell: bash
+        run: |
+          python -m unittest discover -s benchmarks/longmemeval_v2 -p "test_*.py"
+          PYTHONPATH=benchmarks/agent_integration python -m unittest discover -s benchmarks/agent_integration -p "test_*.py"
+          PYTHONPATH=benchmarks/resource_frontier python -m unittest discover -s benchmarks/resource_frontier -p "test_*.py"
+          PYTHONPATH=benchmarks/final_acceptance python -m unittest discover -s benchmarks/final_acceptance -p "test_*.py"
+          python -m py_compile benchmarks/resource_frontier/tam_benchmark.py
+          python -m py_compile benchmarks/final_acceptance/official_validate.py
       - name: Build
         run: go build ./...
 

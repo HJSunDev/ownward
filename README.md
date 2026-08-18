@@ -62,7 +62,7 @@ Run the MCP adapter with:
 bin/ownward mcp
 ```
 
-The repository's [project-scoped Codex configuration](.codex/config.toml) launches the same server during development and inherits the Ownward environment variables listed above. The MCP server itself supplies agents with Ownward's collaboration rules; adapter-private prompts are not required.
+The repository's [project-scoped Codex configuration](.codex/config.toml) launches the same server during development with isolated data under `.ownward/development`, and inherits the Ownward environment variables listed above. The MCP server itself supplies agents with Ownward's collaboration rules; adapter-private prompts are not required.
 
 ## Verify
 
@@ -71,16 +71,20 @@ gofmt -l .
 go vet ./...
 go test ./...
 go build ./...
-go build -trimpath -ldflags="-s -w" -o bin/ownward ./cmd/ownward
+go build -trimpath -ldflags="-s -w -X main.version=COMMIT_SHA" -o bin/ownward ./cmd/ownward
 go run ./cmd/ownward-performance --binary bin/ownward --scale 100000 --dimensions 384 --candidate COMMIT_SHA --output performance-report.json
 ```
 
 The model-backed product acceptance suite deliberately refuses to run without a real semantic provider:
 
 ```sh
-go run ./cmd/ownward-acceptance
+go run ./cmd/ownward-acceptance --binary bin/ownward --candidate COMMIT_SHA
 ```
 
 Public quality and latency comparison uses the pinned official [LongMemEval-V2 integration](benchmarks/longmemeval_v2/README.md), including direct retrieval and external-agent active retrieval modes.
+
+Public resource comparison uses the reproducible [resource-frontier harness](benchmarks/resource_frontier/README.md) at the same 100,000-item, 384-dimensional scale.
+Real external-agent mutation and cross-session consistency use the [Codex integration acceptance](benchmarks/agent_integration/README.md); the verifier rejects sessions that bypass Ownward through shell or file tools.
+The [final acceptance verifier](benchmarks/final_acceptance/README.md) accepts completion only when every formal report is bound to the same release binary and full Git candidate.
 
 See [Contributing](CONTRIBUTING.md), [Security](SECURITY.md), and the [Apache 2.0 license](LICENSE).
