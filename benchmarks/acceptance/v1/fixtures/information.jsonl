@@ -1,0 +1,30 @@
+{"fixture_id":"I001","kind":"knowledge","content":"React 使用声明式组件描述界面，状态变化会触发协调过程并更新需要变化的宿主界面。"}
+{"fixture_id":"I002","kind":"knowledge","content":"Fiber 是 React 协调器的工作单元结构，使渲染工作能够被拆分、排序、暂停和恢复。"}
+{"fixture_id":"I003","kind":"knowledge","content":"并发渲染允许 React 在提交前中断低优先级渲染，但最终提交阶段仍保持一致。"}
+{"fixture_id":"I004","kind":"knowledge","content":"useEffect 用于组件提交后与外部系统同步，不应被当作普通数据推导工具。"}
+{"fixture_id":"I005","kind":"knowledge","content":"Effect 依赖项描述其读取的响应式值；遗漏依赖会使同步逻辑使用陈旧闭包。"}
+{"fixture_id":"I006","kind":"method","content":"开发和修复期间只运行能够完整覆盖当前变更的最小充分测试。"}
+{"fixture_id":"I007","kind":"method","content":"实现稳定且定向验证全部通过后，才对同一候选版本执行一次完整验证。"}
+{"fixture_id":"I008","kind":"lesson","content":"递归删除前必须解析并校验绝对目标路径，防止变量、通配符或跨 Shell 传递扩大删除范围。","contexts":[{"key":"platform","value":"windows"}]}
+{"fixture_id":"I009","kind":"solution","content":"在 Windows 上进行文件删除或移动时，从路径解析到执行都使用 PowerShell 原生命令和 LiteralPath。","contexts":[{"key":"platform","value":"windows"}]}
+{"fixture_id":"I010","kind":"experience","content":"林涛在 2022 年 9 月从成都搬到深圳，开始从事智能体产品开发。","contexts":[{"key":"person","value":"林涛"}]}
+{"fixture_id":"I011","kind":"thought","content":"林涛在安静的清晨最容易进入深度工作状态，上午更适合完成需要连续思考的任务。","contexts":[{"key":"person","value":"林涛"}]}
+{"fixture_id":"I012","kind":"work","content":"林涛尽量不在工作日上午安排非必要会议，以保护连续思考时间。","contexts":[{"key":"person","value":"林涛"},{"key":"time","value":"weekday-morning"}]}
+{"fixture_id":"I013","kind":"social","content":"与父亲讨论重要决定时，先完整说明事实和取舍，再表达最终选择，比直接宣布结果更容易形成理解。","contexts":[{"key":"relationship","value":"father"}]}
+{"fixture_id":"I014","kind":"thought","content":"当任务没有清晰完成边界时，林涛容易反复扩大范围并产生焦虑。","contexts":[{"key":"person","value":"林涛"}]}
+{"fixture_id":"I015","kind":"method","content":"开始长期任务前先写清楚目标、不可突破的规范以及可明确判断的结束条件。"}
+{"fixture_id":"I016","kind":"lesson","content":"某次 Windows 构建失败的根因是原生 SQLite 依赖缺少匹配的 C 编译环境。","contexts":[{"key":"platform","value":"windows"},{"key":"runtime","value":"go"}]}
+{"fixture_id":"I017","kind":"solution","content":"需要轻量跨平台单二进制时，优先评估纯 Go 存储实现，避免无必要的 CGO 和动态库依赖。","contexts":[{"key":"runtime","value":"go"}]}
+{"fixture_id":"I018","kind":"path","content":"排查检索质量下降时，先固定查询、数据、模型和预算，再分别检查候选召回、关系扩展和最终排序。"}
+{"fixture_id":"I019","kind":"lesson","content":"一次检索没有结果不代表信息不存在；复杂问题应根据中间证据改变线索并继续搜索。"}
+{"fixture_id":"I020","kind":"method","content":"复杂检索先获取低成本线索与关联，再按需读取完整内容，可以减少无关上下文。"}
+{"fixture_id":"I021","kind":"work","content":"Ownward 只直接服务外部智能体，不提供面向用户的图形界面，也不内置替代外部智能体的检索智能。"}
+{"fixture_id":"I022","kind":"knowledge","content":"长期信息资产保存稳定身份、完整内容和不可重建语义；索引、向量与推导关系都属于可重新计算的派生状态。"}
+{"fixture_id":"I023","kind":"method","content":"Linux 常驻服务使用 systemd 管理进程、重启策略和日志入口。","contexts":[{"key":"platform","value":"linux"}]}
+{"fixture_id":"I024","kind":"method","content":"Windows 上需要用户登录后启动本地程序时，可以使用任务计划程序配置触发器。","contexts":[{"key":"platform","value":"windows"}]}
+{"fixture_id":"I025","kind":"skill","content":"林涛擅长从产品本质出发删掉没有需求依据的功能与抽象。","contexts":[{"key":"person","value":"林涛"}]}
+{"fixture_id":"I026","kind":"work","content":"项目提交按能够独立理解、构建、测试和回滚的最大终态子集拆分，并倾向于减少提交数量。"}
+{"fixture_id":"I027","kind":"lesson","content":"把对用户纠正的回应直接写进正文，会让不了解修改过程的人看到多余的范围声明和解释。"}
+{"fixture_id":"I028","kind":"solution","content":"写正文时只表达事物本身；能够由文本直接体现的意图，不再额外解释。"}
+{"fixture_id":"I029","kind":"experience","content":"林涛第一次独自完成公开演讲是在 2019 年 6 月的成都产品交流会上。","contexts":[{"key":"person","value":"林涛"},{"key":"location","value":"成都"}]}
+{"fixture_id":"I030","kind":"thought","content":"公开表达前如果先写出一句核心判断，林涛会明显更从容。","contexts":[{"key":"person","value":"林涛"},{"key":"activity","value":"public-speaking"}]}

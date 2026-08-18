@@ -1,0 +1,15 @@
+{"source_id":"I002","type":"part_of","target_id":"I001"}
+{"source_id":"I003","type":"related_to","target_id":"I002"}
+{"source_id":"I004","type":"part_of","target_id":"I001"}
+{"source_id":"I005","type":"part_of","target_id":"I004"}
+{"source_id":"I007","type":"supports","target_id":"I006"}
+{"source_id":"I009","type":"supports","target_id":"I008"}
+{"source_id":"I012","type":"derived_from","target_id":"I011"}
+{"source_id":"I015","type":"supports","target_id":"I014"}
+{"source_id":"I017","type":"supports","target_id":"I016"}
+{"source_id":"I018","type":"related_to","target_id":"I019"}
+{"source_id":"I020","type":"supports","target_id":"I019"}
+{"source_id":"I021","type":"related_to","target_id":"I022"}
+{"source_id":"I024","type":"related_to","target_id":"I023"}
+{"source_id":"I028","type":"supports","target_id":"I027"}
+{"source_id":"I030","type":"supports","target_id":"I029"}

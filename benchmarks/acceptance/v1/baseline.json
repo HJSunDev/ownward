@@ -1,0 +1,75 @@
+{
+  "schema": "ownward.acceptance-baseline/v1",
+  "frozen_at": "2026-08-18T10:50:00+08:00",
+  "product_scales": [1000, 10000, 100000],
+  "concurrency": [1, 8],
+  "retrieval": {
+    "explicit_object": {
+      "recall_at_5_min": 1.0,
+      "mrr_at_10_min": 1.0,
+      "p95_ms_max_at_100k": 20
+    },
+    "semantic_intent": {
+      "recall_at_10_min": 0.95,
+      "ndcg_at_10_min": 0.95,
+      "p95_ms_max_at_100k_excluding_query_embedding": 75
+    },
+    "relation_constraint": {
+      "evidence_precision_min": 0.95,
+      "evidence_recall_min": 0.9,
+      "p95_ms_max_at_100k": 50
+    },
+    "context_applicability": {
+      "accuracy_min": 1.0,
+      "incompatible_context_leakage_max": 0.0,
+      "p95_ms_max_at_100k_excluding_query_embedding": 75
+    }
+  },
+  "organization": {
+    "relation_precision_min": 0.95,
+    "relation_recall_min": 0.9,
+    "explicit_semantic_retention_min": 1.0,
+    "identity_change_max": 0,
+    "meaning_changing_merge_or_split_max": 0,
+    "manual_structure_actions_max": 0,
+    "retrieval_recall_gain_over_no_graph_min": 0.05
+  },
+  "ingestion": {
+    "durable_write_p95_ms_max": 20,
+    "basic_searchable_p95_ms_max": 30,
+    "organization_complete_p95_seconds_max": 15,
+    "clarification_rounds_max": 1
+  },
+  "resources": {
+    "release_binary_mib_max": 25,
+    "idle_rss_mib_max": 50,
+    "rss_mib_max_at_100k_384d": 768,
+    "idle_cpu_percent_max": 0.1,
+    "derived_storage_over_raw_plus_vectors_ratio_max": 1.35
+  },
+  "public_frontier": {
+    "longmemeval_v2_small": {
+      "dataset": "xiaowu0162/longmemeval-v2 small, web and enterprise",
+      "reader": "Qwen/Qwen3.5-9B",
+      "judge": "gpt-5.2 medium",
+      "controller_reference": "AgentRunbook-C V2",
+      "accuracy_min": 0.7561,
+      "average_memory_query_seconds_max": 130.54,
+      "require_official_lafs_non_negative": true,
+      "sources": [
+        "https://github.com/xiaowu0162/LongMemEval-V2",
+        "https://xiaowu0162.github.io/longmemeval-v2/agentrunbook-c-v2/"
+      ]
+    },
+    "mragent_regression": {
+      "locomo_llm_judge_min": 0.8832,
+      "longmemeval_llm_judge_min": 0.7295,
+      "source": "https://arxiv.org/abs/2606.06036"
+    }
+  },
+  "recovery": {
+    "asset_byte_equivalence_min": 1.0,
+    "post_rebuild_acceptance_pass_rate_min": 1.0,
+    "backup_must_exclude_derived_state": true
+  }
+}

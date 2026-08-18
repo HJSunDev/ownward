@@ -1,0 +1,11 @@
+{
+  "schema": "ownward.acceptance-baseline/v3",
+  "frozen_at": "2026-08-18T11:15:00+08:00",
+  "supersedes": "../v2/baseline.json",
+  "reason": "v2 provided an information-kind gold set but omitted its pass threshold",
+  "thresholds": "thresholds.json",
+  "information": "../v2/fixtures/information.jsonl",
+  "kind_gold": "../v2/fixtures/kinds.jsonl",
+  "relation_gold": "../v1/fixtures/relations.jsonl",
+  "queries": "../v1/fixtures/queries.jsonl"
+}

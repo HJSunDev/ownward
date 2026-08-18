@@ -1,0 +1,12 @@
+{
+  "schema": "ownward.acceptance-baseline/v4",
+  "frozen_at": "2026-08-18T15:05:00+08:00",
+  "supersedes": "../v3/baseline.json",
+  "reason": "v3 did not exercise stable identity and relationship consistency after an information update",
+  "thresholds": "../v3/thresholds.json",
+  "information": "../v2/fixtures/information.jsonl",
+  "kind_gold": "../v2/fixtures/kinds.jsonl",
+  "relation_gold": "../v1/fixtures/relations.jsonl",
+  "queries": "../v1/fixtures/queries.jsonl",
+  "updates": "fixtures/updates.jsonl"
+}

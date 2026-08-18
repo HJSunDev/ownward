@@ -1,0 +1,11 @@
+{
+  "schema": "ownward.acceptance-baseline/v2",
+  "frozen_at": "2026-08-18T11:05:00+08:00",
+  "supersedes": "../v1/baseline.json",
+  "reason": "v1 leaked information-kind organization labels into product input",
+  "thresholds": "../v1/baseline.json",
+  "information": "fixtures/information.jsonl",
+  "kind_gold": "fixtures/kinds.jsonl",
+  "relation_gold": "../v1/fixtures/relations.jsonl",
+  "queries": "../v1/fixtures/queries.jsonl"
+}

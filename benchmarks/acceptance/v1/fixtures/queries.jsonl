@@ -1,0 +1,10 @@
+{"query_id":"Q001","type":"explicit_object","query":"林涛是哪一年从成都搬到深圳的？","expected_ids":["I010"]}
+{"query_id":"Q002","type":"explicit_object","query":"Fiber 在 React 中解决什么问题？","expected_ids":["I002"]}
+{"query_id":"Q003","type":"semantic_intent","query":"怎样避免每改一点代码就跑全部测试造成浪费？","expected_ids":["I006","I007"]}
+{"query_id":"Q004","type":"semantic_intent","query":"面对一个线索不足、需要多步追查的问题，应该怎样找信息？","expected_ids":["I018","I019","I020"]}
+{"query_id":"Q005","type":"relation_constraint","query":"React 并发渲染依赖哪个底层协调结构？","expected_ids":["I003","I002"],"required_relation_path":["I003","I002"]}
+{"query_id":"Q006","type":"relation_constraint","query":"什么做法可以缓解任务边界不清引起的焦虑？","expected_ids":["I014","I015"],"required_relation_path":["I014","I015"]}
+{"query_id":"Q007","type":"context_applicability","query":"本地程序需要在用户登录后自动启动，应该用什么？","contexts":[{"key":"platform","value":"windows"}],"expected_ids":["I024"],"forbidden_ids":["I023"]}
+{"query_id":"Q008","type":"context_applicability","query":"删除目录时怎样避免误删？","contexts":[{"key":"platform","value":"windows"}],"expected_ids":["I008","I009"]}
+{"query_id":"Q009","type":"semantic_intent","query":"如何让正文摆脱针对上一轮纠正的多余解释？","expected_ids":["I027","I028"]}
+{"query_id":"Q010","type":"relation_constraint","query":"林涛为公开表达建立了什么有效准备方法？","expected_ids":["I029","I030"],"required_relation_path":["I029","I030"]}
