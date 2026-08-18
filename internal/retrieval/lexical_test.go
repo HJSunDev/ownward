@@ -36,6 +36,19 @@ func TestUpsertRemovesStaleTermsWithoutRebuildingWholeIndex(t *testing.T) {
 	}
 }
 
+func TestGenerationRolloverKeepsOnlyCurrentTermsSearchable(t *testing.T) {
+	index := NewLexical([]domain.Information{{ID: "one", Content: "旧线索 alpha"}})
+	index.generation = ^uint32(0)
+	index.Upsert(domain.Information{ID: "one", Content: "新线索 beta"})
+	if results := index.Search("alpha", nil, 10); len(results) != 0 {
+		t.Fatalf("stale term survived generation rollover: %#v", results)
+	}
+	results := index.Search("beta", nil, 10)
+	if len(results) != 1 || results[0].Information.ID != "one" {
+		t.Fatalf("current term was lost during generation rollover: %#v", results)
+	}
+}
+
 func BenchmarkSearch100K(b *testing.B) {
 	values := make([]domain.Information, 100_000)
 	for index := range values {

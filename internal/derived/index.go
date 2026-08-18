@@ -29,18 +29,17 @@ type Edge struct {
 
 type Index struct {
 	mu        sync.RWMutex
-	records   map[string]Record
+	records   []indexedRecord
 	blocks    map[int]*vectorBlock
-	locations map[string]vectorLocation
+	locations map[string]uint32
 	forward   map[string][]Edge
 	reverse   map[string][]Edge
 }
 
 type vectorBlock struct {
 	dimensions int
-	ids        []string
+	records    []uint32
 	active     []bool
-	norms      []float64
 	contexts   [][]domain.Context
 	values     []float32
 }
@@ -50,11 +49,17 @@ type vectorLocation struct {
 	row        int
 }
 
+type indexedRecord struct {
+	record    Record
+	vector    vectorLocation
+	hasVector bool
+}
+
 func NewIndex(records []Record) *Index {
 	index := &Index{
-		records:   make(map[string]Record, len(records)),
+		records:   make([]indexedRecord, 0, len(records)),
 		blocks:    make(map[int]*vectorBlock),
-		locations: make(map[string]vectorLocation, len(records)),
+		locations: make(map[string]uint32, len(records)),
 		forward:   make(map[string][]Edge),
 		reverse:   make(map[string][]Edge),
 	}
@@ -67,13 +72,15 @@ func NewIndex(records []Record) *Index {
 	for dimensions, count := range counts {
 		index.blocks[dimensions] = &vectorBlock{
 			dimensions: dimensions,
-			ids:        make([]string, 0, count), active: make([]bool, 0, count), norms: make([]float64, 0, count), contexts: make([][]domain.Context, 0, count),
+			records:    make([]uint32, 0, count), active: make([]bool, 0, count), contexts: make([][]domain.Context, 0, count),
 			values: make([]float32, 0, count*dimensions),
 		}
 	}
 	for recordIndex, record := range records {
-		index.records[record.AssetID] = cloneForIndex(record)
-		index.upsertVectorLocked(record)
+		location := uint32(len(index.records))
+		index.locations[record.AssetID] = location
+		index.records = append(index.records, indexedRecord{record: cloneForIndex(record)})
+		index.upsertVectorLocked(location, record)
 		records[recordIndex].Embedding = nil
 	}
 	index.rebuildEdgesLocked()
@@ -83,12 +90,18 @@ func NewIndex(records []Record) *Index {
 func (i *Index) Upsert(record Record) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	if current, exists := i.records[record.AssetID]; exists && current.AssetRevision > record.AssetRevision {
+	location, exists := i.locations[record.AssetID]
+	if exists && i.records[location].record.AssetRevision > record.AssetRevision {
 		return
 	}
 	i.removeOutgoingLocked(record.AssetID)
-	i.records[record.AssetID] = cloneForIndex(record)
-	i.upsertVectorLocked(record)
+	if !exists {
+		location = uint32(len(i.records))
+		i.locations[record.AssetID] = location
+		i.records = append(i.records, indexedRecord{})
+	}
+	i.records[location].record = cloneForIndex(record)
+	i.upsertVectorLocked(location, record)
 	i.removeStaleIncomingLocked(record.AssetID)
 	i.addOutgoingLocked(record.AssetID, record)
 }
@@ -102,8 +115,11 @@ func cloneForIndex(record Record) Record {
 func (i *Index) Get(id string) (Record, bool) {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
-	record, ok := i.records[id]
-	return clone(record), ok
+	location, ok := i.locations[id]
+	if !ok {
+		return Record{}, false
+	}
+	return clone(i.records[location].record), true
 }
 
 func (i *Index) Dependents(targetID string) []string {
@@ -140,12 +156,14 @@ func (i *Index) Search(vector []float32, contexts []domain.Context, limit int) [
 	if queryNorm == 0 {
 		return nil
 	}
+	normalizedQuery := append([]float32(nil), vector...)
+	vek32.MulNumber_Inplace(normalizedQuery, float32(1/queryNorm))
 	block := i.blocks[len(vector)]
 	if block == nil {
 		return nil
 	}
 	best := make(semanticHitHeap, 0, limit)
-	for row, id := range block.ids {
+	for row, recordID := range block.records {
 		if !block.active[row] {
 			continue
 		}
@@ -153,9 +171,9 @@ func (i *Index) Search(vector []float32, contexts []domain.Context, limit int) [
 			continue
 		}
 		start := row * block.dimensions
-		score := cosineWithNorms(vector, block.values[start:start+block.dimensions], queryNorm, block.norms[row])
+		score := float64(vek32.Dot(normalizedQuery, block.values[start:start+block.dimensions]))
 		if score > 0 {
-			hit := SemanticHit{AssetID: id, Score: score}
+			hit := SemanticHit{AssetID: i.records[recordID].record.AssetID, Score: score}
 			if len(best) < limit {
 				heap.Push(&best, hit)
 			} else if betterSemanticHit(hit, best[0]) {
@@ -251,7 +269,9 @@ func (i *Index) Navigate(start []string, relationTypes []string, maxDepth, limit
 func (i *Index) rebuildEdgesLocked() {
 	i.forward = make(map[string][]Edge)
 	i.reverse = make(map[string][]Edge)
-	for id, record := range i.records {
+	for _, indexed := range i.records {
+		record := indexed.record
+		id := record.AssetID
 		for _, relation := range record.Analysis.Relations {
 			if !i.relationCurrentLocked(id, relation) {
 				continue
@@ -263,20 +283,26 @@ func (i *Index) rebuildEdgesLocked() {
 	}
 }
 
-func (i *Index) upsertVectorLocked(record Record) {
+func (i *Index) upsertVectorLocked(recordID uint32, record Record) {
 	validVector := len(record.Embedding) > 0 && finiteVector(record.Embedding)
-	if previous, exists := i.locations[record.AssetID]; exists {
+	indexed := &i.records[recordID]
+	if indexed.hasVector {
+		previous := indexed.vector
 		block := i.blocks[previous.dimensions]
 		if validVector && len(record.Embedding) == previous.dimensions {
 			start := previous.row * block.dimensions
-			copy(block.values[start:start+block.dimensions], record.Embedding)
-			block.norms[previous.row] = vectorNorm(record.Embedding)
+			values := block.values[start : start+block.dimensions]
+			copy(values, record.Embedding)
+			norm := vectorNorm(record.Embedding)
+			if norm > 0 {
+				vek32.MulNumber_Inplace(values, float32(1/norm))
+			}
 			block.contexts[previous.row] = append(block.contexts[previous.row][:0], record.Analysis.Contexts...)
-			block.active[previous.row] = record.Status != "pending" && block.norms[previous.row] > 0
+			block.active[previous.row] = record.Status != "pending" && norm > 0
 			return
 		}
 		block.active[previous.row] = false
-		delete(i.locations, record.AssetID)
+		indexed.hasVector = false
 	}
 	if !validVector {
 		return
@@ -286,16 +312,20 @@ func (i *Index) upsertVectorLocked(record Record) {
 		block = &vectorBlock{dimensions: len(record.Embedding)}
 		i.blocks[len(record.Embedding)] = block
 	}
-	row := len(block.ids)
-	block.ids = append(block.ids, record.AssetID)
+	row := len(block.records)
+	block.records = append(block.records, recordID)
 	block.active = append(block.active, record.Status != "pending")
-	block.norms = append(block.norms, vectorNorm(record.Embedding))
 	block.contexts = append(block.contexts, append([]domain.Context(nil), record.Analysis.Contexts...))
+	start := len(block.values)
 	block.values = append(block.values, record.Embedding...)
-	if block.norms[row] == 0 {
+	norm := vectorNorm(record.Embedding)
+	if norm == 0 {
 		block.active[row] = false
+	} else {
+		vek32.MulNumber_Inplace(block.values[start:], float32(1/norm))
 	}
-	i.locations[record.AssetID] = vectorLocation{dimensions: len(record.Embedding), row: row}
+	indexed.vector = vectorLocation{dimensions: len(record.Embedding), row: row}
+	indexed.hasVector = true
 }
 
 func (i *Index) removeOutgoingLocked(id string) {
@@ -328,8 +358,12 @@ func (i *Index) addOutgoingLocked(id string, record Record) {
 }
 
 func (i *Index) relationCurrentLocked(sourceID string, relation semantics.Relation) bool {
-	target, exists := i.records[relation.TargetID]
-	return exists && relation.TargetID != sourceID && (relation.TargetRevision == 0 || relation.TargetRevision == target.AssetRevision)
+	location, exists := i.locations[relation.TargetID]
+	if !exists {
+		return false
+	}
+	target := i.records[location].record
+	return relation.TargetID != sourceID && (relation.TargetRevision == 0 || relation.TargetRevision == target.AssetRevision)
 }
 
 func edgeFromRelation(sourceID string, relation semantics.Relation) Edge {
@@ -340,7 +374,11 @@ func edgeFromRelation(sourceID string, relation semantics.Relation) Edge {
 }
 
 func (i *Index) removeStaleIncomingLocked(targetID string) {
-	target := i.records[targetID]
+	location, exists := i.locations[targetID]
+	if !exists {
+		return
+	}
+	target := i.records[location].record
 	incoming := i.reverse[targetID]
 	keptIncoming := incoming[:0]
 	for _, edge := range incoming {
@@ -369,16 +407,13 @@ func (i *Index) removeStaleIncomingLocked(targetID string) {
 	}
 }
 
-func cosineWithNorms(left, right []float32, leftNorm, rightNorm float64) float64 {
-	if leftNorm == 0 || rightNorm == 0 {
-		return 0
-	}
-	dot := float64(vek32.Dot(left, right))
-	return dot / (leftNorm * rightNorm)
-}
-
 func vectorNorm(vector []float32) float64 {
-	return math.Sqrt(float64(vek32.Dot(vector, vector)))
+	sum := 0.0
+	for _, value := range vector {
+		converted := float64(value)
+		sum += converted * converted
+	}
+	return math.Sqrt(sum)
 }
 
 func finiteVector(vector []float32) bool {

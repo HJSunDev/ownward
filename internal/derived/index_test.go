@@ -61,6 +61,15 @@ func TestIndexRejectsNonFiniteVectors(t *testing.T) {
 	}
 }
 
+func TestIndexNormalizesLargeFiniteVectorsWithoutOverflow(t *testing.T) {
+	large := float32(math.MaxFloat32)
+	index := NewIndex([]Record{{AssetID: "large", AssetRevision: 1, Status: "ready", Embedding: []float32{large, large}}})
+	hits := index.Search([]float32{large, large}, nil, 1)
+	if len(hits) != 1 || hits[0].AssetID != "large" || math.IsNaN(hits[0].Score) || math.IsInf(hits[0].Score, 0) {
+		t.Fatalf("unexpected large-vector result: %#v", hits)
+	}
+}
+
 func TestIndexIgnoresAnOlderDerivedRevision(t *testing.T) {
 	index := NewIndex([]Record{{AssetID: "one", AssetRevision: 2, Status: "ready", Embedding: []float32{1, 0}}})
 	index.Upsert(Record{AssetID: "one", AssetRevision: 1, Status: "ready", Embedding: []float32{0, 1}})

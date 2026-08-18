@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -19,6 +18,7 @@ import (
 	"time"
 
 	"github.com/HJSunDev/ownward/internal/assetlog"
+	"github.com/HJSunDev/ownward/internal/candidate"
 	"github.com/HJSunDev/ownward/internal/core"
 	"github.com/HJSunDev/ownward/internal/derived"
 	"github.com/HJSunDev/ownward/internal/domain"
@@ -56,6 +56,7 @@ type Report struct {
 	Schema          string                  `json:"schema"`
 	Candidate       string                  `json:"candidate"`
 	BinarySHA256    string                  `json:"release_binary_sha256"`
+	BinaryVersion   string                  `json:"release_binary_version"`
 	ThresholdSHA256 string                  `json:"thresholds_sha256,omitempty"`
 	MeasuredAt      time.Time               `json:"measured_at"`
 	OS              string                  `json:"os"`
@@ -72,6 +73,7 @@ type Report struct {
 	RawAssetMiB     float64                 `json:"raw_asset_mib"`
 	VectorMiB       float64                 `json:"vector_mib"`
 	DerivedMiB      float64                 `json:"derived_storage_mib"`
+	StorageMiB      float64                 `json:"storage_mib_at_scale"`
 	DerivedRatio    float64                 `json:"derived_storage_over_raw_plus_vectors_ratio"`
 	Latency         map[string]Distribution `json:"latency"`
 	Build           map[string]Distribution `json:"build"`
@@ -109,17 +111,6 @@ type limits struct {
 	} `json:"ingestion"`
 }
 
-type persistedDerivedApproximation struct {
-	Schema        string             `json:"schema"`
-	AssetID       string             `json:"asset_id"`
-	AssetRevision uint64             `json:"asset_revision"`
-	GeneratedAt   time.Time          `json:"generated_at"`
-	Provider      string             `json:"provider"`
-	Status        string             `json:"status"`
-	Analysis      semantics.Analysis `json:"analysis"`
-	Embedding     []byte             `json:"embedding_f32le"`
-}
-
 func Run(ctx context.Context, options Options) (Report, error) {
 	if options.Scale <= 0 {
 		options.Scale = 100_000
@@ -138,25 +129,19 @@ func Run(ctx context.Context, options Options) (Report, error) {
 	}
 	releaseMiB := 0.0
 	binarySHA256 := ""
+	binaryVersion := ""
 	if strings.TrimSpace(options.BinaryPath) != "" {
-		binary, statErr := os.Stat(options.BinaryPath)
-		if statErr != nil {
-			return Report{}, fmt.Errorf("读取发布二进制文件: %w", statErr)
+		binary, inspectErr := candidate.Inspect(ctx, options.BinaryPath, options.Candidate)
+		if inspectErr != nil {
+			return Report{}, inspectErr
 		}
-		if !binary.Mode().IsRegular() {
-			return Report{}, fmt.Errorf("发布二进制路径不是普通文件")
-		}
-		releaseMiB = float64(binary.Size()) / (1024 * 1024)
-		encoded, readErr := os.ReadFile(options.BinaryPath)
-		if readErr != nil {
-			return Report{}, fmt.Errorf("计算发布二进制摘要: %w", readErr)
-		}
-		digest := sha256.Sum256(encoded)
-		binarySHA256 = fmt.Sprintf("%x", digest)
+		releaseMiB = float64(binary.Size) / (1024 * 1024)
+		binarySHA256 = binary.SHA256
+		binaryVersion = binary.Version
 	}
 	var idleRSS, loadedRSS uint64
 	var idleCPU float64
-	var rawAssetBytes, derivedBytes int64
+	var rawAssetBytes, derivedBytes, storageBytes int64
 	if strings.TrimSpace(options.BinaryPath) != "" {
 		emptyDir, err := os.MkdirTemp("", "ownward-performance-empty-*")
 		if err != nil {
@@ -173,7 +158,7 @@ func Run(ctx context.Context, options Options) (Report, error) {
 		}
 		defer os.RemoveAll(fixtureRoot)
 		dataDir := filepath.Join(fixtureRoot, "data")
-		rawAssetBytes, derivedBytes, err = prepareReleaseFixture(ctx, dataDir, options.Scale, options.Dimensions)
+		rawAssetBytes, derivedBytes, storageBytes, err = prepareReleaseFixture(ctx, dataDir, options.Scale, options.Dimensions)
 		if err != nil {
 			return Report{}, err
 		}
@@ -196,11 +181,11 @@ func Run(ctx context.Context, options Options) (Report, error) {
 				return Report{}, err
 			}
 			rawAssetBytes += int64(len(encodedAsset) + 1)
-			encodedDerived, err := json.Marshal(persistedDerived(records[index]))
+			encodedDerived, err := derived.EncodeRecord(records[index])
 			if err != nil {
 				return Report{}, err
 			}
-			derivedBytes += int64(len(encodedDerived) + 1)
+			derivedBytes += int64(len(encodedDerived))
 		}
 	}
 	lexicalBuildStarted := time.Now()
@@ -231,14 +216,15 @@ func Run(ctx context.Context, options Options) (Report, error) {
 	var memory runtime.MemStats
 	runtime.ReadMemStats(&memory)
 	report := Report{
-		Schema: "ownward.performance-report/v2", Candidate: strings.TrimSpace(options.Candidate),
-		BinarySHA256: binarySHA256, MeasuredAt: time.Now().UTC(),
+		Schema: "ownward.performance-report/v4", Candidate: strings.TrimSpace(options.Candidate),
+		BinarySHA256: binarySHA256, BinaryVersion: binaryVersion, MeasuredAt: time.Now().UTC(),
 		OS: runtime.GOOS, Arch: runtime.GOARCH, CPUs: runtime.NumCPU(), Scale: options.Scale, Dimensions: options.Dimensions,
 		ReleaseMiB: releaseMiB, IdleRSSMiB: float64(idleRSS) / (1024 * 1024),
 		RSSMiB: float64(loadedRSS) / (1024 * 1024), HeapAllocMiB: float64(memory.HeapAlloc) / (1024 * 1024), HeapSysMiB: float64(memory.HeapSys) / (1024 * 1024),
 		RawAssetMiB: float64(rawAssetBytes) / (1024 * 1024), VectorMiB: float64(options.Scale*options.Dimensions*4) / (1024 * 1024),
-		DerivedMiB: float64(derivedBytes) / (1024 * 1024), DerivedRatio: float64(derivedBytes) / float64(rawAssetBytes+int64(options.Scale*options.Dimensions*4)),
-		Latency: make(map[string]Distribution), Build: make(map[string]Distribution),
+		DerivedMiB: float64(derivedBytes) / (1024 * 1024), StorageMiB: float64(storageBytes) / (1024 * 1024),
+		DerivedRatio: float64(derivedBytes) / float64(rawAssetBytes+int64(options.Scale*options.Dimensions*4)),
+		Latency:      make(map[string]Distribution), Build: make(map[string]Distribution),
 		IdleCPUPercent: idleCPU,
 	}
 	report.Build["lexical_index"] = distribution([]time.Duration{lexicalBuild})
@@ -381,14 +367,14 @@ func measureRelease(ctx context.Context, binaryPath, dataDir string) (uint64, fl
 	return rssBefore, idleCPU, nil
 }
 
-func prepareReleaseFixture(ctx context.Context, dataDir string, scale, dimensions int) (int64, int64, error) {
+func prepareReleaseFixture(ctx context.Context, dataDir string, scale, dimensions int) (int64, int64, int64, error) {
 	assetsDir := filepath.Join(dataDir, "assets")
 	stateDir := filepath.Join(dataDir, "state")
 	if err := os.MkdirAll(assetsDir, 0o700); err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
 	if err := os.MkdirAll(stateDir, 0o700); err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
 	generatedAt := time.Date(2026, 8, 18, 0, 0, 0, 0, time.UTC)
 	manifest, err := json.MarshalIndent(struct {
@@ -396,19 +382,19 @@ func prepareReleaseFixture(ctx context.Context, dataDir string, scale, dimension
 		CreatedAt time.Time `json:"created_at"`
 	}{Format: domain.AssetSchema, CreatedAt: generatedAt}, "", "  ")
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
 	if err := os.WriteFile(filepath.Join(assetsDir, "manifest.json"), append(manifest, '\n'), 0o600); err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
 	assetFile, err := os.OpenFile(filepath.Join(assetsDir, "information.jsonl"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
-	derivedFile, err := os.OpenFile(filepath.Join(stateDir, "organization.jsonl"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	derivedFile, err := os.OpenFile(filepath.Join(stateDir, derived.LogFileName), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		_ = assetFile.Close()
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
 	closed := false
 	defer func() {
@@ -439,12 +425,12 @@ func prepareReleaseFixture(ctx context.Context, dataDir string, scale, dimension
 	var rawAssetBytes, derivedBytes int64
 	for index := 0; index < scale; index++ {
 		if err := ctx.Err(); err != nil {
-			return 0, 0, err
+			return 0, 0, 0, err
 		}
 		asset, record := performanceValues(index, dimensions, generatedAt)
 		encodedAsset, err := json.Marshal(asset)
 		if err != nil {
-			return 0, 0, err
+			return 0, 0, 0, err
 		}
 		rawAssetBytes += int64(len(encodedAsset) + 1)
 		entry := struct {
@@ -453,25 +439,43 @@ func prepareReleaseFixture(ctx context.Context, dataDir string, scale, dimension
 			Value     domain.Information `json:"value"`
 		}{Operation: "create", Recorded: generatedAt, Value: asset}
 		if err := writeJSONLine(assetWriter, entry); err != nil {
-			return 0, 0, err
+			return 0, 0, 0, err
 		}
-		persisted := persistedDerived(record)
-		encodedDerived, err := json.Marshal(persisted)
+		encodedDerived, err := derived.EncodeRecord(record)
 		if err != nil {
-			return 0, 0, err
+			return 0, 0, 0, err
 		}
-		derivedBytes += int64(len(encodedDerived) + 1)
+		derivedBytes += int64(len(encodedDerived))
 		if _, err := derivedWriter.Write(encodedDerived); err != nil {
-			return 0, 0, err
-		}
-		if err := derivedWriter.WriteByte('\n'); err != nil {
-			return 0, 0, err
+			return 0, 0, 0, err
 		}
 	}
 	if err := closeFiles(); err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
-	return rawAssetBytes, derivedBytes, nil
+	storageBytes, err := directorySize(dataDir)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	return rawAssetBytes, derivedBytes, storageBytes, nil
+}
+
+func directorySize(root string) (int64, error) {
+	var size int64
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.Type().IsRegular() {
+			info, infoErr := entry.Info()
+			if infoErr != nil {
+				return infoErr
+			}
+			size += info.Size()
+		}
+		return nil
+	})
+	return size, err
 }
 
 func performanceValues(index, dimensions int, generatedAt time.Time) (domain.Information, derived.Record) {
@@ -497,17 +501,6 @@ func performanceValues(index, dimensions int, generatedAt time.Time) (domain.Inf
 		Analysis: analysis, Embedding: deterministicVector(index, dimensions),
 	}
 	return asset, record
-}
-
-func persistedDerived(record derived.Record) persistedDerivedApproximation {
-	vectorBytes := make([]byte, len(record.Embedding)*4)
-	for position, value := range record.Embedding {
-		binary.LittleEndian.PutUint32(vectorBytes[position*4:], math.Float32bits(value))
-	}
-	return persistedDerivedApproximation{
-		Schema: "ownward.derived/v2", AssetID: record.AssetID, AssetRevision: record.AssetRevision, GeneratedAt: record.GeneratedAt,
-		Provider: record.Provider, Status: record.Status, Analysis: record.Analysis, Embedding: vectorBytes,
-	}
 }
 
 func writeJSONLine(writer *bufio.Writer, value any) error {

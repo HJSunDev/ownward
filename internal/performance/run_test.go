@@ -10,12 +10,12 @@ import (
 
 func TestPrepareReleaseFixtureUsesProductionFormats(t *testing.T) {
 	dataDir := filepath.Join(t.TempDir(), "data")
-	rawBytes, derivedBytes, err := prepareReleaseFixture(t.Context(), dataDir, 3, 4)
+	rawBytes, derivedBytes, storageBytes, err := prepareReleaseFixture(t.Context(), dataDir, 3, 4)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rawBytes == 0 || derivedBytes == 0 {
-		t.Fatalf("fixture sizes are empty: raw=%d derived=%d", rawBytes, derivedBytes)
+	if rawBytes == 0 || derivedBytes == 0 || storageBytes < rawBytes+derivedBytes {
+		t.Fatalf("fixture sizes are invalid: raw=%d derived=%d storage=%d", rawBytes, derivedBytes, storageBytes)
 	}
 	assets, err := assetlog.Open(filepath.Join(dataDir, "assets"))
 	if err != nil {

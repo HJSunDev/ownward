@@ -19,33 +19,39 @@ type Result struct {
 
 type Lexical struct {
 	mu            sync.RWMutex
-	docs          map[string]*indexedDocument
-	postings      map[string][]posting
-	docFreq       map[string]int
+	docs          map[string]uint32
+	documents     []*indexedDocument
+	terms         map[string]uint32
+	termEntries   []termEntry
 	totalTerm     int
 	postingCount  int
 	liveTermCount int
-	generation    uint64
+	generation    uint32
 }
 
 type indexedDocument struct {
 	information domain.Information
-	terms       []string
 	length      int
-	generation  uint64
+	generation  uint32
 }
 
 type posting struct {
-	document   *indexedDocument
-	frequency  int
-	generation uint64
+	document   uint32
+	frequency  uint32
+	generation uint32
+}
+
+type termEntry struct {
+	documentFrequency int
+	postings          []posting
 }
 
 func NewLexical(values []domain.Information) *Lexical {
 	index := &Lexical{
-		docs:     make(map[string]*indexedDocument, len(values)),
-		postings: make(map[string][]posting),
-		docFreq:  make(map[string]int),
+		docs:        make(map[string]uint32, len(values)),
+		documents:   make([]*indexedDocument, 0, len(values)),
+		terms:       make(map[string]uint32),
+		termEntries: make([]termEntry, 0),
 	}
 	for _, value := range values {
 		index.upsertLocked(value)
@@ -66,11 +72,11 @@ func (l *Lexical) Search(query string, contexts []domain.Context, limit int) []R
 		limit = 10
 	}
 	type weightedTerm struct {
-		value string
-		idf   float64
+		id  uint32
+		idf float64
 	}
 	uniqueTerms := make(map[string]struct{})
-	maxDocumentFrequency := len(l.docs) / 4
+	maxDocumentFrequency := len(l.documents) / 4
 	if maxDocumentFrequency < 16 {
 		maxDocumentFrequency = 16
 	}
@@ -81,40 +87,51 @@ func (l *Lexical) Search(query string, contexts []domain.Context, limit int) []R
 			continue
 		}
 		uniqueTerms[term] = struct{}{}
-		documentFrequency := l.docFreq[term]
+		termID, exists := l.terms[term]
+		if !exists {
+			continue
+		}
+		documentFrequency := l.termEntries[termID].documentFrequency
 		if documentFrequency == 0 || documentFrequency > maxDocumentFrequency {
 			continue
 		}
-		idf := math.Log(1 + (float64(len(l.docs)-documentFrequency)+0.5)/(float64(documentFrequency)+0.5))
-		queryTerms = append(queryTerms, weightedTerm{value: term, idf: idf})
+		idf := math.Log(1 + (float64(len(l.documents)-documentFrequency)+0.5)/(float64(documentFrequency)+0.5))
+		queryTerms = append(queryTerms, weightedTerm{id: termID, idf: idf})
 		candidateCapacity += documentFrequency
 	}
-	if candidateCapacity > len(l.docs) {
-		candidateCapacity = len(l.docs)
+	if candidateCapacity > len(l.documents) {
+		candidateCapacity = len(l.documents)
 	}
 	trimmedQuery := strings.TrimSpace(query)
 	averageLength := 1.0
-	if len(l.docs) > 0 && l.totalTerm > 0 {
-		averageLength = float64(l.totalTerm) / float64(len(l.docs))
+	if len(l.documents) > 0 && l.totalTerm > 0 {
+		averageLength = float64(l.totalTerm) / float64(len(l.documents))
 	}
-	scores := make(map[*indexedDocument]float64, candidateCapacity)
+	scores := make(map[uint32]float64, candidateCapacity)
 	for _, term := range queryTerms {
-		for _, posting := range l.postings[term.value] {
-			document := posting.document
-			if document.generation != posting.generation || l.docs[document.information.ID] != document || !matchesContexts(document.information.Contexts, contexts) {
+		for _, posting := range l.termEntries[term.id].postings {
+			if int(posting.document) >= len(l.documents) {
+				continue
+			}
+			document := l.documents[posting.document]
+			if document == nil || document.generation != posting.generation || l.docs[document.information.ID] != posting.document || !matchesContexts(document.information.Contexts, contexts) {
 				continue
 			}
 			frequency := float64(posting.frequency)
 			length := float64(document.length)
 			const k1, b = 1.2, 0.75
-			scores[document] += term.idf * (frequency * (k1 + 1)) / (frequency + k1*(1-b+b*length/averageLength))
+			scores[posting.document] += term.idf * (frequency * (k1 + 1)) / (frequency + k1*(1-b+b*length/averageLength))
 		}
 	}
-	if document := l.docs[trimmedQuery]; document != nil && matchesContexts(document.information.Contexts, contexts) {
-		scores[document] += 1000
+	if documentID, exists := l.docs[trimmedQuery]; exists {
+		document := l.documents[documentID]
+		if document != nil && matchesContexts(document.information.Contexts, contexts) {
+			scores[documentID] += 1000
+		}
 	}
 	best := make(resultHeap, 0, limit)
-	for document, score := range scores {
+	for documentID, score := range scores {
+		document := l.documents[documentID]
 		identity := strings.EqualFold(trimmedQuery, document.information.ID)
 		if score > 0 {
 			signals := make([]string, 0, 2)
@@ -169,16 +186,80 @@ func betterResult(left, right Result) bool {
 }
 
 func (l *Lexical) upsertLocked(value domain.Information) {
-	if previous := l.docs[value.ID]; previous != nil {
-		l.totalTerm -= previous.length
-		l.liveTermCount -= len(previous.terms)
-		for _, term := range previous.terms {
-			l.docFreq[term]--
-			if l.docFreq[term] == 0 {
-				delete(l.docFreq, term)
+	if l.generation == ^uint32(0) {
+		for _, existing := range l.documents {
+			if existing != nil {
+				existing.generation = 1
 			}
 		}
+		l.generation = 1
+		l.rebuildPostingsLocked()
 	}
+	documentID, exists := l.docs[value.ID]
+	if exists {
+		previous := l.documents[documentID]
+		_, previousFrequencies := lexicalTerms(previous.information)
+		l.totalTerm -= previous.length
+		l.liveTermCount -= len(previousFrequencies)
+		for term := range previousFrequencies {
+			if termID, found := l.terms[term]; found {
+				l.termEntries[termID].documentFrequency--
+			}
+		}
+	} else {
+		documentID = uint32(len(l.documents))
+		l.docs[value.ID] = documentID
+		l.documents = append(l.documents, nil)
+	}
+	tokens, frequencies := lexicalTerms(value)
+	l.generation++
+	value.Contexts = append([]domain.Context(nil), value.Contexts...)
+	value.Relations = append([]domain.ExplicitRelation(nil), value.Relations...)
+	document := &indexedDocument{information: value, length: len(tokens), generation: l.generation}
+	for term, frequency := range frequencies {
+		termID, exists := l.terms[term]
+		if !exists {
+			termID = uint32(len(l.termEntries))
+			l.terms[term] = termID
+			l.termEntries = append(l.termEntries, termEntry{})
+		}
+		entry := &l.termEntries[termID]
+		entry.documentFrequency++
+		entry.postings = append(entry.postings, posting{document: documentID, frequency: frequency, generation: document.generation})
+		l.postingCount++
+	}
+	l.documents[documentID] = document
+	l.totalTerm += len(tokens)
+	l.liveTermCount += len(frequencies)
+	if l.postingCount > l.liveTermCount*2+1000 {
+		l.rebuildPostingsLocked()
+	}
+}
+
+func (l *Lexical) rebuildPostingsLocked() {
+	for index := range l.termEntries {
+		l.termEntries[index].postings = nil
+	}
+	count := 0
+	for documentID, document := range l.documents {
+		if document == nil {
+			continue
+		}
+		_, frequencies := lexicalTerms(document.information)
+		for term, frequency := range frequencies {
+			termID, exists := l.terms[term]
+			if !exists {
+				continue
+			}
+			entry := &l.termEntries[termID]
+			entry.postings = append(entry.postings, posting{document: uint32(documentID), frequency: frequency, generation: document.generation})
+			count++
+		}
+	}
+	l.postingCount = count
+}
+
+func lexicalTerms(value domain.Information) ([]string, map[string]uint32) {
 	parts := []string{value.ID, string(value.Kind), value.Content}
 	for _, context := range value.Contexts {
 		parts = append(parts, context.Key, context.Value)
@@ -187,50 +268,11 @@ func (l *Lexical) upsertLocked(value domain.Information) {
 		parts = append(parts, relation.Type, relation.TargetID)
 	}
 	tokens := tokenize(strings.Join(parts, " "))
-	frequencies := make(map[string]int, len(tokens))
+	frequencies := make(map[string]uint32, len(tokens))
 	for _, token := range tokens {
 		frequencies[token]++
 	}
-	l.generation++
-	value.Contexts = append([]domain.Context(nil), value.Contexts...)
-	value.Relations = append([]domain.ExplicitRelation(nil), value.Relations...)
-	document := &indexedDocument{information: value, terms: make([]string, 0, len(frequencies)), length: len(tokens), generation: l.generation}
-	for term, frequency := range frequencies {
-		document.terms = append(document.terms, term)
-		l.docFreq[term]++
-		l.postings[term] = append(l.postings[term], posting{document: document, frequency: frequency, generation: document.generation})
-		l.postingCount++
-	}
-	l.docs[value.ID] = document
-	l.totalTerm += len(tokens)
-	l.liveTermCount += len(document.terms)
-	if l.postingCount > l.liveTermCount*2+1000 {
-		l.rebuildPostingsLocked()
-	}
-}
-
-func (l *Lexical) rebuildPostingsLocked() {
-	postings := make(map[string][]posting, len(l.postings))
-	count := 0
-	for _, document := range l.docs {
-		frequencies := make(map[string]int, len(document.terms))
-		parts := []string{document.information.ID, string(document.information.Kind), document.information.Content}
-		for _, context := range document.information.Contexts {
-			parts = append(parts, context.Key, context.Value)
-		}
-		for _, relation := range document.information.Relations {
-			parts = append(parts, relation.Type, relation.TargetID)
-		}
-		for _, token := range tokenize(strings.Join(parts, " ")) {
-			frequencies[token]++
-		}
-		for term, frequency := range frequencies {
-			postings[term] = append(postings[term], posting{document: document, frequency: frequency, generation: document.generation})
-			count++
-		}
-	}
-	l.postings = postings
-	l.postingCount = count
+	return tokens, frequencies
 }
 
 func tokenize(value string) []string {
