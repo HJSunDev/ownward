@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 
@@ -99,6 +100,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	}
 	switch command {
 	case "mcp":
+		// 启动重放会产生大量短生命周期对象；常驻服务开始工作前将这部分内存归还操作系统。
+		debug.FreeOSMemory()
 		server := mcpserver.New(service, version)
 		return server.Run(ctx, &mcp.StdioTransport{})
 	case "create":

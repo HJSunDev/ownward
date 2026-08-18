@@ -71,7 +71,8 @@ gofmt -l .
 go vet ./...
 go test ./...
 go build ./...
-go run ./cmd/ownward-performance --scale 100000 --dimensions 384
+go build -trimpath -ldflags="-s -w" -o bin/ownward ./cmd/ownward
+go run ./cmd/ownward-performance --binary bin/ownward --scale 100000 --dimensions 384 --candidate COMMIT_SHA --output performance-report.json
 ```
 
 The model-backed product acceptance suite deliberately refuses to run without a real semantic provider:
@@ -79,5 +80,7 @@ The model-backed product acceptance suite deliberately refuses to run without a 
 ```sh
 go run ./cmd/ownward-acceptance
 ```
+
+Public quality and latency comparison uses the pinned official [LongMemEval-V2 integration](benchmarks/longmemeval_v2/README.md), including direct retrieval and external-agent active retrieval modes.
 
 See [Contributing](CONTRIBUTING.md), [Security](SECURITY.md), and the [Apache 2.0 license](LICENSE).

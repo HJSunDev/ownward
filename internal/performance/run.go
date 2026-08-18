@@ -1,16 +1,20 @@
 package performance
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
-	"runtime/debug"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -28,6 +32,8 @@ type Options struct {
 	Dimensions int
 	Iterations int
 	Thresholds string
+	BinaryPath string
+	Candidate  string
 }
 
 type Check struct {
@@ -47,27 +53,32 @@ type Distribution struct {
 }
 
 type Report struct {
-	Schema         string                  `json:"schema"`
-	MeasuredAt     time.Time               `json:"measured_at"`
-	OS             string                  `json:"os"`
-	Arch           string                  `json:"arch"`
-	CPUs           int                     `json:"cpus"`
-	Scale          int                     `json:"scale"`
-	Dimensions     int                     `json:"dimensions"`
-	RSSMiB         float64                 `json:"rss_mib"`
-	HeapAllocMiB   float64                 `json:"heap_alloc_mib"`
-	HeapSysMiB     float64                 `json:"heap_sys_mib"`
-	IdleCPUPercent float64                 `json:"idle_cpu_percent"`
-	RawAssetMiB    float64                 `json:"raw_asset_mib"`
-	VectorMiB      float64                 `json:"vector_mib"`
-	DerivedMiB     float64                 `json:"derived_storage_mib"`
-	DerivedRatio   float64                 `json:"derived_storage_over_raw_plus_vectors_ratio"`
-	Latency        map[string]Distribution `json:"latency"`
-	Build          map[string]Distribution `json:"build"`
-	Thresholds     string                  `json:"thresholds,omitempty"`
-	Comparable     bool                    `json:"comparable"`
-	Passed         bool                    `json:"passed"`
-	Checks         []Check                 `json:"checks,omitempty"`
+	Schema          string                  `json:"schema"`
+	Candidate       string                  `json:"candidate"`
+	BinarySHA256    string                  `json:"release_binary_sha256"`
+	ThresholdSHA256 string                  `json:"thresholds_sha256,omitempty"`
+	MeasuredAt      time.Time               `json:"measured_at"`
+	OS              string                  `json:"os"`
+	Arch            string                  `json:"arch"`
+	CPUs            int                     `json:"cpus"`
+	Scale           int                     `json:"scale"`
+	Dimensions      int                     `json:"dimensions"`
+	ReleaseMiB      float64                 `json:"release_binary_mib"`
+	IdleRSSMiB      float64                 `json:"idle_rss_mib"`
+	RSSMiB          float64                 `json:"rss_mib"`
+	HeapAllocMiB    float64                 `json:"heap_alloc_mib"`
+	HeapSysMiB      float64                 `json:"heap_sys_mib"`
+	IdleCPUPercent  float64                 `json:"idle_cpu_percent"`
+	RawAssetMiB     float64                 `json:"raw_asset_mib"`
+	VectorMiB       float64                 `json:"vector_mib"`
+	DerivedMiB      float64                 `json:"derived_storage_mib"`
+	DerivedRatio    float64                 `json:"derived_storage_over_raw_plus_vectors_ratio"`
+	Latency         map[string]Distribution `json:"latency"`
+	Build           map[string]Distribution `json:"build"`
+	Thresholds      string                  `json:"thresholds,omitempty"`
+	Comparable      bool                    `json:"comparable"`
+	Passed          bool                    `json:"passed"`
+	Checks          []Check                 `json:"checks,omitempty"`
 }
 
 type limits struct {
@@ -86,6 +97,8 @@ type limits struct {
 		} `json:"context_applicability"`
 	} `json:"retrieval"`
 	Resources struct {
+		ReleaseMiB   float64 `json:"release_binary_mib_max"`
+		IdleRSSMiB   float64 `json:"idle_rss_mib_max"`
 		RSSMiB       float64 `json:"rss_mib_max_at_100k_384d"`
 		IdleCPU      float64 `json:"idle_cpu_percent_max"`
 		DerivedRatio float64 `json:"derived_storage_over_raw_plus_vectors_ratio_max"`
@@ -120,50 +133,75 @@ func Run(ctx context.Context, options Options) (Report, error) {
 	if options.Dimensions > 8192 {
 		return Report{}, fmt.Errorf("向量维度不能超过 8192")
 	}
+	if options.Thresholds != "" && strings.TrimSpace(options.BinaryPath) == "" {
+		return Report{}, fmt.Errorf("带阈值的性能验收必须提供发布二进制文件")
+	}
+	releaseMiB := 0.0
+	binarySHA256 := ""
+	if strings.TrimSpace(options.BinaryPath) != "" {
+		binary, statErr := os.Stat(options.BinaryPath)
+		if statErr != nil {
+			return Report{}, fmt.Errorf("读取发布二进制文件: %w", statErr)
+		}
+		if !binary.Mode().IsRegular() {
+			return Report{}, fmt.Errorf("发布二进制路径不是普通文件")
+		}
+		releaseMiB = float64(binary.Size()) / (1024 * 1024)
+		encoded, readErr := os.ReadFile(options.BinaryPath)
+		if readErr != nil {
+			return Report{}, fmt.Errorf("计算发布二进制摘要: %w", readErr)
+		}
+		digest := sha256.Sum256(encoded)
+		binarySHA256 = fmt.Sprintf("%x", digest)
+	}
+	var idleRSS, loadedRSS uint64
+	var idleCPU float64
+	var rawAssetBytes, derivedBytes int64
+	if strings.TrimSpace(options.BinaryPath) != "" {
+		emptyDir, err := os.MkdirTemp("", "ownward-performance-empty-*")
+		if err != nil {
+			return Report{}, err
+		}
+		idleRSS, _, err = measureRelease(ctx, options.BinaryPath, emptyDir)
+		_ = os.RemoveAll(emptyDir)
+		if err != nil {
+			return Report{}, err
+		}
+		fixtureRoot, err := os.MkdirTemp("", "ownward-performance-loaded-*")
+		if err != nil {
+			return Report{}, err
+		}
+		defer os.RemoveAll(fixtureRoot)
+		dataDir := filepath.Join(fixtureRoot, "data")
+		rawAssetBytes, derivedBytes, err = prepareReleaseFixture(ctx, dataDir, options.Scale, options.Dimensions)
+		if err != nil {
+			return Report{}, err
+		}
+		loadedRSS, idleCPU, err = measureRelease(ctx, options.BinaryPath, dataDir)
+		if err != nil {
+			return Report{}, err
+		}
+	}
 	assets := make([]domain.Information, options.Scale)
 	records := make([]derived.Record, options.Scale)
 	generatedAt := time.Date(2026, 8, 18, 0, 0, 0, 0, time.UTC)
-	var rawAssetBytes, derivedBytes int64
 	for index := 0; index < options.Scale; index++ {
 		if err := ctx.Err(); err != nil {
 			return Report{}, err
 		}
-		id := fmt.Sprintf("I%06d", index)
-		contexts := []domain.Context(nil)
-		if index%10 == 0 {
-			platform := "windows"
-			if index%20 == 0 {
-				platform = "linux"
+		assets[index], records[index] = performanceValues(index, options.Dimensions, generatedAt)
+		if strings.TrimSpace(options.BinaryPath) == "" {
+			encodedAsset, err := json.Marshal(assets[index])
+			if err != nil {
+				return Report{}, err
 			}
-			contexts = []domain.Context{{Key: "platform", Value: platform}}
+			rawAssetBytes += int64(len(encodedAsset) + 1)
+			encodedDerived, err := json.Marshal(persistedDerived(records[index]))
+			if err != nil {
+				return Report{}, err
+			}
+			derivedBytes += int64(len(encodedDerived) + 1)
 		}
-		assets[index] = domain.Information{
-			Schema: domain.AssetSchema, ID: id, Revision: 1, CreatedAt: generatedAt, UpdatedAt: generatedAt, Kind: domain.KindKnowledge,
-			Content:  fmt.Sprintf("长期个人信息 %d，主题 bucket%d，包含可复用的经验、方法和解决路径。", index, index%100),
-			Contexts: contexts,
-		}
-		analysis := semantics.Analysis{Kind: domain.KindKnowledge, Contexts: contexts}
-		if index > 0 {
-			analysis.Relations = []semantics.Relation{{Type: "related_to", TargetID: fmt.Sprintf("I%06d", index-1), Confidence: 0.95}}
-		}
-		records[index] = derived.Record{AssetID: id, AssetRevision: 1, GeneratedAt: generatedAt, Provider: "performance-fixture", Status: "ready", Analysis: analysis, Embedding: deterministicVector(index, options.Dimensions)}
-		encodedAsset, err := json.Marshal(assets[index])
-		if err != nil {
-			return Report{}, err
-		}
-		rawAssetBytes += int64(len(encodedAsset) + 1)
-		vectorBytes := make([]byte, len(records[index].Embedding)*4)
-		for position, value := range records[index].Embedding {
-			binary.LittleEndian.PutUint32(vectorBytes[position*4:], math.Float32bits(value))
-		}
-		encodedDerived, err := json.Marshal(persistedDerivedApproximation{
-			Schema: "ownward.derived/v2", AssetID: id, AssetRevision: 1, GeneratedAt: generatedAt,
-			Provider: "performance-fixture", Status: "ready", Analysis: analysis, Embedding: vectorBytes,
-		})
-		if err != nil {
-			return Report{}, err
-		}
-		derivedBytes += int64(len(encodedDerived) + 1)
 	}
 	lexicalBuildStarted := time.Now()
 	lexical := retrieval.NewLexical(assets)
@@ -183,20 +221,25 @@ func Run(ctx context.Context, options Options) (Report, error) {
 	assets = nil
 	records = nil
 	runtime.GC()
-	debug.FreeOSMemory()
-	rss, err := systemmetrics.RSSBytes()
-	if err != nil {
-		return Report{}, err
+	if loadedRSS == 0 {
+		currentRSS, err := systemmetrics.RSSBytes()
+		if err != nil {
+			return Report{}, err
+		}
+		loadedRSS = currentRSS
 	}
 	var memory runtime.MemStats
 	runtime.ReadMemStats(&memory)
 	report := Report{
-		Schema: "ownward.performance-report/v1", MeasuredAt: time.Now().UTC(),
+		Schema: "ownward.performance-report/v2", Candidate: strings.TrimSpace(options.Candidate),
+		BinarySHA256: binarySHA256, MeasuredAt: time.Now().UTC(),
 		OS: runtime.GOOS, Arch: runtime.GOARCH, CPUs: runtime.NumCPU(), Scale: options.Scale, Dimensions: options.Dimensions,
-		RSSMiB: float64(rss) / (1024 * 1024), HeapAllocMiB: float64(memory.HeapAlloc) / (1024 * 1024), HeapSysMiB: float64(memory.HeapSys) / (1024 * 1024),
+		ReleaseMiB: releaseMiB, IdleRSSMiB: float64(idleRSS) / (1024 * 1024),
+		RSSMiB: float64(loadedRSS) / (1024 * 1024), HeapAllocMiB: float64(memory.HeapAlloc) / (1024 * 1024), HeapSysMiB: float64(memory.HeapSys) / (1024 * 1024),
 		RawAssetMiB: float64(rawAssetBytes) / (1024 * 1024), VectorMiB: float64(options.Scale*options.Dimensions*4) / (1024 * 1024),
 		DerivedMiB: float64(derivedBytes) / (1024 * 1024), DerivedRatio: float64(derivedBytes) / float64(rawAssetBytes+int64(options.Scale*options.Dimensions*4)),
 		Latency: make(map[string]Distribution), Build: make(map[string]Distribution),
+		IdleCPUPercent: idleCPU,
 	}
 	report.Build["lexical_index"] = distribution([]time.Duration{lexicalBuild})
 	report.Build["semantic_index"] = distribution([]time.Duration{semanticBuild})
@@ -225,18 +268,6 @@ func Run(ctx context.Context, options Options) (Report, error) {
 	}
 	report.Latency["durable_write"] = durableWrite
 	report.Latency["basic_searchable"] = basicSearchable
-	cpuStart, err := systemmetrics.CPUTime()
-	if err != nil {
-		return Report{}, err
-	}
-	idleStart := time.Now()
-	time.Sleep(3 * time.Second)
-	idleWall := time.Since(idleStart)
-	cpuEnd, err := systemmetrics.CPUTime()
-	if err != nil {
-		return Report{}, err
-	}
-	report.IdleCPUPercent = (cpuEnd - cpuStart).Seconds() / idleWall.Seconds() / float64(runtime.NumCPU()) * 100
 	if options.Thresholds != "" {
 		encoded, readErr := os.ReadFile(options.Thresholds)
 		if readErr != nil {
@@ -247,6 +278,8 @@ func Run(ctx context.Context, options Options) (Report, error) {
 			return Report{}, fmt.Errorf("解析性能阈值: %w", unmarshalErr)
 		}
 		report.Thresholds = options.Thresholds
+		digest := sha256.Sum256(encoded)
+		report.ThresholdSHA256 = fmt.Sprintf("%x", digest)
 		report.Comparable = options.Scale == 100_000 && options.Dimensions == 384
 		report.Checks = evaluate(report, thresholds)
 		report.Passed = report.Comparable
@@ -263,6 +296,231 @@ func Run(ctx context.Context, options Options) (Report, error) {
 	return report, nil
 }
 
+func measureRelease(ctx context.Context, binaryPath, dataDir string) (uint64, float64, error) {
+	if strings.TrimSpace(binaryPath) == "" {
+		return 0, 0, nil
+	}
+	command := exec.CommandContext(ctx, binaryPath, "mcp", "--data-dir", dataDir)
+	stdin, err := command.StdinPipe()
+	if err != nil {
+		return 0, 0, err
+	}
+	stdout, err := command.StdoutPipe()
+	if err != nil {
+		return 0, 0, err
+	}
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
+	if err := command.Start(); err != nil {
+		return 0, 0, fmt.Errorf("启动发布二进制: %w", err)
+	}
+	defer func() {
+		_ = stdin.Close()
+		_ = command.Process.Kill()
+		_ = command.Wait()
+	}()
+	initialize := map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "initialize",
+		"params": map[string]any{
+			"protocolVersion": "2025-06-18", "capabilities": map[string]any{},
+			"clientInfo": map[string]string{"name": "ownward-performance", "version": "1"},
+		},
+	}
+	if err := json.NewEncoder(stdin).Encode(initialize); err != nil {
+		return 0, 0, fmt.Errorf("初始化发布二进制: %w", err)
+	}
+	response := make(chan []byte, 1)
+	readError := make(chan error, 1)
+	go func() {
+		line, readErr := bufio.NewReader(stdout).ReadBytes('\n')
+		if readErr != nil {
+			readError <- readErr
+			return
+		}
+		response <- line
+	}()
+	select {
+	case <-ctx.Done():
+		return 0, 0, ctx.Err()
+	case err := <-readError:
+		return 0, 0, fmt.Errorf("读取发布二进制初始化结果: %w; stderr: %s", err, strings.TrimSpace(stderr.String()))
+	case encoded := <-response:
+		var result struct {
+			ID     int             `json:"id"`
+			Result json.RawMessage `json:"result"`
+			Error  json.RawMessage `json:"error"`
+		}
+		if err := json.Unmarshal(encoded, &result); err != nil || result.ID != 1 || len(result.Result) == 0 || len(result.Error) > 0 {
+			return 0, 0, fmt.Errorf("发布二进制初始化响应无效: %s", strings.TrimSpace(string(encoded)))
+		}
+	case <-time.After(10 * time.Second):
+		return 0, 0, fmt.Errorf("发布二进制初始化超时; stderr: %s", strings.TrimSpace(stderr.String()))
+	}
+	if err := json.NewEncoder(stdin).Encode(map[string]any{"jsonrpc": "2.0", "method": "notifications/initialized"}); err != nil {
+		return 0, 0, fmt.Errorf("确认发布二进制初始化: %w", err)
+	}
+	rssBefore, cpuBefore, err := systemmetrics.SampleProcess(command.Process.Pid)
+	if err != nil {
+		return 0, 0, fmt.Errorf("读取发布二进制初始指标: %w", err)
+	}
+	idleStarted := time.Now()
+	select {
+	case <-ctx.Done():
+		return 0, 0, ctx.Err()
+	case <-time.After(3 * time.Second):
+	}
+	idleWall := time.Since(idleStarted)
+	rssAfter, cpuAfter, err := systemmetrics.SampleProcess(command.Process.Pid)
+	if err != nil {
+		return 0, 0, fmt.Errorf("读取发布二进制空载指标: %w; stderr: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	if rssAfter > rssBefore {
+		rssBefore = rssAfter
+	}
+	idleCPU := (cpuAfter - cpuBefore).Seconds() / idleWall.Seconds() / float64(runtime.NumCPU()) * 100
+	return rssBefore, idleCPU, nil
+}
+
+func prepareReleaseFixture(ctx context.Context, dataDir string, scale, dimensions int) (int64, int64, error) {
+	assetsDir := filepath.Join(dataDir, "assets")
+	stateDir := filepath.Join(dataDir, "state")
+	if err := os.MkdirAll(assetsDir, 0o700); err != nil {
+		return 0, 0, err
+	}
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		return 0, 0, err
+	}
+	generatedAt := time.Date(2026, 8, 18, 0, 0, 0, 0, time.UTC)
+	manifest, err := json.MarshalIndent(struct {
+		Format    string    `json:"format"`
+		CreatedAt time.Time `json:"created_at"`
+	}{Format: domain.AssetSchema, CreatedAt: generatedAt}, "", "  ")
+	if err != nil {
+		return 0, 0, err
+	}
+	if err := os.WriteFile(filepath.Join(assetsDir, "manifest.json"), append(manifest, '\n'), 0o600); err != nil {
+		return 0, 0, err
+	}
+	assetFile, err := os.OpenFile(filepath.Join(assetsDir, "information.jsonl"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return 0, 0, err
+	}
+	derivedFile, err := os.OpenFile(filepath.Join(stateDir, "organization.jsonl"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		_ = assetFile.Close()
+		return 0, 0, err
+	}
+	closed := false
+	defer func() {
+		if !closed {
+			_ = assetFile.Close()
+			_ = derivedFile.Close()
+		}
+	}()
+	assetWriter := bufio.NewWriterSize(assetFile, 1024*1024)
+	derivedWriter := bufio.NewWriterSize(derivedFile, 1024*1024)
+	closeFiles := func() error {
+		var first error
+		if err := assetWriter.Flush(); err != nil && first == nil {
+			first = err
+		}
+		if err := derivedWriter.Flush(); err != nil && first == nil {
+			first = err
+		}
+		if err := assetFile.Close(); err != nil && first == nil {
+			first = err
+		}
+		if err := derivedFile.Close(); err != nil && first == nil {
+			first = err
+		}
+		closed = true
+		return first
+	}
+	var rawAssetBytes, derivedBytes int64
+	for index := 0; index < scale; index++ {
+		if err := ctx.Err(); err != nil {
+			return 0, 0, err
+		}
+		asset, record := performanceValues(index, dimensions, generatedAt)
+		encodedAsset, err := json.Marshal(asset)
+		if err != nil {
+			return 0, 0, err
+		}
+		rawAssetBytes += int64(len(encodedAsset) + 1)
+		entry := struct {
+			Operation string             `json:"operation"`
+			Recorded  time.Time          `json:"recorded_at"`
+			Value     domain.Information `json:"value"`
+		}{Operation: "create", Recorded: generatedAt, Value: asset}
+		if err := writeJSONLine(assetWriter, entry); err != nil {
+			return 0, 0, err
+		}
+		persisted := persistedDerived(record)
+		encodedDerived, err := json.Marshal(persisted)
+		if err != nil {
+			return 0, 0, err
+		}
+		derivedBytes += int64(len(encodedDerived) + 1)
+		if _, err := derivedWriter.Write(encodedDerived); err != nil {
+			return 0, 0, err
+		}
+		if err := derivedWriter.WriteByte('\n'); err != nil {
+			return 0, 0, err
+		}
+	}
+	if err := closeFiles(); err != nil {
+		return 0, 0, err
+	}
+	return rawAssetBytes, derivedBytes, nil
+}
+
+func performanceValues(index, dimensions int, generatedAt time.Time) (domain.Information, derived.Record) {
+	id := fmt.Sprintf("I%06d", index)
+	contexts := []domain.Context(nil)
+	if index%10 == 0 {
+		platform := "windows"
+		if index%20 == 0 {
+			platform = "linux"
+		}
+		contexts = []domain.Context{{Key: "platform", Value: platform}}
+	}
+	asset := domain.Information{
+		Schema: domain.AssetSchema, ID: id, Revision: 1, CreatedAt: generatedAt, UpdatedAt: generatedAt, Kind: domain.KindKnowledge,
+		Content: fmt.Sprintf("长期个人信息 %d，主题 bucket%d，包含可复用的经验、方法和解决路径。", index, index%100), Contexts: contexts,
+	}
+	analysis := semantics.Analysis{Kind: domain.KindKnowledge, Contexts: contexts}
+	if index > 0 {
+		analysis.Relations = []semantics.Relation{{Type: "related_to", TargetID: fmt.Sprintf("I%06d", index-1), Confidence: 0.95}}
+	}
+	record := derived.Record{
+		AssetID: id, AssetRevision: 1, GeneratedAt: generatedAt, Provider: "performance-fixture", Status: "ready",
+		Analysis: analysis, Embedding: deterministicVector(index, dimensions),
+	}
+	return asset, record
+}
+
+func persistedDerived(record derived.Record) persistedDerivedApproximation {
+	vectorBytes := make([]byte, len(record.Embedding)*4)
+	for position, value := range record.Embedding {
+		binary.LittleEndian.PutUint32(vectorBytes[position*4:], math.Float32bits(value))
+	}
+	return persistedDerivedApproximation{
+		Schema: "ownward.derived/v2", AssetID: record.AssetID, AssetRevision: record.AssetRevision, GeneratedAt: record.GeneratedAt,
+		Provider: record.Provider, Status: record.Status, Analysis: record.Analysis, Embedding: vectorBytes,
+	}
+}
+
+func writeJSONLine(writer *bufio.Writer, value any) error {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	if _, err := writer.Write(encoded); err != nil {
+		return err
+	}
+	return writer.WriteByte('\n')
+}
+
 func evaluate(report Report, thresholds limits) []Check {
 	check := func(name string, actual, maximum float64, unit string) Check {
 		return Check{Name: name, Passed: maximum > 0 && actual <= maximum, Actual: actual, Maximum: maximum, Unit: unit}
@@ -275,6 +533,8 @@ func evaluate(report Report, thresholds limits) []Check {
 		check("并发八路语义检索 P95", report.Latency["semantic_concurrency_8"].P95MS, thresholds.Retrieval.SemanticIntent.P95, "ms"),
 		check("持久写入 P95", report.Latency["durable_write"].P95MS, thresholds.Ingestion.DurableWriteMS, "ms"),
 		check("基础可检索 P95", report.Latency["basic_searchable"].P95MS, thresholds.Ingestion.BasicSearchableMS, "ms"),
+		check("发布二进制体积", report.ReleaseMiB, thresholds.Resources.ReleaseMiB, "MiB"),
+		check("空载常驻内存", report.IdleRSSMiB, thresholds.Resources.IdleRSSMiB, "MiB"),
 		check("十万条 384 维常驻内存", report.RSSMiB, thresholds.Resources.RSSMiB, "MiB"),
 		check("空闲 CPU", report.IdleCPUPercent, thresholds.Resources.IdleCPU, "%"),
 		check("派生状态存储比", report.DerivedRatio, thresholds.Resources.DerivedRatio, "ratio"),
