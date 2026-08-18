@@ -1,0 +1,7 @@
+/bin/
+/dist/
+/coverage.out
+/.ownward/
+/.tmp/
+*.test
+*.prof
