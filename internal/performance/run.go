@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -25,6 +26,7 @@ import (
 	"github.com/HJSunDev/ownward/internal/retrieval"
 	"github.com/HJSunDev/ownward/internal/semantics"
 	"github.com/HJSunDev/ownward/internal/systemmetrics"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type Options struct {
@@ -287,63 +289,18 @@ func measureRelease(ctx context.Context, binaryPath, dataDir string) (uint64, fl
 		return 0, 0, nil
 	}
 	command := exec.CommandContext(ctx, binaryPath, "mcp", "--data-dir", dataDir)
-	stdin, err := command.StdinPipe()
-	if err != nil {
-		return 0, 0, err
-	}
-	stdout, err := command.StdoutPipe()
-	if err != nil {
-		return 0, 0, err
-	}
 	var stderr bytes.Buffer
 	command.Stderr = &stderr
-	if err := command.Start(); err != nil {
-		return 0, 0, fmt.Errorf("启动发布二进制: %w", err)
+	client := mcp.NewClient(&mcp.Implementation{Name: "ownward-performance", Version: "1"}, nil)
+	connectCtx, cancelConnect := context.WithTimeout(ctx, 10*time.Second)
+	session, err := client.Connect(connectCtx, &mcp.CommandTransport{Command: command}, nil)
+	cancelConnect()
+	if err != nil {
+		return 0, 0, fmt.Errorf("初始化发布二进制: %w; stderr: %s", err, strings.TrimSpace(stderr.String()))
 	}
-	defer func() {
-		_ = stdin.Close()
-		_ = command.Process.Kill()
-		_ = command.Wait()
-	}()
-	initialize := map[string]any{
-		"jsonrpc": "2.0", "id": 1, "method": "initialize",
-		"params": map[string]any{
-			"protocolVersion": "2025-06-18", "capabilities": map[string]any{},
-			"clientInfo": map[string]string{"name": "ownward-performance", "version": "1"},
-		},
-	}
-	if err := json.NewEncoder(stdin).Encode(initialize); err != nil {
-		return 0, 0, fmt.Errorf("初始化发布二进制: %w", err)
-	}
-	response := make(chan []byte, 1)
-	readError := make(chan error, 1)
-	go func() {
-		line, readErr := bufio.NewReader(stdout).ReadBytes('\n')
-		if readErr != nil {
-			readError <- readErr
-			return
-		}
-		response <- line
-	}()
-	select {
-	case <-ctx.Done():
-		return 0, 0, ctx.Err()
-	case err := <-readError:
-		return 0, 0, fmt.Errorf("读取发布二进制初始化结果: %w; stderr: %s", err, strings.TrimSpace(stderr.String()))
-	case encoded := <-response:
-		var result struct {
-			ID     int             `json:"id"`
-			Result json.RawMessage `json:"result"`
-			Error  json.RawMessage `json:"error"`
-		}
-		if err := json.Unmarshal(encoded, &result); err != nil || result.ID != 1 || len(result.Result) == 0 || len(result.Error) > 0 {
-			return 0, 0, fmt.Errorf("发布二进制初始化响应无效: %s", strings.TrimSpace(string(encoded)))
-		}
-	case <-time.After(10 * time.Second):
-		return 0, 0, fmt.Errorf("发布二进制初始化超时; stderr: %s", strings.TrimSpace(stderr.String()))
-	}
-	if err := json.NewEncoder(stdin).Encode(map[string]any{"jsonrpc": "2.0", "method": "notifications/initialized"}); err != nil {
-		return 0, 0, fmt.Errorf("确认发布二进制初始化: %w", err)
+	defer func() { _ = session.Close() }()
+	if command.Process == nil {
+		return 0, 0, errors.New("发布二进制初始化后没有可采样进程")
 	}
 	rssBefore, cpuBefore, err := systemmetrics.SampleProcess(command.Process.Pid)
 	if err != nil {
