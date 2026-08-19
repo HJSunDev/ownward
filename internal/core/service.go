@@ -33,6 +33,7 @@ type Service struct {
 	provider     semantics.Provider
 	now          func() time.Time
 	mutationMu   [256]sync.Mutex
+	graphMu      sync.Mutex
 }
 
 type OrganizationState struct {
@@ -211,13 +212,22 @@ func (s *Service) Update(ctx context.Context, input UpdateInput) (MutationResult
 		return MutationResult{}, err
 	}
 	s.index.Upsert(updated)
-	organization := s.organize(ctx, updated)
 	unlock()
 	released = true
-	if pending := s.refreshDependents(ctx, dependents); pending > 0 {
+	organizationResult := make(chan OrganizationState, 1)
+	dependentResult := make(chan int, 1)
+	go func() {
+		organizationResult <- s.organize(ctx, updated)
+	}()
+	go func() {
+		dependentResult <- s.refreshDependents(ctx, dependents)
+	}()
+	organization := <-organizationResult
+	if pending := <-dependentResult; pending > 0 {
 		organization.Status = "pending"
 		organization.Error = strings.Trim(strings.Join([]string{organization.Error, fmt.Sprintf("%d 条关联信息待重新组织", pending)}, "; "), "; ")
 	}
+	s.reindexDerived(dependents)
 	return MutationResult{Information: updated, Organization: organization}, nil
 }
 
@@ -464,48 +474,87 @@ func (s *Service) organize(ctx context.Context, value domain.Information) Organi
 	if s.derivedStore == nil || s.semantic == nil || s.provider == nil {
 		return OrganizationState{Status: "unavailable"}
 	}
+	previousDependents := s.semantic.Dependents(value.ID)
 	vectors, embeddingErr := s.provider.Embed(ctx, []string{value.Content})
-	lexical := s.index.Search(value.Content, nil, 17)
-	candidates := make([]semantics.Candidate, 0, 16)
-	candidateIDs := make(map[string]struct{}, 16)
-	appendCandidate := func(candidate domain.Information) {
-		if candidate.ID == value.ID || len(candidates) == 16 {
+	lexical := s.index.Search(value.Content, nil, 33)
+	candidates := make([]semantics.Candidate, 0, 32)
+	candidatePositions := make(map[string]int, 32)
+	appendCandidate := func(candidate domain.Information, similarity float64) {
+		if candidate.ID == value.ID {
 			return
 		}
-		if _, exists := candidateIDs[candidate.ID]; exists {
+		if position, exists := candidatePositions[candidate.ID]; exists {
+			if similarity > candidates[position].Similarity {
+				candidates[position].Similarity = similarity
+			}
 			return
 		}
-		candidateIDs[candidate.ID] = struct{}{}
+		if len(candidates) == 32 {
+			return
+		}
+		candidatePositions[candidate.ID] = len(candidates)
+		kind := candidate.Kind
+		contexts := candidate.Contexts
+		var relations []semantics.Relation
+		if record, exists := s.semantic.Get(candidate.ID); exists {
+			if kind == domain.KindGeneral && record.Analysis.Kind != "" {
+				kind = record.Analysis.Kind
+			}
+			contexts = mergeContexts(contexts, record.Analysis.Contexts)
+			relations = append([]semantics.Relation(nil), record.Analysis.Relations...)
+		}
 		candidates = append(candidates, semantics.Candidate{
-			ID:       candidate.ID,
-			Kind:     candidate.Kind,
-			Content:  candidate.Content,
-			Contexts: candidate.Contexts,
+			ID: candidate.ID, Kind: kind, Content: candidate.Content, Contexts: contexts,
+			Similarity: similarity, Relations: relations,
 		})
 	}
 	for _, relation := range value.Relations {
 		if candidate, ok := s.store.Get(relation.TargetID); ok {
-			appendCandidate(candidate)
+			appendCandidate(candidate, 0)
 		}
 	}
-	for _, hit := range lexical {
-		appendCandidate(hit.Information)
-		if len(candidates) == 8 {
-			break
-		}
+	lexicalOffset := min(4, len(lexical))
+	for _, hit := range lexical[:lexicalOffset] {
+		appendCandidate(hit.Information, 0)
 	}
+	var semanticHits []derived.SemanticHit
 	if len(vectors) == 1 {
-		for _, hit := range s.semantic.Search(vectors[0], nil, 16) {
+		semanticHits = s.semantic.Search(vectors[0], nil, 32)
+		for _, hit := range semanticHits {
 			if candidate, ok := s.store.Get(hit.AssetID); ok {
-				appendCandidate(candidate)
+				appendCandidate(candidate, hit.Score)
 			}
-			if len(candidates) == 16 {
+			if len(candidates) == 12 {
 				break
 			}
 		}
 	}
+	for _, hit := range lexical[lexicalOffset:] {
+		appendCandidate(hit.Information, 0)
+		if len(candidates) == 24 {
+			break
+		}
+	}
+	for _, hit := range semanticHits {
+		if candidate, ok := s.store.Get(hit.AssetID); ok {
+			appendCandidate(candidate, hit.Score)
+		}
+		if len(candidates) == 32 {
+			break
+		}
+	}
 	analysis, analysisErr := s.provider.Analyze(ctx, value, candidates)
-	analysis.Relations = s.finalizeRelations(value, analysis.Relations)
+	incoming := make([]semantics.Relation, 0, len(analysis.Relations))
+	outgoing := make([]semantics.Relation, 0, len(analysis.Relations))
+	for _, relation := range analysis.Relations {
+		if relation.Direction == "incoming" {
+			incoming = append(incoming, relation)
+			continue
+		}
+		relation.Direction = ""
+		outgoing = append(outgoing, relation)
+	}
+	analysis.Relations = s.finalizeRelations(value, outgoing)
 	status := "ready"
 	errorText := ""
 	if _, fallback := s.provider.(semantics.Heuristic); fallback {
@@ -541,10 +590,22 @@ func (s *Service) organize(ctx context.Context, value domain.Information) Organi
 	if !exists || current.Revision != value.Revision {
 		return OrganizationState{Status: "pending", Provider: s.provider.Name(), Error: "信息已被更新版本取代"}
 	}
+	s.graphMu.Lock()
+	defer s.graphMu.Unlock()
+	if previous, ok := s.derivedStore.Get(value.ID); ok {
+		record.Analysis.Relations = preserveExternalRelations(record.Analysis.Relations, previous.Analysis.Relations, value.ID)
+	}
 	if err := s.derivedStore.Put(record); err != nil {
 		return OrganizationState{Status: "pending", Provider: s.provider.Name(), Error: err.Error()}
 	}
 	s.semantic.Upsert(record)
+	if err := s.applyIncomingRelationsLocked(value, previousDependents, incoming); err != nil {
+		record.Status = "pending"
+		record.Error = strings.Trim(strings.Join([]string{record.Error, err.Error()}, "; "), "; ")
+		_ = s.derivedStore.Put(record)
+		s.semantic.Upsert(record)
+		return OrganizationState{Status: "pending", Provider: record.Provider, Error: record.Error}
+	}
 	return OrganizationState{Status: status, Provider: record.Provider, Error: errorText}
 }
 
@@ -558,21 +619,56 @@ func (s *Service) lockMutation(id string) func() {
 }
 
 func (s *Service) refreshDependents(ctx context.Context, ids []string) int {
-	pending := 0
-	for _, id := range ids {
-		unlock := s.lockMutation(id)
-		value, exists := s.store.Get(id)
-		if !exists {
-			unlock()
-			continue
+	if len(ids) == 0 {
+		return 0
+	}
+	workers := min(len(ids), 4)
+	jobs := make(chan string)
+	results := make(chan bool, len(ids))
+	var wait sync.WaitGroup
+	for range workers {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			for id := range jobs {
+				unlock := s.lockMutation(id)
+				value, exists := s.store.Get(id)
+				if !exists {
+					unlock()
+					results <- false
+					continue
+				}
+				state := s.organize(ctx, value)
+				unlock()
+				results <- state.Status == "pending"
+			}
+		}()
+	}
+	go func() {
+		for _, id := range ids {
+			jobs <- id
 		}
-		state := s.organize(ctx, value)
-		unlock()
-		if state.Status == "pending" {
+		close(jobs)
+		wait.Wait()
+		close(results)
+	}()
+	pending := 0
+	for failed := range results {
+		if failed {
 			pending++
 		}
 	}
 	return pending
+}
+
+func (s *Service) reindexDerived(ids []string) {
+	s.graphMu.Lock()
+	defer s.graphMu.Unlock()
+	for _, id := range ids {
+		if record, exists := s.derivedStore.GetWithEmbedding(id); exists {
+			s.semantic.Upsert(record)
+		}
+	}
 }
 
 func (s *Service) finalizeRelations(value domain.Information, inferred []semantics.Relation) []semantics.Relation {
@@ -584,6 +680,8 @@ func (s *Service) finalizeRelations(value domain.Information, inferred []semanti
 		result = append(result, semantics.Relation{Type: relation.Type, TargetID: relation.TargetID, Confidence: 1})
 	}
 	for _, relation := range inferred {
+		relation.Direction = ""
+		relation.InferredBy = ""
 		key := relation.Type + "\x00" + relation.TargetID
 		if _, exists := seen[key]; exists || relation.TargetID == value.ID {
 			continue
@@ -597,6 +695,86 @@ func (s *Service) finalizeRelations(value domain.Information, inferred []semanti
 		result = append(result, relation)
 	}
 	return result
+}
+
+func preserveExternalRelations(current, previous []semantics.Relation, assetID string) []semantics.Relation {
+	result := append([]semantics.Relation(nil), current...)
+	seen := make(map[string]struct{}, len(current))
+	for _, relation := range current {
+		seen[relation.Type+"\x00"+relation.TargetID] = struct{}{}
+	}
+	for _, relation := range previous {
+		if relation.InferredBy == "" || relation.InferredBy == assetID {
+			continue
+		}
+		key := relation.Type + "\x00" + relation.TargetID
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		relation.Direction = ""
+		result = append(result, relation)
+		seen[key] = struct{}{}
+	}
+	return result
+}
+
+func (s *Service) applyIncomingRelationsLocked(value domain.Information, previousDependents []string, incoming []semantics.Relation) error {
+	bySource := make(map[string][]semantics.Relation, len(incoming))
+	affected := make(map[string]struct{}, len(previousDependents)+len(incoming))
+	for _, id := range previousDependents {
+		affected[id] = struct{}{}
+	}
+	for _, relation := range incoming {
+		if relation.TargetID == "" || relation.TargetID == value.ID {
+			continue
+		}
+		bySource[relation.TargetID] = append(bySource[relation.TargetID], relation)
+		affected[relation.TargetID] = struct{}{}
+	}
+	for sourceID := range affected {
+		record, exists := s.derivedStore.GetWithEmbedding(sourceID)
+		if !exists || record.Status == "pending" {
+			continue
+		}
+		asset, exists := s.store.Get(sourceID)
+		if !exists || asset.Revision != record.AssetRevision {
+			continue
+		}
+		relations := make([]semantics.Relation, 0, len(record.Analysis.Relations)+len(bySource[sourceID]))
+		seen := make(map[string]struct{}, len(record.Analysis.Relations)+len(bySource[sourceID]))
+		changed := false
+		for _, relation := range record.Analysis.Relations {
+			if relation.InferredBy == value.ID {
+				changed = true
+				continue
+			}
+			key := relation.Type + "\x00" + relation.TargetID
+			relations = append(relations, relation)
+			seen[key] = struct{}{}
+		}
+		for _, relation := range bySource[sourceID] {
+			key := relation.Type + "\x00" + value.ID
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			relation.TargetID = value.ID
+			relation.TargetRevision = value.Revision
+			relation.Direction = ""
+			relation.InferredBy = value.ID
+			relations = append(relations, relation)
+			seen[key] = struct{}{}
+			changed = true
+		}
+		if !changed {
+			continue
+		}
+		record.Analysis.Relations = relations
+		if err := s.derivedStore.Put(record); err != nil {
+			return fmt.Errorf("维护反向推导关系: %w", err)
+		}
+		s.semantic.Upsert(record)
+	}
+	return nil
 }
 
 func (s *Service) hasStaleRelation(record derived.Record) bool {

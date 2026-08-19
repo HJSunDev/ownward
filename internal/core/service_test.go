@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -237,6 +238,98 @@ func TestServicePreservesExplicitRelationsAndRefreshesStaleInferences(t *testing
 	_ = inferred
 }
 
+func TestServiceAppliesAndRemovesRelationsInferredTowardCurrentInformation(t *testing.T) {
+	root := t.TempDir()
+	store, err := assetlog.Open(filepath.Join(root, "assets"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := derived.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewOrganized(store, state, incomingRelationProvider{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer service.Close()
+	older, err := service.Create(context.Background(), CreateInput{Content: "older path"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	newer, err := service.Create(context.Background(), CreateInput{Content: "new principle"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	graph, err := service.Navigate(context.Background(), []string{older.Information.ID}, nil, 1, 10)
+	if err != nil || len(graph.Edges) != 1 || graph.Edges[0].SourceID != older.Information.ID || graph.Edges[0].TargetID != newer.Information.ID {
+		t.Fatalf("incoming inference was not materialized in its semantic direction: graph=%#v err=%v", graph, err)
+	}
+	if record, exists := state.GetWithEmbedding(older.Information.ID); !exists || len(record.Embedding) != 2 {
+		t.Fatalf("updating an incoming relation discarded the source embedding: %#v", record)
+	}
+	updatedContent := "new principle changed"
+	if _, err := service.Update(context.Background(), UpdateInput{
+		ID: newer.Information.ID, ExpectedRevision: newer.Information.Revision, Content: &updatedContent,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	graph, err = service.Navigate(context.Background(), []string{older.Information.ID}, nil, 1, 10)
+	if err != nil || len(graph.Edges) != 0 {
+		t.Fatalf("obsolete incoming inference was not removed: graph=%#v err=%v", graph, err)
+	}
+	if record, exists := state.GetWithEmbedding(older.Information.ID); !exists || len(record.Embedding) != 2 {
+		t.Fatalf("removing an incoming relation discarded the source embedding: %#v", record)
+	}
+}
+
+func TestUpdateOrganizesAssetAndDependentsConcurrently(t *testing.T) {
+	root := t.TempDir()
+	store, err := assetlog.Open(filepath.Join(root, "assets"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := derived.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &concurrentOrganizationProvider{release: make(chan struct{}), allStarted: make(chan struct{})}
+	service, err := NewOrganized(store, state, provider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer service.Close()
+	target, err := service.Create(context.Background(), CreateInput{Content: "target"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider.targetID = target.Information.ID
+	for _, content := range []string{"source-a", "source-b"} {
+		if _, err = service.Create(context.Background(), CreateInput{Content: content}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	provider.block.Store(true)
+	updatedContent := "target changed"
+	done := make(chan error, 1)
+	go func() {
+		_, updateErr := service.Update(context.Background(), UpdateInput{
+			ID: target.Information.ID, ExpectedRevision: 1, Content: &updatedContent,
+		})
+		done <- updateErr
+	}()
+	select {
+	case <-provider.allStarted:
+		close(provider.release)
+	case <-time.After(2 * time.Second):
+		close(provider.release)
+		t.Fatal("asset and dependent organization did not overlap")
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestServiceNeverLoadsDerivedStateForAnOlderAssetRevision(t *testing.T) {
 	root := t.TempDir()
 	store, err := assetlog.Open(filepath.Join(root, "assets"))
@@ -357,7 +450,38 @@ type relationProvider struct {
 
 type fusionProvider struct{}
 
+type incomingRelationProvider struct{}
+
+type concurrentOrganizationProvider struct {
+	targetID   string
+	block      atomic.Bool
+	active     atomic.Int32
+	started    sync.Once
+	allStarted chan struct{}
+	release    chan struct{}
+}
+
 func (fusionProvider) Name() string { return "test-fusion-provider" }
+
+func (incomingRelationProvider) Name() string { return "test-incoming-relation-provider" }
+
+func (incomingRelationProvider) Embed(_ context.Context, values []string) ([][]float32, error) {
+	result := make([][]float32, len(values))
+	for index := range values {
+		result[index] = []float32{1, 0}
+	}
+	return result, nil
+}
+
+func (incomingRelationProvider) Analyze(_ context.Context, value domain.Information, candidates []semantics.Candidate) (semantics.Analysis, error) {
+	analysis := semantics.Analysis{Kind: domain.KindKnowledge, Summary: value.Content}
+	if value.Content == "new principle" && len(candidates) > 0 {
+		analysis.Relations = []semantics.Relation{{
+			Type: "related_to", TargetID: candidates[0].ID, Confidence: 1, Direction: "incoming",
+		}}
+	}
+	return analysis, nil
+}
 
 func (fusionProvider) Embed(_ context.Context, values []string) ([][]float32, error) {
 	result := make([][]float32, len(values))
@@ -377,6 +501,33 @@ func (fusionProvider) Analyze(_ context.Context, value domain.Information, _ []s
 		relations = append(relations, semantics.Relation{Type: relation.Type, TargetID: relation.TargetID, Confidence: 1})
 	}
 	return semantics.Analysis{Kind: value.Kind, Summary: value.Content, Relations: relations}, nil
+}
+
+func (p *concurrentOrganizationProvider) Name() string {
+	return "test-concurrent-organization-provider"
+}
+
+func (p *concurrentOrganizationProvider) Embed(_ context.Context, values []string) ([][]float32, error) {
+	result := make([][]float32, len(values))
+	for index := range values {
+		result[index] = []float32{1, 0}
+	}
+	return result, nil
+}
+
+func (p *concurrentOrganizationProvider) Analyze(_ context.Context, value domain.Information, _ []semantics.Candidate) (semantics.Analysis, error) {
+	if p.block.Load() {
+		if p.active.Add(1) == 3 {
+			p.started.Do(func() { close(p.allStarted) })
+		}
+		<-p.release
+		p.active.Add(-1)
+	}
+	analysis := semantics.Analysis{Kind: value.Kind, Summary: value.Content}
+	if strings.HasPrefix(value.Content, "source-") {
+		analysis.Relations = []semantics.Relation{{Type: "related_to", TargetID: p.targetID, Confidence: 1}}
+	}
+	return analysis, nil
 }
 
 func (p *relationProvider) Name() string { return "test-relation-provider" }

@@ -280,6 +280,17 @@ func (s *Store) Get(id string) (Record, bool) {
 	return record, err == nil
 }
 
+func (s *Store) GetWithEmbedding(id string) (Record, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	reference, ok := s.records[id]
+	if !ok {
+		return Record{}, false
+	}
+	record, err := s.readReferenceLocked(id, reference, true)
+	return record, err == nil
+}
+
 func (s *Store) All() []Record {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

@@ -25,6 +25,8 @@ type Relation struct {
 	TargetRevision uint64  `json:"target_revision,omitempty"`
 	Confidence     float64 `json:"confidence"`
 	Evidence       string  `json:"evidence,omitempty"`
+	Direction      string  `json:"direction,omitempty"`
+	InferredBy     string  `json:"inferred_by,omitempty"`
 }
 
 type Analysis struct {
@@ -37,10 +39,12 @@ type Analysis struct {
 }
 
 type Candidate struct {
-	ID       string                 `json:"id"`
-	Kind     domain.InformationKind `json:"kind"`
-	Content  string                 `json:"content"`
-	Contexts []domain.Context       `json:"contexts,omitempty"`
+	ID         string                 `json:"id"`
+	Kind       domain.InformationKind `json:"kind"`
+	Content    string                 `json:"content"`
+	Contexts   []domain.Context       `json:"contexts,omitempty"`
+	Similarity float64                `json:"semantic_similarity,omitempty"`
+	Relations  []Relation             `json:"existing_relations,omitempty"`
 }
 
 type Provider interface {
@@ -277,7 +281,7 @@ func normalizeRelations(values []Relation, limit int) []Relation {
 		value.Type = strings.TrimSpace(value.Type)
 		value.TargetID = strings.TrimSpace(value.TargetID)
 		value.Evidence = truncate(strings.TrimSpace(value.Evidence), 240)
-		key := value.Type + "\x00" + value.TargetID
+		key := value.Direction + "\x00" + value.Type + "\x00" + value.TargetID
 		if value.Type == "" || value.TargetID == "" {
 			continue
 		}
