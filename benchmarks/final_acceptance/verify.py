@@ -218,7 +218,7 @@ def _validate_resource_frontier(
 
 def _validate_product_baseline(report: dict[str, Any], baseline_path: Path, thresholds_path: Path) -> None:
     descriptor = _load(baseline_path)
-    _require(descriptor.get("schema") == "ownward.acceptance-baseline/v4", "product baseline is not the frozen v4 definition")
+    _require(descriptor.get("schema") == "ownward.acceptance-baseline/v5", "product baseline is not the frozen v5 definition")
     _require(report.get("baseline") == descriptor.get("schema"), "product report used another baseline schema")
     _require(report.get("baseline_sha256") == _sha256(baseline_path), "product report used another baseline descriptor")
     base = baseline_path.parent

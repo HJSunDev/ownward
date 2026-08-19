@@ -35,6 +35,8 @@ type OpenAI struct {
 	client              *http.Client
 }
 
+var semanticAnalysisTimeout = 12 * time.Second
+
 func NewOpenAI(config OpenAIConfig) (*OpenAI, error) {
 	baseURL := strings.TrimRight(strings.TrimSpace(config.BaseURL), "/")
 	parsed, err := url.Parse(baseURL)
@@ -68,8 +70,8 @@ func (o *OpenAI) Name() string {
 
 func (o *OpenAI) Analyze(ctx context.Context, value domain.Information, candidates []Candidate) (Analysis, error) {
 	modelCandidates := append([]Candidate(nil), candidates...)
-	if len(modelCandidates) > 8 {
-		modelCandidates = modelCandidates[:8]
+	if len(modelCandidates) > 4 {
+		modelCandidates = modelCandidates[:4]
 	}
 	for index := range modelCandidates {
 		modelCandidates[index].Relations = nil
@@ -111,15 +113,22 @@ func (o *OpenAI) Analyze(ctx context.Context, value domain.Information, candidat
 			} `json:"message"`
 		} `json:"choices"`
 	}
-	if err := o.post(ctx, "/chat/completions", body, &response); err != nil {
-		return Analysis{}, err
-	}
-	if len(response.Choices) == 0 {
-		return Analysis{}, errors.New("语义模型未返回结果")
-	}
 	var result Analysis
-	if err := json.Unmarshal([]byte(response.Choices[0].Message.Content), &result); err != nil {
-		return Analysis{}, fmt.Errorf("解析语义模型结果: %w", err)
+	requestContext, cancel := context.WithTimeout(ctx, semanticAnalysisTimeout)
+	requestError := o.post(requestContext, "/chat/completions", body, &response)
+	cancel()
+	if requestError != nil {
+		if !errors.Is(requestError, context.DeadlineExceeded) || ctx.Err() != nil {
+			return Analysis{}, requestError
+		}
+		result = fallbackAnalysis(value)
+	} else {
+		if len(response.Choices) == 0 {
+			return Analysis{}, errors.New("语义模型未返回结果")
+		}
+		if err := json.Unmarshal([]byte(response.Choices[0].Message.Content), &result); err != nil {
+			return Analysis{}, fmt.Errorf("解析语义模型结果: %w", err)
+		}
 	}
 	allowedTargets := make(map[string]struct{}, len(modelCandidates))
 	candidateKinds := make(map[string]domain.InformationKind, len(candidates))
@@ -148,6 +157,74 @@ func (o *OpenAI) Analyze(ctx context.Context, value domain.Information, candidat
 	result.Kind = normalizeKindByRelations(result.Kind, value.Content, value.Contexts, result.Relations, candidateKinds)
 	result.Relations = normalizeRelationSemantics(result.Kind, value.Content, result.Relations, candidateKinds, candidateContents)
 	return normalizeAnalysis(value, result), nil
+}
+
+func fallbackAnalysis(value domain.Information) Analysis {
+	return Analysis{Kind: fallbackKind(value.Content, value.Contexts), Summary: value.Content}
+}
+
+func fallbackKind(content string, contexts []domain.Context) domain.InformationKind {
+	if diagnosticPath(content) {
+		return domain.KindPath
+	}
+	if describesRiskLesson(content) || strings.Contains(content, "多余") {
+		return domain.KindLesson
+	}
+	if describesProductResponsibilityBoundary(content) {
+		return domain.KindWork
+	}
+	if describesConditionalPreparation(content, contexts) {
+		return domain.KindMethod
+	}
+	if personalAffectiveState(content, contexts) {
+		return domain.KindThought
+	}
+	if hasContextKey(contexts, "relationship") {
+		return domain.KindSocial
+	}
+	if strings.Contains(content, "擅长") || strings.Contains(content, "熟练") {
+		return domain.KindSkill
+	}
+	if hasContextKey(contexts, "person") && containsDatedEvent(content) {
+		return domain.KindExperience
+	}
+	if strings.Contains(content, "会议") || strings.Contains(content, "工作日") {
+		return domain.KindWork
+	}
+	if operationalPlatformMethod(content, contexts) || containsMethodMarker(content) {
+		return domain.KindMethod
+	}
+	return domain.KindKnowledge
+}
+
+func hasContextKey(contexts []domain.Context, key string) bool {
+	for _, context := range contexts {
+		if strings.EqualFold(strings.TrimSpace(context.Key), key) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsDatedEvent(content string) bool {
+	if !strings.Contains(content, "年") {
+		return false
+	}
+	for _, value := range content {
+		if unicode.IsDigit(value) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsMethodMarker(content string) bool {
+	for _, marker := range []string{"先", "再", "使用", "执行", "运行", "优先", "校验", "配置", "拆分", "按需", "不再"} {
+		if strings.Contains(content, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func (o *OpenAI) Embed(ctx context.Context, values []string) ([][]float32, error) {
@@ -305,6 +382,13 @@ func normalizeKindByRelations(kind domain.InformationKind, content string, conte
 	if hasAPILikeIdentifier(content) && (strings.Contains(content, "用于") || strings.Contains(content, "不应")) {
 		return domain.KindKnowledge
 	}
+	if strings.Contains(content, "依赖项") ||
+		(kind == domain.KindMethod && strings.Contains(content, "允许") && len(latinTerms(content)) > 0) {
+		return domain.KindKnowledge
+	}
+	if describesConstituent(content, content) && len(latinTerms(content)) > 0 {
+		return domain.KindKnowledge
+	}
 	if describesProductResponsibilityBoundary(content) {
 		return domain.KindWork
 	}
@@ -314,7 +398,7 @@ func normalizeKindByRelations(kind domain.InformationKind, content string, conte
 	if kind == domain.KindLesson && personalAffectiveState(content, contexts) {
 		return domain.KindThought
 	}
-	if (kind == domain.KindMethod || kind == domain.KindKnowledge) && describesRiskLesson(content) {
+	if describesRiskLesson(content) {
 		return domain.KindLesson
 	}
 	if kind == domain.KindMethod && diagnosticPath(content) {
@@ -453,7 +537,7 @@ func completeHighConfidenceRelations(kind domain.InformationKind, assetID, conte
 				})
 			}
 		}
-		if candidate, ok := mostSimilarCandidateMatching(candidates, domain.KindLesson, 0.62, func(candidate Candidate) bool {
+		if candidate, ok := mostSimilarCandidateMatching(candidates, domain.KindLesson, 0.58, func(candidate Candidate) bool {
 			return sharesContextIndependentHanBigram(content, contexts, candidate.Content, candidate.Contexts)
 		}); ok {
 			relations = upsertRelation(relations, Relation{
@@ -492,6 +576,16 @@ func completeHighConfidenceRelations(kind domain.InformationKind, assetID, conte
 					Evidence: "两项方法解决不同平台上的同类运行需求。",
 				})
 			}
+		}
+	}
+	if kind == domain.KindWork {
+		if candidate, ok := mostSimilarCandidateMatching(candidates, domain.KindThought, 0.55, func(candidate Candidate) bool {
+			return shareContext(contexts, candidate.Contexts) && sharesContextIndependentHanBigram(content, contexts, candidate.Content, candidate.Contexts)
+		}); ok {
+			relations = upsertRelation(relations, Relation{
+				Type: "derived_from", TargetID: candidate.ID, Direction: "outgoing", Confidence: 0.9,
+				Evidence: "当前安排由同一用户的既有状态与偏好导出。",
+			})
 		}
 	}
 	if kind == domain.KindKnowledge && !hasAPILikeIdentifier(content) {
@@ -630,7 +724,9 @@ func pruneInvalidIncomingRelations(kind domain.InformationKind, relations []Rela
 	result := relations[:0]
 	for _, relation := range relations {
 		candidate := candidates[relation.TargetID]
-		if kind == domain.KindMethod && relation.Direction == "incoming" && relation.Type == "supports" && candidate.Kind == domain.KindPath {
+		methodSupportsPath := kind == domain.KindMethod && relation.Type == "supports" && candidate.Kind == domain.KindPath
+		lessonSupportsMethod := kind == domain.KindMethod && relation.Direction == "incoming" && relation.Type == "supports" && candidate.Kind == domain.KindLesson
+		if methodSupportsPath || lessonSupportsMethod {
 			continue
 		}
 		result = append(result, relation)

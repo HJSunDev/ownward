@@ -41,11 +41,12 @@ type thresholds struct {
 		} `json:"context_applicability"`
 	} `json:"retrieval"`
 	Organization struct {
-		RelationPrecision float64 `json:"relation_precision_min"`
-		RelationRecall    float64 `json:"relation_recall_min"`
-		SemanticRetention float64 `json:"explicit_semantic_retention_min"`
-		RetrievalGain     float64 `json:"retrieval_recall_gain_over_no_graph_min"`
-		KindAccuracy      float64 `json:"kind_accuracy_min"`
+		RelationPrecision     float64 `json:"relation_precision_min"`
+		RelationRecall        float64 `json:"relation_recall_min"`
+		SemanticRetention     float64 `json:"explicit_semantic_retention_min"`
+		RetrievalRecallGain   float64 `json:"retrieval_recall_gain_over_no_graph_min"`
+		RetrievalEvidenceGain float64 `json:"retrieval_relation_evidence_gain_over_no_graph_min"`
+		KindAccuracy          float64 `json:"kind_accuracy_min"`
 	} `json:"organization"`
 	Ingestion struct {
 		OrganizationSeconds float64 `json:"organization_complete_p95_seconds_max"`

@@ -206,7 +206,7 @@ func TestSearchPreservesRelationEvidenceBetweenDirectSeeds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Create(context.Background(), CreateInput{Content: "needle distractor"}); err != nil {
+	if _, err := service.Create(context.Background(), CreateInput{Content: "irrelevant distractor"}); err != nil {
 		t.Fatal(err)
 	}
 	results, err := service.Search(context.Background(), SearchInput{Query: "needle", Limit: 10})
@@ -221,6 +221,49 @@ func TestSearchPreservesRelationEvidenceBetweenDirectSeeds(t *testing.T) {
 	}
 	if !seen[source.Information.ID] || !seen[target.Information.ID] {
 		t.Fatalf("direct seeds lost their relation evidence: %#v", results)
+	}
+}
+
+func TestSearchDoesNotMarkRelationsBetweenSecondarySeedsAsQueryEvidence(t *testing.T) {
+	root := t.TempDir()
+	store, err := assetlog.Open(filepath.Join(root, "assets"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := derived.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewOrganized(store, state, fusionProvider{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer service.Close()
+	for _, content := range []string{"needle alpha", "needle beta", "needle gamma", "needle delta"} {
+		if _, err := service.Create(context.Background(), CreateInput{Content: content}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	direct, err := service.Search(context.Background(), SearchInput{Query: "needle", Limit: 10, DisableRelationExpansion: true})
+	if err != nil || len(direct) < 4 {
+		t.Fatalf("unexpected direct ranking: results=%#v err=%v", direct, err)
+	}
+	source, err := service.Read(context.Background(), direct[2].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	relations := []domain.ExplicitRelation{{Type: "related_to", TargetID: direct[3].ID}}
+	if _, err := service.Update(context.Background(), UpdateInput{ID: source.ID, ExpectedRevision: source.Revision, Relations: &relations}); err != nil {
+		t.Fatal(err)
+	}
+	results, err := service.Search(context.Background(), SearchInput{Query: "needle", Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, result := range results {
+		if (result.ID == direct[2].ID || result.ID == direct[3].ID) && contains(result.Signals, "relation") {
+			t.Fatalf("a secondary seed relation was presented as query evidence: %#v", results)
+		}
 	}
 }
 

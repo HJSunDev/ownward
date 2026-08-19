@@ -12,3 +12,23 @@ func TestRelationKeyTreatsRelatedToAsSymmetric(t *testing.T) {
 		t.Fatal("directional relations must preserve direction")
 	}
 }
+
+func TestRelationCheckRequiresGraphEvidenceGain(t *testing.T) {
+	var limits thresholds
+	limits.Retrieval.RelationConstraint.Precision = 0.95
+	limits.Retrieval.RelationConstraint.Recall = 0.9
+	limits.Organization.RetrievalEvidenceGain = 0.05
+	metrics := &queryMetrics{
+		recalls: []float64{1}, ndcgs: []float64{1}, graphGains: []float64{1},
+		evidenceCorrect: 1, evidenceTotal: 1,
+	}
+	checks := retrievalChecks(map[string]*queryMetrics{"relation_constraint": metrics}, limits)
+	if !checks[2].Passed {
+		t.Fatalf("correct graph evidence should pass: %#v", checks[2])
+	}
+	metrics.graphGains = []float64{0}
+	checks = retrievalChecks(map[string]*queryMetrics{"relation_constraint": metrics}, limits)
+	if checks[2].Passed {
+		t.Fatalf("relation retrieval without graph evidence gain should fail: %#v", checks[2])
+	}
+}

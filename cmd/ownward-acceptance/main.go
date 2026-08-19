@@ -16,7 +16,7 @@ func main() {
 	if runtime.GOOS == "windows" {
 		defaultBinary += ".exe"
 	}
-	baseline := flag.String("baseline", "benchmarks/acceptance/v4/baseline.json", "固定验收基线描述文件")
+	baseline := flag.String("baseline", "benchmarks/acceptance/v5/baseline.json", "固定验收基线描述文件")
 	binary := flag.String("binary", defaultBinary, "待验收的发布二进制文件")
 	output := flag.String("output", "", "可选的验收报告输出文件")
 	dataDir := flag.String("data-dir", "", "可选的空白验收数据目录；默认使用临时目录")

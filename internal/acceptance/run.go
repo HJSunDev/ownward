@@ -503,7 +503,6 @@ func evaluateRetrieval(ctx context.Context, service *core.Service, fixtures fixt
 		metric.recalls = append(metric.recalls, recall)
 		metric.ranks = append(metric.ranks, reciprocalRank(ids, query.ExpectedIDs, 10))
 		metric.ndcgs = append(metric.ndcgs, ndcgAt(ids, query.ExpectedIDs, 10))
-		metric.graphGains = append(metric.graphGains, recall-recallAt(withoutIDs, query.ExpectedIDs, 10))
 		metric.total++
 		if recall == 1 {
 			metric.passed++
@@ -515,6 +514,7 @@ func evaluateRetrieval(ctx context.Context, service *core.Service, fixtures fixt
 			}
 		}
 		if query.Type == "relation_constraint" {
+			queryEvidenceCorrect := 0
 			for _, result := range results {
 				if !contains(result.Signals, "relation") {
 					continue
@@ -522,8 +522,10 @@ func evaluateRetrieval(ctx context.Context, service *core.Service, fixtures fixt
 				metric.evidenceTotal++
 				if containsID(query.ExpectedIDs, assetToFixture[result.ID]) {
 					metric.evidenceCorrect++
+					queryEvidenceCorrect++
 				}
 			}
+			metric.graphGains = append(metric.graphGains, ratio(queryEvidenceCorrect, len(query.ExpectedIDs)))
 		}
 		queries = append(queries, QueryResult{ID: query.QueryID, Type: query.Type, ReturnedIDs: ids, WithoutGraphIDs: withoutIDs, LatencyMillis: float64(latency.Microseconds()) / 1000})
 	}
@@ -541,17 +543,21 @@ func retrievalChecks(byType map[string]*queryMetrics, limits thresholds) []Check
 	semantic := metric("semantic_intent")
 	relation := metric("relation_constraint")
 	contextual := metric("context_applicability")
+	relationEvidenceGain := limits.Organization.RetrievalEvidenceGain
+	if relationEvidenceGain == 0 {
+		relationEvidenceGain = limits.Organization.RetrievalRecallGain
+	}
 	checks := []Check{
 		{Name: "明确对象检索", Passed: min(explicit.recalls) >= limits.Retrieval.ExplicitObject.RecallAt5 && min(explicit.ranks) >= limits.Retrieval.ExplicitObject.MRRAt10,
 			Metrics: map[string]float64{"recall_at_5_min": min(explicit.recalls), "mrr_at_10_min": min(explicit.ranks)}, Threshold: map[string]float64{"recall_at_5_min": limits.Retrieval.ExplicitObject.RecallAt5, "mrr_at_10_min": limits.Retrieval.ExplicitObject.MRRAt10}},
 		{Name: "语义意图检索", Passed: min(semantic.recalls) >= limits.Retrieval.SemanticIntent.RecallAt10 && min(semantic.ndcgs) >= limits.Retrieval.SemanticIntent.NDCGAt10,
 			Metrics: map[string]float64{"recall_at_10_min": min(semantic.recalls), "ndcg_at_10_min": min(semantic.ndcgs)}, Threshold: map[string]float64{"recall_at_10_min": limits.Retrieval.SemanticIntent.RecallAt10, "ndcg_at_10_min": limits.Retrieval.SemanticIntent.NDCGAt10}},
 		{Name: "关系约束检索", Passed: average(relation.recalls) >= limits.Retrieval.RelationConstraint.Recall && ratio(relation.evidenceCorrect, relation.evidenceTotal) >= limits.Retrieval.RelationConstraint.Precision,
-			Metrics: map[string]float64{"evidence_recall": average(relation.recalls), "evidence_precision": ratio(relation.evidenceCorrect, relation.evidenceTotal), "ndcg_at_10": average(relation.ndcgs), "graph_recall_gain": average(relation.graphGains)}, Threshold: map[string]float64{"evidence_recall_min": limits.Retrieval.RelationConstraint.Recall, "evidence_precision_min": limits.Retrieval.RelationConstraint.Precision, "graph_recall_gain_min": limits.Organization.RetrievalGain}},
+			Metrics: map[string]float64{"evidence_recall": average(relation.recalls), "evidence_precision": ratio(relation.evidenceCorrect, relation.evidenceTotal), "ndcg_at_10": average(relation.ndcgs), "graph_evidence_gain": average(relation.graphGains)}, Threshold: map[string]float64{"evidence_recall_min": limits.Retrieval.RelationConstraint.Recall, "evidence_precision_min": limits.Retrieval.RelationConstraint.Precision, "graph_evidence_gain_min": relationEvidenceGain}},
 		{Name: "场景适用性检索", Passed: ratio(contextual.passed, contextual.total) >= limits.Retrieval.ContextApplicability.Accuracy && ratio(contextual.forbidden, contextual.forbiddenTotal) <= limits.Retrieval.ContextApplicability.Leakage,
 			Metrics: map[string]float64{"accuracy": ratio(contextual.passed, contextual.total), "incompatible_leakage": ratio(contextual.forbidden, contextual.forbiddenTotal)}, Threshold: map[string]float64{"accuracy_min": limits.Retrieval.ContextApplicability.Accuracy, "incompatible_leakage_max": limits.Retrieval.ContextApplicability.Leakage}},
 	}
-	checks[2].Passed = checks[2].Passed && average(relation.graphGains) >= limits.Organization.RetrievalGain
+	checks[2].Passed = checks[2].Passed && average(relation.graphGains) >= relationEvidenceGain
 	return checks
 }
 

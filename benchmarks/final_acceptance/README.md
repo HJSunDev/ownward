@@ -9,8 +9,8 @@ python benchmarks/final_acceptance/verify.py `
   --repository . `
   --binary bin/ownward.exe `
   --candidate <full-commit-sha> `
-  --baseline benchmarks/acceptance/v4/baseline.json `
-  --thresholds benchmarks/acceptance/v3/thresholds.json `
+  --baseline benchmarks/acceptance/v5/baseline.json `
+  --thresholds benchmarks/acceptance/v5/thresholds.json `
   --product-report <product-report.json> `
   --performance-report <performance-report.json> `
   --resource-report <resource-frontier-report.json> `

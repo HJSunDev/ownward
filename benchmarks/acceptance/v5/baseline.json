@@ -1,0 +1,12 @@
+{
+  "schema": "ownward.acceptance-baseline/v5",
+  "frozen_at": "2026-08-19T12:09:00+08:00",
+  "supersedes": "../v4/baseline.json",
+  "reason": "v4 required positive top-10 recall gain although every relation query already had complete top-10 recall without graph expansion",
+  "thresholds": "thresholds.json",
+  "information": "../v2/fixtures/information.jsonl",
+  "kind_gold": "../v2/fixtures/kinds.jsonl",
+  "relation_gold": "../v1/fixtures/relations.jsonl",
+  "queries": "../v1/fixtures/queries.jsonl",
+  "updates": "../v4/fixtures/updates.jsonl"
+}

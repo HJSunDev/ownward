@@ -57,6 +57,54 @@ func TestOpenAIAnalyzesAndEmbedsWithoutAcceptingInventedTargets(t *testing.T) {
 	}
 }
 
+func TestOpenAIUsesDeterministicFallbackAtTheLatencyBoundary(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		time.Sleep(50 * time.Millisecond)
+		writer.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(writer).Encode(map[string]any{"choices": []any{}})
+	}))
+	defer server.Close()
+	previous := semanticAnalysisTimeout
+	semanticAnalysisTimeout = 5 * time.Millisecond
+	defer func() { semanticAnalysisTimeout = previous }()
+	provider, err := NewOpenAI(OpenAIConfig{BaseURL: server.URL + "/v1", ChatModel: "chat", EmbeddingModel: "embedding", Timeout: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis, err := provider.Analyze(context.Background(), domain.Information{
+		ID: "current", Kind: domain.KindGeneral, Content: "某次构建失败的根因是缺少匹配的编译环境。",
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if analysis.Kind != domain.KindLesson {
+		t.Fatalf("timeout fallback lost the core semantic kind: %#v", analysis)
+	}
+}
+
+func TestFallbackKindCoversCoreInformationSemantics(t *testing.T) {
+	tests := []struct {
+		content  string
+		contexts []domain.Context
+		want     domain.InformationKind
+	}{
+		{"林涛在 2022 年搬到深圳。", []domain.Context{{Key: "person", Value: "林涛"}}, domain.KindExperience},
+		{"任务没有边界时林涛容易焦虑。", []domain.Context{{Key: "person", Value: "林涛"}}, domain.KindThought},
+		{"与父亲沟通时先说明事实。", []domain.Context{{Key: "relationship", Value: "father"}}, domain.KindSocial},
+		{"林涛擅长删掉无效抽象。", []domain.Context{{Key: "person", Value: "林涛"}}, domain.KindSkill},
+		{"工作日上午不安排会议。", nil, domain.KindWork},
+		{"先固定查询，再检查候选召回。", nil, domain.KindMethod},
+		{"一次无结果不代表信息不存在。", nil, domain.KindLesson},
+		{"排查质量下降时逐项定位。", nil, domain.KindPath},
+		{"Fiber 是协调器的工作单元结构。", nil, domain.KindKnowledge},
+	}
+	for _, test := range tests {
+		if got := fallbackKind(test.content, test.contexts); got != test.want {
+			t.Errorf("fallbackKind(%q)=%s, want %s", test.content, got, test.want)
+		}
+	}
+}
+
 func TestNormalizeKindByRelationsDistinguishesDirectSolutionFromReusableSequence(t *testing.T) {
 	relations := []Relation{{Type: "supports", TargetID: "risk", Direction: "outgoing"}}
 	kinds := map[string]domain.InformationKind{"risk": domain.KindLesson}
@@ -269,6 +317,17 @@ func TestCompleteHighConfidenceRelationsUsesCandidateGraphAndSimilarity(t *testi
 	result = completeHighConfidenceRelations(
 		domain.KindMethod,
 		"current",
+		"写正文时只表达事物本身，不再额外解释。",
+		nil,
+		nil,
+		[]Candidate{{ID: "lesson", Kind: domain.KindLesson, Content: "把修改回应写进正文会产生多余解释。", Similarity: 0.596}},
+	)
+	if len(result) != 1 || result[0].Type != "supports" || result[0].TargetID != "lesson" {
+		t.Fatalf("a lexically anchored corrective method should support its lesson: %#v", result)
+	}
+	result = completeHighConfidenceRelations(
+		domain.KindMethod,
+		"current",
 		"开始长期任务前先写清楚结束条件。",
 		nil,
 		nil,
@@ -357,6 +416,17 @@ func TestCompleteHighConfidenceRelationsUsesCandidateGraphAndSimilarity(t *testi
 		t.Fatalf("a personal skill should not attach to unrelated project work by topic alone: %#v", result)
 	}
 	result = completeHighConfidenceRelations(
+		domain.KindWork,
+		"current",
+		"林涛不在工作日上午安排会议，以保护连续思考时间。",
+		[]domain.Context{{Key: "person", Value: "林涛"}},
+		nil,
+		[]Candidate{{ID: "thought", Kind: domain.KindThought, Content: "林涛上午适合连续思考。", Contexts: []domain.Context{{Key: "person", Value: "林涛"}}, Similarity: 0.67}},
+	)
+	if len(result) != 1 || result[0].Type != "derived_from" || result[0].TargetID != "thought" {
+		t.Fatalf("a work arrangement should derive from the directly anchored personal state: %#v", result)
+	}
+	result = completeHighConfidenceRelations(
 		domain.KindMethod,
 		"current",
 		"提交按最大终态子集拆分。",
@@ -378,6 +448,28 @@ func TestCompleteHighConfidenceRelationsUsesCandidateGraphAndSimilarity(t *testi
 	if len(result) != 0 {
 		t.Fatalf("a diagnostic path should not be made to support a later method: %#v", result)
 	}
+	result = completeHighConfidenceRelations(
+		domain.KindMethod,
+		"current",
+		"按低成本线索继续检索。",
+		nil,
+		[]Relation{{Type: "supports", TargetID: "path", Direction: "outgoing", Confidence: 0.8}},
+		[]Candidate{{ID: "path", Kind: domain.KindPath, Content: "排查检索质量下降。"}},
+	)
+	if len(result) != 0 {
+		t.Fatalf("a later retrieval method should not support its diagnostic path: %#v", result)
+	}
+	result = completeHighConfidenceRelations(
+		domain.KindMethod,
+		"current",
+		"根据检索教训继续搜索。",
+		nil,
+		[]Relation{{Type: "supports", TargetID: "lesson", Direction: "incoming", Confidence: 0.8}},
+		[]Candidate{{ID: "lesson", Kind: domain.KindLesson, Content: "一次无结果不代表不存在。"}},
+	)
+	if len(result) != 0 {
+		t.Fatalf("a lesson should not be made to support a later method: %#v", result)
+	}
 }
 
 func TestPersonalAffectiveStateRemainsThoughtWithoutConvertingConditionalMethods(t *testing.T) {
@@ -394,8 +486,20 @@ func TestPersonalAffectiveStateRemainsThoughtWithoutConvertingConditionalMethods
 	if got := normalizeKindByRelations(domain.KindKnowledge, "构建失败的根因是缺少匹配的编译环境。", nil, nil, nil); got != domain.KindLesson {
 		t.Fatalf("a diagnosed failure cause should normalize to lesson, got %s", got)
 	}
+	if got := normalizeKindByRelations(domain.KindExperience, "某次构建失败的根因是缺少匹配的编译环境。", nil, nil, nil); got != domain.KindLesson {
+		t.Fatalf("a diagnosed failure cause should outrank event phrasing, got %s", got)
+	}
 	if got := normalizeKindByRelations(domain.KindLesson, "useEffect 用于外部系统同步，不应当作数据推导工具。", nil, nil, nil); got != domain.KindKnowledge {
 		t.Fatalf("API usage semantics should normalize to knowledge, got %s", got)
+	}
+	if got := normalizeKindByRelations(domain.KindMethod, "并发渲染允许 React 中断低优先级工作。", nil, nil, nil); got != domain.KindKnowledge {
+		t.Fatalf("a named technical mechanism should normalize to knowledge, got %s", got)
+	}
+	if got := normalizeKindByRelations(domain.KindMethod, "Fiber 是 React 协调器的工作单元结构。", nil, nil, nil); got != domain.KindKnowledge {
+		t.Fatalf("a named constituent structure should normalize to knowledge, got %s", got)
+	}
+	if got := normalizeKindByRelations(domain.KindLesson, "Effect 依赖项描述其读取的响应式值。", nil, nil, nil); got != domain.KindKnowledge {
+		t.Fatalf("a technical dependency description should normalize to knowledge, got %s", got)
 	}
 	if got := normalizeKindByRelations(domain.KindKnowledge, "Ownward 只服务外部智能体，不提供图形界面。", nil, nil, nil); got != domain.KindWork {
 		t.Fatalf("a product responsibility boundary should normalize to work, got %s", got)

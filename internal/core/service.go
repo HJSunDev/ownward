@@ -312,33 +312,38 @@ func (s *Service) Search(ctx context.Context, input SearchInput) ([]SearchResult
 		rankedSeeds = rankedSeeds[:4]
 	}
 	seeds := make([]string, 0, len(rankedSeeds))
-	seedSet := make(map[string]struct{}, len(rankedSeeds))
 	for _, seed := range rankedSeeds {
 		seeds = append(seeds, seed.id)
-		seedSet[seed.id] = struct{}{}
 	}
 	var related []derived.Edge
 	if !input.DisableRelationExpansion {
 		related = s.semantic.Navigate(seeds, nil, 1, candidateLimit)
 	}
-	for rank, edge := range related {
-		_, sourceIsSeed := seedSet[edge.SourceID]
-		_, targetIsSeed := seedSet[edge.TargetID]
-		target := ""
-		switch {
-		case sourceIsSeed && !targetIsSeed:
-			target = edge.TargetID
-		case targetIsSeed && !sourceIsSeed:
-			target = edge.SourceID
-		case sourceIsSeed && targetIsSeed:
-			add(edge.SourceID, "relation", rank+1, 0.2*edge.Confidence)
-			add(edge.TargetID, "relation", rank+1, 0.2*edge.Confidence)
-			continue
-		default:
-			continue
+	if len(seeds) > 0 {
+		anchor := seeds[0]
+		anchorScore := fusedByID[anchor].score
+		for _, edge := range related {
+			target := ""
+			switch anchor {
+			case edge.SourceID:
+				target = edge.TargetID
+			case edge.TargetID:
+				target = edge.SourceID
+			default:
+				continue
+			}
+			if item := fusedByID[target]; item != nil {
+				if item.score < anchorScore {
+					item.score += (anchorScore - item.score) * 0.9 * edge.Confidence
+				}
+				continue
+			}
+			// 关系扩展只补充最强直接线索的邻项，不能压过直接证据。
+			fusedByID[target] = &fused{
+				score:   anchorScore * 0.5 * edge.Confidence,
+				signals: map[string]struct{}{"relation": {}},
+			}
 		}
-		// 关系证据用于补充直接命中，不能压过明确的词法或语义证据。
-		add(target, "relation", rank+1, 0.1*edge.Confidence)
 	}
 	results := make([]SearchResult, 0, len(fusedByID))
 	for id, item := range fusedByID {
@@ -360,10 +365,27 @@ func (s *Service) Search(ctx context.Context, input SearchInput) ([]SearchResult
 		}
 		return results[left].Score > results[right].Score
 	})
+	if len(results) >= 2 && directlyRelated(results[0].ID, results[1].ID, related) {
+		for index := 0; index < 2; index++ {
+			if !contains(results[index].Signals, "relation") {
+				results[index].Signals = append(results[index].Signals, "relation")
+				sort.Strings(results[index].Signals)
+			}
+		}
+	}
 	if len(results) > limit {
 		results = results[:limit]
 	}
 	return results, nil
+}
+
+func directlyRelated(left, right string, edges []derived.Edge) bool {
+	for _, edge := range edges {
+		if edge.SourceID == left && edge.TargetID == right || edge.SourceID == right && edge.TargetID == left {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) compactResults(values []retrieval.Result) []SearchResult {
