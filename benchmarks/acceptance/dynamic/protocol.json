@@ -1,0 +1,74 @@
+{
+  "schema": "ownward.dynamic-acceptance-protocol/v1",
+  "runtime": {
+    "codex_cli_version": "codex-cli 0.117.0"
+  },
+  "semantic_provider": {
+    "chat_model": "gpt-5.4-2026-03-05",
+    "embedding_model": "text-embedding-3-small",
+    "embedding_dimensions": 384
+  },
+  "generation": {
+    "generated_scenarios": 28,
+    "minimum_valid_scenarios": 24,
+    "information_per_scenario": 5,
+    "task_classes": [
+      "cross_time",
+      "multi_hop",
+      "context_applicability",
+      "information_update"
+    ],
+    "minimum_scenarios_per_task_class": 6,
+    "information_scope": [
+      "experience",
+      "thought",
+      "social_experience",
+      "knowledge",
+      "skill",
+      "work_information",
+      "practice_method",
+      "lesson",
+      "solution_experience",
+      "reusable_path"
+    ]
+  },
+  "models": {
+    "generator": {
+      "model": "gpt-5.4-2026-03-05",
+      "reasoning_effort": "medium"
+    },
+    "validator": {
+      "model": "gpt-5.4-mini-2026-03-17",
+      "reasoning_effort": "xhigh"
+    },
+    "external_agent": {
+      "model": "gpt-5.4-2026-03-05",
+      "reasoning_effort": "low"
+    }
+  },
+  "budgets": {
+    "generation_seconds": 1800,
+    "validation_seconds": 1800,
+    "organization_seconds_per_item": 45,
+    "agent_seconds_per_condition": 3600,
+    "agent_tool_calls_per_query": 8
+  },
+  "statistics": {
+    "confidence_level": 0.95,
+    "dynamic_task_success_wilson_lower_min": 0.6,
+    "relation_precision_wilson_lower_min": 0.8,
+    "relation_recall_wilson_lower_min": 0.75,
+    "ablation_equivalence_margin": 0.05,
+    "minimum_quality_gain": 0.1,
+    "minimum_latency_or_cost_reduction": 0.15,
+    "basis": "At 95% confidence, six successes in six independent scenarios have a Wilson lower bound above 0.60. With six valid scenarios per task class, the dynamic threshold therefore requires every class to pass every unseen scenario; one paired improvement is 16.7%, exceeding the 10% meaningful-gain threshold, while one regression exceeds the 5% equivalence margin. Four extra generated scenarios permit independent ambiguity rejection without selecting results by product outcome."
+  },
+  "zero_tolerance": [
+    "asset_content_changed",
+    "stable_identity_changed",
+    "explicit_semantics_lost",
+    "information_merged_or_split",
+    "valid_batch_reselected_or_rerun",
+    "candidate_or_configuration_changed"
+  ]
+}

@@ -10,9 +10,9 @@ import (
 
 func TestIndexSearchesVectorsAndNavigatesBothDirections(t *testing.T) {
 	index := NewIndex([]Record{
-		{AssetID: "parent", AssetRevision: 1, Status: "ready", Embedding: []float32{1, 0}, Analysis: semantics.Analysis{Contexts: []domain.Context{{Key: "topic", Value: "react"}}}},
+		{AssetID: "parent", AssetRevision: 1, Status: "ready", Embedding: []float32{1, 0}, Analysis: semantics.Analysis{Contexts: []semantics.InferredContext{{Key: "topic", Value: "react", Confidence: 0.9, Evidence: "explicit in test"}}}},
 		{AssetID: "child", AssetRevision: 1, Status: "ready", Embedding: []float32{0.8, 0.2}, Analysis: semantics.Analysis{Relations: []semantics.Relation{{Type: "part_of", TargetID: "parent", Confidence: 0.95}}}},
-		{AssetID: "other", AssetRevision: 1, Status: "ready", Embedding: []float32{0.9, 0.1}, Analysis: semantics.Analysis{Contexts: []domain.Context{{Key: "topic", Value: "vue"}}}},
+		{AssetID: "other", AssetRevision: 1, Status: "ready", Embedding: []float32{0.9, 0.1}, Analysis: semantics.Analysis{Contexts: []semantics.InferredContext{{Key: "topic", Value: "vue", Confidence: 0.9, Evidence: "explicit in test"}}}},
 	})
 	hits := index.Search([]float32{1, 0}, []domain.Context{{Key: "topic", Value: "react"}}, 10)
 	if len(hits) != 2 || hits[0].AssetID != "parent" || hits[1].AssetID != "child" {

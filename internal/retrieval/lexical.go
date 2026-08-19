@@ -277,7 +277,7 @@ func (l *Lexical) rebuildPostingsLocked() {
 }
 
 func lexicalTerms(value domain.Information) ([]string, map[string]uint32) {
-	parts := []string{value.ID, string(value.Kind), value.Content}
+	parts := []string{value.ID, value.Content}
 	for _, context := range value.Contexts {
 		parts = append(parts, context.Key, context.Value)
 	}

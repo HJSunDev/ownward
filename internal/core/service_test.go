@@ -83,6 +83,48 @@ func TestServiceNavigatesSemanticRelations(t *testing.T) {
 	}
 }
 
+func TestServiceCanDisableOnlyRelationOrganizationForAblation(t *testing.T) {
+	root := t.TempDir()
+	store, err := assetlog.Open(filepath.Join(root, "assets"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := derived.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewOrganizedWithOptions(store, state, semantics.Heuristic{}, Options{DisableRelations: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer service.Close()
+	parent, err := service.Create(context.Background(), CreateInput{Content: "project atlas"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := service.Create(context.Background(), CreateInput{
+		Content: "private launch code", Relations: []domain.ExplicitRelation{{Type: "part_of", TargetID: parent.Information.ID}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record, ok := state.Get(child.Information.ID); !ok || len(record.Analysis.Relations) != 0 {
+		t.Fatalf("ablation persisted relation organization: %#v", record)
+	}
+	if _, err := service.Navigate(context.Background(), []string{child.Information.ID}, nil, 1, 10); err == nil {
+		t.Fatal("ablation must disable relation navigation")
+	}
+	results, err := service.Search(context.Background(), SearchInput{Query: "project atlas", Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, result := range results {
+		if contains(result.Signals, "relation") {
+			t.Fatalf("ablation exposed relation evidence: %#v", results)
+		}
+	}
+}
+
 func TestSearchDoesNotForceContextOnGeneralInformation(t *testing.T) {
 	store, err := assetlog.Open(filepath.Join(t.TempDir(), "assets"))
 	if err != nil {
@@ -100,6 +142,52 @@ func TestSearchDoesNotForceContextOnGeneralInformation(t *testing.T) {
 	}
 	if len(results) != 1 {
 		t.Fatalf("unexpected results: %#v", results)
+	}
+}
+
+func TestExplicitContextsOverrideConflictingInferredContexts(t *testing.T) {
+	contexts := mergeContexts(
+		[]domain.Context{{Key: "platform", Value: "windows"}},
+		[]domain.Context{{Key: "platform", Value: "linux"}, {Key: "project", Value: "ownward"}},
+	)
+	if len(contexts) != 2 || contexts[0] != (domain.Context{Key: "platform", Value: "windows"}) ||
+		contexts[1] != (domain.Context{Key: "project", Value: "ownward"}) {
+		t.Fatalf("explicit context did not take precedence: %#v", contexts)
+	}
+}
+
+func TestCurrentAssetDoesNotUseStaleDerivedSemantics(t *testing.T) {
+	root := t.TempDir()
+	store, err := assetlog.Open(filepath.Join(root, "assets"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := derived.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewOrganized(store, state, staleContextProvider{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer service.Close()
+	created, err := service.Create(context.Background(), CreateInput{Content: "old content"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated := created.Information
+	updated.Revision++
+	updated.Content = "new content"
+	updated.UpdatedAt = updated.UpdatedAt.Add(time.Second)
+	if err := store.Update(updated, created.Information.Revision); err != nil {
+		t.Fatal(err)
+	}
+	if contexts := service.effectiveContexts(updated.ID, nil); len(contexts) != 0 {
+		t.Fatalf("stale inferred context leaked into current asset: %#v", contexts)
+	}
+	result := service.compactResult(updated, nil, 1, nil)
+	if result.Summary != "new content" {
+		t.Fatalf("stale summary replaced current content: %#v", result)
 	}
 }
 
@@ -324,6 +412,109 @@ func TestServicePreservesExplicitRelationsAndRefreshesStaleInferences(t *testing
 	_ = inferred
 }
 
+func TestExplicitRelationOverridesConflictingOutgoingInference(t *testing.T) {
+	root := t.TempDir()
+	store, err := assetlog.Open(filepath.Join(root, "assets"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := derived.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &relationProvider{}
+	service, err := NewOrganized(store, state, provider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer service.Close()
+	target, err := service.Create(context.Background(), CreateInput{Content: "target"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider.targetID = target.Information.ID
+	source, err := service.Create(context.Background(), CreateInput{
+		Content: "source", Relations: []domain.ExplicitRelation{{Type: "supports", TargetID: target.Information.ID}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, ok := state.Get(source.Information.ID)
+	if !ok || len(record.Analysis.Relations) != 1 || record.Analysis.Relations[0].Type != "supports" {
+		t.Fatalf("inference conflicted with explicit relation: %#v", record.Analysis.Relations)
+	}
+}
+
+func TestExplicitRelationOverridesConflictingIncomingInference(t *testing.T) {
+	root := t.TempDir()
+	store, err := assetlog.Open(filepath.Join(root, "assets"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := derived.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewOrganized(store, state, incomingRelationProvider{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer service.Close()
+	target, err := service.Create(context.Background(), CreateInput{Content: "placeholder"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := service.Create(context.Background(), CreateInput{
+		Content: "older path", Relations: []domain.ExplicitRelation{{Type: "supports", TargetID: target.Information.ID}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := "new principle"
+	if _, err := service.Update(context.Background(), UpdateInput{ID: target.Information.ID, ExpectedRevision: 1, Content: &content}); err != nil {
+		t.Fatal(err)
+	}
+	record, ok := state.Get(source.Information.ID)
+	if !ok || len(record.Analysis.Relations) != 1 || record.Analysis.Relations[0].Type != "supports" {
+		t.Fatalf("incoming inference conflicted with explicit relation: %#v", record.Analysis.Relations)
+	}
+}
+
+func TestExplicitRelationOnCurrentInformationSuppressesReverseInference(t *testing.T) {
+	root := t.TempDir()
+	store, err := assetlog.Open(filepath.Join(root, "assets"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := derived.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewOrganized(store, state, incomingRelationProvider{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer service.Close()
+	target, err := service.Create(context.Background(), CreateInput{Content: "older path"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := service.Create(context.Background(), CreateInput{
+		Content: "new principle", Relations: []domain.ExplicitRelation{{Type: "supports", TargetID: target.Information.ID}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	currentRecord, currentExists := state.Get(current.Information.ID)
+	targetRecord, targetExists := state.Get(target.Information.ID)
+	if !currentExists || len(currentRecord.Analysis.Relations) != 1 || currentRecord.Analysis.Relations[0].Type != "supports" {
+		t.Fatalf("explicit relation was not preserved: %#v", currentRecord.Analysis.Relations)
+	}
+	if !targetExists || len(targetRecord.Analysis.Relations) != 0 {
+		t.Fatalf("reverse inference conflicted with explicit relation: %#v", targetRecord.Analysis.Relations)
+	}
+}
+
 func TestServiceAppliesAndRemovesRelationsInferredTowardCurrentInformation(t *testing.T) {
 	root := t.TempDir()
 	store, err := assetlog.Open(filepath.Join(root, "assets"))
@@ -379,7 +570,7 @@ func TestUpdateOrganizesAssetAndDependentsConcurrently(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	provider := &concurrentOrganizationProvider{release: make(chan struct{}), allStarted: make(chan struct{})}
+	provider := &concurrentOrganizationProvider{release: make(chan struct{}), overlapStarted: make(chan struct{})}
 	service, err := NewOrganized(store, state, provider)
 	if err != nil {
 		t.Fatal(err)
@@ -405,7 +596,7 @@ func TestUpdateOrganizesAssetAndDependentsConcurrently(t *testing.T) {
 		done <- updateErr
 	}()
 	select {
-	case <-provider.allStarted:
+	case <-provider.overlapStarted:
 		close(provider.release)
 	case <-time.After(2 * time.Second):
 		close(provider.release)
@@ -538,18 +729,37 @@ type fusionProvider struct{}
 
 type incomingRelationProvider struct{}
 
+type staleContextProvider struct{}
+
 type concurrentOrganizationProvider struct {
-	targetID   string
-	block      atomic.Bool
-	active     atomic.Int32
-	started    sync.Once
-	allStarted chan struct{}
-	release    chan struct{}
+	targetID       string
+	block          atomic.Bool
+	active         atomic.Int32
+	started        sync.Once
+	overlapStarted chan struct{}
+	release        chan struct{}
 }
 
 func (fusionProvider) Name() string { return "test-fusion-provider" }
 
 func (incomingRelationProvider) Name() string { return "test-incoming-relation-provider" }
+
+func (staleContextProvider) Name() string { return "test-stale-context-provider" }
+
+func (staleContextProvider) Embed(_ context.Context, values []string) ([][]float32, error) {
+	result := make([][]float32, len(values))
+	for index := range values {
+		result[index] = []float32{1, 0}
+	}
+	return result, nil
+}
+
+func (staleContextProvider) Analyze(_ context.Context, value domain.Information, _ []semantics.Candidate) (semantics.Analysis, error) {
+	return semantics.Analysis{
+		Summary:  value.Content,
+		Contexts: []semantics.InferredContext{{Key: "phase", Value: "old", Confidence: 1, Evidence: "test fixture"}},
+	}, nil
+}
 
 func (incomingRelationProvider) Embed(_ context.Context, values []string) ([][]float32, error) {
 	result := make([][]float32, len(values))
@@ -560,10 +770,10 @@ func (incomingRelationProvider) Embed(_ context.Context, values []string) ([][]f
 }
 
 func (incomingRelationProvider) Analyze(_ context.Context, value domain.Information, candidates []semantics.Candidate) (semantics.Analysis, error) {
-	analysis := semantics.Analysis{Kind: domain.KindKnowledge, Summary: value.Content}
+	analysis := semantics.Analysis{Summary: value.Content}
 	if value.Content == "new principle" && len(candidates) > 0 {
 		analysis.Relations = []semantics.Relation{{
-			Type: "related_to", TargetID: candidates[0].ID, Confidence: 1, Direction: "incoming",
+			Type: "related_to", TargetID: candidates[0].ID, Confidence: 1, Direction: "incoming", Evidence: "test fixture",
 		}}
 	}
 	return analysis, nil
@@ -586,7 +796,7 @@ func (fusionProvider) Analyze(_ context.Context, value domain.Information, _ []s
 	for _, relation := range value.Relations {
 		relations = append(relations, semantics.Relation{Type: relation.Type, TargetID: relation.TargetID, Confidence: 1})
 	}
-	return semantics.Analysis{Kind: value.Kind, Summary: value.Content, Relations: relations}, nil
+	return semantics.Analysis{Summary: value.Content, Relations: relations}, nil
 }
 
 func (p *concurrentOrganizationProvider) Name() string {
@@ -603,15 +813,15 @@ func (p *concurrentOrganizationProvider) Embed(_ context.Context, values []strin
 
 func (p *concurrentOrganizationProvider) Analyze(_ context.Context, value domain.Information, _ []semantics.Candidate) (semantics.Analysis, error) {
 	if p.block.Load() {
-		if p.active.Add(1) == 3 {
-			p.started.Do(func() { close(p.allStarted) })
+		if p.active.Add(1) == 2 {
+			p.started.Do(func() { close(p.overlapStarted) })
 		}
 		<-p.release
 		p.active.Add(-1)
 	}
-	analysis := semantics.Analysis{Kind: value.Kind, Summary: value.Content}
+	analysis := semantics.Analysis{Summary: value.Content}
 	if strings.HasPrefix(value.Content, "source-") {
-		analysis.Relations = []semantics.Relation{{Type: "related_to", TargetID: p.targetID, Confidence: 1}}
+		analysis.Relations = []semantics.Relation{{Type: "related_to", TargetID: p.targetID, Confidence: 1, Evidence: "test fixture"}}
 	}
 	return analysis, nil
 }
@@ -628,9 +838,9 @@ func (p *relationProvider) Embed(_ context.Context, values []string) ([][]float3
 }
 
 func (p *relationProvider) Analyze(_ context.Context, value domain.Information, _ []semantics.Candidate) (semantics.Analysis, error) {
-	analysis := semantics.Analysis{Kind: value.Kind, Summary: value.Content}
+	analysis := semantics.Analysis{Summary: value.Content}
 	if value.Content == "source" {
-		analysis.Relations = []semantics.Relation{{Type: "related_to", TargetID: p.targetID, Confidence: 0.95}}
+		analysis.Relations = []semantics.Relation{{Type: "related_to", TargetID: p.targetID, Confidence: 0.95, Evidence: "test fixture"}}
 	}
 	return analysis, nil
 }

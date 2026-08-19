@@ -26,14 +26,15 @@ Ownward 只保存属于用户且可长期复用的信息。创建信息时保留
 `
 
 type Service struct {
-	store        *assetlog.Store
-	derivedStore *derived.Store
-	index        *retrieval.Lexical
-	semantic     *derived.Index
-	provider     semantics.Provider
-	now          func() time.Time
-	mutationMu   [256]sync.Mutex
-	graphMu      sync.Mutex
+	store            *assetlog.Store
+	derivedStore     *derived.Store
+	index            *retrieval.Lexical
+	semantic         *derived.Index
+	provider         semantics.Provider
+	disableRelations bool
+	now              func() time.Time
+	mutationMu       [256]sync.Mutex
+	graphMu          sync.Mutex
 }
 
 type OrganizationState struct {
@@ -95,11 +96,19 @@ type NavigationResult struct {
 	Edges []derived.Edge   `json:"edges"`
 }
 
+type Options struct {
+	DisableRelations bool
+}
+
 func New(store *assetlog.Store) *Service {
 	return &Service{store: store, index: retrieval.NewLexical(store.All()), now: time.Now}
 }
 
 func NewOrganized(store *assetlog.Store, derivedStore *derived.Store, provider semantics.Provider) (*Service, error) {
+	return NewOrganizedWithOptions(store, derivedStore, provider, Options{})
+}
+
+func NewOrganizedWithOptions(store *assetlog.Store, derivedStore *derived.Store, provider semantics.Provider, options Options) (*Service, error) {
 	if provider == nil {
 		provider = semantics.Heuristic{}
 	}
@@ -115,16 +124,20 @@ func NewOrganized(store *assetlog.Store, derivedStore *derived.Store, provider s
 	currentRecords := records[:0]
 	for _, record := range records {
 		if currentRevision[record.AssetID] == record.AssetRevision {
+			if options.DisableRelations {
+				record.Analysis.Relations = nil
+			}
 			currentRecords = append(currentRecords, record)
 		}
 	}
 	return &Service{
-		store:        store,
-		derivedStore: derivedStore,
-		index:        retrieval.NewLexical(assets),
-		semantic:     derived.NewIndex(currentRecords),
-		provider:     provider,
-		now:          time.Now,
+		store:            store,
+		derivedStore:     derivedStore,
+		index:            retrieval.NewLexical(assets),
+		semantic:         derived.NewIndex(currentRecords),
+		provider:         provider,
+		disableRelations: options.DisableRelations,
+		now:              time.Now,
 	}, nil
 }
 
@@ -292,6 +305,11 @@ func (s *Service) Search(ctx context.Context, input SearchInput) ([]SearchResult
 		add(hit.Information.ID, "lexical", rank+1, 1)
 	}
 	for rank, hit := range semanticHits {
+		record, recordExists := s.semantic.Get(hit.AssetID)
+		asset, assetExists := s.store.Get(hit.AssetID)
+		if !recordExists || !assetExists || record.AssetRevision != asset.Revision {
+			continue
+		}
 		add(hit.AssetID, "semantic", rank+1, 1)
 	}
 	type rankedSeed struct {
@@ -304,6 +322,11 @@ func (s *Service) Search(ctx context.Context, input SearchInput) ([]SearchResult
 	}
 	sort.Slice(rankedSeeds, func(left, right int) bool {
 		if rankedSeeds[left].score == rankedSeeds[right].score {
+			leftPriority := fusedSignalPriority(fusedByID[rankedSeeds[left].id].signals)
+			rightPriority := fusedSignalPriority(fusedByID[rankedSeeds[right].id].signals)
+			if leftPriority != rightPriority {
+				return leftPriority > rightPriority
+			}
 			return rankedSeeds[left].id < rankedSeeds[right].id
 		}
 		return rankedSeeds[left].score > rankedSeeds[right].score
@@ -316,32 +339,39 @@ func (s *Service) Search(ctx context.Context, input SearchInput) ([]SearchResult
 		seeds = append(seeds, seed.id)
 	}
 	var related []derived.Edge
-	if !input.DisableRelationExpansion {
+	if !input.DisableRelationExpansion && !s.disableRelations {
 		related = s.semantic.Navigate(seeds, nil, 1, candidateLimit)
 	}
-	if len(seeds) > 0 {
-		anchor := seeds[0]
-		anchorScore := fusedByID[anchor].score
-		for _, edge := range related {
-			target := ""
-			switch anchor {
-			case edge.SourceID:
-				target = edge.TargetID
-			case edge.TargetID:
-				target = edge.SourceID
-			default:
+	seedScores := make(map[string]float64, len(rankedSeeds))
+	for _, seed := range rankedSeeds {
+		seedScores[seed.id] = seed.score
+	}
+	for _, edge := range related {
+		for _, direction := range [][2]string{{edge.SourceID, edge.TargetID}, {edge.TargetID, edge.SourceID}} {
+			seedScore, isSeed := seedScores[direction[0]]
+			if !isSeed {
 				continue
 			}
-			if item := fusedByID[target]; item != nil {
-				if item.score < anchorScore {
-					item.score += (anchorScore - item.score) * 0.9 * edge.Confidence
+			neighbor := direction[1]
+			contribution := seedScore * 0.3 * edge.Confidence
+			if item := fusedByID[neighbor]; item != nil {
+				_, graphOnly := item.signals["relation"]
+				if graphOnly && len(item.signals) == 1 {
+					if contribution > item.score {
+						item.score = contribution
+					}
+					continue
 				}
-				continue
+				if len(seeds) == 0 || direction[0] != seeds[0] {
+					continue
+				}
+				item.score += min(contribution, item.score*0.1)
+				item.signals["relation"] = struct{}{}
+			} else {
+				fusedByID[neighbor] = &fused{score: contribution, signals: map[string]struct{}{"relation": {}}}
 			}
-			// 关系扩展只补充最强直接线索的邻项，不能压过直接证据。
-			fusedByID[target] = &fused{
-				score:   anchorScore * 0.5 * edge.Confidence,
-				signals: map[string]struct{}{"relation": {}},
+			if len(seeds) > 0 && direction[0] == seeds[0] {
+				fusedByID[direction[0]].signals["relation"] = struct{}{}
 			}
 		}
 	}
@@ -361,6 +391,11 @@ func (s *Service) Search(ctx context.Context, input SearchInput) ([]SearchResult
 	}
 	sort.Slice(results, func(left, right int) bool {
 		if results[left].Score == results[right].Score {
+			leftPriority := resultSignalPriority(results[left].Signals)
+			rightPriority := resultSignalPriority(results[right].Signals)
+			if leftPriority != rightPriority {
+				return leftPriority > rightPriority
+			}
 			return results[left].ID < results[right].ID
 		}
 		return results[left].Score > results[right].Score
@@ -377,6 +412,28 @@ func (s *Service) Search(ctx context.Context, input SearchInput) ([]SearchResult
 		results = results[:limit]
 	}
 	return results, nil
+}
+
+func fusedSignalPriority(signals map[string]struct{}) int {
+	priority := 0
+	if _, exists := signals["semantic"]; exists {
+		priority++
+	}
+	if _, exists := signals["lexical"]; exists {
+		priority += 2
+	}
+	return priority
+}
+
+func resultSignalPriority(signals []string) int {
+	priority := 0
+	if contains(signals, "semantic") {
+		priority++
+	}
+	if contains(signals, "lexical") {
+		priority += 2
+	}
+	return priority
 }
 
 func directlyRelated(left, right string, edges []derived.Edge) bool {
@@ -402,11 +459,8 @@ func (s *Service) compactResult(value domain.Information, contexts []domain.Cont
 	kind := value.Kind
 	if s.semantic != nil {
 		if record, ok := s.semantic.Get(value.ID); ok {
-			if strings.TrimSpace(record.Analysis.Summary) != "" {
+			if record.AssetRevision == value.Revision && strings.TrimSpace(record.Analysis.Summary) != "" {
 				summary = record.Analysis.Summary
-			}
-			if kind == domain.KindGeneral && record.Analysis.Kind != "" {
-				kind = record.Analysis.Kind
 			}
 		}
 	}
@@ -417,6 +471,9 @@ func (s *Service) compactResult(value domain.Information, contexts []domain.Cont
 }
 
 func (s *Service) Navigate(_ context.Context, start, relationTypes []string, depth, limit int) (NavigationResult, error) {
+	if s.disableRelations {
+		return NavigationResult{}, errors.New("关系组织已禁用")
+	}
 	if s.semantic == nil {
 		return NavigationResult{}, errors.New("语义关系导航未启用")
 	}
@@ -442,14 +499,14 @@ func (s *Service) Navigate(_ context.Context, start, relationTypes []string, dep
 		var cues []semantics.Cue
 		contexts := append([]domain.Context(nil), value.Contexts...)
 		if record, ok := s.semantic.Get(id); ok {
+			if record.AssetRevision != value.Revision {
+				record = derived.Record{}
+			}
 			if strings.TrimSpace(record.Analysis.Summary) != "" {
 				summary = record.Analysis.Summary
 			}
 			cues = append([]semantics.Cue(nil), record.Analysis.Cues...)
-			contexts = mergeContexts(contexts, record.Analysis.Contexts)
-			if value.Kind == domain.KindGeneral && record.Analysis.Kind != "" {
-				value.Kind = record.Analysis.Kind
-			}
+			contexts = mergeContexts(contexts, semantics.ContextValues(record.Analysis.Contexts))
 		}
 		nodes = append(nodes, NavigationNode{ID: id, Kind: value.Kind, Summary: summary, Contexts: contexts, Cues: cues, UpdatedAt: value.UpdatedAt})
 	}
@@ -527,19 +584,8 @@ func (s *Service) organize(ctx context.Context, value domain.Information) Organi
 			return
 		}
 		candidatePositions[candidate.ID] = len(candidates)
-		kind := candidate.Kind
-		contexts := candidate.Contexts
-		var relations []semantics.Relation
-		if record, exists := s.semantic.Get(candidate.ID); exists {
-			if kind == domain.KindGeneral && record.Analysis.Kind != "" {
-				kind = record.Analysis.Kind
-			}
-			contexts = mergeContexts(contexts, record.Analysis.Contexts)
-			relations = append([]semantics.Relation(nil), record.Analysis.Relations...)
-		}
 		candidates = append(candidates, semantics.Candidate{
-			ID: candidate.ID, Kind: kind, Content: candidate.Content, Contexts: contexts,
-			Similarity: similarity, Relations: relations,
+			ID: candidate.ID, Content: candidate.Content, Contexts: candidate.Contexts, Similarity: similarity,
 		})
 	}
 	for _, relation := range value.Relations {
@@ -556,7 +602,9 @@ func (s *Service) organize(ctx context.Context, value domain.Information) Organi
 		semanticHits = s.semantic.Search(vectors[0], nil, 32)
 		for _, hit := range semanticHits {
 			if candidate, ok := s.store.Get(hit.AssetID); ok {
-				appendCandidate(candidate, hit.Score)
+				if record, exists := s.semantic.Get(hit.AssetID); exists && record.AssetRevision == candidate.Revision {
+					appendCandidate(candidate, hit.Score)
+				}
 			}
 			if len(candidates) == 12 {
 				break
@@ -571,7 +619,9 @@ func (s *Service) organize(ctx context.Context, value domain.Information) Organi
 	}
 	for _, hit := range semanticHits {
 		if candidate, ok := s.store.Get(hit.AssetID); ok {
-			appendCandidate(candidate, hit.Score)
+			if record, exists := s.semantic.Get(hit.AssetID); exists && record.AssetRevision == candidate.Revision {
+				appendCandidate(candidate, hit.Score)
+			}
 		}
 		if len(candidates) == 32 {
 			break
@@ -580,15 +630,27 @@ func (s *Service) organize(ctx context.Context, value domain.Information) Organi
 	analysis, analysisErr := s.provider.Analyze(ctx, value, candidates)
 	incoming := make([]semantics.Relation, 0, len(analysis.Relations))
 	outgoing := make([]semantics.Relation, 0, len(analysis.Relations))
+	explicitTargets := make(map[string]struct{}, len(value.Relations))
+	for _, relation := range value.Relations {
+		explicitTargets[relation.TargetID] = struct{}{}
+	}
 	for _, relation := range analysis.Relations {
 		if relation.Direction == "incoming" {
+			if _, explicit := explicitTargets[relation.TargetID]; explicit {
+				continue
+			}
 			incoming = append(incoming, relation)
 			continue
 		}
 		relation.Direction = ""
 		outgoing = append(outgoing, relation)
 	}
-	analysis.Relations = s.finalizeRelations(value, outgoing)
+	if s.disableRelations {
+		incoming = nil
+		analysis.Relations = nil
+	} else {
+		analysis.Relations = s.finalizeRelations(value, outgoing)
+	}
 	status := "ready"
 	errorText := ""
 	if _, fallback := s.provider.(semantics.Heuristic); fallback {
@@ -627,18 +689,20 @@ func (s *Service) organize(ctx context.Context, value domain.Information) Organi
 	s.graphMu.Lock()
 	defer s.graphMu.Unlock()
 	if previous, ok := s.derivedStore.Get(value.ID); ok {
-		record.Analysis.Relations = preserveExternalRelations(record.Analysis.Relations, previous.Analysis.Relations, value.ID)
+		record.Analysis.Relations = preserveExternalRelations(record.Analysis.Relations, previous.Analysis.Relations, value.ID, value.Relations)
 	}
 	if err := s.derivedStore.Put(record); err != nil {
 		return OrganizationState{Status: "pending", Provider: s.provider.Name(), Error: err.Error()}
 	}
 	s.semantic.Upsert(record)
-	if err := s.applyIncomingRelationsLocked(value, previousDependents, incoming); err != nil {
-		record.Status = "pending"
-		record.Error = strings.Trim(strings.Join([]string{record.Error, err.Error()}, "; "), "; ")
-		_ = s.derivedStore.Put(record)
-		s.semantic.Upsert(record)
-		return OrganizationState{Status: "pending", Provider: record.Provider, Error: record.Error}
+	if !s.disableRelations {
+		if err := s.applyIncomingRelationsLocked(value, previousDependents, incoming); err != nil {
+			record.Status = "pending"
+			record.Error = strings.Trim(strings.Join([]string{record.Error, err.Error()}, "; "), "; ")
+			_ = s.derivedStore.Put(record)
+			s.semantic.Upsert(record)
+			return OrganizationState{Status: "pending", Provider: record.Provider, Error: record.Error}
+		}
 	}
 	return OrganizationState{Status: status, Provider: record.Provider, Error: errorText}
 }
@@ -708,16 +772,19 @@ func (s *Service) reindexDerived(ids []string) {
 func (s *Service) finalizeRelations(value domain.Information, inferred []semantics.Relation) []semantics.Relation {
 	result := make([]semantics.Relation, 0, len(value.Relations)+len(inferred))
 	seen := make(map[string]struct{}, len(value.Relations)+len(inferred))
+	explicitTargets := make(map[string]struct{}, len(value.Relations))
 	for _, relation := range value.Relations {
 		key := relation.Type + "\x00" + relation.TargetID
 		seen[key] = struct{}{}
+		explicitTargets[relation.TargetID] = struct{}{}
 		result = append(result, semantics.Relation{Type: relation.Type, TargetID: relation.TargetID, Confidence: 1})
 	}
 	for _, relation := range inferred {
 		relation.Direction = ""
 		relation.InferredBy = ""
 		key := relation.Type + "\x00" + relation.TargetID
-		if _, exists := seen[key]; exists || relation.TargetID == value.ID {
+		_, hasExplicitRelation := explicitTargets[relation.TargetID]
+		if _, exists := seen[key]; exists || hasExplicitRelation || relation.TargetID == value.ID {
 			continue
 		}
 		target, exists := s.store.Get(relation.TargetID)
@@ -731,14 +798,21 @@ func (s *Service) finalizeRelations(value domain.Information, inferred []semanti
 	return result
 }
 
-func preserveExternalRelations(current, previous []semantics.Relation, assetID string) []semantics.Relation {
+func preserveExternalRelations(current, previous []semantics.Relation, assetID string, explicit []domain.ExplicitRelation) []semantics.Relation {
 	result := append([]semantics.Relation(nil), current...)
 	seen := make(map[string]struct{}, len(current))
+	explicitTargets := make(map[string]struct{}, len(explicit))
+	for _, relation := range explicit {
+		explicitTargets[relation.TargetID] = struct{}{}
+	}
 	for _, relation := range current {
 		seen[relation.Type+"\x00"+relation.TargetID] = struct{}{}
 	}
 	for _, relation := range previous {
 		if relation.InferredBy == "" || relation.InferredBy == assetID {
+			continue
+		}
+		if _, exists := explicitTargets[relation.TargetID]; exists {
 			continue
 		}
 		key := relation.Type + "\x00" + relation.TargetID
@@ -787,6 +861,16 @@ func (s *Service) applyIncomingRelationsLocked(value domain.Information, previou
 			seen[key] = struct{}{}
 		}
 		for _, relation := range bySource[sourceID] {
+			hasExplicitRelation := false
+			for _, explicit := range asset.Relations {
+				if explicit.TargetID == value.ID {
+					hasExplicitRelation = true
+					break
+				}
+			}
+			if hasExplicitRelation {
+				continue
+			}
 			key := relation.Type + "\x00" + value.ID
 			if _, exists := seen[key]; exists {
 				continue
@@ -853,7 +937,19 @@ func normalizeContexts(values []domain.Context) []domain.Context {
 }
 
 func mergeContexts(left, right []domain.Context) []domain.Context {
-	return normalizeContexts(append(append([]domain.Context(nil), left...), right...))
+	explicit := normalizeContexts(left)
+	explicitKeys := make(map[string]struct{}, len(explicit))
+	for _, value := range explicit {
+		explicitKeys[strings.ToLower(value.Key)] = struct{}{}
+	}
+	merged := append([]domain.Context(nil), explicit...)
+	for _, value := range normalizeContexts(right) {
+		if _, exists := explicitKeys[strings.ToLower(value.Key)]; exists {
+			continue
+		}
+		merged = append(merged, value)
+	}
+	return normalizeContexts(merged)
 }
 
 func truncate(value string, length int) string {
@@ -891,10 +987,11 @@ func (s *Service) effectiveContexts(id string, explicit []domain.Context) []doma
 		return explicit
 	}
 	record, ok := s.semantic.Get(id)
-	if !ok {
+	asset, exists := s.store.Get(id)
+	if !ok || !exists || record.AssetRevision != asset.Revision {
 		return explicit
 	}
-	return mergeContexts(explicit, record.Analysis.Contexts)
+	return mergeContexts(explicit, semantics.ContextValues(record.Analysis.Contexts))
 }
 
 func contains(values []string, expected string) bool {

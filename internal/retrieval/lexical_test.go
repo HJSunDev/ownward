@@ -61,6 +61,17 @@ func TestSearchPrioritizesNamedTermsOverGenericQuestionWording(t *testing.T) {
 	}
 }
 
+func TestLegacyInformationKindDoesNotActAsOrganizationMetadata(t *testing.T) {
+	index := NewLexical([]domain.Information{{
+		ID:      "one",
+		Kind:    domain.KindKnowledge,
+		Content: "arbitrary durable content",
+	}})
+	if results := index.Search("knowledge", nil, 10); len(results) != 0 {
+		t.Fatalf("legacy information kind influenced retrieval: %#v", results)
+	}
+}
+
 func BenchmarkSearch100K(b *testing.B) {
 	values := make([]domain.Information, 100_000)
 	for index := range values {

@@ -67,7 +67,7 @@ The repository's [project-scoped Codex configuration](.codex/config.toml) launch
 ## Verify
 
 ```sh
-gofmt -l .
+gofmt -l $(git ls-files '*.go')
 go vet ./...
 go test ./...
 go build ./...
@@ -82,6 +82,8 @@ go run ./cmd/ownward-acceptance --binary bin/ownward --candidate COMMIT_SHA
 ```
 
 Public quality and latency comparison uses the pinned official [LongMemEval-V2 integration](benchmarks/longmemeval_v2/README.md), including direct retrieval and external-agent active retrieval modes.
+
+Open-world organization and relation-structure value use the post-freeze [dynamic unseen acceptance](benchmarks/acceptance/dynamic/README.md), with independently validated generated data and a same-state relation ablation.
 
 Public resource comparison uses the reproducible [resource-frontier harness](benchmarks/resource_frontier/README.md) at the same 100,000-item, 384-dimensional scale.
 Real external-agent mutation and cross-session consistency use the [Codex integration acceptance](benchmarks/agent_integration/README.md); the verifier rejects sessions that bypass Ownward through shell or file tools.

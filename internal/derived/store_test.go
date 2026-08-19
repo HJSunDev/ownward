@@ -28,6 +28,31 @@ func TestStoreRejectsAnOlderDerivedRevision(t *testing.T) {
 	}
 }
 
+func TestStoreRejectsUngroundedDerivedSemantics(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	invalidContext := Record{AssetID: "context", AssetRevision: 1, Status: "ready", Analysis: semantics.Analysis{
+		Contexts: []semantics.InferredContext{{Key: "project", Value: "unknown", Confidence: 0.5, Evidence: "guess"}},
+	}}
+	if err := store.Put(invalidContext); err == nil {
+		t.Fatal("low-confidence inferred context must be rejected")
+	}
+	invalidRelation := Record{AssetID: "source", AssetRevision: 1, Status: "ready", Analysis: semantics.Analysis{
+		Relations: []semantics.Relation{{Type: "related_to", TargetID: "target", TargetRevision: 1, Confidence: 0.9}},
+	}}
+	if err := store.Put(invalidRelation); err == nil {
+		t.Fatal("inferred relation without evidence must be rejected")
+	}
+	if err := store.Put(Record{AssetID: "explicit", AssetRevision: 1, Status: "ready", Analysis: semantics.Analysis{
+		Relations: []semantics.Relation{{Type: "supports", TargetID: "target", Confidence: 1}},
+	}}); err != nil {
+		t.Fatalf("explicit durable relation should remain valid: %v", err)
+	}
+}
+
 func TestStoreTruncatesIncompleteTail(t *testing.T) {
 	dir := t.TempDir()
 	store, err := Open(dir)

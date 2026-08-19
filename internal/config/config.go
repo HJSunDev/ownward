@@ -18,6 +18,7 @@ type Config struct {
 	ChatModel           string
 	EmbeddingModel      string
 	EmbeddingDimensions int
+	DisableRelations    bool
 }
 
 func Load(override string) (Config, error) {
@@ -44,6 +45,14 @@ func Load(override string) (Config, error) {
 		}
 		dimensions = value
 	}
+	disableRelations := false
+	if raw := strings.TrimSpace(os.Getenv("OWNWARD_DISABLE_RELATIONS")); raw != "" {
+		value, parseErr := strconv.ParseBool(raw)
+		if parseErr != nil {
+			return Config{}, errors.New("OWNWARD_DISABLE_RELATIONS 必须是布尔值")
+		}
+		disableRelations = value
+	}
 	return Config{
 		DataDir:             absolute,
 		ModelBaseURL:        strings.TrimSpace(os.Getenv("OWNWARD_MODEL_BASE_URL")),
@@ -51,6 +60,7 @@ func Load(override string) (Config, error) {
 		ChatModel:           strings.TrimSpace(os.Getenv("OWNWARD_CHAT_MODEL")),
 		EmbeddingModel:      strings.TrimSpace(os.Getenv("OWNWARD_EMBEDDING_MODEL")),
 		EmbeddingDimensions: dimensions,
+		DisableRelations:    disableRelations,
 	}, nil
 }
 

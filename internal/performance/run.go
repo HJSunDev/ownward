@@ -492,7 +492,11 @@ func performanceValues(index, dimensions int, generatedAt time.Time) (domain.Inf
 		Schema: domain.AssetSchema, ID: id, Revision: 1, CreatedAt: generatedAt, UpdatedAt: generatedAt, Kind: domain.KindKnowledge,
 		Content: fmt.Sprintf("长期个人信息 %d，主题 bucket%d，包含可复用的经验、方法和解决路径。", index, index%100), Contexts: contexts,
 	}
-	analysis := semantics.Analysis{Kind: domain.KindKnowledge, Contexts: contexts}
+	inferredContexts := make([]semantics.InferredContext, 0, len(contexts))
+	for _, context := range contexts {
+		inferredContexts = append(inferredContexts, semantics.InferredContext{Key: context.Key, Value: context.Value, Confidence: 1, Evidence: "performance fixture"})
+	}
+	analysis := semantics.Analysis{Contexts: inferredContexts}
 	if index > 0 {
 		analysis.Relations = []semantics.Relation{{Type: "related_to", TargetID: fmt.Sprintf("I%06d", index-1), Confidence: 0.95}}
 	}

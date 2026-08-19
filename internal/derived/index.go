@@ -364,7 +364,7 @@ func (i *Index) upsertVectorLocked(recordID uint32, record Record) {
 			if norm > 0 {
 				vek32.MulNumber_Inplace(values, float32(1/norm))
 			}
-			block.contexts[previous.row] = append(block.contexts[previous.row][:0], record.Analysis.Contexts...)
+			block.contexts[previous.row] = append(block.contexts[previous.row][:0], semantics.ContextValues(record.Analysis.Contexts)...)
 			block.active[previous.row] = record.Status != "pending" && norm > 0
 			return
 		}
@@ -382,7 +382,7 @@ func (i *Index) upsertVectorLocked(recordID uint32, record Record) {
 	row := len(block.records)
 	block.records = append(block.records, recordID)
 	block.active = append(block.active, record.Status != "pending")
-	block.contexts = append(block.contexts, append([]domain.Context(nil), record.Analysis.Contexts...))
+	block.contexts = append(block.contexts, semantics.ContextValues(record.Analysis.Contexts))
 	start := len(block.values)
 	block.values = append(block.values, record.Embedding...)
 	norm := vectorNorm(record.Embedding)

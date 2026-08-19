@@ -16,7 +16,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/HJSunDev/ownward/internal/domain"
 	"github.com/HJSunDev/ownward/internal/semantics"
 )
 
@@ -489,6 +488,21 @@ func validateRecord(record Record) error {
 			return errors.New("派生向量包含非有限数值")
 		}
 	}
+	for _, context := range record.Analysis.Contexts {
+		if strings.TrimSpace(context.Key) == "" || strings.TrimSpace(context.Value) == "" || strings.TrimSpace(context.Evidence) == "" ||
+			context.Confidence < 0.75 || context.Confidence > 1 || math.IsNaN(context.Confidence) || math.IsInf(context.Confidence, 0) {
+			return errors.New("推导场景缺少可靠依据")
+		}
+	}
+	for _, relation := range record.Analysis.Relations {
+		if strings.TrimSpace(relation.Type) == "" || strings.TrimSpace(relation.TargetID) == "" || relation.TargetID == record.AssetID ||
+			relation.Confidence <= 0 || relation.Confidence > 1 || math.IsNaN(relation.Confidence) || math.IsInf(relation.Confidence, 0) {
+			return errors.New("语义关系结构无效")
+		}
+		if relation.TargetRevision > 0 && (relation.Confidence < 0.75 || strings.TrimSpace(relation.Evidence) == "") {
+			return errors.New("推导关系缺少可靠依据")
+		}
+	}
 	return nil
 }
 
@@ -548,7 +562,7 @@ func clone(record Record) Record {
 	record.Embedding = append([]float32(nil), record.Embedding...)
 	record.Analysis.Cues = append([]semantics.Cue(nil), record.Analysis.Cues...)
 	record.Analysis.Topics = append([]string(nil), record.Analysis.Topics...)
-	record.Analysis.Contexts = append([]domain.Context(nil), record.Analysis.Contexts...)
+	record.Analysis.Contexts = append([]semantics.InferredContext(nil), record.Analysis.Contexts...)
 	record.Analysis.Relations = append([]semantics.Relation(nil), record.Analysis.Relations...)
 	return record
 }

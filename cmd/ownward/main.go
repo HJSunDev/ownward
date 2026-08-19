@@ -45,7 +45,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	flags.SetOutput(stderr)
 	dataDir := flags.String("data-dir", "", "Ownward 数据目录")
 	content := flags.String("content", "", "信息内容")
-	kindValue := flags.String("kind", string(domain.KindGeneral), "可选的信息类型")
+	kindValue := flags.String("kind", string(domain.KindGeneral), "兼容既有资产的可选字段，不参与自主语义组织")
 	id := flags.String("id", "", "信息标识")
 	revision := flags.Uint64("revision", 0, "期望的信息版本")
 	query := flags.String("query", "", "检索内容")
@@ -87,7 +87,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		_ = store.Close()
 		return err
 	}
-	service, err := core.NewOrganized(store, derivedStore, provider)
+	service, err := core.NewOrganizedWithOptions(store, derivedStore, provider, core.Options{DisableRelations: loaded.DisableRelations})
 	if err != nil {
 		_ = derivedStore.Close()
 		_ = store.Close()

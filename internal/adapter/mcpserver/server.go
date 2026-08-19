@@ -21,7 +21,7 @@ type RulesOutput struct {
 
 type CreateInput struct {
 	Content  string           `json:"content" jsonschema:"属于用户且可长期复用的完整信息"`
-	Kind     string           `json:"kind,omitempty" jsonschema:"可选的信息类型；不确定时省略，由 Ownward 自主判断"`
+	Kind     string           `json:"kind,omitempty" jsonschema:"兼容既有资产的可选字段；通常省略，不参与自主语义组织"`
 	Contexts []domain.Context `json:"contexts,omitempty" jsonschema:"仅在信息含义或适用性依赖场景时提供"`
 	Source   domain.Source    `json:"source,omitempty" jsonschema:"信息来源"`
 }
@@ -42,7 +42,7 @@ type UpdateInput struct {
 	ID               string            `json:"id" jsonschema:"稳定的信息标识"`
 	ExpectedRevision uint64            `json:"expected_revision" jsonschema:"调用方最后读取到的版本，用于避免覆盖并发更新"`
 	Content          *string           `json:"content,omitempty" jsonschema:"更新后的完整信息内容"`
-	Kind             *string           `json:"kind,omitempty" jsonschema:"更新后的信息类型"`
+	Kind             *string           `json:"kind,omitempty" jsonschema:"兼容既有资产的可选字段；通常省略，不参与自主语义组织"`
 	Contexts         *[]domain.Context `json:"contexts,omitempty" jsonschema:"更新后的完整场景集合；空数组表示清除场景"`
 	Source           *domain.Source    `json:"source,omitempty" jsonschema:"更新后的来源"`
 }

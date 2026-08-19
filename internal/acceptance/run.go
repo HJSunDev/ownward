@@ -437,15 +437,6 @@ func fileDigest(path string) (string, error) {
 }
 
 func organizationChecks(state *derived.Store, fixtures fixtureSet, fixtureToAsset, assetToFixture map[string]string) []Check {
-	kindCorrect := 0
-	for _, expected := range fixtures.Kinds {
-		assetID := fixtureToAsset[expected.FixtureID]
-		record, ok := state.Get(assetID)
-		if ok && record.Analysis.Kind == expected.Kind {
-			kindCorrect++
-		}
-	}
-	kindAccuracy := ratio(kindCorrect, len(fixtures.Kinds))
 	expectedRelations := make(map[string]struct{}, len(fixtures.Relations))
 	for _, relation := range fixtures.Relations {
 		expectedRelations[relationKey(relation.SourceID, relation.Type, relation.TargetID)] = struct{}{}
@@ -467,8 +458,6 @@ func organizationChecks(state *derived.Store, fixtures fixtureSet, fixtureToAsse
 	relationPrecision := ratio(trueRelations, len(actualRelations))
 	relationRecall := ratio(trueRelations, len(expectedRelations))
 	return []Check{
-		{Name: "自主信息类型判断", Passed: kindAccuracy >= fixtures.Thresholds.Organization.KindAccuracy,
-			Metrics: map[string]float64{"accuracy": kindAccuracy}, Threshold: map[string]float64{"accuracy_min": fixtures.Thresholds.Organization.KindAccuracy}},
 		{Name: "自主语义关系组织", Passed: relationPrecision >= fixtures.Thresholds.Organization.RelationPrecision && relationRecall >= fixtures.Thresholds.Organization.RelationRecall,
 			Metrics: map[string]float64{"precision": relationPrecision, "recall": relationRecall}, Threshold: map[string]float64{"precision_min": fixtures.Thresholds.Organization.RelationPrecision, "recall_min": fixtures.Thresholds.Organization.RelationRecall}},
 	}

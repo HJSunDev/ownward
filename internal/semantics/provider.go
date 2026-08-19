@@ -29,22 +29,26 @@ type Relation struct {
 	InferredBy     string  `json:"inferred_by,omitempty"`
 }
 
+type InferredContext struct {
+	Key        string  `json:"key"`
+	Value      string  `json:"value"`
+	Confidence float64 `json:"confidence"`
+	Evidence   string  `json:"evidence"`
+}
+
 type Analysis struct {
-	Kind      domain.InformationKind `json:"kind"`
-	Summary   string                 `json:"summary"`
-	Cues      []Cue                  `json:"cues"`
-	Topics    []string               `json:"topics"`
-	Contexts  []domain.Context       `json:"inferred_contexts,omitempty"`
-	Relations []Relation             `json:"relations,omitempty"`
+	Summary   string            `json:"summary"`
+	Cues      []Cue             `json:"cues"`
+	Topics    []string          `json:"topics"`
+	Contexts  []InferredContext `json:"inferred_contexts,omitempty"`
+	Relations []Relation        `json:"relations,omitempty"`
 }
 
 type Candidate struct {
-	ID         string                 `json:"id"`
-	Kind       domain.InformationKind `json:"kind"`
-	Content    string                 `json:"content"`
-	Contexts   []domain.Context       `json:"contexts,omitempty"`
-	Similarity float64                `json:"semantic_similarity,omitempty"`
-	Relations  []Relation             `json:"existing_relations,omitempty"`
+	ID         string           `json:"id"`
+	Content    string           `json:"content"`
+	Contexts   []domain.Context `json:"explicit_contexts,omitempty"`
+	Similarity float64          `json:"semantic_similarity,omitempty"`
 }
 
 type Provider interface {
@@ -76,11 +80,9 @@ func (Heuristic) Analyze(_ context.Context, value domain.Information, _ []Candid
 		relations = append(relations, Relation{Type: relation.Type, TargetID: relation.TargetID, Confidence: 1})
 	}
 	return Analysis{
-		Kind:      value.Kind,
 		Summary:   truncate(value.Content, 240),
 		Cues:      cues,
 		Topics:    append([]string(nil), tokens...),
-		Contexts:  append([]domain.Context(nil), value.Contexts...),
 		Relations: relations,
 	}, nil
 }
@@ -237,7 +239,7 @@ func normalizeStrings(values []string, limit, length int) []string {
 	return result
 }
 
-func normalizeInferredContexts(explicit, inferred []domain.Context, limit int) []domain.Context {
+func normalizeInferredContexts(explicit []domain.Context, inferred []InferredContext, limit int) []InferredContext {
 	explicitByKey := make(map[string]map[string]struct{}, len(explicit))
 	for _, value := range explicit {
 		key := strings.ToLower(strings.TrimSpace(value.Key))
@@ -246,12 +248,14 @@ func normalizeInferredContexts(explicit, inferred []domain.Context, limit int) [
 		}
 		explicitByKey[key][strings.ToLower(strings.TrimSpace(value.Value))] = struct{}{}
 	}
-	result := make([]domain.Context, 0, minInt(len(inferred), limit))
+	result := make([]InferredContext, 0, minInt(len(inferred), limit))
 	seen := make(map[string]struct{}, len(inferred))
 	for _, value := range inferred {
 		value.Key = truncate(strings.TrimSpace(value.Key), 128)
 		value.Value = truncate(strings.TrimSpace(value.Value), 256)
-		if value.Key == "" || value.Value == "" {
+		value.Evidence = truncate(strings.TrimSpace(value.Evidence), 240)
+		if value.Key == "" || value.Value == "" || value.Evidence == "" || value.Confidence < 0.75 || value.Confidence > 1 ||
+			math.IsNaN(value.Confidence) || math.IsInf(value.Confidence, 0) {
 			continue
 		}
 		key := strings.ToLower(value.Key)
@@ -276,23 +280,34 @@ func normalizeInferredContexts(explicit, inferred []domain.Context, limit int) [
 
 func normalizeRelations(values []Relation, limit int) []Relation {
 	result := make([]Relation, 0, minInt(len(values), limit))
-	seen := make(map[string]struct{}, len(values))
+	positions := make(map[string]int, len(values))
 	for _, value := range values {
 		value.Type = strings.TrimSpace(value.Type)
 		value.TargetID = strings.TrimSpace(value.TargetID)
 		value.Evidence = truncate(strings.TrimSpace(value.Evidence), 240)
-		key := value.Direction + "\x00" + value.Type + "\x00" + value.TargetID
-		if value.Type == "" || value.TargetID == "" {
+		key := value.Direction + "\x00" + value.TargetID
+		if value.Type == "" || value.TargetID == "" || value.Evidence == "" || value.Confidence < 0.75 || value.Confidence > 1 || math.IsNaN(value.Confidence) || math.IsInf(value.Confidence, 0) {
 			continue
 		}
-		if _, exists := seen[key]; exists {
+		if position, exists := positions[key]; exists {
+			if value.Confidence > result[position].Confidence {
+				result[position] = value
+			}
 			continue
 		}
-		seen[key] = struct{}{}
+		positions[key] = len(result)
 		result = append(result, value)
 		if len(result) == limit {
 			break
 		}
+	}
+	return result
+}
+
+func ContextValues(values []InferredContext) []domain.Context {
+	result := make([]domain.Context, 0, len(values))
+	for _, value := range values {
+		result = append(result, domain.Context{Key: value.Key, Value: value.Value})
 	}
 	return result
 }
