@@ -292,7 +292,7 @@ func measureRelease(ctx context.Context, binaryPath, dataDir string) (uint64, fl
 	var stderr bytes.Buffer
 	command.Stderr = &stderr
 	client := mcp.NewClient(&mcp.Implementation{Name: "ownward-performance", Version: "1"}, nil)
-	connectCtx, cancelConnect := context.WithTimeout(ctx, 10*time.Second)
+	connectCtx, cancelConnect := context.WithTimeout(ctx, 2*time.Minute)
 	session, err := client.Connect(connectCtx, &mcp.CommandTransport{Command: command}, nil)
 	cancelConnect()
 	if err != nil {
