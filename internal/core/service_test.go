@@ -181,6 +181,49 @@ func TestSearchKeepsDirectEvidenceAheadOfAccumulatedRelations(t *testing.T) {
 	}
 }
 
+func TestSearchPreservesRelationEvidenceBetweenDirectSeeds(t *testing.T) {
+	root := t.TempDir()
+	store, err := assetlog.Open(filepath.Join(root, "assets"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := derived.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewOrganized(store, state, fusionProvider{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer service.Close()
+	target, err := service.Create(context.Background(), CreateInput{Content: "needle target"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := service.Create(context.Background(), CreateInput{
+		Content: "needle source", Relations: []domain.ExplicitRelation{{Type: "supports", TargetID: target.Information.ID}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Create(context.Background(), CreateInput{Content: "needle distractor"}); err != nil {
+		t.Fatal(err)
+	}
+	results, err := service.Search(context.Background(), SearchInput{Query: "needle", Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := make(map[string]bool)
+	for _, result := range results {
+		if result.ID == source.Information.ID || result.ID == target.Information.ID {
+			seen[result.ID] = contains(result.Signals, "relation")
+		}
+	}
+	if !seen[source.Information.ID] || !seen[target.Information.ID] {
+		t.Fatalf("direct seeds lost their relation evidence: %#v", results)
+	}
+}
+
 func TestServicePreservesExplicitRelationsAndRefreshesStaleInferences(t *testing.T) {
 	root := t.TempDir()
 	store, err := assetlog.Open(filepath.Join(root, "assets"))

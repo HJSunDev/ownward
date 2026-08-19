@@ -118,6 +118,17 @@ func TestSemanticNormalizationUsesDirectionAndOperationalContext(t *testing.T) {
 	if normalized[0].Type != "supports" || normalized[0].Direction != "outgoing" {
 		t.Fatalf("a method addressing a personal risk should support it: %#v", normalized)
 	}
+	method[0] = Relation{Type: "derived_from", TargetID: "risk", Direction: "outgoing"}
+	normalized = normalizeRelationSemantics(
+		domain.KindMethod,
+		"开始任务前先写清楚完成边界。",
+		method,
+		map[string]domain.InformationKind{"risk": domain.KindThought},
+		map[string]string{"risk": "任务边界不清会引发焦虑。"},
+	)
+	if normalized[0].Type != "supports" {
+		t.Fatalf("a method derived from a personal risk should support it: %#v", normalized)
+	}
 	method[0] = Relation{Type: "derived_from", TargetID: "failure", Direction: "outgoing"}
 	normalized = normalizeRelationSemantics(
 		domain.KindMethod,
@@ -139,6 +150,7 @@ func TestCompleteHighConfidenceRelationsUsesCandidateGraphAndSimilarity(t *testi
 	}
 	result := completeHighConfidenceRelations(
 		domain.KindKnowledge,
+		"current",
 		"useFeature 用于同步外部系统。",
 		nil,
 		[]Relation{{Type: "related_to", TargetID: "neighbor", Direction: "outgoing", Confidence: 0.8}},
@@ -149,7 +161,49 @@ func TestCompleteHighConfidenceRelationsUsesCandidateGraphAndSimilarity(t *testi
 	}
 
 	result = completeHighConfidenceRelations(
+		domain.KindKnowledge,
+		"current",
+		"Fiber 是 React 协调器的工作单元结构。",
+		nil,
+		nil,
+		[]Candidate{{ID: "react", Kind: domain.KindKnowledge, Content: "React 协调渲染。", Similarity: 0.6}},
+	)
+	if len(result) != 1 || result[0].Type != "part_of" || result[0].TargetID != "react" {
+		t.Fatalf("a named constituent should connect to its existing system: %#v", result)
+	}
+
+	result = completeHighConfidenceRelations(
+		domain.KindKnowledge,
+		"current",
+		"并发渲染允许 React 中断低优先级工作。",
+		nil,
+		[]Relation{{Type: "part_of", TargetID: "react", Direction: "outgoing", Confidence: 0.8}},
+		[]Candidate{
+			{ID: "react", Kind: domain.KindKnowledge, Similarity: 0.54},
+			{ID: "fiber", Kind: domain.KindKnowledge, Similarity: 0.61, Relations: []Relation{{Type: "part_of", TargetID: "react"}}},
+		},
+	)
+	if len(result) != 1 || result[0].Type != "related_to" || result[0].TargetID != "fiber" {
+		t.Fatalf("a direct sibling mechanism should replace a generic root relation: %#v", result)
+	}
+	result = completeHighConfidenceRelations(
+		domain.KindKnowledge,
+		"current",
+		"并发渲染允许 React 中断低优先级工作。",
+		nil,
+		nil,
+		[]Candidate{
+			{ID: "fiber", Kind: domain.KindKnowledge, Similarity: 0.61, Relations: []Relation{{Type: "part_of", TargetID: "react"}}},
+			{ID: "react", Kind: domain.KindKnowledge, Content: "React 协调渲染。", Similarity: 0.54},
+		},
+	)
+	if len(result) != 1 || result[0].Type != "related_to" || result[0].TargetID != "fiber" {
+		t.Fatalf("an omitted sibling relation should be recovered from the existing graph: %#v", result)
+	}
+
+	result = completeHighConfidenceRelations(
 		domain.KindLesson,
+		"current",
 		"一次结果不能证明信息不存在。",
 		nil,
 		nil,
@@ -161,6 +215,7 @@ func TestCompleteHighConfidenceRelationsUsesCandidateGraphAndSimilarity(t *testi
 
 	result = completeHighConfidenceRelations(
 		domain.KindKnowledge,
+		"current",
 		"长期资产与派生状态相互独立。",
 		nil,
 		nil,
@@ -175,6 +230,7 @@ func TestCompleteHighConfidenceRelationsUsesCandidateGraphAndSimilarity(t *testi
 
 	result = completeHighConfidenceRelations(
 		domain.KindMethod,
+		"current",
 		"优先使用无原生依赖的存储实现。",
 		[]domain.Context{{Key: "runtime", Value: "go"}},
 		nil,
@@ -189,6 +245,42 @@ func TestCompleteHighConfidenceRelationsUsesCandidateGraphAndSimilarity(t *testi
 
 	result = completeHighConfidenceRelations(
 		domain.KindMethod,
+		"current",
+		"定向验证通过后，才执行完整验证。",
+		nil,
+		nil,
+		[]Candidate{{ID: "focused", Kind: domain.KindMethod, Similarity: 0.58}},
+	)
+	if len(result) != 1 || result[0].Type != "supports" || result[0].TargetID != "focused" {
+		t.Fatalf("a gated follow-up should connect to its preceding method: %#v", result)
+	}
+
+	result = completeHighConfidenceRelations(
+		domain.KindMethod,
+		"current",
+		"复杂检索先获取低成本线索，再按需读取完整内容。",
+		nil,
+		nil,
+		[]Candidate{{ID: "lesson", Kind: domain.KindLesson, Content: "复杂问题应根据检索证据改变线索并继续搜索。", Similarity: 0.66}},
+	)
+	if len(result) != 1 || result[0].Type != "supports" || result[0].TargetID != "lesson" {
+		t.Fatalf("a method should support its directly anchored lesson: %#v", result)
+	}
+	result = completeHighConfidenceRelations(
+		domain.KindMethod,
+		"current",
+		"开始长期任务前先写清楚结束条件。",
+		nil,
+		nil,
+		[]Candidate{{ID: "thought", Kind: domain.KindThought, Content: "任务没有清晰完成边界时容易焦虑。", Similarity: 0.57}},
+	)
+	if len(result) != 1 || result[0].Type != "supports" || result[0].TargetID != "thought" {
+		t.Fatalf("a method should support the directly anchored personal state it improves: %#v", result)
+	}
+
+	result = completeHighConfidenceRelations(
+		domain.KindMethod,
+		"current",
 		"Windows 使用任务计划程序管理登录后启动。",
 		[]domain.Context{{Key: "platform", Value: "windows"}},
 		nil,
@@ -203,6 +295,7 @@ func TestCompleteHighConfidenceRelationsUsesCandidateGraphAndSimilarity(t *testi
 
 	result = completeHighConfidenceRelations(
 		domain.KindMethod,
+		"current",
 		"按关联线索继续检索。",
 		nil,
 		[]Relation{
@@ -216,6 +309,96 @@ func TestCompleteHighConfidenceRelationsUsesCandidateGraphAndSimilarity(t *testi
 	)
 	if len(result) != 1 || result[0].TargetID != "lesson" {
 		t.Fatalf("a direct lesson relation should replace its diagnostic path indirection: %#v", result)
+	}
+
+	result = completeHighConfidenceRelations(
+		domain.KindLesson,
+		"current",
+		"一次结果不代表不存在。",
+		nil,
+		[]Relation{{Type: "related_to", TargetID: "method", Direction: "outgoing", Confidence: 0.8}},
+		[]Candidate{{ID: "method", Kind: domain.KindMethod, Relations: []Relation{{Type: "supports", TargetID: "current"}}}},
+	)
+	if len(result) != 0 {
+		t.Fatalf("a weaker reciprocal relation should not duplicate an existing directed relation: %#v", result)
+	}
+
+	result = completeHighConfidenceRelations(
+		domain.KindMethod,
+		"current",
+		"公开表达前先写核心判断会更从容。",
+		[]domain.Context{{Key: "person", Value: "林涛"}, {Key: "activity", Value: "public-speaking"}},
+		[]Relation{{Type: "supports", TargetID: "thought", Direction: "outgoing", Confidence: 0.8}},
+		[]Candidate{{ID: "thought", Kind: domain.KindThought, Content: "任务边界不清会让林涛焦虑。", Contexts: []domain.Context{{Key: "person", Value: "林涛"}}}},
+	)
+	if len(result) != 0 {
+		t.Fatalf("sharing only a person should not create a method-to-thought relation: %#v", result)
+	}
+	result = completeHighConfidenceRelations(
+		domain.KindMethod,
+		"current",
+		"开始长期任务前先写清楚完成边界。",
+		nil,
+		[]Relation{{Type: "supports", TargetID: "thought", Direction: "outgoing", Confidence: 0.8}},
+		[]Candidate{{ID: "thought", Kind: domain.KindThought, Content: "任务边界不清会引发焦虑。"}},
+	)
+	if len(result) != 1 {
+		t.Fatalf("a method with a direct lexical anchor should retain the thought relation: %#v", result)
+	}
+	result = completeHighConfidenceRelations(
+		domain.KindSkill,
+		"current",
+		"擅长删掉没有需求依据的抽象。",
+		[]domain.Context{{Key: "person", Value: "林涛"}},
+		[]Relation{{Type: "related_to", TargetID: "work", Direction: "outgoing", Confidence: 0.8}},
+		[]Candidate{{ID: "work", Kind: domain.KindWork, Content: "产品不提供图形界面。"}},
+	)
+	if len(result) != 0 {
+		t.Fatalf("a personal skill should not attach to unrelated project work by topic alone: %#v", result)
+	}
+	result = completeHighConfidenceRelations(
+		domain.KindMethod,
+		"current",
+		"提交按最大终态子集拆分。",
+		nil,
+		[]Relation{{Type: "supports", TargetID: "tests", Direction: "outgoing", Confidence: 0.8}},
+		[]Candidate{{ID: "tests", Kind: domain.KindMethod, Content: "开发时运行最小相关测试。"}},
+	)
+	if len(result) != 0 {
+		t.Fatalf("independent methods should not be connected as a sequence: %#v", result)
+	}
+	result = completeHighConfidenceRelations(
+		domain.KindMethod,
+		"current",
+		"按关联线索继续检索。",
+		nil,
+		[]Relation{{Type: "supports", TargetID: "path", Direction: "incoming", Confidence: 0.8}},
+		[]Candidate{{ID: "path", Kind: domain.KindPath, Content: "排查检索质量下降。"}},
+	)
+	if len(result) != 0 {
+		t.Fatalf("a diagnostic path should not be made to support a later method: %#v", result)
+	}
+}
+
+func TestPersonalAffectiveStateRemainsThoughtWithoutConvertingConditionalMethods(t *testing.T) {
+	contexts := []domain.Context{{Key: "person", Value: "林涛"}}
+	if got := normalizeKindByRelations(domain.KindLesson, "任务没有边界时，林涛容易焦虑。", contexts, nil, nil); got != domain.KindThought {
+		t.Fatalf("personal affective state should be thought, got %s", got)
+	}
+	if got := normalizeKindByRelations(domain.KindMethod, "公开表达前如果先写核心判断，林涛会更从容。", contexts, nil, nil); got != domain.KindMethod {
+		t.Fatalf("conditional preparation should remain method, got %s", got)
+	}
+	if got := normalizeKindByRelations(domain.KindThought, "公开表达前如果先写核心判断，林涛会更从容。", contexts, nil, nil); got != domain.KindMethod {
+		t.Fatalf("conditional preparation should normalize to method, got %s", got)
+	}
+	if got := normalizeKindByRelations(domain.KindKnowledge, "构建失败的根因是缺少匹配的编译环境。", nil, nil, nil); got != domain.KindLesson {
+		t.Fatalf("a diagnosed failure cause should normalize to lesson, got %s", got)
+	}
+	if got := normalizeKindByRelations(domain.KindLesson, "useEffect 用于外部系统同步，不应当作数据推导工具。", nil, nil, nil); got != domain.KindKnowledge {
+		t.Fatalf("API usage semantics should normalize to knowledge, got %s", got)
+	}
+	if got := normalizeKindByRelations(domain.KindKnowledge, "Ownward 只服务外部智能体，不提供图形界面。", nil, nil, nil); got != domain.KindWork {
+		t.Fatalf("a product responsibility boundary should normalize to work, got %s", got)
 	}
 }
 

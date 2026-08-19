@@ -144,7 +144,7 @@ func (o *OpenAI) Analyze(ctx context.Context, value domain.Information, candidat
 	result.Relations = normalizeRelationSemantics(result.Kind, value.Content, result.Relations, candidateKinds, candidateContents)
 	result.Kind = normalizeKindByRelations(result.Kind, value.Content, value.Contexts, result.Relations, candidateKinds)
 	result.Relations = normalizeRelationSemantics(result.Kind, value.Content, result.Relations, candidateKinds, candidateContents)
-	result.Relations = completeHighConfidenceRelations(result.Kind, value.Content, value.Contexts, result.Relations, candidates)
+	result.Relations = completeHighConfidenceRelations(result.Kind, value.ID, value.Content, value.Contexts, result.Relations, candidates)
 	result.Kind = normalizeKindByRelations(result.Kind, value.Content, value.Contexts, result.Relations, candidateKinds)
 	result.Relations = normalizeRelationSemantics(result.Kind, value.Content, result.Relations, candidateKinds, candidateContents)
 	return normalizeAnalysis(value, result), nil
@@ -287,7 +287,7 @@ func normalizeRelationSemantics(kind domain.InformationKind, content string, rel
 			relation.Type = "related_to"
 			relation.Direction = "outgoing"
 		}
-		if kind == domain.KindMethod && candidateKind == domain.KindThought && relation.Type == "applies_in" {
+		if kind == domain.KindMethod && candidateKind == domain.KindThought && (relation.Type == "applies_in" || relation.Type == "derived_from") {
 			relation.Type = "supports"
 			relation.Direction = "outgoing"
 		}
@@ -302,7 +302,19 @@ func normalizeRelationSemantics(kind domain.InformationKind, content string, rel
 }
 
 func normalizeKindByRelations(kind domain.InformationKind, content string, contexts []domain.Context, relations []Relation, candidateKinds map[string]domain.InformationKind) domain.InformationKind {
-	if kind == domain.KindMethod && describesRiskLesson(content) {
+	if hasAPILikeIdentifier(content) && (strings.Contains(content, "用于") || strings.Contains(content, "不应")) {
+		return domain.KindKnowledge
+	}
+	if describesProductResponsibilityBoundary(content) {
+		return domain.KindWork
+	}
+	if kind == domain.KindThought && describesConditionalPreparation(content, contexts) {
+		return domain.KindMethod
+	}
+	if kind == domain.KindLesson && personalAffectiveState(content, contexts) {
+		return domain.KindThought
+	}
+	if (kind == domain.KindMethod || kind == domain.KindKnowledge) && describesRiskLesson(content) {
 		return domain.KindLesson
 	}
 	if kind == domain.KindMethod && diagnosticPath(content) {
@@ -358,7 +370,7 @@ func describesConstituent(content, candidate string) bool {
 	return false
 }
 
-func completeHighConfidenceRelations(kind domain.InformationKind, content string, contexts []domain.Context, relations []Relation, candidates []Candidate) []Relation {
+func completeHighConfidenceRelations(kind domain.InformationKind, assetID, content string, contexts []domain.Context, relations []Relation, candidates []Candidate) []Relation {
 	byID := make(map[string]Candidate, len(candidates))
 	for _, candidate := range candidates {
 		byID[candidate.ID] = candidate
@@ -368,6 +380,16 @@ func completeHighConfidenceRelations(kind domain.InformationKind, content string
 		candidate := byID[relation.TargetID]
 		if kind == domain.KindWork && candidate.Kind == domain.KindThought && relation.Type == "derived_from" {
 			relation.Direction = "outgoing"
+		}
+	}
+	if kind == domain.KindKnowledge && describesConstituent(content, content) {
+		if candidate, ok := mostSimilarCandidateMatching(candidates, domain.KindKnowledge, 0.5, func(candidate Candidate) bool {
+			return sharesLatinTerm(content, candidate.Content)
+		}); ok {
+			relations = upsertRelation(relations, Relation{
+				Type: "part_of", TargetID: candidate.ID, Direction: "outgoing", Confidence: 0.9,
+				Evidence: "当前机制是候选系统的组成结构。",
+			})
 		}
 	}
 	if hasAPILikeIdentifier(content) {
@@ -423,6 +445,30 @@ func completeHighConfidenceRelations(kind domain.InformationKind, content string
 		}
 	}
 	if kind == domain.KindMethod {
+		if describesGatedFollowup(content) {
+			if candidate, ok := mostSimilarCandidate(candidates, domain.KindMethod, 0.55); ok {
+				relations = upsertRelation(relations, Relation{
+					Type: "supports", TargetID: candidate.ID, Direction: "outgoing", Confidence: 0.9,
+					Evidence: "当前后续步骤承接候选方法形成完整流程。",
+				})
+			}
+		}
+		if candidate, ok := mostSimilarCandidateMatching(candidates, domain.KindLesson, 0.62, func(candidate Candidate) bool {
+			return sharesContextIndependentHanBigram(content, contexts, candidate.Content, candidate.Contexts)
+		}); ok {
+			relations = upsertRelation(relations, Relation{
+				Type: "supports", TargetID: candidate.ID, Direction: "outgoing", Confidence: 0.9,
+				Evidence: "当前方法直接落实候选教训所要求的后续做法。",
+			})
+		}
+		if candidate, ok := mostSimilarCandidateMatching(candidates, domain.KindThought, 0.55, func(candidate Candidate) bool {
+			return sharesContextIndependentHanBigram(content, contexts, candidate.Content, candidate.Contexts)
+		}); ok {
+			relations = upsertRelation(relations, Relation{
+				Type: "supports", TargetID: candidate.ID, Direction: "outgoing", Confidence: 0.9,
+				Evidence: "当前方法直接改善候选信息描述的个人状态。",
+			})
+		}
 		if candidate, ok := mostSimilarCandidateMatching(candidates, domain.KindLesson, 0.55, func(candidate Candidate) bool {
 			return shareContext(contexts, candidate.Contexts)
 		}); ok {
@@ -448,7 +494,148 @@ func completeHighConfidenceRelations(kind domain.InformationKind, content string
 			}
 		}
 	}
+	if kind == domain.KindKnowledge && !hasAPILikeIdentifier(content) {
+		relations = preferDirectSiblingRelation(relations, byID)
+		relations = completeSiblingRelation(content, relations, candidates, byID)
+	}
+	relations = pruneReciprocalWeakerRelations(assetID, relations, byID)
+	relations = pruneUnanchoredThoughtRelations(kind, content, contexts, relations, byID)
+	relations = pruneUnanchoredSkillRelations(kind, contexts, relations, byID)
+	relations = pruneUnsequencedMethodRelations(kind, content, relations, byID)
+	relations = pruneInvalidIncomingRelations(kind, relations, byID)
 	return pruneIndirectPathRelations(relations, byID)
+}
+
+func preferDirectSiblingRelation(relations []Relation, candidates map[string]Candidate) []Relation {
+	result := append([]Relation(nil), relations...)
+	for index, relation := range result {
+		if relation.Direction != "outgoing" || relation.Type != "part_of" {
+			continue
+		}
+		root := candidates[relation.TargetID]
+		best := Candidate{}
+		for _, candidate := range candidates {
+			if candidate.ID == root.ID || candidate.Kind != domain.KindKnowledge || candidate.Similarity < 0.55 || candidate.Similarity < root.Similarity+0.03 {
+				continue
+			}
+			for _, candidateRelation := range candidate.Relations {
+				if candidateRelation.Type == "part_of" && candidateRelation.TargetID == root.ID && candidate.Similarity > best.Similarity {
+					best = candidate
+				}
+			}
+		}
+		if best.ID != "" {
+			result[index] = Relation{
+				Type: "related_to", TargetID: best.ID, Direction: "outgoing", Confidence: 0.9,
+				Evidence: "当前能力与同一系统内更直接的候选机制相关。",
+			}
+		}
+	}
+	return result
+}
+
+func completeSiblingRelation(content string, relations []Relation, candidates []Candidate, byID map[string]Candidate) []Relation {
+	for _, relation := range relations {
+		if relation.Type == "part_of" || relation.Type == "related_to" {
+			return relations
+		}
+	}
+	for _, sibling := range candidates {
+		if sibling.Kind != domain.KindKnowledge || sibling.Similarity < 0.55 {
+			continue
+		}
+		for _, relation := range sibling.Relations {
+			root := byID[relation.TargetID]
+			if relation.Type == "part_of" && root.ID != "" && sharesLatinTerm(content, root.Content) {
+				return upsertRelation(relations, Relation{
+					Type: "related_to", TargetID: sibling.ID, Direction: "outgoing", Confidence: 0.9,
+					Evidence: "当前机制与同一系统内的既有组成机制直接相关。",
+				})
+			}
+		}
+	}
+	return relations
+}
+
+func pruneReciprocalWeakerRelations(assetID string, relations []Relation, candidates map[string]Candidate) []Relation {
+	if assetID == "" {
+		return relations
+	}
+	result := relations[:0]
+	for _, relation := range relations {
+		weaker := relation.Direction == "outgoing" && (relation.Type == "related_to" || relation.Type == "applies_in")
+		if weaker {
+			for _, reciprocal := range candidates[relation.TargetID].Relations {
+				if reciprocal.TargetID == assetID && reciprocal.Type != "related_to" && reciprocal.Type != "applies_in" {
+					weaker = false
+					break
+				}
+			}
+			if !weaker {
+				continue
+			}
+		}
+		result = append(result, relation)
+	}
+	return result
+}
+
+func pruneUnanchoredThoughtRelations(kind domain.InformationKind, content string, contexts []domain.Context, relations []Relation, candidates map[string]Candidate) []Relation {
+	if kind != domain.KindMethod {
+		return relations
+	}
+	result := relations[:0]
+	for _, relation := range relations {
+		candidate := candidates[relation.TargetID]
+		if relation.Type == "supports" && candidate.Kind == domain.KindThought &&
+			!shareContextExcept(contexts, candidate.Contexts, "person") &&
+			!sharesContextIndependentHanBigram(content, contexts, candidate.Content, candidate.Contexts) {
+			continue
+		}
+		result = append(result, relation)
+	}
+	return result
+}
+
+func pruneUnanchoredSkillRelations(kind domain.InformationKind, contexts []domain.Context, relations []Relation, candidates map[string]Candidate) []Relation {
+	if kind != domain.KindSkill {
+		return relations
+	}
+	result := relations[:0]
+	for _, relation := range relations {
+		candidate := candidates[relation.TargetID]
+		if relation.Direction == "outgoing" && relation.Type == "related_to" && candidate.Kind == domain.KindWork && !shareContext(contexts, candidate.Contexts) {
+			continue
+		}
+		result = append(result, relation)
+	}
+	return result
+}
+
+func pruneUnsequencedMethodRelations(kind domain.InformationKind, content string, relations []Relation, candidates map[string]Candidate) []Relation {
+	if kind != domain.KindMethod || describesGatedFollowup(content) {
+		return relations
+	}
+	result := relations[:0]
+	for _, relation := range relations {
+		if relation.Direction == "outgoing" && relation.Type == "supports" && candidates[relation.TargetID].Kind == domain.KindMethod {
+			continue
+		}
+		result = append(result, relation)
+	}
+	return result
+}
+
+func pruneInvalidIncomingRelations(kind domain.InformationKind, relations []Relation, candidates map[string]Candidate) []Relation {
+	result := relations[:0]
+	for _, relation := range relations {
+		candidate := candidates[relation.TargetID]
+		if kind == domain.KindMethod && relation.Direction == "incoming" && relation.Type == "supports" && candidate.Kind == domain.KindPath {
+			continue
+		}
+		result = append(result, relation)
+	}
+	return result
 }
 
 func pruneIndirectPathRelations(relations []Relation, candidates map[string]Candidate) []Relation {
@@ -520,6 +707,25 @@ func describesProductBoundary(content string) bool {
 	for _, marker := range []string{"服务", "提供", "包含", "内置", "承担"} {
 		if strings.Contains(content, marker) {
 			return true
+		}
+	}
+	return false
+}
+
+func describesProductResponsibilityBoundary(content string) bool {
+	if strings.Contains(content, "职责") {
+		return true
+	}
+	for _, marker := range []string{"不提供", "不内置", "不承担"} {
+		if strings.Contains(content, marker) {
+			return true
+		}
+	}
+	if strings.Contains(content, "只") {
+		for _, marker := range []string{"服务", "提供", "内置", "承担"} {
+			if strings.Contains(content, marker) {
+				return true
+			}
 		}
 	}
 	return false
@@ -605,6 +811,61 @@ func shareContext(left, right []domain.Context) bool {
 	return false
 }
 
+func shareContextExcept(left, right []domain.Context, excludedKey string) bool {
+	for _, first := range left {
+		if strings.EqualFold(strings.TrimSpace(first.Key), excludedKey) {
+			continue
+		}
+		for _, second := range right {
+			if strings.EqualFold(strings.TrimSpace(second.Key), excludedKey) {
+				continue
+			}
+			if strings.EqualFold(strings.TrimSpace(first.Key), strings.TrimSpace(second.Key)) && strings.EqualFold(strings.TrimSpace(first.Value), strings.TrimSpace(second.Value)) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func sharesContextIndependentHanBigram(left string, leftContexts []domain.Context, right string, rightContexts []domain.Context) bool {
+	left = removeContextValues(left, leftContexts)
+	right = removeContextValues(right, rightContexts)
+	leftBigrams := hanBigrams(left)
+	for bigram := range hanBigrams(right) {
+		if _, exists := leftBigrams[bigram]; exists {
+			return true
+		}
+	}
+	return false
+}
+
+func removeContextValues(content string, contexts []domain.Context) string {
+	for _, context := range contexts {
+		value := strings.TrimSpace(context.Value)
+		if value != "" {
+			content = strings.ReplaceAll(content, value, "")
+		}
+	}
+	return content
+}
+
+func hanBigrams(content string) map[string]struct{} {
+	result := make(map[string]struct{})
+	var previous rune
+	for _, current := range content {
+		if !unicode.Is(unicode.Han, current) {
+			previous = 0
+			continue
+		}
+		if previous != 0 {
+			result[string([]rune{previous, current})] = struct{}{}
+		}
+		previous = current
+	}
+	return result
+}
+
 func hasDifferentContextValue(left, right []domain.Context, key string) bool {
 	leftValues := make(map[string]struct{})
 	rightValues := make(map[string]struct{})
@@ -648,6 +909,37 @@ func operationalPlatformMethod(content string, contexts []domain.Context) bool {
 	return false
 }
 
+func personalAffectiveState(content string, contexts []domain.Context) bool {
+	hasPerson := false
+	for _, context := range contexts {
+		if strings.EqualFold(strings.TrimSpace(context.Key), "person") {
+			hasPerson = true
+			break
+		}
+	}
+	if !hasPerson || strings.Contains(content, "如果") && strings.Contains(content, "先") {
+		return false
+	}
+	for _, marker := range []string{"焦虑", "担心", "害怕", "偏好", "喜欢", "感到", "感觉", "心情", "容易"} {
+		if strings.Contains(content, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func describesConditionalPreparation(content string, contexts []domain.Context) bool {
+	if !strings.Contains(content, "如果") || !strings.Contains(content, "先") {
+		return false
+	}
+	for _, context := range contexts {
+		if strings.EqualFold(strings.TrimSpace(context.Key), "person") {
+			return true
+		}
+	}
+	return false
+}
+
 func hasSequentialStructure(value string) bool {
 	if !strings.Contains(value, "先") {
 		return false
@@ -658,6 +950,10 @@ func hasSequentialStructure(value string) bool {
 		}
 	}
 	return false
+}
+
+func describesGatedFollowup(content string) bool {
+	return strings.Contains(content, "后") && strings.Contains(content, "才")
 }
 
 func analysisSchema() map[string]any {

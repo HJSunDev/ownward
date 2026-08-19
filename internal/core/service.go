@@ -288,26 +288,34 @@ func (s *Service) Search(ctx context.Context, input SearchInput) ([]SearchResult
 		item.score += weight / float64(60+rank)
 		item.signals[signal] = struct{}{}
 	}
-	seeds := make([]string, 0, 8)
-	seedSet := make(map[string]struct{}, 8)
-	appendSeed := func(id string) {
-		if _, exists := seedSet[id]; exists {
-			return
-		}
-		seedSet[id] = struct{}{}
-		seeds = append(seeds, id)
-	}
 	for rank, hit := range lexical {
 		add(hit.Information.ID, "lexical", rank+1, 1)
-		if rank < 4 {
-			appendSeed(hit.Information.ID)
-		}
 	}
 	for rank, hit := range semanticHits {
 		add(hit.AssetID, "semantic", rank+1, 1)
-		if rank < 4 {
-			appendSeed(hit.AssetID)
+	}
+	type rankedSeed struct {
+		id    string
+		score float64
+	}
+	rankedSeeds := make([]rankedSeed, 0, len(fusedByID))
+	for id, item := range fusedByID {
+		rankedSeeds = append(rankedSeeds, rankedSeed{id: id, score: item.score})
+	}
+	sort.Slice(rankedSeeds, func(left, right int) bool {
+		if rankedSeeds[left].score == rankedSeeds[right].score {
+			return rankedSeeds[left].id < rankedSeeds[right].id
 		}
+		return rankedSeeds[left].score > rankedSeeds[right].score
+	})
+	if len(rankedSeeds) > 4 {
+		rankedSeeds = rankedSeeds[:4]
+	}
+	seeds := make([]string, 0, len(rankedSeeds))
+	seedSet := make(map[string]struct{}, len(rankedSeeds))
+	for _, seed := range rankedSeeds {
+		seeds = append(seeds, seed.id)
+		seedSet[seed.id] = struct{}{}
 	}
 	var related []derived.Edge
 	if !input.DisableRelationExpansion {
@@ -322,6 +330,10 @@ func (s *Service) Search(ctx context.Context, input SearchInput) ([]SearchResult
 			target = edge.TargetID
 		case targetIsSeed && !sourceIsSeed:
 			target = edge.SourceID
+		case sourceIsSeed && targetIsSeed:
+			add(edge.SourceID, "relation", rank+1, 0.2*edge.Confidence)
+			add(edge.TargetID, "relation", rank+1, 0.2*edge.Confidence)
+			continue
 		default:
 			continue
 		}
