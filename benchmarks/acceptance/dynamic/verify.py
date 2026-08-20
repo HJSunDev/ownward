@@ -143,11 +143,25 @@ def parse_agent_trace(text: str) -> AgentTrace:
             error = str(item.get("error") or "")
         if isinstance(result, dict) and "structured_content" in result:
             result = result["structured_content"]
+        if name == "ownward_semantic_submit_batch" and isinstance(result, dict):
+            per_item = result.get("results")
+            if isinstance(per_item, list) and any(isinstance(value, dict) and value.get("error") for value in per_item):
+                error = error or "Ownward semantic batch contains rejected items"
         if item.get("status") != "completed":
             error = error or f"tool status {item.get('status')!r}"
         calls.append(AgentToolCall(name, _arguments(item.get("arguments", {})), _json_fragment(result), error))
     require(bool(session_id), "Codex event stream has no session identity")
     return AgentTrace(session_id, tuple(calls), bool(bypass_operations), tuple(bypass_operations))
+
+
+def _validate_semantic_collaboration(trace: AgentTrace) -> None:
+    require(not trace.bypassed, f"semantic capability used bypass tools: {trace.bypass_operations}")
+    require(trace.calls and all(call.name in {"ownward_semantic_work", "ownward_semantic_submit_batch"} for call in trace.calls), "semantic capability used a non-semantic Ownward tool")
+    work = [call for call in trace.calls if call.name == "ownward_semantic_work"]
+    submissions = [call for call in trace.calls if call.name == "ownward_semantic_submit_batch"]
+    require(len(work) == 1 and not work[0].error, "semantic capability changed its assigned work partition")
+    require(1 <= len(submissions) <= 3, "semantic capability exceeded the bounded submission attempts")
+    require(not submissions[-1].error and all(call.error for call in submissions[:-1]), "semantic capability did not finish with a valid submission batch")
 
 
 def _validate_generation_trace(path: Path) -> None:
@@ -646,7 +660,7 @@ def _semantic_prompt(asset_ids: list[str], capability: dict[str, Any]) -> str:
 Call `ownward_semantic_work` once with exactly these asset IDs:
 {json.dumps(asset_ids, ensure_ascii=False)}
 
-Analyze only the returned assets and candidate contexts. Do not infer anything from a user task, query, test expectation, hidden truth, or outside knowledge. For every returned work item, submit exactly one result through `ownward_semantic_submit_batch` using schema `ownward.semantic-submission/v1`, capability id `codex`, capability version `{capability['model']}`, and execution `dynamic-unseen-organization`. A complete analysis may contain a concise summary, retrieval cues, topics, inferred contexts, and relations supported by explicit evidence in the work. Relations may use only same_as, broader_than, narrower_than, part_of, has_part, supports, contradicts, derived_from, applies_in, or related_to, and must target a supplied candidate with confidence at least 0.75. Use incoming direction when the candidate is the semantic source; otherwise use outgoing. Do not create a relation merely because two items share vocabulary. If the work does not support a reliable judgment, submit uncertain with a concise reason instead of guessing.
+Analyze only the returned assets and candidate contexts. Do not infer anything from a user task, query, test expectation, hidden truth, or outside knowledge. For every returned work item, submit exactly one result through `ownward_semantic_submit_batch` using schema `ownward.semantic-submission/v1`, capability id `codex`, capability version `{capability['model']}`, and execution `dynamic-unseen-organization`. Inspect every returned per-item result. If any item is rejected, correct and retry only the rejected work items, with no more than two correction attempts. A complete analysis may contain a concise summary, retrieval cues, topics, inferred contexts, and relations supported by explicit evidence in the work. Relations may use only same_as, broader_than, narrower_than, part_of, has_part, supports, contradicts, derived_from, applies_in, or related_to, and must target a candidate supplied for that same work item with confidence at least 0.75. Use incoming direction when the candidate is the semantic source; otherwise use outgoing. Do not create a relation merely because two items share vocabulary. If the work does not support a reliable judgment, submit uncertain with a concise reason instead of guessing.
 
 Check every per-item submission result. Return only the number processed and the number submitted as uncertain."""
 
@@ -708,11 +722,7 @@ def _run_semantic_partition(
     )
     elapsed = time.perf_counter() - begin
     trace = parse_agent_trace(events_path.read_text(encoding="utf-8"))
-    require(not trace.bypassed, f"semantic capability used bypass tools: {trace.bypass_operations}")
-    require(trace.calls and all(call.name in {"ownward_semantic_work", "ownward_semantic_submit_batch"} for call in trace.calls), "semantic capability used a non-semantic Ownward tool")
-    require(all(not call.error for call in trace.calls), "semantic capability encountered a tool error")
-    require(sum(call.name == "ownward_semantic_work" for call in trace.calls) == 1, "semantic capability changed its assigned work partition")
-    require(sum(call.name == "ownward_semantic_submit_batch" for call in trace.calls) == 1, "semantic capability did not submit one complete batch")
+    _validate_semantic_collaboration(trace)
     require(int(result.get("processed", -1)) == len(asset_ids), "semantic capability did not process every assigned asset")
     write_json(
         run_path,

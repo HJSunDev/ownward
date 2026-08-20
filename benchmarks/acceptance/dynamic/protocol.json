@@ -40,15 +40,15 @@
   },
   "models": {
     "generator": {
-      "model": "gpt-5.4-2026-03-05",
+      "model": "gpt-5.4",
       "reasoning_effort": "medium"
     },
     "validator": {
-      "model": "gpt-5.4-mini-2026-03-17",
+      "model": "gpt-5.4-mini",
       "reasoning_effort": "xhigh"
     },
     "external_agent": {
-      "model": "gpt-5.4-2026-03-05",
+      "model": "gpt-5.4",
       "reasoning_effort": "low"
     }
   },

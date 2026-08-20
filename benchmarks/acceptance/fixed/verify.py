@@ -118,7 +118,8 @@ def semantic_prompt(asset_ids: list[str], model: str) -> str:
     return (
         "Act only as Ownward's external semantic capability. Use only the connected Ownward semantic tools. "
         "Call ownward_semantic_work once with exactly the asset IDs below, analyze only the returned assets and candidate contexts, "
-        "then call ownward_semantic_submit_batch once with one submission per work item. "
+        "then call ownward_semantic_submit_batch with one submission per work item. Inspect every returned per-item result; "
+        "if any item is rejected, correct and retry only the rejected work items, with no more than two correction attempts. "
         f"Use schema ownward.semantic-submission/v1, capability id codex, capability version {model}, and execution fixed-regression. "
         "Preserve source meaning and cite evidence present in the work. Do not use benchmark queries, expected answers, relation gold, "
         "outside knowledge, or temporary task intent. Relations may use only "
@@ -142,8 +143,25 @@ def semantic_trace_calls(text: str) -> list[tuple[str, bool]]:
         if item.get("type") != "mcp_tool_call":
             continue
         require(item.get("server") == "ownward", "semantic agent called a non-Ownward MCP server")
-        calls.append((str(item.get("tool", "")), item.get("status") == "completed" and item.get("error") is None))
+        success = item.get("status") == "completed" and item.get("error") is None
+        result = item.get("result")
+        if isinstance(result, dict) and result.get("isError") is True:
+            success = False
+        structured = result.get("structured_content") if isinstance(result, dict) else None
+        per_item = structured.get("results") if isinstance(structured, dict) else None
+        if isinstance(per_item, list) and any(isinstance(value, dict) and value.get("error") for value in per_item):
+            success = False
+        calls.append((str(item.get("tool", "")), success))
     return calls
+
+
+def validate_semantic_trace(calls: list[tuple[str, bool]]) -> None:
+    require(all(name in {"ownward_semantic_work", "ownward_semantic_submit_batch"} for name, _ in calls), "semantic agent used a non-semantic Ownward tool")
+    work = [success for name, success in calls if name == "ownward_semantic_work"]
+    submissions = [success for name, success in calls if name == "ownward_semantic_submit_batch"]
+    require(work == [True], "semantic agent changed its assigned work partition")
+    require(1 <= len(submissions) <= 3, "semantic agent exceeded the bounded submission attempts")
+    require(submissions[-1] and not any(submissions[:-1]), "semantic agent did not finish with a valid submission batch")
 
 
 def run_semantic_agent(
@@ -177,7 +195,7 @@ def run_semantic_agent(
     stderr.write_text(completed.stderr, encoding="utf-8")
     require(completed.returncode == 0, f"Codex semantic organization failed: {completed.stderr[-2000:]}")
     calls = semantic_trace_calls(completed.stdout)
-    require(calls == [("ownward_semantic_work", True), ("ownward_semantic_submit_batch", True)], "semantic agent changed the bounded collaboration path")
+    validate_semantic_trace(calls)
     return {f"semantic_{evidence_name}_output": output, f"semantic_{evidence_name}_events": events, f"semantic_{evidence_name}_stderr": stderr}
 
 
@@ -218,8 +236,8 @@ def create_and_organize(args: argparse.Namespace, fixtures: dict[str, Any]) -> t
     environment = product_environment(disable_relations=False)
     with OwnwardRuntime(args.binary, data_dir, args.runtime_dir, environment, operation_seconds=45) as runtime:
         require(runtime.client is not None, "Ownward runtime did not start")
-        for batch_index, offset in enumerate(range(0, len(information), 20)):
-            batch = information[offset : offset + 20]
+        for batch_index, offset in enumerate(range(0, len(information), 5)):
+            batch = information[offset : offset + 5]
             begin = time.perf_counter()
             response = runtime.client.call_tool(
                 "ownward_create_batch",
@@ -366,7 +384,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--runtime-dir", type=Path, required=True)
     parser.add_argument("--codex-binary", type=Path, required=True)
     parser.add_argument("--codex-auth-file", type=Path, required=True)
-    parser.add_argument("--codex-model", default="gpt-5.4-2026-03-05")
+    parser.add_argument("--codex-model", default="gpt-5.4")
     parser.add_argument("--codex-reasoning-effort", default="low")
     parser.add_argument("--codex-timeout-seconds", type=float, default=300)
     parser.add_argument("--evidence-dir", type=Path, required=True)

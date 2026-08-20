@@ -38,6 +38,31 @@ class FixedVerifierTests(unittest.TestCase):
             verify.semantic_trace_calls(text),
             [("ownward_semantic_work", True), ("ownward_semantic_submit_batch", True)],
         )
+        verify.validate_semantic_trace(verify.semantic_trace_calls(text))
+
+    def test_semantic_trace_allows_only_bounded_failed_submissions_before_success(self) -> None:
+        calls = [
+            ("ownward_semantic_work", True),
+            ("ownward_semantic_submit_batch", False),
+            ("ownward_semantic_submit_batch", True),
+        ]
+        verify.validate_semantic_trace(calls)
+        with self.assertRaisesRegex(RuntimeError, "bounded submission attempts"):
+            verify.validate_semantic_trace([calls[0], calls[1], calls[1], calls[1], calls[2]])
+        with self.assertRaisesRegex(RuntimeError, "valid submission batch"):
+            verify.validate_semantic_trace([calls[0], calls[2], calls[1]])
+
+    def test_semantic_trace_treats_per_item_batch_error_as_failed_attempt(self) -> None:
+        text = "\n".join(
+            [
+                '{"type":"item.completed","item":{"type":"mcp_tool_call","server":"ownward","tool":"ownward_semantic_work","status":"completed","error":null}}',
+                '{"type":"item.completed","item":{"type":"mcp_tool_call","server":"ownward","tool":"ownward_semantic_submit_batch","status":"completed","error":null,"result":{"structured_content":{"results":[{"error":"rejected"}]}}}}',
+                '{"type":"item.completed","item":{"type":"mcp_tool_call","server":"ownward","tool":"ownward_semantic_submit_batch","status":"completed","error":null,"result":{"structured_content":{"results":[{"error":""}]}}}}',
+            ]
+        )
+        calls = verify.semantic_trace_calls(text)
+        self.assertEqual(calls, [("ownward_semantic_work", True), ("ownward_semantic_submit_batch", False), ("ownward_semantic_submit_batch", True)])
+        verify.validate_semantic_trace(calls)
 
 
 if __name__ == "__main__":

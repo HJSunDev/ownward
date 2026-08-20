@@ -46,6 +46,45 @@ class DynamicVerifierTests(unittest.TestCase):
         self.assertIn("grounded fact", evidence["one"])
         self.assertNotIn("two", evidence)
 
+    def test_semantic_collaboration_allows_only_bounded_correction(self) -> None:
+        trace = verify.AgentTrace(
+            "thread-1",
+            (
+                verify.AgentToolCall("ownward_semantic_work", {}, {}, ""),
+                verify.AgentToolCall("ownward_semantic_submit_batch", {}, {}, "invalid schema"),
+                verify.AgentToolCall("ownward_semantic_submit_batch", {}, {}, ""),
+            ),
+            False,
+            (),
+        )
+        verify._validate_semantic_collaboration(trace)
+        with self.assertRaisesRegex(RuntimeError, "bounded submission attempts"):
+            verify._validate_semantic_collaboration(
+                verify.AgentTrace(trace.session_id, trace.calls[:1] + trace.calls[1:2] * 3 + trace.calls[-1:], False, ())
+            )
+        with self.assertRaisesRegex(RuntimeError, "valid submission batch"):
+            verify._validate_semantic_collaboration(
+                verify.AgentTrace(trace.session_id, (trace.calls[0], trace.calls[2], trace.calls[1]), False, ())
+            )
+
+    def test_agent_trace_marks_rejected_semantic_batch_items_as_an_error(self) -> None:
+        events = [
+            {"type": "thread.started", "thread_id": "thread-1"},
+            {
+                "type": "item.completed",
+                "item": {
+                    "type": "mcp_tool_call",
+                    "server": "ownward",
+                    "tool": "ownward_semantic_submit_batch",
+                    "status": "completed",
+                    "error": None,
+                    "result": {"structured_content": {"results": [{"error": "rejected"}]}},
+                },
+            },
+        ]
+        trace = verify.parse_agent_trace("\n".join(json.dumps(value) for value in events))
+        self.assertEqual(trace.calls[0].error, "Ownward semantic batch contains rejected items")
+
     def test_dataset_generation_trace_rejects_tool_use(self) -> None:
         with tempfile.TemporaryDirectory() as root_value:
             path = Path(root_value) / "events.jsonl"
