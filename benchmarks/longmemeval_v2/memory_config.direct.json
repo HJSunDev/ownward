@@ -3,11 +3,14 @@
   "memory_params": {
     "ownward_binary": "ownward",
     "query_mode": "direct",
-    "require_model": true,
     "max_chunk_chars": 8000,
     "search_limit": 16,
     "graph_depth": 2,
     "max_context_chars": 100000,
-    "command_timeout_seconds": 300
+    "command_timeout_seconds": 300,
+    "codex_binary": "codex",
+    "codex_model": "gpt-5.4-mini",
+    "codex_reasoning_effort": "xhigh",
+    "codex_timeout_seconds": 900
   }
 }

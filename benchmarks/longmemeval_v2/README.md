@@ -18,6 +18,7 @@ python benchmarks/longmemeval_v2/run.py `
   --ownward-binary bin/ownward.exe `
   --codex-binary <native-codex-0.117.0-executable> `
   --codex-auth-file <auth.json> `
+  --runtime-dir <accepted-product-runtime-directory> `
   --candidate <commit-sha> `
   --domain web `
   --questions-path <questions.json> `

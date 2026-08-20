@@ -28,8 +28,9 @@ def _parse_wrapper_args() -> tuple[argparse.Namespace, list[str]]:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--official-repo", required=True)
     parser.add_argument("--ownward-binary", required=True)
-    parser.add_argument("--codex-binary")
-    parser.add_argument("--codex-auth-file")
+    parser.add_argument("--codex-binary", required=True)
+    parser.add_argument("--codex-auth-file", required=True)
+    parser.add_argument("--runtime-dir", required=True)
     parser.add_argument("--candidate", required=True)
     return parser.parse_known_args()
 
@@ -136,18 +137,19 @@ def main() -> None:
     binary = Path(wrapper.ownward_binary).resolve()
     binary_sha256 = _verify_candidate(binary, wrapper.candidate)
     os.environ["OWNWARD_BENCHMARK_BINARY"] = str(binary)
+    runtime_dir = Path(wrapper.runtime_dir).resolve()
+    if not runtime_dir.is_dir():
+        raise RuntimeError(f"accepted Ownward runtime directory does not exist: {runtime_dir}")
+    os.environ["OWNWARD_BENCHMARK_RUNTIME_DIR"] = str(runtime_dir)
     codex_version = ""
     codex_sha256 = ""
-    if wrapper.codex_binary:
-        codex_binary = Path(wrapper.codex_binary).resolve()
-        codex_version, codex_sha256 = _verify_codex(codex_binary)
-        os.environ["OWNWARD_BENCHMARK_CODEX_BINARY"] = str(codex_binary)
-        if not wrapper.codex_auth_file:
-            raise RuntimeError("active retrieval requires --codex-auth-file")
-        codex_auth_file = Path(wrapper.codex_auth_file).resolve()
-        if not codex_auth_file.is_file():
-            raise RuntimeError(f"Codex auth file does not exist: {codex_auth_file}")
-        os.environ["OWNWARD_BENCHMARK_CODEX_AUTH_FILE"] = str(codex_auth_file)
+    codex_binary = Path(wrapper.codex_binary).resolve()
+    codex_version, codex_sha256 = _verify_codex(codex_binary)
+    os.environ["OWNWARD_BENCHMARK_CODEX_BINARY"] = str(codex_binary)
+    codex_auth_file = Path(wrapper.codex_auth_file).resolve()
+    if not codex_auth_file.is_file():
+        raise RuntimeError(f"Codex auth file does not exist: {codex_auth_file}")
+    os.environ["OWNWARD_BENCHMARK_CODEX_AUTH_FILE"] = str(codex_auth_file)
     sys.path.insert(0, str(official_repo))
 
     from evaluation import harness

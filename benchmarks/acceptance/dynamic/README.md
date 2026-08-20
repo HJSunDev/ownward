@@ -17,7 +17,8 @@ python benchmarks/acceptance/dynamic/verify.py `
   --dynamic-output <dynamic-report.json> `
   --ablation-output <organization-ablation-report.json> `
   --codex-binary <native-codex-0.117.0-executable> `
-  --codex-auth-file <auth.json>
+  --codex-auth-file <auth.json> `
+  --runtime-dir <accepted-product-runtime-directory>
 ```
 
 生成器、独立验证者和外部智能体使用隔离的 Codex 运行环境；Ownward 候选只按正式发布默认方式启动。信息沉淀阶段由固定的外部智能体兼任第一版语义能力，通过[正式语义理解路径](../../../docs/modules/semantics/README.md)提交带来源、依据和不确定性的候选判断，完整组与无关系组复用同一份已冻结且来源仍有效的非关系语义结果。执行器会清除旧版 OpenAI 兼容接口的模型与凭证环境变量，不允许测试配置替代正式本地向量能力或语义理解路径。中断后仅可对原候选、原协议、原二进制和原模型配置增加 `--resume`；任何绑定不一致都会拒绝续跑。

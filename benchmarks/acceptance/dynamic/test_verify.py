@@ -173,6 +173,8 @@ class DynamicVerifierTests(unittest.TestCase):
                 {},
                 {},
                 protocol,
+                "http://127.0.0.1:1",
+                "http://127.0.0.1:2",
             )
         self.assertEqual(full["cross_time"]["condition"], "full")
         self.assertEqual(baseline["cross_time"]["condition"], "baseline")
@@ -401,6 +403,7 @@ class DynamicVerifierTests(unittest.TestCase):
                 mapping,
                 {},
                 protocol,
+                "http://127.0.0.1:1",
                 condition="full",
             )
             self.assertEqual(runs["cross_time"]["elapsed_seconds"], 12.5)
@@ -422,6 +425,7 @@ class DynamicVerifierTests(unittest.TestCase):
                     mapping,
                     {},
                     protocol,
+                    "http://127.0.0.1:1",
                     condition="full",
                 )
 

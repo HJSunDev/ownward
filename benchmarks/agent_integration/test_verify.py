@@ -16,12 +16,24 @@ def _mutation_trace(initial: str, final: str, prompt: str) -> verify.SessionTrac
         verify.ToolCall("ownward_rules", {}, {"rules": "只保存长期复用的信息，不保存临时工作状态。"}),
         verify.ToolCall("ownward_search", {"query": initial}, {"results": []}),
         verify.ToolCall("ownward_create", {"content": initial}, {"result": {"information": information_v1}}),
+        verify.ToolCall("ownward_semantic_work", {"asset_ids": ["I1"]}, {"works": [{"id": "W1"}]}),
+        verify.ToolCall(
+            "ownward_semantic_submit_batch",
+            {"submissions": [{"work_id": "W1", "asset_id": "I1", "status": "complete", "capability": {"id": "codex", "version": "gpt-5.4", "execution": "agent-integration"}}]},
+            {"results": [{"work_id": "W1", "organization": {"status": "ready"}}]},
+        ),
         verify.ToolCall("ownward_read", {"id": "I1"}, {"information": information_v1}),
         verify.ToolCall("ownward_search", {"query": initial}, {"results": [{"id": "I1"}]}),
         verify.ToolCall(
             "ownward_update",
             {"id": "I1", "expected_revision": 1, "content": final},
             {"result": {"information": information_v2}},
+        ),
+        verify.ToolCall("ownward_semantic_work", {"asset_ids": ["I1"]}, {"works": [{"id": "W2"}]}),
+        verify.ToolCall(
+            "ownward_semantic_submit_batch",
+            {"submissions": [{"work_id": "W2", "asset_id": "I1", "status": "complete", "capability": {"id": "codex", "version": "gpt-5.4", "execution": "agent-integration"}}]},
+            {"results": [{"work_id": "W2", "organization": {"status": "ready"}}]},
         ),
         verify.ToolCall("ownward_read", {"id": "I1"}, {"information": information_v2}),
         verify.ToolCall("ownward_search", {"query": final}, {"results": [{"id": "I1"}]}),
@@ -47,6 +59,7 @@ class VerifyTests(unittest.TestCase):
             codex_service_tier="",
             binary=Path("ownward.exe"),
             data_dir=Path("data"),
+            runtime_dir=Path("runtime"),
         )
         command = verify._codex_command(args, Path("agent"))
         self.assertNotIn("--ignore-user-config", command)
@@ -58,6 +71,8 @@ class VerifyTests(unittest.TestCase):
         mutation_command = verify._codex_command(args, Path("agent"), allow_mutation=True)
         self.assertIn('mcp_servers.ownward.tools.ownward_create.approval_mode="approve"', mutation_command)
         self.assertIn('mcp_servers.ownward.tools.ownward_update.approval_mode="approve"', mutation_command)
+        self.assertIn('mcp_servers.ownward.tools.ownward_semantic_submit_batch.approval_mode="approve"', mutation_command)
+        self.assertIn('mcp_servers.ownward.tools.ownward_semantic_submit.approval_mode="approve"', mutation_command)
 
         with tempfile.TemporaryDirectory() as root:
             root_path = Path(root)
@@ -72,6 +87,34 @@ class VerifyTests(unittest.TestCase):
         trace = _mutation_trace("before", "after", "transient scratch")
         self.assertEqual(
             verify.validate_mutation_session(trace, excluded_transient_content="transient scratch"),
+            {"id": "I1", "revision": 2, "content": "after"},
+        )
+
+    def test_mutation_lifecycle_accepts_single_semantic_submission(self) -> None:
+        trace = _mutation_trace("before", "after", "transient scratch")
+        calls = list(trace.calls)
+        for index, call in enumerate(calls):
+            if call.name != "ownward_semantic_submit_batch":
+                continue
+            submission = call.arguments["submissions"][0]
+            organization = call.result["results"][0]["organization"]
+            calls[index] = verify.ToolCall(
+                "ownward_semantic_submit",
+                {"submission": submission},
+                {"organization": organization},
+            )
+        singular = verify.SessionTrace(
+            trace.session_id,
+            trace.agent,
+            calls,
+            trace.bypassed,
+            trace.user_text,
+            trace.model,
+            trace.reasoning_effort,
+            len(calls),
+        )
+        self.assertEqual(
+            verify.validate_mutation_session(singular, excluded_transient_content="transient scratch"),
             {"id": "I1", "revision": 2, "content": "after"},
         )
 

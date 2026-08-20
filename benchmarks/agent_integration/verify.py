@@ -22,7 +22,7 @@ EXPECTED_APPLIED_ACTIONS = ["verify backups", "test restoration"]
 SEARCH_QUERY = "Ownward acceptance Project Borealis"
 EXPECTED_CODEX_MODEL = "gpt-5.4"
 EXPECTED_CODEX_REASONING_EFFORT = "low"
-MUTATION_PROMPT = f"""Use only the connected Ownward tools and do not use shell or file tools. First obtain Ownward's collaboration rules. Evaluate each statement below only under those rules.
+MUTATION_PROMPT = f"""Use only the connected Ownward tools and do not use shell or file tools. First obtain Ownward's collaboration rules. Evaluate each statement below only under those rules, and complete any Ownward maintenance required by those rules and by returned organization states.
 
 Statement A: {EXPECTED_INITIAL_CONTENT}
 Statement B: {EXCLUDED_TRANSIENT_CONTENT}
@@ -229,6 +229,12 @@ def validate_mutation_session(
     update_position = names.index("ownward_update")
     search_positions = [position for position, name in enumerate(names) if name == "ownward_search"]
     read_positions = [position for position, name in enumerate(names) if name == "ownward_read"]
+    semantic_work_positions = [position for position, name in enumerate(names) if name == "ownward_semantic_work"]
+    semantic_submit_positions = [
+        position
+        for position, name in enumerate(names)
+        if name in {"ownward_semantic_submit", "ownward_semantic_submit_batch"}
+    ]
     _require(
         search_positions
         and rules_position < search_positions[0] < create_position < update_position
@@ -237,6 +243,13 @@ def validate_mutation_session(
         and any(position > update_position for position in search_positions)
         and any(position > update_position for position in read_positions),
         f"mutation session did not complete the required Ownward lifecycle: {names}",
+    )
+    _require(
+        len(semantic_work_positions) == 2
+        and len(semantic_submit_positions) == 2
+        and create_position < semantic_work_positions[0] < semantic_submit_positions[0] < update_position
+        and update_position < semantic_work_positions[1] < semantic_submit_positions[1],
+        f"the connected agent did not complete both semantic collaboration cycles: {names}",
     )
 
     rules = next(call for call in trace.calls if call.name == "ownward_rules")
@@ -254,6 +267,41 @@ def validate_mutation_session(
     stable_id = str(created.get("id", ""))
     _require(bool(stable_id), "created information has no stable id")
     _require(created.get("revision") == 1, "created information must start at revision 1")
+    for position in semantic_work_positions:
+        _require(
+            trace.calls[position].arguments.get("asset_ids") == [stable_id],
+            "semantic work was not scoped to the mutated information",
+        )
+    for position in semantic_submit_positions:
+        call = trace.calls[position]
+        if call.name == "ownward_semantic_submit_batch":
+            submissions = call.arguments.get("submissions")
+            _require(isinstance(submissions, list) and len(submissions) == 1, "semantic submission batch is incomplete")
+            submission = submissions[0]
+        else:
+            submission = call.arguments.get("submission")
+        _require(
+            isinstance(submission, dict)
+            and submission.get("asset_id") == stable_id
+            and submission.get("status") in {"complete", "uncertain"}
+            and isinstance(submission.get("capability"), dict)
+            and str(submission["capability"].get("id", "")).strip(),
+            "semantic submission is not bound to the external capability and asset",
+        )
+        result = call.result
+        if call.name == "ownward_semantic_submit_batch":
+            _require(
+                isinstance(result, dict)
+                and isinstance(result.get("results"), list)
+                and len(result["results"]) == 1
+                and not result["results"][0].get("error"),
+                "Ownward did not accept the external semantic result",
+            )
+        else:
+            _require(
+                isinstance(result, dict) and isinstance(result.get("organization"), dict),
+                "Ownward did not accept the external semantic result",
+            )
     _require(create_call.arguments.get("content") == created.get("content"), "create input and persisted content differ")
     _require(updated.get("id") == stable_id and updated.get("revision") == 2, "update did not preserve identity and advance revision")
     _require(update_call.arguments.get("id") == stable_id and update_call.arguments.get("expected_revision") == 1, "update did not use the stable id and observed revision")
@@ -323,7 +371,7 @@ def _codex_command(args: argparse.Namespace, agent_dir: Path, *, allow_mutation:
         "-c",
         f"mcp_servers.ownward.command={json.dumps(str(args.binary))}",
         "-c",
-        f"mcp_servers.ownward.args={json.dumps(['mcp', '--data-dir', str(args.data_dir)])}",
+        f"mcp_servers.ownward.args={json.dumps(['mcp', '--data-dir', str(args.data_dir), '--runtime-dir', str(args.runtime_dir)])}",
         "-c",
         "features.apps=false",
         "-c",
@@ -348,6 +396,10 @@ def _codex_command(args: argparse.Namespace, agent_dir: Path, *, allow_mutation:
                 'mcp_servers.ownward.tools.ownward_create.approval_mode="approve"',
                 "-c",
                 'mcp_servers.ownward.tools.ownward_update.approval_mode="approve"',
+                "-c",
+                'mcp_servers.ownward.tools.ownward_semantic_submit_batch.approval_mode="approve"',
+                "-c",
+                'mcp_servers.ownward.tools.ownward_semantic_submit.approval_mode="approve"',
             ]
         )
     return command
@@ -503,6 +555,7 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--data-dir", type=Path, required=True)
+    parser.add_argument("--runtime-dir", type=Path, required=True)
     parser.add_argument("--codex-binary", type=Path, required=True)
     parser.add_argument("--codex-auth-file", type=Path, required=True)
     parser.add_argument("--codex-model", default=EXPECTED_CODEX_MODEL)
@@ -518,6 +571,7 @@ def main() -> None:
     args = _parse_args()
     args.binary = args.binary.resolve()
     args.data_dir = args.data_dir.resolve()
+    args.runtime_dir = args.runtime_dir.resolve()
     args.codex_binary = args.codex_binary.resolve()
     args.codex_auth_file = args.codex_auth_file.resolve()
     for path, label in (
@@ -530,6 +584,7 @@ def main() -> None:
         not args.data_dir.exists() or not any(args.data_dir.iterdir()),
         "agent acceptance data directory is not blank",
     )
+    _require(args.runtime_dir.is_dir(), "accepted product runtime directory does not exist")
     args.data_dir.mkdir(parents=True, exist_ok=True)
     _require(args.codex_model == EXPECTED_CODEX_MODEL, "Codex acceptance model changed")
     _require(args.codex_reasoning_effort == EXPECTED_CODEX_REASONING_EFFORT, "Codex acceptance reasoning effort changed")
@@ -584,6 +639,7 @@ def main() -> None:
         },
         "checks": [
             {"name": "rules-create-search-read-update", "passed": True},
+            {"name": "external-semantic-collaboration", "passed": True},
             {"name": "stable-identity-and-revision", "passed": True},
             {"name": "independent-session-search-and-read", "passed": True},
             {"name": "growth-closure", "passed": True},

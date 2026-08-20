@@ -3,7 +3,6 @@
   "memory_params": {
     "ownward_binary": "ownward",
     "query_mode": "codex",
-    "require_model": true,
     "max_chunk_chars": 8000,
     "search_limit": 16,
     "graph_depth": 2,

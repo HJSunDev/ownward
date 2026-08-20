@@ -1,6 +1,6 @@
 # 外部智能体接入验收
 
-本验收固定使用 Codex `gpt-5.4`（`low` reasoning）证明外部智能体能够从 Ownward 取得协作规则，并通过统一核心完成创建、检索、读取和更新；随后由全新会话确认相同信息身份和更新结果。验收器拒绝提示词变化及任何旁路工具，只保存提示摘要、Ownward 工具事实和合成验收资产，不复制系统提示或其他私有内容。
+本验收固定使用 Codex `gpt-5.4`（`low` reasoning）证明外部智能体能够从 Ownward 取得协作规则，通过统一核心完成创建、检索、读取和更新，并在创建与更新后经独立语义契约完成内容理解；随后由全新会话确认相同信息身份和更新结果。验收器拒绝提示词变化及任何旁路工具，只保存提示摘要、Ownward 工具事实和合成验收资产，不复制系统提示或其他私有内容。
 
 验收器使用同一候选二进制先后启动两个独立 Codex 会话。第一轮从 Ownward 取得规则并完成固定信息的创建、检索、读取和更新；第二轮验证跨会话读取与经验应用。两轮都使用空白工作目录和仅含临时认证副本的隔离 `CODEX_HOME`，关闭无关工具与扩展，临时认证副本随会话目录一并销毁。第一轮只预先批准固定合成数据的 `ownward_create` 与 `ownward_update`，不跳过其他权限检查；第二轮不预先批准任何写操作。
 
@@ -36,6 +36,7 @@ Ownward acceptance Project Borealis requires two actions before migration: verif
 python benchmarks/agent_integration/verify.py `
   --binary bin/ownward.exe `
   --data-dir <temporary-root>/data `
+  --runtime-dir <accepted-product-runtime> `
   --codex-binary <codex.ps1> `
   --codex-auth-file <auth.json> `
   --candidate <commit-sha> `

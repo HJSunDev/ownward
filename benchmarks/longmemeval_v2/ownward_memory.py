@@ -1,15 +1,21 @@
 from __future__ import annotations
 
+import atexit
 from copy import deepcopy
+from dataclasses import dataclass
 import hashlib
 import json
 import os
 from pathlib import Path
+import queue
+import secrets
 import shutil
 import subprocess
 import tempfile
 import threading
+import time
 from typing import Any
+from urllib import request
 
 from memory_modules.memory import Memory, MemoryConfig, MemoryContextItem, register_memory, require
 
@@ -51,6 +57,218 @@ def _command_prefix(binary: Path) -> list[str]:
     return [str(binary)]
 
 
+class _StreamableHTTPClient:
+    def __init__(self, endpoint: str, timeout_seconds: float, bearer_token: str) -> None:
+        self.endpoint = endpoint
+        self.timeout_seconds = timeout_seconds
+        self.bearer_token = bearer_token
+        self._opener = request.build_opener(request.ProxyHandler({}))
+        self._session_id = ""
+        self._next_id = 1
+        initialized = self._request(
+            "initialize",
+            {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "longmemeval-v2", "version": "1"},
+            },
+        )
+        require(isinstance(initialized.get("serverInfo"), dict), "Ownward MCP initialization returned invalid metadata")
+        self._notification("notifications/initialized", {})
+
+    def _headers(self) -> dict[str, str]:
+        headers = {
+            "Accept": "application/json, text/event-stream",
+            "Authorization": "Bearer " + self.bearer_token,
+            "Content-Type": "application/json",
+        }
+        if self._session_id:
+            headers["Mcp-Session-Id"] = self._session_id
+        return headers
+
+    def _post(self, payload: dict[str, Any], *, expect_result: bool) -> dict[str, Any] | None:
+        message = request.Request(
+            self.endpoint,
+            data=json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"),
+            headers=self._headers(),
+            method="POST",
+        )
+        with self._opener.open(message, timeout=self.timeout_seconds) as response:
+            session = response.headers.get("Mcp-Session-Id", "").strip()
+            if session:
+                self._session_id = session
+            content = response.read()
+        if not expect_result:
+            return None
+        decoded = json.loads(content)
+        require(isinstance(decoded, dict) and decoded.get("error") is None, f"Ownward MCP returned an error: {decoded}")
+        result = decoded.get("result")
+        require(isinstance(result, dict), "Ownward MCP response has no result")
+        return result
+
+    def _request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        message_id = self._next_id
+        self._next_id += 1
+        result = self._post({"jsonrpc": "2.0", "id": message_id, "method": method, "params": params}, expect_result=True)
+        assert result is not None
+        return result
+
+    def _notification(self, method: str, params: dict[str, Any]) -> None:
+        self._post({"jsonrpc": "2.0", "method": method, "params": params}, expect_result=False)
+
+    def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
+        result = self._request("tools/call", {"name": name, "arguments": arguments})
+        require(result.get("isError") is not True, f"Ownward tool {name} failed: {result}")
+        structured = result.get("structuredContent", result.get("structured_content"))
+        if structured is not None:
+            return structured
+        for item in result.get("content", []):
+            if isinstance(item, dict) and item.get("type") == "text":
+                try:
+                    return json.loads(str(item.get("text", "")))
+                except json.JSONDecodeError:
+                    continue
+        raise RuntimeError(f"Ownward tool {name} returned no structured result")
+
+    def close(self) -> None:
+        if not self._session_id:
+            return
+        message = request.Request(self.endpoint, headers=self._headers(), method="DELETE")
+        try:
+            with self._opener.open(message, timeout=min(self.timeout_seconds, 5)):
+                pass
+        except Exception:
+            pass
+        self._session_id = ""
+
+
+@dataclass(frozen=True)
+class _RuntimeBinding:
+    endpoint: str
+    bearer_token: str
+
+
+class _OwnwardRuntime:
+    def __init__(self, binary: Path, data_dir: Path, runtime_dir: Path, environment: dict[str, str], timeout_seconds: float) -> None:
+        self.binary = binary
+        self.data_dir = data_dir
+        self.runtime_dir = runtime_dir
+        self.environment = environment
+        self.timeout_seconds = timeout_seconds
+        self.process: subprocess.Popen[str] | None = None
+        self.client: _StreamableHTTPClient | None = None
+        self.binding: _RuntimeBinding | None = None
+        self._stderr: list[str] = []
+        self._stderr_thread: threading.Thread | None = None
+        self._bearer_token = secrets.token_urlsafe(32)
+
+    def start(self) -> _OwnwardRuntime:
+        terms = subprocess.run(
+            [str(self.binary), "terms", "--runtime-dir", str(self.runtime_dir)],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=self.timeout_seconds,
+            env=self.environment,
+        )
+        require(terms.returncode == 0, f"cannot verify Ownward terms acceptance: {terms.stderr[-2000:]}")
+        status = json.loads(terms.stdout)
+        require(isinstance(status, dict) and status.get("accepted") is True, "the bundled model terms have not been explicitly accepted")
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+        self.process = subprocess.Popen(
+            [
+                str(self.binary),
+                "mcp-http",
+                "--data-dir",
+                str(self.data_dir),
+                "--runtime-dir",
+                str(self.runtime_dir),
+                "--listen",
+                "127.0.0.1:0",
+                "--token",
+                self._bearer_token,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            env=self.environment,
+            creationflags=flags,
+        )
+        assert self.process.stdout is not None and self.process.stderr is not None
+        stdout_messages: queue.Queue[str | None] = queue.Queue()
+
+        def read_stdout() -> None:
+            assert self.process is not None and self.process.stdout is not None
+            try:
+                for line in self.process.stdout:
+                    stdout_messages.put(line)
+            finally:
+                stdout_messages.put(None)
+
+        def read_stderr() -> None:
+            assert self.process is not None and self.process.stderr is not None
+            for line in self.process.stderr:
+                self._stderr.append(line)
+                if len(self._stderr) > 200:
+                    del self._stderr[:-200]
+
+        threading.Thread(target=read_stdout, daemon=True).start()
+        self._stderr_thread = threading.Thread(target=read_stderr, daemon=True)
+        self._stderr_thread.start()
+        deadline = time.monotonic() + self.timeout_seconds
+        output = ""
+        endpoint = ""
+        while time.monotonic() < deadline:
+            require(self.process.poll() is None, f"Ownward MCP exited during startup: {''.join(self._stderr)[-2000:]}")
+            try:
+                line = stdout_messages.get(timeout=min(0.25, max(0.01, deadline - time.monotonic())))
+            except queue.Empty:
+                continue
+            if line is None:
+                break
+            output += line
+            try:
+                metadata = json.loads(output)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(metadata, dict):
+                endpoint = str(metadata.get("endpoint", "")).strip()
+            break
+        if not endpoint.startswith("http://127.0.0.1:"):
+            self.close()
+            raise RuntimeError(f"Ownward MCP did not publish a loopback endpoint: {output[-2000:]}")
+        try:
+            self.client = _StreamableHTTPClient(endpoint, self.timeout_seconds, self._bearer_token)
+        except Exception:
+            self.close()
+            raise
+        self.binding = _RuntimeBinding(endpoint, self._bearer_token)
+        return self
+
+    def close(self) -> None:
+        if self.client is not None:
+            self.client.close()
+            self.client = None
+        process = self.process
+        self.process = None
+        if process is not None and process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=10)
+        if process is not None:
+            for stream in (process.stdout, process.stderr):
+                if stream is not None:
+                    stream.close()
+        if self._stderr_thread is not None:
+            self._stderr_thread.join(timeout=1)
+            self._stderr_thread = None
+
+
 @register_memory
 class OwnwardMemory(Memory):
     memory_type = "ownward"
@@ -62,8 +280,8 @@ class OwnwardMemory(Memory):
             "trajectories_root_dir",
             "query_trace_dir",
             "ownward_binary",
+            "runtime_dir",
             "query_mode",
-            "require_model",
             "max_chunk_chars",
             "search_limit",
             "graph_depth",
@@ -85,9 +303,10 @@ class OwnwardMemory(Memory):
         query_mode = memory_params.get("query_mode", "direct")
         require(query_mode in {"direct", "codex"}, "query_mode must be direct or codex")
         self.query_mode = str(query_mode)
-        require_model = memory_params.get("require_model", True)
-        require(isinstance(require_model, bool), "require_model must be a boolean")
-        self.require_model = require_model
+        runtime_value = os.environ.get("OWNWARD_BENCHMARK_RUNTIME_DIR", "").strip() or memory_params.get("runtime_dir")
+        require(isinstance(runtime_value, str) and bool(runtime_value.strip()), "accepted Ownward runtime directory must be configured")
+        self.runtime_dir = Path(runtime_value).expanduser().resolve()
+        require(self.runtime_dir.is_dir(), f"Ownward runtime directory does not exist: {self.runtime_dir}")
         self.max_chunk_chars = _positive_int(
             memory_params.get("max_chunk_chars"),
             name="max_chunk_chars",
@@ -119,22 +338,21 @@ class OwnwardMemory(Memory):
         self.codex_model = str(memory_params.get("codex_model", "gpt-5.4")).strip()
         self.codex_reasoning_effort = str(memory_params.get("codex_reasoning_effort", "xhigh")).strip()
         self.codex_timeout_seconds = float(memory_params.get("codex_timeout_seconds", 900))
-        if self.query_mode == "codex":
-            self.codex_binary = _resolve_executable(
-                memory_params.get("codex_binary", "codex"),
-                environment_name="OWNWARD_BENCHMARK_CODEX_BINARY",
-                label="Codex",
-            )
-            auth_value = os.environ.get("OWNWARD_BENCHMARK_CODEX_AUTH_FILE", "").strip()
-            require(bool(auth_value), "active retrieval requires OWNWARD_BENCHMARK_CODEX_AUTH_FILE")
-            self.codex_auth_file = Path(auth_value).expanduser().resolve()
-            require(
-                self.codex_auth_file.exists() and self.codex_auth_file.is_file(),
-                f"Codex auth file does not exist: {self.codex_auth_file}",
-            )
-            require(bool(self.codex_model), "codex_model must be non-empty")
-            require(bool(self.codex_reasoning_effort), "codex_reasoning_effort must be non-empty")
-            require(self.codex_timeout_seconds > 0, "codex_timeout_seconds must be positive")
+        self.codex_binary = _resolve_executable(
+            memory_params.get("codex_binary", "codex"),
+            environment_name="OWNWARD_BENCHMARK_CODEX_BINARY",
+            label="Codex",
+        )
+        auth_value = os.environ.get("OWNWARD_BENCHMARK_CODEX_AUTH_FILE", "").strip()
+        require(bool(auth_value), "semantic organization requires OWNWARD_BENCHMARK_CODEX_AUTH_FILE")
+        self.codex_auth_file = Path(auth_value).expanduser().resolve()
+        require(
+            self.codex_auth_file.exists() and self.codex_auth_file.is_file(),
+            f"Codex auth file does not exist: {self.codex_auth_file}",
+        )
+        require(bool(self.codex_model), "codex_model must be non-empty")
+        require(bool(self.codex_reasoning_effort), "codex_reasoning_effort must be non-empty")
+        require(self.codex_timeout_seconds > 0, "codex_timeout_seconds must be positive")
 
         workspace_value = memory_params.get("workspace_dir")
         self._temporary_workspace: tempfile.TemporaryDirectory[str] | None = None
@@ -146,10 +364,13 @@ class OwnwardMemory(Memory):
         self.query_trace_dir = self._optional_path(memory_params.get("query_trace_dir"))
         self.inserted_trajectory_ids: list[str] = []
         self.inserted_trajectory_id_set: set[str] = set()
+        self._pending_documents: list[str] = []
         self._operation_lock = threading.RLock()
+        self._runtime: _OwnwardRuntime | None = None
+        self._frozen_state_sha256 = ""
         if self.workspace_dir is not None:
             self._initialize_workspace(self.workspace_dir)
-        self._validate_model_environment()
+        atexit.register(self._close_runtime)
 
     @staticmethod
     def _optional_path(value: object) -> Path | None:
@@ -170,7 +391,6 @@ class OwnwardMemory(Memory):
         params: dict[str, object] = {
             "ownward_binary": str(self.ownward_binary),
             "query_mode": self.query_mode,
-            "require_model": self.require_model,
             "max_chunk_chars": self.max_chunk_chars,
             "search_limit": self.search_limit,
             "graph_depth": self.graph_depth,
@@ -196,7 +416,7 @@ class OwnwardMemory(Memory):
         require(requested_config["memory_type"] == cls.memory_type, "requested memory type is not ownward")
         saved = dict(saved_config["memory_params"])
         requested = dict(requested_config["memory_params"])
-        for key in {"require_model", "max_chunk_chars"}:
+        for key in {"max_chunk_chars"}:
             require(saved.get(key) == requested.get(key), f"loaded Ownward memory changes indexing parameter {key}")
         return deepcopy(requested_config)
 
@@ -207,16 +427,6 @@ class OwnwardMemory(Memory):
             self.query_trace_dir = Path(trace).resolve()
             self.query_trace_dir.mkdir(parents=True, exist_ok=True)
 
-    def _validate_model_environment(self) -> None:
-        if not self.require_model:
-            return
-        missing = [
-            name
-            for name in ("OWNWARD_MODEL_BASE_URL", "OWNWARD_CHAT_MODEL", "OWNWARD_EMBEDDING_MODEL")
-            if not os.environ.get(name, "").strip()
-        ]
-        require(not missing, "Ownward benchmark requires model environment variables: " + ", ".join(missing))
-
     def _initialize_workspace(self, workspace_dir: Path) -> None:
         require(
             not (workspace_dir / "data" / "assets" / "manifest.json").exists(),
@@ -224,6 +434,53 @@ class OwnwardMemory(Memory):
         )
         workspace_dir.mkdir(parents=True, exist_ok=True)
         self.agent_dir.mkdir(parents=True, exist_ok=True)
+
+    def _runtime_environment(self) -> dict[str, str]:
+        environment = os.environ.copy()
+        for name in (
+            "OPENAI_API_KEY",
+            "OWNWARD_MODEL_BASE_URL",
+            "OWNWARD_MODEL_API_KEY",
+            "OWNWARD_CHAT_MODEL",
+            "OWNWARD_EMBEDDING_MODEL",
+            "OWNWARD_EMBEDDING_DIMENSIONS",
+        ):
+            environment.pop(name, None)
+        environment["NO_PROXY"] = "127.0.0.1,localhost"
+        environment["no_proxy"] = "127.0.0.1,localhost"
+        return environment
+
+    def _ensure_runtime(self) -> _OwnwardRuntime:
+        require(self.workspace_dir is not None, "Ownward workspace is not configured")
+        if self._runtime is None:
+            runtime = _OwnwardRuntime(
+                self.ownward_binary,
+                self.data_dir,
+                self.runtime_dir,
+                self._runtime_environment(),
+                self.command_timeout_seconds,
+            )
+            self._runtime = runtime.start()
+        require(self._runtime.binding is not None and self._runtime.client is not None, "Ownward shared runtime is unavailable")
+        return self._runtime
+
+    def _close_runtime(self) -> None:
+        if self._runtime is not None:
+            self._runtime.close()
+            self._runtime = None
+
+    @staticmethod
+    def _tree_sha256(root: Path) -> str:
+        digest = hashlib.sha256()
+        if not root.exists():
+            return digest.hexdigest()
+        for path in sorted((value for value in root.rglob("*") if value.is_file()), key=lambda value: value.relative_to(root).as_posix()):
+            relative = path.relative_to(root).as_posix().encode("utf-8")
+            content = path.read_bytes()
+            digest.update(len(relative).to_bytes(8, "little"))
+            digest.update(relative)
+            digest.update(hashlib.sha256(content).digest())
+        return digest.hexdigest()
 
     def _codex_environment(self, codex_home: Path) -> dict[str, str]:
         require(self.codex_auth_file is not None, "Codex auth file is not configured")
@@ -233,10 +490,15 @@ class OwnwardMemory(Memory):
         environment["CODEX_HOME"] = str(codex_home)
         environment.pop("OWNWARD_BENCHMARK_CODEX_AUTH_FILE", None)
         environment.pop("OPENAI_API_KEY", None)
+        runtime = self._ensure_runtime()
+        require(runtime.binding is not None, "Ownward shared runtime is unavailable")
+        environment["OWNWARD_MCP_BEARER_TOKEN"] = runtime.binding.bearer_token
+        environment["NO_PROXY"] = "127.0.0.1,localhost"
+        environment["no_proxy"] = "127.0.0.1,localhost"
         return environment
 
     def _run(self, args: list[str], *, timeout: float | None = None) -> Any:
-        command = _command_prefix(self.ownward_binary) + args
+        command = _command_prefix(self.ownward_binary) + [args[0], "--runtime-dir", str(self.runtime_dir), *args[1:]]
         completed = subprocess.run(
             command,
             check=False,
@@ -262,52 +524,146 @@ class OwnwardMemory(Memory):
         with self._operation_lock:
             if trajectory_id in self.inserted_trajectory_id_set:
                 return
-            for content in trajectory_documents(trajectory, self.max_chunk_chars):
-                result = self._run(["create", "--data-dir", str(self.data_dir), "--content", content])
-                organization = result.get("organization") if isinstance(result, dict) else None
-                if self.require_model:
-                    require(
-                        isinstance(organization, dict) and organization.get("status") == "ready",
-                        f"Ownward did not organize trajectory {trajectory_id} with the configured model",
-                    )
+            self._pending_documents.extend(trajectory_documents(trajectory, self.max_chunk_chars))
             self.inserted_trajectory_ids.append(trajectory_id)
             self.inserted_trajectory_id_set.add(trajectory_id)
 
+    def _flush_pending_documents(self) -> None:
+        with self._operation_lock:
+            if not self._pending_documents:
+                return
+            runtime = self._ensure_runtime()
+            require(runtime.client is not None and runtime.binding is not None, "Ownward shared runtime is unavailable")
+            while self._pending_documents:
+                contents = self._pending_documents[:20]
+                created = runtime.client.call_tool(
+                    "ownward_create_batch",
+                    {
+                        "items": [
+                            {"content": content, "source": {"actor": "longmemeval-v2"}}
+                            for content in contents
+                        ]
+                    },
+                )
+                results = created.get("results") if isinstance(created, dict) else None
+                require(isinstance(results, list) and len(results) == len(contents), "Ownward batch insertion returned incomplete results")
+                asset_ids: list[str] = []
+                for result in results:
+                    mutation = result.get("result") if isinstance(result, dict) and not result.get("error") else None
+                    information = mutation.get("information") if isinstance(mutation, dict) else None
+                    organization = mutation.get("organization") if isinstance(mutation, dict) else None
+                    require(isinstance(information, dict) and isinstance(organization, dict), "Ownward batch insertion failed")
+                    require(organization.get("status") == "pending", "new LongMemEval asset did not expose semantic work")
+                    asset_ids.append(str(information["id"]))
+                self._organize_batch(asset_ids)
+                for information_id in asset_ids:
+                    status = runtime.client.call_tool("ownward_status", {"id": information_id})
+                    organization = status.get("organization") if isinstance(status, dict) else None
+                    require(isinstance(organization, dict) and organization.get("status") == "ready", "LongMemEval semantic organization did not become ready")
+                del self._pending_documents[: len(contents)]
+            self._frozen_state_sha256 = self._tree_sha256(self.data_dir)
+
+    def _organize_batch(self, asset_ids: list[str]) -> None:
+        require(self.codex_binary is not None, "Codex binary is not configured")
+        runtime = self._ensure_runtime()
+        require(runtime.binding is not None, "Ownward shared runtime is unavailable")
+        trace_dir = self.workspace_dir / "semantic-traces" if self.workspace_dir is not None else self.agent_dir
+        trace_dir.mkdir(parents=True, exist_ok=True)
+        batch_id = hashlib.sha256("\n".join(asset_ids).encode("utf-8")).hexdigest()[:24]
+        output_path = trace_dir / f"{batch_id}.txt"
+        events_path = trace_dir / f"{batch_id}.jsonl"
+        errors_path = trace_dir / f"{batch_id}.stderr.txt"
+        prompt = (
+            "Act only as Ownward's external semantic capability. Use only the connected Ownward semantic tools. "
+            "Call ownward_semantic_work once with exactly the asset IDs below, analyze only the returned assets and candidate contexts, "
+            "then call ownward_semantic_submit_batch once with one submission per work item. Use schema ownward.semantic-submission/v1, "
+            f"capability id codex, capability version {self.codex_model}, and execution longmemeval-v2-organization. "
+            "Every judgment must preserve source meaning and cite evidence present in the work. Do not use any benchmark query, expected answer, "
+            "outside knowledge, or temporary task intent. Relations may use only same_as, broader_than, narrower_than, part_of, has_part, "
+            "supports, contradicts, derived_from, applies_in, or related_to, and must target a supplied candidate. "
+            "Submit uncertain rather than guessing.\n\nAsset IDs:\n"
+            + json.dumps(asset_ids, ensure_ascii=False)
+        )
+        command = _command_prefix(self.codex_binary) + [
+            "exec",
+            "-C",
+            str(self.agent_dir),
+            "--skip-git-repo-check",
+            "--ephemeral",
+            "--json",
+            "--sandbox",
+            "read-only",
+            "-o",
+            str(output_path),
+            "-m",
+            self.codex_model,
+            "-c",
+            f"model_reasoning_effort={json.dumps(self.codex_reasoning_effort)}",
+            "-c",
+            f"mcp_servers.ownward.url={json.dumps(runtime.binding.endpoint)}",
+            "-c",
+            'mcp_servers.ownward.bearer_token_env_var="OWNWARD_MCP_BEARER_TOKEN"',
+            "-c",
+            "features.apps=false",
+            "-c",
+            "features.multi_agent=false",
+            "-c",
+            "features.personality=false",
+            "-c",
+            "features.plugins=false",
+            "-c",
+            "features.shell_snapshot=false",
+            "-c",
+            "features.shell_tool=false",
+            "-c",
+            'web_search="disabled"',
+            prompt,
+        ]
+        with tempfile.TemporaryDirectory(prefix="codex-home-", dir=self.workspace_dir) as temporary:
+            completed = subprocess.run(
+                command,
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=self.codex_timeout_seconds,
+                env=self._codex_environment(Path(temporary)),
+            )
+        events_path.write_text(completed.stdout, encoding="utf-8")
+        errors_path.write_text(completed.stderr, encoding="utf-8")
+        require(completed.returncode == 0, f"Codex semantic organization failed ({completed.returncode}): {completed.stderr.strip()}")
+        calls = self._ownward_tool_calls(completed.stdout)
+        require(
+            [(name, successful) for name, successful in calls]
+            == [("ownward_semantic_work", True), ("ownward_semantic_submit_batch", True)],
+            "semantic organization did not use exactly one bounded work and submission batch",
+        )
+
     def query(self, query: str, query_image: str | None = None) -> list[MemoryContextItem]:
         require(isinstance(query, str) and bool(query.strip()), "query must be non-empty")
-        with self._operation_lock:
-            if self.query_mode == "codex":
-                return [{"type": "text", "value": self._query_with_codex(query.strip(), query_image)}]
-            return [{"type": "text", "value": self._query_direct(query.strip())}]
+        self._flush_pending_documents()
+        before = self._frozen_state_sha256 or self._tree_sha256(self.data_dir)
+        if self.query_mode == "codex":
+            value = self._query_with_codex(query.strip(), query_image)
+        else:
+            with self._operation_lock:
+                value = self._query_direct(query.strip())
+        require(self._tree_sha256(self.data_dir) == before, "Ownward query changed the frozen shared state")
+        return [{"type": "text", "value": value}]
 
     def _query_direct(self, query: str) -> str:
-        results = self._run(
-            [
-                "search",
-                "--data-dir",
-                str(self.data_dir),
-                "--query",
-                query,
-                "--limit",
-                str(self.search_limit),
-            ]
-        )
+        runtime = self._ensure_runtime()
+        require(runtime.client is not None, "Ownward shared runtime is unavailable")
+        response = runtime.client.call_tool("ownward_search", {"query": query, "limit": self.search_limit})
+        results = response.get("results") if isinstance(response, dict) else None
         require(isinstance(results, list), "Ownward search result must be a list")
         ids = [item.get("id") for item in results if isinstance(item, dict) and isinstance(item.get("id"), str)]
         if ids and self.graph_depth > 0:
-            navigation = self._run(
-                [
-                    "navigate",
-                    "--data-dir",
-                    str(self.data_dir),
-                    "--id",
-                    ids[0],
-                    "--depth",
-                    str(self.graph_depth),
-                    "--limit",
-                    str(self.search_limit * 4),
-                ]
+            response = runtime.client.call_tool(
+                "ownward_navigate",
+                {"start_ids": [ids[0]], "depth": self.graph_depth, "limit": self.search_limit * 4},
             )
+            navigation = response.get("result") if isinstance(response, dict) else None
             if isinstance(navigation, dict) and isinstance(navigation.get("nodes"), list):
                 ids.extend(
                     node.get("id")
@@ -319,7 +675,8 @@ class OwnwardMemory(Memory):
         sections: list[str] = ["# Ownward evidence"]
         used = len(sections[0])
         for information_id in unique_ids:
-            value = self._run(["read", "--data-dir", str(self.data_dir), "--id", information_id])
+            response = runtime.client.call_tool("ownward_read", {"id": information_id})
+            value = response.get("information") if isinstance(response, dict) else None
             if not isinstance(value, dict):
                 continue
             contexts = value.get("contexts", [])
@@ -340,6 +697,8 @@ class OwnwardMemory(Memory):
     def _query_with_codex(self, query: str, query_image: str | None) -> str:
         require(self.codex_binary is not None, "Codex binary is not configured")
         require(self.workspace_dir is not None, "Ownward workspace is not configured")
+        runtime = self._ensure_runtime()
+        require(runtime.binding is not None, "Ownward shared runtime is unavailable")
         output_dir = self.query_trace_dir or self.workspace_dir / "query-traces"
         output_dir.mkdir(parents=True, exist_ok=True)
         invocation_id = self.get_query_context().get("query_invocation_id", "query")
@@ -363,7 +722,7 @@ class OwnwardMemory(Memory):
             "--ephemeral",
             "--json",
             "--sandbox",
-            "workspace-write",
+            "read-only",
             "-o",
             str(output_path),
             "-m",
@@ -371,20 +730,9 @@ class OwnwardMemory(Memory):
             "-c",
             f"model_reasoning_effort={json.dumps(self.codex_reasoning_effort)}",
             "-c",
-            f"mcp_servers.ownward.command={json.dumps(str(self.ownward_binary))}",
+            f"mcp_servers.ownward.url={json.dumps(runtime.binding.endpoint)}",
             "-c",
-            f"mcp_servers.ownward.args={json.dumps(['mcp', '--data-dir', str(self.data_dir)])}",
-            "-c",
-            "mcp_servers.ownward.env_vars="
-            + json.dumps(
-                [
-                    "OWNWARD_MODEL_BASE_URL",
-                    "OWNWARD_MODEL_API_KEY",
-                    "OWNWARD_CHAT_MODEL",
-                    "OWNWARD_EMBEDDING_MODEL",
-                    "OWNWARD_EMBEDDING_DIMENSIONS",
-                ]
-            ),
+            'mcp_servers.ownward.bearer_token_env_var="OWNWARD_MCP_BEARER_TOKEN"',
             "-c",
             "features.apps=false",
             "-c",
@@ -422,8 +770,17 @@ class OwnwardMemory(Memory):
             completed.returncode == 0,
             f"Codex retrieval failed ({completed.returncode}): {completed.stderr.strip()}",
         )
+        calls = self._ownward_tool_calls(completed.stdout)
         require(
-            self._used_ownward_mcp(completed.stdout),
+            calls
+            and all(
+                name in {"ownward_rules", "ownward_search", "ownward_read", "ownward_navigate", "ownward_status"}
+                for name, _ in calls
+            ),
+            "Codex retrieval used an Ownward mutation or non-retrieval tool",
+        )
+        require(
+            any(successful for _, successful in calls),
             "Codex retrieval completed without a successful Ownward MCP tool call",
         )
         require(output_path.exists(), "Codex retrieval produced no final message")
@@ -432,7 +789,8 @@ class OwnwardMemory(Memory):
         return evidence[: self.max_context_chars]
 
     @staticmethod
-    def _used_ownward_mcp(stdout: str) -> bool:
+    def _ownward_tool_calls(stdout: str) -> list[tuple[str, bool]]:
+        result: list[tuple[str, bool]] = []
         for line in stdout.splitlines():
             try:
                 event = json.loads(line)
@@ -443,28 +801,43 @@ class OwnwardMemory(Memory):
             item = event.get("item")
             if not isinstance(item, dict) or item.get("type") != "mcp_tool_call":
                 continue
-            if (
-                item.get("server") == "ownward"
-                and str(item.get("tool", "")).startswith("ownward_")
-                and item.get("status") == "completed"
-                and item.get("error") is None
-            ):
-                return True
-        return False
+            name = str(item.get("tool", ""))
+            if item.get("server") == "ownward" and name.startswith("ownward_"):
+                result.append((name, item.get("status") == "completed" and item.get("error") is None))
+        return result
+
+    @staticmethod
+    def _used_ownward_mcp(stdout: str) -> bool:
+        return any(successful for _, successful in OwnwardMemory._ownward_tool_calls(stdout))
 
     def _save_backend(self, output_dir: Path) -> None:
         with self._operation_lock:
+            self._flush_pending_documents()
+            self._close_runtime()
             backup = output_dir / "ownward-assets.ownward"
             self._run(["backup", "--data-dir", str(self.data_dir), "--output", str(backup)])
+            state_source = self.data_dir / "state"
+            require(state_source.is_dir(), "Ownward derived state is missing")
+            shutil.copytree(state_source, output_dir / "ownward-state")
             (output_dir / "ownward-index.json").write_text(
-                json.dumps({"inserted_trajectory_ids": self.inserted_trajectory_ids}, indent=2) + "\n",
+                json.dumps(
+                    {
+                        "inserted_trajectory_ids": self.inserted_trajectory_ids,
+                        "frozen_state_sha256": self._tree_sha256(self.data_dir),
+                    },
+                    indent=2,
+                )
+                + "\n",
                 encoding="utf-8",
             )
+            self._ensure_runtime()
 
     def _load_backend(self, input_dir: Path) -> None:
         backup = input_dir / "ownward-assets.ownward"
+        state_source = input_dir / "ownward-state"
         index_path = input_dir / "ownward-index.json"
         require(backup.exists(), f"missing Ownward memory backup: {backup}")
+        require(state_source.is_dir(), f"missing Ownward frozen state: {state_source}")
         require(index_path.exists(), f"missing Ownward memory index: {index_path}")
         if self.workspace_dir is None:
             self._temporary_workspace = tempfile.TemporaryDirectory(prefix="longmemeval-ownward-")
@@ -478,9 +851,20 @@ class OwnwardMemory(Memory):
             "Ownward memory index has invalid trajectory ids",
         )
         with self._operation_lock:
+            self._close_runtime()
             self._run(
                 ["restore", "--data-dir", str(self.data_dir), "--backup", str(backup)],
                 timeout=max(self.command_timeout_seconds, 900),
             )
+            state_target = self.data_dir / "state"
+            if state_target.exists():
+                shutil.rmtree(state_target)
+            shutil.copytree(state_source, state_target)
         self.inserted_trajectory_ids = list(inserted)
         self.inserted_trajectory_id_set = set(inserted)
+        self._frozen_state_sha256 = self._tree_sha256(self.data_dir)
+        require(
+            payload.get("frozen_state_sha256") == self._frozen_state_sha256,
+            "loaded Ownward state differs from the saved shared memory",
+        )
+        self._ensure_runtime()

@@ -51,9 +51,11 @@ class OwnwardMemoryTest(unittest.TestCase):
             ownward = root_path / "ownward.exe"
             codex = root_path / "codex.exe"
             auth = root_path / "auth.json"
+            runtime_dir = root_path / "runtime"
             ownward.write_bytes(b"")
             codex.write_bytes(b"")
             auth.write_text("{}", encoding="utf-8")
+            runtime_dir.mkdir()
             workspace = root_path / "workspace"
             with patch.dict(
                 os.environ,
@@ -66,19 +68,22 @@ class OwnwardMemoryTest(unittest.TestCase):
                     {
                         "workspace_dir": str(workspace),
                         "ownward_binary": str(ownward),
+                        "runtime_dir": str(runtime_dir),
                         "query_mode": "codex",
-                        "require_model": False,
                         "codex_binary": str(codex),
                     }
                 )
                 codex_home = workspace / "temporary-codex-home"
-                environment = memory._codex_environment(codex_home)
+                fake_runtime = types.SimpleNamespace(binding=types.SimpleNamespace(bearer_token="secret"))
+                with patch.object(memory, "_ensure_runtime", return_value=fake_runtime):
+                    environment = memory._codex_environment(codex_home)
 
             self.assertEqual(environment["CODEX_HOME"], str(codex_home))
             self.assertEqual((codex_home / "auth.json").read_text(encoding="utf-8"), "{}")
             self.assertFalse(any(memory.agent_dir.iterdir()))
             self.assertNotIn("OWNWARD_BENCHMARK_CODEX_AUTH_FILE", environment)
             self.assertNotIn("OPENAI_API_KEY", environment)
+            self.assertEqual(environment["OWNWARD_MCP_BEARER_TOKEN"], "secret")
 
     def test_mcp_evidence_gate_requires_a_successful_ownward_call(self) -> None:
         adapter = _load_adapter()
@@ -96,7 +101,10 @@ class OwnwardMemoryTest(unittest.TestCase):
         self.assertFalse(adapter.OwnwardMemory._used_ownward_mcp(failed))
         self.assertTrue(adapter.OwnwardMemory._used_ownward_mcp(completed))
 
-    @unittest.skipUnless(os.environ.get("OWNWARD_BENCHMARK_BINARY"), "requires a built Ownward binary")
+    @unittest.skipUnless(
+        all(os.environ.get(name) for name in ("OWNWARD_BENCHMARK_BINARY", "OWNWARD_BENCHMARK_RUNTIME_DIR", "OWNWARD_BENCHMARK_CODEX_BINARY", "OWNWARD_BENCHMARK_CODEX_AUTH_FILE")),
+        "requires a built Ownward bundle, accepted runtime, and Codex",
+    )
     def test_direct_query_and_portable_asset_restore(self) -> None:
         adapter = _load_adapter()
         binary = str(Path(os.environ["OWNWARD_BENCHMARK_BINARY"]).resolve())
@@ -122,9 +130,10 @@ class OwnwardMemoryTest(unittest.TestCase):
                 {
                     "workspace_dir": str(workspace),
                     "ownward_binary": binary,
+                    "runtime_dir": os.environ["OWNWARD_BENCHMARK_RUNTIME_DIR"],
                     "query_mode": "direct",
-                    "require_model": False,
                     "max_chunk_chars": 1000,
+                    "codex_binary": os.environ["OWNWARD_BENCHMARK_CODEX_BINARY"],
                 }
             )
 
@@ -136,14 +145,17 @@ class OwnwardMemoryTest(unittest.TestCase):
             restored = adapter.OwnwardMemory(
                 {
                     "ownward_binary": binary,
+                    "runtime_dir": os.environ["OWNWARD_BENCHMARK_RUNTIME_DIR"],
                     "query_mode": "direct",
-                    "require_model": False,
                     "max_chunk_chars": 1000,
+                    "codex_binary": os.environ["OWNWARD_BENCHMARK_CODEX_BINARY"],
                 }
             )
             restored._load_backend(saved)
             restored_context = restored.query("release codename")
             self.assertIn("Silver Swift", restored_context[0]["value"])
+            memory._close_runtime()
+            restored._close_runtime()
             restored._temporary_workspace.cleanup()
 
     @unittest.skipUnless(os.environ.get("OWNWARD_BENCHMARK_ACTIVE_SMOKE") == "1", "active smoke test is opt-in")
@@ -169,8 +181,8 @@ class OwnwardMemoryTest(unittest.TestCase):
                     "workspace_dir": str(Path(root) / "workspace"),
                     "query_trace_dir": os.environ.get("OWNWARD_BENCHMARK_TRACE_DIR", ""),
                     "ownward_binary": os.environ["OWNWARD_BENCHMARK_BINARY"],
+                    "runtime_dir": os.environ["OWNWARD_BENCHMARK_RUNTIME_DIR"],
                     "query_mode": "codex",
-                    "require_model": False,
                     "max_chunk_chars": 1000,
                     "codex_binary": os.environ["OWNWARD_BENCHMARK_CODEX_BINARY"],
                     "codex_model": os.environ.get("OWNWARD_BENCHMARK_CODEX_MODEL", "gpt-5.4-mini"),
@@ -183,6 +195,7 @@ class OwnwardMemoryTest(unittest.TestCase):
             context = memory.query("What is the release codename?")
 
             self.assertIn("Silver Swift", context[0]["value"])
+            memory._close_runtime()
 
 
 if __name__ == "__main__":

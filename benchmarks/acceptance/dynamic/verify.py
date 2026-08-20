@@ -32,6 +32,7 @@ LEGACY_MODEL_ENVIRONMENT = (
     "OWNWARD_EMBEDDING_DIMENSIONS",
 )
 sys.path.insert(0, str(HERE))
+sys.path.insert(0, str(HERE.parents[1]))
 from common import (  # noqa: E402
     ABLATION_REPORT_SCHEMA,
     DYNAMIC_REPORT_SCHEMA,
@@ -50,6 +51,7 @@ from common import (  # noqa: E402
     write_json,
 )
 from schemas import answers_schema, expression_schema, hidden_world_schema, validation_schema  # noqa: E402
+from support.ownward_mcp import OwnwardRuntime  # noqa: E402
 
 
 @dataclass(frozen=True)
@@ -223,7 +225,7 @@ def _codex_command(
     work_dir: Path,
     schema_path: Path,
     output_path: Path,
-    data_dir: Path | None = None,
+    endpoint: str | None = None,
 ) -> list[str]:
     command = _command_prefix(args.codex_binary) + [
         "exec",
@@ -260,13 +262,13 @@ def _codex_command(
     ):
         command.extend(["-c", f"features.{feature}=false"])
     command.extend(["-c", 'web_search="disabled"', "--output-schema", str(schema_path), "-o", str(output_path)])
-    if data_dir is not None:
+    if endpoint is not None:
         command.extend(
             [
                 "-c",
-                f"mcp_servers.ownward.command={json.dumps(str(args.binary))}",
+                f"mcp_servers.ownward.url={json.dumps(endpoint)}",
                 "-c",
-                f"mcp_servers.ownward.args={json.dumps(['mcp', '--data-dir', str(data_dir)])}",
+                'mcp_servers.ownward.bearer_token_env_var="OWNWARD_MCP_BEARER_TOKEN"',
             ]
         )
     return command
@@ -282,7 +284,7 @@ def _run_codex_json(
     output_path: Path,
     events_path: Path,
     environment: dict[str, str],
-    data_dir: Path | None = None,
+    endpoint: str | None = None,
     maximum_seconds: float | None = None,
 ) -> dict[str, Any]:
     work_dir = events_path.with_suffix("")
@@ -299,7 +301,7 @@ def _run_codex_json(
             work_dir=work_dir,
             schema_path=schema_path,
             output_path=output_path,
-            data_dir=data_dir,
+            endpoint=endpoint,
         )
         command.append(prompt)
         isolated = _isolated_codex_environment(args.codex_auth_file, root / "codex-home", environment)
@@ -575,6 +577,8 @@ def _ownward_environment(args: argparse.Namespace, *, disable_relations: bool) -
     for name in prohibited:
         environment.pop(name, None)
     environment["OWNWARD_DISABLE_RELATIONS"] = "true" if disable_relations else "false"
+    environment["NO_PROXY"] = "127.0.0.1,localhost"
+    environment["no_proxy"] = "127.0.0.1,localhost"
     return environment
 
 
@@ -598,7 +602,7 @@ def _run_binary(
 ) -> dict[str, Any]:
     try:
         completed = subprocess.run(
-            [str(args.binary), *command],
+            [str(args.binary), command[0], "--runtime-dir", str(args.runtime_dir), *command[1:]],
             check=False,
             capture_output=True,
             text=True,
@@ -622,6 +626,127 @@ def _percentile(values: list[float], quantile: float) -> float:
 
 def _scenario_key(scenario_id: str, node_id: str) -> str:
     return f"{scenario_id}/{node_id}"
+
+
+def _semantic_completion_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["processed", "uncertain"],
+        "properties": {
+            "processed": {"type": "integer", "minimum": 0},
+            "uncertain": {"type": "integer", "minimum": 0},
+        },
+    }
+
+
+def _semantic_prompt(asset_ids: list[str], capability: dict[str, Any]) -> str:
+    return f"""Act only as Ownward's external semantic capability. Use only the connected Ownward tools.
+
+Call `ownward_semantic_work` once with exactly these asset IDs:
+{json.dumps(asset_ids, ensure_ascii=False)}
+
+Analyze only the returned assets and candidate contexts. Do not infer anything from a user task, query, test expectation, hidden truth, or outside knowledge. For every returned work item, submit exactly one result through `ownward_semantic_submit_batch` using schema `ownward.semantic-submission/v1`, capability id `codex`, capability version `{capability['model']}`, and execution `dynamic-unseen-organization`. A complete analysis may contain a concise summary, retrieval cues, topics, inferred contexts, and relations supported by explicit evidence in the work. Relations may use only same_as, broader_than, narrower_than, part_of, has_part, supports, contradicts, derived_from, applies_in, or related_to, and must target a supplied candidate with confidence at least 0.75. Use incoming direction when the candidate is the semantic source; otherwise use outgoing. Do not create a relation merely because two items share vocabulary. If the work does not support a reliable judgment, submit uncertain with a concise reason instead of guessing.
+
+Check every per-item submission result. Return only the number processed and the number submitted as uncertain."""
+
+
+def _run_semantic_partition(
+    args: argparse.Namespace,
+    *,
+    scenario_id: str,
+    asset_ids: list[str],
+    endpoint: str,
+    environment: dict[str, str],
+) -> tuple[float, dict[str, Path]]:
+    require(0 < len(asset_ids) <= 20, "semantic partition must contain one to twenty current assets")
+    capability = args.protocol["models"]["external_agent"]
+    prompt = _semantic_prompt(asset_ids, capability)
+    safe_id = hashlib.sha256(scenario_id.encode("utf-8")).hexdigest()[:20]
+    output_path = args.evidence_dir / f"semantic-{safe_id}.json"
+    events_path = args.evidence_dir / f"semantic-{safe_id}.events.jsonl"
+    run_path = args.evidence_dir / f"semantic-{safe_id}-run.json"
+    binding = {
+        "candidate": args.candidate,
+        "release_binary_sha256": sha256(args.binary),
+        "protocol_sha256": sha256(args.protocol_path),
+        "codex_binary_sha256": sha256(args.codex_binary),
+        "scenario_id": scenario_id,
+        "asset_ids": asset_ids,
+        "model": capability["model"],
+        "reasoning_effort": capability["reasoning_effort"],
+        "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+    }
+    existing = [output_path.exists(), events_path.exists(), run_path.exists()]
+    if any(existing):
+        require(args.resume, f"semantic partition {scenario_id} exists; use --resume")
+        if not all(existing):
+            _clear_incomplete_codex_stage(output_path, events_path, run_path)
+        else:
+            run = load_json(run_path)
+            require(run.get("schema") == "ownward.dynamic-semantic-run/v1", "semantic run schema changed")
+            require(run.get("binding") == binding, "semantic run binding changed")
+            require(run.get("output_sha256") == sha256(output_path), "semantic output changed")
+            require(run.get("events_sha256") == sha256(events_path), "semantic events changed")
+            return float(run["elapsed_seconds"]), {
+                f"semantic_{safe_id}_output": output_path,
+                f"semantic_{safe_id}_events": events_path,
+                f"semantic_{safe_id}_run": run_path,
+            }
+    begin = time.perf_counter()
+    result = _run_codex_json(
+        args,
+        model=str(capability["model"]),
+        reasoning_effort=str(capability["reasoning_effort"]),
+        prompt=prompt,
+        schema=_semantic_completion_schema(),
+        output_path=output_path,
+        events_path=events_path,
+        environment=environment,
+        endpoint=endpoint,
+        maximum_seconds=float(args.protocol["execution"]["organization_operation_stall_seconds"]),
+    )
+    elapsed = time.perf_counter() - begin
+    trace = parse_agent_trace(events_path.read_text(encoding="utf-8"))
+    require(not trace.bypassed, f"semantic capability used bypass tools: {trace.bypass_operations}")
+    require(trace.calls and all(call.name in {"ownward_semantic_work", "ownward_semantic_submit_batch"} for call in trace.calls), "semantic capability used a non-semantic Ownward tool")
+    require(all(not call.error for call in trace.calls), "semantic capability encountered a tool error")
+    require(sum(call.name == "ownward_semantic_work" for call in trace.calls) == 1, "semantic capability changed its assigned work partition")
+    require(sum(call.name == "ownward_semantic_submit_batch" for call in trace.calls) == 1, "semantic capability did not submit one complete batch")
+    require(int(result.get("processed", -1)) == len(asset_ids), "semantic capability did not process every assigned asset")
+    write_json(
+        run_path,
+        {
+            "schema": "ownward.dynamic-semantic-run/v1",
+            "binding": binding,
+            "elapsed_seconds": elapsed,
+            "output_sha256": sha256(output_path),
+            "events_sha256": sha256(events_path),
+        },
+    )
+    return elapsed, {
+        f"semantic_{safe_id}_output": output_path,
+        f"semantic_{safe_id}_events": events_path,
+        f"semantic_{safe_id}_run": run_path,
+    }
+
+
+def _clear_partial_ingestion(data_dir: Path, progress_path: Path, evidence_dir: Path) -> None:
+    resolved_evidence = evidence_dir.resolve()
+    if data_dir.exists():
+        resolved_data = data_dir.resolve()
+        require(resolved_data.parent == resolved_evidence, "refusing to clear an unexpected data directory")
+        shutil.rmtree(resolved_data)
+    for path in evidence_dir.glob("semantic-*"):
+        resolved = path.resolve()
+        require(resolved.parent == resolved_evidence, "semantic evidence escaped the acceptance directory")
+        if resolved.is_dir():
+            shutil.rmtree(resolved)
+        else:
+            resolved.unlink()
+    if progress_path.exists():
+        require(progress_path.resolve().parent == resolved_evidence, "ingestion progress escaped the acceptance directory")
+        progress_path.unlink()
 
 
 def _ingest_condition(
@@ -665,10 +790,13 @@ def _ingest_condition(
         return mapping, environment
     require(condition == "full", "full ingestion must keep relation organization enabled")
     data_dir = args.evidence_dir / "full-data"
+    progress_path = args.evidence_dir / "full-ingestion-progress.json"
     if mapping_path.exists():
         require(args.resume, f"{condition} mapping exists; use --resume")
         mapping = load_json(mapping_path)
         require(mapping.get("binding") == binding, f"{condition} ingestion binding changed")
+        require(progress_path.is_file(), "sealed ingestion mapping has no progress evidence")
+        require(mapping.get("ingestion_progress_sha256") == sha256(progress_path), "sealed ingestion progress changed")
         stable_ids = {str(key): str(value) for key, value in mapping["stable_ids"].items()}
         inspection_stall = float(args.protocol["execution"]["inspection_operation_stall_seconds"])
         for scenario in dataset["valid_scenarios"]:
@@ -685,16 +813,36 @@ def _ingest_condition(
                 )
                 require(read.get("content") == expected_content, f"{condition} resumed asset differs from the frozen dataset")
         return mapping, environment
-    if data_dir.exists():
-        require(args.resume, f"{condition} data already exists; use --resume")
-        resolved = data_dir.resolve()
-        require(resolved.parent == args.evidence_dir.resolve(), "refusing to clear an unexpected data directory")
-        shutil.rmtree(resolved)
-    data_dir.mkdir(parents=True)
-    stable_ids: dict[str, str] = {}
-    revisions: dict[str, int] = {}
-    durations: list[float] = []
-    operation_count = 0
+    progress: dict[str, Any] | None = None
+    if data_dir.exists() or progress_path.exists():
+        require(args.resume, f"{condition} ingestion already started; use --resume")
+        if data_dir.is_dir() and progress_path.is_file():
+            candidate_progress = load_json(progress_path)
+            require(candidate_progress.get("schema") == "ownward.dynamic-ingestion-progress/v1", "ingestion progress schema changed")
+            require(candidate_progress.get("binding") == binding, "ingestion progress binding changed")
+            if not candidate_progress.get("inflight_scenario"):
+                progress = candidate_progress
+        if progress is None:
+            _clear_partial_ingestion(data_dir, progress_path, args.evidence_dir)
+    if progress is None:
+        data_dir.mkdir(parents=True)
+        progress = {
+            "schema": "ownward.dynamic-ingestion-progress/v1",
+            "binding": binding,
+            "completed_scenarios": [],
+            "inflight_scenario": "",
+            "stable_ids": {},
+            "revisions": {},
+            "durations": [],
+            "operation_count": 0,
+            "semantic_evidence": {},
+        }
+        write_json(progress_path, progress)
+    stable_ids = {str(key): str(value) for key, value in progress["stable_ids"].items()}
+    revisions = {str(key): int(value) for key, value in progress["revisions"].items()}
+    durations = [float(value) for value in progress["durations"]]
+    operation_count = int(progress["operation_count"])
+    completed_scenarios = {str(value) for value in progress["completed_scenarios"]}
     execution = args.protocol["execution"]
     operation_stall = float(execution["organization_operation_stall_seconds"])
     accepted_p95 = float(execution["organization_p95_seconds_max"])
@@ -703,61 +851,102 @@ def _ingest_condition(
         for scenario in dataset["valid_scenarios"]
     )
     allowed_slow_operations = max(0, int(total_operations * 0.05))
-    for scenario in dataset["valid_scenarios"]:
-        scenario_id = str(scenario["truth"]["id"])
-        for item in scenario["expression"]["information"]:
+    semantic_evidence = {str(key): str(value) for key, value in progress["semantic_evidence"].items()}
+    with OwnwardRuntime(
+        args.binary,
+        data_dir,
+        args.runtime_dir,
+        environment,
+        startup_seconds=operation_stall,
+        operation_seconds=operation_stall,
+    ) as runtime:
+        require(runtime.client is not None and runtime.binding is not None, "Ownward shared runtime did not start")
+        for scenario in dataset["valid_scenarios"]:
+            scenario_id = str(scenario["truth"]["id"])
+            if scenario_id in completed_scenarios:
+                for item in scenario["expression"]["information"]:
+                    key = _scenario_key(scenario_id, str(item["node_id"]))
+                    status = runtime.client.call_tool("ownward_status", {"id": stable_ids[key]})
+                    organization = status.get("organization") if isinstance(status, dict) else None
+                    require(isinstance(organization, dict) and organization.get("status") == "ready", "resumed semantic organization is not ready")
+                continue
+            progress["inflight_scenario"] = scenario_id
+            write_json(progress_path, progress)
+            information = list(scenario["expression"]["information"])
             begin = time.perf_counter()
-            created = _run_binary(
-                args,
-                ["create", "--data-dir", str(data_dir), "--content", str(item["content"])],
-                environment,
-                timeout=operation_stall,
+            created_batch = runtime.client.call_tool(
+                "ownward_create_batch",
+                {"items": [{"content": str(item["content"]), "source": {"actor": "dynamic-unseen"}} for item in information]},
             )
-            durations.append(time.perf_counter() - begin)
+            batch_results = created_batch.get("results") if isinstance(created_batch, dict) else None
+            require(isinstance(batch_results, list) and len(batch_results) == len(information), "create batch result is incomplete")
+            scenario_ids: list[str] = []
+            for item, batch_result in zip(information, batch_results, strict=True):
+                require(isinstance(batch_result, dict) and not batch_result.get("error"), f"create batch item failed: {batch_result}")
+                mutation = batch_result.get("result")
+                result = mutation.get("information") if isinstance(mutation, dict) else None
+                organization = mutation.get("organization") if isinstance(mutation, dict) else None
+                require(isinstance(result, dict) and isinstance(organization, dict), "create batch item is incomplete")
+                require(organization.get("status") == "pending", "new asset did not expose pending semantic work")
+                key = _scenario_key(scenario_id, str(item["node_id"]))
+                require(key not in stable_ids, "dynamic node was created twice")
+                stable_ids[key] = str(result["id"])
+                revisions[key] = int(result["revision"])
+                scenario_ids.append(str(result["id"]))
+                operation_count += 1
+            for item in scenario["expression"]["updates"]:
+                key = _scenario_key(scenario_id, str(item["node_id"]))
+                updated = runtime.client.call_tool(
+                    "ownward_update",
+                    {
+                        "id": stable_ids[key],
+                        "expected_revision": revisions[key],
+                        "content": str(item["content"]),
+                    },
+                )
+                mutation = updated.get("result") if isinstance(updated, dict) else None
+                result = mutation.get("information") if isinstance(mutation, dict) else None
+                organization = mutation.get("organization") if isinstance(mutation, dict) else None
+                require(isinstance(result, dict) and isinstance(organization, dict), "update result is incomplete")
+                require(result.get("id") == stable_ids[key] and int(result.get("revision", 0)) == revisions[key] + 1, "update changed stable identity")
+                require(organization.get("status") == "pending", "updated asset did not expose pending semantic work")
+                revisions[key] = int(result["revision"])
+                operation_count += 1
+            semantic_seconds, evidence = _run_semantic_partition(
+                args,
+                scenario_id=scenario_id,
+                asset_ids=scenario_ids,
+                endpoint=runtime.binding.endpoint,
+                environment={**environment, "OWNWARD_MCP_BEARER_TOKEN": runtime.binding.bearer_token},
+            )
+            for name, path in evidence.items():
+                semantic_evidence[name] = str(path.relative_to(args.evidence_dir))
+            for information_id in scenario_ids:
+                status = runtime.client.call_tool("ownward_status", {"id": information_id})
+                organization = status.get("organization") if isinstance(status, dict) else None
+                require(isinstance(organization, dict) and organization.get("status") == "ready", f"semantic organization did not become ready: {organization}")
+            scenario_seconds = time.perf_counter() - begin
+            durations.extend([scenario_seconds] * (len(information) + len(scenario["expression"]["updates"])))
+            require(semantic_seconds <= operation_stall, "semantic organization exceeded the frozen operation boundary")
             require(
                 sum(value > accepted_p95 for value in durations) <= allowed_slow_operations,
                 "organization can no longer satisfy the frozen P95; stop before consuming the remaining batch",
             )
-            result = created.get("information")
-            organization = created.get("organization")
-            require(isinstance(result, dict) and isinstance(organization, dict), "create result is incomplete")
-            require(organization.get("status") == "ready", f"{condition} organization was not ready: {organization}")
-            key = _scenario_key(scenario_id, str(item["node_id"]))
-            require(key not in stable_ids, "dynamic node was created twice")
-            stable_ids[key] = str(result["id"])
-            revisions[key] = int(result["revision"])
-            operation_count += 1
-        for item in scenario["expression"]["updates"]:
-            key = _scenario_key(scenario_id, str(item["node_id"]))
-            begin = time.perf_counter()
-            updated = _run_binary(
-                args,
-                [
-                    "update",
-                    "--data-dir",
-                    str(data_dir),
-                    "--id",
-                    stable_ids[key],
-                    "--revision",
-                    str(revisions[key]),
-                    "--content",
-                    str(item["content"]),
-                ],
-                environment,
-                timeout=operation_stall,
-            )
-            durations.append(time.perf_counter() - begin)
-            require(
-                sum(value > accepted_p95 for value in durations) <= allowed_slow_operations,
-                "organization can no longer satisfy the frozen P95; stop before consuming the remaining batch",
-            )
-            result = updated.get("information")
-            organization = updated.get("organization")
-            require(isinstance(result, dict) and isinstance(organization, dict), "update result is incomplete")
-            require(result.get("id") == stable_ids[key] and int(result.get("revision", 0)) == revisions[key] + 1, "update changed stable identity")
-            require(organization.get("status") == "ready", f"{condition} update organization was not ready: {organization}")
-            revisions[key] = int(result["revision"])
-            operation_count += 1
+            completed_scenarios.add(scenario_id)
+            progress = {
+                "schema": "ownward.dynamic-ingestion-progress/v1",
+                "binding": binding,
+                "completed_scenarios": sorted(completed_scenarios),
+                "inflight_scenario": "",
+                "stable_ids": stable_ids,
+                "revisions": revisions,
+                "durations": durations,
+                "operation_count": operation_count,
+                "semantic_evidence": semantic_evidence,
+            }
+            write_json(progress_path, progress)
+    expected_scenarios = {str(value["truth"]["id"]) for value in dataset["valid_scenarios"]}
+    require(completed_scenarios == expected_scenarios, "full ingestion did not complete every frozen scenario")
     mapping = {
         "schema": "ownward.dynamic-ingestion/v2",
         "condition": condition,
@@ -770,6 +959,8 @@ def _ingest_condition(
         "organization_seconds": sum(durations),
         "organization_seconds_max": max(durations, default=0),
         "organization_seconds_p95": _percentile(durations, 0.95),
+        "semantic_evidence": semantic_evidence,
+        "ingestion_progress_sha256": sha256(progress_path),
     }
     write_json(mapping_path, mapping)
     return mapping, environment
@@ -785,11 +976,11 @@ def _run_agents(
     mapping: dict[str, Any],
     environment: dict[str, str],
     protocol: dict[str, Any],
+    endpoint: str,
     *,
     condition: str,
     task_classes: list[str] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Path]]:
-    data_dir = args.evidence_dir / str(mapping["data_directory"])
     agent_config = protocol["models"]["external_agent"]
     model = str(agent_config["model"])
     reasoning_effort = str(agent_config["reasoning_effort"])
@@ -853,7 +1044,7 @@ def _run_agents(
                 output_path=output_path,
                 events_path=events_path,
                 environment=environment,
-                data_dir=data_dir,
+                endpoint=endpoint,
                 maximum_seconds=class_seconds,
             )
             elapsed = time.perf_counter() - begin
@@ -872,6 +1063,15 @@ def _run_agents(
             )
         trace = parse_agent_trace(events_path.read_text(encoding="utf-8"))
         require(not trace.bypassed, f"{condition} agent used bypass tools: {trace.bypass_operations}")
+        require(
+            trace.calls
+            and all(
+                call.name in {"ownward_rules", "ownward_search", "ownward_read", "ownward_navigate", "ownward_status"}
+                for call in trace.calls
+            ),
+            f"{condition} agent used a mutation or non-retrieval Ownward tool",
+        )
+        require(all(not call.error for call in trace.calls), f"{condition} agent encountered an Ownward tool error")
         observed_evidence = _observed_tool_evidence(trace.calls)
         answer_values = answers.get("answers")
         require(isinstance(answer_values, list), "agent output has no answers")
@@ -935,6 +1135,8 @@ def _run_agent_pairs(
     baseline_mapping: dict[str, Any],
     baseline_environment: dict[str, str],
     protocol: dict[str, Any],
+    full_endpoint: str,
+    baseline_endpoint: str,
 ) -> tuple[dict[str, Any], dict[str, Path], dict[str, Any], dict[str, Path]]:
     require(int(protocol["execution"]["parallel_conditions"]) == 2, "dynamic condition parallelism changed")
     full_runs: dict[str, Any] = {}
@@ -950,6 +1152,7 @@ def _run_agent_pairs(
                 full_mapping,
                 full_environment,
                 protocol,
+                full_endpoint,
                 condition="full",
                 task_classes=[str(task_class)],
             )
@@ -960,6 +1163,7 @@ def _run_agent_pairs(
                 baseline_mapping,
                 baseline_environment,
                 protocol,
+                baseline_endpoint,
                 condition="baseline",
                 task_classes=[str(task_class)],
             )
@@ -1301,6 +1505,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--ablation-output", type=Path, required=True)
     parser.add_argument("--codex-binary", type=Path, required=True)
     parser.add_argument("--codex-auth-file", type=Path, required=True)
+    parser.add_argument("--runtime-dir", type=Path, required=True)
     parser.add_argument("--resume", action="store_true")
     return parser.parse_args()
 
@@ -1315,6 +1520,7 @@ def main() -> None:
     args.ablation_output = args.ablation_output.resolve()
     args.codex_binary = args.codex_binary.resolve()
     args.codex_auth_file = args.codex_auth_file.resolve()
+    args.runtime_dir = args.runtime_dir.resolve()
     for path, label in (
         (args.binary, "release binary"),
         (args.protocol_path, "dynamic protocol"),
@@ -1322,6 +1528,7 @@ def main() -> None:
         (args.codex_auth_file, "Codex auth file"),
     ):
         require(path.is_file(), f"{label} does not exist: {path}")
+    require(args.runtime_dir.is_dir(), f"accepted product runtime does not exist: {args.runtime_dir}")
     require(args.codex_binary.suffix.lower() not in {".ps1", ".cmd", ".bat", ".js"}, "Codex evidence must bind the native executable, not a launcher script")
     require(len(args.candidate) == 40 and all(value in "0123456789abcdef" for value in args.candidate), "candidate must be a full lowercase Git hash")
     head, status = _repository_candidate(args.repository)
@@ -1365,15 +1572,34 @@ def main() -> None:
     organization, organization_evidence = _organization_metrics(args, dataset, full_mapping, full_environment)
     organization_evidence_path = args.evidence_dir / "organization-relations.json"
     write_json(organization_evidence_path, organization_evidence)
-    full_runs, full_evidence, baseline_runs, baseline_evidence = _run_agent_pairs(
-        args,
-        dataset,
-        full_mapping,
+    operation_stall = float(protocol["execution"]["organization_operation_stall_seconds"])
+    with OwnwardRuntime(
+        args.binary,
+        args.evidence_dir / str(full_mapping["data_directory"]),
+        args.runtime_dir,
         full_environment,
-        baseline_mapping,
+        startup_seconds=operation_stall,
+        operation_seconds=operation_stall,
+    ) as full_runtime, OwnwardRuntime(
+        args.binary,
+        args.evidence_dir / str(baseline_mapping["data_directory"]),
+        args.runtime_dir,
         baseline_environment,
-        protocol,
-    )
+        startup_seconds=operation_stall,
+        operation_seconds=operation_stall,
+    ) as baseline_runtime:
+        require(full_runtime.binding is not None and baseline_runtime.binding is not None, "query runtimes did not start")
+        full_runs, full_evidence, baseline_runs, baseline_evidence = _run_agent_pairs(
+            args,
+            dataset,
+            full_mapping,
+            {**full_environment, "OWNWARD_MCP_BEARER_TOKEN": full_runtime.binding.bearer_token},
+            baseline_mapping,
+            {**baseline_environment, "OWNWARD_MCP_BEARER_TOKEN": baseline_runtime.binding.bearer_token},
+            protocol,
+            full_runtime.binding.endpoint,
+            baseline_runtime.binding.endpoint,
+        )
     dynamic, ablation = _build_reports(
         args,
         protocol,
