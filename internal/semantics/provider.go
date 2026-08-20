@@ -14,18 +14,59 @@ import (
 
 const DefaultEmbeddingDimensions = 384
 
+var allowedRelationTypes = [...]string{
+	"same_as",
+	"broader_than",
+	"narrower_than",
+	"part_of",
+	"has_part",
+	"supports",
+	"contradicts",
+	"derived_from",
+	"applies_in",
+	"related_to",
+}
+
+var allowedRelationDirections = [...]string{"outgoing", "incoming"}
+
+func AllowedRelationTypes() []string {
+	return append([]string(nil), allowedRelationTypes[:]...)
+}
+
+func AllowedRelationDirections() []string {
+	return append([]string(nil), allowedRelationDirections[:]...)
+}
+
+func IsAllowedRelationType(value string) bool {
+	for _, allowed := range allowedRelationTypes {
+		if value == allowed {
+			return true
+		}
+	}
+	return false
+}
+
+func IsAllowedRelationDirection(value string) bool {
+	for _, allowed := range allowedRelationDirections {
+		if value == allowed {
+			return true
+		}
+	}
+	return false
+}
+
 type Cue struct {
 	Text string `json:"text" jsonschema:"有助于未来检索的原文线索"`
 	Kind string `json:"kind" jsonschema:"线索类别，例如 entity、term 或 requirement"`
 }
 
 type Relation struct {
-	Type           string  `json:"type" jsonschema:"关系类型：same_as、broader_than、narrower_than、part_of、has_part、supports、contradicts、derived_from、applies_in 或 related_to"`
+	Type           string  `json:"type" jsonschema:"关系类型必须取最精确的一种：same_as 表示含义等价；broader_than/narrower_than 只表示类别或概念范围的上位/下位，不能代替组成关系；part_of/has_part 表示机制、结构、流程、体系或主题中的组成/包含；supports 表示源资产为目标资产提供证据、机制、条件、方法或解决方案，问题、原因或背景不能反向支持解决它的方法；contradicts 表示明确冲突；derived_from 表示源结论、选择或做法由目标依据推导，不能用双向 supports 代替；applies_in 表示源内容适用于目标场景；只有存在直接关系但以上类型均不准确时才用 related_to。候选支持当前资产时仍填写 supports 并使用 incoming，不能自创逆向类型"`
 	TargetID       string  `json:"target_id" jsonschema:"必须是当前语义工作提供的候选资产 id"`
 	TargetRevision uint64  `json:"target_revision,omitempty"`
 	Confidence     float64 `json:"confidence" jsonschema:"基于明确证据的置信度，关系至少为 0.75"`
 	Evidence       string  `json:"evidence,omitempty" jsonschema:"当前资产与候选内容中直接支持该关系的证据"`
-	Direction      string  `json:"direction,omitempty" jsonschema:"当前资产指向候选时为 outgoing；候选指向当前资产时为 incoming"`
+	Direction      string  `json:"direction,omitempty" jsonschema:"方向决定关系陈述的主语：outgoing 表示 当前资产 type 候选资产；incoming 表示 候选资产 type 当前资产。例如候选是支持当前结论的证据时，type 为 supports 且 direction 为 incoming"`
 	InferredBy     string  `json:"inferred_by,omitempty"`
 }
 

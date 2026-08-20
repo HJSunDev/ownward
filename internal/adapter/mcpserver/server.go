@@ -3,10 +3,12 @@ package mcpserver
 import (
 	"context"
 	"net/http"
+	"reflect"
 
 	"github.com/HJSunDev/ownward/internal/core"
 	"github.com/HJSunDev/ownward/internal/domain"
 	"github.com/HJSunDev/ownward/internal/semantics"
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -163,20 +165,62 @@ func New(service *core.Service, version string) *Server {
 	}, value.navigate)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ownward_semantic_work",
-		Description: "以独立的语义能力角色取得待理解的有界工作。只分析工作中的资产和候选上下文，不使用当前任务意图，也不直接修改资产或关系图。",
+		Description: "以独立的语义能力角色取得待理解的有界工作。只分析工作中的资产和各自候选上下文，不使用当前任务意图，也不直接修改资产或关系图；关系只能指向同一工作项提供的候选，并按提交契约中每种关系与方向的精确定义判断。",
 		Annotations: closedWorldAnnotations(true, false, true),
 	}, value.semanticWork)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ownward_semantic_submit",
-		Description: "提交带能力来源、依据、置信度和不确定性的语义候选。Ownward 内核校验工作版本、证据与结构后决定如何进入派生组织状态；无法可靠判断时提交 uncertain，而不是猜测。",
+		Description: "提交带能力来源、依据、置信度和不确定性的语义候选。Ownward 内核校验工作版本、证据与结构后决定如何进入派生组织状态；能可靠概括资产但没有可靠关系时提交 complete 和空关系，只有无法可靠理解资产基本含义时才提交 uncertain。",
 		Annotations: closedWorldAnnotations(false, false, true),
+		InputSchema: semanticInputSchema[SemanticSubmitInput](),
 	}, value.semanticSubmit)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ownward_semantic_submit_batch",
-		Description: "一次提交一批彼此独立的语义候选，减少批量沉淀和重建中的交互成本。每条结果独立校验并返回；失败项不会阻断有效项，也不得被静默忽略。",
+		Description: "一次提交一批彼此独立的语义候选，减少批量沉淀和重建中的交互成本。每条结果独立校验并返回；失败项不会阻断有效项，调用方必须仅纠正并重试失败项，不得静默忽略。没有可靠关系不代表资产含义不确定，应提交 complete 和空关系。",
 		Annotations: closedWorldAnnotations(false, false, true),
+		InputSchema: semanticInputSchema[SemanticSubmitBatchInput](),
 	}, value.semanticSubmitBatch)
 	return value
+}
+
+func semanticInputSchema[T any]() *jsonschema.Schema {
+	relationSchema, err := jsonschema.For[semantics.Relation](nil)
+	if err != nil {
+		panic(err)
+	}
+	relationSchema.Properties["type"].Enum = stringEnum(semantics.AllowedRelationTypes())
+	relationSchema.Properties["direction"].Enum = stringEnum(semantics.AllowedRelationDirections())
+	relationSchema.Required = appendRequired(relationSchema.Required, "evidence", "direction")
+	schema, err := jsonschema.For[T](&jsonschema.ForOptions{TypeSchemas: map[reflect.Type]*jsonschema.Schema{
+		reflect.TypeFor[semantics.Relation](): relationSchema,
+	}})
+	if err != nil {
+		panic(err)
+	}
+	return schema
+}
+
+func appendRequired(required []string, names ...string) []string {
+	present := make(map[string]struct{}, len(required)+len(names))
+	for _, name := range required {
+		present[name] = struct{}{}
+	}
+	for _, name := range names {
+		if _, exists := present[name]; exists {
+			continue
+		}
+		required = append(required, name)
+		present[name] = struct{}{}
+	}
+	return required
+}
+
+func stringEnum(values []string) []any {
+	result := make([]any, len(values))
+	for index, value := range values {
+		result[index] = value
+	}
+	return result
 }
 
 func closedWorldAnnotations(readOnly, destructive, idempotent bool) *mcp.ToolAnnotations {

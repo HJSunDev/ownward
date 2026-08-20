@@ -261,16 +261,11 @@ func waitForRetry(ctx context.Context, delay time.Duration) error {
 }
 
 func validRelationType(value string) bool {
-	switch value {
-	case "same_as", "broader_than", "narrower_than", "part_of", "has_part", "related_to", "supports", "contradicts", "derived_from", "applies_in":
-		return true
-	default:
-		return false
-	}
+	return IsAllowedRelationType(value)
 }
 
 func validRelationDirection(value string) bool {
-	return value == "outgoing" || value == "incoming"
+	return IsAllowedRelationDirection(value)
 }
 
 func analysisSchema() map[string]any {
@@ -297,13 +292,11 @@ func analysisSchema() map[string]any {
 			"relations": map[string]any{"type": "array", "maxItems": 12, "items": map[string]any{
 				"type": "object", "additionalProperties": false, "required": []string{"type", "target_id", "confidence", "evidence", "direction"},
 				"properties": map[string]any{
-					"type": map[string]any{"type": "string", "enum": []string{
-						"same_as", "broader_than", "narrower_than", "part_of", "has_part", "related_to", "supports", "contradicts", "derived_from", "applies_in",
-					}},
+					"type":       map[string]any{"type": "string", "enum": AllowedRelationTypes()},
 					"target_id":  map[string]any{"type": "string", "maxLength": 128},
 					"confidence": map[string]any{"type": "number", "minimum": 0, "maximum": 1},
 					"evidence":   map[string]any{"type": "string", "maxLength": 240},
-					"direction":  map[string]any{"type": "string", "enum": []string{"outgoing", "incoming"}},
+					"direction":  map[string]any{"type": "string", "enum": AllowedRelationDirections()},
 				},
 			}},
 		},

@@ -49,8 +49,8 @@ type Submission struct {
 	AssetID     string     `json:"asset_id" jsonschema:"原样复制语义工作的 asset.id"`
 	Revision    uint64     `json:"asset_revision" jsonschema:"原样复制语义工作的 asset.revision"`
 	Capability  Capability `json:"capability" jsonschema:"产生本次判断的外部语义能力来源"`
-	Status      string     `json:"status" jsonschema:"只能填写 complete 或 uncertain；能够可靠判断时填写 complete，无法可靠判断时填写 uncertain"`
-	Uncertainty string     `json:"uncertainty,omitempty" jsonschema:"status 为 uncertain 时必须说明无法可靠判断的原因"`
+	Status      string     `json:"status" jsonschema:"只能填写 complete 或 uncertain。只要能够可靠概括资产本身就填写 complete；没有可靠的关系、场景或主题时在相应字段使用空数组，不能因此填写 uncertain。只有连资产基本含义都无法可靠理解时才填写 uncertain"`
+	Uncertainty string     `json:"uncertainty,omitempty" jsonschema:"仅在 status 为 uncertain 时说明为什么无法可靠理解资产基本含义"`
 	Analysis    Analysis   `json:"analysis" jsonschema:"只依据当前语义工作中的资产和候选上下文形成的候选判断"`
 	AcceptedAt  time.Time  `json:"accepted_at,omitempty"`
 }
