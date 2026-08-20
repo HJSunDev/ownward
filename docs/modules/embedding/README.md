@@ -35,7 +35,7 @@ flowchart LR
 | 本地运行时 | 在用户设备上完成向量计算，不承担信息组织、关系推导和检索编排。 |
 | 向量派生世代 | 保存与当前资产版本和向量空间一致的可重建向量。 |
 
-向量能力与通用语义能力必须相互独立。前者生成语义表示，后者理解内容并提出关系和场景判断；两者都不形成信息权威，也不能替代 Ownward 内核。
+向量能力与[语义理解能力](../semantics/README.md)必须相互独立。前者在本地生成语义表示并召回候选，后者通过可替换的外部能力理解开放内容并提出带依据和不确定性的关系与场景判断；两者都不形成信息权威，也不能替代 Ownward 内核。第一版可以由接入的外部智能体兼任语义能力。
 
 ## 向量空间
 
@@ -83,6 +83,7 @@ flowchart LR
 - [产品需求](../../product/requirements.md)
 - [架构总纲](../../architecture/overview.md)
 - [检索体系演进](../retrieval/README.md)
+- [语义理解架构](../semantics/README.md)
 - [存储架构](../storage/architecture.md)
 - [向量模型方案](../../research/vector-model-selection.md)
 - [第一版交付定义](../../delivery/first-version-delivery-definition.md)
