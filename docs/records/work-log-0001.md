@@ -168,3 +168,17 @@
 - **结论**：长期架构定义可替换的外部语义能力角色，不绑定同一个智能体、会话、模型、服务或协议；第一版由已接入 Ownward 的外部智能体兼任使用者与语义能力两个角色，不内置第二个智能体，也不要求额外模型服务。内核验证身份、版本、来源、证据、冲突和结构不变量，管理不确定性与派生状态，但不假装独立判断开放语义真伪。
 - **影响**：R-000023 确定的第一版协作路径继续成立，其“同一个接入智能体”只属于第一版落点，不再被视为长期架构不变量。语义能力可以随技术进步替换，资产、组织权威和核心契约始终属于 Ownward。
 - **证据**：docs/modules/semantics/README.md、docs/architecture/overview.md、docs/delivery/first-version-delivery-definition.md
+
+## R-000025｜关键问题｜智能体验收执行契约失效
+
+- **时间**：2026-08-20 23:43（Asia/Shanghai）
+- **结论**：dated Codex 模型名已不再支持，固定回归单批 20 项又实测产生语义工作 ID 错配；正式验收改用同模型家族的稳定别名，并将语义工作划分为每批 5 项，测试内容、质量门槛和产品范围不变。
+- **影响**：验收任务必须使用当前可执行的模型标识和经实测可靠的有界工作单元，不得把失效标识或超出智能体可靠处理范围的批次误判为产品失败。
+- **证据**：`benchmarks/acceptance/fixed/verify.py`、`benchmarks/acceptance/dynamic/protocol.json`、`.tmp/final-candidate-54fccad/evidence/fixed-regression-v2/`、`.tmp/final-candidate-54fccad/evidence/fixed-regression-v3/`
+
+## R-000026｜关键问题｜冻结语义验收条件不可同时满足
+
+- **时间**：2026-08-21 00:46（Asia/Shanghai）
+- **结论**：冻结的 Codex CLI 0.117.0、`gpt-5.4/low` 语义路径实测单条需 25.27 秒、五条批次 P95 为 58.22 秒，无法达到 15 秒；固定旧关系金标的逐类型命中仅 20%，但同一候选的全部检索质量已通过，继续调整内容规则会破坏开放语义架构。
+- **影响**：恢复开发前必须重新收敛锁定验收依据，使组织时效采用可达且真实的产品口径，并以不依赖唯一主观标签的证据验证组织质量；不得降低产品前沿标准或引入内容特判。
+- **证据**：`.tmp/final-candidate-209cc78/reports/fixed-regression-report.json`、`.tmp/semantic-single-item-probe-209cc78/evidence/`、R-000016、R-000021、R-000025
