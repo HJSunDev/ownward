@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 from typing import Any
+import zipfile
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parents[1]))
@@ -177,7 +178,11 @@ def main() -> None:
 
     with OwnwardRuntime(args.binary, data, args.runtime_dir, environment) as runtime:
         created = tool(runtime, "ownward_create_batch", {"items": [
-            {"content": "Project Atlas migration requires verified backups.", "source": {"actor": "module-lifecycle", "ref": "atlas"}},
+            {
+                "content": "Project Atlas migration requires verified backups.",
+                "contexts": [{"key": "project", "value": "atlas"}],
+                "source": {"actor": "module-lifecycle", "ref": "atlas"},
+            },
             {"content": "Project Atlas deployment window remains uncertain.", "source": {"actor": "module-lifecycle", "ref": "window"}},
         ]})
         results = created.get("results")
@@ -258,12 +263,137 @@ def main() -> None:
     require(after["pointer_sha256"] != before["pointer_sha256"], "successful recovery did not switch generations")
     require(len(after["generation_directories"]) == 1, "old derived generations were not reclaimed")
     require(after["manifest"].get("embedding_space") == bundle_manifest["space"]["id"], "active generation is not bound to the release vector space")
+    source_information: dict[str, dict[str, Any]] = {}
     with OwnwardRuntime(args.binary, data, args.runtime_dir, environment) as runtime:
         statuses = [tool(runtime, "ownward_status", {"id": value})["organization"]["status"] for value in [*asset_ids, unavailable_id]]
         require(statuses == ["ready", "uncertain", "ready"], "final module states differ after restart")
         search = tool(runtime, "ownward_search", {"query": "Which project needs backup and restoration verification?", "limit": 5})
         require(any("semantic" in item.get("signals", []) for item in search.get("results", [])), "recovered vector capability did not participate in retrieval")
+        source_information = {
+            value: tool(runtime, "ownward_read", {"id": value})["information"]
+            for value in [*asset_ids, unavailable_id]
+        }
         contract["final_statuses"] = statuses
+
+    source_asset_files = {
+        name: sha256(data / "assets" / name)
+        for name in ("manifest.json", "information.jsonl")
+    }
+    backup_path = args.evidence_dir / "independent-backup.ownward"
+    backup_result, _ = run_json(
+        [str(args.binary), "backup", "--data-dir", str(data), "--runtime-dir", str(args.runtime_dir), "--output", str(backup_path)],
+        timeout=120,
+    )
+    require(backup_result is not None and Path(str(backup_result.get("backup", ""))).resolve() == backup_path, "production backup did not return the independent archive")
+    with zipfile.ZipFile(backup_path) as archive:
+        backup_entries = sorted(archive.namelist())
+        require(backup_entries == ["backup.json", "information.jsonl", "manifest.json"], "backup contains derived or runtime state")
+        require(
+            all(archive.read(name) == (data / "assets" / name).read_bytes() for name in ("manifest.json", "information.jsonl")),
+            "backup asset bytes differ from the authoritative source",
+        )
+
+    restored_data = args.evidence_dir / "blank-restored-data"
+    require(not restored_data.exists(), "restore destination was not blank")
+    restore_result, _ = run_json(
+        [str(args.binary), "restore", "--data-dir", str(restored_data), "--runtime-dir", str(args.runtime_dir), "--backup", str(backup_path)],
+        timeout=300,
+    )
+    require(
+        restore_result is not None
+        and restore_result.get("organization", {}).get("pending") == 3,
+        "blank restore did not expose assets awaiting current semantic reorganization",
+    )
+    restored_asset_files = {
+        name: sha256(restored_data / "assets" / name)
+        for name in ("manifest.json", "information.jsonl")
+    }
+    require(restored_asset_files == source_asset_files, "restored authoritative asset bytes differ from the backup source")
+    restored_generation = generation_snapshot(restored_data / "state")
+    require(restored_generation["manifest"].get("embedding_space") == bundle_manifest["space"]["id"], "restored generation belongs to another vector space")
+
+    with OwnwardRuntime(args.binary, restored_data, args.runtime_dir, environment) as runtime:
+        restored_information = {
+            value: tool(runtime, "ownward_read", {"id": value})["information"]
+            for value in [*asset_ids, unavailable_id]
+        }
+        require(restored_information == source_information, "restored information identity, content, revision, or explicit semantics changed")
+        restore_initial_statuses = [tool(runtime, "ownward_status", {"id": value})["organization"]["status"] for value in [*asset_ids, unavailable_id]]
+        require(restore_initial_statuses == ["pending", "pending", "pending"], "restored assets did not expose the required semantic work")
+        restored_works = tool(runtime, "ownward_semantic_work", {"asset_ids": [*asset_ids, unavailable_id]})["work"]
+        require(len(restored_works) == 3, "current semantic capability could not obtain every restored work item")
+        restored_by_id = {str(work["asset"]["id"]): work for work in restored_works}
+        restored_submissions = [
+            complete_submission(restored_by_id[asset_ids[0]], summary="Atlas backup and restoration requirement", execution="blank-restore", inferred_context=True),
+            uncertain_submission(restored_by_id[asset_ids[1]]),
+            complete_submission(restored_by_id[unavailable_id], summary="Friday recovery review", execution="blank-restore"),
+        ]
+        restored_organization = tool(runtime, "ownward_semantic_submit_batch", {"submissions": restored_submissions})
+        require(
+            [value.get("organization", {}).get("status") for value in restored_organization.get("results", [])] == ["ready", "uncertain", "ready"],
+            "current semantic capability did not rebuild restored organization state",
+        )
+        restored_statuses = [tool(runtime, "ownward_status", {"id": value})["organization"]["status"] for value in [*asset_ids, unavailable_id]]
+        require(restored_statuses == ["ready", "uncertain", "ready"], "restored organization states differ after semantic reorganization")
+        rules = tool(runtime, "ownward_rules", {})
+        require(isinstance(rules, dict) and str(rules.get("rules", "")).strip(), "restored product did not expose collaboration rules")
+        restored_search = tool(runtime, "ownward_search", {"query": "Project Atlas backup and restoration requirement", "limit": 5})
+        require(any(item.get("id") == asset_ids[0] for item in restored_search.get("results", [])), "restored assets are not searchable")
+        created_after_restore = tool(runtime, "ownward_create", {
+            "content": "Project Atlas restored environment requires a quarterly recovery drill.",
+            "source": {"actor": "module-lifecycle", "ref": "post-restore"},
+        })
+        created_id = str(created_after_restore["result"]["information"]["id"])
+        created_work = tool(runtime, "ownward_semantic_work", {"asset_ids": [created_id]})["work"][0]
+        created_submission = complete_submission(created_work, summary="Quarterly recovery drill", execution="post-restore-create", inferred_context=True)
+        created_organized = tool(runtime, "ownward_semantic_submit", {"submission": created_submission})
+        require(created_organized["organization"]["status"] == "ready", "restored environment could not organize a new asset")
+        updated_after_restore = tool(runtime, "ownward_update", {
+            "id": created_id,
+            "expected_revision": 1,
+            "content": "Project Atlas restored environment requires a monthly recovery drill.",
+        })
+        require(updated_after_restore["result"]["information"]["revision"] == 2, "restored environment could not update an asset")
+        updated_work = tool(runtime, "ownward_semantic_work", {"asset_ids": [created_id]})["work"][0]
+        updated_submission = complete_submission(updated_work, summary="Monthly recovery drill", execution="post-restore-update", inferred_context=True)
+        updated_organized = tool(runtime, "ownward_semantic_submit", {"submission": updated_submission})
+        require(updated_organized["organization"]["status"] == "ready", "restored environment could not reorganize an updated asset")
+        updated_read = tool(runtime, "ownward_read", {"id": created_id})["information"]
+        require(updated_read["revision"] == 2 and "monthly recovery drill" in updated_read["content"], "restored update was not durably readable")
+
+    with OwnwardRuntime(args.binary, restored_data, args.runtime_dir, environment) as runtime:
+        independent_read = tool(runtime, "ownward_read", {"id": created_id})["information"]
+        independent_search = tool(runtime, "ownward_search", {"query": "monthly recovery drill", "limit": 5})
+        require(
+            independent_read["revision"] == 2 and any(item.get("id") == created_id for item in independent_search.get("results", [])),
+            "an independent restored session could not use the post-restore mutation",
+        )
+
+    recovery_contract = {
+        "schema": "ownward.recovery-evidence/v1",
+        "source_asset_files": source_asset_files,
+        "source_information": source_information,
+        "backup_entries": backup_entries,
+        "backup_sha256": sha256(backup_path),
+        "restore_destination_was_blank": True,
+        "restore_result": restore_result,
+        "restored_asset_files_before_mutation": restored_asset_files,
+        "restored_information_before_mutation": restored_information,
+        "restore_initial_statuses": restore_initial_statuses,
+        "restored_semantic_work_count": len(restored_works),
+        "restored_organization": restored_organization,
+        "restored_statuses": restored_statuses,
+        "restored_generation": restored_generation,
+        "rules_sha256": hashlib.sha256(str(rules["rules"]).encode("utf-8")).hexdigest(),
+        "restored_search_ids": [item.get("id") for item in restored_search.get("results", [])],
+        "post_restore_mutation": {
+            "id": created_id,
+            "revision": independent_read["revision"],
+            "content_sha256": hashlib.sha256(independent_read["content"].encode("utf-8")).hexdigest(),
+            "organization_status": updated_organized["organization"]["status"],
+            "independent_search_ids": [item.get("id") for item in independent_search.get("results", [])],
+        },
+    }
 
     asset_evidence = args.evidence_dir / "asset-log.jsonl"
     shutil.copy2(data / "assets" / "information.jsonl", asset_evidence)
@@ -273,15 +403,18 @@ def main() -> None:
     before_path = args.evidence_dir / "generation-before-failure.json"
     after_path = args.evidence_dir / "generation-after-recovery.json"
     contract_path = args.evidence_dir / "semantic-contract.json"
+    recovery_path = args.evidence_dir / "recovery-contract.json"
     write_json(before_path, before)
     write_json(after_path, after)
     write_json(contract_path, contract)
+    write_json(recovery_path, recovery_contract)
     checks = [
         "derived-generation-atomic-switch", "derived-generation-failure-fallback", "old-generation-reclamation",
         "embedding-capability-generation-consistency", "embedding-space-isolation", "embedding-unavailable-safe-degradation",
         "embedding-recovery", "semantic-work-version-binding", "semantic-provenance-and-evidence", "semantic-uncertainty",
         "semantic-conflict-rejection", "semantic-stale-result-rejection", "semantic-unavailable-safe-degradation",
-        "semantic-recovery-reevaluation",
+        "semantic-recovery-reevaluation", "asset-only-independent-backup", "blank-environment-restore",
+        "asset-byte-equivalence", "assets-only-derived-rebuild", "post-restore-core-closure",
     ]
     report = {
         "schema": REPORT_SCHEMA, "candidate": args.candidate, "release_binary_version": version,
@@ -292,6 +425,8 @@ def main() -> None:
             "generation_before_failure": {"path": str(before_path), "sha256": sha256(before_path)},
             "generation_after_recovery": {"path": str(after_path), "sha256": sha256(after_path)},
             "semantic_contract": {"path": str(contract_path), "sha256": sha256(contract_path)},
+            "backup_archive": {"path": str(backup_path), "sha256": sha256(backup_path)},
+            "recovery_contract": {"path": str(recovery_path), "sha256": sha256(recovery_path)},
         },
         "checks": [{"name": name, "passed": True} for name in checks], "passed": True,
     }

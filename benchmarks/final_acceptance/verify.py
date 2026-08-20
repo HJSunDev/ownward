@@ -16,6 +16,7 @@ import sys
 import tarfile
 import tempfile
 from typing import Any
+import zipfile
 
 
 REPORT_SCHEMA = "ownward.final-acceptance-report/v1"
@@ -36,7 +37,7 @@ AGENT_EXCLUDED_CONTENT = "Scratch note: the acceptance controller is currently c
 AGENT_APPLIED_ACTIONS = ["verify backups", "test restoration"]
 AGENT_MODEL = "gpt-5.4"
 AGENT_REASONING_EFFORT = "low"
-AGENT_MUTATION_PROMPT = f"""Use only the connected Ownward tools and do not use shell or file tools. First obtain Ownward's collaboration rules. Evaluate each statement below only under those rules.
+AGENT_MUTATION_PROMPT = f"""Use only the connected Ownward tools and do not use shell or file tools. First obtain Ownward's collaboration rules. Evaluate each statement below only under those rules, and complete any Ownward maintenance required by those rules and by returned organization states.
 
 Statement A: {AGENT_INITIAL_CONTENT}
 Statement B: {AGENT_EXCLUDED_CONTENT}
@@ -128,7 +129,15 @@ def _verify_repository(repository: Path, candidate: str) -> list[str]:
         [sys.executable, "-m", "py_compile", "benchmarks/final_acceptance/official_validate.py"],
         [sys.executable, "-m", "py_compile", "benchmarks/resource_frontier/tam_benchmark.py"],
     ]
-    for directory in ("agent_integration", "resource_frontier", "final_acceptance", "acceptance/dynamic"):
+    for directory in (
+        "agent_integration",
+        "resource_frontier",
+        "delivery_resource",
+        "final_acceptance",
+        "acceptance/dynamic",
+        "acceptance/fixed",
+        "acceptance/module_lifecycle",
+    ):
         environment = dict(os.environ)
         environment["PYTHONPATH"] = str(repository / "benchmarks" / directory)
         _run_checked(
@@ -178,6 +187,195 @@ def _require_checks(report: dict[str, Any], expected: set[str], label: str) -> N
         if isinstance(check, dict) and check.get("passed") is True
     }
     _require(names == expected and len(checks) == len(expected), f"{label} report checks are incomplete or changed")
+
+
+def _validate_evidence_files(report: dict[str, Any], required: set[str], label: str) -> dict[str, Path]:
+    evidence = report.get("evidence")
+    _require(isinstance(evidence, dict) and required <= set(evidence), f"{label} evidence is incomplete")
+    result: dict[str, Path] = {}
+    for name in required:
+        descriptor = evidence.get(name)
+        _require(isinstance(descriptor, dict), f"{label} evidence {name} is invalid")
+        path = Path(str(descriptor.get("path", ""))).resolve()
+        _require(path.is_file(), f"{label} evidence {name} is missing")
+        _require(descriptor.get("sha256") == _sha256(path), f"{label} evidence {name} changed")
+        result[name] = path
+    return result
+
+
+def _validate_module_lifecycle_evidence(
+    paths: dict[str, Path], report: dict[str, Any]
+) -> None:
+    before = _load(paths["generation_before_failure"])
+    after = _load(paths["generation_after_recovery"])
+    contract = _load(paths["semantic_contract"])
+    failed = before.get("failed_rebuild")
+    _require(
+        isinstance(failed, dict)
+        and isinstance(failed.get("returncode"), int)
+        and failed["returncode"] != 0
+        and re.fullmatch(r"[0-9a-f]{64}", str(failed.get("stderr_sha256", ""))) is not None,
+        "module lifecycle failure evidence is invalid",
+    )
+    _require(
+        before.get("after_failure_pointer_sha256") == before.get("pointer_sha256"),
+        "failed generation rebuild did not preserve the active pointer",
+    )
+    durable = before.get("authoritative_asset_after_failure")
+    _require(
+        isinstance(durable, dict)
+        and str(durable.get("id", "")).strip()
+        and durable.get("revision") == 2
+        and re.fullmatch(r"[0-9a-f]{64}", str(durable.get("content_sha256", ""))) is not None,
+        "module lifecycle has no authoritative asset evidence after failure",
+    )
+    _require(before.get("pointer_sha256") != after.get("pointer_sha256"), "successful recovery did not switch the derived generation")
+    _require(
+        isinstance(after.get("generation_directories"), list)
+        and len(after["generation_directories"]) == 1
+        and after.get("manifest", {}).get("schema") == "ownward.derived-generation/v2"
+        and after.get("manifest", {}).get("embedding_space") == report.get("embedding_space"),
+        "recovered derived generation is incomplete or belongs to another vector space",
+    )
+    _require(contract.get("schema") == "ownward.module-lifecycle-evidence/v1", "semantic lifecycle evidence has an unexpected schema")
+    _require(contract.get("conflict_rejected") is True and contract.get("stale_rejected") is True, "semantic conflicts or stale results were not rejected")
+    accepted = contract.get("accepted", {}).get("results")
+    _require(
+        isinstance(accepted, list)
+        and [item.get("organization", {}).get("status") for item in accepted] == ["ready", "uncertain"],
+        "semantic complete and uncertain states were not preserved",
+    )
+    _require(contract.get("pending_without_semantics", {}).get("organization", {}).get("status") == "pending", "semantic unavailability did not remain explicit")
+    _require(contract.get("reevaluated", {}).get("organization", {}).get("status") == "ready", "semantic reevaluation did not recover")
+    _require(contract.get("space_isolation", {}).get("status", {}).get("organization", {}).get("status") == "pending", "another vector space remained visible")
+    _require(contract.get("final_statuses") == ["ready", "uncertain", "ready"], "final module statuses differ after recovery")
+    asset_events = [json.loads(line) for line in paths["asset_log"].read_text(encoding="utf-8").splitlines() if line.strip()]
+    _require(
+        len(asset_events) >= 4
+        and all(isinstance(item, dict) and item.get("operation") in {"create", "update"} for item in asset_events),
+        "module lifecycle authoritative asset log is incomplete",
+    )
+    recovery = _load(paths["recovery_contract"])
+    _require(recovery.get("schema") == "ownward.recovery-evidence/v1", "recovery evidence has an unexpected schema")
+    backup_path = paths["backup_archive"]
+    _require(recovery.get("backup_sha256") == _sha256(backup_path), "recovery evidence belongs to another backup")
+    with zipfile.ZipFile(backup_path) as archive:
+        entries = sorted(archive.namelist())
+        _require(entries == ["backup.json", "information.jsonl", "manifest.json"], "backup contains derived or runtime state")
+        archive_assets = {
+            name: hashlib.sha256(archive.read(name)).hexdigest()
+            for name in ("manifest.json", "information.jsonl")
+        }
+    source_assets = recovery.get("source_asset_files")
+    restored_assets = recovery.get("restored_asset_files_before_mutation")
+    _require(
+        recovery.get("backup_entries") == entries
+        and isinstance(source_assets, dict)
+        and source_assets == archive_assets
+        and restored_assets == source_assets,
+        "backup and blank restore did not preserve authoritative asset bytes",
+    )
+    source_information = recovery.get("source_information")
+    restored_information = recovery.get("restored_information_before_mutation")
+    _require(
+        recovery.get("restore_destination_was_blank") is True
+        and isinstance(source_information, dict)
+        and len(source_information) == 3
+        and restored_information == source_information,
+        "blank restore changed stable information identity, content, revision, or explicit semantics",
+    )
+    restore_result = recovery.get("restore_result", {}).get("organization", {})
+    restored_generation = recovery.get("restored_generation", {})
+    _require(
+        restore_result.get("pending") == 3
+        and recovery.get("restore_initial_statuses") == ["pending", "pending", "pending"]
+        and recovery.get("restored_semantic_work_count") == 3
+        and [
+            value.get("organization", {}).get("status")
+            for value in recovery.get("restored_organization", {}).get("results", [])
+        ] == ["ready", "uncertain", "ready"]
+        and recovery.get("restored_statuses") == ["ready", "uncertain", "ready"]
+        and restored_generation.get("manifest", {}).get("schema") == "ownward.derived-generation/v2"
+        and restored_generation.get("manifest", {}).get("embedding_space") == report.get("embedding_space"),
+        "assets-only restore did not expose and complete the expected semantic reorganization",
+    )
+    _require(
+        re.fullmatch(r"[0-9a-f]{64}", str(recovery.get("rules_sha256", ""))) is not None
+        and any(value in recovery.get("restored_search_ids", []) for value in source_information),
+        "restored product did not expose collaboration rules or searchable assets",
+    )
+    mutation = recovery.get("post_restore_mutation")
+    _require(
+        isinstance(mutation, dict)
+        and str(mutation.get("id", "")).strip()
+        and mutation.get("revision") == 2
+        and re.fullmatch(r"[0-9a-f]{64}", str(mutation.get("content_sha256", ""))) is not None
+        and mutation.get("organization_status") == "ready"
+        and mutation.get("id") in mutation.get("independent_search_ids", []),
+        "restored product did not complete create, update, organization, read, search, and independent-session use",
+    )
+
+
+def _validate_delivery_resource_evidence(
+    paths: dict[str, Path], report: dict[str, Any], *, repository: Path, candidate: str, binary_sha256: str
+) -> dict[str, Path]:
+    thresholds_path = repository / "benchmarks" / "delivery_resource" / "thresholds.json"
+    _require(thresholds_path.is_file(), "complete delivery resource thresholds are missing")
+    _require(report.get("thresholds_sha256") == _sha256(thresholds_path), "delivery resource report used other thresholds")
+    thresholds = _load(thresholds_path)
+    workload_contract = thresholds.get("workload")
+    _require(isinstance(workload_contract, dict), "delivery resource workload is not frozen")
+
+    package = _load(paths["package_manifest"])
+    _require(package.get("schema") == "ownward.release-package-evidence/v1" and package.get("candidate") == candidate, "release package evidence belongs to another candidate")
+    files = package.get("files")
+    _require(isinstance(files, dict) and {"bin/ownward.exe", "bin/embedding/manifest.json", "LICENSE", "README.md"} <= set(files), "release package evidence is incomplete")
+    _require(files["bin/ownward.exe"].get("sha256") == binary_sha256, "release package contains another binary")
+    _require(
+        isinstance(package.get("installed_bytes"), int)
+        and package["installed_bytes"] >= sum(int(item.get("bytes", 0)) for item in files.values()),
+        "release installed footprint is inconsistent with its file inventory",
+    )
+
+    process = _load(paths["process_samples"])
+    _require(process.get("schema") == "ownward.process-tree-evidence/v1" and process.get("candidate") == candidate, "process-tree evidence belongs to another candidate")
+    warm_samples = process.get("warm_samples")
+    _require(isinstance(warm_samples, list) and warm_samples, "delivery resource evidence has no warm process samples")
+    observed_names = {
+        str(item.get("name", "")).lower()
+        for sample in warm_samples if isinstance(sample, dict)
+        for item in sample.get("processes", []) if isinstance(item, dict)
+    }
+    _require({"ownward.exe", "llama-server.exe"} <= observed_names, "complete product process tree was not measured")
+
+    workload = _load(paths["workload_results"])
+    _require(workload.get("schema") == "ownward.delivery-workload-evidence/v1" and workload.get("candidate") == candidate, "delivery workload evidence belongs to another candidate")
+    cold = workload.get("cold_start_samples")
+    warm = workload.get("warm")
+    _require(
+        isinstance(cold, list)
+        and len(cold) == workload_contract.get("cold_start_samples")
+        and all(isinstance(item, dict) and all(float(item.get(name, 0)) > 0 for name in ("server_start_ms", "first_query_ms", "total_ms")) for item in cold),
+        "delivery cold-start evidence is incomplete",
+    )
+    _require(
+        isinstance(warm, dict)
+        and len(warm.get("query_samples_ms", [])) == workload_contract.get("warm_query_samples")
+        and warm.get("observed_model_runtime") is True,
+        "delivery warm workload is incomplete",
+    )
+    storage_path = Path(str(workload.get("production_storage_report", ""))).resolve()
+    _require(storage_path.is_file() and workload.get("production_storage_report_sha256") == _sha256(storage_path), "production storage report changed")
+    storage = _load(storage_path)
+    _validate_bound_report(storage, schema="ownward.production-storage-report/v1", candidate=candidate, binary_sha256=binary_sha256, label="production storage")
+    _require(
+        storage.get("scale") == workload_contract.get("production_scale")
+        and storage.get("dimensions") == workload_contract.get("production_dimensions")
+        and storage.get("thresholds_sha256") == _sha256(thresholds_path),
+        "production storage report used another workload or thresholds",
+    )
+    _require_checks(storage, {"production-record-count", "production-vector-dimensions", "bounded-derived-storage"}, "production storage")
+    return {**paths, "production_storage_report": storage_path, "delivery_resource_thresholds": thresholds_path}
 
 
 def _validate_dynamic_evidence(report: dict[str, Any], task_classes: set[str]) -> dict[str, Path]:
@@ -1063,6 +1261,8 @@ def _validate_agent_traces(report_path: Path, report: dict[str, Any]) -> dict[st
     update_position = mutation_names.index("ownward_update")
     search_positions = [position for position, name in enumerate(mutation_names) if name == "ownward_search"]
     read_positions = [position for position, name in enumerate(mutation_names) if name == "ownward_read"]
+    semantic_work_positions = [position for position, name in enumerate(mutation_names) if name == "ownward_semantic_work"]
+    semantic_submit_positions = [position for position, name in enumerate(mutation_names) if name == "ownward_semantic_submit_batch"]
     _require(
         search_positions
         and rules_position < search_positions[0] < create_position < update_position
@@ -1071,6 +1271,13 @@ def _validate_agent_traces(report_path: Path, report: dict[str, Any]) -> dict[st
         and any(position > update_position for position in search_positions)
         and any(position > update_position for position in read_positions),
         "agent mutation evidence does not contain the required lifecycle",
+    )
+    _require(
+        len(semantic_work_positions) == 2
+        and len(semantic_submit_positions) == 2
+        and create_position < semantic_work_positions[0] < semantic_submit_positions[0] < update_position
+        and update_position < semantic_work_positions[1] < semantic_submit_positions[1],
+        "agent evidence does not contain both external semantic collaboration cycles",
     )
     rules_result = next(call for call in mutation_calls if call.get("name") == "ownward_rules").get("result")
     _require(
@@ -1083,6 +1290,33 @@ def _validate_agent_traces(report_path: Path, report: dict[str, Any]) -> dict[st
     updated = _agent_information(next(call for call in mutation_calls if call.get("name") == "ownward_update"))
     _require(created.get("id") == updated.get("id") and created.get("revision") == 1 and updated.get("revision") == 2, "agent mutation evidence does not preserve stable identity")
     _require(created.get("content") == AGENT_INITIAL_CONTENT and updated.get("content") == AGENT_FINAL_CONTENT, "agent evidence does not use the fixed growth scenario")
+    stable_id = created.get("id")
+    for position in semantic_work_positions:
+        _require(
+            mutation_calls[position].get("arguments", {}).get("asset_ids") == [stable_id],
+            "agent semantic work was not scoped to the mutated information",
+        )
+    for position in semantic_submit_positions:
+        arguments = mutation_calls[position].get("arguments")
+        submissions = arguments.get("submissions") if isinstance(arguments, dict) else None
+        _require(isinstance(submissions, list) and len(submissions) == 1, "agent semantic submission batch is incomplete")
+        submission = submissions[0]
+        _require(
+            isinstance(submission, dict)
+            and submission.get("asset_id") == stable_id
+            and submission.get("status") in {"complete", "uncertain"}
+            and isinstance(submission.get("capability"), dict)
+            and str(submission["capability"].get("id", "")).strip(),
+            "agent semantic submission is not bound to its asset and external capability",
+        )
+        result_value = mutation_calls[position].get("result")
+        _require(
+            isinstance(result_value, dict)
+            and isinstance(result_value.get("results"), list)
+            and len(result_value["results"]) == 1
+            and not result_value["results"][0].get("error"),
+            "Ownward did not accept the agent's external semantic result",
+        )
     _require(
         all(AGENT_EXCLUDED_CONTENT not in str(call.get("arguments", {}).get("content", "")) for call in mutation_calls),
         "agent evidence persisted the fixed transient state",
@@ -1337,8 +1571,10 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--product-report", type=Path, required=True)
     parser.add_argument("--dynamic-report", type=Path, required=True)
     parser.add_argument("--organization-ablation-report", type=Path, required=True)
+    parser.add_argument("--module-lifecycle-report", type=Path, required=True)
     parser.add_argument("--performance-report", type=Path, required=True)
     parser.add_argument("--resource-report", type=Path, required=True)
+    parser.add_argument("--delivery-resource-report", type=Path, required=True)
     parser.add_argument("--resource-comparator-report", type=Path, required=True)
     parser.add_argument("--agent-report", type=Path, required=True)
     parser.add_argument("--longmemeval-overview", type=Path, required=True)
@@ -1358,8 +1594,10 @@ def main() -> None:
         args.product_report,
         args.dynamic_report,
         args.organization_ablation_report,
+        args.module_lifecycle_report,
         args.performance_report,
         args.resource_report,
+        args.delivery_resource_report,
         args.resource_comparator_report,
         args.agent_report,
         args.longmemeval_overview,
@@ -1382,24 +1620,45 @@ def main() -> None:
     product = _load(args.product_report.resolve())
     dynamic = _load(args.dynamic_report.resolve())
     organization_ablation = _load(args.organization_ablation_report.resolve())
+    module_lifecycle = _load(args.module_lifecycle_report.resolve())
     performance = _load(args.performance_report.resolve())
     resource = _load(args.resource_report.resolve())
+    delivery_resource = _load(args.delivery_resource_report.resolve())
     agent = _load(args.agent_report.resolve())
-    _validate_bound_report(product, schema="ownward.acceptance-report/v2", candidate=candidate, binary_sha256=binary_sha256, label="product")
+    _validate_bound_report(product, schema="ownward.fixed-regression-report/v1", candidate=candidate, binary_sha256=binary_sha256, label="fixed regression")
+    _validate_bound_report(module_lifecycle, schema="ownward.module-lifecycle-report/v1", candidate=candidate, binary_sha256=binary_sha256, label="module lifecycle")
     _validate_bound_report(performance, schema="ownward.performance-report/v4", candidate=candidate, binary_sha256=binary_sha256, label="performance")
+    _validate_bound_report(delivery_resource, schema="ownward.delivery-resource-report/v1", candidate=candidate, binary_sha256=binary_sha256, label="delivery resource")
     _validate_bound_report(agent, schema="ownward.agent-integration-report/v1", candidate=candidate, binary_sha256=binary_sha256, label="agent")
     _require_checks(
         product,
+        {"asset_fidelity", "organization", "organization_latency", "retrieval"},
+        "fixed regression",
+    )
+    _require_checks(
+        module_lifecycle,
         {
-            "信息沉淀与明确语义保持",
-            "自主语义关系组织",
-            "明确对象检索",
-            "语义意图检索",
-            "关系约束检索",
-            "场景适用性检索",
-            "资产备份、空白恢复与派生重建",
+            "derived-generation-atomic-switch",
+            "derived-generation-failure-fallback",
+            "old-generation-reclamation",
+            "embedding-capability-generation-consistency",
+            "embedding-space-isolation",
+            "embedding-unavailable-safe-degradation",
+            "embedding-recovery",
+            "semantic-work-version-binding",
+            "semantic-provenance-and-evidence",
+            "semantic-uncertainty",
+            "semantic-conflict-rejection",
+            "semantic-stale-result-rejection",
+            "semantic-unavailable-safe-degradation",
+            "semantic-recovery-reevaluation",
+            "asset-only-independent-backup",
+            "blank-environment-restore",
+            "asset-byte-equivalence",
+            "assets-only-derived-rebuild",
+            "post-restore-core-closure",
         },
-        "product",
+        "module lifecycle",
     )
     _require_checks(
         performance,
@@ -1423,6 +1682,7 @@ def main() -> None:
         agent,
         {
             "rules-create-search-read-update",
+            "external-semantic-collaboration",
             "stable-identity-and-revision",
             "independent-session-search-and-read",
             "growth-closure",
@@ -1432,10 +1692,55 @@ def main() -> None:
         },
         "agent",
     )
+    _require_checks(
+        delivery_resource,
+        {
+            "release-package-completeness",
+            "installed-footprint",
+            "complete-process-tree",
+            "cold-start",
+            "idle-resources",
+            "working-resources",
+            "embedding-throughput",
+            "production-scale-storage",
+        },
+        "delivery resource",
+    )
     threshold_sha256 = _sha256(thresholds_path)
     baseline_path = args.baseline.resolve()
     _validate_product_baseline(product, baseline_path, thresholds_path)
-    _require(str(product.get("provider", "")).startswith("openai-compatible:"), "product report did not use the required semantic provider")
+    semantic_capability = product.get("semantic_capability")
+    _require(
+        isinstance(semantic_capability, dict)
+        and str(semantic_capability.get("model", "")).strip()
+        and str(semantic_capability.get("reasoning_effort", "")).strip(),
+        "fixed regression did not bind the external semantic capability",
+    )
+    lifecycle_evidence = _validate_evidence_files(
+        module_lifecycle,
+        {
+            "asset_log",
+            "generation_before_failure",
+            "generation_after_recovery",
+            "semantic_contract",
+            "backup_archive",
+            "recovery_contract",
+        },
+        "module lifecycle",
+    )
+    _validate_module_lifecycle_evidence(lifecycle_evidence, module_lifecycle)
+    delivery_evidence = _validate_evidence_files(
+        delivery_resource,
+        {"package_manifest", "process_samples", "workload_results"},
+        "delivery resource",
+    )
+    delivery_evidence = _validate_delivery_resource_evidence(
+        delivery_evidence,
+        delivery_resource,
+        repository=args.repository.resolve(),
+        candidate=candidate,
+        binary_sha256=binary_sha256,
+    )
     _require(performance.get("thresholds_sha256") == threshold_sha256, "performance report used other thresholds")
     _require(
         performance.get("comparable") is True
@@ -1480,7 +1785,9 @@ def main() -> None:
         "product_report": args.product_report.resolve(),
         "dynamic_report": args.dynamic_report.resolve(),
         "organization_ablation_report": args.organization_ablation_report.resolve(),
+        "module_lifecycle_report": args.module_lifecycle_report.resolve(),
         "performance_report": args.performance_report.resolve(),
+        "delivery_resource_report": args.delivery_resource_report.resolve(),
         "resource_frontier_report": args.resource_report.resolve(),
         "resource_comparator_report": args.resource_comparator_report.resolve(),
         "agent_report": args.agent_report.resolve(),
@@ -1491,6 +1798,8 @@ def main() -> None:
         "longmemeval_archive": package["archive_path"],
     }
     artifacts.update({f"dynamic_{name}": path for name, path in dynamic_evidence.items()})
+    artifacts.update({f"module_lifecycle_{name}": path for name, path in lifecycle_evidence.items()})
+    artifacts.update({f"delivery_resource_{name}": path for name, path in delivery_evidence.items()})
     report = {
         "schema": REPORT_SCHEMA,
         "candidate": candidate,
@@ -1506,12 +1815,14 @@ def main() -> None:
         },
         "engineering_checks": engineering_checks,
         "checks": [
-            {"name": "product-and-recovery", "passed": True},
+            {"name": "fixed-regression", "passed": True},
+            {"name": "module-lifecycle-and-recovery", "passed": True},
             {"name": "dynamic-unseen-generality", "passed": True},
             {"name": "organization-structure-advantage", "passed": True},
             {"name": "external-agent-and-growth", "passed": True},
             {"name": "public-quality-latency-frontier", "passed": True},
             {"name": "release-resource-envelope", "passed": True},
+            {"name": "complete-delivery-resource-envelope", "passed": True},
             {"name": "public-resource-frontier", "passed": True},
             {"name": "single-candidate-binding", "passed": True},
         ],

@@ -149,21 +149,25 @@ class FinalVerifierTests(unittest.TestCase):
             before = {"id": "I1", "revision": 1, "content": verify.AGENT_INITIAL_CONTENT}
             after = {"id": "I1", "revision": 2, "content": verify.AGENT_FINAL_CONTENT}
             mutation_calls = [
-                ("ownward_rules", {"rules": "只保存长期复用的信息，不保存临时工作状态。"}),
-                ("ownward_search", {"results": []}),
-                ("ownward_create", {"result": {"information": before}}),
-                ("ownward_search", {"results": [{"id": "I1"}]}),
-                ("ownward_read", {"information": before}),
-                ("ownward_update", {"result": {"information": after}}),
-                ("ownward_search", {"results": [{"id": "I1"}]}),
-                ("ownward_read", {"information": after}),
+                ("ownward_rules", {}, {"rules": "只保存长期复用的信息，不保存临时工作状态。"}),
+                ("ownward_search", {}, {"results": []}),
+                ("ownward_create", {"content": verify.AGENT_INITIAL_CONTENT}, {"result": {"information": before}}),
+                ("ownward_semantic_work", {"asset_ids": ["I1"]}, {"work": [{"id": "work-1"}]}),
+                ("ownward_semantic_submit_batch", {"submissions": [{"asset_id": "I1", "status": "complete", "capability": {"id": "codex", "version": "1"}}]}, {"results": [{"work_id": "work-1", "organization": {"status": "ready"}}]}),
+                ("ownward_search", {}, {"results": [{"id": "I1"}]}),
+                ("ownward_read", {"id": "I1"}, {"information": before}),
+                ("ownward_update", {"id": "I1", "expected_revision": 1, "content": verify.AGENT_FINAL_CONTENT}, {"result": {"information": after}}),
+                ("ownward_semantic_work", {"asset_ids": ["I1"]}, {"work": [{"id": "work-2"}]}),
+                ("ownward_semantic_submit_batch", {"submissions": [{"asset_id": "I1", "status": "complete", "capability": {"id": "codex", "version": "1"}}]}, {"results": [{"work_id": "work-2", "organization": {"status": "ready"}}]}),
+                ("ownward_search", {}, {"results": [{"id": "I1"}]}),
+                ("ownward_read", {"id": "I1"}, {"information": after}),
             ]
             independent_calls = [
-                ("ownward_search", {"results": [{"id": "I1"}]}),
-                ("ownward_read", {"information": after}),
+                ("ownward_search", {}, {"results": [{"id": "I1"}]}),
+                ("ownward_read", {"id": "I1"}, {"information": after}),
             ]
 
-            def write_trace(path: Path, session_id: str, calls: list[tuple[str, dict[str, object]]], prompt: str = "") -> None:
+            def write_trace(path: Path, session_id: str, calls: list[tuple[str, dict[str, object], dict[str, object]]], prompt: str = "") -> None:
                 events = [{
                     "type": "session",
                     "session_id": session_id,
@@ -175,8 +179,8 @@ class FinalVerifierTests(unittest.TestCase):
                     "bypassed": False,
                 }]
                 events.extend(
-                    {"type": "ownward_tool_call", "name": name, "arguments": {}, "result": value}
-                    for name, value in calls
+                    {"type": "ownward_tool_call", "name": name, "arguments": arguments, "result": value}
+                    for name, arguments, value in calls
                 )
                 path.write_text("\n".join(json.dumps(event) for event in events) + "\n", encoding="utf-8")
 

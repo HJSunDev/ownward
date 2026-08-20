@@ -1,0 +1,28 @@
+{
+  "schema": "ownward.delivery-resource-thresholds/v1",
+  "frozen_at": "2026-08-20T12:30:00Z",
+  "basis": {
+    "embedding_resource_report": "benchmarks/vector-model-evaluation/results/embeddinggemma-runtime-optimization/llama-q8/resources.json",
+    "embedding_resource_report_sha256": "ffb1613e746f5b9ae2fee9dbe33cff7a5ff91f6e519e82a0681e7a56bdeb7e32",
+    "product_thresholds": "benchmarks/acceptance/v5/thresholds.json",
+    "product_thresholds_sha256": "2367f0e9facd216ec09ce9cd93a45f1712b8347f3e292e99fd130f8abf2fb1b9"
+  },
+  "limits": {
+    "installed_footprint_mib_max": 384,
+    "cold_start_p95_ms_max": 3500,
+    "idle_process_tree_rss_mib_max": 270,
+    "working_process_tree_rss_mib_max": 270,
+    "idle_cpu_percent_max": 0.1,
+    "warm_query_p95_ms_max": 600,
+    "document_embedding_ms_per_item_max": 535,
+    "derived_storage_over_raw_plus_vectors_ratio_max": 1.35
+  },
+  "workload": {
+    "cold_start_samples": 3,
+    "warm_query_samples": 20,
+    "document_samples": 20,
+    "idle_observation_seconds": 10,
+    "production_scale": 100000,
+    "production_dimensions": 512
+  }
+}
