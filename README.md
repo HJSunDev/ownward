@@ -20,32 +20,52 @@ Ownward does not include a user interface or an internal agent. The first adapte
 
 ## Build
 
-Requirements: Go 1.25 or newer.
+Requirements: Go 1.25 or newer. The first release target also requires the exact
+EmbeddingGemma and llama.cpp artifacts pinned in
+[the vector model selection](docs/research/vector-model-selection.md).
 
 ```sh
 go test ./...
 go build -trimpath -ldflags="-s -w" -o bin/ownward ./cmd/ownward
+go run ./cmd/ownward-bundle \
+  --model <embeddinggemma-300m-qat-Q8_0.gguf> \
+  --runtime-archive <llama-b10488-bin-win-cpu-x64.zip> \
+  --legal-root third_party \
+  --output bin/embedding
+go run ./cmd/ownward-release \
+  --binary bin/ownward.exe \
+  --embedding bin/embedding \
+  --output dist/ownward-windows-amd64
 ```
 
 On Windows, use `bin/ownward.exe` as the output path.
 
-## Configure semantic organization
+## Enable the bundled vector capability
 
-Ownward accepts an OpenAI-compatible Chat Completions and Embeddings endpoint:
+The release bundle includes the model, runtime, Gemma terms and use restrictions,
+model notice and modification statement, and the llama.cpp license. Review the
+files and explicitly accept the exact bundled terms before first use:
 
-```text
-OWNWARD_MODEL_BASE_URL=https://api.openai.com/v1
-OWNWARD_MODEL_API_KEY=...
-OWNWARD_CHAT_MODEL=...
-OWNWARD_EMBEDDING_MODEL=...
-OWNWARD_EMBEDDING_DIMENSIONS=384
+```sh
+bin/ownward terms
+bin/ownward terms --accept
 ```
 
-Without model configuration, Ownward remains usable with a deterministic degraded fallback and marks organization results as `degraded`; that mode does not represent the product's target organization quality.
+Acceptance is bound to the exact model and legal-material digests. A changed model
+or changed terms require a new explicit acceptance. Without acceptance or while
+the local runtime is unavailable, durable assets, stable reads, and non-vector
+retrieval remain available; vector state stays visibly pending.
 
-The configured model endpoint receives information being organized, selected related candidates, and search queries. Choose a provider whose data handling is acceptable for the user's personal information; see [Security](SECURITY.md).
+Open-world semantic organization is supplied through Ownward's separate semantic
+work contract by the connected external agent. Ownward does not require an
+additional model endpoint or API key and never replaces missing understanding
+with content-specific heuristics.
 
-`OWNWARD_DATA_DIR` selects the local data directory. If omitted, Ownward uses the operating system's user configuration directory. Never commit model credentials or personal information assets.
+`OWNWARD_DATA_DIR` selects the user-asset directory. `OWNWARD_RUNTIME_DIR` or
+`--runtime-dir` selects product-local state such as the model-terms acceptance
+record. The two lifecycles are intentionally separate: asset backup and restore
+never copy product terms acceptance. If omitted, Ownward uses the operating
+system's user configuration directory. Never commit personal information assets.
 
 ## Use
 
@@ -62,7 +82,11 @@ Run the MCP adapter with:
 bin/ownward mcp
 ```
 
-The repository's [project-scoped Codex configuration](.codex/config.toml) launches the same server during development with isolated data under `.ownward/development`, and inherits the Ownward environment variables listed above. The MCP server itself supplies agents with Ownward's collaboration rules; adapter-private prompts are not required.
+The repository's [project-scoped Codex configuration](.codex/config.toml) launches
+the built server with isolated assets under `.ownward/development`. Accept the
+bundled terms once for its configured runtime directory before enabling the server. The MCP server
+itself supplies agents with Ownward's collaboration rules; adapter-private prompts
+are not required.
 
 ## Verify
 
@@ -72,13 +96,8 @@ go vet ./...
 go test ./...
 go build ./...
 go build -trimpath -ldflags="-s -w -X main.version=COMMIT_SHA" -o bin/ownward ./cmd/ownward
-go run ./cmd/ownward-performance --binary bin/ownward --scale 100000 --dimensions 384 --candidate COMMIT_SHA --output performance-report.json
-```
-
-The model-backed product acceptance suite deliberately refuses to run without a real semantic provider:
-
-```sh
-go run ./cmd/ownward-acceptance --binary bin/ownward --candidate COMMIT_SHA
+go run ./cmd/ownward-performance --binary bin/ownward.exe --scale 100000 --dimensions 384 --candidate COMMIT_SHA --thresholds benchmarks/acceptance/v5/thresholds.json --output performance-report.json
+go run ./cmd/ownward-production-storage --binary bin/ownward.exe --candidate COMMIT_SHA --workspace .tmp/production-storage --output production-storage-report.json
 ```
 
 Public quality and latency comparison uses the pinned official [LongMemEval-V2 integration](benchmarks/longmemeval_v2/README.md) with external-agent active retrieval; direct retrieval is only an optional diagnostic mode.

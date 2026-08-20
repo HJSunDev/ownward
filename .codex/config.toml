@@ -1,15 +1,7 @@
 [mcp_servers.ownward]
-command = "go"
-args = ["run", "./cmd/ownward", "mcp", "--data-dir", ".ownward/development"]
+command = "bin/ownward.exe"
+args = ["mcp", "--data-dir", ".ownward/development"]
 cwd = "."
-env_vars = [
-  "OWNWARD_DATA_DIR",
-  "OWNWARD_MODEL_BASE_URL",
-  "OWNWARD_MODEL_API_KEY",
-  "OWNWARD_CHAT_MODEL",
-  "OWNWARD_EMBEDDING_MODEL",
-  "OWNWARD_EMBEDDING_DIMENSIONS",
-]
 required = true
 startup_timeout_sec = 120
 tool_timeout_sec = 120
