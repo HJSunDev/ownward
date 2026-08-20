@@ -312,6 +312,54 @@ func TestSearchPreservesRelationEvidenceBetweenDirectSeeds(t *testing.T) {
 	}
 }
 
+func TestSearchRelationsDoNotReorderDirectEvidence(t *testing.T) {
+	root := t.TempDir()
+	store, err := assetlog.Open(filepath.Join(root, "assets"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := derived.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewOrganized(store, state, fusionProvider{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer service.Close()
+	target, err := service.Create(context.Background(), CreateInput{Content: "needle target"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Create(context.Background(), CreateInput{
+		Content:   "needle needle direct answer",
+		Relations: []domain.ExplicitRelation{{Type: "supports", TargetID: target.Information.ID}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, content := range []string{"needle context", "needle detail"} {
+		if _, err := service.Create(context.Background(), CreateInput{Content: content}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	direct, err := service.Search(context.Background(), SearchInput{Query: "needle", Limit: 10, DisableRelationExpansion: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expanded, err := service.Search(context.Background(), SearchInput{Query: "needle", Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(expanded) != len(direct) {
+		t.Fatalf("relation expansion changed the direct candidate set: direct=%#v expanded=%#v", direct, expanded)
+	}
+	for index := range direct {
+		if expanded[index].ID != direct[index].ID {
+			t.Fatalf("relation evidence reordered direct candidates at %d: direct=%#v expanded=%#v", index, direct, expanded)
+		}
+	}
+}
+
 func TestSearchDoesNotMarkRelationsBetweenSecondarySeedsAsQueryEvidence(t *testing.T) {
 	root := t.TempDir()
 	store, err := assetlog.Open(filepath.Join(root, "assets"))

@@ -497,7 +497,6 @@ func (s *Service) Search(ctx context.Context, input SearchInput) ([]SearchResult
 				if len(seeds) == 0 || direction[0] != seeds[0] {
 					continue
 				}
-				item.score += min(contribution, item.score*0.1)
 				item.signals["relation"] = struct{}{}
 			} else {
 				fusedByID[neighbor] = &fused{score: contribution, signals: map[string]struct{}{"relation": {}}}
