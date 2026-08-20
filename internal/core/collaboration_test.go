@@ -82,7 +82,7 @@ func TestCollaborativeSemanticWorkIsVersionedAndAppliedByTheKernel(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.Organization.Status != "pending" {
+	if first.Organization.Status != "pending" || first.Organization.RequiredAction != semanticWorkRequiredAction {
 		t.Fatalf("asset must be durable before external understanding completes: %#v", first.Organization)
 	}
 	work := nextSemanticWork(t, ctx, service)
@@ -128,7 +128,7 @@ func TestCollaborativeSemanticWorkIsVersionedAndAppliedByTheKernel(t *testing.T)
 	if _, err := service.SubmitSemantic(ctx, submission); err == nil {
 		t.Fatal("a semantic result from an older asset revision was accepted")
 	}
-	if updated.Organization.Status != "pending" {
+	if updated.Organization.Status != "pending" || updated.Organization.RequiredAction != semanticWorkRequiredAction {
 		t.Fatalf("updated asset must expose pending understanding: %#v", updated.Organization)
 	}
 }

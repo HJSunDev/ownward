@@ -128,7 +128,7 @@ func New(service *core.Service, version string) *Server {
 	}, value.rules)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ownward_create",
-		Description: "创建属于用户且可长期复用的信息。体系负责组织结构，调用方不得为了保存信息而自行设计目录或关系图。",
+		Description: "创建属于用户且可长期复用的信息。体系负责组织结构，调用方不得为了保存信息而自行设计目录或关系图；返回 organization.required_action 时应先完成该动作。",
 		Annotations: closedWorldAnnotations(false, false, false),
 	}, value.create)
 	mcp.AddTool(server, &mcp.Tool{
@@ -148,7 +148,7 @@ func New(service *core.Service, version string) *Server {
 	}, value.status)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ownward_update",
-		Description: "更新现有个人信息并保留稳定标识；必须提供最后读取到的版本，避免覆盖并发变化。",
+		Description: "更新现有个人信息并保留稳定标识；必须提供最后读取到的版本，避免覆盖并发变化；返回 organization.required_action 时应先完成该动作。",
 		Annotations: closedWorldAnnotations(false, true, false),
 	}, value.update)
 	mcp.AddTool(server, &mcp.Tool{

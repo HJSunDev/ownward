@@ -44,9 +44,10 @@ type Service struct {
 }
 
 type OrganizationState struct {
-	Status   string `json:"status"`
-	Provider string `json:"provider,omitempty"`
-	Error    string `json:"error,omitempty"`
+	Status         string `json:"status"`
+	Provider       string `json:"provider,omitempty"`
+	Error          string `json:"error,omitempty"`
+	RequiredAction string `json:"required_action,omitempty"`
 }
 
 type MutationResult struct {

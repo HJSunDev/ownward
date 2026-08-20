@@ -13,6 +13,8 @@ import (
 
 var ErrSemanticConflict = errors.New("当前语义工作已经接受了不同结果")
 
+const semanticWorkRequiredAction = "ownward_semantic_work"
+
 type SemanticSubmissionResult struct {
 	WorkID       string            `json:"work_id"`
 	Organization OrganizationState `json:"organization,omitempty"`
@@ -275,7 +277,12 @@ func (s *Service) prepareSemanticWorkWithVector(value domain.Information, vector
 			s.semantic.Upsert(record)
 		}
 	}
-	return OrganizationState{Status: "pending", Provider: "external-semantic-capability", Error: record.Error}
+	return OrganizationState{
+		Status:         "pending",
+		Provider:       "external-semantic-capability",
+		Error:          record.Error,
+		RequiredAction: semanticWorkRequiredAction,
+	}
 }
 
 func (s *Service) semanticCandidates(value domain.Information, vectors [][]float32) []semantics.Candidate {
@@ -334,7 +341,11 @@ func (s *Service) semanticCandidates(value domain.Information, vectors [][]float
 }
 
 func organizationState(record derived.Record) OrganizationState {
-	return OrganizationState{Status: record.Status, Provider: record.Provider, Error: record.Error}
+	state := OrganizationState{Status: record.Status, Provider: record.Provider, Error: record.Error}
+	if record.Status == "pending" && record.SemanticWork != nil && record.SemanticResult == nil {
+		state.RequiredAction = semanticWorkRequiredAction
+	}
+	return state
 }
 
 func (s *Service) SemanticStatus() map[string]int {
