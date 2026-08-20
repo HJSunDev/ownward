@@ -24,7 +24,7 @@ class FinalVerifierTests(unittest.TestCase):
                 "minimum_quality_gain": 0.1,
                 "minimum_latency_or_cost_reduction": 0.15,
             },
-            "budgets": {"agent_seconds_per_condition": 60},
+            "execution": {"agent_seconds_per_question_max": 60},
         }
         full = {
             "cross_time": {
@@ -293,6 +293,17 @@ class FinalVerifierTests(unittest.TestCase):
             root = Path(root_value)
             protocol_dir = root / "benchmarks" / "acceptance" / "dynamic"
             protocol_dir.mkdir(parents=True)
+            thresholds_dir = root / "benchmarks" / "acceptance" / "v5"
+            thresholds_dir.mkdir(parents=True)
+            thresholds_dir.joinpath("thresholds.json").write_text(
+                json.dumps(
+                    {
+                        "ingestion": {"organization_complete_p95_seconds_max": 15},
+                        "public_frontier": {"longmemeval_v2_small": {"average_memory_query_seconds_max": 130.54}},
+                    }
+                ),
+                encoding="utf-8",
+            )
             task_classes = {"cross_time", "multi_hop", "context_applicability", "information_update"}
             statistics = {
                 "dynamic_task_success_wilson_lower_min": 0.6,
@@ -307,7 +318,11 @@ class FinalVerifierTests(unittest.TestCase):
                 "validator": {"model": "validator"},
                 "external_agent": {"model": "agent"},
             }
-            budgets = {"agent_tool_calls_per_query": 8}
+            execution = {
+                "agent_tool_calls_per_query": 8,
+                "organization_p95_seconds_max": 15,
+                "agent_seconds_per_question_max": 130.54,
+            }
             protocol_path = protocol_dir / "protocol.json"
             protocol_path.write_text(
                 json.dumps(
@@ -316,7 +331,7 @@ class FinalVerifierTests(unittest.TestCase):
                         "runtime": {"codex_cli_version": "codex-cli 0.117.0"},
                         "statistics": statistics,
                         "models": models,
-                        "budgets": budgets,
+                        "execution": execution,
                     }
                 ),
                 encoding="utf-8",
@@ -356,11 +371,12 @@ class FinalVerifierTests(unittest.TestCase):
                 "required-scope-and-task-coverage",
                 "asset-identity-content-integrity",
                 "semantic-relation-quality",
+                "organization-completion-p95",
                 "external-agent-no-bypass-and-budget",
                 *(f"dynamic-{value}" for value in task_classes),
             }
             dynamic = {
-                "schema": "ownward.dynamic-acceptance-report/v1",
+                "schema": "ownward.dynamic-acceptance-report/v2",
                 "passed": True,
                 "candidate": "a" * 40,
                 "release_binary_version": "a" * 40,
@@ -370,13 +386,14 @@ class FinalVerifierTests(unittest.TestCase):
                 "random_source_sha256": verify._sha256(evidence_paths["random"]),
                 "hidden_truth_sha256": verify._sha256(evidence_paths["hidden"]),
                 "statistics": statistics,
-                "budgets": budgets,
+                "execution": execution,
                 "generator": models["generator"],
                 "validator": models["validator"],
                 "external_agent": models["external_agent"],
                 "codex_cli": {"version": "codex-cli 0.117.0", "sha256": evidence["codex_binary"]["sha256"]},
                 "generated_scenarios": 0,
                 "valid_scenarios": 0,
+                "reserve_scenarios": 0,
                 "rejected_scenarios": 0,
                 "tasks": {value: {"wilson_lower": 0.61} for value in task_classes},
                 "organization": {"precision_wilson_lower": 0.81, "recall_wilson_lower": 0.76},
@@ -386,7 +403,7 @@ class FinalVerifierTests(unittest.TestCase):
             dynamic_path = root / "dynamic-report.json"
             dynamic_path.write_text(json.dumps(dynamic), encoding="utf-8")
             ablation = {
-                "schema": "ownward.organization-ablation-report/v1",
+                "schema": "ownward.organization-ablation-report/v2",
                 "passed": True,
                 "candidate": "a" * 40,
                 "release_binary_version": "a" * 40,
@@ -403,14 +420,12 @@ class FinalVerifierTests(unittest.TestCase):
                 },
                 "full_total_cost": {
                     "ingestion_operations": 1,
-                    "semantic_model_calls": 1,
                     "agent_tool_calls": 1,
                     "organization_seconds": 1,
                     "agent_seconds": 1,
                 },
                 "baseline_total_cost": {
                     "ingestion_operations": 1,
-                    "semantic_model_calls": 1,
                     "agent_tool_calls": 1,
                     "organization_seconds": 1,
                     "agent_seconds": 1,

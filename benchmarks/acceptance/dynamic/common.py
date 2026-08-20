@@ -8,9 +8,9 @@ from pathlib import Path
 from typing import Any
 
 
-DYNAMIC_REPORT_SCHEMA = "ownward.dynamic-acceptance-report/v1"
-ABLATION_REPORT_SCHEMA = "ownward.organization-ablation-report/v1"
-PROTOCOL_SCHEMA = "ownward.dynamic-acceptance-protocol/v1"
+DYNAMIC_REPORT_SCHEMA = "ownward.dynamic-acceptance-report/v2"
+ABLATION_REPORT_SCHEMA = "ownward.organization-ablation-report/v2"
+PROTOCOL_SCHEMA = "ownward.dynamic-acceptance-protocol/v2"
 RELATION_TYPES = {
     "same_as",
     "broader_than",
@@ -86,7 +86,7 @@ Required generation contract: {json.dumps(generation, ensure_ascii=False, separa
 
 Generate exactly the required number of independent scenarios, balanced equally across the four task classes. Each scenario must contain exactly the required number of nodes and use globally unique scenario and node IDs. Invent unrelated domains, cultures, activities, technologies, time periods, names, and wording; do not reuse common benchmark examples or Ownward examples. Across the full batch cover every information_scope value, cross-time links, multiple belonging, hierarchy, intersection, composition, contextual and non-contextual facts, changed information, and varied expression intent.
 
-This is hidden truth, so describe atomic facts and exact relation/query truth without writing the final natural-language information. Every query must require the expected nodes and exact answer_facts. Cross-time queries require at least two linked nodes. Multi-hop queries require at least three expected nodes connected by a path of two or more relation edges. A context task must include a plausible forbidden node from an incompatible context. An update task must replace facts on the same node and its query must depend on that updated node. Across the batch, relation truth must include hierarchy, composition, contextual applicability, and at least one node with multiple direct semantic relations. Relations must use only the semantic relation vocabulary supported by the output schema. Do not mention the product or its implementation."""
+This is hidden truth, so describe atomic facts and exact relation/query truth without writing the final natural-language information. Every query must require the expected nodes and exact answer_facts. Cross-time queries require at least two linked nodes. Multi-hop queries require at least three expected nodes connected by a path of two or more relation edges. A context task must include a plausible forbidden node from an incompatible context. Each update task must replace exactly one node and its query must depend on that updated node; all other task classes must contain no update. Across the batch, relation truth must include hierarchy, composition, contextual applicability, and at least one node with multiple direct semantic relations. Relations must use only the semantic relation vocabulary supported by the output schema. Do not mention the product or its implementation."""
 
 
 def expression_prompt(hidden: dict[str, Any]) -> str:
@@ -123,19 +123,19 @@ def validate_protocol(protocol: dict[str, Any]) -> None:
     require(protocol.get("schema") == PROTOCOL_SCHEMA, "unsupported dynamic protocol")
     generation = protocol.get("generation")
     statistics = protocol.get("statistics")
-    budgets = protocol.get("budgets")
+    execution = protocol.get("execution")
     models = protocol.get("models")
     runtime = protocol.get("runtime")
-    semantic_provider = protocol.get("semantic_provider")
+    product_runtime = protocol.get("product_runtime")
     require(isinstance(generation, dict) and isinstance(statistics, dict), "protocol is incomplete")
-    require(isinstance(budgets, dict) and isinstance(models, dict), "protocol budgets or models are missing")
+    require(isinstance(execution, dict) and isinstance(models, dict), "protocol execution contract or models are missing")
     require(isinstance(runtime, dict) and str(runtime.get("codex_cli_version", "")).startswith("codex-cli "), "Codex CLI version is missing")
     require(
-        isinstance(semantic_provider, dict)
-        and str(semantic_provider.get("chat_model", "")).strip()
-        and str(semantic_provider.get("embedding_model", "")).strip()
-        and 0 < int(semantic_provider.get("embedding_dimensions", 0)) <= 8192,
-        "semantic provider configuration is missing",
+        isinstance(product_runtime, dict)
+        and product_runtime.get("mode") == "release-defaults"
+        and isinstance(product_runtime.get("prohibited_environment"), list)
+        and bool(product_runtime.get("prohibited_environment")),
+        "formal product runtime must use isolated release defaults",
     )
     classes = generation.get("task_classes")
     require(isinstance(classes, list) and len(classes) == len(set(classes)) == 4, "task classes must contain four unique values")
@@ -158,13 +158,26 @@ def validate_protocol(protocol: dict[str, Any]) -> None:
         require(0 < float(statistics.get(name, 0)) <= 1, f"invalid statistical threshold: {name}")
     require(0 <= float(statistics.get("ablation_equivalence_margin", -1)) < 1, "invalid ablation equivalence margin")
     for name in (
-        "generation_seconds",
-        "validation_seconds",
-        "organization_seconds_per_item",
-        "agent_seconds_per_condition",
+        "dataset_stage_seconds_max",
+        "codex_inactivity_seconds",
+        "inspection_operation_stall_seconds",
+        "organization_operation_stall_seconds",
+        "organization_p95_seconds_max",
+        "agent_seconds_per_question_max",
         "agent_tool_calls_per_query",
     ):
-        require(float(budgets.get(name, 0)) > 0, f"invalid dynamic budget: {name}")
+        require(float(execution.get(name, 0)) > 0, f"invalid dynamic execution value: {name}")
+    require(
+        float(execution["organization_operation_stall_seconds"])
+        > float(execution["organization_p95_seconds_max"]),
+        "organization stall protection must exceed the accepted P95",
+    )
+    require(
+        float(execution["inspection_operation_stall_seconds"])
+        <= float(execution["organization_p95_seconds_max"]),
+        "inspection stall protection must not exceed the accepted organization P95",
+    )
+    require(int(execution.get("parallel_conditions", 0)) == 2, "full and baseline conditions must run as one parallel pair")
     for role in ("generator", "validator", "external_agent"):
         value = models.get(role)
         require(isinstance(value, dict) and value.get("model") and value.get("reasoning_effort"), f"{role} model is missing")
@@ -227,7 +240,9 @@ def validate_hidden_world(hidden: dict[str, Any], protocol: dict[str, Any]) -> l
             facts = update.get("replacement_facts")
             require(isinstance(facts, list) and facts, f"scenario {scenario_id} has an empty update")
         if task_class == "information_update":
-            require(bool(updates), f"update scenario {scenario_id} has no update")
+            require(len(updates) == 1, f"update scenario {scenario_id} must contain exactly one necessary update")
+        else:
+            require(not updates, f"non-update scenario {scenario_id} contains an unnecessary update")
         query = scenario.get("query")
         require(isinstance(query, dict), f"scenario {scenario_id} has no query truth")
         expected = query.get("expected_ids")
@@ -284,7 +299,7 @@ def merge_valid_dataset(
     validation_by_id = {str(item.get("id", "")): item for item in verdicts if isinstance(item, dict)}
     require(set(expression_by_id) == set(hidden_scenarios), "expression output changed the scenario set")
     require(set(validation_by_id) == set(hidden_scenarios), "validator changed the scenario set")
-    valid: list[dict[str, Any]] = []
+    validated: list[dict[str, Any]] = []
     rejected: list[dict[str, Any]] = []
     class_counts: Counter[str] = Counter()
     for scenario_id, truth in hidden_scenarios.items():
@@ -323,14 +338,31 @@ def merge_valid_dataset(
         require(isinstance(issues, list), f"scenario {scenario_id} validator issues are invalid")
         if verdict.get("valid") is True:
             item = {"truth": truth, "expression": text}
-            valid.append(item)
+            validated.append(item)
             class_counts[str(truth["task_class"])] += 1
         else:
             rejected.append({"id": scenario_id, "issues": [str(issue) for issue in issues]})
     generation = protocol["generation"]
-    require(len(valid) >= int(generation["minimum_valid_scenarios"]), "independent validation left too few valid scenarios")
+    require(len(validated) >= int(generation["minimum_valid_scenarios"]), "independent validation left too few valid scenarios")
     require(
         all(class_counts[value] >= int(generation["minimum_scenarios_per_task_class"]) for value in generation["task_classes"]),
         "independent validation left a task class underpowered",
     )
-    return {"schema": "ownward.dynamic-dataset/v1", "valid_scenarios": valid, "rejected_scenarios": rejected}
+    required_per_class = int(generation["minimum_scenarios_per_task_class"])
+    selected_counts: Counter[str] = Counter()
+    valid: list[dict[str, Any]] = []
+    reserve: list[dict[str, Any]] = []
+    for item in validated:
+        task_class = str(item["truth"]["task_class"])
+        if selected_counts[task_class] < required_per_class:
+            valid.append(item)
+            selected_counts[task_class] += 1
+        else:
+            reserve.append(item)
+    require(len(valid) == int(generation["minimum_valid_scenarios"]), "minimal valid scenario selection changed")
+    return {
+        "schema": "ownward.dynamic-dataset/v2",
+        "valid_scenarios": valid,
+        "reserve_scenarios": reserve,
+        "rejected_scenarios": rejected,
+    }

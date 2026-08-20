@@ -342,12 +342,13 @@ def _validate_dynamic_mapping(
     dataset: dict[str, Any], mapping: dict[str, Any], *, condition: str, disable_relations: bool
 ) -> None:
     _require(
-        mapping.get("schema") == "ownward.dynamic-ingestion/v1"
+        mapping.get("schema") == "ownward.dynamic-ingestion/v2"
         and mapping.get("condition") == condition
         and mapping.get("disable_relations") is disable_relations,
         f"dynamic {condition} mapping is invalid",
     )
-    _require(mapping.get("data_directory") == "full-data", f"dynamic {condition} used another data state")
+    expected_directory = "baseline-data" if disable_relations else "full-data"
+    _require(mapping.get("data_directory") == expected_directory, f"dynamic {condition} used another data state")
     expected_keys: set[str] = set()
     operation_count = 0
     for scenario in dataset["valid_scenarios"]:
@@ -361,12 +362,8 @@ def _validate_dynamic_mapping(
     _require(isinstance(stable_ids, dict) and set(stable_ids) == expected_keys, f"dynamic {condition} identities are incomplete")
     _require(len(set(stable_ids.values())) == len(stable_ids), f"dynamic {condition} identities were merged")
     _require(isinstance(revisions, dict) and set(revisions) == expected_keys, f"dynamic {condition} revisions are incomplete")
-    _require(
-        mapping.get("operation_count") == operation_count
-        and mapping.get("logical_semantic_model_calls") == operation_count * 2,
-        f"dynamic {condition} operation accounting changed",
-    )
-    for name in ("organization_seconds", "organization_seconds_max"):
+    _require(mapping.get("operation_count") == operation_count, f"dynamic {condition} operation accounting changed")
+    for name in ("organization_seconds", "organization_seconds_max", "organization_seconds_p95"):
         value = float(mapping.get(name, -1))
         _require(math.isfinite(value) and value >= 0, f"dynamic {condition} timing is invalid")
 
@@ -438,8 +435,13 @@ def _recompute_dynamic_run(
             and actual_facts == expected_facts
             and grounded
         )
-    budget = int(protocol["budgets"]["agent_tool_calls_per_query"])
+    execution = protocol["execution"]
+    budget = int(execution["agent_tool_calls_per_query"])
     _require(len(calls) <= len(scenarios) * budget, f"dynamic {condition} {task_class} exceeded its tool budget")
+    _require(
+        elapsed <= len(scenarios) * float(execution["agent_seconds_per_question_max"]),
+        f"dynamic {condition} {task_class} exceeded the product-derived time boundary",
+    )
     total = len(scenarios)
     return {
         "session_id": session_id,
@@ -499,16 +501,6 @@ def _require_dynamic_outcomes(
         advantage = advantage or class_advantage
     _require(all(sessions) and len(set(sessions)) == len(sessions), "dynamic agent sessions are not independent")
     _require(
-        sum(float(value["elapsed_seconds"]) for value in full_runs.values())
-        <= float(protocol["budgets"]["agent_seconds_per_condition"]),
-        "dynamic full agent exceeded the frozen condition time budget",
-    )
-    _require(
-        sum(float(value["elapsed_seconds"]) for value in baseline_runs.values())
-        <= float(protocol["budgets"]["agent_seconds_per_condition"]),
-        "dynamic baseline agent exceeded the frozen condition time budget",
-    )
-    _require(
         float(organization["precision_wilson_lower"])
         >= float(statistics["relation_precision_wilson_lower_min"])
         and float(organization["recall_wilson_lower"])
@@ -531,14 +523,14 @@ def _validate_dynamic_reports(
 ) -> dict[str, Path]:
     _validate_bound_report(
         dynamic,
-        schema="ownward.dynamic-acceptance-report/v1",
+        schema="ownward.dynamic-acceptance-report/v2",
         candidate=candidate,
         binary_sha256=binary_sha256,
         label="dynamic",
     )
     _validate_bound_report(
         ablation,
-        schema="ownward.organization-ablation-report/v1",
+        schema="ownward.organization-ablation-report/v2",
         candidate=candidate,
         binary_sha256=binary_sha256,
         label="organization ablation",
@@ -552,6 +544,7 @@ def _validate_dynamic_reports(
             "required-scope-and-task-coverage",
             "asset-identity-content-integrity",
             "semantic-relation-quality",
+            "organization-completion-p95",
             "external-agent-no-bypass-and-budget",
             *(f"dynamic-{value}" for value in task_classes),
         },
@@ -572,11 +565,19 @@ def _validate_dynamic_reports(
     _require(protocol.is_file(), "frozen dynamic protocol is missing")
     protocol_value = _load(protocol)
     _dynamic_common.validate_protocol(protocol_value)
+    fixed_thresholds = _load(repository / "benchmarks" / "acceptance" / "v5" / "thresholds.json")
+    _require(
+        float(protocol_value["execution"]["organization_p95_seconds_max"])
+        == float(fixed_thresholds["ingestion"]["organization_complete_p95_seconds_max"])
+        and float(protocol_value["execution"]["agent_seconds_per_question_max"])
+        == float(fixed_thresholds["public_frontier"]["longmemeval_v2_small"]["average_memory_query_seconds_max"]),
+        "dynamic execution boundaries are not derived from the frozen product baselines",
+    )
     protocol_sha256 = _sha256(protocol)
     _require(dynamic.get("protocol_sha256") == protocol_sha256, "dynamic report used another protocol")
     _require(ablation.get("protocol_sha256") == protocol_sha256, "organization ablation used another protocol")
     _require(dynamic.get("statistics") == protocol_value.get("statistics"), "dynamic report changed the frozen statistics")
-    _require(dynamic.get("budgets") == protocol_value.get("budgets"), "dynamic report changed the frozen budgets")
+    _require(dynamic.get("execution") == protocol_value.get("execution"), "dynamic report changed the frozen execution contract")
     _require(dynamic.get("generator") == protocol_value.get("models", {}).get("generator"), "dynamic report changed the generator")
     _require(dynamic.get("validator") == protocol_value.get("models", {}).get("validator"), "dynamic report changed the validator")
     _require(dynamic.get("external_agent") == protocol_value.get("models", {}).get("external_agent"), "dynamic report changed the external agent")
@@ -631,7 +632,7 @@ def _validate_dynamic_reports(
         cost = ablation.get(label)
         _require(
             isinstance(cost, dict)
-            and {"ingestion_operations", "semantic_model_calls", "agent_tool_calls", "organization_seconds", "agent_seconds"} <= set(cost),
+            and {"ingestion_operations", "agent_tool_calls", "organization_seconds", "agent_seconds"} <= set(cost),
             f"{label} is incomplete",
         )
     evidence = _validate_dynamic_evidence(dynamic, task_classes)
@@ -656,6 +657,7 @@ def _validate_dynamic_reports(
     _require(
         dynamic.get("generated_scenarios") == protocol_value.get("generation", {}).get("generated_scenarios")
         and dynamic.get("valid_scenarios") == len(dataset.get("valid_scenarios", []))
+        and dynamic.get("reserve_scenarios") == len(dataset.get("reserve_scenarios", []))
         and dynamic.get("rejected_scenarios") == len(dataset.get("rejected_scenarios", [])),
         "dynamic scenario counts do not match the frozen evidence",
     )
@@ -685,7 +687,7 @@ def _validate_dynamic_reports(
         binding = run.get("binding")
         expected_model = protocol_value["models"][role]
         _require(
-            run.get("schema") == "ownward.dynamic-dataset-stage/v1"
+            run.get("schema") == "ownward.dynamic-dataset-stage/v2"
             and isinstance(binding, dict)
             and binding.get("candidate") == candidate
             and binding.get("protocol_sha256") == protocol_sha256
@@ -697,6 +699,8 @@ def _validate_dynamic_reports(
             and run.get("events_sha256") == _sha256(evidence[f"{prefix}_events"]),
             f"dynamic {prefix} stage binding changed",
         )
+        elapsed = float(run.get("elapsed_seconds", 0))
+        _require(math.isfinite(elapsed) and elapsed > 0, f"dynamic {prefix} stage elapsed time is invalid")
         _validate_dynamic_generation_trace(evidence[f"{prefix}_events"])
     full_mapping = _load(evidence["full_mapping"])
     baseline_mapping = _load(evidence["baseline_mapping"])
@@ -707,31 +711,20 @@ def _validate_dynamic_reports(
         and baseline_mapping.get("stable_ids") == full_mapping.get("stable_ids")
         and baseline_mapping.get("revisions") == full_mapping.get("revisions")
         and baseline_mapping.get("operation_count") == full_mapping.get("operation_count")
-        and baseline_mapping.get("logical_semantic_model_calls") == full_mapping.get("logical_semantic_model_calls")
         and baseline_mapping.get("organization_seconds") == full_mapping.get("organization_seconds")
-        and baseline_mapping.get("organization_seconds_max") == full_mapping.get("organization_seconds_max"),
+        and baseline_mapping.get("organization_seconds_max") == full_mapping.get("organization_seconds_max")
+        and baseline_mapping.get("organization_seconds_p95") == full_mapping.get("organization_seconds_p95")
+        and baseline_mapping.get("source_state_tree_sha256") == baseline_mapping.get("baseline_state_tree_sha256"),
         "organization ablation did not reuse the identical frozen non-relation state",
     )
-    semantic_provider = dynamic.get("semantic_provider")
-    _require(isinstance(semantic_provider, dict), "dynamic semantic provider binding is missing")
-    _require(
-        {
-            "chat_model": semantic_provider.get("chat_model"),
-            "embedding_model": semantic_provider.get("embedding_model"),
-            "embedding_dimensions": semantic_provider.get("embedding_dimensions"),
-        }
-        == protocol_value.get("semantic_provider"),
-        "dynamic semantic provider differs from the frozen protocol",
-    )
+    product_runtime = dynamic.get("product_runtime")
+    _require(product_runtime == protocol_value.get("product_runtime"), "dynamic product runtime changed")
     expected_ingestion_binding = {
         "candidate": candidate,
         "release_binary_sha256": binary_sha256,
         "protocol_sha256": protocol_sha256,
         "dataset_sha256": _sha256(evidence["dataset"]),
-        "model_base_url_sha256": semantic_provider.get("base_url_sha256"),
-        "chat_model": semantic_provider.get("chat_model"),
-        "embedding_model": semantic_provider.get("embedding_model"),
-        "embedding_dimensions": semantic_provider.get("embedding_dimensions"),
+        "product_runtime": product_runtime,
     }
     _require(
         full_mapping.get("binding") == expected_ingestion_binding
@@ -801,9 +794,15 @@ def _validate_dynamic_reports(
         "recall_wilson_lower": _dynamic_common.wilson_lower(true_positive, len(snapshot_expected), confidence)
         if snapshot_expected
         else 0.0,
+        "completion_p95_seconds": float(full_mapping["organization_seconds_p95"]),
     }
     for name, expected in expected_organization.items():
         _same_metric(dynamic["organization"].get(name), float(expected), f"dynamic organization {name}")
+    _require(
+        expected_organization["completion_p95_seconds"]
+        <= float(protocol_value["execution"]["organization_p95_seconds_max"]),
+        "dynamic organization completion exceeded the frozen P95",
+    )
     full_runs: dict[str, dict[str, Any]] = {}
     baseline_runs: dict[str, dict[str, Any]] = {}
     for task_class in task_classes:
@@ -886,16 +885,12 @@ def _validate_dynamic_reports(
     expected_total_costs = {
         "full_total_cost": {
             "ingestion_operations": full_mapping["operation_count"],
-            "semantic_model_calls": full_mapping["logical_semantic_model_calls"]
-            + sum(value["search_calls"] for value in full_runs.values()),
             "agent_tool_calls": sum(value["tool_calls"] for value in full_runs.values()),
             "organization_seconds": full_mapping["organization_seconds"],
             "agent_seconds": sum(value["elapsed_seconds"] for value in full_runs.values()),
         },
         "baseline_total_cost": {
             "ingestion_operations": baseline_mapping["operation_count"],
-            "semantic_model_calls": baseline_mapping["logical_semantic_model_calls"]
-            + sum(value["search_calls"] for value in baseline_runs.values()),
             "agent_tool_calls": sum(value["tool_calls"] for value in baseline_runs.values()),
             "organization_seconds": baseline_mapping["organization_seconds"],
             "agent_seconds": sum(value["elapsed_seconds"] for value in baseline_runs.values()),

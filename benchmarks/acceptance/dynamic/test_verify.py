@@ -3,8 +3,11 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
+import sys
 import tempfile
+import threading
 import unittest
 from unittest import mock
 
@@ -84,10 +87,11 @@ class DynamicVerifierTests(unittest.TestCase):
             verify.write_json(
                 run_path,
                 {
-                    "schema": "ownward.dynamic-dataset-stage/v1",
+                    "schema": "ownward.dynamic-dataset-stage/v2",
                     "binding": binding,
                     "output_sha256": verify.sha256(output_path),
                     "events_sha256": verify.sha256(events_path),
+                    "elapsed_seconds": 1.0,
                 },
             )
             args = argparse.Namespace(
@@ -105,7 +109,6 @@ class DynamicVerifierTests(unittest.TestCase):
                 output_path=output_path,
                 events_path=events_path,
                 run_path=run_path,
-                timeout=1,
                 environment={},
             )
             self.assertEqual(value, {})
@@ -120,7 +123,6 @@ class DynamicVerifierTests(unittest.TestCase):
                     output_path=output_path,
                     events_path=events_path,
                     run_path=run_path,
-                    timeout=1,
                     environment={},
                 )
 
@@ -140,6 +142,53 @@ class DynamicVerifierTests(unittest.TestCase):
             run.write_text("sealed", encoding="utf-8")
             with self.assertRaisesRegex(RuntimeError, "sealed run metadata"):
                 verify._clear_incomplete_codex_stage(output, events, run)
+
+    def test_codex_watchdog_stops_a_process_that_exceeds_its_stage_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as root_value:
+            events = Path(root_value) / "events.jsonl"
+            with self.assertRaisesRegex(RuntimeError, "execution limit"):
+                verify._run_codex_with_inactivity_watchdog(
+                    [sys.executable, "-c", "import time; time.sleep(5)"],
+                    environment=dict(os.environ),
+                    events_path=events,
+                    inactivity_seconds=2,
+                    maximum_seconds=0.2,
+                )
+
+    def test_agent_conditions_are_executed_as_a_parallel_pair(self) -> None:
+        barrier = threading.Barrier(2, timeout=2)
+
+        def run_agents(*_args: object, condition: str, task_classes: list[str], **_kwargs: object):
+            barrier.wait()
+            task_class = task_classes[0]
+            return ({task_class: {"condition": condition}}, {condition: Path(condition)})
+
+        protocol = {"generation": {"task_classes": ["cross_time"]}, "execution": {"parallel_conditions": 2}}
+        with mock.patch.object(verify, "_run_agents", side_effect=run_agents):
+            full, _, baseline, _ = verify._run_agent_pairs(
+                argparse.Namespace(),
+                {},
+                {},
+                {},
+                {},
+                {},
+                protocol,
+            )
+        self.assertEqual(full["cross_time"]["condition"], "full")
+        self.assertEqual(baseline["cross_time"]["condition"], "baseline")
+
+    def test_asset_conditions_are_executed_as_a_parallel_pair(self) -> None:
+        barrier = threading.Barrier(2, timeout=2)
+
+        def verify_assets(*_args: object, condition: str, **_kwargs: object):
+            barrier.wait()
+            return ({"condition": condition}, [{"condition": condition}])
+
+        args = argparse.Namespace(protocol={"execution": {"parallel_conditions": 2}})
+        with mock.patch.object(verify, "_verify_assets", side_effect=verify_assets):
+            full, baseline = verify._verify_asset_pair(args, {}, {}, {}, {}, {})
+        self.assertEqual(full[0]["condition"], "full")
+        self.assertEqual(baseline[0]["condition"], "baseline")
 
     def test_completed_reports_are_immutable_when_resuming(self) -> None:
         with tempfile.TemporaryDirectory() as root_value:
@@ -165,7 +214,7 @@ class DynamicVerifierTests(unittest.TestCase):
             ):
                 path.write_text(value, encoding="utf-8")
             full_mapping = {
-                "schema": "ownward.dynamic-ingestion/v1",
+                "schema": "ownward.dynamic-ingestion/v2",
                 "condition": "full",
                 "disable_relations": False,
                 "data_directory": "full-data",
@@ -173,39 +222,45 @@ class DynamicVerifierTests(unittest.TestCase):
                 "stable_ids": {"scenario/node": "stable-id"},
                 "revisions": {"scenario/node": 2},
                 "operation_count": 2,
-                "logical_semantic_model_calls": 4,
                 "organization_seconds": 1.25,
                 "organization_seconds_max": 0.75,
+                "organization_seconds_p95": 0.75,
             }
             full_mapping_path = root / "full-mapping.json"
             verify.write_json(full_mapping_path, full_mapping)
+            full_data = root / "full-data"
+            full_data.mkdir()
+            (full_data / "state").write_text("frozen", encoding="utf-8")
+            protocol = {
+                "product_runtime": {
+                    "mode": "release-defaults",
+                    "prohibited_environment": list(verify.LEGACY_MODEL_ENVIRONMENT),
+                }
+            }
             args = argparse.Namespace(
                 evidence_dir=root,
                 resume=False,
                 candidate="a" * 40,
                 binary=binary,
                 protocol_path=protocol_path,
-                model_api_key_env="TEST_MODEL_KEY",
-                model_base_url="https://example.invalid/v1",
-                chat_model="chat-model",
-                embedding_model="embedding-model",
-                embedding_dimensions=384,
+                protocol=protocol,
             )
-            with mock.patch.dict("os.environ", {"TEST_MODEL_KEY": "secret"}):
+            with mock.patch.dict("os.environ", {"OPENAI_API_KEY": "must-not-leak"}):
                 baseline, environment = verify._ingest_condition(
                     args,
                     {},
                     condition="baseline",
                     disable_relations=True,
                 )
-            self.assertEqual(baseline["data_directory"], "full-data")
             self.assertEqual(baseline["stable_ids"], full_mapping["stable_ids"])
             self.assertEqual(baseline["revisions"], full_mapping["revisions"])
             self.assertEqual(baseline["operation_count"], full_mapping["operation_count"])
-            self.assertEqual(baseline["logical_semantic_model_calls"], full_mapping["logical_semantic_model_calls"])
             self.assertEqual(baseline["source_mapping_sha256"], verify.sha256(full_mapping_path))
+            self.assertEqual(baseline["source_state_tree_sha256"], baseline["baseline_state_tree_sha256"])
+            self.assertEqual(baseline["data_directory"], "baseline-data")
             self.assertEqual(environment["OWNWARD_DISABLE_RELATIONS"], "true")
-            self.assertFalse((root / "baseline-data").exists())
+            self.assertNotIn("OPENAI_API_KEY", environment)
+            self.assertTrue((root / "baseline-data").is_dir())
 
     def test_resumed_agent_runs_keep_original_elapsed_time(self) -> None:
         with tempfile.TemporaryDirectory() as root_value:
@@ -237,7 +292,10 @@ class DynamicVerifierTests(unittest.TestCase):
             protocol = {
                 "generation": {"task_classes": task_classes},
                 "models": {"external_agent": {"model": "agent-model", "reasoning_effort": "low"}},
-                "budgets": {"agent_tool_calls_per_query": 8, "agent_seconds_per_condition": 60},
+                "execution": {
+                    "agent_tool_calls_per_query": 8,
+                    "agent_seconds_per_question_max": 60,
+                },
             }
             binary = root / "ownward.exe"
             protocol_path = root / "protocol.json"

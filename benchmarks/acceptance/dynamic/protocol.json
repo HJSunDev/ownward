@@ -1,12 +1,18 @@
 {
-  "schema": "ownward.dynamic-acceptance-protocol/v1",
+  "schema": "ownward.dynamic-acceptance-protocol/v2",
   "runtime": {
     "codex_cli_version": "codex-cli 0.117.0"
   },
-  "semantic_provider": {
-    "chat_model": "gpt-5.4-2026-03-05",
-    "embedding_model": "text-embedding-3-small",
-    "embedding_dimensions": 384
+  "product_runtime": {
+    "mode": "release-defaults",
+    "prohibited_environment": [
+      "OPENAI_API_KEY",
+      "OWNWARD_MODEL_BASE_URL",
+      "OWNWARD_MODEL_API_KEY",
+      "OWNWARD_CHAT_MODEL",
+      "OWNWARD_EMBEDDING_MODEL",
+      "OWNWARD_EMBEDDING_DIMENSIONS"
+    ]
   },
   "generation": {
     "generated_scenarios": 28,
@@ -46,12 +52,15 @@
       "reasoning_effort": "low"
     }
   },
-  "budgets": {
-    "generation_seconds": 1800,
-    "validation_seconds": 1800,
-    "organization_seconds_per_item": 45,
-    "agent_seconds_per_condition": 3600,
-    "agent_tool_calls_per_query": 8
+  "execution": {
+    "dataset_stage_seconds_max": 600,
+    "codex_inactivity_seconds": 600,
+    "inspection_operation_stall_seconds": 5,
+    "organization_operation_stall_seconds": 45,
+    "organization_p95_seconds_max": 15,
+    "agent_seconds_per_question_max": 130.54,
+    "agent_tool_calls_per_query": 8,
+    "parallel_conditions": 2
   },
   "statistics": {
     "confidence_level": 0.95,

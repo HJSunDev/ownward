@@ -3,22 +3,34 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter, defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
+import queue
 import secrets
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from typing import Any
 
 
 HERE = Path(__file__).resolve().parent
+LEGACY_MODEL_ENVIRONMENT = (
+    "OPENAI_API_KEY",
+    "OWNWARD_MODEL_BASE_URL",
+    "OWNWARD_MODEL_API_KEY",
+    "OWNWARD_CHAT_MODEL",
+    "OWNWARD_EMBEDDING_MODEL",
+    "OWNWARD_EMBEDDING_DIMENSIONS",
+)
 sys.path.insert(0, str(HERE))
 from common import (  # noqa: E402
     ABLATION_REPORT_SCHEMA,
@@ -269,9 +281,9 @@ def _run_codex_json(
     schema: dict[str, Any],
     output_path: Path,
     events_path: Path,
-    timeout: float,
     environment: dict[str, str],
     data_dir: Path | None = None,
+    maximum_seconds: float | None = None,
 ) -> dict[str, Any]:
     work_dir = events_path.with_suffix("")
     require(not work_dir.exists() or not any(work_dir.iterdir()), f"Codex work directory is not blank: {work_dir}")
@@ -291,19 +303,101 @@ def _run_codex_json(
         )
         command.append(prompt)
         isolated = _isolated_codex_environment(args.codex_auth_file, root / "codex-home", environment)
-        completed = subprocess.run(
+        returncode, stderr = _run_codex_with_inactivity_watchdog(
             command,
-            check=False,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            timeout=timeout,
-            env=isolated,
+            environment=isolated,
+            events_path=events_path,
+            inactivity_seconds=float(args.protocol["execution"]["codex_inactivity_seconds"]),
+            maximum_seconds=maximum_seconds,
         )
-    events_path.write_text(completed.stdout, encoding="utf-8")
-    require(completed.returncode == 0, f"Codex run failed: {completed.stderr[-3000:]}")
+    require(returncode == 0, f"Codex run failed: {stderr[-3000:]}")
     require(output_path.is_file(), "Codex run produced no structured output")
     return load_json(output_path)
+
+
+def _run_codex_with_inactivity_watchdog(
+    command: list[str],
+    *,
+    environment: dict[str, str],
+    events_path: Path,
+    inactivity_seconds: float,
+    maximum_seconds: float | None,
+) -> tuple[int, str]:
+    require(inactivity_seconds > 0, "Codex inactivity protection must be positive")
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        bufsize=1,
+        env=environment,
+    )
+    require(process.stdout is not None and process.stderr is not None, "Codex pipes are unavailable")
+    messages: queue.Queue[tuple[str, str | None]] = queue.Queue()
+
+    def pump(label: str, stream: Any) -> None:
+        try:
+            for line in stream:
+                messages.put((label, line))
+        finally:
+            messages.put((label, None))
+
+    threads = [
+        threading.Thread(target=pump, args=("stdout", process.stdout), daemon=True),
+        threading.Thread(target=pump, args=("stderr", process.stderr), daemon=True),
+    ]
+    for thread in threads:
+        thread.start()
+    closed: set[str] = set()
+    stderr_parts: list[str] = []
+    started = time.monotonic()
+    last_activity = time.monotonic()
+    events_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with events_path.open("w", encoding="utf-8") as events:
+            while process.poll() is None or len(closed) < 2:
+                if maximum_seconds is not None and time.monotonic() - started > maximum_seconds:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait()
+                    raise RuntimeError(f"Codex exceeded the product-derived execution limit of {maximum_seconds:g} seconds")
+                remaining = inactivity_seconds - (time.monotonic() - last_activity)
+                if remaining <= 0:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait()
+                    raise RuntimeError(f"Codex produced no process activity for {inactivity_seconds:g} seconds")
+                try:
+                    label, line = messages.get(timeout=min(1.0, remaining))
+                except queue.Empty:
+                    continue
+                if line is None:
+                    closed.add(label)
+                    continue
+                last_activity = time.monotonic()
+                if label == "stdout":
+                    events.write(line)
+                    events.flush()
+                else:
+                    stderr_parts.append(line)
+                    if len(stderr_parts) > 200:
+                        del stderr_parts[:-200]
+    finally:
+        for stream in (process.stdout, process.stderr):
+            stream.close()
+        for thread in threads:
+            thread.join(timeout=1)
+        if process.poll() is None:
+            process.kill()
+            process.wait()
+    return int(process.returncode), "".join(stderr_parts)
 
 
 def _clear_incomplete_codex_stage(output_path: Path, events_path: Path, run_path: Path) -> None:
@@ -340,7 +434,6 @@ def _dataset_stage(
     output_path: Path,
     events_path: Path,
     run_path: Path,
-    timeout: float,
     environment: dict[str, str],
 ) -> dict[str, Any]:
     binding = {
@@ -359,18 +452,14 @@ def _dataset_stage(
         else:
             value = load_json(output_path)
             run = load_json(run_path)
-            require(
-                run
-                == {
-                    "schema": "ownward.dynamic-dataset-stage/v1",
-                    "binding": binding,
-                    "output_sha256": sha256(output_path),
-                    "events_sha256": sha256(events_path),
-                },
-                f"{name} run binding changed",
-            )
+            require(run.get("schema") == "ownward.dynamic-dataset-stage/v2", f"{name} run schema changed")
+            require(run.get("binding") == binding, f"{name} run binding changed")
+            require(run.get("output_sha256") == sha256(output_path), f"{name} output changed")
+            require(run.get("events_sha256") == sha256(events_path), f"{name} events changed")
+            require(float(run.get("elapsed_seconds", 0)) > 0, f"{name} elapsed time is invalid")
             _validate_generation_trace(events_path)
             return value
+    begin = time.perf_counter()
     value = _run_codex_json(
         args,
         model=str(model["model"]),
@@ -379,17 +468,19 @@ def _dataset_stage(
         schema=schema,
         output_path=output_path,
         events_path=events_path,
-        timeout=timeout,
         environment=environment,
+        maximum_seconds=float(args.protocol["execution"]["dataset_stage_seconds_max"]),
     )
+    elapsed = time.perf_counter() - begin
     _validate_generation_trace(events_path)
     write_json(
         run_path,
         {
-            "schema": "ownward.dynamic-dataset-stage/v1",
+            "schema": "ownward.dynamic-dataset-stage/v2",
             "binding": binding,
             "output_sha256": sha256(output_path),
             "events_sha256": sha256(events_path),
+            "elapsed_seconds": elapsed,
         },
     )
     return value
@@ -411,7 +502,6 @@ def _prepare_dataset(args: argparse.Namespace, protocol: dict[str, Any], environ
         "dataset_run": args.evidence_dir / "dataset-run.json",
     }
     models = protocol["models"]
-    budgets = protocol["budgets"]
     if paths["random"].exists():
         require(args.resume, "random source already exists; use --resume instead of regenerating")
         random_source = load_json(paths["random"])
@@ -427,7 +517,6 @@ def _prepare_dataset(args: argparse.Namespace, protocol: dict[str, Any], environ
         output_path=paths["hidden"],
         events_path=paths["hidden_events"],
         run_path=paths["hidden_run"],
-        timeout=float(budgets["generation_seconds"]),
         environment=environment,
     )
     validate_hidden_world(hidden, protocol)
@@ -440,7 +529,6 @@ def _prepare_dataset(args: argparse.Namespace, protocol: dict[str, Any], environ
         output_path=paths["expression"],
         events_path=paths["expression_events"],
         run_path=paths["expression_run"],
-        timeout=float(budgets["generation_seconds"]),
         environment=environment,
     )
     validation = _dataset_stage(
@@ -452,7 +540,6 @@ def _prepare_dataset(args: argparse.Namespace, protocol: dict[str, Any], environ
         output_path=paths["validation"],
         events_path=paths["validation_events"],
         run_path=paths["validation_run"],
-        timeout=float(budgets["validation_seconds"]),
         environment=environment,
     )
     dataset = merge_valid_dataset(hidden, expression, validation, protocol)
@@ -483,35 +570,54 @@ def _prepare_dataset(args: argparse.Namespace, protocol: dict[str, Any], environ
 
 def _ownward_environment(args: argparse.Namespace, *, disable_relations: bool) -> dict[str, str]:
     environment = os.environ.copy()
-    api_key = environment.get(args.model_api_key_env, "").strip()
-    require(bool(api_key), f"model API key environment is missing: {args.model_api_key_env}")
-    environment.update(
-        {
-            "OWNWARD_MODEL_BASE_URL": args.model_base_url,
-            "OWNWARD_MODEL_API_KEY": api_key,
-            "OWNWARD_CHAT_MODEL": args.chat_model,
-            "OWNWARD_EMBEDDING_MODEL": args.embedding_model,
-            "OWNWARD_EMBEDDING_DIMENSIONS": str(args.embedding_dimensions),
-            "OWNWARD_DISABLE_RELATIONS": "true" if disable_relations else "false",
-        }
-    )
+    prohibited = tuple(str(value) for value in args.protocol["product_runtime"]["prohibited_environment"])
+    require(set(prohibited) == set(LEGACY_MODEL_ENVIRONMENT), "release-default environment isolation changed")
+    for name in prohibited:
+        environment.pop(name, None)
+    environment["OWNWARD_DISABLE_RELATIONS"] = "true" if disable_relations else "false"
     return environment
 
 
-def _run_binary(args: argparse.Namespace, command: list[str], environment: dict[str, str], timeout: float = 90) -> dict[str, Any]:
-    completed = subprocess.run(
-        [str(args.binary), *command],
-        check=False,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=timeout,
-        env=environment,
-    )
+def _tree_sha256(root: Path) -> str:
+    require(root.is_dir(), f"state directory is missing: {root}")
+    digest = hashlib.sha256()
+    for path in sorted((value for value in root.rglob("*") if value.is_file()), key=lambda value: value.relative_to(root).as_posix()):
+        relative = path.relative_to(root).as_posix().encode("utf-8")
+        digest.update(len(relative).to_bytes(8, "little"))
+        digest.update(relative)
+        digest.update(bytes.fromhex(sha256(path)))
+    return digest.hexdigest()
+
+
+def _run_binary(
+    args: argparse.Namespace,
+    command: list[str],
+    environment: dict[str, str],
+    *,
+    timeout: float,
+) -> dict[str, Any]:
+    try:
+        completed = subprocess.run(
+            [str(args.binary), *command],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=timeout,
+            env=environment,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError(f"Ownward command made no valid completion within {timeout:g} seconds: {' '.join(command[:2])}") from error
     require(completed.returncode == 0, f"Ownward command failed: {' '.join(command[:2])}: {completed.stderr[-2000:]}")
     value = json.loads(completed.stdout)
     require(isinstance(value, dict) or isinstance(value, list), "Ownward returned invalid JSON")
     return value
+
+
+def _percentile(values: list[float], quantile: float) -> float:
+    require(values and 0 < quantile <= 1, "percentile input is invalid")
+    ordered = sorted(values)
+    return ordered[max(0, math.ceil(len(ordered) * quantile) - 1)]
 
 
 def _scenario_key(scenario_id: str, node_id: str) -> str:
@@ -528,20 +634,29 @@ def _ingest_condition(
         "release_binary_sha256": sha256(args.binary),
         "protocol_sha256": sha256(args.protocol_path),
         "dataset_sha256": sha256(args.evidence_dir / "valid-dataset.json"),
-        "model_base_url_sha256": hashlib.sha256(args.model_base_url.encode("utf-8")).hexdigest(),
-        "chat_model": args.chat_model,
-        "embedding_model": args.embedding_model,
-        "embedding_dimensions": args.embedding_dimensions,
+        "product_runtime": args.protocol["product_runtime"],
     }
     if disable_relations:
         full_mapping_path = args.evidence_dir / "full-mapping.json"
         require(condition == "baseline" and full_mapping_path.is_file(), "baseline requires the completed full ingestion")
         full_mapping = load_json(full_mapping_path)
+        full_data = args.evidence_dir / str(full_mapping["data_directory"])
+        baseline_data = args.evidence_dir / "baseline-data"
+        if baseline_data.exists():
+            require(args.resume and baseline_data.is_dir(), "baseline state already exists; use --resume")
+        else:
+            shutil.copytree(full_data, baseline_data)
+        source_tree = _tree_sha256(full_data)
+        baseline_tree = _tree_sha256(baseline_data)
+        require(source_tree == baseline_tree, "baseline state is not an exact copy of the frozen full state")
         mapping = {
             **full_mapping,
             "condition": "baseline",
             "disable_relations": True,
+            "data_directory": "baseline-data",
             "source_mapping_sha256": sha256(full_mapping_path),
+            "source_state_tree_sha256": source_tree,
+            "baseline_state_tree_sha256": baseline_tree,
         }
         if mapping_path.exists():
             require(args.resume and load_json(mapping_path) == mapping, "baseline mapping changed")
@@ -555,13 +670,19 @@ def _ingest_condition(
         mapping = load_json(mapping_path)
         require(mapping.get("binding") == binding, f"{condition} ingestion binding changed")
         stable_ids = {str(key): str(value) for key, value in mapping["stable_ids"].items()}
+        inspection_stall = float(args.protocol["execution"]["inspection_operation_stall_seconds"])
         for scenario in dataset["valid_scenarios"]:
             scenario_id = str(scenario["truth"]["id"])
             updates = {str(item["node_id"]): str(item["content"]) for item in scenario["expression"]["updates"]}
             for item in scenario["expression"]["information"]:
                 node_id = str(item["node_id"])
                 expected_content = updates.get(node_id, str(item["content"]))
-                read = _run_binary(args, ["read", "--data-dir", str(data_dir), "--id", stable_ids[_scenario_key(scenario_id, node_id)]], environment)
+                read = _run_binary(
+                    args,
+                    ["read", "--data-dir", str(data_dir), "--id", stable_ids[_scenario_key(scenario_id, node_id)]],
+                    environment,
+                    timeout=inspection_stall,
+                )
                 require(read.get("content") == expected_content, f"{condition} resumed asset differs from the frozen dataset")
         return mapping, environment
     if data_dir.exists():
@@ -574,6 +695,14 @@ def _ingest_condition(
     revisions: dict[str, int] = {}
     durations: list[float] = []
     operation_count = 0
+    execution = args.protocol["execution"]
+    operation_stall = float(execution["organization_operation_stall_seconds"])
+    accepted_p95 = float(execution["organization_p95_seconds_max"])
+    total_operations = sum(
+        len(scenario["expression"]["information"]) + len(scenario["expression"]["updates"])
+        for scenario in dataset["valid_scenarios"]
+    )
+    allowed_slow_operations = max(0, int(total_operations * 0.05))
     for scenario in dataset["valid_scenarios"]:
         scenario_id = str(scenario["truth"]["id"])
         for item in scenario["expression"]["information"]:
@@ -582,9 +711,13 @@ def _ingest_condition(
                 args,
                 ["create", "--data-dir", str(data_dir), "--content", str(item["content"])],
                 environment,
-                timeout=float(args.protocol["budgets"]["organization_seconds_per_item"]),
+                timeout=operation_stall,
             )
             durations.append(time.perf_counter() - begin)
+            require(
+                sum(value > accepted_p95 for value in durations) <= allowed_slow_operations,
+                "organization can no longer satisfy the frozen P95; stop before consuming the remaining batch",
+            )
             result = created.get("information")
             organization = created.get("organization")
             require(isinstance(result, dict) and isinstance(organization, dict), "create result is incomplete")
@@ -611,9 +744,13 @@ def _ingest_condition(
                     str(item["content"]),
                 ],
                 environment,
-                timeout=float(args.protocol["budgets"]["organization_seconds_per_item"]),
+                timeout=operation_stall,
             )
             durations.append(time.perf_counter() - begin)
+            require(
+                sum(value > accepted_p95 for value in durations) <= allowed_slow_operations,
+                "organization can no longer satisfy the frozen P95; stop before consuming the remaining batch",
+            )
             result = updated.get("information")
             organization = updated.get("organization")
             require(isinstance(result, dict) and isinstance(organization, dict), "update result is incomplete")
@@ -622,7 +759,7 @@ def _ingest_condition(
             revisions[key] = int(result["revision"])
             operation_count += 1
     mapping = {
-        "schema": "ownward.dynamic-ingestion/v1",
+        "schema": "ownward.dynamic-ingestion/v2",
         "condition": condition,
         "disable_relations": disable_relations,
         "data_directory": "full-data",
@@ -630,9 +767,9 @@ def _ingest_condition(
         "stable_ids": stable_ids,
         "revisions": revisions,
         "operation_count": operation_count,
-        "logical_semantic_model_calls": operation_count * 2,
         "organization_seconds": sum(durations),
         "organization_seconds_max": max(durations, default=0),
+        "organization_seconds_p95": _percentile(durations, 0.95),
     }
     write_json(mapping_path, mapping)
     return mapping, environment
@@ -650,20 +787,25 @@ def _run_agents(
     protocol: dict[str, Any],
     *,
     condition: str,
+    task_classes: list[str] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Path]]:
     data_dir = args.evidence_dir / str(mapping["data_directory"])
     agent_config = protocol["models"]["external_agent"]
     model = str(agent_config["model"])
     reasoning_effort = str(agent_config["reasoning_effort"])
-    budget = int(protocol["budgets"]["agent_tool_calls_per_query"])
-    condition_seconds = float(protocol["budgets"]["agent_seconds_per_condition"])
+    execution = protocol["execution"]
+    budget = int(execution["agent_tool_calls_per_query"])
+    seconds_per_question = float(execution["agent_seconds_per_question_max"])
     scenarios_by_class: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for scenario in dataset["valid_scenarios"]:
         scenarios_by_class[str(scenario["truth"]["task_class"])].append(scenario)
     runs: dict[str, Any] = {}
     evidence: dict[str, Path] = {}
-    for task_class in protocol["generation"]["task_classes"]:
+    selected_classes = task_classes or list(protocol["generation"]["task_classes"])
+    require(set(selected_classes) <= set(protocol["generation"]["task_classes"]), "agent task class is outside the frozen protocol")
+    for task_class in selected_classes:
         scenarios = scenarios_by_class[str(task_class)]
+        class_seconds = len(scenarios) * seconds_per_question
         questions = [
             {"query_id": str(item["truth"]["id"]), "question": str(item["expression"]["query"]["question"])}
             for item in scenarios
@@ -699,10 +841,9 @@ def _run_agents(
             require(run_metadata.get("binding") == run_binding, "resumed agent run binding changed")
             elapsed = float(run_metadata.get("elapsed_seconds", 0))
             require(elapsed > 0, "resumed agent elapsed time is invalid")
+            require(elapsed <= class_seconds, f"{condition} {task_class} exceeded the product-derived time boundary")
         else:
             begin = time.perf_counter()
-            remaining_seconds = condition_seconds - sum(float(value["elapsed_seconds"]) for value in runs.values())
-            require(remaining_seconds > 0, f"{condition} agent exhausted the condition time budget")
             answers = _run_codex_json(
                 args,
                 model=model,
@@ -711,9 +852,9 @@ def _run_agents(
                 schema=answers_schema(),
                 output_path=output_path,
                 events_path=events_path,
-                timeout=remaining_seconds,
                 environment=environment,
                 data_dir=data_dir,
+                maximum_seconds=class_seconds,
             )
             elapsed = time.perf_counter() - begin
             write_json(
@@ -780,20 +921,62 @@ def _run_agents(
             "elapsed_seconds": elapsed,
             "details": details,
         }
-        require(
-            sum(float(value["elapsed_seconds"]) for value in runs.values()) <= condition_seconds,
-            f"{condition} agent exceeded the condition time budget",
-        )
         evidence[f"{condition}_{task_class}_answers"] = output_path
         evidence[f"{condition}_{task_class}_events"] = events_path
         evidence[f"{condition}_{task_class}_run"] = run_path
     return runs, evidence
 
 
+def _run_agent_pairs(
+    args: argparse.Namespace,
+    dataset: dict[str, Any],
+    full_mapping: dict[str, Any],
+    full_environment: dict[str, str],
+    baseline_mapping: dict[str, Any],
+    baseline_environment: dict[str, str],
+    protocol: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Path], dict[str, Any], dict[str, Path]]:
+    require(int(protocol["execution"]["parallel_conditions"]) == 2, "dynamic condition parallelism changed")
+    full_runs: dict[str, Any] = {}
+    full_evidence: dict[str, Path] = {}
+    baseline_runs: dict[str, Any] = {}
+    baseline_evidence: dict[str, Path] = {}
+    for task_class in protocol["generation"]["task_classes"]:
+        with ThreadPoolExecutor(max_workers=2, thread_name_prefix=f"dynamic-{task_class}") as executor:
+            full_future = executor.submit(
+                _run_agents,
+                args,
+                dataset,
+                full_mapping,
+                full_environment,
+                protocol,
+                condition="full",
+                task_classes=[str(task_class)],
+            )
+            baseline_future = executor.submit(
+                _run_agents,
+                args,
+                dataset,
+                baseline_mapping,
+                baseline_environment,
+                protocol,
+                condition="baseline",
+                task_classes=[str(task_class)],
+            )
+            class_full_runs, class_full_evidence = full_future.result()
+            class_baseline_runs, class_baseline_evidence = baseline_future.result()
+        full_runs.update(class_full_runs)
+        full_evidence.update(class_full_evidence)
+        baseline_runs.update(class_baseline_runs)
+        baseline_evidence.update(class_baseline_evidence)
+    return full_runs, full_evidence, baseline_runs, baseline_evidence
+
+
 def _verify_assets(
     args: argparse.Namespace, dataset: dict[str, Any], mapping: dict[str, Any], environment: dict[str, str], *, condition: str
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     stable_ids = mapping["stable_ids"]
+    inspection_stall = float(args.protocol["execution"]["inspection_operation_stall_seconds"])
     observed_ids: set[str] = set()
     evidence: list[dict[str, Any]] = []
     checked = 0
@@ -803,7 +986,12 @@ def _verify_assets(
         for item in scenario["expression"]["information"]:
             node_id = str(item["node_id"])
             stable_id = stable_ids[_scenario_key(scenario_id, node_id)]
-            read = _run_binary(args, ["read", "--data-dir", str(args.evidence_dir / str(mapping["data_directory"])), "--id", stable_id], environment)
+            read = _run_binary(
+                args,
+                ["read", "--data-dir", str(args.evidence_dir / str(mapping["data_directory"])), "--id", stable_id],
+                environment,
+                timeout=inspection_stall,
+            )
             require(str(read.get("id")) == stable_id, "stable identity changed")
             require(str(read.get("content")) == updates.get(node_id, str(item["content"])), "asset content changed")
             require(stable_id not in observed_ids, "information was merged or split")
@@ -820,10 +1008,40 @@ def _verify_assets(
     return {"checked": checked, "unique_ids": len(observed_ids), "passed": checked == len(observed_ids)}, evidence
 
 
+def _verify_asset_pair(
+    args: argparse.Namespace,
+    dataset: dict[str, Any],
+    full_mapping: dict[str, Any],
+    full_environment: dict[str, str],
+    baseline_mapping: dict[str, Any],
+    baseline_environment: dict[str, str],
+) -> tuple[tuple[dict[str, Any], list[dict[str, Any]]], tuple[dict[str, Any], list[dict[str, Any]]]]:
+    require(int(args.protocol["execution"]["parallel_conditions"]) == 2, "dynamic condition parallelism changed")
+    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="dynamic-asset-integrity") as executor:
+        full_future = executor.submit(
+            _verify_assets,
+            args,
+            dataset,
+            full_mapping,
+            full_environment,
+            condition="full",
+        )
+        baseline_future = executor.submit(
+            _verify_assets,
+            args,
+            dataset,
+            baseline_mapping,
+            baseline_environment,
+            condition="baseline",
+        )
+        return full_future.result(), baseline_future.result()
+
+
 def _organization_metrics(
     args: argparse.Namespace, dataset: dict[str, Any], mapping: dict[str, Any], environment: dict[str, str]
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     stable_ids = mapping["stable_ids"]
+    inspection_stall = float(args.protocol["execution"]["inspection_operation_stall_seconds"])
     reverse = {value: key for key, value in stable_ids.items()}
     expected: set[tuple[str, str, str]] = set()
     for scenario in dataset["valid_scenarios"]:
@@ -838,6 +1056,7 @@ def _organization_metrics(
             args,
             ["navigate", "--data-dir", str(args.evidence_dir / "full-data"), "--id", stable_id, "--depth", "1", "--limit", "100"],
             environment,
+            timeout=inspection_stall,
         )
         for edge in graph.get("edges", []):
             source = reverse.get(str(edge.get("source_id", "")))
@@ -911,6 +1130,11 @@ def _build_reports(
     organization: dict[str, Any],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     statistics = protocol["statistics"]
+    execution = protocol["execution"]
+    organization = {
+        **organization,
+        "completion_p95_seconds": float(full_mapping["organization_seconds_p95"]),
+    }
     confidence = float(statistics["confidence_level"])
     task_metrics: dict[str, Any] = {}
     task_checks: list[dict[str, Any]] = []
@@ -940,6 +1164,10 @@ def _build_reports(
         {"name": "required-scope-and-task-coverage", "passed": True},
         {"name": "asset-identity-content-integrity", "passed": bool(asset_integrity["passed"])},
         {"name": "semantic-relation-quality", "passed": relation_passed},
+        {
+            "name": "organization-completion-p95",
+            "passed": organization["completion_p95_seconds"] <= float(execution["organization_p95_seconds_max"]),
+        },
         *task_checks,
         {"name": "external-agent-no-bypass-and-budget", "passed": independent_agent_sessions},
     ]
@@ -957,23 +1185,19 @@ def _build_reports(
             "version": protocol["runtime"]["codex_cli_version"],
             "sha256": sha256(args.codex_binary),
         },
-        "semantic_provider": {
-            "base_url_sha256": hashlib.sha256(args.model_base_url.encode("utf-8")).hexdigest(),
-            "chat_model": args.chat_model,
-            "embedding_model": args.embedding_model,
-            "embedding_dimensions": args.embedding_dimensions,
-        },
+        "product_runtime": protocol["product_runtime"],
         "random_source_sha256": sha256(dataset_paths["random"]),
         "hidden_truth_sha256": sha256(dataset_paths["hidden"]),
         "dataset_sha256": sha256(dataset_paths["dataset"]),
         "generated_scenarios": int(protocol["generation"]["generated_scenarios"]),
         "valid_scenarios": len(dataset["valid_scenarios"]),
+        "reserve_scenarios": len(dataset["reserve_scenarios"]),
         "rejected_scenarios": len(dataset["rejected_scenarios"]),
         "asset_integrity": asset_integrity,
         "organization": organization,
         "tasks": task_metrics,
         "statistics": statistics,
-        "budgets": protocol["budgets"],
+        "execution": protocol["execution"],
         "evidence": _artifact_entries(evidence),
         "checks": dynamic_checks,
         "passed": all(bool(item["passed"]) for item in dynamic_checks),
@@ -1015,25 +1239,24 @@ def _build_reports(
         }
     full_cost = {
         "ingestion_operations": full_mapping["operation_count"],
-        "semantic_model_calls": full_mapping["logical_semantic_model_calls"] + sum(value["search_calls"] for value in full_runs.values()),
         "agent_tool_calls": sum(value["tool_calls"] for value in full_runs.values()),
         "organization_seconds": full_mapping["organization_seconds"],
         "agent_seconds": sum(value["elapsed_seconds"] for value in full_runs.values()),
     }
     baseline_cost = {
         "ingestion_operations": baseline_mapping["operation_count"],
-        "semantic_model_calls": baseline_mapping["logical_semantic_model_calls"] + sum(value["search_calls"] for value in baseline_runs.values()),
         "agent_tool_calls": sum(value["tool_calls"] for value in baseline_runs.values()),
         "organization_seconds": baseline_mapping["organization_seconds"],
         "agent_seconds": sum(value["elapsed_seconds"] for value in baseline_runs.values()),
     }
     same_non_relation_configuration = (
         full_mapping["operation_count"] == baseline_mapping["operation_count"]
-        and full_mapping["logical_semantic_model_calls"] == baseline_mapping["logical_semantic_model_calls"]
         and full_mapping["stable_ids"] == baseline_mapping["stable_ids"]
         and full_mapping["revisions"] == baseline_mapping["revisions"]
-        and full_mapping["data_directory"] == baseline_mapping["data_directory"] == "full-data"
+        and full_mapping["data_directory"] == "full-data"
+        and baseline_mapping["data_directory"] == "baseline-data"
         and baseline_mapping.get("source_mapping_sha256") == sha256(args.evidence_dir / "full-mapping.json")
+        and baseline_mapping.get("source_state_tree_sha256") == baseline_mapping.get("baseline_state_tree_sha256")
     )
     ablation_checks = [
         {"name": "same-candidate-binary-and-dataset", "passed": True},
@@ -1078,11 +1301,6 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--ablation-output", type=Path, required=True)
     parser.add_argument("--codex-binary", type=Path, required=True)
     parser.add_argument("--codex-auth-file", type=Path, required=True)
-    parser.add_argument("--model-base-url", default="https://api.openai.com/v1")
-    parser.add_argument("--model-api-key-env", default="OPENAI_API_KEY")
-    parser.add_argument("--chat-model", required=True)
-    parser.add_argument("--embedding-model", default="text-embedding-3-small")
-    parser.add_argument("--embedding-dimensions", type=int, default=384)
     parser.add_argument("--resume", action="store_true")
     return parser.parse_args()
 
@@ -1114,14 +1332,6 @@ def main() -> None:
     validate_protocol(protocol)
     args.protocol = protocol
     require(_binary_text(args.codex_binary, "--version") == protocol["runtime"]["codex_cli_version"], "Codex CLI version differs from the frozen protocol")
-    semantic_provider = protocol["semantic_provider"]
-    require(
-        args.chat_model == semantic_provider["chat_model"]
-        and args.embedding_model == semantic_provider["embedding_model"]
-        and args.embedding_dimensions == semantic_provider["embedding_dimensions"],
-        "semantic provider differs from the frozen protocol",
-    )
-    require(str(protocol["models"]["validator"]["model"]) != args.chat_model, "validator must be independent from the tested semantic model")
     if args.evidence_dir.exists():
         require(args.resume, "evidence directory already exists; use --resume")
     else:
@@ -1130,8 +1340,14 @@ def main() -> None:
     dataset, dataset_paths = _prepare_dataset(args, protocol, generator_environment)
     full_mapping, full_environment = _ingest_condition(args, dataset, condition="full", disable_relations=False)
     baseline_mapping, baseline_environment = _ingest_condition(args, dataset, condition="baseline", disable_relations=True)
-    full_integrity, full_asset_evidence = _verify_assets(args, dataset, full_mapping, full_environment, condition="full")
-    baseline_integrity, baseline_asset_evidence = _verify_assets(args, dataset, baseline_mapping, baseline_environment, condition="baseline")
+    (full_integrity, full_asset_evidence), (baseline_integrity, baseline_asset_evidence) = _verify_asset_pair(
+        args,
+        dataset,
+        full_mapping,
+        full_environment,
+        baseline_mapping,
+        baseline_environment,
+    )
     asset_integrity = {
         "full": full_integrity,
         "baseline": baseline_integrity,
@@ -1149,8 +1365,15 @@ def main() -> None:
     organization, organization_evidence = _organization_metrics(args, dataset, full_mapping, full_environment)
     organization_evidence_path = args.evidence_dir / "organization-relations.json"
     write_json(organization_evidence_path, organization_evidence)
-    full_runs, full_evidence = _run_agents(args, dataset, full_mapping, full_environment, protocol, condition="full")
-    baseline_runs, baseline_evidence = _run_agents(args, dataset, baseline_mapping, baseline_environment, protocol, condition="baseline")
+    full_runs, full_evidence, baseline_runs, baseline_evidence = _run_agent_pairs(
+        args,
+        dataset,
+        full_mapping,
+        full_environment,
+        baseline_mapping,
+        baseline_environment,
+        protocol,
+    )
     dynamic, ablation = _build_reports(
         args,
         protocol,

@@ -140,3 +140,10 @@
 - **结论**：LongMemEval-V2 Small 的 451 个问题各自引用 100 条轨迹，当前适配器逐题重建时至少触发 1,170,518 次 `create`，该执行路径不可行且不是公开前沿证明本身的要求；正式验收保留唯一必要的 `active` operating point，复用不接触答案的查询无关语义结果，并在全量前完成成本预检。
 - **影响**：高成本批量任务必须先证明规模必要并实测推算完整成本；十万条内核容量验收不得转化为十万次模型推理，检索编排只在具体替代方案可能改变结论时增加定向对照，未变化的对标系统报告可以复用。Ownward 不读取的 5.51 GiB 轨迹截图不再属于验收准备。
 - **证据**：`benchmarks/longmemeval_v2/README.md`、`benchmarks/resource_frontier/README.md`、`docs/delivery/first-version-delivery-definition.md`
+
+## R-000021｜关键决策｜动态未见验收改为最小有界正式路径
+
+- **时间**：2026-08-20 15:18（Asia/Shanghai）
+- **结论**：动态未见验收是防止固定样本过拟合、证明开放信息组织能力的必要证据，保留统计规则要求的最小 24 个有效场景；旧执行器绑定过时模型服务并累计多个无依据长超时，不构成有效完成路径。正式验收改为发布默认运行方式，组织与智能体时效分别绑定既定产品阈值和公开前沿，完整/无关系条件复用同一冻结状态并成对并行。
+- **影响**：动态验收不得要求用户提供 OpenAI 兼容端点或使用测试向量空间；异常运行必须失败并从有效检查点恢复，不能靠延长等待完成，也不能以控制成本为由删除动态证据。
+- **证据**：`benchmarks/acceptance/dynamic/`、`benchmarks/final_acceptance/`、`docs/delivery/first-version-delivery-definition.md`

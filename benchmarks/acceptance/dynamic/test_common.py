@@ -18,10 +18,9 @@ class DynamicCommonTests(unittest.TestCase):
         self.protocol = {
             "schema": common.PROTOCOL_SCHEMA,
             "runtime": {"codex_cli_version": "codex-cli 0.117.0"},
-            "semantic_provider": {
-                "chat_model": "chat",
-                "embedding_model": "embedding",
-                "embedding_dimensions": 384,
+            "product_runtime": {
+                "mode": "release-defaults",
+                "prohibited_environment": ["OPENAI_API_KEY"],
             },
             "generation": {
                 "generated_scenarios": 4,
@@ -36,12 +35,15 @@ class DynamicCommonTests(unittest.TestCase):
                 "validator": {"model": "two", "reasoning_effort": "high"},
                 "external_agent": {"model": "three", "reasoning_effort": "low"},
             },
-            "budgets": {
-                "generation_seconds": 1,
-                "validation_seconds": 1,
-                "organization_seconds_per_item": 1,
-                "agent_seconds_per_condition": 1,
+            "execution": {
+                "dataset_stage_seconds_max": 1,
+                "codex_inactivity_seconds": 1,
+                "inspection_operation_stall_seconds": 1,
+                "organization_operation_stall_seconds": 2,
+                "organization_p95_seconds_max": 1,
+                "agent_seconds_per_question_max": 1,
                 "agent_tool_calls_per_query": 1,
+                "parallel_conditions": 2,
             },
             "statistics": {
                 "confidence_level": 0.95,
@@ -108,6 +110,34 @@ class DynamicCommonTests(unittest.TestCase):
         self.assertGreater(common.wilson_lower(6, 6, 0.95), 0.60)
         self.assertLess(common.wilson_lower(5, 6, 0.95), 0.60)
 
+    def test_protocol_rejects_the_obsolete_test_model_path(self) -> None:
+        common.validate_protocol(self.protocol)
+        obsolete = copy.deepcopy(self.protocol)
+        obsolete.pop("product_runtime")
+        obsolete["semantic_provider"] = {
+            "chat_model": "test-chat",
+            "embedding_model": "test-embedding",
+            "embedding_dimensions": 384,
+        }
+        with self.assertRaisesRegex(RuntimeError, "formal product runtime"):
+            common.validate_protocol(obsolete)
+
+    def test_protocol_requires_paired_conditions_and_product_derived_timing(self) -> None:
+        invalid_parallelism = copy.deepcopy(self.protocol)
+        invalid_parallelism["execution"]["parallel_conditions"] = 1
+        with self.assertRaisesRegex(RuntimeError, "parallel pair"):
+            common.validate_protocol(invalid_parallelism)
+
+        invalid_stall = copy.deepcopy(self.protocol)
+        invalid_stall["execution"]["organization_operation_stall_seconds"] = 1
+        with self.assertRaisesRegex(RuntimeError, "must exceed"):
+            common.validate_protocol(invalid_stall)
+
+        invalid_inspection = copy.deepcopy(self.protocol)
+        invalid_inspection["execution"]["inspection_operation_stall_seconds"] = 2
+        with self.assertRaisesRegex(RuntimeError, "must not exceed"):
+            common.validate_protocol(invalid_inspection)
+
     def test_inverse_relation_labels_have_one_semantic_identity(self) -> None:
         self.assertEqual(
             common.canonical_relation("child", "narrower_than", "parent"),
@@ -120,8 +150,18 @@ class DynamicCommonTests(unittest.TestCase):
 
     def test_merges_only_independently_valid_scenarios(self) -> None:
         dataset = common.merge_valid_dataset(self.hidden, self.expression, self.validation, self.protocol)
+        self.assertEqual(dataset["schema"], "ownward.dynamic-dataset/v2")
         self.assertEqual(len(dataset["valid_scenarios"]), 4)
+        self.assertEqual(dataset["reserve_scenarios"], [])
         self.assertEqual(dataset["rejected_scenarios"], [])
+
+    def test_rejects_updates_that_do_not_belong_to_the_update_task(self) -> None:
+        invalid = copy.deepcopy(self.hidden)
+        invalid["scenarios"][0]["updates"] = [
+            {"node_id": invalid["scenarios"][0]["nodes"][0]["id"], "replacement_facts": ["changed"]}
+        ]
+        with self.assertRaisesRegex(RuntimeError, "unnecessary update"):
+            common.validate_hidden_world(invalid, self.protocol)
 
     def test_rejects_changed_hidden_truth(self) -> None:
         invalid = copy.deepcopy(self.hidden)
