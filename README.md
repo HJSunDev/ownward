@@ -81,7 +81,7 @@ The model-backed product acceptance suite deliberately refuses to run without a 
 go run ./cmd/ownward-acceptance --binary bin/ownward --candidate COMMIT_SHA
 ```
 
-Public quality and latency comparison uses the pinned official [LongMemEval-V2 integration](benchmarks/longmemeval_v2/README.md), including direct retrieval and external-agent active retrieval modes.
+Public quality and latency comparison uses the pinned official [LongMemEval-V2 integration](benchmarks/longmemeval_v2/README.md) with external-agent active retrieval; direct retrieval is only an optional diagnostic mode.
 
 Open-world organization and relation-structure value use the post-freeze [dynamic unseen acceptance](benchmarks/acceptance/dynamic/README.md), with independently validated generated data and a same-state relation ablation.
 

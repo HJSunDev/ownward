@@ -119,3 +119,24 @@
 - **时间**：2026-08-19 15:48（Asia/Shanghai）
 - **结论**：实际探测时，现有 OpenAI API 凭证被服务端拒绝为账户已停用，环境中也没有 Together 或 Hugging Face 凭证；因此当前无法执行依赖通用语义模型的动态未见与最终验收。
 - **影响**：可继续完成本地实现和无网络验证；冻结正式候选前必须取得可用的 OpenAI 兼容模型端点与凭证，届时不得复用本次失败数据。
+
+## R-000018｜关键问题｜语义模型凭证阻塞属于误判
+
+- **时间**：2026-08-20 12:19（Asia/Shanghai）
+- **结论**：R-000017 记录的凭证不可用事实成立，但将其推导为主线阻塞不成立；OpenAI 兼容端点只是当时验收实现的具体依赖，不是 Ownward 的产品前提。外部智能个体可通过稳定边界参与语义工作，无需用户为继续开发另行提供 API Key。
+- **影响**：不得再以缺少特定模型服务或凭证阻断主线；后续实现与验收必须保持语义能力可替换，不把 Ownward 绑定到具体智能体、模型服务或协议。
+- **证据**：R-000017、`docs/product/requirements.md`、`docs/architecture/overview.md`
+
+## R-000019｜关键决策｜第一版本地向量模型确定
+
+- **时间**：2026-08-20 12:19（Asia/Shanghai）
+- **结论**：第一版采用 Google EmbeddingGemma 300M 的 Q8 GGUF，配合 llama.cpp `b10488`、2 线程和 512 维输出，作为本地语义表示与向量召回能力；它不独立决定最终组织与检索质量，内核仍负责融合全部证据并形成结果。
+- **影响**：主线按该方案逐步完成模型接入、集成验证和最终交付；不得以其他候选或旧测试模型替代而不重新形成决策与证据。
+- **证据**：`docs/research/vector-model-selection.md`、`docs/research/vector-model-selection-research.md`、`benchmarks/vector-model-evaluation/`
+
+## R-000020｜关键问题｜最终验收存在未核算的规模放大
+
+- **时间**：2026-08-20 14:33（Asia/Shanghai）
+- **结论**：LongMemEval-V2 Small 的 451 个问题各自引用 100 条轨迹，当前适配器逐题重建时至少触发 1,170,518 次 `create`，该执行路径不可行且不是公开前沿证明本身的要求；正式验收保留唯一必要的 `active` operating point，复用不接触答案的查询无关语义结果，并在全量前完成成本预检。
+- **影响**：高成本批量任务必须先证明规模必要并实测推算完整成本；十万条内核容量验收不得转化为十万次模型推理，检索编排只在具体替代方案可能改变结论时增加定向对照，未变化的对标系统报告可以复用。Ownward 不读取的 5.51 GiB 轨迹截图不再属于验收准备。
+- **证据**：`benchmarks/longmemeval_v2/README.md`、`benchmarks/resource_frontier/README.md`、`docs/delivery/first-version-delivery-definition.md`
