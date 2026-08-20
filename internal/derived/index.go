@@ -33,6 +33,7 @@ type Index struct {
 	searchCacheMu sync.Mutex
 	records       []indexedRecord
 	blocks        map[int]*vectorBlock
+	activeVectors int
 	locations     map[string]uint32
 	forward       map[string][]Edge
 	reverse       map[string][]Edge
@@ -132,6 +133,13 @@ func (i *Index) Get(id string) (Record, bool) {
 		return Record{}, false
 	}
 	return clone(i.records[location].record), true
+}
+
+// HasVectors 判断当前派生世代是否包含可用于语义检索的向量。
+func (i *Index) HasVectors() bool {
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+	return i.activeVectors > 0
 }
 
 func (i *Index) Dependents(targetID string) []string {
@@ -356,6 +364,7 @@ func (i *Index) upsertVectorLocked(recordID uint32, record Record) {
 	if indexed.hasVector {
 		previous := indexed.vector
 		block := i.blocks[previous.dimensions]
+		wasActive := block.active[previous.row]
 		if validVector && len(record.Embedding) == previous.dimensions {
 			start := previous.row * block.dimensions
 			values := block.values[start : start+block.dimensions]
@@ -365,10 +374,20 @@ func (i *Index) upsertVectorLocked(recordID uint32, record Record) {
 				vek32.MulNumber_Inplace(values, float32(1/norm))
 			}
 			block.contexts[previous.row] = append(block.contexts[previous.row][:0], semantics.ContextValues(record.Analysis.Contexts)...)
-			block.active[previous.row] = record.Status != "pending" && norm > 0
+			block.active[previous.row] = norm > 0
+			if wasActive != block.active[previous.row] {
+				if block.active[previous.row] {
+					i.activeVectors++
+				} else {
+					i.activeVectors--
+				}
+			}
 			return
 		}
 		block.active[previous.row] = false
+		if wasActive {
+			i.activeVectors--
+		}
 		indexed.hasVector = false
 	}
 	if !validVector {
@@ -381,7 +400,7 @@ func (i *Index) upsertVectorLocked(recordID uint32, record Record) {
 	}
 	row := len(block.records)
 	block.records = append(block.records, recordID)
-	block.active = append(block.active, record.Status != "pending")
+	block.active = append(block.active, true)
 	block.contexts = append(block.contexts, semantics.ContextValues(record.Analysis.Contexts))
 	start := len(block.values)
 	block.values = append(block.values, record.Embedding...)
@@ -390,6 +409,7 @@ func (i *Index) upsertVectorLocked(recordID uint32, record Record) {
 		block.active[row] = false
 	} else {
 		vek32.MulNumber_Inplace(block.values[start:], float32(1/norm))
+		i.activeVectors++
 	}
 	indexed.vector = vectorLocation{dimensions: len(record.Embedding), row: row}
 	indexed.hasVector = true

@@ -15,37 +15,38 @@ import (
 const DefaultEmbeddingDimensions = 384
 
 type Cue struct {
-	Text string `json:"text"`
-	Kind string `json:"kind"`
+	Text string `json:"text" jsonschema:"有助于未来检索的原文线索"`
+	Kind string `json:"kind" jsonschema:"线索类别，例如 entity、term 或 requirement"`
 }
 
 type Relation struct {
-	Type           string  `json:"type"`
-	TargetID       string  `json:"target_id"`
+	Type           string  `json:"type" jsonschema:"关系类型：same_as、broader_than、narrower_than、part_of、has_part、supports、contradicts、derived_from、applies_in 或 related_to"`
+	TargetID       string  `json:"target_id" jsonschema:"必须是当前语义工作提供的候选资产 id"`
 	TargetRevision uint64  `json:"target_revision,omitempty"`
-	Confidence     float64 `json:"confidence"`
-	Evidence       string  `json:"evidence,omitempty"`
-	Direction      string  `json:"direction,omitempty"`
+	Confidence     float64 `json:"confidence" jsonschema:"基于明确证据的置信度，关系至少为 0.75"`
+	Evidence       string  `json:"evidence,omitempty" jsonschema:"当前资产与候选内容中直接支持该关系的证据"`
+	Direction      string  `json:"direction,omitempty" jsonschema:"当前资产指向候选时为 outgoing；候选指向当前资产时为 incoming"`
 	InferredBy     string  `json:"inferred_by,omitempty"`
 }
 
 type InferredContext struct {
-	Key        string  `json:"key"`
-	Value      string  `json:"value"`
-	Confidence float64 `json:"confidence"`
-	Evidence   string  `json:"evidence"`
+	Key        string  `json:"key" jsonschema:"只有信息含义或适用性确实依赖场景时才提供的场景键"`
+	Value      string  `json:"value" jsonschema:"场景值"`
+	Confidence float64 `json:"confidence" jsonschema:"场景判断置信度"`
+	Evidence   string  `json:"evidence" jsonschema:"资产内容中直接支持该场景的证据"`
 }
 
 type Analysis struct {
-	Summary   string            `json:"summary"`
-	Cues      []Cue             `json:"cues"`
-	Topics    []string          `json:"topics"`
+	Summary   string            `json:"summary" jsonschema:"不改变原意的简洁语义摘要"`
+	Cues      []Cue             `json:"cues" jsonschema:"有助于未来检索的线索；没有则为空数组"`
+	Topics    []string          `json:"topics" jsonschema:"可多重归属的主题；没有可靠主题则为空数组"`
 	Contexts  []InferredContext `json:"inferred_contexts,omitempty"`
 	Relations []Relation        `json:"relations,omitempty"`
 }
 
 type Candidate struct {
 	ID         string           `json:"id"`
+	Revision   uint64           `json:"revision"`
 	Content    string           `json:"content"`
 	Contexts   []domain.Context `json:"explicit_contexts,omitempty"`
 	Similarity float64          `json:"semantic_similarity,omitempty"`
@@ -181,6 +182,10 @@ func truncate(value string, length int) string {
 	}
 	runes := []rune(value)
 	return strings.TrimSpace(string(runes[:length])) + "…"
+}
+
+func NormalizeAnalysis(source domain.Information, value Analysis) Analysis {
+	return normalizeAnalysis(source, value)
 }
 
 func normalizeAnalysis(source domain.Information, value Analysis) Analysis {

@@ -14,6 +14,7 @@ import (
 	"github.com/HJSunDev/ownward/internal/assetlog"
 	"github.com/HJSunDev/ownward/internal/derived"
 	"github.com/HJSunDev/ownward/internal/domain"
+	"github.com/HJSunDev/ownward/internal/embedding"
 	"github.com/HJSunDev/ownward/internal/retrieval"
 	"github.com/HJSunDev/ownward/internal/semantics"
 )
@@ -23,6 +24,8 @@ const CollaborationRules = `# Ownward 协作规则
 Ownward 只保存属于用户且可长期复用的信息。创建信息时保留完整原意；只有信息的含义或适用性依赖场景时才附加场景。不要把某个智能体的临时工作状态写入 Ownward。
 
 开始任务时，先检索可能影响当前判断的个人信息。检索先取得低成本线索与关联，再按需读取完整内容；简单问题可以一次检索，复杂问题应依据累计证据继续检索、沿关系扩展或调整方向，直到证据足以支持当前目的。真实工作中形成的错误教训、解决经验和可复用路径应在确认后补充，并标明适用场景。
+
+创建或更新返回待理解状态时，通过独立的语义工作工具取得有界工作，并只依据其中的资产和候选上下文提交带来源、证据与不确定性的候选判断。语义工作不代表当前用户任务，不得把临时任务意图写入长期组织状态；无法可靠判断时明确保留不确定性。
 `
 
 type Service struct {
@@ -31,10 +34,13 @@ type Service struct {
 	index            *retrieval.Lexical
 	semantic         *derived.Index
 	provider         semantics.Provider
+	embedder         embedding.Provider
+	collaborative    bool
 	disableRelations bool
 	now              func() time.Time
 	mutationMu       [256]sync.Mutex
 	graphMu          sync.Mutex
+	stateMu          sync.RWMutex
 }
 
 type OrganizationState struct {
@@ -46,6 +52,11 @@ type OrganizationState struct {
 type MutationResult struct {
 	Information  domain.Information `json:"information"`
 	Organization OrganizationState  `json:"organization"`
+}
+
+type MutationBatchResult struct {
+	Result *MutationResult `json:"result,omitempty"`
+	Error  string          `json:"error,omitempty"`
 }
 
 type CreateInput struct {
@@ -141,23 +152,122 @@ func NewOrganizedWithOptions(store *assetlog.Store, derivedStore *derived.Store,
 	}, nil
 }
 
+// NewCollaborative 创建本地向量能力与外部语义理解相互独立的正式产品架构。
+func NewCollaborative(store *assetlog.Store, derivedStore *derived.Store, embedder embedding.Provider) (*Service, error) {
+	return NewCollaborativeWithOptions(store, derivedStore, embedder, Options{})
+}
+
+func NewCollaborativeWithOptions(store *assetlog.Store, derivedStore *derived.Store, embedder embedding.Provider, options Options) (*Service, error) {
+	if embedder == nil {
+		embedder = embedding.Unavailable{}
+	}
+	records, err := derivedStore.AllWithEmbeddings()
+	if err != nil {
+		return nil, fmt.Errorf("加载派生检索状态: %w", err)
+	}
+	assets := store.All()
+	currentRevision := make(map[string]uint64, len(assets))
+	for _, asset := range assets {
+		currentRevision[asset.ID] = asset.Revision
+	}
+	currentRecords := records[:0]
+	space := embedder.Space()
+	invalidated := make([]derived.Record, 0)
+	for _, record := range records {
+		if currentRevision[record.AssetID] != record.AssetRevision {
+			continue
+		}
+		if len(record.Embedding) > 0 && space.ID != "" && record.EmbeddingSpace != space.ID {
+			record.Embedding = nil
+			record.Status = "pending"
+			record.Error = strings.Trim(strings.Join([]string{record.Error, "向量空间与当前能力不一致"}, "; "), "; ")
+			invalidated = append(invalidated, record)
+		}
+		if options.DisableRelations {
+			record.Analysis.Relations = nil
+		}
+		currentRecords = append(currentRecords, record)
+	}
+	for _, record := range invalidated {
+		if err := derivedStore.Put(record); err != nil {
+			return nil, fmt.Errorf("持久化向量空间隔离状态: %w", err)
+		}
+	}
+	return &Service{
+		store:            store,
+		derivedStore:     derivedStore,
+		index:            retrieval.NewLexical(assets),
+		semantic:         derived.NewIndex(currentRecords),
+		embedder:         embedder,
+		collaborative:    true,
+		disableRelations: options.DisableRelations,
+		now:              time.Now,
+	}, nil
+}
+
 func (s *Service) Create(ctx context.Context, input CreateInput) (MutationResult, error) {
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
+	value, err := s.createAsset(input)
+	if err != nil {
+		return MutationResult{}, err
+	}
+	if s.collaborative {
+		return MutationResult{Information: value, Organization: s.prepareSemanticWork(ctx, value)}, nil
+	}
+	return MutationResult{Information: value, Organization: s.organize(ctx, value)}, nil
+}
+
+func (s *Service) CreateBatch(ctx context.Context, inputs []CreateInput) ([]MutationBatchResult, error) {
+	if len(inputs) == 0 || len(inputs) > 20 {
+		return nil, errors.New("批量创建数量必须介于一和二十之间")
+	}
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
+	results := make([]MutationBatchResult, len(inputs))
+	values := make([]domain.Information, 0, len(inputs))
+	positions := make([]int, 0, len(inputs))
+	for index, input := range inputs {
+		value, err := s.createAsset(input)
+		if err != nil {
+			results[index].Error = err.Error()
+			continue
+		}
+		values = append(values, value)
+		positions = append(positions, index)
+	}
+	states := make([]OrganizationState, len(values))
+	if s.collaborative {
+		states = s.prepareSemanticWorkBatch(ctx, values)
+	} else {
+		for index, value := range values {
+			states[index] = s.organize(ctx, value)
+		}
+	}
+	for index, value := range values {
+		result := MutationResult{Information: value, Organization: states[index]}
+		results[positions[index]].Result = &result
+	}
+	return results, nil
+}
+
+func (s *Service) createAsset(input CreateInput) (domain.Information, error) {
 	if strings.TrimSpace(input.Content) == "" {
-		return MutationResult{}, errors.New("信息内容不能为空")
+		return domain.Information{}, errors.New("信息内容不能为空")
 	}
 	if input.Kind == "" {
 		input.Kind = domain.KindGeneral
 	}
 	if _, err := domain.ParseKind(string(input.Kind)); err != nil {
-		return MutationResult{}, err
+		return domain.Information{}, err
 	}
 	if err := s.validateRelationTargets("", input.Relations); err != nil {
-		return MutationResult{}, err
+		return domain.Information{}, err
 	}
 	now := s.now().UTC()
 	id, err := newID(now)
 	if err != nil {
-		return MutationResult{}, err
+		return domain.Information{}, err
 	}
 	value := domain.Information{
 		Schema:    domain.AssetSchema,
@@ -166,19 +276,21 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (MutationResult
 		CreatedAt: now,
 		UpdatedAt: now,
 		Kind:      input.Kind,
-		Content:   strings.TrimSpace(input.Content),
+		Content:   input.Content,
 		Contexts:  normalizeContexts(input.Contexts),
 		Relations: append([]domain.ExplicitRelation(nil), input.Relations...),
 		Source:    input.Source,
 	}
 	if err := s.store.Create(value); err != nil {
-		return MutationResult{}, err
+		return domain.Information{}, err
 	}
 	s.index.Upsert(value)
-	return MutationResult{Information: value, Organization: s.organize(ctx, value)}, nil
+	return value, nil
 }
 
 func (s *Service) Update(ctx context.Context, input UpdateInput) (MutationResult, error) {
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
 	unlock := s.lockMutation(input.ID)
 	released := false
 	defer func() {
@@ -203,7 +315,10 @@ func (s *Service) Update(ctx context.Context, input UpdateInput) (MutationResult
 		updated.Kind = *input.Kind
 	}
 	if input.Content != nil {
-		updated.Content = strings.TrimSpace(*input.Content)
+		if strings.TrimSpace(*input.Content) == "" {
+			return MutationResult{}, errors.New("信息内容不能为空")
+		}
+		updated.Content = *input.Content
 	}
 	if input.Contexts != nil {
 		updated.Contexts = normalizeContexts(*input.Contexts)
@@ -230,6 +345,10 @@ func (s *Service) Update(ctx context.Context, input UpdateInput) (MutationResult
 	organizationResult := make(chan OrganizationState, 1)
 	dependentResult := make(chan int, 1)
 	go func() {
+		if s.collaborative {
+			organizationResult <- s.prepareSemanticWork(ctx, updated)
+			return
+		}
 		organizationResult <- s.organize(ctx, updated)
 	}()
 	go func() {
@@ -253,6 +372,8 @@ func (s *Service) Read(_ context.Context, id string) (domain.Information, error)
 }
 
 func (s *Service) Search(ctx context.Context, input SearchInput) ([]SearchResult, error) {
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
 	if strings.TrimSpace(input.Query) == "" {
 		return nil, errors.New("检索内容不能为空")
 	}
@@ -273,20 +394,30 @@ func (s *Service) Search(ctx context.Context, input SearchInput) ([]SearchResult
 	if len(lexical) > 0 && lexical[0].Information.ID == trimmedQuery && contains(lexical[0].Signals, "identity") {
 		return s.compactResults(lexical[:1]), nil
 	}
-	if s.semantic == nil || s.provider == nil {
+	if s.semantic == nil || !s.semantic.HasVectors() || (!s.collaborative && s.provider == nil) {
 		if len(lexical) > limit {
 			lexical = lexical[:limit]
 		}
 		return s.compactResults(lexical), nil
 	}
-	vectors, err := s.provider.Embed(ctx, []string{input.Query})
-	if err != nil || len(vectors) != 1 {
+	var queryVector []float32
+	var err error
+	if s.collaborative {
+		queryVector, err = s.embedder.EmbedQuery(ctx, input.Query)
+	} else {
+		var vectors [][]float32
+		vectors, err = s.provider.Embed(ctx, []string{input.Query})
+		if len(vectors) == 1 {
+			queryVector = vectors[0]
+		}
+	}
+	if err != nil || len(queryVector) == 0 {
 		if len(lexical) > limit {
 			lexical = lexical[:limit]
 		}
 		return s.compactResults(lexical), nil
 	}
-	semanticHits := s.semantic.Search(vectors[0], contexts, candidateLimit)
+	semanticHits := s.semantic.Search(queryVector, contexts, candidateLimit)
 	type fused struct {
 		score   float64
 		signals map[string]struct{}
@@ -471,6 +602,8 @@ func (s *Service) compactResult(value domain.Information, contexts []domain.Cont
 }
 
 func (s *Service) Navigate(_ context.Context, start, relationTypes []string, depth, limit int) (NavigationResult, error) {
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
 	if s.disableRelations {
 		return NavigationResult{}, errors.New("关系组织已禁用")
 	}
@@ -519,9 +652,16 @@ func (s *Service) Rules(context.Context) string {
 }
 
 func (s *Service) Close() error {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
 	var first error
+	if s.embedder != nil {
+		first = s.embedder.Close()
+	}
 	if s.derivedStore != nil {
-		first = s.derivedStore.Close()
+		if err := s.derivedStore.Close(); first == nil {
+			first = err
+		}
 	}
 	if err := s.store.Close(); first == nil {
 		first = err
@@ -530,9 +670,14 @@ func (s *Service) Close() error {
 }
 
 func (s *Service) Maintain(ctx context.Context, rebuild bool) (map[string]int, error) {
-	if s.derivedStore == nil || s.provider == nil {
+	if s.derivedStore == nil || (!s.collaborative && s.provider == nil) {
 		return nil, errors.New("语义组织未启用")
 	}
+	if rebuild && s.collaborative {
+		return s.rebuildCollaborative(ctx)
+	}
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
 	if rebuild {
 		if err := s.derivedStore.Reset(); err != nil {
 			return nil, err
@@ -554,7 +699,12 @@ func (s *Service) Maintain(ctx context.Context, rebuild bool) (map[string]int, e
 			unlock()
 			continue
 		}
-		state := s.organize(ctx, value)
+		var state OrganizationState
+		if s.collaborative {
+			state = s.prepareSemanticWork(ctx, value)
+		} else {
+			state = s.organize(ctx, value)
+		}
 		counts[state.Status]++
 		unlock()
 	}
@@ -736,7 +886,12 @@ func (s *Service) refreshDependents(ctx context.Context, ids []string) int {
 					results <- false
 					continue
 				}
-				state := s.organize(ctx, value)
+				var state OrganizationState
+				if s.collaborative {
+					state = s.prepareSemanticWork(ctx, value)
+				} else {
+					state = s.organize(ctx, value)
+				}
 				unlock()
 				results <- state.Status == "pending"
 			}

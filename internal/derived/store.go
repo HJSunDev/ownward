@@ -36,38 +36,47 @@ var (
 var ErrStaleRecord = errors.New("派生状态版本早于当前版本")
 
 type Record struct {
-	Schema        string             `json:"schema"`
-	AssetID       string             `json:"asset_id"`
-	AssetRevision uint64             `json:"asset_revision"`
-	GeneratedAt   time.Time          `json:"generated_at"`
-	Provider      string             `json:"provider"`
-	Status        string             `json:"status"`
-	Error         string             `json:"error,omitempty"`
-	Analysis      semantics.Analysis `json:"analysis"`
-	Embedding     []float32          `json:"embedding,omitempty"`
+	Schema         string                `json:"schema"`
+	AssetID        string                `json:"asset_id"`
+	AssetRevision  uint64                `json:"asset_revision"`
+	GeneratedAt    time.Time             `json:"generated_at"`
+	Provider       string                `json:"provider"`
+	Status         string                `json:"status"`
+	Error          string                `json:"error,omitempty"`
+	Analysis       semantics.Analysis    `json:"analysis"`
+	SemanticWork   *semantics.Work       `json:"semantic_work,omitempty"`
+	SemanticResult *semantics.Submission `json:"semantic_result,omitempty"`
+	EmbeddingSpace string                `json:"embedding_space,omitempty"`
+	Embedding      []float32             `json:"embedding,omitempty"`
 }
 
 type persistedRecord struct {
-	Schema        string             `json:"schema"`
-	AssetID       string             `json:"asset_id"`
-	AssetRevision uint64             `json:"asset_revision"`
-	GeneratedAt   time.Time          `json:"generated_at"`
-	Provider      string             `json:"provider"`
-	Status        string             `json:"status"`
-	Error         string             `json:"error,omitempty"`
-	Analysis      semantics.Analysis `json:"analysis"`
-	Embedding     []byte             `json:"embedding_f32le,omitempty"`
+	Schema         string                `json:"schema"`
+	AssetID        string                `json:"asset_id"`
+	AssetRevision  uint64                `json:"asset_revision"`
+	GeneratedAt    time.Time             `json:"generated_at"`
+	Provider       string                `json:"provider"`
+	Status         string                `json:"status"`
+	Error          string                `json:"error,omitempty"`
+	Analysis       semantics.Analysis    `json:"analysis"`
+	SemanticWork   *semantics.Work       `json:"semantic_work,omitempty"`
+	SemanticResult *semantics.Submission `json:"semantic_result,omitempty"`
+	EmbeddingSpace string                `json:"embedding_space,omitempty"`
+	Embedding      []byte                `json:"embedding_f32le,omitempty"`
 }
 
 type recordMetadata struct {
-	Schema        string             `json:"schema"`
-	AssetID       string             `json:"asset_id"`
-	AssetRevision uint64             `json:"asset_revision"`
-	GeneratedAt   time.Time          `json:"generated_at"`
-	Provider      string             `json:"provider"`
-	Status        string             `json:"status"`
-	Error         string             `json:"error,omitempty"`
-	Analysis      semantics.Analysis `json:"analysis"`
+	Schema         string                `json:"schema"`
+	AssetID        string                `json:"asset_id"`
+	AssetRevision  uint64                `json:"asset_revision"`
+	GeneratedAt    time.Time             `json:"generated_at"`
+	Provider       string                `json:"provider"`
+	Status         string                `json:"status"`
+	Error          string                `json:"error,omitempty"`
+	Analysis       semantics.Analysis    `json:"analysis"`
+	SemanticWork   *semantics.Work       `json:"semantic_work,omitempty"`
+	SemanticResult *semantics.Submission `json:"semantic_result,omitempty"`
+	EmbeddingSpace string                `json:"embedding_space,omitempty"`
 }
 
 type Store struct {
@@ -76,6 +85,10 @@ type Store struct {
 	records             map[string]recordReference
 	startupRecords      map[string]Record
 	recoveredCorruption bool
+	root                string
+	directory           string
+	generation          string
+	sealed              bool
 }
 
 type recordReference struct {
@@ -92,21 +105,45 @@ func (e *legacyCorruptionError) Error() string { return e.err.Error() }
 func (e *legacyCorruptionError) Unwrap() error { return e.err }
 
 func Open(dir string) (*Store, error) {
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	root, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, fmt.Errorf("解析派生状态目录: %w", err)
+	}
+	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, fmt.Errorf("创建派生状态目录: %w", err)
 	}
+	generation, activeDir, sealed, err := currentGeneration(root)
+	if err != nil {
+		return nil, err
+	}
+	store, err := openStore(root, generation, activeDir, sealed, !sealed)
+	if err != nil {
+		return nil, err
+	}
+	if sealed {
+		if err := store.verifyGeneration(); err != nil {
+			_ = store.Close()
+			return nil, err
+		}
+	}
+	return store, nil
+}
+
+func openStore(root, generation, dir string, sealed, allowLegacyMigration bool) (*Store, error) {
 	recoveredLegacy := false
-	if err := migrateLegacy(dir); err != nil {
-		var corruption *legacyCorruptionError
-		if !errors.As(err, &corruption) {
-			return nil, fmt.Errorf("迁移旧派生状态: %w", err)
+	if allowLegacyMigration {
+		if err := migrateLegacy(dir); err != nil {
+			var corruption *legacyCorruptionError
+			if !errors.As(err, &corruption) {
+				return nil, fmt.Errorf("迁移旧派生状态: %w", err)
+			}
+			legacyPath := filepath.Join(dir, legacyLogFileName)
+			corruptPath := fmt.Sprintf("%s.corrupt-%s", legacyPath, time.Now().UTC().Format("20060102T150405.000000000Z"))
+			if renameErr := os.Rename(legacyPath, corruptPath); renameErr != nil {
+				return nil, fmt.Errorf("旧派生状态损坏且无法隔离: %v; %w", renameErr, err)
+			}
+			recoveredLegacy = true
 		}
-		legacyPath := filepath.Join(dir, legacyLogFileName)
-		corruptPath := fmt.Sprintf("%s.corrupt-%s", legacyPath, time.Now().UTC().Format("20060102T150405.000000000Z"))
-		if renameErr := os.Rename(legacyPath, corruptPath); renameErr != nil {
-			return nil, fmt.Errorf("旧派生状态损坏且无法隔离: %v; %w", renameErr, err)
-		}
-		recoveredLegacy = true
 	}
 	path := filepath.Join(dir, LogFileName)
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
@@ -116,8 +153,21 @@ func Open(dir string) (*Store, error) {
 	store := &Store{
 		file: file, records: make(map[string]recordReference),
 		startupRecords: make(map[string]Record), recoveredCorruption: recoveredLegacy,
+		root: root, directory: dir, generation: generation, sealed: sealed,
 	}
-	if err := store.replay(); err != nil {
+	if err := store.replay(); err != nil && sealed {
+		store.records = make(map[string]recordReference)
+		store.startupRecords = make(map[string]Record)
+		if recoverErr := store.recoverSealedTail(); recoverErr != nil {
+			_ = file.Close()
+			return nil, fmt.Errorf("恢复派生世代的有效基线: %v; %w", recoverErr, err)
+		}
+		if replayErr := store.replay(); replayErr != nil {
+			_ = file.Close()
+			return nil, replayErr
+		}
+		store.recoveredCorruption = true
+	} else if err != nil {
 		_ = file.Close()
 		corruptPath := fmt.Sprintf("%s.corrupt-%s", path, time.Now().UTC().Format("20060102T150405.000000000Z"))
 		if renameErr := os.Rename(path, corruptPath); renameErr != nil {
@@ -133,6 +183,29 @@ func Open(dir string) (*Store, error) {
 		store.recoveredCorruption = true
 	}
 	return store, nil
+}
+
+func (s *Store) recoverSealedTail() error {
+	encoded, err := os.ReadFile(filepath.Join(s.directory, manifestFileName))
+	if err != nil {
+		return err
+	}
+	var manifest generationManifest
+	if err := json.Unmarshal(encoded, &manifest); err != nil || manifest.Schema != generationSchema || manifest.Generation != s.generation || manifest.SealedBytes < 0 || !validDigest(manifest.LogSHA256) {
+		return errors.New("派生世代基线清单无效")
+	}
+	actual, err := fileDigestPrefix(filepath.Join(s.directory, LogFileName), manifest.SealedBytes)
+	if err != nil || !strings.EqualFold(actual, manifest.LogSHA256) {
+		return errors.New("派生世代已封存基线损坏")
+	}
+	if err := s.file.Truncate(manifest.SealedBytes); err != nil {
+		return err
+	}
+	if err := s.file.Sync(); err != nil {
+		return err
+	}
+	_, err = s.file.Seek(0, io.SeekStart)
+	return err
 }
 
 func migrateLegacy(dir string) error {
@@ -435,12 +508,12 @@ func fromPersisted(value persistedRecord) (Record, error) {
 	return Record{
 		Schema: value.Schema, AssetID: value.AssetID, AssetRevision: value.AssetRevision,
 		GeneratedAt: value.GeneratedAt, Provider: value.Provider, Status: value.Status,
-		Error: value.Error, Analysis: value.Analysis, Embedding: embedding,
+		Error: value.Error, Analysis: value.Analysis, SemanticWork: value.SemanticWork,
+		SemanticResult: value.SemanticResult, EmbeddingSpace: value.EmbeddingSpace, Embedding: embedding,
 	}, nil
 }
 
-// EncodeRecord produces the exact durable representation used by Store. It is
-// exported only so the performance fixture can exercise the release format.
+// EncodeRecord 生成 Store 使用的正式持久化表示，仅供性能夹具验证发布格式。
 func EncodeRecord(record Record) ([]byte, error) {
 	record.Schema = recordSchema
 	if err := validateRecord(record); err != nil {
@@ -449,7 +522,8 @@ func EncodeRecord(record Record) ([]byte, error) {
 	metadata, err := json.Marshal(recordMetadata{
 		Schema: record.Schema, AssetID: record.AssetID, AssetRevision: record.AssetRevision,
 		GeneratedAt: record.GeneratedAt, Provider: record.Provider, Status: record.Status,
-		Error: record.Error, Analysis: record.Analysis,
+		Error: record.Error, Analysis: record.Analysis, SemanticWork: record.SemanticWork,
+		SemanticResult: record.SemanticResult, EmbeddingSpace: record.EmbeddingSpace,
 	})
 	if err != nil {
 		return nil, err
@@ -477,8 +551,19 @@ func validateRecord(record Record) error {
 	if strings.TrimSpace(record.AssetID) == "" || record.AssetRevision == 0 {
 		return errors.New("派生状态缺少有效信息标识或版本")
 	}
-	if record.Status != "ready" && record.Status != "degraded" && record.Status != "pending" {
+	if record.Status != "ready" && record.Status != "degraded" && record.Status != "pending" && record.Status != "uncertain" {
 		return errors.New("派生状态值无效")
+	}
+	if record.SemanticWork != nil {
+		if err := record.SemanticWork.Validate(); err != nil || record.SemanticWork.Asset.ID != record.AssetID || record.SemanticWork.Asset.Revision != record.AssetRevision {
+			return errors.New("派生状态包含无效语义工作")
+		}
+	}
+	if record.SemanticResult != nil {
+		if record.SemanticWork == nil || record.SemanticResult.WorkID != record.SemanticWork.ID || record.SemanticResult.AssetID != record.AssetID ||
+			record.SemanticResult.Revision != record.AssetRevision || record.SemanticResult.AcceptedAt.IsZero() {
+			return errors.New("派生状态包含无效语义结果")
+		}
 	}
 	if len(record.Embedding) > 8192 {
 		return errors.New("派生向量维度超过限制")
@@ -527,7 +612,7 @@ func decodeRecord(encoded []byte, withEmbedding bool) (Record, error) {
 		return Record{}, err
 	}
 	if metadata.Schema != recordSchema || strings.TrimSpace(metadata.AssetID) == "" || metadata.AssetRevision == 0 ||
-		(metadata.Status != "ready" && metadata.Status != "degraded" && metadata.Status != "pending") {
+		(metadata.Status != "ready" && metadata.Status != "degraded" && metadata.Status != "pending" && metadata.Status != "uncertain") {
 		return Record{}, errors.New("派生状态记录元数据无效")
 	}
 	var embedding []float32
@@ -544,7 +629,8 @@ func decodeRecord(encoded []byte, withEmbedding bool) (Record, error) {
 	return Record{
 		Schema: metadata.Schema, AssetID: metadata.AssetID, AssetRevision: metadata.AssetRevision,
 		GeneratedAt: metadata.GeneratedAt, Provider: metadata.Provider, Status: metadata.Status,
-		Error: metadata.Error, Analysis: metadata.Analysis, Embedding: embedding,
+		Error: metadata.Error, Analysis: metadata.Analysis, SemanticWork: metadata.SemanticWork,
+		SemanticResult: metadata.SemanticResult, EmbeddingSpace: metadata.EmbeddingSpace, Embedding: embedding,
 	}, nil
 }
 
@@ -564,5 +650,22 @@ func clone(record Record) Record {
 	record.Analysis.Topics = append([]string(nil), record.Analysis.Topics...)
 	record.Analysis.Contexts = append([]semantics.InferredContext(nil), record.Analysis.Contexts...)
 	record.Analysis.Relations = append([]semantics.Relation(nil), record.Analysis.Relations...)
+	if record.SemanticWork != nil {
+		work := *record.SemanticWork
+		work.Candidates = append([]semantics.Candidate(nil), work.Candidates...)
+		if work.Previous != nil {
+			previous := *work.Previous
+			work.Previous = &previous
+		}
+		record.SemanticWork = &work
+	}
+	if record.SemanticResult != nil {
+		result := *record.SemanticResult
+		result.Analysis.Cues = append([]semantics.Cue(nil), result.Analysis.Cues...)
+		result.Analysis.Topics = append([]string(nil), result.Analysis.Topics...)
+		result.Analysis.Contexts = append([]semantics.InferredContext(nil), result.Analysis.Contexts...)
+		result.Analysis.Relations = append([]semantics.Relation(nil), result.Analysis.Relations...)
+		record.SemanticResult = &result
+	}
 	return record
 }

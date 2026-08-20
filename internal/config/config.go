@@ -7,18 +7,12 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-
-	"github.com/HJSunDev/ownward/internal/semantics"
 )
 
 type Config struct {
-	DataDir             string
-	ModelBaseURL        string
-	ModelAPIKey         string
-	ChatModel           string
-	EmbeddingModel      string
-	EmbeddingDimensions int
-	DisableRelations    bool
+	DataDir          string
+	RuntimeDir       string
+	DisableRelations bool
 }
 
 func Load(override string) (Config, error) {
@@ -37,13 +31,17 @@ func Load(override string) (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("解析数据目录: %w", err)
 	}
-	dimensions := 0
-	if raw := strings.TrimSpace(os.Getenv("OWNWARD_EMBEDDING_DIMENSIONS")); raw != "" {
-		value, parseErr := strconv.Atoi(raw)
-		if parseErr != nil || value < 0 || value > 8192 {
-			return Config{}, errors.New("OWNWARD_EMBEDDING_DIMENSIONS 必须介于零和 8192 之间")
+	runtimeDir := strings.TrimSpace(os.Getenv("OWNWARD_RUNTIME_DIR"))
+	if runtimeDir == "" {
+		base, runtimeErr := os.UserConfigDir()
+		if runtimeErr != nil {
+			return Config{}, fmt.Errorf("确定默认运行状态目录: %w", runtimeErr)
 		}
-		dimensions = value
+		runtimeDir = filepath.Join(base, "Ownward", "runtime")
+	}
+	absoluteRuntime, err := filepath.Abs(runtimeDir)
+	if err != nil {
+		return Config{}, fmt.Errorf("解析运行状态目录: %w", err)
 	}
 	disableRelations := false
 	if raw := strings.TrimSpace(os.Getenv("OWNWARD_DISABLE_RELATIONS")); raw != "" {
@@ -54,28 +52,8 @@ func Load(override string) (Config, error) {
 		disableRelations = value
 	}
 	return Config{
-		DataDir:             absolute,
-		ModelBaseURL:        strings.TrimSpace(os.Getenv("OWNWARD_MODEL_BASE_URL")),
-		ModelAPIKey:         strings.TrimSpace(os.Getenv("OWNWARD_MODEL_API_KEY")),
-		ChatModel:           strings.TrimSpace(os.Getenv("OWNWARD_CHAT_MODEL")),
-		EmbeddingModel:      strings.TrimSpace(os.Getenv("OWNWARD_EMBEDDING_MODEL")),
-		EmbeddingDimensions: dimensions,
-		DisableRelations:    disableRelations,
+		DataDir:          absolute,
+		RuntimeDir:       absoluteRuntime,
+		DisableRelations: disableRelations,
 	}, nil
-}
-
-func (c Config) SemanticProvider(requireModel bool) (semantics.Provider, error) {
-	if c.ModelBaseURL == "" {
-		if requireModel {
-			return nil, errors.New("验收需要配置 OWNWARD_MODEL_BASE_URL、OWNWARD_CHAT_MODEL 和 OWNWARD_EMBEDDING_MODEL")
-		}
-		return semantics.Heuristic{}, nil
-	}
-	return semantics.NewOpenAI(semantics.OpenAIConfig{
-		BaseURL:             c.ModelBaseURL,
-		APIKey:              c.ModelAPIKey,
-		ChatModel:           c.ChatModel,
-		EmbeddingModel:      c.EmbeddingModel,
-		EmbeddingDimensions: c.EmbeddingDimensions,
-	})
 }

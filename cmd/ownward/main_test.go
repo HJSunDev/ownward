@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"testing"
 
@@ -19,7 +21,7 @@ func TestCLICompletesAssetLifecycleAcrossIndependentInvocations(t *testing.T) {
 	if err := json.Unmarshal(createdOutput, &created); err != nil {
 		t.Fatal(err)
 	}
-	if created.Information.ID == "" || created.Information.Revision != 1 || created.Organization.Status != "degraded" {
+	if created.Information.ID == "" || created.Information.Revision != 1 || created.Organization.Status != "pending" {
 		t.Fatalf("unexpected create result: %#v", created)
 	}
 
@@ -53,6 +55,28 @@ func TestCLICompletesAssetLifecycleAcrossIndependentInvocations(t *testing.T) {
 	restoredOutput := runCLI(t, "read", "--data-dir", restoredDir, "--id", created.Information.ID)
 	if !bytes.Contains(restoredOutput, []byte(updatedContent)) {
 		t.Fatalf("restored CLI data differs: %s", restoredOutput)
+	}
+}
+
+func TestBearerTokenHandlerRejectsMissingOrWrongCredentials(t *testing.T) {
+	handler := bearerTokenHandler(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.WriteHeader(http.StatusNoContent)
+	}), "secret")
+	for _, authorization := range []string{"", "Bearer wrong", "Basic secret"} {
+		request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/", nil)
+		request.Header.Set("Authorization", authorization)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusUnauthorized {
+			t.Fatalf("authorization %q returned %d", authorization, response.Code)
+		}
+	}
+	request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/", nil)
+	request.Header.Set("Authorization", "Bearer secret")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("valid bearer token returned %d", response.Code)
 	}
 }
 

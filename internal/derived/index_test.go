@@ -53,11 +53,33 @@ func TestIndexReportsOnlyInferredDependents(t *testing.T) {
 
 func TestIndexRejectsNonFiniteVectors(t *testing.T) {
 	index := NewIndex([]Record{{AssetID: "invalid", AssetRevision: 1, Status: "ready", Embedding: []float32{1, float32(math.NaN())}}})
+	if index.HasVectors() {
+		t.Fatal("non-finite vector was reported as searchable")
+	}
 	if hits := index.Search([]float32{1, 0}, nil, 10); len(hits) != 0 {
 		t.Fatalf("unexpected hits: %#v", hits)
 	}
 	if hits := index.Search([]float32{1, float32(math.Inf(1))}, nil, 10); len(hits) != 0 {
 		t.Fatalf("unexpected hits for invalid query: %#v", hits)
+	}
+}
+
+func TestIndexTracksWhetherComparableVectorsExist(t *testing.T) {
+	index := NewIndex(nil)
+	if index.HasVectors() {
+		t.Fatal("empty index reported a comparable vector")
+	}
+	index.Upsert(Record{AssetID: "one", AssetRevision: 1, Status: "ready", Embedding: []float32{1, 0}})
+	if !index.HasVectors() {
+		t.Fatal("valid vector was not reported")
+	}
+	index.Upsert(Record{AssetID: "one", AssetRevision: 2, Status: "pending"})
+	if index.HasVectors() {
+		t.Fatal("removed vector remained searchable")
+	}
+	index.Upsert(Record{AssetID: "one", AssetRevision: 3, Status: "ready", Embedding: []float32{0, 1}})
+	if !index.HasVectors() {
+		t.Fatal("restored vector was not reported")
 	}
 }
 

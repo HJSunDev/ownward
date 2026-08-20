@@ -10,6 +10,7 @@ import (
 	"github.com/HJSunDev/ownward/internal/core"
 	"github.com/HJSunDev/ownward/internal/derived"
 	"github.com/HJSunDev/ownward/internal/domain"
+	"github.com/HJSunDev/ownward/internal/embedding"
 	"github.com/HJSunDev/ownward/internal/semantics"
 )
 
@@ -92,9 +93,10 @@ func TestBackupRestoreAndDerivedRebuildPreserveAuthoritativeAssets(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if counts["degraded"] != len(expected) {
+	if counts["pending"] != len(expected) {
 		t.Fatalf("derived state was not fully rebuilt: %#v", counts)
 	}
+	restored.organizeAll(t)
 	results, err := restored.service.Search(context.Background(), core.SearchInput{Query: "广义个人信息", Limit: len(expected)})
 	if err != nil || len(results) != len(expected) {
 		t.Fatalf("restored assets are not searchable: count=%d err=%v", len(results), err)
@@ -117,7 +119,7 @@ func openTestService(t *testing.T, dir string) *testService {
 		_ = store.Close()
 		t.Fatal(err)
 	}
-	service, err := core.NewOrganized(store, state, semantics.Heuristic{})
+	service, err := core.NewCollaborative(store, state, embedding.HashForTesting{Dimensions: 64})
 	if err != nil {
 		_ = state.Close()
 		_ = store.Close()
@@ -135,5 +137,37 @@ func (s *testService) Search(ctx context.Context, input core.SearchInput) ([]cor
 }
 
 func (s *testService) Create(ctx context.Context, input core.CreateInput) (core.MutationResult, error) {
-	return s.service.Create(ctx, input)
+	result, err := s.service.Create(ctx, input)
+	if err != nil {
+		return result, err
+	}
+	state, err := s.submit(ctx, result.Information.ID)
+	result.Organization = state
+	return result, err
+}
+
+func (s *testService) submit(ctx context.Context, assetID string) (core.OrganizationState, error) {
+	works, err := s.service.SemanticWorkFor(ctx, []string{assetID})
+	if err != nil || len(works) != 1 {
+		return core.OrganizationState{}, err
+	}
+	work := works[0]
+	return s.service.SubmitSemantic(ctx, semantics.Submission{
+		Schema: semantics.SubmissionSchema, WorkID: work.ID, AssetID: work.Asset.ID, Revision: work.Asset.Revision,
+		Capability: semantics.Capability{ID: "unit-explicit", Version: "v1", Execution: "lifecycle-test"},
+		Status:     semantics.SubmissionComplete, Analysis: semantics.Analysis{Summary: work.Asset.Content},
+	})
+}
+
+func (s *testService) organizeAll(t *testing.T) {
+	t.Helper()
+	works, err := s.service.SemanticWork(context.Background(), 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, work := range works {
+		if _, err := s.submit(context.Background(), work.Asset.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
 }

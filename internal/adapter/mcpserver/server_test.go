@@ -2,6 +2,8 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -9,7 +11,7 @@ import (
 	"github.com/HJSunDev/ownward/internal/assetlog"
 	"github.com/HJSunDev/ownward/internal/core"
 	"github.com/HJSunDev/ownward/internal/derived"
-	"github.com/HJSunDev/ownward/internal/semantics"
+	"github.com/HJSunDev/ownward/internal/embedding"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -24,7 +26,7 @@ func TestServerExposesUnifiedCoreOperations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := core.NewOrganized(store, state, semantics.Heuristic{})
+	service, err := core.NewCollaborative(store, state, embedding.HashForTesting{Dimensions: 64})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +49,7 @@ func TestServerExposesUnifiedCoreOperations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(tools.Tools) != 6 {
+	if len(tools.Tools) != 11 {
 		t.Fatalf("unexpected tool count: %d", len(tools.Tools))
 	}
 	toolsByName := make(map[string]*mcp.Tool, len(tools.Tools))
@@ -57,16 +59,34 @@ func TestServerExposesUnifiedCoreOperations(t *testing.T) {
 			t.Fatalf("tool %s must declare its closed-world boundary: %#v", tool.Name, tool.Annotations)
 		}
 	}
-	for _, name := range []string{"ownward_rules", "ownward_read", "ownward_search", "ownward_navigate"} {
+	for _, name := range []string{"ownward_rules", "ownward_read", "ownward_status", "ownward_search", "ownward_navigate", "ownward_semantic_work"} {
 		if tool := toolsByName[name]; tool == nil || !tool.Annotations.ReadOnlyHint || !tool.Annotations.IdempotentHint {
 			t.Fatalf("tool %s must be declared read-only and idempotent: %#v", name, tool)
+		}
+	}
+	semanticSchema, err := json.Marshal(toolsByName["ownward_semantic_submit"].InputSchema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"ownward.semantic-submission/v1", "complete", "uncertain", "outgoing", "incoming"} {
+		if !strings.Contains(string(semanticSchema), required) {
+			t.Fatalf("semantic tool schema does not explain %q: %s", required, semanticSchema)
 		}
 	}
 	if tool := toolsByName["ownward_create"]; tool == nil || tool.Annotations.ReadOnlyHint || tool.Annotations.DestructiveHint == nil || *tool.Annotations.DestructiveHint {
 		t.Fatalf("create must be declared additive: %#v", tool)
 	}
+	if tool := toolsByName["ownward_create_batch"]; tool == nil || tool.Annotations.ReadOnlyHint || tool.Annotations.DestructiveHint == nil || *tool.Annotations.DestructiveHint {
+		t.Fatalf("batch create must be declared additive: %#v", tool)
+	}
 	if tool := toolsByName["ownward_update"]; tool == nil || tool.Annotations.ReadOnlyHint || tool.Annotations.DestructiveHint == nil || !*tool.Annotations.DestructiveHint {
 		t.Fatalf("update must retain its write boundary: %#v", tool)
+	}
+	if tool := toolsByName["ownward_semantic_submit"]; tool == nil || tool.Annotations.ReadOnlyHint || !tool.Annotations.IdempotentHint {
+		t.Fatalf("semantic submission must be an idempotent write: %#v", tool)
+	}
+	if tool := toolsByName["ownward_semantic_submit_batch"]; tool == nil || tool.Annotations.ReadOnlyHint || !tool.Annotations.IdempotentHint {
+		t.Fatalf("semantic batch submission must be an idempotent write: %#v", tool)
 	}
 	created, err := clientSession.CallTool(ctx, &mcp.CallToolParams{
 		Name: "ownward_create",
@@ -117,5 +137,40 @@ func TestServerExposesUnifiedCoreOperations(t *testing.T) {
 	}
 	if err := serverSession.Wait(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestStreamableHTTPUsesTheSameCore(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	store, err := assetlog.Open(filepath.Join(root, "assets"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := derived.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := core.NewCollaborative(store, state, embedding.HashForTesting{Dimensions: 64})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer service.Close()
+	httpServer := httptest.NewServer(New(service, "test").HTTPHandler())
+	defer httpServer.Close()
+	client := mcp.NewClient(&mcp.Implementation{Name: "streamable-http-test"}, nil)
+	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: httpServer.URL}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	created, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "ownward_create", Arguments: map[string]any{"content": "同一常驻内核服务多个独立智能体会话。"},
+	})
+	if err != nil || created.IsError {
+		t.Fatalf("streamable HTTP create failed: result=%#v error=%v", created, err)
+	}
+	if len(store.All()) != 1 {
+		t.Fatalf("streamable HTTP did not reach the shared core: %#v", store.All())
 	}
 }

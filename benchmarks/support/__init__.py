@@ -1,0 +1,1 @@
+"""Shared acceptance-harness support."""

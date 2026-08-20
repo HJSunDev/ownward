@@ -2,16 +2,21 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/HJSunDev/ownward/internal/adapter/mcpserver"
 	"github.com/HJSunDev/ownward/internal/assetlog"
@@ -19,13 +24,16 @@ import (
 	"github.com/HJSunDev/ownward/internal/core"
 	"github.com/HJSunDev/ownward/internal/derived"
 	"github.com/HJSunDev/ownward/internal/domain"
+	"github.com/HJSunDev/ownward/internal/embedding"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 var version = "0.1.0-dev"
 
 func main() {
-	if err := run(context.Background(), os.Args[1:], os.Stdout, os.Stderr); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	if err := run(ctx, os.Args[1:], os.Stdout, os.Stderr); err != nil {
 		fmt.Fprintln(os.Stderr, "ownward:", err)
 		os.Exit(1)
 	}
@@ -44,6 +52,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	dataDir := flags.String("data-dir", "", "Ownward 数据目录")
+	runtimeDir := flags.String("runtime-dir", "", "模型条款确认等产品运行状态目录")
 	content := flags.String("content", "", "信息内容")
 	kindValue := flags.String("kind", string(domain.KindGeneral), "兼容既有资产的可选字段，不参与自主语义组织")
 	id := flags.String("id", "", "信息标识")
@@ -53,6 +62,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	depth := flags.Int("depth", 1, "关系导航深度")
 	output := flags.String("output", "", "备份输出文件")
 	backup := flags.String("backup", "", "待恢复的备份文件")
+	listen := flags.String("listen", "127.0.0.1:0", "Streamable HTTP MCP 监听地址，仅允许本机回环地址")
+	token := flags.String("token", "", "Streamable HTTP MCP 可选的 Bearer Token")
+	acceptTerms := flags.Bool("accept", false, "确认接受随包交付的 EmbeddingGemma 条款和用途限制")
 	contexts := stringList{}
 	flags.Var(&contexts, "context", "场景，格式为 key=value，可重复")
 	relations := stringList{}
@@ -63,6 +75,28 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	loaded, err := config.Load(*dataDir)
 	if err != nil {
 		return err
+	}
+	if strings.TrimSpace(*runtimeDir) != "" {
+		loaded.RuntimeDir, err = filepath.Abs(strings.TrimSpace(*runtimeDir))
+		if err != nil {
+			return fmt.Errorf("解析运行状态目录: %w", err)
+		}
+	}
+	bundle, bundleErr := loadEmbeddingBundle()
+	if command == "terms" {
+		if bundleErr != nil {
+			return bundleErr
+		}
+		var status embedding.AcceptanceStatus
+		if *acceptTerms {
+			status, err = embedding.AcceptTerms(loaded.RuntimeDir, bundle, time.Now())
+		} else {
+			status, err = embedding.TermsStatus(loaded.RuntimeDir, bundle)
+		}
+		if err != nil {
+			return err
+		}
+		return writeJSON(stdout, status)
 	}
 	if command == "restore" {
 		if strings.TrimSpace(*backup) == "" {
@@ -81,13 +115,25 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		_ = store.Close()
 		return err
 	}
-	provider, err := loaded.SemanticProvider(false)
-	if err != nil {
-		_ = derivedStore.Close()
-		_ = store.Close()
-		return err
+	var vectorCapability embedding.Provider
+	if bundleErr != nil {
+		vectorCapability = embedding.Unavailable{Reason: "无法加载本地向量能力包: " + bundleErr.Error()}
+	} else {
+		status, statusErr := embedding.TermsStatus(loaded.RuntimeDir, bundle)
+		if statusErr != nil {
+			vectorCapability = embedding.Unavailable{Reason: "无法验证模型条款确认: " + statusErr.Error()}
+		} else if !status.Accepted {
+			vectorCapability = embedding.Unavailable{Reason: "尚未接受随包交付的 EmbeddingGemma 条款；请先运行 ownward terms 查看并以 --accept 明确确认"}
+		} else {
+			managed, openErr := embedding.OpenManagedBundle(bundle)
+			if openErr != nil {
+				vectorCapability = embedding.Unavailable{Reason: "本地向量能力不可用: " + openErr.Error()}
+			} else {
+				vectorCapability = managed
+			}
+		}
 	}
-	service, err := core.NewOrganizedWithOptions(store, derivedStore, provider, core.Options{DisableRelations: loaded.DisableRelations})
+	service, err := core.NewCollaborativeWithOptions(store, derivedStore, vectorCapability, core.Options{DisableRelations: loaded.DisableRelations})
 	if err != nil {
 		_ = derivedStore.Close()
 		_ = store.Close()
@@ -104,6 +150,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		debug.FreeOSMemory()
 		server := mcpserver.New(service, version)
 		return server.Run(ctx, &mcp.StdioTransport{})
+	case "mcp-http":
+		debug.FreeOSMemory()
+		return runHTTPMCP(ctx, mcpserver.New(service, version), *listen, *token, stdout)
 	case "create":
 		kind, err := domain.ParseKind(*kindValue)
 		if err != nil {
@@ -213,8 +262,74 @@ func writeJSON(writer io.Writer, value any) error {
 	return encoder.Encode(value)
 }
 
+func loadEmbeddingBundle() (embedding.Bundle, error) {
+	executable, err := os.Executable()
+	if err != nil {
+		return embedding.Bundle{}, fmt.Errorf("定位本地向量能力包: %w", err)
+	}
+	return embedding.LoadBundle(filepath.Join(filepath.Dir(executable), "embedding"))
+}
+
+func runHTTPMCP(ctx context.Context, server *mcpserver.Server, address, token string, stdout io.Writer) error {
+	listener, err := net.Listen("tcp", strings.TrimSpace(address))
+	if err != nil {
+		return fmt.Errorf("启动 Streamable HTTP MCP: %w", err)
+	}
+	tcpAddress, ok := listener.Addr().(*net.TCPAddr)
+	if !ok || tcpAddress.IP == nil || !tcpAddress.IP.IsLoopback() {
+		_ = listener.Close()
+		return errors.New("Streamable HTTP MCP 只允许监听本机回环地址")
+	}
+	handler := server.HTTPHandler()
+	if strings.TrimSpace(token) != "" {
+		handler = bearerTokenHandler(handler, strings.TrimSpace(token))
+	}
+	httpServer := &http.Server{
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	endpoint := "http://" + net.JoinHostPort(tcpAddress.IP.String(), strconv.Itoa(tcpAddress.Port))
+	if err := writeJSON(stdout, map[string]string{"endpoint": endpoint}); err != nil {
+		_ = listener.Close()
+		return err
+	}
+	result := make(chan error, 1)
+	go func() { result <- httpServer.Serve(listener) }()
+	select {
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := httpServer.Shutdown(shutdownCtx); err != nil {
+			return err
+		}
+		serveErr := <-result
+		if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+			return serveErr
+		}
+		return nil
+	case serveErr := <-result:
+		if errors.Is(serveErr, http.ErrServerClosed) {
+			return nil
+		}
+		return serveErr
+	}
+}
+
+func bearerTokenHandler(next http.Handler, token string) http.Handler {
+	expected := []byte("Bearer " + token)
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		provided := []byte(request.Header.Get("Authorization"))
+		if len(provided) != len(expected) || subtle.ConstantTimeCompare(provided, expected) != 1 {
+			writer.Header().Set("WWW-Authenticate", "Bearer")
+			http.Error(writer, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(writer, request)
+	})
+}
+
 func printUsage(writer io.Writer) {
-	fmt.Fprintln(writer, "用法: ownward <mcp|create|update|read|search|navigate|rules|backup|restore|maintain|rebuild|version> [选项]")
+	fmt.Fprintln(writer, "用法: ownward <mcp|mcp-http|create|update|read|search|navigate|rules|backup|restore|maintain|rebuild|terms|version> [选项]")
 	fmt.Fprintln(writer, "信息类型:", strings.Join(kindNames(), ", "))
 }
 

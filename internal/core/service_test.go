@@ -720,6 +720,31 @@ func TestConcurrentUpdatesCannotOverwriteTheSameRevision(t *testing.T) {
 	}
 }
 
+func TestServicePreservesInformationContentExactly(t *testing.T) {
+	store, err := assetlog.Open(filepath.Join(t.TempDir(), "assets"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := New(store)
+	defer service.Close()
+	original := "  第一行\r\n第二行  \n"
+	created, err := service.Create(context.Background(), CreateInput{Content: original})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Information.Content != original {
+		t.Fatalf("create changed information content: %q", created.Information.Content)
+	}
+	updatedContent := "\t更新后的内容\r\n  "
+	updated, err := service.Update(context.Background(), UpdateInput{ID: created.Information.ID, ExpectedRevision: 1, Content: &updatedContent})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Information.Content != updatedContent {
+		t.Fatalf("update changed information content: %q", updated.Information.Content)
+	}
+}
+
 type relationProvider struct {
 	targetID   string
 	embedCalls int

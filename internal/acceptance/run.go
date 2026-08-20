@@ -6,9 +6,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -21,6 +23,7 @@ import (
 	"github.com/HJSunDev/ownward/internal/core"
 	"github.com/HJSunDev/ownward/internal/derived"
 	"github.com/HJSunDev/ownward/internal/domain"
+	"github.com/HJSunDev/ownward/internal/embedding"
 	"github.com/HJSunDev/ownward/internal/semantics"
 )
 
@@ -32,6 +35,12 @@ type Options struct {
 	DataDir      string
 	Candidate    string
 	BinaryPath   string
+	RuntimeDir   string
+	Repository   string
+	PythonBinary string
+	CodexBinary  string
+	CodexAuth    string
+	EvidenceDir  string
 }
 
 type Check struct {
@@ -81,6 +90,11 @@ type queryMetrics struct {
 }
 
 func Run(ctx context.Context, options Options) (Report, error) {
+	return runFixedPython(ctx, options)
+}
+
+// runLegacyFixed 仅保留历史计算供审查，不属于正式执行路径。
+func runLegacyFixed(ctx context.Context, options Options) (Report, error) {
 	started := time.Now().UTC()
 	binary, err := candidate.Inspect(ctx, options.BinaryPath, options.Candidate)
 	if err != nil {
@@ -97,7 +111,19 @@ func Run(ctx context.Context, options Options) (Report, error) {
 	if err != nil {
 		return Report{}, err
 	}
-	provider, err := loaded.SemanticProvider(true)
+	runtimeDir := strings.TrimSpace(options.RuntimeDir)
+	if runtimeDir == "" {
+		runtimeDir = loaded.RuntimeDir
+	}
+	bundle, err := embedding.LoadBundle(filepath.Join(filepath.Dir(options.BinaryPath), "embedding"))
+	if err != nil {
+		return Report{}, err
+	}
+	terms, err := embedding.TermsStatus(runtimeDir, bundle)
+	if err != nil || !terms.Accepted {
+		return Report{}, errors.New("固定回归要求对候选发布包中的向量模型完成明确条款确认")
+	}
+	vectorCapability, err := embedding.OpenManaged(bundle.Root)
 	if err != nil {
 		return Report{}, err
 	}
@@ -122,7 +148,7 @@ func Run(ctx context.Context, options Options) (Report, error) {
 		_ = assets.Close()
 		return Report{}, err
 	}
-	service, err := core.NewOrganized(assets, state, provider)
+	service, err := core.NewCollaborative(assets, state, vectorCapability)
 	if err != nil {
 		_ = state.Close()
 		_ = assets.Close()
@@ -135,7 +161,7 @@ func Run(ctx context.Context, options Options) (Report, error) {
 		BinaryVersion: binary.Version,
 		BinarySHA256:  binary.SHA256,
 		Baseline:      fixtures.Descriptor.Schema,
-		Provider:      provider.Name(),
+		Provider:      vectorCapability.Name() + "+fixture-gold-v5-via-semantic-contract",
 		StartedAt:     started,
 		Environment:   map[string]string{"os": runtime.GOOS, "arch": runtime.GOARCH, "go": runtime.Version()},
 	}
@@ -148,14 +174,14 @@ func Run(ctx context.Context, options Options) (Report, error) {
 	expectedContent := make(map[string]string, len(fixtures.Information))
 	expectedContexts := make(map[string][]domain.Context, len(fixtures.Information))
 	ingestionTimes := make([]time.Duration, 0, len(fixtures.Information))
+	ingestionStarted := make(map[string]time.Time, len(fixtures.Information))
 	for _, item := range fixtures.Information {
-		begin := time.Now()
+		ingestionStarted[item.FixtureID] = time.Now()
 		created, createErr := service.Create(ctx, core.CreateInput{
 			Content:  item.Content,
 			Contexts: item.Contexts,
 			Source:   domain.Source{Actor: "acceptance", Ref: item.FixtureID},
 		})
-		ingestionTimes = append(ingestionTimes, time.Since(begin))
 		if createErr != nil {
 			return Report{}, fmt.Errorf("导入验收信息 %s: %w", item.FixtureID, createErr)
 		}
@@ -163,6 +189,12 @@ func Run(ctx context.Context, options Options) (Report, error) {
 		assetToFixture[created.Information.ID] = item.FixtureID
 		expectedContent[item.FixtureID] = item.Content
 		expectedContexts[item.FixtureID] = item.Contexts
+	}
+	if err := submitFixtureSemantics(ctx, service, fixtures, fixtureToAsset, nil); err != nil {
+		return Report{}, err
+	}
+	for _, item := range fixtures.Information {
+		ingestionTimes = append(ingestionTimes, time.Since(ingestionStarted[item.FixtureID]))
 	}
 	stableUpdates := 0
 	for _, update := range fixtures.Updates {
@@ -177,13 +209,16 @@ func Run(ctx context.Context, options Options) (Report, error) {
 		updated, updateErr := service.Update(ctx, core.UpdateInput{
 			ID: assetID, ExpectedRevision: current.Revision, Content: &content, Contexts: &contexts,
 		})
-		ingestionTimes = append(ingestionTimes, time.Since(begin))
 		if updateErr != nil {
 			return Report{}, fmt.Errorf("更新验收信息 %s: %w", update.FixtureID, updateErr)
 		}
 		if updated.Information.ID == assetID && updated.Information.Revision == current.Revision+1 {
 			stableUpdates++
 		}
+		if err := submitFixtureSemantics(ctx, service, fixtures, fixtureToAsset, []string{assetID}); err != nil {
+			return Report{}, err
+		}
+		ingestionTimes = append(ingestionTimes, time.Since(begin))
 		expectedContent[update.FixtureID] = update.Content
 		expectedContexts[update.FixtureID] = update.Contexts
 	}
@@ -213,7 +248,7 @@ func Run(ctx context.Context, options Options) (Report, error) {
 	}
 	report.Checks = append(report.Checks, retrieval...)
 	report.Queries = append(report.Queries, queries...)
-	recovery, recoveryErr := verifyRecovery(ctx, assets, provider, fixtures, fixtureToAsset, assetToFixture)
+	recovery, recoveryErr := verifyRecovery(ctx, assets, nil, fixtures, fixtureToAsset, assetToFixture)
 	if recoveryErr != nil {
 		return Report{}, recoveryErr
 	}
@@ -232,6 +267,92 @@ func Run(ctx context.Context, options Options) (Report, error) {
 		}
 	}
 	return report, nil
+}
+
+func runFixedPython(ctx context.Context, options Options) (Report, error) {
+	started := time.Now().UTC()
+	repository := strings.TrimSpace(options.Repository)
+	if repository == "" {
+		repository = "."
+	}
+	repository, err := filepath.Abs(repository)
+	if err != nil {
+		return Report{}, err
+	}
+	python := strings.TrimSpace(options.PythonBinary)
+	if python == "" {
+		python = "python"
+	}
+	if resolved, lookErr := exec.LookPath(python); lookErr == nil {
+		python = resolved
+	}
+	required := map[string]string{
+		"发布二进制":      options.BinaryPath,
+		"固定基线":       options.BaselinePath,
+		"运行状态目录":     options.RuntimeDir,
+		"Codex 二进制":  options.CodexBinary,
+		"Codex 认证文件": options.CodexAuth,
+		"证据目录":       options.EvidenceDir,
+		"报告输出":       options.OutputPath,
+	}
+	for label, value := range required {
+		if strings.TrimSpace(value) == "" {
+			return Report{}, fmt.Errorf("固定回归缺少%s", label)
+		}
+	}
+	script := filepath.Join(repository, "benchmarks", "acceptance", "fixed", "verify.py")
+	arguments := []string{
+		script,
+		"--repository", repository,
+		"--binary", options.BinaryPath,
+		"--candidate", options.Candidate,
+		"--baseline", options.BaselinePath,
+		"--runtime-dir", options.RuntimeDir,
+		"--codex-binary", options.CodexBinary,
+		"--codex-auth-file", options.CodexAuth,
+		"--evidence-dir", options.EvidenceDir,
+		"--output", options.OutputPath,
+	}
+	command := exec.CommandContext(ctx, python, arguments...)
+	command.Dir = repository
+	var stdout, stderr bytes.Buffer
+	command.Stdout = &stdout
+	command.Stderr = &stderr
+	if err := command.Run(); err != nil {
+		return Report{}, fmt.Errorf("正式固定回归失败: %w: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	var raw struct {
+		Schema       string          `json:"schema"`
+		Candidate    string          `json:"candidate"`
+		BinarySHA256 string          `json:"release_binary_sha256"`
+		Baseline     string          `json:"baseline"`
+		BaselineHash string          `json:"baseline_sha256"`
+		Checks       map[string]bool `json:"checks"`
+		Passed       bool            `json:"passed"`
+	}
+	encoded, err := os.ReadFile(options.OutputPath)
+	if err != nil {
+		return Report{}, fmt.Errorf("读取固定回归报告: %w", err)
+	}
+	if err := json.Unmarshal(encoded, &raw); err != nil {
+		return Report{}, fmt.Errorf("解析固定回归报告: %w", err)
+	}
+	checks := make([]Check, 0, len(raw.Checks))
+	for name, passed := range raw.Checks {
+		checks = append(checks, Check{Name: name, Passed: passed})
+	}
+	sort.Slice(checks, func(left, right int) bool { return checks[left].Name < checks[right].Name })
+	return Report{
+		Schema: raw.Schema, Candidate: raw.Candidate, BinaryVersion: raw.Candidate,
+		BinarySHA256: raw.BinarySHA256, Baseline: raw.Baseline, BaselineSHA256: raw.BaselineHash,
+		Provider: "external-codex-via-semantic-contract", StartedAt: started, FinishedAt: time.Now().UTC(),
+		Environment: map[string]string{"os": runtime.GOOS, "arch": runtime.GOARCH, "go": runtime.Version()},
+		Passed:      raw.Passed, Checks: checks,
+	}, nil
+}
+
+func submitFixtureSemantics(context.Context, *core.Service, fixtureSet, map[string]string, []string) error {
+	return errors.New("旧固定回归语义注入路径已停用；必须使用正式外部语义协作执行器")
 }
 
 func verifyRecovery(ctx context.Context, source *assetlog.Store, provider semantics.Provider, fixtures fixtureSet, fixtureToAsset, assetToFixture map[string]string) (Check, error) {
