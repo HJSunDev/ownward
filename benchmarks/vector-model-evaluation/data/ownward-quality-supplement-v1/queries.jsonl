@@ -1,0 +1,24 @@
+{"category": "deep_paraphrase", "id": "sq-001", "language": "zh", "scope": "method", "text": "我之前为了不在出门时漏带门禁卡，最后固定下来的办法是什么？"}
+{"category": "deep_paraphrase", "id": "sq-002", "language": "zh", "scope": "method", "text": "写长文总拖到最后，我后来真正采用的启动办法是什么？"}
+{"category": "deep_paraphrase", "id": "sq-003", "language": "zh", "scope": "work", "text": "开会时讨论容易越跑越远，我给自己定的处理方式是什么？"}
+{"category": "deep_paraphrase", "id": "sq-004", "language": "zh", "scope": "habit", "text": "晚上总忍不住刷手机影响睡眠，我最后用了什么安排？"}
+{"category": "decision_polarity", "id": "sq-005", "language": "zh", "scope": "decision", "text": "数据库迁移时，哪种做法被明确排除了？"}
+{"category": "decision_polarity", "id": "sq-006", "language": "zh", "scope": "health", "text": "膝盖不舒服以后，医生允许我继续做哪种运动？"}
+{"category": "decision_polarity", "id": "sq-007", "language": "zh", "scope": "work", "text": "团队对自动发布最后定下来的边界是什么？"}
+{"category": "decision_polarity", "id": "sq-008", "language": "zh", "scope": "experience", "text": "那次报销被退回，后来确认的真正原因是什么？"}
+{"category": "context_disambiguation", "id": "sq-009", "language": "zh", "scope": "family", "text": "给父亲设置的服药提醒采用了什么方式？"}
+{"category": "context_disambiguation", "id": "sq-010", "language": "zh", "scope": "method", "text": "家庭照片最终采用哪种备份方式，而不是代码仓库的做法？"}
+{"category": "context_disambiguation", "id": "sq-011", "language": "zh", "scope": "social_experience", "text": "和设计组沟通时，我提醒自己不要用哪种开场方式？"}
+{"category": "context_disambiguation", "id": "sq-012", "language": "zh", "scope": "experience", "text": "家里网络卡顿最后查出的瓶颈在哪里？"}
+{"category": "buried_evidence", "id": "sq-013", "language": "zh", "scope": "decision", "text": "买显示器时，我真正不能妥协的条件是什么？"}
+{"category": "buried_evidence", "id": "sq-014", "language": "zh", "scope": "experience", "text": "上次旅行为什么临时改坐高铁？"}
+{"category": "buried_evidence", "id": "sq-015", "language": "zh", "scope": "learning", "text": "学统计那段时间，哪种做法真正让我理解得更牢？"}
+{"category": "buried_evidence", "id": "sq-016", "language": "zh", "scope": "lesson", "text": "那次和朋友争执后，我认为自己最该改的是什么？"}
+{"category": "english_semantics", "id": "sq-017", "language": "en", "scope": "work", "text": "What finally stopped the weekly report from consuming most of Friday afternoon?"}
+{"category": "english_semantics", "id": "sq-018", "language": "en", "scope": "work", "text": "What did I decide to do with receipts immediately after buying something for work?"}
+{"category": "english_semantics", "id": "sq-019", "language": "en", "scope": "decision", "text": "Why did I turn down the earlier apartment?"}
+{"category": "english_semantics", "id": "sq-020", "language": "en", "scope": "method", "text": "What should I do when a code-review comment feels too vague to act on?"}
+{"category": "cross_language", "id": "sq-021", "language": "zh_to_en", "scope": "work", "text": "给海外客户演示前，我最终决定怎么处理产品术语？"}
+{"category": "cross_language", "id": "sq-022", "language": "en_to_zh", "scope": "habit", "text": "What made the morning exercise routine sustainable?"}
+{"category": "cross_language", "id": "sq-023", "language": "zh_to_en", "scope": "experience", "text": "上次排查线上延迟时，最终确认的根因是什么？"}
+{"category": "cross_language", "id": "sq-024", "language": "en_to_zh", "scope": "lesson", "text": "What did I learn to do before agreeing to a family request?"}

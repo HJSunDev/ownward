@@ -1,0 +1,96 @@
+{"id": "sd-001-1", "text": "手机提醒总在走出楼门后才被看到。后来我把门禁卡固定夹进钥匙包，回家开门后立刻放回原位。", "world_id": "sw-001"}
+{"id": "sd-001-2", "text": "我试过在手机上设置出门提醒，但经常顺手划掉，实际没有解决忘带门禁卡的问题。", "world_id": "sw-001"}
+{"id": "sd-001-3", "text": "有一阵我把门禁卡塞进当天穿的外套，换衣服时还是会忘，因此没有继续这样做。", "world_id": "sw-001"}
+{"id": "sd-001-4", "text": "门边贴着一张检查燃气和窗户的便签，出门前看一眼能少些担心。", "world_id": "sw-001"}
+{"id": "sd-002-1", "text": "番茄钟试了两周，计时本身反而让我频繁查看进度，没有改善长文启动困难。", "world_id": "sw-002"}
+{"id": "sd-002-2", "text": "我给写作资料建立了分类收藏夹，里面按主题保存了很多以后可能引用的链接。", "world_id": "sw-002"}
+{"id": "sd-002-3", "text": "交稿前最后一遍只检查论点与证据是否对应，不再同时调整排版。", "world_id": "sw-002"}
+{"id": "sd-002-4", "text": "现在开新文章时，我先关掉资料页，用二十分钟写一份很粗糙的两百字骨架；有了可修改的东西，再去补证据。", "world_id": "sw-002"}
+{"id": "sd-003-1", "text": "会议邀请里应提前附上议程和材料，参会者最好在前一天读完。", "world_id": "sw-003"}
+{"id": "sd-003-2", "text": "线上会议时我会关闭聊天软件通知，避免说到一半被弹窗打断。", "world_id": "sw-003"}
+{"id": "sd-003-3", "text": "以后有人带入新话题时，我先复述本次必须作出的决定，再把无关问题记到停车场清单，会后另约时间。", "world_id": "sw-003"}
+{"id": "sd-003-4", "text": "录音转写适合会后补会议纪要，但不能替代现场确认负责人和截止时间。", "world_id": "sw-003"}
+{"id": "sd-004-1", "text": "应用限额很容易被我点掉，连续几晚失效后就不再把它当作主要办法。", "world_id": "sw-004"}
+{"id": "sd-004-2", "text": "我把充电线移到客厅，十点半后手机留在那里，卧室改用普通闹钟；这样上床后就没有设备可刷。", "world_id": "sw-004"}
+{"id": "sd-004-3", "text": "屏幕调成暖色以后眼睛没那么刺，但睡前浏览的时间并没有缩短。", "world_id": "sw-004"}
+{"id": "sd-004-4", "text": "早上起床后先喝水再看消息，可以避免一醒来就在床上停留太久。", "world_id": "sw-004"}
+{"id": "sd-005-1", "text": "评审后决定不让新旧系统长时间双写：两边失败语义不同，持续双写会制造难以核对的分叉数据。", "world_id": "sw-005"}
+{"id": "sd-005-2", "text": "迁移前先做影子读取，对比新旧结果但不影响线上返回，这是已经接受的验证步骤。", "world_id": "sw-005"}
+{"id": "sd-005-3", "text": "正式切换采用短暂停写、校验水位后一次转向新库，回滚窗口保留十五分钟。", "world_id": "sw-005"}
+{"id": "sd-005-4", "text": "历史数据按日期分批回填，每批完成后核对数量、校验和与抽样内容。", "world_id": "sw-005"}
+{"id": "sd-006-1", "text": "医生让我暂时停止跑步，尤其不要做下坡冲刺，等肿胀消失后再评估。", "world_id": "sw-006"}
+{"id": "sd-006-2", "text": "骑车是否恢复要看屈膝角度，当前阶段还没有得到可以开始的确认。", "world_id": "sw-006"}
+{"id": "sd-006-3", "text": "深蹲训练被取消两周，力量练习只保留不会让膝盖受力的上肢部分。", "world_id": "sw-006"}
+{"id": "sd-006-4", "text": "复诊时医生同意我在不诱发疼痛的前提下继续游泳，并要求先缩短到每次二十分钟。", "world_id": "sw-006"}
+{"id": "sd-007-1", "text": "有人建议合并主分支后自动发布生产，以减少等待时间，这个提议仍停留在讨论稿里。", "world_id": "sw-007"}
+{"id": "sd-007-2", "text": "预发布环境每天自动部署一次，失败时由机器人在群里通知，不需要人工触发。", "world_id": "sw-007"}
+{"id": "sd-007-3", "text": "构建和预发布检查可以自动完成，但生产发布必须由当班负责人查看差异并手动确认，暂不做无人值守上线。", "world_id": "sw-007"}
+{"id": "sd-007-4", "text": "回滚脚本已自动化，执行前仍要选择目标版本并记录事故编号。", "world_id": "sw-007"}
+{"id": "sd-008-1", "text": "我最初以为含税金额填错了，重新计算后发现与发票完全一致。", "world_id": "sw-008"}
+{"id": "sd-008-2", "text": "财务复核后确认，发票本身没有问题，退回是因为审批单上的项目编码与预算科目不一致。", "world_id": "sw-008"}
+{"id": "sd-008-3", "text": "同事怀疑开票日期超期，但财务确认日期仍在允许范围内。", "world_id": "sw-008"}
+{"id": "sd-008-4", "text": "电子签名显示正常，退回通知也没有要求重新签署。", "world_id": "sw-008"}
+{"id": "sd-009-1", "text": "父亲不常看日历通知，我把提醒改成早餐后由客厅音箱直接播报，并在药盒旁放当天日期卡。", "world_id": "sw-009"}
+{"id": "sd-009-2", "text": "我自己的维生素放在办公桌抽屉，午饭后的日历通知响起时顺手吃。", "world_id": "sw-009"}
+{"id": "sd-009-3", "text": "母亲的复诊日期由家庭群置顶，提前一周和前一天各提醒一次。", "world_id": "sw-009"}
+{"id": "sd-009-4", "text": "客厅音箱每天早上播天气，音量调低后不会吵到还在睡觉的人。", "world_id": "sw-009"}
+{"id": "sd-010-1", "text": "代码提交后推送到两个远程仓库，主仓库不可用时可以从镜像继续工作。", "world_id": "sw-010"}
+{"id": "sd-010-2", "text": "手机相册自动同步只是方便跨设备查看，不再把同步状态当成唯一备份。", "world_id": "sw-010"}
+{"id": "sd-010-3", "text": "项目数据库每天导出增量文件，保留七天后自动轮换。", "world_id": "sw-010"}
+{"id": "sd-010-4", "text": "家庭照片每月复制到一块加密移动硬盘，硬盘平时断开存放；每季度随机恢复一个相册确认可读。", "world_id": "sw-010"}
+{"id": "sd-011-1", "text": "和运维讨论事故时，开场先确认时间线和受影响范围，避免直接猜测责任方。", "world_id": "sw-011"}
+{"id": "sd-011-2", "text": "给直属同事反馈时，先讲观察到的行为，再说明它造成的具体影响。", "world_id": "sw-011"}
+{"id": "sd-011-3", "text": "设计评审里不要一开口就说“这个不对”；先说明用户在哪一步受阻，再一起看当前方案为什么没有解决。", "world_id": "sw-011"}
+{"id": "sd-011-4", "text": "设计稿评论尽量标在对应界面位置，集中问题另写一段总体说明。", "world_id": "sw-011"}
+{"id": "sd-012-1", "text": "办公室无线网络曾因同信道干扰频繁抖动，把接入点改到其他信道后稳定。", "world_id": "sw-012"}
+{"id": "sd-012-2", "text": "入户带宽正常，电脑直连路由器也正常；最后发现书房旧交换机的上联口只协商到 100Mbps，更换网线后恢复千兆。", "world_id": "sw-012"}
+{"id": "sd-012-3", "text": "家里有一次网页打开慢是运营商 DNS 超时，切换解析服务器后当天恢复。", "world_id": "sw-012"}
+{"id": "sd-012-4", "text": "晚高峰测速下降曾让我怀疑运营商限速，但连续三天直连测试没有复现。", "world_id": "sw-012"}
+{"id": "sd-013-1", "text": "看了几款屏幕后，我发现高刷新率和接口数量都可以让步。每天要连续读代码和文档，最终留下的硬条件只有正常坐姿下文字必须清晰、长时间看不发虚。支架以后还能另配。", "world_id": "sw-013"}
+{"id": "sd-013-2", "text": "候选显示器有高刷新率、多个视频接口和原厂升降支架，参数表看起来很完整。", "world_id": "sw-013"}
+{"id": "sd-013-3", "text": "桌面宽度最多容纳二十七英寸屏幕，因此购买前需要再次测量底座占用。", "world_id": "sw-013"}
+{"id": "sd-013-4", "text": "原厂支架不能旋转，但我已经有一只兼容的显示器臂，这点不影响选择。", "world_id": "sw-013"}
+{"id": "sd-014-1", "text": "高铁票临出发前仍有余票，二等座价格比当天新买机票便宜一些。", "world_id": "sw-014"}
+{"id": "sd-014-2", "text": "另一趟旅行因为暴雨导致航班取消，航空公司安排到了第二天。", "world_id": "sw-014"}
+{"id": "sd-014-3", "text": "出发前我查过机场换乘路线，两个航站楼之间需要乘摆渡车。", "world_id": "sw-014"}
+{"id": "sd-014-4", "text": "机票并没有取消，价格也没变化。问题是前序航班延误后只剩四十分钟转机，而同行人行动不便，机场又要换航站楼。评估后我们退掉机票，改成可以直达的高铁。", "world_id": "sw-014"}
+{"id": "sd-015-1", "text": "统计课程的讲义按章节整理好了，所有公式都抄进了同一个笔记本。", "world_id": "sw-015"}
+{"id": "sd-015-2", "text": "我收藏了几门评价很高的视频课，但同时切换老师会让符号体系更加混乱。", "world_id": "sw-015"}
+{"id": "sd-015-3", "text": "我原来只是反复看公式，做题时仍不知道每个量代表什么。后来每学一个概念，先手工造一组很小的数据，自己算一遍，再用代码验证；从那以后能解释结果为什么变化。", "world_id": "sw-015"}
+{"id": "sd-015-4", "text": "考试前集中刷历年题能熟悉题型，不过遇到换一种问法时仍然容易卡住。", "world_id": "sw-015"}
+{"id": "sd-016-1", "text": "争执发生在很晚的时候，双方都累了，以后重要话题尽量不要拖到睡前。", "world_id": "sw-016"}
+{"id": "sd-016-2", "text": "回头看，她讲难受时我连续给了三个解决方案，还追问为什么不马上行动。那些建议不一定错，但我跳过了她当时需要被理解的部分。下次先确认感受和她想要的是倾听还是建议。", "world_id": "sw-016"}
+{"id": "sd-016-3", "text": "我整理了三个可能的解决办法，其中第二个成本最低，也最容易在一周内执行。", "world_id": "sw-016"}
+{"id": "sd-016-4", "text": "她后来解释，沉默并不是生气，只是需要一点时间把自己的想法说清楚。", "world_id": "sw-016"}
+{"id": "sd-017-1", "text": "I started adding decisions and evidence to a running note as they happened. On Friday I now edit that note into the report instead of reconstructing the whole week from chat history.", "world_id": "sw-017"}
+{"id": "sd-017-2", "text": "I moved the report deadline from Friday noon to Friday evening, which created more room but did not reduce the work itself.", "world_id": "sw-017"}
+{"id": "sd-017-3", "text": "The report template has shorter headings now, although gathering the facts still used to take several hours.", "world_id": "sw-017"}
+{"id": "sd-017-4", "text": "Chat history is retained for ninety days and can be searched when someone needs an old discussion.", "world_id": "sw-017"}
+{"id": "sd-018-1", "text": "Paper receipts stay in the blue envelope until the reimbursement has been paid, in case finance asks for the original.", "world_id": "sw-018"}
+{"id": "sd-018-2", "text": "Personal purchases are entered in the household budget once a week and do not need a project code.", "world_id": "sw-018"}
+{"id": "sd-018-3", "text": "I used to collect all work receipts and reconstruct their purpose on the last day of the month, but too many details were missing.", "world_id": "sw-018"}
+{"id": "sd-018-4", "text": "As soon as a work purchase is complete, I photograph the receipt and add the project code to the expense draft. Waiting until month-end is what made the context impossible to reconstruct.", "world_id": "sw-018"}
+{"id": "sd-019-1", "text": "The earlier apartment was slightly cheaper and included a storage room in the basement.", "world_id": "sw-019"}
+{"id": "sd-019-2", "text": "Another apartment was rejected because the commute required two transfers and took more than an hour.", "world_id": "sw-019"}
+{"id": "sd-019-3", "text": "The viewing was quiet in the afternoon, but a second visit at night revealed freight trains passing behind the building every twenty minutes. That recurring noise was the reason I declined it.", "world_id": "sw-019"}
+{"id": "sd-019-4", "text": "The agent offered to replace the bedroom windows, but no written schedule or cost estimate was provided.", "world_id": "sw-019"}
+{"id": "sd-020-1", "text": "Collect all review comments before pushing the next revision so reviewers do not receive many small updates.", "world_id": "sw-020"}
+{"id": "sd-020-2", "text": "Ask for the failing case or the behavior the reviewer expects, then restate the requested change in concrete terms before editing the code.", "world_id": "sw-020"}
+{"id": "sd-020-3", "text": "If a comment concerns formatting, run the repository formatter rather than adjusting nearby lines by hand.", "world_id": "sw-020"}
+{"id": "sd-020-4", "text": "A review thread should be marked resolved only after the corresponding change is visible in the latest diff.", "world_id": "sw-020"}
+{"id": "sd-021-1", "text": "For the client demo, I will keep the official product terms in English and explain each one once in plain language, instead of inventing translated names that differ from the interface.", "world_id": "sw-021"}
+{"id": "sd-021-2", "text": "The slides use shorter sentences now, and every section begins with the customer problem rather than a feature list.", "world_id": "sw-021"}
+{"id": "sd-021-3", "text": "我曾考虑把所有术语都翻成中文再口头解释，但这样会与客户看到的英文界面不一致。", "world_id": "sw-021"}
+{"id": "sd-021-4", "text": "The rehearsal showed that switching windows took too long, so all examples were moved into one browser profile.", "world_id": "sw-021"}
+{"id": "sd-022-1", "text": "我买了一套新的训练服，刚开始的一周确实更愿意早起，但新鲜感很快就过去了。", "world_id": "sw-022"}
+{"id": "sd-022-2", "text": "晚上提前把水杯放在桌上，可以减少早晨临时找东西的时间。", "world_id": "sw-022"}
+{"id": "sd-022-3", "text": "The original plan required forty-five minutes every morning and was abandoned after several missed days.", "world_id": "sw-022"}
+{"id": "sd-022-4", "text": "真正坚持下来以后，我不再要求每天完成整套训练，只规定穿上鞋出门十分钟；状态好再继续，状态差也算完成。", "world_id": "sw-022"}
+{"id": "sd-023-1", "text": "The slow-request dashboard initially pointed to the database because most delayed calls ended at the storage service.", "world_id": "sw-023"}
+{"id": "sd-023-2", "text": "我们把连接池从二十调到四十做过对照，延迟分布几乎没有变化，因此恢复了原配置。", "world_id": "sw-023"}
+{"id": "sd-023-3", "text": "The database was healthy. Latency came from a retry loop in the client: requests that had already succeeded were sent again when the acknowledgement arrived just after the timeout boundary.", "world_id": "sw-023"}
+{"id": "sd-023-4", "text": "A separate incident was caused by DNS failures between two regions and produced connection errors rather than duplicate requests.", "world_id": "sw-023"}
+{"id": "sd-024-1", "text": "上次答应帮忙后，我把原定的休息计划挪到了第二天，事情最后还是完成了。", "world_id": "sw-024"}
+{"id": "sd-024-2", "text": "家人临时提出帮忙时，我以后先确认具体要做什么、最晚什么时候需要，再看自己的安排后答复，不在电话里因为内疚立刻承诺。", "world_id": "sw-024"}
+{"id": "sd-024-3", "text": "家人有时只是想先讨论可能性，并不代表当天就需要一个肯定答复。", "world_id": "sw-024"}
+{"id": "sd-024-4", "text": "I wrote a shared list of recurring household tasks so everyone can see which items still need an owner.", "world_id": "sw-024"}

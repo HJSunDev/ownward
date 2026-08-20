@@ -1,0 +1,147 @@
+{
+  "comparison": {
+    "candidate_p95_ms": [
+      514.478615,
+      467.584965
+    ],
+    "candidate_peak_rss_bytes": [
+      1639260160,
+      1637933056
+    ],
+    "current_p95_ms": [
+      966.17567,
+      1012.71575
+    ],
+    "current_peak_rss_bytes": [
+      1807212544,
+      1806979072
+    ],
+    "latency_improves_beyond_observed_ranges": true,
+    "memory_improves_beyond_observed_ranges": true,
+    "route_succeeds": true
+  },
+  "runs": [
+    {
+      "cold": {
+        "p95_ms": 2663.3150500027114,
+        "peak_rss_bytes": [
+          355893248,
+          357756928,
+          352944128
+        ],
+        "samples_ms": [
+          2409.4543999963207,
+          2675.7367000027443,
+          2551.5202000024146
+        ]
+      },
+      "label": "cycle-1-current",
+      "warm": {
+        "idle_cpu_percent_total_logical_capacity": 0.0,
+        "peak_rss_bytes_through_idle": 1807212544,
+        "query_count": 200,
+        "rss_bytes_at_idle_end": 1805455360,
+        "wall_ms": {
+          "mean": 612.5546275,
+          "p50": 575.8959500000001,
+          "p95": 966.17567,
+          "p99": 1140.0030069999975
+        },
+        "worker_p95_ms": 923.9355999999967
+      }
+    },
+    {
+      "cold": {
+        "p95_ms": 2483.2196200004546,
+        "peak_rss_bytes": [
+          355631104,
+          355246080,
+          371314688
+        ],
+        "samples_ms": [
+          1930.3877999991528,
+          2256.2416000000667,
+          2508.4394000004977
+        ]
+      },
+      "label": "cycle-1-direct-t2",
+      "warm": {
+        "idle_cpu_percent_total_logical_capacity": 0.0,
+        "peak_rss_bytes_through_idle": 1639260160,
+        "query_count": 200,
+        "rss_bytes_at_idle_end": 1491836928,
+        "wall_ms": {
+          "mean": 384.333257,
+          "p50": 360.624,
+          "p95": 514.478615,
+          "p99": 736.6888989999997
+        },
+        "worker_p95_ms": 512.796225000001
+      }
+    },
+    {
+      "cold": {
+        "p95_ms": 2928.678909996961,
+        "peak_rss_bytes": [
+          373702656,
+          374546432,
+          355078144
+        ],
+        "samples_ms": [
+          2175.5581999968854,
+          2373.3169000042835,
+          2990.3857999961474
+        ]
+      },
+      "label": "cycle-2-direct-t2",
+      "warm": {
+        "idle_cpu_percent_total_logical_capacity": 0.0,
+        "peak_rss_bytes_through_idle": 1637933056,
+        "query_count": 200,
+        "rss_bytes_at_idle_end": 1492926464,
+        "wall_ms": {
+          "mean": 362.906604,
+          "p50": 351.8089,
+          "p95": 467.584965,
+          "p99": 500.96124299999985
+        },
+        "worker_p95_ms": 460.2022649999995
+      }
+    },
+    {
+      "cold": {
+        "p95_ms": 2165.5374400019355,
+        "peak_rss_bytes": [
+          363114496,
+          355733504,
+          357654528
+        ],
+        "samples_ms": [
+          1934.1860999993514,
+          2178.077700002177,
+          2052.6750999997603
+        ]
+      },
+      "label": "cycle-2-current",
+      "warm": {
+        "idle_cpu_percent_total_logical_capacity": 0.0,
+        "peak_rss_bytes_through_idle": 1806979072,
+        "query_count": 200,
+        "rss_bytes_at_idle_end": 1806979072,
+        "wall_ms": {
+          "mean": 653.1297595,
+          "p50": 633.4311,
+          "p95": 1012.71575,
+          "p99": 1175.022829
+        },
+        "worker_p95_ms": 966.1152049999979
+      }
+    }
+  ],
+  "session_config": {
+    "enable_cpu_mem_arena": true,
+    "enable_mem_pattern": true,
+    "intra_op_threads": 2,
+    "name": "direct-t2-arena-pattern"
+  }
+}

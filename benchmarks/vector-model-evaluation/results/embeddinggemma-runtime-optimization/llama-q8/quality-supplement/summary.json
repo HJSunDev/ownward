@@ -1,0 +1,153 @@
+{
+  "dataset_manifest_sha256": "0e3f14bad23895a813e75e22e937c0282accd9f0d87a4d6050c4cde0ebc7409d",
+  "dimension": 512,
+  "metrics": {
+    "by_category": {
+      "buried_evidence": {
+        "count": 4,
+        "mrr_at_10": 0.875,
+        "ndcg_at_10": 0.9077324383928644,
+        "recall_at_10": 1.0,
+        "recall_at_5": 1.0,
+        "top1_accuracy": 0.75
+      },
+      "context_disambiguation": {
+        "count": 4,
+        "mrr_at_10": 0.875,
+        "ndcg_at_10": 0.9077324383928644,
+        "recall_at_10": 1.0,
+        "recall_at_5": 1.0,
+        "top1_accuracy": 0.75
+      },
+      "cross_language": {
+        "count": 4,
+        "mrr_at_10": 0.675,
+        "ndcg_at_10": 0.7544456402014998,
+        "recall_at_10": 1.0,
+        "recall_at_5": 1.0,
+        "top1_accuracy": 0.5
+      },
+      "decision_polarity": {
+        "count": 4,
+        "mrr_at_10": 0.7083333333333333,
+        "ndcg_at_10": 0.7827324383928644,
+        "recall_at_10": 1.0,
+        "recall_at_5": 1.0,
+        "top1_accuracy": 0.5
+      },
+      "deep_paraphrase": {
+        "count": 4,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "recall_at_10": 1.0,
+        "recall_at_5": 1.0,
+        "top1_accuracy": 1.0
+      },
+      "english_semantics": {
+        "count": 4,
+        "mrr_at_10": 0.8333333333333334,
+        "ndcg_at_10": 0.875,
+        "recall_at_10": 1.0,
+        "recall_at_5": 1.0,
+        "top1_accuracy": 0.75
+      }
+    },
+    "by_scope": {
+      "decision": {
+        "count": 3,
+        "mrr_at_10": 0.5555555555555555,
+        "ndcg_at_10": 0.6666666666666666,
+        "recall_at_10": 1.0,
+        "recall_at_5": 1.0,
+        "top1_accuracy": 0.3333333333333333
+      },
+      "experience": {
+        "count": 4,
+        "mrr_at_10": 0.675,
+        "ndcg_at_10": 0.7544456402014998,
+        "recall_at_10": 1.0,
+        "recall_at_5": 1.0,
+        "top1_accuracy": 0.5
+      },
+      "family": {
+        "count": 1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "recall_at_10": 1.0,
+        "recall_at_5": 1.0,
+        "top1_accuracy": 1.0
+      },
+      "habit": {
+        "count": 2,
+        "mrr_at_10": 0.75,
+        "ndcg_at_10": 0.8154648767857288,
+        "recall_at_10": 1.0,
+        "recall_at_5": 1.0,
+        "top1_accuracy": 0.5
+      },
+      "health": {
+        "count": 1,
+        "mrr_at_10": 0.5,
+        "ndcg_at_10": 0.6309297535714575,
+        "recall_at_10": 1.0,
+        "recall_at_5": 1.0,
+        "top1_accuracy": 0.0
+      },
+      "learning": {
+        "count": 1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "recall_at_10": 1.0,
+        "recall_at_5": 1.0,
+        "top1_accuracy": 1.0
+      },
+      "lesson": {
+        "count": 2,
+        "mrr_at_10": 0.75,
+        "ndcg_at_10": 0.8154648767857288,
+        "recall_at_10": 1.0,
+        "recall_at_5": 1.0,
+        "top1_accuracy": 0.5
+      },
+      "method": {
+        "count": 4,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "recall_at_10": 1.0,
+        "recall_at_5": 1.0,
+        "top1_accuracy": 1.0
+      },
+      "social_experience": {
+        "count": 1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "recall_at_10": 1.0,
+        "recall_at_5": 1.0,
+        "top1_accuracy": 1.0
+      },
+      "work": {
+        "count": 5,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "recall_at_10": 1.0,
+        "recall_at_5": 1.0,
+        "top1_accuracy": 1.0
+      }
+    },
+    "overall": {
+      "count": 24,
+      "mrr_at_10": 0.8277777777777778,
+      "ndcg_at_10": 0.8712738258966821,
+      "recall_at_10": 1.0,
+      "recall_at_5": 1.0,
+      "top1_accuracy": 0.7083333333333334
+    }
+  },
+  "model": "ggml-org/embeddinggemma-300m-qat-q8_0-GGUF",
+  "model_sha256": "6fa0c02a9c302be6f977521d399b4de3a46310a4f2621ee0063747881b673f67",
+  "runtime": "llama.cpp b10488",
+  "timing": {
+    "corpus_seconds": 14.407928400003584,
+    "query_seconds": 2.8492225000009057
+  }
+}

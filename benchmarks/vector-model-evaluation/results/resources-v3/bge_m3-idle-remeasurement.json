@@ -1,0 +1,15 @@
+{
+  "base_resource_summary_sha256": "ecd318d793276e60d61efbf2e68b60fb1700c5107c3993c26f12df8786da68a2",
+  "cpu_seconds": 0.0,
+  "gate": {
+    "limit_percent": 0.1,
+    "pass": true,
+    "value_percent": 0.0
+  },
+  "idle_cpu_percent_total_logical_capacity": 0.0,
+  "logical_processors": 12,
+  "measured_seconds": 60.01054089999525,
+  "model_key": "bge_m3",
+  "resident_bytes_after_measurement": 1431166976,
+  "settling_seconds": 10
+}

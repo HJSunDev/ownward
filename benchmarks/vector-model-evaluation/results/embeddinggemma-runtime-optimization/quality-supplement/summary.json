@@ -1,0 +1,162 @@
+{
+  "dataset_manifest_sha256": "0e3f14bad23895a813e75e22e937c0282accd9f0d87a4d6050c4cde0ebc7409d",
+  "freeze_id": "ownward-quality-supplement-2026-08-20-v1",
+  "frozen_config_sha256": "c0710dc9fbe7a672231382b12eb8e38749ca183e305e8103b4c46e9f2e65d3c7",
+  "metrics": {
+    "by_category": {
+      "buried_evidence": {
+        "count": 4,
+        "ndcg_at_10": 0.9077324383928644,
+        "recall_at_10": 1.0
+      },
+      "context_disambiguation": {
+        "count": 4,
+        "ndcg_at_10": 0.9077324383928644,
+        "recall_at_10": 1.0
+      },
+      "cross_language": {
+        "count": 4,
+        "ndcg_at_10": 0.8154648767857288,
+        "recall_at_10": 1.0
+      },
+      "decision_polarity": {
+        "count": 4,
+        "ndcg_at_10": 0.8154648767857288,
+        "recall_at_10": 1.0
+      },
+      "deep_paraphrase": {
+        "count": 4,
+        "ndcg_at_10": 1.0,
+        "recall_at_10": 1.0
+      },
+      "english_semantics": {
+        "count": 4,
+        "ndcg_at_10": 0.875,
+        "recall_at_10": 1.0
+      }
+    },
+    "by_scope": {
+      "decision": {
+        "count": 3,
+        "ndcg_at_10": 0.7103099178571526,
+        "recall_at_10": 1.0
+      },
+      "experience": {
+        "count": 4,
+        "ndcg_at_10": 0.8154648767857289,
+        "recall_at_10": 1.0
+      },
+      "family": {
+        "count": 1,
+        "ndcg_at_10": 1.0,
+        "recall_at_10": 1.0
+      },
+      "habit": {
+        "count": 2,
+        "ndcg_at_10": 0.8154648767857288,
+        "recall_at_10": 1.0
+      },
+      "health": {
+        "count": 1,
+        "ndcg_at_10": 0.6309297535714575,
+        "recall_at_10": 1.0
+      },
+      "learning": {
+        "count": 1,
+        "ndcg_at_10": 1.0,
+        "recall_at_10": 1.0
+      },
+      "lesson": {
+        "count": 2,
+        "ndcg_at_10": 0.8154648767857288,
+        "recall_at_10": 1.0
+      },
+      "method": {
+        "count": 4,
+        "ndcg_at_10": 1.0,
+        "recall_at_10": 1.0
+      },
+      "social_experience": {
+        "count": 1,
+        "ndcg_at_10": 1.0,
+        "recall_at_10": 1.0
+      },
+      "work": {
+        "count": 5,
+        "ndcg_at_10": 1.0,
+        "recall_at_10": 1.0
+      }
+    },
+    "overall": {
+      "count": 24,
+      "ndcg_at_10": 0.8868991050595311,
+      "recall_at_10": 1.0
+    }
+  },
+  "model_artifacts": [
+    {
+      "bytes": 567874,
+      "path": "onnx/model_quantized.onnx",
+      "sha256": "172efde319fe1542dc41f31be6154910b05b78f7a861c265c4600eec906bd6d8"
+    },
+    {
+      "bytes": 308890624,
+      "path": "onnx/model_quantized.onnx_data",
+      "sha256": "705626e28e4c23c82ade34566b4197d97f534c12275fa406dfb71e9937d388c0"
+    }
+  ],
+  "model_key": "embeddinggemma_300m",
+  "runtime": {
+    "affinity": [
+      0,
+      2,
+      4,
+      6
+    ],
+    "batch_size": 8,
+    "pid": 22432,
+    "platform": "Windows-11-10.0.22631-SP0",
+    "python": "3.12.13"
+  },
+  "timing": {
+    "corpus": {
+      "bytes": 196608,
+      "complete": 96,
+      "count": 96,
+      "dimension": 512,
+      "seconds_this_run": 17.997625800002425
+    },
+    "queries": {
+      "count": 24,
+      "dimension": 512,
+      "seconds_this_run": 3.266167800000403
+    },
+    "ranking_seconds_this_run": 0.20188020000205142
+  },
+  "token_lengths": {
+    "corpus": {
+      "count": 96,
+      "max": 61.0,
+      "max_length": 512,
+      "mean": 32.697916666666664,
+      "min": 22.0,
+      "p50": 30.0,
+      "p95": 45.5,
+      "p99": 61.0,
+      "truncated_count": 0
+    },
+    "queries": {
+      "count": 24,
+      "max": 27.0,
+      "max_length": 512,
+      "mean": 22.958333333333332,
+      "min": 17.0,
+      "p50": 24.0,
+      "p95": 26.0,
+      "p99": 26.77,
+      "truncated_count": 0
+    }
+  },
+  "track": "formal",
+  "variant": "deliverable"
+}

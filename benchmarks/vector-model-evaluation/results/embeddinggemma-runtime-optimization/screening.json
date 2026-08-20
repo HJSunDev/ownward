@@ -1,0 +1,80 @@
+{
+  "results": [
+    {
+      "cold_ms": 2657.9194000005373,
+      "peak_rss_bytes": 1635827712,
+      "query_count": 20,
+      "session": {
+        "enable_cpu_mem_arena": true,
+        "enable_mem_pattern": true,
+        "intra_op_threads": 4,
+        "name": "direct-t4-arena-pattern"
+      },
+      "variant": "direct-t4-arena-pattern",
+      "warm_wall_ms": {
+        "mean": 436.8077,
+        "p50": 431.07595000000003,
+        "p95": 539.26297
+      },
+      "worker_p95_ms": 537.9830799999997
+    },
+    {
+      "cold_ms": 2661.302699998487,
+      "peak_rss_bytes": 1634164736,
+      "query_count": 20,
+      "session": {
+        "enable_cpu_mem_arena": true,
+        "enable_mem_pattern": true,
+        "intra_op_threads": 2,
+        "name": "direct-t2-arena-pattern"
+      },
+      "variant": "direct-t2-arena-pattern",
+      "warm_wall_ms": {
+        "mean": 330.28964,
+        "p50": 327.4735,
+        "p95": 425.09823500000005
+      },
+      "worker_p95_ms": 413.75442499999957
+    },
+    {
+      "cold_ms": 2406.9504999933997,
+      "peak_rss_bytes": 1523068928,
+      "query_count": 20,
+      "session": {
+        "enable_cpu_mem_arena": false,
+        "enable_mem_pattern": false,
+        "intra_op_threads": 4,
+        "name": "direct-t4-noarena-nopattern"
+      },
+      "variant": "direct-t4-noarena-nopattern",
+      "warm_wall_ms": {
+        "mean": 603.26098,
+        "p50": 604.98525,
+        "p95": 736.936585
+      },
+      "worker_p95_ms": 733.6600350000006
+    },
+    {
+      "cold_ms": 3384.138499997789,
+      "peak_rss_bytes": 1553768448,
+      "query_count": 20,
+      "session": {
+        "enable_cpu_mem_arena": false,
+        "enable_mem_pattern": false,
+        "intra_op_threads": 2,
+        "name": "direct-t2-noarena-nopattern"
+      },
+      "variant": "direct-t2-noarena-nopattern",
+      "warm_wall_ms": {
+        "mean": 573.6605950000001,
+        "p50": 562.9192499999999,
+        "p95": 661.9872600000001
+      },
+      "worker_p95_ms": 656.6169449999992
+    }
+  ],
+  "vector_consistency": {
+    "maximum_absolute_difference": 1.7136335372924805e-07,
+    "minimum_cosine": 0.9999999999993927
+  }
+}

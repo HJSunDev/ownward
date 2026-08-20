@@ -1,0 +1,158 @@
+{
+  "bundle_file_count": 280,
+  "bundle_manifest_sha256": "8cac64c982e00fcddf89151349e119e8a6316eac8c518089f5c89f4ccbd9327d",
+  "bundle_total_bytes": 138378246,
+  "models": [
+    {
+      "clean_exit": true,
+      "comparisons": [
+        {
+          "cosine": 0.9999999403953552,
+          "maximum_absolute_error": 7.450580596923828e-09,
+          "prompt_type": "query",
+          "request_id": "query-zh",
+          "response": {
+            "checksum": -1.0487242989765946,
+            "dimension": 512,
+            "elapsed_ms": 463.6693,
+            "id": "query-zh",
+            "token_count": 29
+          }
+        },
+        {
+          "cosine": 1.0,
+          "maximum_absolute_error": 1.4901161193847656e-08,
+          "prompt_type": "query",
+          "request_id": "query-en",
+          "response": {
+            "checksum": -9.404240082425531,
+            "dimension": 512,
+            "elapsed_ms": 514.6268999999998,
+            "id": "query-en",
+            "token_count": 30
+          }
+        },
+        {
+          "cosine": 1.0,
+          "maximum_absolute_error": 7.450580596923828e-09,
+          "prompt_type": "document",
+          "request_id": "document-zh",
+          "response": {
+            "checksum": -10.306222799468742,
+            "dimension": 512,
+            "elapsed_ms": 360.08989999999994,
+            "id": "document-zh",
+            "token_count": 10
+          }
+        }
+      ],
+      "model_key": "qwen3_embedding_0_6b",
+      "ready": {
+        "load_ms": 2349.4164,
+        "model_key": "qwen3_embedding_0_6b",
+        "type": "ready"
+      }
+    },
+    {
+      "clean_exit": true,
+      "comparisons": [
+        {
+          "cosine": 1.0,
+          "maximum_absolute_error": 1.341104507446289e-07,
+          "prompt_type": "query",
+          "request_id": "query-zh",
+          "response": {
+            "checksum": 3.3299694461620675,
+            "dimension": 512,
+            "elapsed_ms": 750.1858000000002,
+            "id": "query-zh",
+            "token_count": 18
+          }
+        },
+        {
+          "cosine": 0.9999998807907104,
+          "maximum_absolute_error": 1.6391277313232422e-07,
+          "prompt_type": "query",
+          "request_id": "query-en",
+          "response": {
+            "checksum": -4.416085382996243,
+            "dimension": 512,
+            "elapsed_ms": 743.9475000000002,
+            "id": "query-en",
+            "token_count": 19
+          }
+        },
+        {
+          "cosine": 1.0,
+          "maximum_absolute_error": 1.1920928955078125e-07,
+          "prompt_type": "document",
+          "request_id": "document-zh",
+          "response": {
+            "checksum": 4.952714564453345,
+            "dimension": 512,
+            "elapsed_ms": 513.0803999999998,
+            "id": "document-zh",
+            "token_count": 18
+          }
+        }
+      ],
+      "model_key": "embeddinggemma_300m",
+      "ready": {
+        "load_ms": 1849.8852,
+        "model_key": "embeddinggemma_300m",
+        "type": "ready"
+      }
+    },
+    {
+      "clean_exit": true,
+      "comparisons": [
+        {
+          "cosine": 1.0,
+          "maximum_absolute_error": 1.4901161193847656e-08,
+          "prompt_type": "query",
+          "request_id": "query-zh",
+          "response": {
+            "checksum": -9.163991623929178,
+            "dimension": 1024,
+            "elapsed_ms": 152.71900000000005,
+            "id": "query-zh",
+            "token_count": 12
+          }
+        },
+        {
+          "cosine": 1.0000001192092896,
+          "maximum_absolute_error": 1.4901161193847656e-08,
+          "prompt_type": "query",
+          "request_id": "query-en",
+          "response": {
+            "checksum": -1.109157990444146,
+            "dimension": 1024,
+            "elapsed_ms": 90.10580000000027,
+            "id": "query-en",
+            "token_count": 14
+          }
+        },
+        {
+          "cosine": 1.0,
+          "maximum_absolute_error": 1.4901161193847656e-08,
+          "prompt_type": "document",
+          "request_id": "document-zh",
+          "response": {
+            "checksum": -2.442725367829553,
+            "dimension": 1024,
+            "elapsed_ms": 201.29110000000037,
+            "id": "document-zh",
+            "token_count": 12
+          }
+        }
+      ],
+      "model_key": "bge_m3",
+      "ready": {
+        "load_ms": 2496.6587999999997,
+        "model_key": "bge_m3",
+        "type": "ready"
+      }
+    }
+  ],
+  "status": "pass"
+}

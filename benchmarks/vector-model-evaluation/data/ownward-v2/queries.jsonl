@@ -1,0 +1,512 @@
+{"category": "chinese", "id": "q-00000", "scope": "experience", "text": "请找出青岚归档1001的经历中说明“最后采用了哪种做法”的记录。"}
+{"category": "english", "id": "q-00001", "scope": "experience", "text": "Find the experience record for Aurora Review 1002 that explains which trade-off was accepted."}
+{"category": "cross_zh_en", "id": "q-00002", "scope": "experience", "text": "在云栖归档1003的经历里，下一步需要继续做什么？"}
+{"category": "paraphrase", "id": "q-00003", "scope": "experience", "text": "关于远汀归档1004这段经历，哪种方案被明确放弃？"}
+{"category": "long_short", "id": "q-00004", "scope": "experience", "text": "请找出清和归档1005的经历中说明“当时识别出的最大风险是什么”的记录。"}
+{"category": "noise", "id": "q-00005", "scope": "experience", "text": "关于松隐归档1006这段经历，这项工作由谁负责？"}
+{"category": "hard_negative", "id": "q-00006", "scope": "experience", "text": "请找出星渡归档1007的经历中表达“首先向车站确认停运范围和可退改区间”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00007", "scope": "experience", "text": "请找出澄川归档1008的经历中表达“为每段行程预留四十分钟缓冲”的那条记录。"}
+{"category": "chinese", "id": "q-00008", "scope": "psychology", "text": "在临岳归档1009的心理活动里，目前处于什么状态？"}
+{"category": "english", "id": "q-00009", "scope": "psychology", "text": "In the psychological reflection named River Review 1010, how the result was validated?"}
+{"category": "cross_zh_en", "id": "q-00010", "scope": "psychology", "text": "In the psychological reflection named 青岚复盘1011, what result was achieved?"}
+{"category": "paraphrase", "id": "q-00011", "scope": "psychology", "text": "关于北辰复盘1012这段心理活动，是什么触发了这件事？"}
+{"category": "long_short", "id": "q-00012", "scope": "psychology", "text": "关于云栖复盘1013这段心理活动，最初暴露出的异常是什么？"}
+{"category": "noise", "id": "q-00013", "scope": "psychology", "text": "关于远汀复盘1014这段心理活动，这件事留下的核心教训是什么？"}
+{"category": "hard_negative", "id": "q-00014", "scope": "psychology", "text": "请找出清和复盘1015的心理活动中表达“能够带着紧张完成表达而不是强迫自己毫无焦虑”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00015", "scope": "psychology", "text": "请找出松隐复盘1016的心理活动中表达“把他人的中性反应自动解释成负面评价”的那条记录。"}
+{"category": "chinese", "id": "q-00016", "scope": "social_experience", "text": "请找出星渡复盘1017的社会经验中说明“这条经验在什么条件下可以复用”的记录。"}
+{"category": "english", "id": "q-00017", "scope": "social_experience", "text": "For the social experience from Nimbus Migration 1018, which limit could not be crossed?"}
+{"category": "cross_zh_en", "id": "q-00018", "scope": "social_experience", "text": "请找出临岳复盘1019的社会经验中说明“问题最终怎样解决”的记录。"}
+{"category": "paraphrase", "id": "q-00019", "scope": "social_experience", "text": "关于知微复盘1020这段社会经验，什么情况下不应套用这条经验？"}
+{"category": "long_short", "id": "q-00020", "scope": "social_experience", "text": "请找出青岚迁移1021的社会经验中说明“最后采用了哪种做法”的记录。"}
+{"category": "noise", "id": "q-00021", "scope": "social_experience", "text": "关于北辰迁移1022这段社会经验，当时接受了什么取舍？"}
+{"category": "hard_negative", "id": "q-00022", "scope": "social_experience", "text": "请找出云栖迁移1023的社会经验中表达“把这次对话模板用于下一次跨团队反馈”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00023", "scope": "social_experience", "text": "请找出远汀迁移1024的社会经验中表达“用能力不足概括对方而不谈具体事件”的那条记录。"}
+{"category": "chinese", "id": "q-00024", "scope": "knowledge", "text": "请找出清和迁移1025的知识中说明“当时识别出的最大风险是什么”的记录。"}
+{"category": "english", "id": "q-00025", "scope": "knowledge", "text": "In the knowledge note named Orchid Practice 1026, who is responsible for the work?"}
+{"category": "cross_zh_en", "id": "q-00026", "scope": "knowledge", "text": "For the knowledge note from 星渡迁移1027, what was done first?"}
+{"category": "paraphrase", "id": "q-00027", "scope": "knowledge", "text": "请找出澄川迁移1028的知识中说明“如何降低这个风险”的记录。"}
+{"category": "long_short", "id": "q-00028", "scope": "knowledge", "text": "请找出临岳迁移1029的知识中说明“目前处于什么状态”的记录。"}
+{"category": "noise", "id": "q-00029", "scope": "knowledge", "text": "在知微迁移1030的知识里，结果是怎样验证的？"}
+{"category": "hard_negative", "id": "q-00030", "scope": "knowledge", "text": "请找出青岚协作1031的知识中表达“能够说明向量、关系结构和外部智能体各自职责”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00031", "scope": "knowledge", "text": "请找出北辰协作1032的知识中表达“学习语义检索时发现相似内容与真正相关内容经常被混为一谈”的那条记录。"}
+{"category": "chinese", "id": "q-00032", "scope": "skill", "text": "在云栖协作1033的技能里，最初暴露出的异常是什么？"}
+{"category": "english", "id": "q-00033", "scope": "skill", "text": "Find the skill practice record for Atlas Research 1034 that explains what central lesson was learned."}
+{"category": "cross_zh_en", "id": "q-00034", "scope": "skill", "text": "关于清和协作1035这段技能，最终想达到什么结果？"}
+{"category": "paraphrase", "id": "q-00035", "scope": "skill", "text": "在松隐协作1036的技能里，最终确认的根因是什么？"}
+{"category": "long_short", "id": "q-00036", "scope": "skill", "text": "请找出星渡协作1037的技能中说明“这条经验在什么条件下可以复用”的记录。"}
+{"category": "noise", "id": "q-00037", "scope": "skill", "text": "在澄川协作1038的技能里，当时最不能突破的限制是什么？"}
+{"category": "hard_negative", "id": "q-00038", "scope": "skill", "text": "请找出临岳协作1039的技能中表达“把呼气提前到水下并缩小转头幅度”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00039", "scope": "skill", "text": "请找出知微协作1040的技能中表达“出现胸闷、眩晕或水域安全条件不足时”的那条记录。"}
+{"category": "chinese", "id": "q-00040", "scope": "work", "text": "在青岚训练1041的工作里，最后采用了哪种做法？"}
+{"category": "english", "id": "q-00041", "scope": "work", "text": "For the work record from Aurora Repair 1042, which trade-off was accepted?"}
+{"category": "cross_zh_en", "id": "q-00042", "scope": "work", "text": "In the work record named 云栖训练1043, what should be done next?"}
+{"category": "paraphrase", "id": "q-00043", "scope": "work", "text": "关于远汀训练1044这段工作，哪种方案被明确放弃？"}
+{"category": "long_short", "id": "q-00044", "scope": "work", "text": "请找出清和训练1045的工作中说明“当时识别出的最大风险是什么”的记录。"}
+{"category": "noise", "id": "q-00045", "scope": "work", "text": "关于松隐训练1046这段工作，这项工作由谁负责？"}
+{"category": "hard_negative", "id": "q-00046", "scope": "work", "text": "请找出星渡训练1047的工作中表达“首先还原重复写入的最小触发条件”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00047", "scope": "work", "text": "请找出澄川训练1048的工作中表达“所有请求统一写入同一审计流水并按标识对账”的那条记录。"}
+{"category": "chinese", "id": "q-00048", "scope": "method", "text": "请找出临岳训练1049的实践方法中说明“目前处于什么状态”的记录。"}
+{"category": "english", "id": "q-00049", "scope": "method", "text": "For the working method from River Repair 1050, how the result was validated?"}
+{"category": "cross_zh_en", "id": "q-00050", "scope": "method", "text": "在青岚调研1051的实践方法里，最后取得了什么结果？"}
+{"category": "paraphrase", "id": "q-00051", "scope": "method", "text": "请找出北辰调研1052的实践方法中说明“是什么触发了这件事”的记录。"}
+{"category": "long_short", "id": "q-00052", "scope": "method", "text": "在云栖调研1053的实践方法里，最初暴露出的异常是什么？"}
+{"category": "noise", "id": "q-00053", "scope": "method", "text": "在远汀调研1054的实践方法里，这件事留下的核心教训是什么？"}
+{"category": "hard_negative", "id": "q-00054", "scope": "method", "text": "请找出清和调研1055的实践方法中表达“用十分钟得到可信的本周进展和下周重点”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00055", "scope": "method", "text": "请找出松隐调研1056的实践方法中表达“记录围绕发生时间堆积而没有围绕决策结果组织”的那条记录。"}
+{"category": "chinese", "id": "q-00056", "scope": "mistake", "text": "请找出星渡调研1057的错误教训中说明“这条经验在什么条件下可以复用”的记录。"}
+{"category": "english", "id": "q-00057", "scope": "mistake", "text": "In the failure lesson named Nimbus Planning 1058, which limit could not be crossed?"}
+{"category": "cross_zh_en", "id": "q-00058", "scope": "mistake", "text": "Find the failure lesson record for 临岳调研1059 that explains how the problem was ultimately solved."}
+{"category": "paraphrase", "id": "q-00059", "scope": "mistake", "text": "请找出知微调研1060的错误教训中说明“什么情况下不应套用这条经验”的记录。"}
+{"category": "long_short", "id": "q-00060", "scope": "mistake", "text": "关于青岚修复1061这段错误教训，最后采用了哪种做法？"}
+{"category": "noise", "id": "q-00061", "scope": "mistake", "text": "关于北辰修复1062这段错误教训，当时接受了什么取舍？"}
+{"category": "hard_negative", "id": "q-00062", "scope": "mistake", "text": "请找出云栖修复1063的错误教训中表达“在另一块介质执行一次完整恢复演练”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00063", "scope": "mistake", "text": "请找出远汀修复1064的错误教训中表达“继续在原目录反复尝试撤销和重命名”的那条记录。"}
+{"category": "chinese", "id": "q-00064", "scope": "solution", "text": "在清和修复1065的解决经验里，当时识别出的最大风险是什么？"}
+{"category": "english", "id": "q-00065", "scope": "solution", "text": "In the solution record named Orchid Delivery 1066, who is responsible for the work?"}
+{"category": "cross_zh_en", "id": "q-00066", "scope": "solution", "text": "关于星渡修复1067这段解决经验，实际执行的第一步是什么？"}
+{"category": "paraphrase", "id": "q-00067", "scope": "solution", "text": "在澄川修复1068的解决经验里，如何降低这个风险？"}
+{"category": "long_short", "id": "q-00068", "scope": "solution", "text": "请找出临岳修复1069的解决经验中说明“目前处于什么状态”的记录。"}
+{"category": "noise", "id": "q-00069", "scope": "solution", "text": "关于知微修复1070这段解决经验，结果是怎样验证的？"}
+{"category": "hard_negative", "id": "q-00070", "scope": "solution", "text": "请找出青岚规划1071的解决经验中表达“连续七晚没有会议中断且丢包保持在低位”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00071", "scope": "solution", "text": "请找出北辰规划1072的解决经验中表达“家中无线网络每天晚上都会短暂断开数次”的那条记录。"}
+{"category": "chinese", "id": "q-00072", "scope": "reusable_path", "text": "请找出云栖规划1073的可复用路径中说明“最初暴露出的异常是什么”的记录。"}
+{"category": "english", "id": "q-00073", "scope": "reusable_path", "text": "In the reusable path named Atlas Validation 1074, what central lesson was learned?"}
+{"category": "cross_zh_en", "id": "q-00074", "scope": "reusable_path", "text": "For the reusable path from 清和规划1075, what outcome was intended?"}
+{"category": "paraphrase", "id": "q-00075", "scope": "reusable_path", "text": "请找出松隐规划1076的可复用路径中说明“最终确认的根因是什么”的记录。"}
+{"category": "long_short", "id": "q-00076", "scope": "reusable_path", "text": "关于星渡规划1077这段可复用路径，这条经验在什么条件下可以复用？"}
+{"category": "noise", "id": "q-00077", "scope": "reusable_path", "text": "关于澄川规划1078这段可复用路径，当时最不能突破的限制是什么？"}
+{"category": "hard_negative", "id": "q-00078", "scope": "reusable_path", "text": "请找出临岳规划1079的可复用路径中表达“在真实约束下同时比较效果、资源和交付闭环”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00079", "scope": "reusable_path", "text": "请找出知微规划1080的可复用路径中表达“决策主要取决于不可逆的伦理或法律判断时”的那条记录。"}
+{"category": "chinese", "id": "q-00080", "scope": "experience", "text": "关于青岚交付1081这段经历，最后采用了哪种做法？"}
+{"category": "english", "id": "q-00081", "scope": "experience", "text": "Find the experience record for Aurora Archive 1082 that explains which trade-off was accepted."}
+{"category": "cross_zh_en", "id": "q-00082", "scope": "experience", "text": "请找出云栖交付1083的经历中说明“下一步需要继续做什么”的记录。"}
+{"category": "paraphrase", "id": "q-00083", "scope": "experience", "text": "请找出远汀交付1084的经历中说明“哪种方案被明确放弃”的记录。"}
+{"category": "long_short", "id": "q-00084", "scope": "experience", "text": "在清和交付1085的经历里，当时识别出的最大风险是什么？"}
+{"category": "noise", "id": "q-00085", "scope": "experience", "text": "关于松隐交付1086这段经历，这项工作由谁负责？"}
+{"category": "hard_negative", "id": "q-00086", "scope": "experience", "text": "请找出星渡交付1087的经历中表达“首先向车站确认停运范围和可退改区间”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00087", "scope": "experience", "text": "请找出澄川交付1088的经历中表达“为每段行程预留四十分钟缓冲”的那条记录。"}
+{"category": "chinese", "id": "q-00088", "scope": "psychology", "text": "关于临岳交付1089这段心理活动，目前处于什么状态？"}
+{"category": "english", "id": "q-00089", "scope": "psychology", "text": "In the psychological reflection named River Archive 1090, how the result was validated?"}
+{"category": "cross_zh_en", "id": "q-00090", "scope": "psychology", "text": "Find the psychological reflection record for 青岚验证1091 that explains what result was achieved."}
+{"category": "paraphrase", "id": "q-00091", "scope": "psychology", "text": "关于北辰验证1092这段心理活动，是什么触发了这件事？"}
+{"category": "long_short", "id": "q-00092", "scope": "psychology", "text": "在云栖验证1093的心理活动里，最初暴露出的异常是什么？"}
+{"category": "noise", "id": "q-00093", "scope": "psychology", "text": "请找出远汀验证1094的心理活动中说明“这件事留下的核心教训是什么”的记 录。"}
+{"category": "hard_negative", "id": "q-00094", "scope": "psychology", "text": "请找出清和验证1095的心理活动中表达“能够带着紧张完成表达而不是强迫自己毫无焦虑”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00095", "scope": "psychology", "text": "请找出松隐验证1096的心理活动中表达“把他人的中性反应自动解释成负面评价”的那条记录。"}
+{"category": "chinese", "id": "q-00096", "scope": "social_experience", "text": "在星渡验证1097的社会经验里，这条经验在什么条件下可以复用？"}
+{"category": "english", "id": "q-00097", "scope": "social_experience", "text": "In the social experience named Nimbus Coordination 1098, which limit could not be crossed?"}
+{"category": "cross_zh_en", "id": "q-00098", "scope": "social_experience", "text": "关于临岳验证1099这段社会经验，问题最终怎样解决？"}
+{"category": "paraphrase", "id": "q-00099", "scope": "social_experience", "text": "请找出知微验证1100的社会经验中说明“什么情况下不应套用这条经验”的记录。"}
+{"category": "long_short", "id": "q-00100", "scope": "social_experience", "text": "关于青岚归档1101这段社会经验，最后采用了哪种做法？"}
+{"category": "noise", "id": "q-00101", "scope": "social_experience", "text": "在北辰归档1102的社会经验里，当时接受了什么取舍？"}
+{"category": "hard_negative", "id": "q-00102", "scope": "social_experience", "text": "请找出云栖归档1103的社会经验中表达“把这次对话模板用于下一次跨团队反馈”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00103", "scope": "social_experience", "text": "请找出远汀归档1104的社会经验中表达“用能力不足概括对方而不谈具体事件”的那条记录。"}
+{"category": "chinese", "id": "q-00104", "scope": "knowledge", "text": "关于清和归档1105这段知识，当时识别出的最大风险是什么？"}
+{"category": "english", "id": "q-00105", "scope": "knowledge", "text": "For the knowledge note from Orchid Review 1106, who is responsible for the work?"}
+{"category": "cross_zh_en", "id": "q-00106", "scope": "knowledge", "text": "Find the knowledge note record for 星渡归档1107 that explains what was done first."}
+{"category": "paraphrase", "id": "q-00107", "scope": "knowledge", "text": "在澄川归档1108的知识里，如何降低这个风险？"}
+{"category": "long_short", "id": "q-00108", "scope": "knowledge", "text": "在临岳归档1109的知识里，目前处于什么状态？"}
+{"category": "noise", "id": "q-00109", "scope": "knowledge", "text": "在知微归档1110的知识里，结果是怎样验证的？"}
+{"category": "hard_negative", "id": "q-00110", "scope": "knowledge", "text": "请找出青岚复盘1111的知识中表达“能够说明向量、关系结构和外部智能体各自职责”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00111", "scope": "knowledge", "text": "请找出北辰复盘1112的知识中表达“学习语义检索时发现相似内容与真正相关内容经常被混为一谈”的那条记录。"}
+{"category": "chinese", "id": "q-00112", "scope": "skill", "text": "请找出云栖复盘1113的技能中说明“最初暴露出的异常是什么”的记录。"}
+{"category": "english", "id": "q-00113", "scope": "skill", "text": "For the skill practice from Atlas Migration 1114, what central lesson was learned?"}
+{"category": "cross_zh_en", "id": "q-00114", "scope": "skill", "text": "在清和复盘1115的技能里，最终想达到什么结果？"}
+{"category": "paraphrase", "id": "q-00115", "scope": "skill", "text": "在松隐复盘1116的技能里，最终确认的根因是什么？"}
+{"category": "long_short", "id": "q-00116", "scope": "skill", "text": "请找出星渡复盘1117的技能中说明“这条经验在什么条件下可以复用”的记录。"}
+{"category": "noise", "id": "q-00117", "scope": "skill", "text": "关于澄川复盘1118这段技能，当时最不能突破的限制是什么？"}
+{"category": "hard_negative", "id": "q-00118", "scope": "skill", "text": "请找出临岳复盘1119的技能中表达“把呼气提前到水下并缩小转头幅度”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00119", "scope": "skill", "text": "请找出知微复盘1120的技能中表达“出现胸闷、眩晕或水域安全条件不足时”的那条记录。"}
+{"category": "chinese", "id": "q-00120", "scope": "work", "text": "请找出青岚迁移1121的工作中说明“最后采用了哪种做法”的记录。"}
+{"category": "english", "id": "q-00121", "scope": "work", "text": "Find the work record record for Aurora Practice 1122 that explains which trade-off was accepted."}
+{"category": "cross_zh_en", "id": "q-00122", "scope": "work", "text": "Find the work record record for 云栖迁移1123 that explains what should be done next."}
+{"category": "paraphrase", "id": "q-00123", "scope": "work", "text": "请找出远汀迁移1124的工作中说明“哪种方案被明确放弃”的记录。"}
+{"category": "long_short", "id": "q-00124", "scope": "work", "text": "关于清和迁移1125这段工作，当时识别出的最大风险是什么？"}
+{"category": "noise", "id": "q-00125", "scope": "work", "text": "关于松隐迁移1126这段工作，这项工作由谁负责？"}
+{"category": "hard_negative", "id": "q-00126", "scope": "work", "text": "请找出星渡迁移1127的工作中表达“首先还原重复写入的最小触发条件”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00127", "scope": "work", "text": "请找出澄川迁移1128的工作中表达“所有请求统一写入同一审计流水并按标识对账”的那条记录。"}
+{"category": "chinese", "id": "q-00128", "scope": "method", "text": "请找出临岳迁移1129的实践方法中说明“目前处于什么状态”的记录。"}
+{"category": "english", "id": "q-00129", "scope": "method", "text": "In the working method named River Practice 1130, how the result was validated?"}
+{"category": "cross_zh_en", "id": "q-00130", "scope": "method", "text": "请找出青岚协作1131的实践方法中说明“最后取得了什么结果”的记录。"}
+{"category": "paraphrase", "id": "q-00131", "scope": "method", "text": "请找出北辰协作1132的实践方法中说明“是什么触发了这件事”的记录。"}
+{"category": "long_short", "id": "q-00132", "scope": "method", "text": "关于云栖协作1133这段实践方法，最初暴露出的异常是什么？"}
+{"category": "noise", "id": "q-00133", "scope": "method", "text": "关于远汀协作1134这段实践方法，这件事留下的核心教训是什么？"}
+{"category": "hard_negative", "id": "q-00134", "scope": "method", "text": "请找出清和协作1135的实践方法中表达“用十分钟得到可信的本周进展和下周重点”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00135", "scope": "method", "text": "请找出松隐协作1136的实践方法中表达“记录围绕发生时间堆积而没有围绕决策结果组织”的那条记录。"}
+{"category": "chinese", "id": "q-00136", "scope": "mistake", "text": "关于星渡协作1137这段错误教训，这条经验在什么条件下可以复用？"}
+{"category": "english", "id": "q-00137", "scope": "mistake", "text": "Find the failure lesson record for Nimbus Research 1138 that explains which limit could not be crossed."}
+{"category": "cross_zh_en", "id": "q-00138", "scope": "mistake", "text": "For the failure lesson from 临岳协作1139, how the problem was ultimately solved?"}
+{"category": "paraphrase", "id": "q-00139", "scope": "mistake", "text": "关于知微协作1140这段错误教训，什么情况下不应套用这条经验？"}
+{"category": "long_short", "id": "q-00140", "scope": "mistake", "text": "在青岚训练1141的错误教训里，最后采用了哪种做法？"}
+{"category": "noise", "id": "q-00141", "scope": "mistake", "text": "在北辰训练1142的错误教训里，当时接受了什么取舍？"}
+{"category": "hard_negative", "id": "q-00142", "scope": "mistake", "text": "请找出云栖训练1143的错误教训中表达“在另一块介质执行一次完整恢复演练”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00143", "scope": "mistake", "text": "请找出远汀训练1144的错误教训中表达“继续在原目录反复尝试撤销和重命名”的那条记录。"}
+{"category": "chinese", "id": "q-00144", "scope": "solution", "text": "关于清和训练1145这段解决经验，当时识别出的最大风险是什么？"}
+{"category": "english", "id": "q-00145", "scope": "solution", "text": "In the solution record named Orchid Repair 1146, who is responsible for the work?"}
+{"category": "cross_zh_en", "id": "q-00146", "scope": "solution", "text": "在星渡训练1147的解决经验里，实际执行的第一步是什么？"}
+{"category": "paraphrase", "id": "q-00147", "scope": "solution", "text": "在澄川训练1148的解决经验里，如何降低这个风险？"}
+{"category": "long_short", "id": "q-00148", "scope": "solution", "text": "请找出临岳训练1149的解决经验中说明“目前处于什么状态”的记录。"}
+{"category": "noise", "id": "q-00149", "scope": "solution", "text": "在知微训练1150的解决经验里，结果是怎样验证的？"}
+{"category": "hard_negative", "id": "q-00150", "scope": "solution", "text": "请找出青岚调研1151的解决经验中表达“连续七晚没有会议中断且丢包保持在低位”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00151", "scope": "solution", "text": "请找出北辰调研1152的解决经验中表达“家中无线网络每天晚上都会短暂断开数次”的那条记录。"}
+{"category": "chinese", "id": "q-00152", "scope": "reusable_path", "text": "在云栖调研1153的可复用路径里，最初暴露出的异常是什么？"}
+{"category": "english", "id": "q-00153", "scope": "reusable_path", "text": "For the reusable path from Atlas Planning 1154, what central lesson was learned?"}
+{"category": "cross_zh_en", "id": "q-00154", "scope": "reusable_path", "text": "For the reusable path from 清和调研1155, what outcome was intended?"}
+{"category": "paraphrase", "id": "q-00155", "scope": "reusable_path", "text": "请找出松隐调研1156的可复用路径中说明“最终确认的根因是什么”的记录。"}
+{"category": "long_short", "id": "q-00156", "scope": "reusable_path", "text": "在星渡调研1157的可复用路径里，这条经验在什么条件下可以复用？"}
+{"category": "noise", "id": "q-00157", "scope": "reusable_path", "text": "在澄川调研1158的可复用路径里，当时最不能突破的限制是什么？"}
+{"category": "hard_negative", "id": "q-00158", "scope": "reusable_path", "text": "请找出临岳调研1159的可复用路径中表达“在真实约束下同时比较效果、资源和交付闭环”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00159", "scope": "reusable_path", "text": "请找出知微调研1160的可复用路径中表达“决策主要取决于不可逆的伦理或法律判断时”的那条记录。"}
+{"category": "chinese", "id": "q-00160", "scope": "experience", "text": "请找出青岚修复1161的经历中说明“最后采用了哪种做法”的记录。"}
+{"category": "english", "id": "q-00161", "scope": "experience", "text": "For the experience from Aurora Delivery 1162, which trade-off was accepted?"}
+{"category": "cross_zh_en", "id": "q-00162", "scope": "experience", "text": "在云栖修复1163的经历里，下一步需要继续做什么？"}
+{"category": "paraphrase", "id": "q-00163", "scope": "experience", "text": "请找出远汀修复1164的经历中说明“哪种方案被明确放弃”的记录。"}
+{"category": "long_short", "id": "q-00164", "scope": "experience", "text": "请找出清和修复1165的经历中说明“当时识别出的最大风险是什么”的记录。"}
+{"category": "noise", "id": "q-00165", "scope": "experience", "text": "请找出松隐修复1166的经历中说明“这项工作由谁负责”的记 录。"}
+{"category": "hard_negative", "id": "q-00166", "scope": "experience", "text": "请找出星渡修复1167的经历中表达“首先向车站确认停运范围和可退改区间”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00167", "scope": "experience", "text": "请找出澄川修复1168的经历中表达“为每段行程预留四十分钟缓冲”的那条记录。"}
+{"category": "chinese", "id": "q-00168", "scope": "psychology", "text": "请找出临岳修复1169的心理活动中说明“目前处于什么状态”的记录。"}
+{"category": "english", "id": "q-00169", "scope": "psychology", "text": "Find the psychological reflection record for River Delivery 1170 that explains how the result was validated."}
+{"category": "cross_zh_en", "id": "q-00170", "scope": "psychology", "text": "In the psychological reflection named 青岚规划1171, what result was achieved?"}
+{"category": "paraphrase", "id": "q-00171", "scope": "psychology", "text": "请找出北辰规划1172的心理活动中说明“是什么触发了这件事”的记录。"}
+{"category": "long_short", "id": "q-00172", "scope": "psychology", "text": "关于云栖规划1173这段心理活动，最初暴露出的异常是什么？"}
+{"category": "noise", "id": "q-00173", "scope": "psychology", "text": "关于远汀规划1174这段心理活动，这件事留下的核心教训是什么？"}
+{"category": "hard_negative", "id": "q-00174", "scope": "psychology", "text": "请找出清和规划1175的心理活动中表达“能够带着紧张完成表达而不是强迫自己毫无焦虑”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00175", "scope": "psychology", "text": "请找出松隐规划1176的心理活动中表达“把他人的中性反应自动解释成负面评价”的那条记录。"}
+{"category": "chinese", "id": "q-00176", "scope": "social_experience", "text": "在星渡规划1177的社会经验里，这条经验在什么条件下可以复用？"}
+{"category": "english", "id": "q-00177", "scope": "social_experience", "text": "For the social experience from Nimbus Validation 1178, which limit could not be crossed?"}
+{"category": "cross_zh_en", "id": "q-00178", "scope": "social_experience", "text": "在临岳规划1179的社会经验里，问题最终怎样解决？"}
+{"category": "paraphrase", "id": "q-00179", "scope": "social_experience", "text": "请找出知微规划1180的社会经验中说明“什么情况下不应套用这条经验”的记录。"}
+{"category": "long_short", "id": "q-00180", "scope": "social_experience", "text": "在青岚交付1181的社会经验里，最后采用了哪种做法？"}
+{"category": "noise", "id": "q-00181", "scope": "social_experience", "text": "关于北辰交付1182这段社会经验，当时接受了什么取舍？"}
+{"category": "hard_negative", "id": "q-00182", "scope": "social_experience", "text": "请找出云栖交付1183的社会经验中表达“把这次对话模板用于下一次跨团队反馈”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00183", "scope": "social_experience", "text": "请找出远汀交付1184的社会经验中表达“用能力不足概括对方而不谈具体事件”的那条记录。"}
+{"category": "chinese", "id": "q-00184", "scope": "knowledge", "text": "请找出清和交付1185的知识中说明“当时识别出的最大风险是什么”的记录。"}
+{"category": "english", "id": "q-00185", "scope": "knowledge", "text": "For the knowledge note from Orchid Archive 1186, who is responsible for the work?"}
+{"category": "cross_zh_en", "id": "q-00186", "scope": "knowledge", "text": "For the knowledge note from 星渡交付1187, what was done first?"}
+{"category": "paraphrase", "id": "q-00187", "scope": "knowledge", "text": "关于澄川交付1188这段知识，如何降低这个风险？"}
+{"category": "long_short", "id": "q-00188", "scope": "knowledge", "text": "在临岳交付1189的知识里，目前处于什么状态？"}
+{"category": "noise", "id": "q-00189", "scope": "knowledge", "text": "请找出知微交付1190的知识中说明“结果是怎样验证的”的记 录。"}
+{"category": "hard_negative", "id": "q-00190", "scope": "knowledge", "text": "请找出青岚验证1191的知识中表达“能够说明向量、关系结构和外部智能体各自职责”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00191", "scope": "knowledge", "text": "请找出北辰验证1192的知识中表达“学习语义检索时发现相似内容与真正相关内容经常被混为一谈”的那条记录。"}
+{"category": "chinese", "id": "q-00192", "scope": "skill", "text": "在云栖验证1193的技能里，最初暴露出的异常是什么？"}
+{"category": "english", "id": "q-00193", "scope": "skill", "text": "In the skill practice named Atlas Coordination 1194, what central lesson was learned?"}
+{"category": "cross_zh_en", "id": "q-00194", "scope": "skill", "text": "在清和验证1195的技能里，最终想达到什么结果？"}
+{"category": "paraphrase", "id": "q-00195", "scope": "skill", "text": "关于松隐验证1196这段技能，最终确认的根因是什么？"}
+{"category": "long_short", "id": "q-00196", "scope": "skill", "text": "在星渡验证1197的技能里，这条经验在什么条件下可以复用？"}
+{"category": "noise", "id": "q-00197", "scope": "skill", "text": "关于澄川验证1198这段技能，当时最不能突破的限制是什么？"}
+{"category": "hard_negative", "id": "q-00198", "scope": "skill", "text": "请找出临岳验证1199的技能中表达“把呼气提前到水下并缩小转头幅度”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00199", "scope": "skill", "text": "请找出知微验证1200的技能中表达“出现胸闷、眩晕或水域安全条件不足时”的那条记录。"}
+{"category": "chinese", "id": "q-00200", "scope": "work", "text": "关于青岚归档1201这段工作，最后采用了哪种做法？"}
+{"category": "english", "id": "q-00201", "scope": "work", "text": "For the work record from Aurora Review 1202, which trade-off was accepted?"}
+{"category": "cross_zh_en", "id": "q-00202", "scope": "work", "text": "For the work record from 云栖归档1203, what should be done next?"}
+{"category": "paraphrase", "id": "q-00203", "scope": "work", "text": "在远汀归档1204的工作里，哪种方案被明确放弃？"}
+{"category": "long_short", "id": "q-00204", "scope": "work", "text": "在清和归档1205的工作里，当时识别出的最大风险是什么？"}
+{"category": "noise", "id": "q-00205", "scope": "work", "text": "请找出松隐归档1206的工作中说明“这项工作由谁负责”的记录。"}
+{"category": "hard_negative", "id": "q-00206", "scope": "work", "text": "请找出星渡归档1207的工作中表达“首先还原重复写入的最小触发条件”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00207", "scope": "work", "text": "请找出澄川归档1208的工作中表达“所有请求统一写入同一审计流水并按标识对账”的那条记录。"}
+{"category": "chinese", "id": "q-00208", "scope": "method", "text": "请找出临岳归档1209的实践方法中说明“目前处于什么状态”的记录。"}
+{"category": "english", "id": "q-00209", "scope": "method", "text": "In the working method named River Review 1210, how the result was validated?"}
+{"category": "cross_zh_en", "id": "q-00210", "scope": "method", "text": "请找出青岚复盘1211的实践方法中说明“最后取得了什么结果”的记录。"}
+{"category": "paraphrase", "id": "q-00211", "scope": "method", "text": "在北辰复盘1212的实践方法里，是什么触发了这件事？"}
+{"category": "long_short", "id": "q-00212", "scope": "method", "text": "关于云栖复盘1213这段实践方法，最初暴露出的异常是什么？"}
+{"category": "noise", "id": "q-00213", "scope": "method", "text": "请找出远汀复盘1214的实践方法中说明“这件事留下的核心教训是什么”的记 录。"}
+{"category": "hard_negative", "id": "q-00214", "scope": "method", "text": "请找出清和复盘1215的实践方法中表达“用十分钟得到可信的本周进展和下周重点”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00215", "scope": "method", "text": "请找出松隐复盘1216的实践方法中表达“记录围绕发生时间堆积而没有围绕决策结果组织”的那条记录。"}
+{"category": "chinese", "id": "q-00216", "scope": "mistake", "text": "在星渡复盘1217的错误教训里，这条经验在什么条件下可以复用？"}
+{"category": "english", "id": "q-00217", "scope": "mistake", "text": "In the failure lesson named Nimbus Migration 1218, which limit could not be crossed?"}
+{"category": "cross_zh_en", "id": "q-00218", "scope": "mistake", "text": "Find the failure lesson record for 临岳复盘1219 that explains how the problem was ultimately solved."}
+{"category": "paraphrase", "id": "q-00219", "scope": "mistake", "text": "在知微复盘1220的错误教训里，什么情况下不应套用这条经验？"}
+{"category": "long_short", "id": "q-00220", "scope": "mistake", "text": "在青岚迁移1221的错误教训里，最后采用了哪种做法？"}
+{"category": "noise", "id": "q-00221", "scope": "mistake", "text": "在北辰迁移1222的错误教训里，当时接受了什么取舍？"}
+{"category": "hard_negative", "id": "q-00222", "scope": "mistake", "text": "请找出云栖迁移1223的错误教训中表达“在另一块介质执行一次完整恢复演练”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00223", "scope": "mistake", "text": "请找出远汀迁移1224的错误教训中表达“继续在原目录反复尝试撤销和重命名”的那条记录。"}
+{"category": "chinese", "id": "q-00224", "scope": "solution", "text": "关于清和迁移1225这段解决经验，当时识别出的最大风险是什么？"}
+{"category": "english", "id": "q-00225", "scope": "solution", "text": "Find the solution record record for Orchid Practice 1226 that explains who is responsible for the work."}
+{"category": "cross_zh_en", "id": "q-00226", "scope": "solution", "text": "在星渡迁移1227的解决经验里，实际执行的第一步是什么？"}
+{"category": "paraphrase", "id": "q-00227", "scope": "solution", "text": "请找出澄川迁移1228的解决经验中说明“如何降低这个风险”的记录。"}
+{"category": "long_short", "id": "q-00228", "scope": "solution", "text": "在临岳迁移1229的解决经验里，目前处于什么状态？"}
+{"category": "noise", "id": "q-00229", "scope": "solution", "text": "在知微迁移1230的解决经验里，结果是怎样验证的？"}
+{"category": "hard_negative", "id": "q-00230", "scope": "solution", "text": "请找出青岚协作1231的解决经验中表达“连续七晚没有会议中断且丢包保持在低位”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00231", "scope": "solution", "text": "请找出北辰协作1232的解决经验中表达“家中无线网络每天晚上都会短暂断开数次”的那条记录。"}
+{"category": "chinese", "id": "q-00232", "scope": "reusable_path", "text": "在云栖协作1233的可复用路径里，最初暴露出的异常是什么？"}
+{"category": "english", "id": "q-00233", "scope": "reusable_path", "text": "For the reusable path from Atlas Research 1234, what central lesson was learned?"}
+{"category": "cross_zh_en", "id": "q-00234", "scope": "reusable_path", "text": "Find the reusable path record for 清和协作1235 that explains what outcome was intended."}
+{"category": "paraphrase", "id": "q-00235", "scope": "reusable_path", "text": "在松隐协作1236的可复用路径里，最终确认的根因是什么？"}
+{"category": "long_short", "id": "q-00236", "scope": "reusable_path", "text": "在星渡协作1237的可复用路径里，这条经验在什么条件下可以复用？"}
+{"category": "noise", "id": "q-00237", "scope": "reusable_path", "text": "关于澄川协作1238这段可复用路径，当时最不能突破的限制是什么？"}
+{"category": "hard_negative", "id": "q-00238", "scope": "reusable_path", "text": "请找出临岳协作1239的可复用路径中表达“在真实约束下同时比较效果、资源和交付闭环”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00239", "scope": "reusable_path", "text": "请找出知微协作1240的可复用路径中表达“决策主要取决于不可逆的伦理或法律判断时”的那条记录。"}
+{"category": "chinese", "id": "q-00240", "scope": "experience", "text": "关于青岚训练1241这段经历，最后采用了哪种做法？"}
+{"category": "english", "id": "q-00241", "scope": "experience", "text": "Find the experience record for Aurora Repair 1242 that explains which trade-off was accepted."}
+{"category": "cross_zh_en", "id": "q-00242", "scope": "experience", "text": "关于云栖训练1243这段经历，下一步需要继续做什么？"}
+{"category": "paraphrase", "id": "q-00243", "scope": "experience", "text": "在远汀训练1244的经历里，哪种方案被明确放弃？"}
+{"category": "long_short", "id": "q-00244", "scope": "experience", "text": "关于清和训练1245这段经历，当时识别出的最大风险是什么？"}
+{"category": "noise", "id": "q-00245", "scope": "experience", "text": "在松隐训练1246的经历里，这项工作由谁负责？"}
+{"category": "hard_negative", "id": "q-00246", "scope": "experience", "text": "请找出星渡训练1247的经历中表达“首先向车站确认停运范围和可退改区间”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00247", "scope": "experience", "text": "请找出澄川训练1248的经历中表达“为每段行程预留四十分钟缓冲”的那条记录。"}
+{"category": "chinese", "id": "q-00248", "scope": "psychology", "text": "请找出临岳训练1249的心理活动中说明“目前处于什么状态”的记录。"}
+{"category": "english", "id": "q-00249", "scope": "psychology", "text": "In the psychological reflection named River Repair 1250, how the result was validated?"}
+{"category": "cross_zh_en", "id": "q-00250", "scope": "psychology", "text": "In the psychological reflection named 青岚调研1251, what result was achieved?"}
+{"category": "paraphrase", "id": "q-00251", "scope": "psychology", "text": "关于北辰调研1252这段心理活动，是什么触发了这件事？"}
+{"category": "long_short", "id": "q-00252", "scope": "psychology", "text": "请找出云栖调研1253的心理活动中说明“最初暴露出的异常是什么”的记录。"}
+{"category": "noise", "id": "q-00253", "scope": "psychology", "text": "关于远汀调研1254这段心理活动，这件事留下的核心教训是什么？"}
+{"category": "hard_negative", "id": "q-00254", "scope": "psychology", "text": "请找出清和调研1255的心理活动中表达“能够带着紧张完成表达而不是强迫自己毫无焦虑”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00255", "scope": "psychology", "text": "请找出松隐调研1256的心理活动中表达“把他人的中性反应自动解释成负面评价”的那条记录。"}
+{"category": "chinese", "id": "q-00256", "scope": "social_experience", "text": "在星渡调研1257的社会经验里，这条经验在什么条件下可以复用？"}
+{"category": "english", "id": "q-00257", "scope": "social_experience", "text": "In the social experience named Nimbus Planning 1258, which limit could not be crossed?"}
+{"category": "cross_zh_en", "id": "q-00258", "scope": "social_experience", "text": "在临岳调研1259的社会经验里，问题最终怎样解决？"}
+{"category": "paraphrase", "id": "q-00259", "scope": "social_experience", "text": "关于知微调研1260这段社会经验，什么情况下不应套用这条经验？"}
+{"category": "long_short", "id": "q-00260", "scope": "social_experience", "text": "请找出青岚修复1261的社会经验中说明“最后采用了哪种做法”的记录。"}
+{"category": "noise", "id": "q-00261", "scope": "social_experience", "text": "关于北辰修复1262这段社会经验，当时接受了什么取舍？"}
+{"category": "hard_negative", "id": "q-00262", "scope": "social_experience", "text": "请找出云栖修复1263的社会经验中表达“把这次对话模板用于下一次跨团队反馈”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00263", "scope": "social_experience", "text": "请找出远汀修复1264的社会经验中表达“用能力不足概括对方而不谈具体事件”的那条记录。"}
+{"category": "chinese", "id": "q-00264", "scope": "knowledge", "text": "在清和修复1265的知识里，当时识别出的最大风险是什么？"}
+{"category": "english", "id": "q-00265", "scope": "knowledge", "text": "For the knowledge note from Orchid Delivery 1266, who is responsible for the work?"}
+{"category": "cross_zh_en", "id": "q-00266", "scope": "knowledge", "text": "Find the knowledge note record for 星渡修复1267 that explains what was done first."}
+{"category": "paraphrase", "id": "q-00267", "scope": "knowledge", "text": "请找出澄川修复1268的知识中说明“如何降低这个风险”的记录。"}
+{"category": "long_short", "id": "q-00268", "scope": "knowledge", "text": "请找出临岳修复1269的知识中说明“目前处于什么状态”的记录。"}
+{"category": "noise", "id": "q-00269", "scope": "knowledge", "text": "关于知微修复1270这段知识，结果是怎样验证的？"}
+{"category": "hard_negative", "id": "q-00270", "scope": "knowledge", "text": "请找出青岚规划1271的知识中表达“能够说明向量、关系结构和外部智能体各自职责”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00271", "scope": "knowledge", "text": "请找出北辰规划1272的知识中表达“学习语义检索时发现相似内容与真正相关内容经常被混为一谈”的那条记录。"}
+{"category": "chinese", "id": "q-00272", "scope": "skill", "text": "请找出云栖规划1273的技能中说明“最初暴露出的异常是什么”的记录。"}
+{"category": "english", "id": "q-00273", "scope": "skill", "text": "Find the skill practice record for Atlas Validation 1274 that explains what central lesson was learned."}
+{"category": "cross_zh_en", "id": "q-00274", "scope": "skill", "text": "在清和规划1275的技能里，最终想达到什么结果？"}
+{"category": "paraphrase", "id": "q-00275", "scope": "skill", "text": "关于松隐规划1276这段技能，最终确认的根因是什么？"}
+{"category": "long_short", "id": "q-00276", "scope": "skill", "text": "关于星渡规划1277这段技能，这条经验在什么条件下可以复用？"}
+{"category": "noise", "id": "q-00277", "scope": "skill", "text": "请找出澄川规划1278的技能中说明“当时最不能突破的限制是什么”的记录。"}
+{"category": "hard_negative", "id": "q-00278", "scope": "skill", "text": "请找出临岳规划1279的技能中表达“把呼气提前到水下并缩小转头幅度”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00279", "scope": "skill", "text": "请找出知微规划1280的技能中表达“出现胸闷、眩晕或水域安全条件不足时”的那条记录。"}
+{"category": "chinese", "id": "q-00280", "scope": "work", "text": "请找出青岚交付1281的工作中说明“最后采用了哪种做法”的记录。"}
+{"category": "english", "id": "q-00281", "scope": "work", "text": "Find the work record record for Aurora Archive 1282 that explains which trade-off was accepted."}
+{"category": "cross_zh_en", "id": "q-00282", "scope": "work", "text": "For the work record from 云栖交付1283, what should be done next?"}
+{"category": "paraphrase", "id": "q-00283", "scope": "work", "text": "在远汀交付1284的工作里，哪种方案被明确放弃？"}
+{"category": "long_short", "id": "q-00284", "scope": "work", "text": "在清和交付1285的工作里，当时识别出的最大风险是什么？"}
+{"category": "noise", "id": "q-00285", "scope": "work", "text": "在松隐交付1286的工作里，这项工作由谁负责？"}
+{"category": "hard_negative", "id": "q-00286", "scope": "work", "text": "请找出星渡交付1287的工作中表达“首先还原重复写入的最小触发条件”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00287", "scope": "work", "text": "请找出澄川交付1288的工作中表达“所有请求统一写入同一审计流水并按标识对账”的那条记录。"}
+{"category": "chinese", "id": "q-00288", "scope": "method", "text": "请找出临岳交付1289的实践方法中说明“目前处于什么状态”的记录。"}
+{"category": "english", "id": "q-00289", "scope": "method", "text": "In the working method named River Archive 1290, how the result was validated?"}
+{"category": "cross_zh_en", "id": "q-00290", "scope": "method", "text": "关于青岚验证1291这段实践方法，最后取得了什么结果？"}
+{"category": "paraphrase", "id": "q-00291", "scope": "method", "text": "关于北辰验证1292这段实践方法，是什么触发了这件事？"}
+{"category": "long_short", "id": "q-00292", "scope": "method", "text": "在云栖验证1293的实践方法里，最初暴露出的异常是什么？"}
+{"category": "noise", "id": "q-00293", "scope": "method", "text": "请找出远汀验证1294的实践方法中说明“这件事留下的核心教训是什么”的记录。"}
+{"category": "hard_negative", "id": "q-00294", "scope": "method", "text": "请找出清和验证1295的实践方法中表达“用十分钟得到可信的本周进展和下周重点”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00295", "scope": "method", "text": "请找出松隐验证1296的实践方法中表达“记录围绕发生时间堆积而没有围绕决策结果组织”的那条记录。"}
+{"category": "chinese", "id": "q-00296", "scope": "mistake", "text": "关于星渡验证1297这段错误教训，这条经验在什么条件下可以复用？"}
+{"category": "english", "id": "q-00297", "scope": "mistake", "text": "In the failure lesson named Nimbus Coordination 1298, which limit could not be crossed?"}
+{"category": "cross_zh_en", "id": "q-00298", "scope": "mistake", "text": "In the failure lesson named 临岳验证1299, how the problem was ultimately solved?"}
+{"category": "paraphrase", "id": "q-00299", "scope": "mistake", "text": "关于知微验证1300这段错误教训，什么情况下不应套用这条经验？"}
+{"category": "long_short", "id": "q-00300", "scope": "mistake", "text": "关于青岚归档1301这段错误教训，最后采用了哪种做法？"}
+{"category": "noise", "id": "q-00301", "scope": "mistake", "text": "在北辰归档1302的错误教训里，当时接受了什么取舍？"}
+{"category": "hard_negative", "id": "q-00302", "scope": "mistake", "text": "请找出云栖归档1303的错误教训中表达“在另一块介质执行一次完整恢复演练”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00303", "scope": "mistake", "text": "请找出远汀归档1304的错误教训中表达“继续在原目录反复尝试撤销和重命名”的那条记录。"}
+{"category": "chinese", "id": "q-00304", "scope": "solution", "text": "请找出清和归档1305的解决经验中说明“当时识别出的最大风险是什么”的记录。"}
+{"category": "english", "id": "q-00305", "scope": "solution", "text": "Find the solution record record for Orchid Review 1306 that explains who is responsible for the work."}
+{"category": "cross_zh_en", "id": "q-00306", "scope": "solution", "text": "请找出星渡归档1307的解决经验中说明“实际执行的第一步是什么”的记录。"}
+{"category": "paraphrase", "id": "q-00307", "scope": "solution", "text": "在澄川归档1308的解决经验里，如何降低这个风险？"}
+{"category": "long_short", "id": "q-00308", "scope": "solution", "text": "关于临岳归档1309这段解决经验，目前处于什么状态？"}
+{"category": "noise", "id": "q-00309", "scope": "solution", "text": "在知微归档1310的解决经验里，结果是怎样验证的？"}
+{"category": "hard_negative", "id": "q-00310", "scope": "solution", "text": "请找出青岚复盘1311的解决经验中表达“连续七晚没有会议中断且丢包保持在低位”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00311", "scope": "solution", "text": "请找出北辰复盘1312的解决经验中表达“家中无线网络每天晚上都会短暂断开数次”的那条记录。"}
+{"category": "chinese", "id": "q-00312", "scope": "reusable_path", "text": "在云栖复盘1313的可复用路径里，最初暴露出的异常是什么？"}
+{"category": "english", "id": "q-00313", "scope": "reusable_path", "text": "Find the reusable path record for Atlas Migration 1314 that explains what central lesson was learned."}
+{"category": "cross_zh_en", "id": "q-00314", "scope": "reusable_path", "text": "For the reusable path from 清和复盘1315, what outcome was intended?"}
+{"category": "paraphrase", "id": "q-00315", "scope": "reusable_path", "text": "请找出松隐复盘1316的可复用路径中说明“最终确认的根因是什么”的记录。"}
+{"category": "long_short", "id": "q-00316", "scope": "reusable_path", "text": "在星渡复盘1317的可复用路径里，这条经验在什么条件下可以复用？"}
+{"category": "noise", "id": "q-00317", "scope": "reusable_path", "text": "请找出澄川复盘1318的可复用路径中说明“当时最不能突破的限制是什么”的记录。"}
+{"category": "hard_negative", "id": "q-00318", "scope": "reusable_path", "text": "请找出临岳复盘1319的可复用路径中表达“在真实约束下同时比较效果、资源和交付闭环”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00319", "scope": "reusable_path", "text": "请找出知微复盘1320的可复用路径中表达“决策主要取决于不可逆的伦理或法律判断时”的那条记录。"}
+{"category": "chinese", "id": "q-00320", "scope": "experience", "text": "在青岚迁移1321的经历里，最后采用了哪种做法？"}
+{"category": "english", "id": "q-00321", "scope": "experience", "text": "Find the experience record for Aurora Practice 1322 that explains which trade-off was accepted."}
+{"category": "cross_zh_en", "id": "q-00322", "scope": "experience", "text": "请找出云栖迁移1323的经历中说明“下一步需要继续做什么”的记录。"}
+{"category": "paraphrase", "id": "q-00323", "scope": "experience", "text": "请找出远汀迁移1324的经历中说明“哪种方案被明确放弃”的记录。"}
+{"category": "long_short", "id": "q-00324", "scope": "experience", "text": "请找出清和迁移1325的经历中说明“当时识别出的最大风险是什么”的记录。"}
+{"category": "noise", "id": "q-00325", "scope": "experience", "text": "请找出松隐迁移1326的经历中说明“这项工作由谁负责”的记录。"}
+{"category": "hard_negative", "id": "q-00326", "scope": "experience", "text": "请找出星渡迁移1327的经历中表达“首先向车站确认停运范围和可退改区间”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00327", "scope": "experience", "text": "请找出澄川迁移1328的经历中表达“为每段行程预留四十分钟缓冲”的那条记录。"}
+{"category": "chinese", "id": "q-00328", "scope": "psychology", "text": "在临岳迁移1329的心理活动里，目前处于什么状态？"}
+{"category": "english", "id": "q-00329", "scope": "psychology", "text": "For the psychological reflection from River Practice 1330, how the result was validated?"}
+{"category": "cross_zh_en", "id": "q-00330", "scope": "psychology", "text": "Find the psychological reflection record for 青岚协作1331 that explains what result was achieved."}
+{"category": "paraphrase", "id": "q-00331", "scope": "psychology", "text": "请找出北辰协作1332的心理活动中说明“是什么触发了这件事”的记录。"}
+{"category": "long_short", "id": "q-00332", "scope": "psychology", "text": "请找出云栖协作1333的心理活动中说明“最初暴露出的异常是什么”的记录。"}
+{"category": "noise", "id": "q-00333", "scope": "psychology", "text": "关于远汀协作1334这段心理活动，这件事留下的核心教训是什么？"}
+{"category": "hard_negative", "id": "q-00334", "scope": "psychology", "text": "请找出清和协作1335的心理活动中表达“能够带着紧张完成表达而不是强迫自己毫无焦虑”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00335", "scope": "psychology", "text": "请找出松隐协作1336的心理活动中表达“把他人的中性反应自动解释成负面评价”的那条记录。"}
+{"category": "chinese", "id": "q-00336", "scope": "social_experience", "text": "关于星渡协作1337这段社会经验，这条经验在什么条件下可以复用？"}
+{"category": "english", "id": "q-00337", "scope": "social_experience", "text": "Find the social experience record for Nimbus Research 1338 that explains which limit could not be crossed."}
+{"category": "cross_zh_en", "id": "q-00338", "scope": "social_experience", "text": "在临岳协作1339的社会经验里，问题最终怎样解决？"}
+{"category": "paraphrase", "id": "q-00339", "scope": "social_experience", "text": "请找出知微协作1340的社会经验中说明“什么情况下不应套用这条经验”的记录。"}
+{"category": "long_short", "id": "q-00340", "scope": "social_experience", "text": "请找出青岚训练1341的社会经验中说明“最后采用了哪种做法”的记录。"}
+{"category": "noise", "id": "q-00341", "scope": "social_experience", "text": "在北辰训练1342的社会经验里，当时接受了什么取舍？"}
+{"category": "hard_negative", "id": "q-00342", "scope": "social_experience", "text": "请找出云栖训练1343的社会经验中表达“把这次对话模板用于下一次跨团队反馈”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00343", "scope": "social_experience", "text": "请找出远汀训练1344的社会经验中表达“用能力不足概括对方而不谈具体事件”的那条记录。"}
+{"category": "chinese", "id": "q-00344", "scope": "knowledge", "text": "在清和训练1345的知识里，当时识别出的最大风险是什么？"}
+{"category": "english", "id": "q-00345", "scope": "knowledge", "text": "In the knowledge note named Orchid Repair 1346, who is responsible for the work?"}
+{"category": "cross_zh_en", "id": "q-00346", "scope": "knowledge", "text": "Find the knowledge note record for 星渡训练1347 that explains what was done first."}
+{"category": "paraphrase", "id": "q-00347", "scope": "knowledge", "text": "关于澄川训练1348这段知识，如何降低这个风险？"}
+{"category": "long_short", "id": "q-00348", "scope": "knowledge", "text": "请找出临岳训练1349的知识中说明“目前处于什么状态”的记录。"}
+{"category": "noise", "id": "q-00349", "scope": "knowledge", "text": "请找出知微训练1350的知识中说明“结果是怎样验证的”的记录。"}
+{"category": "hard_negative", "id": "q-00350", "scope": "knowledge", "text": "请找出青岚调研1351的知识中表达“能够说明向量、关系结构和外部智能体各自职责”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00351", "scope": "knowledge", "text": "请找出北辰调研1352的知识中表达“学习语义检索时发现相似内容与真正相关内容经常被混为一谈”的那条记录。"}
+{"category": "chinese", "id": "q-00352", "scope": "skill", "text": "关于云栖调研1353这段技能，最初暴露出的异常是什么？"}
+{"category": "english", "id": "q-00353", "scope": "skill", "text": "For the skill practice from Atlas Planning 1354, what central lesson was learned?"}
+{"category": "cross_zh_en", "id": "q-00354", "scope": "skill", "text": "请找出清和调研1355的技能中说明“最终想达到什么结果”的记录。"}
+{"category": "paraphrase", "id": "q-00355", "scope": "skill", "text": "关于松隐调研1356这段技能，最终确认的根因是什么？"}
+{"category": "long_short", "id": "q-00356", "scope": "skill", "text": "在星渡调研1357的技能里，这条经验在什么条件下可以复用？"}
+{"category": "noise", "id": "q-00357", "scope": "skill", "text": "在澄川调研1358的技能里，当时最不能突破的限制是什么？"}
+{"category": "hard_negative", "id": "q-00358", "scope": "skill", "text": "请找出临岳调研1359的技能中表达“把呼气提前到水下并缩小转头幅度”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00359", "scope": "skill", "text": "请找出知微调研1360的技能中表达“出现胸闷、眩晕或水域安全条件不足时”的那条记录。"}
+{"category": "chinese", "id": "q-00360", "scope": "work", "text": "在青岚修复1361的工作里，最后采用了哪种做法？"}
+{"category": "english", "id": "q-00361", "scope": "work", "text": "In the work record named Aurora Delivery 1362, which trade-off was accepted?"}
+{"category": "cross_zh_en", "id": "q-00362", "scope": "work", "text": "Find the work record record for 云栖修复1363 that explains what should be done next."}
+{"category": "paraphrase", "id": "q-00363", "scope": "work", "text": "关于远汀修复1364这段工作，哪种方案被明确放弃？"}
+{"category": "long_short", "id": "q-00364", "scope": "work", "text": "关于清和修复1365这段工作，当时识别出的最大风险是什么？"}
+{"category": "noise", "id": "q-00365", "scope": "work", "text": "关于松隐修复1366这段工作，这项工作由谁负责？"}
+{"category": "hard_negative", "id": "q-00366", "scope": "work", "text": "请找出星渡修复1367的工作中表达“首先还原重复写入的最小触发条件”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00367", "scope": "work", "text": "请找出澄川修复1368的工作中表达“所有请求统一写入同一审计流水并按标识对账”的那条记录。"}
+{"category": "chinese", "id": "q-00368", "scope": "method", "text": "关于临岳修复1369这段实践方法，目前处于什么状态？"}
+{"category": "english", "id": "q-00369", "scope": "method", "text": "For the working method from River Delivery 1370, how the result was validated?"}
+{"category": "cross_zh_en", "id": "q-00370", "scope": "method", "text": "关于青岚规划1371这段实践方法，最后取得了什么结果？"}
+{"category": "paraphrase", "id": "q-00371", "scope": "method", "text": "在北辰规划1372的实践方法里，是什么触发了这件事？"}
+{"category": "long_short", "id": "q-00372", "scope": "method", "text": "在云栖规划1373的实践方法里，最初暴露出的异常是什么？"}
+{"category": "noise", "id": "q-00373", "scope": "method", "text": "在远汀规划1374的实践方法里，这件事留下的核心教训是什么？"}
+{"category": "hard_negative", "id": "q-00374", "scope": "method", "text": "请找出清和规划1375的实践方法中表达“用十分钟得到可信的本周进展和下周重点”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00375", "scope": "method", "text": "请找出松隐规划1376的实践方法中表达“记录围绕发生时间堆积而没有围绕决策结果组织”的那条记录。"}
+{"category": "chinese", "id": "q-00376", "scope": "mistake", "text": "关于星渡规划1377这段错误教训，这条经验在什么条件下可以复用？"}
+{"category": "english", "id": "q-00377", "scope": "mistake", "text": "In the failure lesson named Nimbus Validation 1378, which limit could not be crossed?"}
+{"category": "cross_zh_en", "id": "q-00378", "scope": "mistake", "text": "Find the failure lesson record for 临岳规划1379 that explains how the problem was ultimately solved."}
+{"category": "paraphrase", "id": "q-00379", "scope": "mistake", "text": "关于知微规划1380这段错误教训，什么情况下不应套用这条经验？"}
+{"category": "long_short", "id": "q-00380", "scope": "mistake", "text": "关于青岚交付1381这段错误教训，最后采用了哪种做法？"}
+{"category": "noise", "id": "q-00381", "scope": "mistake", "text": "关于北辰交付1382这段错误教训，当时接受了什么取舍？"}
+{"category": "hard_negative", "id": "q-00382", "scope": "mistake", "text": "请找出云栖交付1383的错误教训中表达“在另一块介质执行一次完整恢复演练”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00383", "scope": "mistake", "text": "请找出远汀交付1384的错误教训中表达“继续在原目录反复尝试撤销和重命名”的那条记录。"}
+{"category": "chinese", "id": "q-00384", "scope": "solution", "text": "在清和交付1385的解决经验里，当时识别出的最大风险是什么？"}
+{"category": "english", "id": "q-00385", "scope": "solution", "text": "In the solution record named Orchid Archive 1386, who is responsible for the work?"}
+{"category": "cross_zh_en", "id": "q-00386", "scope": "solution", "text": "请找出星渡交付1387的解决经验中说明“实际执行的第一步是什么”的记录。"}
+{"category": "paraphrase", "id": "q-00387", "scope": "solution", "text": "请找出澄川交付1388的解决经验中说明“如何降低这个风险”的记录。"}
+{"category": "long_short", "id": "q-00388", "scope": "solution", "text": "在临岳交付1389的解决经验里，目前处于什么状态？"}
+{"category": "noise", "id": "q-00389", "scope": "solution", "text": "请找出知微交付1390的解决经验中说明“结果是怎样验证的”的记录。"}
+{"category": "hard_negative", "id": "q-00390", "scope": "solution", "text": "请找出青岚验证1391的解决经验中表达“连续七晚没有会议中断且丢包保持在低位”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00391", "scope": "solution", "text": "请找出北辰验证1392的解决经验中表达“家中无线网络每天晚上都会短暂断开数次”的那条记录。"}
+{"category": "chinese", "id": "q-00392", "scope": "reusable_path", "text": "在云栖验证1393的可复用路径里，最初暴露出的异常是什么？"}
+{"category": "english", "id": "q-00393", "scope": "reusable_path", "text": "In the reusable path named Atlas Coordination 1394, what central lesson was learned?"}
+{"category": "cross_zh_en", "id": "q-00394", "scope": "reusable_path", "text": "In the reusable path named 清和验证1395, what outcome was intended?"}
+{"category": "paraphrase", "id": "q-00395", "scope": "reusable_path", "text": "请找出松隐验证1396的可复用路径中说明“最终确认的根因是什么”的记录。"}
+{"category": "long_short", "id": "q-00396", "scope": "reusable_path", "text": "在星渡验证1397的可复用路径里，这条经验在什么条件下可以复用？"}
+{"category": "noise", "id": "q-00397", "scope": "reusable_path", "text": "请找出澄川验证1398的可复用路径中说明“当时最不能突破的限制是什么”的记录。"}
+{"category": "hard_negative", "id": "q-00398", "scope": "reusable_path", "text": "请找出临岳验证1399的可复用路径中表达“在真实约束下同时比较效果、资源和交付闭环”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00399", "scope": "reusable_path", "text": "请找出知微验证1400的可复用路径中表达“决策主要取决于不可逆的伦理或法律判断时”的那条记录。"}
+{"category": "chinese", "id": "q-00400", "scope": "experience", "text": "关于青岚归档1401这段经历，最后采用了哪种做法？"}
+{"category": "english", "id": "q-00401", "scope": "experience", "text": "In the experience named Aurora Review 1402, which trade-off was accepted?"}
+{"category": "cross_zh_en", "id": "q-00402", "scope": "experience", "text": "关于云栖归档1403这段经历，下一步需要继续做什么？"}
+{"category": "paraphrase", "id": "q-00403", "scope": "experience", "text": "在远汀归档1404的经历里，哪种方案被明确放弃？"}
+{"category": "long_short", "id": "q-00404", "scope": "experience", "text": "请找出清和归档1405的经历中说明“当时识别出的最大风险是什么”的记录。"}
+{"category": "noise", "id": "q-00405", "scope": "experience", "text": "关于松隐归档1406这段经历，这项工作由谁负责？"}
+{"category": "hard_negative", "id": "q-00406", "scope": "experience", "text": "请找出星渡归档1407的经历中表达“首先向车站确认停运范围和可退改区间”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00407", "scope": "experience", "text": "请找出澄川归档1408的经历中表达“为每段行程预留四十分钟缓冲”的那条记录。"}
+{"category": "chinese", "id": "q-00408", "scope": "psychology", "text": "关于临岳归档1409这段心理活动，目前处于什么状态？"}
+{"category": "english", "id": "q-00409", "scope": "psychology", "text": "Find the psychological reflection record for River Review 1410 that explains how the result was validated."}
+{"category": "cross_zh_en", "id": "q-00410", "scope": "psychology", "text": "Find the psychological reflection record for 青岚复盘1411 that explains what result was achieved."}
+{"category": "paraphrase", "id": "q-00411", "scope": "psychology", "text": "在北辰复盘1412的心理活动里，是什么触发了这件事？"}
+{"category": "long_short", "id": "q-00412", "scope": "psychology", "text": "请找出云栖复盘1413的心理活动中说明“最初暴露出的异常是什么”的记录。"}
+{"category": "noise", "id": "q-00413", "scope": "psychology", "text": "请找出远汀复盘1414的心理活动中说明“这件事留下的核心教训是什么”的记录。"}
+{"category": "hard_negative", "id": "q-00414", "scope": "psychology", "text": "请找出清和复盘1415的心理活动中表达“能够带着紧张完成表达而不是强迫自己毫无焦虑”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00415", "scope": "psychology", "text": "请找出松隐复盘1416的心理活动中表达“把他人的中性反应自动解释成负面评价”的那条记录。"}
+{"category": "chinese", "id": "q-00416", "scope": "social_experience", "text": "关于星渡复盘1417这段社会经验，这条经验在什么条件下可以复用？"}
+{"category": "english", "id": "q-00417", "scope": "social_experience", "text": "For the social experience from Nimbus Migration 1418, which limit could not be crossed?"}
+{"category": "cross_zh_en", "id": "q-00418", "scope": "social_experience", "text": "在临岳复盘1419的社会经验里，问题最终怎样解决？"}
+{"category": "paraphrase", "id": "q-00419", "scope": "social_experience", "text": "关于知微复盘1420这段社会经验，什么情况下不应套用这条经验？"}
+{"category": "long_short", "id": "q-00420", "scope": "social_experience", "text": "在青岚迁移1421的社会经验里，最后采用了哪种做法？"}
+{"category": "noise", "id": "q-00421", "scope": "social_experience", "text": "请找出北辰迁移1422的社会经验中说明“当时接受了什么取舍”的记录。"}
+{"category": "hard_negative", "id": "q-00422", "scope": "social_experience", "text": "请找出云栖迁移1423的社会经验中表达“把这次对话模板用于下一次跨团队反馈”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00423", "scope": "social_experience", "text": "请找出远汀迁移1424的社会经验中表达“用能力不足概括对方而不谈具体事件”的那条记录。"}
+{"category": "chinese", "id": "q-00424", "scope": "knowledge", "text": "在清和迁移1425的知识里，当时识别出的最大风险是什么？"}
+{"category": "english", "id": "q-00425", "scope": "knowledge", "text": "In the knowledge note named Orchid Practice 1426, who is responsible for the work?"}
+{"category": "cross_zh_en", "id": "q-00426", "scope": "knowledge", "text": "For the knowledge note from 星渡迁移1427, what was done first?"}
+{"category": "paraphrase", "id": "q-00427", "scope": "knowledge", "text": "关于澄川迁移1428这段知识，如何降低这个风险？"}
+{"category": "long_short", "id": "q-00428", "scope": "knowledge", "text": "在临岳迁移1429的知识里，目前处于什么状态？"}
+{"category": "noise", "id": "q-00429", "scope": "knowledge", "text": "在知微迁移1430的知识里，结果是怎样验证的？"}
+{"category": "hard_negative", "id": "q-00430", "scope": "knowledge", "text": "请找出青岚协作1431的知识中表达“能够说明向量、关系结构和外部智能体各自职责”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00431", "scope": "knowledge", "text": "请找出北辰协作1432的知识中表达“学习语义检索时发现相似内容与真正相关内容经常被混为一谈”的那条记录。"}
+{"category": "chinese", "id": "q-00432", "scope": "skill", "text": "请找出云栖协作1433的技能中说明“最初暴露出的异常是什么”的记录。"}
+{"category": "english", "id": "q-00433", "scope": "skill", "text": "Find the skill practice record for Atlas Research 1434 that explains what central lesson was learned."}
+{"category": "cross_zh_en", "id": "q-00434", "scope": "skill", "text": "请找出清和协作1435的技能中说明“最终想达到什么结果”的记录。"}
+{"category": "paraphrase", "id": "q-00435", "scope": "skill", "text": "关于松隐协作1436这段技能，最终确认的根因是什么？"}
+{"category": "long_short", "id": "q-00436", "scope": "skill", "text": "在星渡协作1437的技能里，这条经验在什么条件下可以复用？"}
+{"category": "noise", "id": "q-00437", "scope": "skill", "text": "关于澄川协作1438这段技能，当时最不能突破的限制是什么？"}
+{"category": "hard_negative", "id": "q-00438", "scope": "skill", "text": "请找出临岳协作1439的技能中表达“把呼气提前到水下并缩小转头幅度”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00439", "scope": "skill", "text": "请找出知微协作1440的技能中表达“出现胸闷、眩晕或水域安全条件不足时”的那条记录。"}
+{"category": "chinese", "id": "q-00440", "scope": "work", "text": "请找出青岚训练1441的工作中说明“最后采用了哪种做法”的记录。"}
+{"category": "english", "id": "q-00441", "scope": "work", "text": "In the work record named Aurora Repair 1442, which trade-off was accepted?"}
+{"category": "cross_zh_en", "id": "q-00442", "scope": "work", "text": "In the work record named 云栖训练1443, what should be done next?"}
+{"category": "paraphrase", "id": "q-00443", "scope": "work", "text": "关于远汀训练1444这段工作，哪种方案被明确放弃？"}
+{"category": "long_short", "id": "q-00444", "scope": "work", "text": "请找出清和训练1445的工作中说明“当时识别出的最大风险是什么”的记录。"}
+{"category": "noise", "id": "q-00445", "scope": "work", "text": "在松隐训练1446的工作里，这项工作由谁负责？"}
+{"category": "hard_negative", "id": "q-00446", "scope": "work", "text": "请找出星渡训练1447的工作中表达“首先还原重复写入的最小触发条件”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00447", "scope": "work", "text": "请找出澄川训练1448的工作中表达“所有请求统一写入同一审计流水并按标识对账”的那条记录。"}
+{"category": "chinese", "id": "q-00448", "scope": "method", "text": "关于临岳训练1449这段实践方法，目前处于什么状态？"}
+{"category": "english", "id": "q-00449", "scope": "method", "text": "Find the working method record for River Repair 1450 that explains how the result was validated."}
+{"category": "cross_zh_en", "id": "q-00450", "scope": "method", "text": "在青岚调研1451的实践方法里，最后取得了什么结果？"}
+{"category": "paraphrase", "id": "q-00451", "scope": "method", "text": "请找出北辰调研1452的实践方法中说明“是什么触发了这件事”的记录。"}
+{"category": "long_short", "id": "q-00452", "scope": "method", "text": "请找出云栖调研1453的实践方法中说明“最初暴露出的异常是什么”的记录。"}
+{"category": "noise", "id": "q-00453", "scope": "method", "text": "请找出远汀调研1454的实践方法中说明“这件事留下的核心教训是什么”的记 录。"}
+{"category": "hard_negative", "id": "q-00454", "scope": "method", "text": "请找出清和调研1455的实践方法中表达“用十分钟得到可信的本周进展和下周重点”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00455", "scope": "method", "text": "请找出松隐调研1456的实践方法中表达“记录围绕发生时间堆积而没有围绕决策结果组织”的那条记录。"}
+{"category": "chinese", "id": "q-00456", "scope": "mistake", "text": "在星渡调研1457的错误教训里，这条经验在什么条件下可以复用？"}
+{"category": "english", "id": "q-00457", "scope": "mistake", "text": "For the failure lesson from Nimbus Planning 1458, which limit could not be crossed?"}
+{"category": "cross_zh_en", "id": "q-00458", "scope": "mistake", "text": "Find the failure lesson record for 临岳调研1459 that explains how the problem was ultimately solved."}
+{"category": "paraphrase", "id": "q-00459", "scope": "mistake", "text": "关于知微调研1460这段错误教训，什么情况下不应套用这条经验？"}
+{"category": "long_short", "id": "q-00460", "scope": "mistake", "text": "在青岚修复1461的错误教训里，最后采用了哪种做法？"}
+{"category": "noise", "id": "q-00461", "scope": "mistake", "text": "在北辰修复1462的错误教训里，当时接受了什么取舍？"}
+{"category": "hard_negative", "id": "q-00462", "scope": "mistake", "text": "请找出云栖修复1463的错误教训中表达“在另一块介质执行一次完整恢复演练”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00463", "scope": "mistake", "text": "请找出远汀修复1464的错误教训中表达“继续在原目录反复尝试撤销和重命名”的那条记录。"}
+{"category": "chinese", "id": "q-00464", "scope": "solution", "text": "关于清和修复1465这段解决经验，当时识别出的最大风险是什么？"}
+{"category": "english", "id": "q-00465", "scope": "solution", "text": "Find the solution record record for Orchid Delivery 1466 that explains who is responsible for the work."}
+{"category": "cross_zh_en", "id": "q-00466", "scope": "solution", "text": "关于星渡修复1467这段解决经验，实际执行的第一步是什么？"}
+{"category": "paraphrase", "id": "q-00467", "scope": "solution", "text": "请找出澄川修复1468的解决经验中说明“如何降低这个风险”的记录。"}
+{"category": "long_short", "id": "q-00468", "scope": "solution", "text": "在临岳修复1469的解决经验里，目前处于什么状态？"}
+{"category": "noise", "id": "q-00469", "scope": "solution", "text": "关于知微修复1470这段解决经验，结果是怎样验证的？"}
+{"category": "hard_negative", "id": "q-00470", "scope": "solution", "text": "请找出青岚规划1471的解决经验中表达“连续七晚没有会议中断且丢包保持在低位”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00471", "scope": "solution", "text": "请找出北辰规划1472的解决经验中表达“家中无线网络每天晚上都会短暂断开数次”的那条记录。"}
+{"category": "chinese", "id": "q-00472", "scope": "reusable_path", "text": "关于云栖规划1473这段可复用路径，最初暴露出的异常是什么？"}
+{"category": "english", "id": "q-00473", "scope": "reusable_path", "text": "In the reusable path named Atlas Validation 1474, what central lesson was learned?"}
+{"category": "cross_zh_en", "id": "q-00474", "scope": "reusable_path", "text": "Find the reusable path record for 清和规划1475 that explains what outcome was intended."}
+{"category": "paraphrase", "id": "q-00475", "scope": "reusable_path", "text": "请找出松隐规划1476的可复用路径中说明“最终确认的根因是什么”的记录。"}
+{"category": "long_short", "id": "q-00476", "scope": "reusable_path", "text": "请找出星渡规划1477的可复用路径中说明“这条经验在什么条件下可以复用”的记录。"}
+{"category": "noise", "id": "q-00477", "scope": "reusable_path", "text": "请找出澄川规划1478的可复用路径中说明“当时最不能突破的限制是什么”的记 录。"}
+{"category": "hard_negative", "id": "q-00478", "scope": "reusable_path", "text": "请找出临岳规划1479的可复用路径中表达“在真实约束下同时比较效果、资源和交付闭环”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00479", "scope": "reusable_path", "text": "请找出知微规划1480的可复用路径中表达“决策主要取决于不可逆的伦理或法律判断时”的那条记录。"}
+{"category": "chinese", "id": "q-00480", "scope": "experience", "text": "请找出青岚交付1481的经历中说明“最后采用了哪种做法”的记录。"}
+{"category": "english", "id": "q-00481", "scope": "experience", "text": "Find the experience record for Aurora Archive 1482 that explains which trade-off was accepted."}
+{"category": "cross_zh_en", "id": "q-00482", "scope": "experience", "text": "请找出云栖交付1483的经历中说明“下一步需要继续做什么”的记录。"}
+{"category": "paraphrase", "id": "q-00483", "scope": "experience", "text": "请找出远汀交付1484的经历中说明“哪种方案被明确放弃”的记录。"}
+{"category": "long_short", "id": "q-00484", "scope": "experience", "text": "请找出清和交付1485的经历中说明“当时识别出的最大风险是什么”的记录。"}
+{"category": "noise", "id": "q-00485", "scope": "experience", "text": "关于松隐交付1486这段经历，这项工作由谁负责？"}
+{"category": "hard_negative", "id": "q-00486", "scope": "experience", "text": "请找出星渡交付1487的经历中表达“首先向车站确认停运范围和可退改区间”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00487", "scope": "experience", "text": "请找出澄川交付1488的经历中表达“为每段行程预留四十分钟缓冲”的那条记录。"}
+{"category": "chinese", "id": "q-00488", "scope": "psychology", "text": "在临岳交付1489的心理活动里，目前处于什么状态？"}
+{"category": "english", "id": "q-00489", "scope": "psychology", "text": "Find the psychological reflection record for River Archive 1490 that explains how the result was validated."}
+{"category": "cross_zh_en", "id": "q-00490", "scope": "psychology", "text": "Find the psychological reflection record for 青岚验证1491 that explains what result was achieved."}
+{"category": "paraphrase", "id": "q-00491", "scope": "psychology", "text": "关于北辰验证1492这段心理活动，是什么触发了这件事？"}
+{"category": "long_short", "id": "q-00492", "scope": "psychology", "text": "请找出云栖验证1493的心理活动中说明“最初暴露出的异常是什么”的记录。"}
+{"category": "noise", "id": "q-00493", "scope": "psychology", "text": "关于远汀验证1494这段心理活动，这件事留下的核心教训是什么？"}
+{"category": "hard_negative", "id": "q-00494", "scope": "psychology", "text": "请找出清和验证1495的心理活动中表达“能够带着紧张完成表达而不是强迫自己毫无焦虑”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00495", "scope": "psychology", "text": "请找出松隐验证1496的心理活动中表达“把他人的中性反应自动解释成负面评价”的那条记录。"}
+{"category": "chinese", "id": "q-00496", "scope": "social_experience", "text": "关于星渡验证1497这段社会经验，这条经验在什么条件下可以复用？"}
+{"category": "english", "id": "q-00497", "scope": "social_experience", "text": "In the social experience named Nimbus Coordination 1498, which limit could not be crossed?"}
+{"category": "cross_zh_en", "id": "q-00498", "scope": "social_experience", "text": "请找出临岳验证1499的社会经验中说明“问题最终怎样解决”的记录。"}
+{"category": "paraphrase", "id": "q-00499", "scope": "social_experience", "text": "请找出知微验证1500的社会经验中说明“什么情况下不应套用这条经验”的记录。"}
+{"category": "long_short", "id": "q-00500", "scope": "social_experience", "text": "请找出青岚归档1501的社会经验中说明“最后采用了哪种做法”的记录。"}
+{"category": "noise", "id": "q-00501", "scope": "social_experience", "text": "关于北辰归档1502这段社会经验，当时接受了什么取舍？"}
+{"category": "hard_negative", "id": "q-00502", "scope": "social_experience", "text": "请找出云栖归档1503的社会经验中表达“把这次对话模板用于下一次跨团队反馈”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00503", "scope": "social_experience", "text": "请找出远汀归档1504的社会经验中表达“用能力不足概括对方而不谈具体事件”的那条记录。"}
+{"category": "chinese", "id": "q-00504", "scope": "knowledge", "text": "在清和归档1505的知识里，当时识别出的最大风险是什么？"}
+{"category": "english", "id": "q-00505", "scope": "knowledge", "text": "Find the knowledge note record for Orchid Review 1506 that explains who is responsible for the work."}
+{"category": "cross_zh_en", "id": "q-00506", "scope": "knowledge", "text": "For the knowledge note from 星渡归档1507, what was done first?"}
+{"category": "paraphrase", "id": "q-00507", "scope": "knowledge", "text": "请找出澄川归档1508的知识中说明“如何降低这个风险”的记录。"}
+{"category": "long_short", "id": "q-00508", "scope": "knowledge", "text": "请找出临岳归档1509的知识中说明“目前处于什么状态”的记录。"}
+{"category": "noise", "id": "q-00509", "scope": "knowledge", "text": "在知微归档1510的知识里，结果是怎样验证的？"}
+{"category": "hard_negative", "id": "q-00510", "scope": "knowledge", "text": "请找出青岚复盘1511的知识中表达“能够说明向量、关系结构和外部智能体各自职责”的那条记录。"}
+{"category": "lexical_semantic_trap", "id": "q-00511", "scope": "knowledge", "text": "请找出北辰复盘1512的知识中表达“学习语义检索时发现相似内容与真正相关内容经常被混为一谈”的那条记录。"}

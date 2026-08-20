@@ -1,0 +1,46 @@
+{
+  "category_counts": {
+    "buried_evidence": 4,
+    "context_disambiguation": 4,
+    "cross_language": 4,
+    "decision_polarity": 4,
+    "deep_paraphrase": 4,
+    "english_semantics": 4
+  },
+  "dataset": "ownward-quality-supplement-v1",
+  "design": [
+    "人工逐条策划，不使用模板扩写或唯一名称匹配",
+    "每条查询只有一个可由文本直接判定的最佳答案",
+    "每条配置三个同主题强干扰项，覆盖否定、弃用、上下文错配和表层词面诱导",
+    "只测试单节点语义检索，不测试图推理、时间排序或外部智能体能力",
+    "中文为主，英文与中英交叉作为次要但必要覆盖"
+  ],
+  "document_count": 96,
+  "documents_per_query_case": 4,
+  "files": {
+    "adjudication.jsonl": {
+      "bytes": 6385,
+      "sha256": "03ca45a0b4a64a4b3d504ac54ebcd98aaa521fb460b3a97f700e00ca7854b97d"
+    },
+    "corpus.jsonl": {
+      "bytes": 16025,
+      "sha256": "978b873bca514f4c5a9500025db168b8e50d21ed7809ccc732ab882e148fbe97"
+    },
+    "qrels.jsonl": {
+      "bytes": 1584,
+      "sha256": "65360b0e74336df312f24c8c6dc25044f76523f6346d7a72d09a6228f329c493"
+    },
+    "queries.jsonl": {
+      "bytes": 3965,
+      "sha256": "23e351f1ec6fd170036d12c7cb2720fca87bd3c77b3bd28fa5860c36ba70f57a"
+    }
+  },
+  "language_counts": {
+    "en": 4,
+    "en_to_zh": 2,
+    "zh": 16,
+    "zh_to_en": 2
+  },
+  "query_count": 24,
+  "status": "frozen_before_candidate_results"
+}

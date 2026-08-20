@@ -1,0 +1,250 @@
+{
+  "freeze": {
+    "config_sha256": "ec1ee5ed948b29d149f334fe43084f8c2c5b2b67f205f3293c48cfb2afc5fecd",
+    "created_at": "2026-08-19T14:50:00.832204+00:00",
+    "delivery_runtime_validation_sha256": "adbdf9bedbfb50034b39c9bc9fb3358767dd4ada07e3c5166324fb6f49e153a2",
+    "idle_seconds": 60,
+    "models": [
+      "qwen3_embedding_0_6b",
+      "embeddinggemma_300m",
+      "bge_m3"
+    ],
+    "output": "E:\\Dev\\ownward\\.tmp\\vector-model-evaluation\\results\\resources-v4-repeat",
+    "script_sha256": "b18703863b127bb36000e931758ab2108e75380b2ab5f7be5931969dedc8166b",
+    "settling_seconds": 10,
+    "status": "frozen_before_repeat_results"
+  },
+  "results": [
+    {
+      "admitted": false,
+      "cold_starts": {
+        "p95_wall_ms": 3933.722430002672,
+        "peak_rss_bytes": [
+          911859712,
+          955695104,
+          938434560
+        ],
+        "reported_load_ms": [
+          3418.0227,
+          2670.8872,
+          2668.9388999999996
+        ],
+        "wall_ms": [
+          4020.8971000029123,
+          3149.150400000508,
+          3092.198099999223
+        ]
+      },
+      "delivery_runtime_bytes": 138378246,
+      "dimension": 512,
+      "float32_vector_bytes": 2048,
+      "gates": {
+        "cold_start": {
+          "limit_ms": 3000.0,
+          "pass": false,
+          "sample_count": 3,
+          "statistic": "p95",
+          "value_ms": 3933.722430002672
+        },
+        "idle_cpu": {
+          "limit_percent": 0.1,
+          "pass": true,
+          "value_percent": 0.0
+        },
+        "install": {
+          "limit": 1073741824,
+          "pass": true,
+          "value": 767793430
+        },
+        "peak_rss": {
+          "limit": 1073741824,
+          "pass": false,
+          "value": 1493053440
+        },
+        "warm_query_p95": {
+          "limit_ms": 500.0,
+          "pass": false,
+          "value_ms": 1660.794735
+        }
+      },
+      "install_bytes": 767793430,
+      "model_bytes": 629415184,
+      "model_directory": "qwen3-int8",
+      "model_key": "qwen3_embedding_0_6b",
+      "warm": {
+        "idle_cpu_percent_total_logical_capacity": 0.0,
+        "idle_seconds": 60.01074819999485,
+        "peak_process_tree_rss_bytes_through_idle": 1493053440,
+        "query_count": 200,
+        "rss_bytes_at_idle_end": 1493037056,
+        "settling_seconds": 10,
+        "wall_ms": {
+          "max": 2370.0139,
+          "mean": 1085.9786485,
+          "p50": 1042.8577500000001,
+          "p95": 1660.794735,
+          "p99": 1845.3393499999975
+        },
+        "worker_ms": {
+          "p50": 1005.8829999999871,
+          "p95": 1586.529884999991,
+          "p99": 1811.7249150000018
+        }
+      }
+    },
+    {
+      "admitted": false,
+      "cold_starts": {
+        "p95_wall_ms": 2315.979659997538,
+        "peak_rss_bytes": [
+          356044800,
+          361988096,
+          356356096
+        ],
+        "reported_load_ms": [
+          1918.8650000000002,
+          1676.7513,
+          2079.322
+        ],
+        "wall_ms": [
+          2178.054299998621,
+          1932.2336000041105,
+          2331.3046999974176
+        ]
+      },
+      "delivery_runtime_bytes": 138378246,
+      "dimension": 512,
+      "float32_vector_bytes": 2048,
+      "gates": {
+        "cold_start": {
+          "limit_ms": 3000.0,
+          "pass": true,
+          "sample_count": 3,
+          "statistic": "p95",
+          "value_ms": 2315.979659997538
+        },
+        "idle_cpu": {
+          "limit_percent": 0.1,
+          "pass": true,
+          "value_percent": 0.0
+        },
+        "install": {
+          "limit": 1073741824,
+          "pass": true,
+          "value": 474027276
+        },
+        "peak_rss": {
+          "limit": 1073741824,
+          "pass": false,
+          "value": 1807413248
+        },
+        "warm_query_p95": {
+          "limit_ms": 500.0,
+          "pass": false,
+          "value_ms": 992.1941299999999
+        }
+      },
+      "install_bytes": 474027276,
+      "model_bytes": 335649030,
+      "model_directory": "embeddinggemma-int8",
+      "model_key": "embeddinggemma_300m",
+      "warm": {
+        "idle_cpu_percent_total_logical_capacity": 0.0,
+        "idle_seconds": 60.012865800003055,
+        "peak_process_tree_rss_bytes_through_idle": 1807413248,
+        "query_count": 200,
+        "rss_bytes_at_idle_end": 1807413248,
+        "settling_seconds": 10,
+        "wall_ms": {
+          "max": 1190.3612,
+          "mean": 651.922586,
+          "p50": 624.56965,
+          "p95": 992.1941299999999,
+          "p99": 1063.7841489999994
+        },
+        "worker_ms": {
+          "p50": 612.7804499999984,
+          "p95": 948.8294799999971,
+          "p99": 1043.2551479999938
+        }
+      }
+    },
+    {
+      "admitted": false,
+      "cold_starts": {
+        "p95_wall_ms": 3610.0649699990754,
+        "peak_rss_bytes": [
+          1128308736,
+          1219678208,
+          1212284928
+        ],
+        "reported_load_ms": [
+          2274.0359,
+          2253.6371,
+          3359.0087000000003
+        ],
+        "wall_ms": [
+          2537.551800000074,
+          2525.388699999894,
+          3729.2330999989645
+        ]
+      },
+      "delivery_runtime_bytes": 138378246,
+      "dimension": 1024,
+      "float32_vector_bytes": 4096,
+      "gates": {
+        "cold_start": {
+          "limit_ms": 3000.0,
+          "pass": false,
+          "sample_count": 3,
+          "statistic": "p95",
+          "value_ms": 3610.0649699990754
+        },
+        "idle_cpu": {
+          "limit_percent": 0.1,
+          "pass": true,
+          "value_percent": 0.0
+        },
+        "install": {
+          "limit": 1073741824,
+          "pass": true,
+          "value": 723959538
+        },
+        "peak_rss": {
+          "limit": 1073741824,
+          "pass": false,
+          "value": 1430388736
+        },
+        "warm_query_p95": {
+          "limit_ms": 500.0,
+          "pass": false,
+          "value_ms": 568.414045
+        }
+      },
+      "install_bytes": 723959538,
+      "model_bytes": 585581292,
+      "model_directory": "bge-m3-int8",
+      "model_key": "bge_m3",
+      "warm": {
+        "idle_cpu_percent_total_logical_capacity": 0.0,
+        "idle_seconds": 60.013165299998946,
+        "peak_process_tree_rss_bytes_through_idle": 1430388736,
+        "query_count": 200,
+        "rss_bytes_at_idle_end": 1430372352,
+        "settling_seconds": 10,
+        "wall_ms": {
+          "max": 918.1673,
+          "mean": 331.608491,
+          "p50": 317.36755,
+          "p95": 568.414045,
+          "p99": 656.4137509999999
+        },
+        "worker_ms": {
+          "p50": 306.06614999999965,
+          "p95": 515.6283349999992,
+          "p99": 604.2070310000008
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,167 @@
+{
+  "dataset_manifest_sha256": "dcadebd0303877367b865ab1347fb194b3b7df1ba46f51618f02d739ba0ef16e",
+  "freeze_id": "ownward-vector-eval-2026-08-19-v2",
+  "frozen_config_sha256": "ec1ee5ed948b29d149f334fe43084f8c2c5b2b67f205f3293c48cfb2afc5fecd",
+  "metrics": {
+    "by_category": {
+      "chinese": {
+        "count": 64,
+        "ndcg_at_10": 0.7057000444096885,
+        "recall_at_10": 0.84375
+      },
+      "cross_zh_en": {
+        "count": 64,
+        "ndcg_at_10": 0.38218944747460437,
+        "recall_at_10": 0.59375
+      },
+      "english": {
+        "count": 64,
+        "ndcg_at_10": 0.62598343508111,
+        "recall_at_10": 0.875
+      },
+      "hard_negative": {
+        "count": 64,
+        "ndcg_at_10": 0.8586283855706376,
+        "recall_at_10": 1.0
+      },
+      "lexical_semantic_trap": {
+        "count": 64,
+        "ndcg_at_10": 0.8603998483881179,
+        "recall_at_10": 1.0
+      },
+      "long_short": {
+        "count": 64,
+        "ndcg_at_10": 0.4969697155637155,
+        "recall_at_10": 0.734375
+      },
+      "noise": {
+        "count": 64,
+        "ndcg_at_10": 0.7460596648651833,
+        "recall_at_10": 0.9375
+      },
+      "paraphrase": {
+        "count": 64,
+        "ndcg_at_10": 0.722745598290113,
+        "recall_at_10": 0.9375
+      }
+    },
+    "by_scope": {
+      "experience": {
+        "count": 56,
+        "ndcg_at_10": 0.7807965742216691,
+        "recall_at_10": 0.9107142857142857
+      },
+      "knowledge": {
+        "count": 56,
+        "ndcg_at_10": 0.691867237845928,
+        "recall_at_10": 0.9107142857142857
+      },
+      "method": {
+        "count": 48,
+        "ndcg_at_10": 0.6995929835127542,
+        "recall_at_10": 0.8333333333333334
+      },
+      "mistake": {
+        "count": 48,
+        "ndcg_at_10": 0.5205396634449974,
+        "recall_at_10": 0.7291666666666666
+      },
+      "psychology": {
+        "count": 56,
+        "ndcg_at_10": 0.7583933526589538,
+        "recall_at_10": 0.875
+      },
+      "reusable_path": {
+        "count": 48,
+        "ndcg_at_10": 0.6596499950155688,
+        "recall_at_10": 0.875
+      },
+      "skill": {
+        "count": 48,
+        "ndcg_at_10": 0.7588656255834252,
+        "recall_at_10": 0.9583333333333334
+      },
+      "social_experience": {
+        "count": 56,
+        "ndcg_at_10": 0.6597403783397373,
+        "recall_at_10": 0.9285714285714286
+      },
+      "solution": {
+        "count": 48,
+        "ndcg_at_10": 0.5820128166010682,
+        "recall_at_10": 0.7916666666666666
+      },
+      "work": {
+        "count": 48,
+        "ndcg_at_10": 0.6049766351224101,
+        "recall_at_10": 0.8125
+      }
+    },
+    "overall": {
+      "count": 512,
+      "ndcg_at_10": 0.6748345174553962,
+      "recall_at_10": 0.865234375
+    }
+  },
+  "model_artifacts": [
+    {
+      "bytes": 613527631,
+      "path": "onnx/model_quantized.onnx",
+      "sha256": "87cd124e0ef1fd1f223ebc283efccbaeac386d0b08344701c46975d0657b591f"
+    }
+  ],
+  "model_key": "qwen3_embedding_0_6b",
+  "runtime": {
+    "affinity": [
+      0,
+      2,
+      4,
+      6
+    ],
+    "batch_size": 8,
+    "pid": 14916,
+    "platform": "Windows-11-10.0.22631-SP0",
+    "python": "3.12.13"
+  },
+  "timing": {
+    "corpus": {
+      "bytes": 3145728,
+      "complete": 1536,
+      "count": 1536,
+      "dimension": 512,
+      "seconds_this_run": 506.1786310000025
+    },
+    "queries": {
+      "count": 512,
+      "dimension": 512,
+      "seconds_this_run": 142.5039121000009
+    },
+    "ranking_seconds_this_run": 4.783776199998101
+  },
+  "token_lengths": {
+    "corpus": {
+      "count": 1536,
+      "max": 87.0,
+      "max_length": 512,
+      "mean": 36.999348958333336,
+      "min": 25.0,
+      "p50": 31.0,
+      "p95": 78.0,
+      "p99": 81.0,
+      "truncated_count": 0
+    },
+    "queries": {
+      "count": 512,
+      "max": 57.0,
+      "max_length": 512,
+      "mean": 43.6953125,
+      "min": 37.0,
+      "p50": 42.0,
+      "p95": 53.0,
+      "p99": 56.0,
+      "truncated_count": 0
+    }
+  },
+  "track": "formal",
+  "variant": "deliverable"
+}

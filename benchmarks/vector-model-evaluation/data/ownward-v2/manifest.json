@@ -1,0 +1,46 @@
+{
+  "category_counts": {
+    "chinese": 64,
+    "cross_zh_en": 64,
+    "english": 64,
+    "hard_negative": 64,
+    "lexical_semantic_trap": 64,
+    "long_short": 64,
+    "noise": 64,
+    "paraphrase": 64
+  },
+  "contract_version": "2.0.0",
+  "corpus_size": 1536,
+  "files": {
+    "corpus.jsonl": {
+      "bytes": 355216,
+      "sha256": "b49c10ed2ed21faa3796f40a785173b4ad9c8633609c4581ea5acd87ec4c48d4"
+    },
+    "hidden_worlds.jsonl": {
+      "bytes": 237491,
+      "sha256": "0cdde10dc23d1028cf397dc64c4038ce8a7b12d05b2426e7cba62f243e86586b"
+    },
+    "negative_selection.jsonl": {
+      "bytes": 91009,
+      "sha256": "d5175da8d4eef945d368b649fadce05fc5c9efc477a632177812500a4e719f03"
+    },
+    "qrels.jsonl": {
+      "bytes": 35328,
+      "sha256": "9c31bc7782afbf2863e6bddc0ff4d426f1d4528697622a0b4f8d616c19c2aada"
+    },
+    "queries.jsonl": {
+      "bytes": 87896,
+      "sha256": "899a7dc00be663b42ba311d03bc773ef50bea3f37ed3b977190d3b26cafe69b4"
+    }
+  },
+  "qrel_count": 512,
+  "query_count": 512,
+  "selection": {
+    "negative_count_per_query": 2,
+    "negative_normalization": "Unicode NFKC, casefold, remove whitespace and punctuation",
+    "negative_similarity": "character trigram Jaccard",
+    "negative_tie_break": "document id ascending",
+    "queries": "first 64 query ids in each frozen category"
+  },
+  "source_manifest_sha256": "dbbb01cfadb89d5bdaf56d513b66b28034313ff11dabf72a1b28f36705c4eb23"
+}

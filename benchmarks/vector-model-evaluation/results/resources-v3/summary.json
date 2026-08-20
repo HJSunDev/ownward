@@ -1,0 +1,242 @@
+{
+  "freeze_id": "ownward-vector-eval-2026-08-19-v2",
+  "results": [
+    {
+      "admitted": false,
+      "cold_starts": {
+        "p95_wall_ms": 2854.4341799992253,
+        "peak_rss_bytes": [
+          950255616,
+          960462848,
+          953819136,
+          927813632,
+          968790016
+        ],
+        "reported_load_ms": [
+          2381.9305000000004,
+          2161.7183,
+          2404.6439,
+          2402.3547,
+          2513.3853
+        ],
+        "wall_ms": [
+          2761.9362999976147,
+          2484.3925000022864,
+          2772.2704999978305,
+          2757.0032000003266,
+          2874.975099999574
+        ]
+      },
+      "delivery_runtime_bytes": 138378246,
+      "dimension": 512,
+      "float32_vector_bytes": 2048,
+      "gates": {
+        "cold_start": {
+          "limit_ms": 3000.0,
+          "pass": true,
+          "sample_count": 5,
+          "statistic": "p95",
+          "value_ms": 2854.4341799992253
+        },
+        "idle_cpu": {
+          "limit_percent": 0.1,
+          "pass": false,
+          "value_percent": 0.18440461031426666
+        },
+        "install": {
+          "limit": 1073741824,
+          "pass": true,
+          "value": 767793430
+        },
+        "peak_rss": {
+          "limit": 1073741824,
+          "pass": true,
+          "value": 962236416
+        },
+        "warm_query_p95": {
+          "limit_ms": 500.0,
+          "pass": false,
+          "value_ms": 1371.5086349999997
+        }
+      },
+      "install_bytes": 767793430,
+      "model_bytes": 629415184,
+      "model_directory": "qwen3-int8",
+      "model_key": "qwen3_embedding_0_6b",
+      "warm": {
+        "idle_cpu_percent_total_logical_capacity": 0.18440461031426666,
+        "idle_seconds": 60.01860970000416,
+        "peak_rss_bytes": 962236416,
+        "query_count": 200,
+        "wall_ms": {
+          "max": 2086.2452,
+          "mean": 834.2751785,
+          "p50": 780.47245,
+          "p95": 1371.5086349999997,
+          "p99": 1529.5317749999988
+        },
+        "worker_ms": {
+          "p50": 772.8830999999991,
+          "p95": 1345.942489999991,
+          "p99": 1528.358339999998
+        }
+      }
+    },
+    {
+      "admitted": false,
+      "cold_starts": {
+        "p95_wall_ms": 2158.8967699964996,
+        "peak_rss_bytes": [
+          362647552,
+          362496000,
+          362520576
+        ],
+        "reported_load_ms": [
+          1692.4407,
+          1890.0408,
+          1782.4124000000002
+        ],
+        "wall_ms": [
+          1941.3996000002953,
+          2170.5461999954423,
+          2054.051900006016
+        ]
+      },
+      "delivery_runtime_bytes": 138378246,
+      "dimension": 512,
+      "float32_vector_bytes": 2048,
+      "gates": {
+        "cold_start": {
+          "limit_ms": 3000.0,
+          "pass": true,
+          "sample_count": 3,
+          "statistic": "p95",
+          "value_ms": 2158.8967699964996
+        },
+        "idle_cpu": {
+          "limit_percent": 0.1,
+          "pass": false,
+          "value_percent": 0.22130396460000165
+        },
+        "install": {
+          "limit": 1073741824,
+          "pass": true,
+          "value": 474027276
+        },
+        "peak_rss": {
+          "limit": 1073741824,
+          "pass": false,
+          "value": 1633591296
+        },
+        "warm_query_p95": {
+          "limit_ms": 500.0,
+          "pass": false,
+          "value_ms": 756.6968949999996
+        }
+      },
+      "install_bytes": 474027276,
+      "model_bytes": 335649030,
+      "model_directory": "embeddinggemma-int8",
+      "model_key": "embeddinggemma_300m",
+      "warm": {
+        "idle_cpu_percent_total_logical_capacity": 0.22130396460000165,
+        "idle_seconds": 60.01361079999333,
+        "peak_rss_bytes": 1633591296,
+        "query_count": 200,
+        "wall_ms": {
+          "max": 1499.7321,
+          "mean": 516.910665,
+          "p50": 502.32145,
+          "p95": 756.6968949999996,
+          "p99": 1024.515913
+        },
+        "worker_ms": {
+          "p50": 484.98094999999876,
+          "p95": 753.6282550000002,
+          "p99": 993.6353459999937
+        }
+      }
+    },
+    {
+      "admitted": false,
+      "cold_starts": {
+        "p95_wall_ms": 2835.539519993472,
+        "peak_rss_bytes": [
+          1168220160,
+          1221644288,
+          1153998848,
+          1107357696,
+          1222451200
+        ],
+        "reported_load_ms": [
+          2095.5161000000003,
+          2352.2214,
+          2455.0766000000003,
+          2528.4462,
+          2468.7482999999997
+        ],
+        "wall_ms": [
+          2347.480900003575,
+          2599.79469999962,
+          2765.3623999940464,
+          2853.0837999933283,
+          2758.3997000037925
+        ]
+      },
+      "delivery_runtime_bytes": 138378246,
+      "dimension": 1024,
+      "float32_vector_bytes": 4096,
+      "gates": {
+        "cold_start": {
+          "limit_ms": 3000.0,
+          "pass": true,
+          "sample_count": 5,
+          "statistic": "p95",
+          "value_ms": 2835.539519993472
+        },
+        "idle_cpu": {
+          "limit_percent": 0.1,
+          "pass": false,
+          "value_percent": 0.6465032334928236
+        },
+        "install": {
+          "limit": 1073741824,
+          "pass": true,
+          "value": 723959538
+        },
+        "peak_rss": {
+          "limit": 1073741824,
+          "pass": true,
+          "value": 988278784
+        },
+        "warm_query_p95": {
+          "limit_ms": 500.0,
+          "pass": true,
+          "value_ms": 399.74681999999996
+        }
+      },
+      "install_bytes": 723959538,
+      "model_bytes": 585581292,
+      "model_directory": "bge-m3-int8",
+      "model_key": "bge_m3",
+      "warm": {
+        "idle_cpu_percent_total_logical_capacity": 0.6465032334928236,
+        "idle_seconds": 60.018390199998976,
+        "peak_rss_bytes": 988278784,
+        "query_count": 200,
+        "wall_ms": {
+          "max": 675.8215,
+          "mean": 256.3374735,
+          "p50": 242.27319999999997,
+          "p95": 399.74681999999996,
+          "p99": 618.3509589999999
+        },
+        "worker_ms": {
+          "p50": 231.9723499999982,
+          "p95": 395.0641900000027,
+          "p99": 567.5235140000003
+        }
+      }
+    }
+  ]
+}

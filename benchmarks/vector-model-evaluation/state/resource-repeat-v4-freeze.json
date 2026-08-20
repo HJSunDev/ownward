@@ -1,0 +1,15 @@
+{
+  "config_sha256": "ec1ee5ed948b29d149f334fe43084f8c2c5b2b67f205f3293c48cfb2afc5fecd",
+  "created_at": "2026-08-19T14:50:00.832204+00:00",
+  "delivery_runtime_validation_sha256": "adbdf9bedbfb50034b39c9bc9fb3358767dd4ada07e3c5166324fb6f49e153a2",
+  "idle_seconds": 60,
+  "models": [
+    "qwen3_embedding_0_6b",
+    "embeddinggemma_300m",
+    "bge_m3"
+  ],
+  "output": "E:\\Dev\\ownward\\.tmp\\vector-model-evaluation\\results\\resources-v4-repeat",
+  "script_sha256": "b18703863b127bb36000e931758ab2108e75380b2ab5f7be5931969dedc8166b",
+  "settling_seconds": 10,
+  "status": "frozen_before_repeat_results"
+}

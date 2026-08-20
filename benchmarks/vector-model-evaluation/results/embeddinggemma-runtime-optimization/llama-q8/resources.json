@@ -1,0 +1,81 @@
+{
+  "cycles": [
+    {
+      "cold": {
+        "p95_ms": 2455.3616099969076,
+        "peak_rss_bytes": [
+          79040512,
+          79028224,
+          79163392
+        ],
+        "samples_ms": [
+          2493.7894999966375,
+          2109.5105999993393,
+          2088.679799999227
+        ]
+      },
+      "cycle": 1,
+      "threads": 2,
+      "warm": {
+        "idle_cpu_percent_total_logical_capacity": 0.0,
+        "mean_ms": 381.06960750017606,
+        "p50_ms": 363.7455999996746,
+        "p95_ms": 512.4156050016603,
+        "p99_ms": 667.0557229976838,
+        "peak_rss_bytes_through_idle": 230539264,
+        "query_count": 200,
+        "rss_bytes_at_idle_end": 183574528
+      }
+    },
+    {
+      "cold": {
+        "p95_ms": 2608.200000000943,
+        "peak_rss_bytes": [
+          79036416,
+          79052800,
+          79056896
+        ],
+        "samples_ms": [
+          1513.1617999941227,
+          1885.8383999977377,
+          2688.462400001299
+        ]
+      },
+      "cycle": 2,
+      "threads": 2,
+      "warm": {
+        "idle_cpu_percent_total_logical_capacity": 0.0,
+        "mean_ms": 395.99187799987703,
+        "p50_ms": 382.09885000105714,
+        "p95_ms": 534.4709400036663,
+        "p99_ms": 603.2815629999094,
+        "peak_rss_bytes_through_idle": 230354944,
+        "query_count": 200,
+        "rss_bytes_at_idle_end": 230264832
+      }
+    }
+  ],
+  "model_bytes": 328577056,
+  "model_sha256": "6fa0c02a9c302be6f977521d399b4de3a46310a4f2621ee0063747881b673f67",
+  "runtime_bytes": 47386976,
+  "runtime_version": "llama.cpp b10488 (9d77fa172)",
+  "screening": {
+    "results": [
+      {
+        "mean_ms": 339.65351000006194,
+        "p95_ms": 423.73732500418555,
+        "peak_rss_bytes": 230236160,
+        "startup_ms": 2459.485899998981,
+        "threads": 2
+      },
+      {
+        "mean_ms": 362.28755000011006,
+        "p95_ms": 428.25778000187717,
+        "peak_rss_bytes": 230551552,
+        "startup_ms": 2250.7413999992423,
+        "threads": 4
+      }
+    ],
+    "selected_threads": 2
+  }
+}
