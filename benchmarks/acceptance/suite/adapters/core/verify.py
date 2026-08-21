@@ -157,7 +157,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--repository", type=Path, default=Path("."))
     parser.add_argument("--candidate", required=True)
-    parser.add_argument("--runtime-dir", type=Path, required=True)
     parser.add_argument("--evidence-dir", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--suite-version", required=True)
@@ -171,11 +170,9 @@ def main() -> None:
     args = parse_args()
     args.binary = args.binary.resolve()
     args.repository = args.repository.resolve()
-    args.runtime_dir = args.runtime_dir.resolve()
     args.evidence_dir = args.evidence_dir.resolve()
     args.output = args.output.resolve()
     require(args.binary.is_file(), "release binary does not exist")
-    require(args.runtime_dir.is_dir(), "accepted runtime directory does not exist")
     require(not args.evidence_dir.exists(), "module lifecycle evidence directory must be new")
     version = subprocess.run([str(args.binary), "version"], check=True, capture_output=True, text=True, encoding="utf-8", timeout=30).stdout.strip()
     require(version == args.candidate, "release binary version differs from the candidate")
@@ -185,7 +182,7 @@ def main() -> None:
     environment = dict(os.environ)
     contract: dict[str, Any] = {"schema": "ownward.module-lifecycle-evidence/v1"}
 
-    with OwnwardRuntime(args.binary, data, args.runtime_dir, environment) as runtime:
+    with OwnwardRuntime(args.binary, data, environment) as runtime:
         created = tool(runtime, "ownward_create_batch", {"items": [
             {
                 "content": "Project Atlas migration requires verified backups.",
@@ -230,7 +227,7 @@ def main() -> None:
         require(reevaluated["organization"]["status"] == "ready", "semantic reevaluation did not recover organization")
         contract.update({"asset_ids": asset_ids, "initial_works": works, "accepted": accepted, "conflict_rejected": conflict_rejected, "stale_rejected": stale_rejected, "pending_without_semantics": pending, "updated_work": updated_work, "reevaluated": reevaluated})
 
-    rebuild_command = [str(args.binary), "rebuild", "--data-dir", str(data), "--runtime-dir", str(args.runtime_dir)]
+    rebuild_command = [str(args.binary), "rebuild", "--data-dir", str(data)]
     first_rebuild, _ = run_json(rebuild_command, timeout=300)
     require(first_rebuild is not None and first_rebuild.get("ready") == 1 and first_rebuild.get("uncertain") == 1, "initial generation rebuild lost semantic state")
     before = generation_snapshot(data / "state")
@@ -238,19 +235,19 @@ def main() -> None:
     naked = args.evidence_dir / ".naked" / args.binary.name
     naked.parent.mkdir()
     shutil.copy2(args.binary, naked)
-    _, failed = run_json([str(naked), "rebuild", "--data-dir", str(data), "--runtime-dir", str(args.runtime_dir)], expected_success=False, timeout=120)
+    _, failed = run_json([str(naked), "rebuild", "--data-dir", str(data)], expected_success=False, timeout=120)
     after_failure = generation_snapshot(data / "state")
     require(after_failure["pointer_sha256"] == before["pointer_sha256"], "failed rebuild changed the active generation")
-    durable, _ = run_json([str(naked), "read", "--data-dir", str(data), "--runtime-dir", str(args.runtime_dir), "--id", asset_ids[0]])
+    durable, _ = run_json([str(naked), "read", "--data-dir", str(data), "--id", asset_ids[0]])
     require(durable is not None and durable.get("revision") == 2, "embedding failure affected the authoritative asset")
-    unavailable, _ = run_json([str(naked), "create", "--data-dir", str(data), "--runtime-dir", str(args.runtime_dir), "--content", "Project Atlas recovery review is scheduled for Friday."])
+    unavailable, _ = run_json([str(naked), "create", "--data-dir", str(data), "--content", "Project Atlas recovery review is scheduled for Friday."])
     require(unavailable is not None and unavailable.get("organization", {}).get("status") == "pending", "embedding outage did not preserve a pending asset")
     unavailable_id = str(unavailable["information"]["id"])
     shutil.rmtree(naked.parent)
 
     recovered_rebuild, _ = run_json(rebuild_command, timeout=300)
     require(recovered_rebuild is not None and recovered_rebuild.get("pending") == 1, "embedding recovery did not rebuild the pending asset")
-    with OwnwardRuntime(args.binary, data, args.runtime_dir, environment) as runtime:
+    with OwnwardRuntime(args.binary, data, environment) as runtime:
         recovered_work = tool(runtime, "ownward_semantic_work", {"asset_ids": [unavailable_id]})["work"][0]
         recovered_submission = complete_submission(recovered_work, summary="Friday recovery review", execution="embedding-recovery")
         recovered_semantics = tool(runtime, "ownward_semantic_submit", {"submission": recovered_submission})
@@ -260,7 +257,7 @@ def main() -> None:
     alternate_root = args.evidence_dir / ".alternate-release"
     alternate_binary, alternate_space = copy_alternate_space_release(args.binary, alternate_root)
     require(alternate_space != bundle_manifest["space"]["id"], "alternate vector space was not distinct")
-    with OwnwardRuntime(alternate_binary, data, args.runtime_dir, environment) as runtime:
+    with OwnwardRuntime(alternate_binary, data, environment) as runtime:
         isolated = tool(runtime, "ownward_status", {"id": asset_ids[0]})
         require(isolated["organization"]["status"] == "pending", "old vector space remained active under a changed capability generation")
         contract["space_isolation"] = {"alternate_space": alternate_space, "status": isolated}
@@ -273,7 +270,7 @@ def main() -> None:
     require(len(after["generation_directories"]) == 1, "old derived generations were not reclaimed")
     require(after["manifest"].get("embedding_space") == bundle_manifest["space"]["id"], "active generation is not bound to the release vector space")
     source_information: dict[str, dict[str, Any]] = {}
-    with OwnwardRuntime(args.binary, data, args.runtime_dir, environment) as runtime:
+    with OwnwardRuntime(args.binary, data, environment) as runtime:
         statuses = [tool(runtime, "ownward_status", {"id": value})["organization"]["status"] for value in [*asset_ids, unavailable_id]]
         require(statuses == ["ready", "uncertain", "ready"], "final module states differ after restart")
         search = tool(runtime, "ownward_search", {"query": "Which project needs backup and restoration verification?", "limit": 5})
@@ -290,7 +287,7 @@ def main() -> None:
     }
     backup_path = args.evidence_dir / "independent-backup.ownward"
     backup_result, _ = run_json(
-        [str(args.binary), "backup", "--data-dir", str(data), "--runtime-dir", str(args.runtime_dir), "--output", str(backup_path)],
+        [str(args.binary), "backup", "--data-dir", str(data), "--output", str(backup_path)],
         timeout=120,
     )
     require(backup_result is not None and Path(str(backup_result.get("backup", ""))).resolve() == backup_path, "production backup did not return the independent archive")
@@ -305,7 +302,7 @@ def main() -> None:
     restored_data = args.evidence_dir / "blank-restored-data"
     require(not restored_data.exists(), "restore destination was not blank")
     restore_result, _ = run_json(
-        [str(args.binary), "restore", "--data-dir", str(restored_data), "--runtime-dir", str(args.runtime_dir), "--backup", str(backup_path)],
+        [str(args.binary), "restore", "--data-dir", str(restored_data), "--backup", str(backup_path)],
         timeout=300,
     )
     require(
@@ -321,7 +318,7 @@ def main() -> None:
     restored_generation = generation_snapshot(restored_data / "state")
     require(restored_generation["manifest"].get("embedding_space") == bundle_manifest["space"]["id"], "restored generation belongs to another vector space")
 
-    with OwnwardRuntime(args.binary, restored_data, args.runtime_dir, environment) as runtime:
+    with OwnwardRuntime(args.binary, restored_data, environment) as runtime:
         restored_information = {
             value: tool(runtime, "ownward_read", {"id": value})["information"]
             for value in [*asset_ids, unavailable_id]
@@ -370,7 +367,7 @@ def main() -> None:
         updated_read = tool(runtime, "ownward_read", {"id": created_id})["information"]
         require(updated_read["revision"] == 2 and "monthly recovery drill" in updated_read["content"], "restored update was not durably readable")
 
-    with OwnwardRuntime(args.binary, restored_data, args.runtime_dir, environment) as runtime:
+    with OwnwardRuntime(args.binary, restored_data, environment) as runtime:
         independent_read = tool(runtime, "ownward_read", {"id": created_id})["information"]
         independent_search = tool(runtime, "ownward_search", {"query": "monthly recovery drill", "limit": 5})
         require(

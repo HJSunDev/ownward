@@ -342,7 +342,7 @@ def _run_scenario(
     stable_by_node: dict[str, str] = {}
     revisions: dict[str, int] = {}
     binary = args.binary
-    with support.OwnwardRuntime(binary, data_dir, args.runtime_dir, environment) as runtime:
+    with support.OwnwardRuntime(binary, data_dir, environment) as runtime:
         require(runtime.client is not None and runtime.binding is not None and runtime.process is not None, "Ownward runtime did not start")
         with resource.TreeSampler(runtime.process.pid) as sampler:
             items = task["information"]
@@ -437,7 +437,6 @@ def _run_scenario(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--binary", type=Path, required=True)
-    parser.add_argument("--runtime-dir", type=Path, required=True)
     parser.add_argument("--codex-binary", type=Path, required=True)
     parser.add_argument("--codex-auth-file", type=Path, required=True)
     parser.add_argument("--codex-model", default="gpt-5.4-mini")
@@ -455,11 +454,10 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    for name in ("binary", "runtime_dir", "codex_binary", "codex_auth_file", "tasks", "binding", "resource_report", "evidence_dir", "output"):
+    for name in ("binary", "codex_binary", "codex_auth_file", "tasks", "binding", "resource_report", "evidence_dir", "output"):
         setattr(args, name, getattr(args, name).resolve())
     for path, label in ((args.binary, "binary"), (args.codex_binary, "Codex"), (args.codex_auth_file, "Codex auth")):
         require(path.is_file(), f"{label} file does not exist: {path}")
-    require(args.runtime_dir.is_dir(), "accepted runtime directory does not exist")
     args.evidence_dir.mkdir(parents=True, exist_ok=True)
     tasks = load_json(args.tasks)
     binding = load_json(args.binding)

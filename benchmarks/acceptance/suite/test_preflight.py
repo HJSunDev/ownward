@@ -33,6 +33,7 @@ class PreflightTests(unittest.TestCase):
             model.write_bytes(b"model")
             library.write_bytes(b"runtime")
             manifest = {
+                "schema": "ownward.embedding-bundle/v3",
                 "capability": "embeddinggemma-q8",
                 "model": {"path": model.name, "sha256": self._sha(model)},
                 "runtime": {"files": {library.name: self._sha(library)}},
@@ -67,6 +68,7 @@ class PreflightTests(unittest.TestCase):
             for path in (binary, codex, auth, runtime / "model.gguf", runtime / "runtime.dll"):
                 path.write_bytes(b"fixture")
             manifest = {
+                "schema": "ownward.embedding-bundle/v3",
                 "capability": "embeddinggemma-q8",
                 "model": {"path": "model.gguf", "sha256": "0" * 64},
                 "runtime": {"files": {"runtime.dll": self._sha(runtime / "runtime.dll")}},

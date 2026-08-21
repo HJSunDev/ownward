@@ -40,32 +40,24 @@ go run ./cmd/ownward-release \
 
 On Windows, use `bin/ownward.exe` as the output path.
 
-## Enable the bundled vector capability
+## Bundled vector capability
 
 The release bundle includes the model, runtime, Gemma terms and use restrictions,
-model notice and modification statement, and the llama.cpp license. Review the
-files and explicitly accept the exact bundled terms before first use:
-
-```sh
-bin/ownward terms
-bin/ownward terms --accept
-```
-
-Acceptance is bound to the exact model and legal-material digests. A changed model
-or changed terms require a new explicit acceptance. Without acceptance or while
-the local runtime is unavailable, durable assets, stable reads, and non-vector
-retrieval remain available; vector state stays visibly pending.
+model notice and modification statement, and the llama.cpp license. Packaging and
+release validation bind those legal materials to the distributed model. Product
+runtime validates only the model, inference runtime, and vector-space artifacts;
+it does not create or require a per-install terms-confirmation record. If the
+local vector runtime is unavailable, durable assets, stable reads, and non-vector
+retrieval remain available while vector state stays visibly pending.
 
 Open-world semantic organization is supplied through Ownward's separate semantic
 work contract by the connected external agent. Ownward does not require an
 additional model endpoint or API key and never replaces missing understanding
 with content-specific heuristics.
 
-`OWNWARD_DATA_DIR` selects the user-asset directory. `OWNWARD_RUNTIME_DIR` or
-`--runtime-dir` selects product-local state such as the model-terms acceptance
-record. The two lifecycles are intentionally separate: asset backup and restore
-never copy product terms acceptance. If omitted, Ownward uses the operating
-system's user configuration directory. Never commit personal information assets.
+`OWNWARD_DATA_DIR` selects the user-asset directory. If omitted, Ownward uses the
+operating system's user configuration directory. Never commit personal information
+assets.
 
 ## Use
 
@@ -83,8 +75,7 @@ bin/ownward mcp
 ```
 
 The repository's [project-scoped Codex configuration](.codex/config.toml) launches
-the built server with isolated assets under `.ownward/development`. Accept the
-bundled terms once for its configured runtime directory before enabling the server. The MCP server
+the built server with isolated assets under `.ownward/development`. The MCP server
 itself supplies agents with Ownward's collaboration rules; adapter-private prompts
 are not required.
 

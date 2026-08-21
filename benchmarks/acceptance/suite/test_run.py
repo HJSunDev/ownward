@@ -19,7 +19,7 @@ class UnifiedEntryTests(unittest.TestCase):
             arguments = argparse.Namespace(
                 mode="bind", config=root / "execution.json", output=root / "binding",
                 state=None, binding=None, impact=[], checkpoint_mode=None, repository=Path("."),
-                binary=None, runtime_dir=None, codex_binary=None, codex_auth_file=None,
+                binary=None, embedding_bundle_dir=None, codex_binary=None, codex_auth_file=None,
                 isolation_dir=None, resume=False,
             )
             expected = {"candidate": "a" * 40}
@@ -38,7 +38,7 @@ class UnifiedEntryTests(unittest.TestCase):
             report_path.write_text('{"sealed": true}\n', encoding="utf-8")
             contract = load_contract(run.HERE / "contract.json")
             binding = {
-                "schema": "ownward.acceptance-binding/v2",
+                "schema": "ownward.acceptance-binding/v3",
                 "suite_version": "1.0.0", "candidate": "a" * 40,
                 "binary_sha256": "b" * 64,
                 "scopes": {
@@ -62,7 +62,7 @@ class UnifiedEntryTests(unittest.TestCase):
             arguments = argparse.Namespace(
                 mode="summarize", config=None, output=report_path, state=state_path,
                 binding=None, impact=[], checkpoint_mode=None, repository=Path("."),
-                binary=None, runtime_dir=None, codex_binary=None, codex_auth_file=None,
+                binary=None, embedding_bundle_dir=None, codex_binary=None, codex_auth_file=None,
                 isolation_dir=None, resume=True,
             )
             with (

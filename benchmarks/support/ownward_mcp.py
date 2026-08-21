@@ -123,7 +123,6 @@ class RuntimeBinding:
     bearer_token: str
     binary: str
     data_directory: str
-    runtime_directory: str
 
 
 class OwnwardRuntime:
@@ -131,20 +130,16 @@ class OwnwardRuntime:
         self,
         binary: Path,
         data_directory: Path,
-        runtime_directory: Path,
         environment: dict[str, str],
         *,
         startup_seconds: float = 45,
         operation_seconds: float = 45,
-        verify_terms: bool = True,
     ) -> None:
         self.binary = binary.resolve()
         self.data_directory = data_directory.resolve()
-        self.runtime_directory = runtime_directory.resolve()
         self.environment = dict(environment)
         self.startup_seconds = startup_seconds
         self.operation_seconds = operation_seconds
-        self.verify_terms = verify_terms
         self.process: subprocess.Popen[str] | None = None
         self.client: StreamableHTTPClient | None = None
         self.binding: RuntimeBinding | None = None
@@ -153,25 +148,6 @@ class OwnwardRuntime:
         self._bearer_token = secrets.token_urlsafe(32)
 
     def __enter__(self) -> OwnwardRuntime:
-        if self.verify_terms:
-            status = subprocess.run(
-                [str(self.binary), "terms", "--runtime-dir", str(self.runtime_directory)],
-                check=False,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                timeout=self.operation_seconds,
-                env=self.environment,
-            )
-            if status.returncode != 0:
-                raise MCPError(f"cannot verify Ownward model terms acceptance: {status.stderr[-2000:]}")
-            try:
-                terms = json.loads(status.stdout)
-            except json.JSONDecodeError as error:
-                raise MCPError("Ownward terms status returned invalid JSON") from error
-            if not isinstance(terms, dict) or terms.get("accepted") is not True:
-                raise MCPError("the exact bundled model terms have not been explicitly accepted for this runtime")
-
         flags = (
             getattr(subprocess, "CREATE_NO_WINDOW", 0) | subprocess.CREATE_NEW_PROCESS_GROUP
             if os.name == "nt" else 0
@@ -182,8 +158,6 @@ class OwnwardRuntime:
                 "mcp-http",
                 "--data-dir",
                 str(self.data_directory),
-                "--runtime-dir",
-                str(self.runtime_directory),
                 "--listen",
                 "127.0.0.1:0",
                 "--token",
@@ -242,7 +216,7 @@ class OwnwardRuntime:
             self.close()
             raise MCPError(f"Ownward MCP did not publish a loopback endpoint: {output[-2000:]}")
         self.client = StreamableHTTPClient(endpoint, self.operation_seconds, self._bearer_token)
-        self.binding = RuntimeBinding(endpoint, self._bearer_token, str(self.binary), str(self.data_directory), str(self.runtime_directory))
+        self.binding = RuntimeBinding(endpoint, self._bearer_token, str(self.binary), str(self.data_directory))
         return self
 
     def close(self) -> None:

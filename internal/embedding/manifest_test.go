@@ -57,11 +57,11 @@ func TestBundleBindsArtifactsAndCompleteSpaceDefinition(t *testing.T) {
 			Pooling: "mean", Normalization: "l2", Truncation: "prefix",
 		},
 	}
-	acceptanceID, err := ComputeAcceptanceID(manifest)
+	materialsID, err := ComputeLegalMaterialsID(manifest)
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifest.Legal.AcceptanceID = acceptanceID
+	manifest.Legal.LegalMaterialsID = materialsID
 	spaceID, err := ComputeSpaceID(manifest)
 	if err != nil {
 		t.Fatal(err)
@@ -84,6 +84,9 @@ func TestBundleBindsArtifactsAndCompleteSpaceDefinition(t *testing.T) {
 	if !bundle.verified {
 		t.Fatal("fully loaded bundle did not retain its integrity verification state")
 	}
+	if _, err := LoadDistributionBundle(root); err != nil {
+		t.Fatal(err)
+	}
 	inspected, err := InspectBundle(root)
 	if err != nil {
 		t.Fatal(err)
@@ -93,6 +96,29 @@ func TestBundleBindsArtifactsAndCompleteSpaceDefinition(t *testing.T) {
 	}
 	if _, err := OpenManagedBundle(inspected); err == nil {
 		t.Fatal("runtime accepted a bundle without complete artifact verification")
+	}
+	legacyConfirmation := filepath.Join(root, "embedding-terms-acceptance.json")
+	if err := os.WriteFile(legacyConfirmation, []byte("legacy"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadBundle(root); err != nil {
+		t.Fatalf("runtime technical validation depended on an unrelated extra file: %v", err)
+	}
+	if _, err := LoadDistributionBundle(root); err == nil {
+		t.Fatal("distribution validation accepted an undeclared legacy confirmation file")
+	}
+	if err := os.Remove(legacyConfirmation); err != nil {
+		t.Fatal(err)
+	}
+	legalPath := filepath.Join(root, "legal", "embeddinggemma", "NOTICE")
+	if err := os.WriteFile(legalPath, []byte("tampered notice"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadBundle(root); err != nil {
+		t.Fatalf("runtime technical validation depended on legal materials: %v", err)
+	}
+	if _, err := LoadDistributionBundle(root); err == nil {
+		t.Fatal("distribution validation accepted tampered legal materials")
 	}
 	if err := os.WriteFile(bundle.ModelPath, []byte("tampered"), 0o600); err != nil {
 		t.Fatal(err)

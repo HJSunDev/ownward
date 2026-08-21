@@ -195,7 +195,7 @@ def _execute_core(
     workspace: Path,
     resume: bool,
 ) -> dict[str, Any]:
-    binary, runtime = _product_paths(config, state)
+    binary = _product_binary(config, state)
     evidence = workspace / "evidence" / "core"
     adapter_report = evidence / "adapter-report.json"
     if adapter_report.is_file():
@@ -209,7 +209,7 @@ def _execute_core(
     adapter = suite_root / "adapters" / "core" / "verify.py"
     command = [
         sys.executable, str(adapter), "--repository", str(suite_root.parents[2]), "--binary", str(binary),
-        "--candidate", state["binding"]["candidate"], "--runtime-dir", str(runtime),
+        "--candidate", state["binding"]["candidate"],
         "--evidence-dir", str(evidence), "--output", str(adapter_report),
         "--suite-version", contract["suite_version"], "--environment-sha256", state["binding"]["environment_sha256"],
         "--input-manifest-sha256", state["binding"]["input_manifest_sha256"],
@@ -296,7 +296,7 @@ def _execute_product(
     *,
     deadline: float,
 ) -> dict[str, Any]:
-    binary, runtime = _product_paths(config, state)
+    binary = _product_binary(config, state)
     section = _mapping(config, "product")
     resource_report = _resource_report(suite_root, state, config, workspace, resume=resume)
     dataset, qualification = product.load_default_materials(suite_root)
@@ -318,7 +318,7 @@ def _execute_product(
     maximum = deadline - time.perf_counter()
     _require(maximum > 0, f"{mode} 的资源准入已经耗尽该层总成本预算")
     command = [
-        sys.executable, str(adapter), "--binary", str(binary), "--runtime-dir", str(runtime),
+        sys.executable, str(adapter), "--binary", str(binary),
         "--codex-binary", str(Path(section["codex_binary"]).resolve()),
         "--codex-auth-file", str(Path(section["codex_auth_file"]).resolve()),
         "--codex-model", str(section["codex_model"]),
@@ -340,13 +340,12 @@ def _execute_product(
     return report
 
 
-def _product_paths(config: dict[str, Any], state: dict[str, Any]) -> tuple[Path, Path]:
+def _product_binary(config: dict[str, Any], state: dict[str, Any]) -> Path:
     section = _mapping(config, "product")
     binary = Path(section["binary"]).resolve()
-    runtime = Path(section["runtime_dir"]).resolve()
-    _require(binary.is_file() and runtime.is_dir(), "候选二进制或本地运行时不存在")
+    _require(binary.is_file(), "候选二进制不存在")
     _require(lifecycle.file_sha256(binary) == state["binding"]["binary_sha256"], "候选二进制摘要变化")
-    return binary, runtime
+    return binary
 
 
 def _run(command: list[str], *, cwd: Path, timeout: float) -> None:

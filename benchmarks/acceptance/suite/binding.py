@@ -71,14 +71,14 @@ def create(
     frontier = _mapping(config, "frontier")
     repository = Path(config["repository"])
     binary = Path(product["binary"])
-    runtime_dir = Path(product["runtime_dir"])
+    embedding_bundle_dir = Path(product["embedding_bundle_dir"])
     package = Path(product["package"])
     production_report = Path(product["production_storage_report"])
     codex_binary = Path(product["codex_binary"])
     frontier_binary = Path(frontier["tool"])
     repository = repository.resolve()
     binary = binary.resolve()
-    runtime_dir = runtime_dir.resolve()
+    embedding_bundle_dir = embedding_bundle_dir.resolve()
     package = package.resolve()
     production_report = production_report.resolve()
     codex_binary = codex_binary.resolve()
@@ -90,7 +90,7 @@ def create(
     community = config.get("community")
     if community is not None:
         _require(isinstance(community, dict), "执行配置 community 必须是对象")
-        _require(Path(community["binary"]).resolve() == binary and Path(community["runtime_dir"]).resolve() == runtime_dir, "专项集与社区基准必须使用同一候选与运行时")
+        _require(Path(community["binary"]).resolve() == binary and Path(community["embedding_bundle_dir"]).resolve() == embedding_bundle_dir, "专项集与社区基准必须使用同一候选与向量能力包")
         _require(Path(community["codex_binary"]).resolve() == codex_binary, "专项集与社区基准必须使用同一外部智能体程序")
         for domain in ("web", "enterprise"):
             run_output = Path(_argument_value(list(community[f"{domain}_arguments"]), "--output-dir")).resolve()
@@ -100,7 +100,8 @@ def create(
     _require(output_dir.drive and output_dir.drive.lower() != Path.home().drive.lower(), "绑定清单不得写入系统盘")
     for path, label in ((binary, "候选二进制"), (codex_binary, "Codex"), (frontier_binary, "内核观察器")):
         _require(path.is_file(), f"{label}不存在: {path}")
-    _require(runtime_dir.is_dir(), "本地向量运行时不存在")
+    _require(embedding_bundle_dir.is_dir(), "本地向量能力包不存在")
+    _require(embedding_bundle_dir == (binary.parent / "embedding").resolve(), "绑定的向量能力包必须是候选二进制相邻的正式产品制品")
     _require(package.is_dir() and (package / "manifest.json").is_file(), "候选发布包或清单不存在")
     _require(production_report.is_file(), "生产规模存储证据不存在")
     candidate = _git(repository, "rev-parse", "HEAD")
@@ -115,7 +116,7 @@ def create(
     enabled_scopes = ["frontier", "core", "product"] + (["community"] if community is not None else [])
     for scope in enabled_scopes:
         manifests = {
-            "environment": _environment_manifest(runtime_dir, codex_binary, frontier_binary, scope),
+            "environment": _environment_manifest(embedding_bundle_dir, codex_binary, frontier_binary, scope),
             "inputs": _input_manifest(suite_root, config, scope),
             "tools": _tool_manifest(suite_root, scope),
         }
@@ -128,7 +129,7 @@ def create(
             "tool_sha256": sha256(paths["tools"]),
         }
     binding = {
-        "schema": "ownward.acceptance-binding/v2",
+        "schema": "ownward.acceptance-binding/v3",
         "suite_version": "1.0.0",
         "candidate": candidate,
         "binary_sha256": sha256(binary),
@@ -140,7 +141,7 @@ def create(
 
 
 def validate_config(config: dict[str, Any]) -> None:
-    _require(config.get("schema") == "ownward.acceptance-execution/v1", "执行配置 schema 无效")
+    _require(config.get("schema") == "ownward.acceptance-execution/v2", "执行配置 schema 无效")
     for name in ("repository", "workspace", "binding_dir"):
         _require(isinstance(config.get(name), str) and config[name].strip(), f"执行配置缺少 {name}")
     frontier = _mapping(config, "frontier")
@@ -150,7 +151,7 @@ def validate_config(config: dict[str, Any]) -> None:
     _require(len(stages) == len(set(stages)) and set(stages) <= TARGET_STAGES, "frontier.targeted_stages 包含重复或未知阶段")
     product = _mapping(config, "product")
     for name in (
-        "binary", "runtime_dir", "package", "production_storage_report", "codex_binary", "codex_auth_file",
+        "binary", "embedding_bundle_dir", "package", "production_storage_report", "codex_binary", "codex_auth_file",
         "codex_model", "codex_reasoning_effort",
     ):
         _require(isinstance(product.get(name), str) and product[name].strip(), f"执行配置缺少 product.{name}")
@@ -161,7 +162,7 @@ def validate_config(config: dict[str, Any]) -> None:
         return
     _require(isinstance(community, dict), "执行配置 community 必须是对象")
     for name in (
-        "official_repo", "binary", "runtime_dir", "codex_binary", "codex_auth_file", "submission_root", "submission_name",
+        "official_repo", "binary", "embedding_bundle_dir", "codex_binary", "codex_auth_file", "submission_root", "submission_name",
     ):
         _require(isinstance(community.get(name), str) and community[name].strip(), f"执行配置缺少 community.{name}")
     for domain in ("web", "enterprise"):
@@ -191,7 +192,7 @@ def validate_binding(value: dict[str, Any]) -> None:
         set(value) == {"schema", "suite_version", "candidate", "binary_sha256", "scopes"},
         "候选绑定顶层字段无效",
     )
-    _require(value.get("schema") == "ownward.acceptance-binding/v2", "候选绑定 schema 无效")
+    _require(value.get("schema") == "ownward.acceptance-binding/v3", "候选绑定 schema 无效")
     _require(value.get("suite_version") == "1.0.0", "候选绑定体系版本无效")
     candidate = value.get("candidate")
     _require(
@@ -268,7 +269,7 @@ def verify_current(
     product = _mapping(config, "product")
     frontier = _mapping(config, "frontier")
     current_environment = _environment_manifest(
-        Path(product["runtime_dir"]).resolve(),
+        Path(product["embedding_bundle_dir"]).resolve(),
         Path(product["codex_binary"]).resolve(),
         Path(frontier["tool"]).resolve(),
         scope,
@@ -373,11 +374,12 @@ def _tool_manifest(suite_root: Path, scope: str) -> dict[str, Any]:
     return {"schema": "ownward.acceptance-tool-manifest/v2", "scope": scope, "files": _files(repository, shared + scoped)}
 
 
-def _environment_manifest(runtime_dir: Path, codex_binary: Path, frontier_binary: Path, scope: str) -> dict[str, Any]:
+def _environment_manifest(embedding_bundle_dir: Path, codex_binary: Path, frontier_binary: Path, scope: str) -> dict[str, Any]:
     _require(scope in SCOPE_NAMES, f"未知绑定范围: {scope}")
-    runtime_manifest = runtime_dir / "manifest.json"
-    _require(runtime_manifest.is_file(), "本地向量运行时清单不存在")
+    runtime_manifest = embedding_bundle_dir / "manifest.json"
+    _require(runtime_manifest.is_file(), "本地向量能力包清单不存在")
     manifest = load_json(runtime_manifest)
+    _require(manifest.get("schema") == "ownward.embedding-bundle/v3", "本地向量能力包 schema 无效")
     model = manifest.get("model")
     runtime = manifest.get("runtime")
     _require(isinstance(model, dict) and isinstance(runtime, dict), "本地向量运行时清单不完整")
@@ -389,8 +391,8 @@ def _environment_manifest(runtime_dir: Path, codex_binary: Path, frontier_binary
     for relative, expected in sorted(declared.items()):
         path = Path(relative)
         _require(relative and not path.is_absolute() and ".." not in path.parts and len(expected) == 64, "本地向量运行时文件声明无效")
-        artifact = (runtime_dir / path).resolve()
-        _require(artifact.is_relative_to(runtime_dir) and artifact.is_file(), f"本地向量运行时制品不存在: {relative}")
+        artifact = (embedding_bundle_dir / path).resolve()
+        _require(artifact.is_relative_to(embedding_bundle_dir) and artifact.is_file(), f"本地向量能力制品不存在: {relative}")
         actual = sha256(artifact)
         _require(actual == expected, f"本地向量运行时制品摘要不一致: {relative}")
         verified_files.append({"path": path.as_posix(), "sha256": actual})

@@ -130,7 +130,7 @@ func BuildSelectedBundle(options BuildOptions) (Bundle, error) {
 			Pooling: "mean", Normalization: "l2", Truncation: "prefix",
 		},
 	}
-	manifest.Legal.AcceptanceID, err = ComputeAcceptanceID(manifest)
+	manifest.Legal.LegalMaterialsID, err = ComputeLegalMaterialsID(manifest)
 	if err != nil {
 		return Bundle{}, err
 	}
@@ -146,14 +146,14 @@ func BuildSelectedBundle(options BuildOptions) (Bundle, error) {
 	if err := os.WriteFile(filepath.Join(temporary, "manifest.json"), encoded, 0o644); err != nil {
 		return Bundle{}, err
 	}
-	if _, err := LoadBundle(temporary); err != nil {
+	if _, err := LoadDistributionBundle(temporary); err != nil {
 		return Bundle{}, fmt.Errorf("复核向量能力包: %w", err)
 	}
 	if err := os.Rename(temporary, output); err != nil {
 		return Bundle{}, fmt.Errorf("提交向量能力包: %w", err)
 	}
 	committed = true
-	return LoadBundle(output)
+	return LoadDistributionBundle(output)
 }
 
 func copyLegalFiles(root, target string) (map[string]string, error) {

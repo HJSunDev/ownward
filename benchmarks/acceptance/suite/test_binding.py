@@ -105,6 +105,7 @@ class BindingManifestTests(unittest.TestCase):
             executable.write_bytes(b"runtime")
             digest = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
             (runtime / "manifest.json").write_text(json.dumps({
+                "schema": "ownward.embedding-bundle/v3",
                 "model": {"path": "model/model.gguf", "sha256": digest(model)},
                 "runtime": {"files": {"runtime/server.exe": digest(executable)}},
             }), encoding="utf-8")
@@ -122,11 +123,11 @@ class BindingManifestTests(unittest.TestCase):
 
     def test_internal_config_does_not_require_community_inputs(self) -> None:
         config = {
-            "schema": "ownward.acceptance-execution/v1",
+            "schema": "ownward.acceptance-execution/v2",
             "repository": "repo", "workspace": "workspace", "binding_dir": "binding",
             "frontier": {"tool": "tool", "targeted_stages": []},
             "product": {name: name for name in (
-                "binary", "runtime_dir", "package", "production_storage_report", "codex_binary", "codex_auth_file",
+                "binary", "embedding_bundle_dir", "package", "production_storage_report", "codex_binary", "codex_auth_file",
             )},
         }
         config["product"].update({
@@ -137,7 +138,7 @@ class BindingManifestTests(unittest.TestCase):
 
     def test_deferred_community_scope_is_required_only_when_used(self) -> None:
         value = {
-            "schema": "ownward.acceptance-binding/v2", "suite_version": "1.0.0",
+            "schema": "ownward.acceptance-binding/v3", "suite_version": "1.0.0",
             "candidate": "a" * 40, "binary_sha256": "b" * 64,
             "scopes": {
                 name: {"environment_sha256": "c" * 64, "input_manifest_sha256": "d" * 64, "tool_sha256": "e" * 64}
@@ -151,7 +152,7 @@ class BindingManifestTests(unittest.TestCase):
 
     def test_binding_rejects_unbound_fields_and_invalid_candidate(self) -> None:
         value = {
-            "schema": "ownward.acceptance-binding/v2", "suite_version": "1.0.0",
+            "schema": "ownward.acceptance-binding/v3", "suite_version": "1.0.0",
             "candidate": "a" * 40, "binary_sha256": "b" * 64,
             "scopes": {
                 name: {"environment_sha256": "c" * 64, "input_manifest_sha256": "d" * 64, "tool_sha256": "e" * 64}
@@ -177,7 +178,7 @@ class BindingManifestTests(unittest.TestCase):
             frontier = root / "frontier.exe"
             for path in (binary, codex, frontier):
                 path.write_bytes(path.name.encode())
-            runtime = root / "runtime"
+            runtime = root / "embedding"
             runtime.mkdir()
             package = root / "package"
             package.mkdir()
@@ -186,12 +187,12 @@ class BindingManifestTests(unittest.TestCase):
             production.write_text("{}\n", encoding="utf-8")
             output = root / "binding"
             config = {
-                "schema": "ownward.acceptance-execution/v1",
+                "schema": "ownward.acceptance-execution/v2",
                 "repository": str(self.root.parents[2]), "workspace": str(root / "workspace"),
                 "binding_dir": str(output),
                 "frontier": {"tool": str(frontier), "targeted_stages": []},
                 "product": {
-                    "binary": str(binary), "runtime_dir": str(runtime), "package": str(package),
+                    "binary": str(binary), "embedding_bundle_dir": str(runtime), "package": str(package),
                     "production_storage_report": str(production), "codex_binary": str(codex),
                     "codex_auth_file": str(root / "auth.json"),
                     "codex_model": binding.ACTIVE_CODEX_MODEL,
@@ -221,15 +222,15 @@ class BindingManifestTests(unittest.TestCase):
 
     def test_execution_config_rejects_unknown_targeted_stage(self) -> None:
         config = {
-            "schema": "ownward.acceptance-execution/v1",
+            "schema": "ownward.acceptance-execution/v2",
             "repository": "repo", "workspace": "workspace", "binding_dir": "binding",
             "frontier": {"tool": "tool", "targeted_stages": ["unknown"]},
             "product": {name: name for name in (
-                "binary", "runtime_dir", "package", "production_storage_report", "codex_binary", "codex_auth_file",
+                "binary", "embedding_bundle_dir", "package", "production_storage_report", "codex_binary", "codex_auth_file",
                 "codex_model", "codex_reasoning_effort",
             )},
             "community": {name: name for name in (
-                "official_repo", "binary", "runtime_dir", "codex_binary", "codex_auth_file", "submission_root", "submission_name",
+                "official_repo", "binary", "embedding_bundle_dir", "codex_binary", "codex_auth_file", "submission_root", "submission_name",
             )},
         }
         arguments = [

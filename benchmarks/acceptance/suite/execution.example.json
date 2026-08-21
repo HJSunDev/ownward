@@ -1,5 +1,5 @@
 {
-  "schema": "ownward.acceptance-execution/v1",
+  "schema": "ownward.acceptance-execution/v2",
   "repository": "E:\\path\\to\\ownward",
   "workspace": "E:\\path\\to\\ownward-acceptance\\candidate-commit",
   "binding_dir": "E:\\path\\to\\ownward-acceptance\\candidate-commit\\binding",
@@ -9,7 +9,7 @@
   },
   "product": {
     "binary": "E:\\path\\to\\candidate\\ownward.exe",
-    "runtime_dir": "E:\\path\\to\\ownward-runtime",
+    "embedding_bundle_dir": "E:\\path\\to\\candidate\\embedding",
     "package": "E:\\path\\to\\ownward-release",
     "production_storage_report": "E:\\path\\to\\ownward-evidence\\production-storage.json",
     "codex_binary": "E:\\path\\to\\codex.exe",
@@ -20,7 +20,7 @@
   "community": {
     "official_repo": "E:\\path\\to\\LongMemEval-V2",
     "binary": "E:\\path\\to\\candidate\\ownward.exe",
-    "runtime_dir": "E:\\path\\to\\ownward-runtime",
+    "embedding_bundle_dir": "E:\\path\\to\\candidate\\embedding",
     "codex_binary": "E:\\path\\to\\codex.exe",
     "codex_auth_file": "C:\\Users\\USERNAME\\.codex\\auth.json",
     "submission_root": "E:\\path\\to\\ownward-acceptance\\candidate-commit\\longmemeval-submission",

@@ -30,7 +30,7 @@ def _parse_wrapper_args() -> tuple[argparse.Namespace, list[str]]:
     parser.add_argument("--ownward-binary", required=True)
     parser.add_argument("--codex-binary", required=True)
     parser.add_argument("--codex-auth-file", required=True)
-    parser.add_argument("--runtime-dir", required=True)
+    parser.add_argument("--embedding-bundle-dir", required=True)
     parser.add_argument("--candidate", required=True)
     parser.add_argument("--environment-sha256", required=True)
     parser.add_argument("--input-manifest-sha256", required=True)
@@ -162,10 +162,9 @@ def main() -> None:
     binary = Path(wrapper.ownward_binary).resolve()
     binary_sha256 = _verify_candidate(binary, wrapper.candidate)
     os.environ["OWNWARD_BENCHMARK_BINARY"] = str(binary)
-    runtime_dir = Path(wrapper.runtime_dir).resolve()
-    if not runtime_dir.is_dir():
-        raise RuntimeError(f"accepted Ownward runtime directory does not exist: {runtime_dir}")
-    os.environ["OWNWARD_BENCHMARK_RUNTIME_DIR"] = str(runtime_dir)
+    embedding_bundle_dir = Path(wrapper.embedding_bundle_dir).resolve()
+    if not embedding_bundle_dir.is_dir() or embedding_bundle_dir != (binary.parent / "embedding").resolve():
+        raise RuntimeError("the bound embedding bundle must be the candidate binary's adjacent product bundle")
     codex_version = ""
     codex_sha256 = ""
     codex_binary = Path(wrapper.codex_binary).resolve()

@@ -10,7 +10,7 @@
 python benchmarks/acceptance/suite/run.py check
 python -m unittest discover -s benchmarks/acceptance/suite -p "test_*.py" -v
 python benchmarks/acceptance/suite/run.py self-check --output <self-check-report.json>
-python benchmarks/acceptance/suite/run.py preflight --repository <repository> --binary <candidate-binary> --runtime-dir <embedding-bundle> --codex-binary <codex-executable> --codex-auth-file <codex-auth-file> --isolation-dir <new-empty-directory-on-non-system-drive>
+python benchmarks/acceptance/suite/run.py preflight --repository <repository> --binary <candidate-binary> --embedding-bundle-dir <embedding-bundle> --codex-binary <codex-executable> --codex-auth-file <codex-auth-file> --isolation-dir <new-empty-directory-on-non-system-drive>
 ```
 
 内核前沿观察器由同一候选源码构建；正式运行会拒绝提交身份不一致或由脏工作树构建的观察器：

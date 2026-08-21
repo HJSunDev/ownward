@@ -18,31 +18,32 @@ def run(
     suite_root: Path,
     repository: Path,
     binary: Path,
-    runtime_dir: Path,
+    embedding_bundle_dir: Path,
     codex_binary: Path,
     codex_auth_file: Path,
     isolation_dir: Path,
 ) -> dict[str, Any]:
     repository = repository.resolve()
     binary = binary.resolve()
-    runtime_dir = runtime_dir.resolve()
+    embedding_bundle_dir = embedding_bundle_dir.resolve()
     codex_binary = codex_binary.resolve()
     codex_auth_file = codex_auth_file.resolve()
     isolation_dir = isolation_dir.resolve()
     _require(binary.is_file(), "候选二进制不存在")
     _require(codex_binary.is_file(), "外部智能体执行程序不存在")
     _require(codex_auth_file.is_file(), "外部智能体认证文件不存在")
-    _require(runtime_dir.is_dir(), "本地模型能力目录不存在")
+    _require(embedding_bundle_dir.is_dir(), "本地模型能力目录不存在")
     codex_version = subprocess.run(
         [*_command_prefix(codex_binary), "--version"],
         capture_output=True, text=True, encoding="utf-8", timeout=30, check=False,
     )
     _require(codex_version.returncode == 0 and codex_version.stdout.strip(), "外部智能体执行程序不可运行")
-    manifest = load_json(runtime_dir / "manifest.json")
+    manifest = load_json(embedding_bundle_dir / "manifest.json")
+    _require(manifest.get("schema") == "ownward.embedding-bundle/v3", "本地模型能力清单 schema 无效")
     files = {manifest["model"]["path"]: manifest["model"]["sha256"]}
     files.update(manifest["runtime"]["files"])
     for relative, expected in files.items():
-        path = runtime_dir / relative
+        path = embedding_bundle_dir / relative
         _require(path.is_file(), f"本地模型制品不存在: {relative}")
         _require(_sha256(path) == expected, f"本地模型制品摘要不一致: {relative}")
     adapters = load_json(suite_root / "adapters.json")

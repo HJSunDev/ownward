@@ -21,7 +21,7 @@ class UnifiedExecutionTests(unittest.TestCase):
         self.workspace = Path(self.temporary.name)
         self.contract = load_contract(self.root / "contract.json")
         self.binding = {
-            "schema": "ownward.acceptance-binding/v2",
+            "schema": "ownward.acceptance-binding/v3",
             "suite_version": self.contract["suite_version"], "candidate": "c" * 40,
             "binary_sha256": "a" * 64,
             "scopes": {
@@ -56,7 +56,7 @@ class UnifiedExecutionTests(unittest.TestCase):
             Path(a.output).write_text(json.dumps(report),encoding='utf-8')
         """), encoding="utf-8")
         self.config = {
-            "schema": "ownward.acceptance-execution/v1", "repository": str(self.repository),
+            "schema": "ownward.acceptance-execution/v2", "repository": str(self.repository),
             "workspace": str(self.workspace / "work"), "binding_dir": str(self.workspace / "binding"),
             "frontier": {"tool": str(self.tool), "targeted_stages": ["lexical"]}, "product": {}, "community": {},
         }
@@ -158,7 +158,7 @@ class UnifiedExecutionTests(unittest.TestCase):
     def test_product_resource_admission_consumes_the_same_layer_budget(self) -> None:
         state = lifecycle.load_state(self.state_path)
         with (
-            mock.patch("execution._product_paths", return_value=(self.tool, self.workspace)),
+            mock.patch("execution._product_binary", return_value=self.tool),
             mock.patch("execution._resource_report", return_value=self.tool),
         ):
             with self.assertRaisesRegex(execution.ExecutionError, "耗尽该层总成本预算"):

@@ -29,8 +29,8 @@ from benchmarks.support.ownward_mcp import OwnwardRuntime  # noqa: E402
 
 REPORT_SCHEMA = "ownward.delivery-resource-report/v1"
 THRESHOLDS_SCHEMA = "ownward.delivery-resource-thresholds/v1"
-RELEASE_SCHEMA = "ownward.release-bundle/v1"
-EMBEDDING_SCHEMA = "ownward.embedding-bundle/v2"
+RELEASE_SCHEMA = "ownward.release-bundle/v2"
+EMBEDDING_SCHEMA = "ownward.embedding-bundle/v3"
 
 
 def require(condition: bool, message: str) -> None:
@@ -104,7 +104,7 @@ def validate_release(package: Path, candidate: str) -> tuple[Path, dict[str, Any
     embedding = load(package / "bin" / "embedding" / "manifest.json")
     require(embedding.get("schema") == EMBEDDING_SCHEMA, "release embedding manifest has an unexpected schema")
     require(release.get("embedding_space") == embedding.get("space", {}).get("id"), "release vector space binding changed")
-    require(release.get("embedding_acceptance") == embedding.get("legal", {}).get("acceptance_id"), "release legal binding changed")
+    require(release.get("embedding_legal_materials") == embedding.get("legal", {}).get("legal_materials_id"), "release legal-material binding changed")
     require(embedding.get("model", {}).get("sha256") == "6fa0c02a9c302be6f977521d399b4de3a46310a4f2621ee0063747881b673f67", "release contains another embedding model")
     require(embedding.get("runtime", {}).get("source_archive_sha256") == "6c938f6d79aac96cb90fda673aade20cff9b1b6c1e97de04f4d5d60bca107082", "release contains another embedding runtime")
     embedding_root = package / "bin" / "embedding"
@@ -117,6 +117,13 @@ def validate_release(package: Path, candidate: str) -> tuple[Path, dict[str, Any
         path = (embedding_root / Path(relative)).resolve()
         require(path.is_relative_to(embedding_root.resolve()) and path.is_file(), f"embedding artifact is missing: {relative}")
         require(sha256(path) == expected, f"embedding artifact changed: {relative}")
+    legal_binding = {
+        "model_sha256": str(embedding["model"]["sha256"]),
+        "files": dict(sorted(embedding["legal"]["files"].items())),
+    }
+    encoded = json.dumps(legal_binding, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    expected_legal_materials = "legal_" + hashlib.sha256(encoded).hexdigest()[:32]
+    require(embedding["legal"]["legal_materials_id"] == expected_legal_materials, "embedding legal-material identity is invalid")
     return binary, embedding, actual
 
 
@@ -268,24 +275,13 @@ def call(client: Any, name: str, arguments: dict[str, Any]) -> Any:
     return result, (time.perf_counter() - started) * 1000
 
 
-def accept_terms(binary: Path, runtime_dir: Path, environment: dict[str, str]) -> dict[str, Any]:
-    completed = subprocess.run(
-        [str(binary), "terms", "--runtime-dir", str(runtime_dir), "--accept"],
-        capture_output=True, text=True, encoding="utf-8", timeout=30, env=environment,
-    )
-    require(completed.returncode == 0, f"could not accept release model terms: {completed.stderr[-2000:]}")
-    value = json.loads(completed.stdout)
-    require(isinstance(value, dict) and value.get("accepted") is True, "release model terms were not accepted")
-    return value
-
-
-def run_cold_samples(binary: Path, workspace: Path, runtime_dir: Path, environment: dict[str, str], count: int) -> tuple[list[dict[str, float]], list[dict[str, Any]]]:
+def run_cold_samples(binary: Path, workspace: Path, environment: dict[str, str], count: int) -> tuple[list[dict[str, float]], list[dict[str, Any]]]:
     durations: list[dict[str, float]] = []
     samples: list[dict[str, Any]] = []
     for index in range(count):
         data_dir = workspace / f"cold-{index + 1}"
         started = time.perf_counter()
-        runtime = OwnwardRuntime(binary, data_dir, runtime_dir, environment, startup_seconds=15, operation_seconds=15, verify_terms=False)
+        runtime = OwnwardRuntime(binary, data_dir, environment, startup_seconds=15, operation_seconds=15)
         runtime.__enter__()
         try:
             require(runtime.client is not None and runtime.process is not None, "Ownward runtime did not start")
@@ -301,8 +297,8 @@ def run_cold_samples(binary: Path, workspace: Path, runtime_dir: Path, environme
     return durations, samples
 
 
-def run_warm_workload(binary: Path, workspace: Path, runtime_dir: Path, environment: dict[str, str], query_count: int, document_count: int, idle_seconds: int) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    runtime = OwnwardRuntime(binary, workspace / "workload", runtime_dir, environment, startup_seconds=15, operation_seconds=30, verify_terms=False)
+def run_warm_workload(binary: Path, workspace: Path, environment: dict[str, str], query_count: int, document_count: int, idle_seconds: int) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    runtime = OwnwardRuntime(binary, workspace / "workload", environment, startup_seconds=15, operation_seconds=30)
     runtime.__enter__()
     try:
         require(runtime.client is not None and runtime.process is not None, "Ownward runtime did not start")
@@ -399,25 +395,22 @@ def main() -> None:
     require(performance.get("scale") == workload["production_scale"] and performance.get("dimensions") == workload["production_dimensions"], "production storage workload does not use the frozen scale and vector dimensions")
 
     environment = dict(os.environ)
-    environment["OWNWARD_EMBEDDING_DIR"] = str(package / "bin" / "embedding")
-    runtime_dir = workspace / "runtime"
-    terms = accept_terms(binary, runtime_dir, environment)
-    cold_ms, cold_samples = run_cold_samples(binary, workspace, runtime_dir, environment, int(workload["cold_start_samples"]))
+    cold_ms, cold_samples = run_cold_samples(binary, workspace, environment, int(workload["cold_start_samples"]))
     warm, warm_samples = run_warm_workload(
-        binary, workspace, runtime_dir, environment,
+        binary, workspace, environment,
         int(workload["warm_query_samples"]), int(workload["document_samples"]), int(workload["idle_observation_seconds"]),
     )
 
     package_evidence = {
-        "schema": "ownward.release-package-evidence/v1",
+        "schema": "ownward.release-package-evidence/v2",
         "candidate": candidate,
         "package": str(package),
         "files": package_files,
         "installed_bytes": installed_bytes,
         "release_manifest_sha256": sha256(package / "manifest.json"),
         "embedding_space": embedding["space"]["id"],
-        "embedding_acceptance": embedding["legal"]["acceptance_id"],
-        "terms_acceptance": terms,
+        "embedding_legal_materials": embedding["legal"]["legal_materials_id"],
+        "runtime_confirmation_files": sorted(str(path.relative_to(workspace)) for path in workspace.rglob("embedding-terms-acceptance.json")),
     }
     process_evidence = {
         "schema": "ownward.process-tree-evidence/v1",
@@ -444,6 +437,8 @@ def main() -> None:
     write_json(package_evidence_path, package_evidence)
     write_json(process_evidence_path, process_evidence)
     write_json(workload_evidence_path, workload_evidence)
+
+    require(not package_evidence["runtime_confirmation_files"], "blank product state created a model-terms confirmation file")
 
     mib = 1024 * 1024
     checks = [

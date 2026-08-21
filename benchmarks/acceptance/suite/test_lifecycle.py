@@ -16,7 +16,7 @@ class EvidenceLifecycleTests(unittest.TestCase):
         cls.root = Path(__file__).resolve().parent
         cls.contract = load_contract(cls.root / "contract.json")
         cls.binding = {
-            "schema": "ownward.acceptance-binding/v2",
+            "schema": "ownward.acceptance-binding/v3",
             "suite_version": "1.0.0",
             "candidate": "a" * 40,
             "binary_sha256": "b" * 64,

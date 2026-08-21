@@ -195,10 +195,9 @@ class _RuntimeBinding:
 
 
 class _OwnwardRuntime:
-    def __init__(self, binary: Path, data_dir: Path, runtime_dir: Path, environment: dict[str, str], timeout_seconds: float) -> None:
+    def __init__(self, binary: Path, data_dir: Path, environment: dict[str, str], timeout_seconds: float) -> None:
         self.binary = binary
         self.data_dir = data_dir
-        self.runtime_dir = runtime_dir
         self.environment = environment
         self.timeout_seconds = timeout_seconds
         self.process: subprocess.Popen[str] | None = None
@@ -209,14 +208,6 @@ class _OwnwardRuntime:
         self._bearer_token = secrets.token_urlsafe(32)
 
     def start(self) -> _OwnwardRuntime:
-        terms = _run_process(
-            [str(self.binary), "terms", "--runtime-dir", str(self.runtime_dir)],
-            timeout=self.timeout_seconds,
-            env=self.environment,
-        )
-        require(terms.returncode == 0, f"cannot verify Ownward terms acceptance: {terms.stderr[-2000:]}")
-        status = json.loads(terms.stdout)
-        require(isinstance(status, dict) and status.get("accepted") is True, "the bundled model terms have not been explicitly accepted")
         flags = (
             getattr(subprocess, "CREATE_NO_WINDOW", 0) | subprocess.CREATE_NEW_PROCESS_GROUP
             if os.name == "nt" else 0
@@ -227,8 +218,6 @@ class _OwnwardRuntime:
                 "mcp-http",
                 "--data-dir",
                 str(self.data_dir),
-                "--runtime-dir",
-                str(self.runtime_dir),
                 "--listen",
                 "127.0.0.1:0",
                 "--token",
@@ -322,7 +311,6 @@ class OwnwardMemory(Memory):
             "trajectories_root_dir",
             "query_trace_dir",
             "ownward_binary",
-            "runtime_dir",
             "query_mode",
             "max_chunk_chars",
             "search_limit",
@@ -345,10 +333,6 @@ class OwnwardMemory(Memory):
         query_mode = memory_params.get("query_mode", "direct")
         require(query_mode in {"direct", "codex"}, "query_mode must be direct or codex")
         self.query_mode = str(query_mode)
-        runtime_value = os.environ.get("OWNWARD_BENCHMARK_RUNTIME_DIR", "").strip() or memory_params.get("runtime_dir")
-        require(isinstance(runtime_value, str) and bool(runtime_value.strip()), "accepted Ownward runtime directory must be configured")
-        self.runtime_dir = Path(runtime_value).expanduser().resolve()
-        require(self.runtime_dir.is_dir(), f"Ownward runtime directory does not exist: {self.runtime_dir}")
         self.max_chunk_chars = _positive_int(
             memory_params.get("max_chunk_chars"),
             name="max_chunk_chars",
@@ -498,7 +482,6 @@ class OwnwardMemory(Memory):
             runtime = _OwnwardRuntime(
                 self.ownward_binary,
                 self.data_dir,
-                self.runtime_dir,
                 self._runtime_environment(),
                 self.command_timeout_seconds,
             )
@@ -540,7 +523,7 @@ class OwnwardMemory(Memory):
         return environment
 
     def _run(self, args: list[str], *, timeout: float | None = None) -> Any:
-        command = _command_prefix(self.ownward_binary) + [args[0], "--runtime-dir", str(self.runtime_dir), *args[1:]]
+        command = _command_prefix(self.ownward_binary) + args
         completed = _run_process(
             command,
             timeout=timeout or self.command_timeout_seconds,

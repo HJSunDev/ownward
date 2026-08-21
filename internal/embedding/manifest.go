@@ -13,7 +13,7 @@ import (
 	"strings"
 )
 
-const ManifestSchema = "ownward.embedding-bundle/v2"
+const ManifestSchema = "ownward.embedding-bundle/v3"
 
 type Manifest struct {
 	Schema     string          `json:"schema"`
@@ -36,8 +36,8 @@ type RuntimeArtifact struct {
 }
 
 type LegalArtifacts struct {
-	AcceptanceID string            `json:"acceptance_id"`
-	Files        map[string]string `json:"files"`
+	LegalMaterialsID string            `json:"legal_materials_id"`
+	Files            map[string]string `json:"files"`
 }
 
 type SpaceDefinition struct {
@@ -73,9 +73,27 @@ func LoadBundle(root string) (Bundle, error) {
 	return bundle, nil
 }
 
+// LoadDistributionBundle 校验完整的可分发向量能力包，包括法律材料。
+// 产品运行不得使用该入口决定向量能力是否可用。
+func LoadDistributionBundle(root string) (Bundle, error) {
+	bundle, err := inspectBundle(root, true)
+	if err != nil {
+		return Bundle{}, err
+	}
+	if err := VerifyDistributionBundle(bundle); err != nil {
+		return Bundle{}, err
+	}
+	bundle.verified = true
+	return bundle, nil
+}
+
 // InspectBundle 校验清单并解析受根目录约束的制品路径，但不读取完整模型内容。
 // 正式运行在返回第一个向量前仍必须完成 VerifyBundle。
 func InspectBundle(root string) (Bundle, error) {
+	return inspectBundle(root, false)
+}
+
+func inspectBundle(root string, includeLegal bool) (Bundle, error) {
 	absolute, err := filepath.Abs(root)
 	if err != nil {
 		return Bundle{}, err
@@ -117,21 +135,27 @@ func InspectBundle(root string) (Bundle, error) {
 			return Bundle{}, fmt.Errorf("运行时文件 %q: %w", path, err)
 		}
 	}
-	legalPaths := make(map[string]string, len(manifest.Legal.Files))
-	legalFiles := make([]string, 0, len(manifest.Legal.Files))
-	for path := range manifest.Legal.Files {
-		legalFiles = append(legalFiles, path)
-	}
-	sort.Strings(legalFiles)
-	for _, path := range legalFiles {
-		absolutePath, pathErr := confinedPath(absolute, path)
-		if pathErr != nil {
-			return Bundle{}, fmt.Errorf("许可文件 %q: %w", path, pathErr)
+	legalPaths := map[string]string{}
+	if includeLegal {
+		if err := validateLegalManifest(manifest); err != nil {
+			return Bundle{}, err
 		}
-		if err := requireRegularFile(absolutePath); err != nil {
-			return Bundle{}, fmt.Errorf("许可文件 %q: %w", path, err)
+		legalPaths = make(map[string]string, len(manifest.Legal.Files))
+		legalFiles := make([]string, 0, len(manifest.Legal.Files))
+		for path := range manifest.Legal.Files {
+			legalFiles = append(legalFiles, path)
 		}
-		legalPaths[path] = absolutePath
+		sort.Strings(legalFiles)
+		for _, path := range legalFiles {
+			absolutePath, pathErr := confinedPath(absolute, path)
+			if pathErr != nil {
+				return Bundle{}, fmt.Errorf("许可文件 %q: %w", path, pathErr)
+			}
+			if err := requireRegularFile(absolutePath); err != nil {
+				return Bundle{}, fmt.Errorf("许可文件 %q: %w", path, err)
+			}
+			legalPaths[path] = absolutePath
+		}
 	}
 	if _, exists := manifest.Runtime.Files[filepath.ToSlash(manifest.Runtime.Entry)]; !exists {
 		return Bundle{}, errors.New("运行时入口没有进入完整性清单")
@@ -139,7 +163,7 @@ func InspectBundle(root string) (Bundle, error) {
 	return Bundle{Root: absolute, ManifestPath: manifestPath, Manifest: manifest, ModelPath: modelPath, RuntimePath: runtimePath, LegalPaths: legalPaths}, nil
 }
 
-// VerifyBundle 将所有制品与清单中的摘要逐一绑定。
+// VerifyBundle 校验产品运行所需的技术制品。
 func VerifyBundle(bundle Bundle) error {
 	if err := verifyFile(bundle.ModelPath, bundle.Manifest.Model.SHA256); err != nil {
 		return fmt.Errorf("校验向量模型: %w", err)
@@ -158,6 +182,17 @@ func VerifyBundle(bundle Bundle) error {
 			return fmt.Errorf("校验运行时文件 %q: %w", path, err)
 		}
 	}
+	return nil
+}
+
+// VerifyDistributionBundle 在技术制品之外校验发布所需的法律材料。
+func VerifyDistributionBundle(bundle Bundle) error {
+	if err := validateLegalManifest(bundle.Manifest); err != nil {
+		return err
+	}
+	if err := VerifyBundle(bundle); err != nil {
+		return err
+	}
 	legalFiles := make([]string, 0, len(bundle.Manifest.Legal.Files))
 	for path := range bundle.Manifest.Legal.Files {
 		legalFiles = append(legalFiles, path)
@@ -170,6 +205,52 @@ func VerifyBundle(bundle Bundle) error {
 		}
 		if err := verifyFile(absolutePath, bundle.Manifest.Legal.Files[path]); err != nil {
 			return fmt.Errorf("校验许可文件 %q: %w", path, err)
+		}
+	}
+	return verifyDistributionInventory(bundle)
+}
+
+func verifyDistributionInventory(bundle Bundle) error {
+	expected := map[string]struct{}{
+		"manifest.json": {},
+		filepath.ToSlash(bundle.Manifest.Model.Path): {},
+	}
+	for path := range bundle.Manifest.Runtime.Files {
+		expected[filepath.ToSlash(path)] = struct{}{}
+	}
+	for path := range bundle.Manifest.Legal.Files {
+		expected[filepath.ToSlash(path)] = struct{}{}
+	}
+	actual := map[string]struct{}{}
+	err := filepath.WalkDir(bundle.Root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("向量能力包不得包含符号链接: %s", path)
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		if !entry.Type().IsRegular() {
+			return fmt.Errorf("向量能力包包含非普通文件: %s", path)
+		}
+		relative, err := filepath.Rel(bundle.Root, path)
+		if err != nil {
+			return err
+		}
+		actual[filepath.ToSlash(relative)] = struct{}{}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if len(actual) != len(expected) {
+		return errors.New("向量能力包包含未声明制品")
+	}
+	for path := range expected {
+		if _, exists := actual[path]; !exists {
+			return fmt.Errorf("向量能力包缺少已声明制品 %q", path)
 		}
 	}
 	return nil
@@ -186,7 +267,7 @@ func requireRegularFile(path string) error {
 	return nil
 }
 
-func ComputeAcceptanceID(manifest Manifest) (string, error) {
+func ComputeLegalMaterialsID(manifest Manifest) (string, error) {
 	binding := struct {
 		ModelSHA256 string            `json:"model_sha256"`
 		Files       map[string]string `json:"files"`
@@ -228,6 +309,18 @@ func validateManifest(value Manifest) error {
 			return errors.New("向量运行时文件清单无效")
 		}
 	}
+	if value.Space.Dimensions != 512 || value.Space.SourceDimensions < value.Space.Dimensions || value.Space.QueryPrefix == "" || value.Space.DocumentPrefix == "" ||
+		value.Space.Pooling != "mean" || value.Space.Normalization != "l2" || value.Space.Truncation != "prefix" {
+		return errors.New("向量空间定义与第一版方案不一致")
+	}
+	expected, err := ComputeSpaceID(value)
+	if err != nil || value.Space.ID != expected {
+		return errors.New("向量空间身份与完整配置不一致")
+	}
+	return nil
+}
+
+func validateLegalManifest(value Manifest) error {
 	requiredLegal := []string{
 		"legal/embeddinggemma/GEMMA_TERMS_OF_USE.md",
 		"legal/embeddinggemma/GEMMA_PROHIBITED_USE_POLICY.md",
@@ -244,17 +337,9 @@ func validateManifest(value Manifest) error {
 	if len(value.Legal.Files) != len(requiredLegal) {
 		return errors.New("向量能力包许可文件清单包含未定义内容")
 	}
-	expectedAcceptance, err := ComputeAcceptanceID(value)
-	if err != nil || value.Legal.AcceptanceID != expectedAcceptance {
-		return errors.New("向量能力许可确认身份与制品不一致")
-	}
-	if value.Space.Dimensions != 512 || value.Space.SourceDimensions < value.Space.Dimensions || value.Space.QueryPrefix == "" || value.Space.DocumentPrefix == "" ||
-		value.Space.Pooling != "mean" || value.Space.Normalization != "l2" || value.Space.Truncation != "prefix" {
-		return errors.New("向量空间定义与第一版方案不一致")
-	}
-	expected, err := ComputeSpaceID(value)
-	if err != nil || value.Space.ID != expected {
-		return errors.New("向量空间身份与完整配置不一致")
+	expectedMaterials, err := ComputeLegalMaterialsID(value)
+	if err != nil || value.Legal.LegalMaterialsID != expectedMaterials {
+		return errors.New("向量能力法律材料身份与制品不一致")
 	}
 	return nil
 }

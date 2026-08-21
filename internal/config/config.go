@@ -8,8 +8,7 @@ import (
 )
 
 type Config struct {
-	DataDir    string
-	RuntimeDir string
+	DataDir string
 }
 
 func Load(override string) (Config, error) {
@@ -28,20 +27,5 @@ func Load(override string) (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("解析数据目录: %w", err)
 	}
-	runtimeDir := strings.TrimSpace(os.Getenv("OWNWARD_RUNTIME_DIR"))
-	if runtimeDir == "" {
-		base, runtimeErr := os.UserConfigDir()
-		if runtimeErr != nil {
-			return Config{}, fmt.Errorf("确定默认运行状态目录: %w", runtimeErr)
-		}
-		runtimeDir = filepath.Join(base, "Ownward", "runtime")
-	}
-	absoluteRuntime, err := filepath.Abs(runtimeDir)
-	if err != nil {
-		return Config{}, fmt.Errorf("解析运行状态目录: %w", err)
-	}
-	return Config{
-		DataDir:    absolute,
-		RuntimeDir: absoluteRuntime,
-	}, nil
+	return Config{DataDir: absolute}, nil
 }

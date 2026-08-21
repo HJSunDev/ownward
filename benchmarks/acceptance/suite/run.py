@@ -34,7 +34,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", type=Path)
     parser.add_argument("--repository", type=Path, default=Path("."))
     parser.add_argument("--binary", type=Path)
-    parser.add_argument("--runtime-dir", type=Path)
+    parser.add_argument("--embedding-bundle-dir", type=Path)
     parser.add_argument("--codex-binary", type=Path)
     parser.add_argument("--codex-auth-file", type=Path)
     parser.add_argument("--isolation-dir", type=Path)
@@ -61,10 +61,10 @@ def main() -> None:
         print(json.dumps(report, ensure_ascii=False))
         return
     if args.mode == "preflight":
-        if None in (args.binary, args.runtime_dir, args.codex_binary, args.codex_auth_file, args.isolation_dir):
-            raise lifecycle.LifecycleError("preflight 需要 --binary、--runtime-dir、--codex-binary、--codex-auth-file 与 --isolation-dir")
+        if None in (args.binary, args.embedding_bundle_dir, args.codex_binary, args.codex_auth_file, args.isolation_dir):
+            raise lifecycle.LifecycleError("preflight 需要 --binary、--embedding-bundle-dir、--codex-binary、--codex-auth-file 与 --isolation-dir")
         report = preflight.run(
-            HERE, args.repository, args.binary, args.runtime_dir, args.codex_binary, args.codex_auth_file, args.isolation_dir
+            HERE, args.repository, args.binary, args.embedding_bundle_dir, args.codex_binary, args.codex_auth_file, args.isolation_dir
         )
         print(json.dumps(report, ensure_ascii=False))
         return

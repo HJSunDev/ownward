@@ -59,11 +59,9 @@ class OwnwardMemoryTest(unittest.TestCase):
             ownward = root_path / "ownward.exe"
             codex = root_path / "codex.exe"
             auth = root_path / "auth.json"
-            runtime_dir = root_path / "runtime"
             ownward.write_bytes(b"")
             codex.write_bytes(b"")
             auth.write_text("{}", encoding="utf-8")
-            runtime_dir.mkdir()
             workspace = root_path / "workspace"
             with patch.dict(
                 os.environ,
@@ -76,7 +74,6 @@ class OwnwardMemoryTest(unittest.TestCase):
                     {
                         "workspace_dir": str(workspace),
                         "ownward_binary": str(ownward),
-                        "runtime_dir": str(runtime_dir),
                         "query_mode": "codex",
                         "codex_binary": str(codex),
                     }
@@ -110,8 +107,8 @@ class OwnwardMemoryTest(unittest.TestCase):
         self.assertTrue(adapter.OwnwardMemory._used_ownward_mcp(completed))
 
     @unittest.skipUnless(
-        all(os.environ.get(name) for name in ("OWNWARD_BENCHMARK_BINARY", "OWNWARD_BENCHMARK_RUNTIME_DIR", "OWNWARD_BENCHMARK_CODEX_BINARY", "OWNWARD_BENCHMARK_CODEX_AUTH_FILE")),
-        "requires a built Ownward bundle, accepted runtime, and Codex",
+        all(os.environ.get(name) for name in ("OWNWARD_BENCHMARK_BINARY", "OWNWARD_BENCHMARK_CODEX_BINARY", "OWNWARD_BENCHMARK_CODEX_AUTH_FILE")),
+        "requires a built Ownward bundle and Codex",
     )
     def test_direct_query_and_portable_asset_restore(self) -> None:
         adapter = _load_adapter()
@@ -138,7 +135,6 @@ class OwnwardMemoryTest(unittest.TestCase):
                 {
                     "workspace_dir": str(workspace),
                     "ownward_binary": binary,
-                    "runtime_dir": os.environ["OWNWARD_BENCHMARK_RUNTIME_DIR"],
                     "query_mode": "direct",
                     "max_chunk_chars": 1000,
                     "codex_binary": os.environ["OWNWARD_BENCHMARK_CODEX_BINARY"],
@@ -153,7 +149,6 @@ class OwnwardMemoryTest(unittest.TestCase):
             restored = adapter.OwnwardMemory(
                 {
                     "ownward_binary": binary,
-                    "runtime_dir": os.environ["OWNWARD_BENCHMARK_RUNTIME_DIR"],
                     "query_mode": "direct",
                     "max_chunk_chars": 1000,
                     "codex_binary": os.environ["OWNWARD_BENCHMARK_CODEX_BINARY"],
@@ -189,7 +184,6 @@ class OwnwardMemoryTest(unittest.TestCase):
                     "workspace_dir": str(Path(root) / "workspace"),
                     "query_trace_dir": os.environ.get("OWNWARD_BENCHMARK_TRACE_DIR", ""),
                     "ownward_binary": os.environ["OWNWARD_BENCHMARK_BINARY"],
-                    "runtime_dir": os.environ["OWNWARD_BENCHMARK_RUNTIME_DIR"],
                     "query_mode": "codex",
                     "max_chunk_chars": 1000,
                     "codex_binary": os.environ["OWNWARD_BENCHMARK_CODEX_BINARY"],

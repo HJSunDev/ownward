@@ -152,10 +152,10 @@ def execute(
     binary = Path(config["binary"]).resolve()
     codex_binary = Path(config["codex_binary"]).resolve()
     codex_auth_file = Path(config["codex_auth_file"]).resolve()
-    runtime_dir = Path(config["runtime_dir"]).resolve()
+    embedding_bundle_dir = Path(config["embedding_bundle_dir"]).resolve()
     for path, label in ((binary, "Ownward binary"), (codex_binary, "Codex binary"), (codex_auth_file, "Codex auth")):
         _require(path.is_file(), f"{label} does not exist: {path}")
-    _require(runtime_dir.is_dir(), "accepted runtime directory does not exist")
+    _require(embedding_bundle_dir.is_dir(), "embedding bundle directory does not exist")
     _require(sha256(binary) == binding["binary_sha256"], "community binary binding changed")
     wrapper = (suite_root.parents[1] / "longmemeval_v2" / "run.py").resolve()
     runs: dict[str, tuple[Path, dict[str, Any]]] = {}
@@ -179,7 +179,7 @@ def execute(
             command = [
                 sys.executable, str(wrapper), "--official-repo", str(official_repo),
                 "--ownward-binary", str(binary), "--codex-binary", str(codex_binary),
-                "--codex-auth-file", str(codex_auth_file), "--runtime-dir", str(runtime_dir),
+                "--codex-auth-file", str(codex_auth_file), "--embedding-bundle-dir", str(embedding_bundle_dir),
                 "--candidate", binding["candidate"],
                 "--environment-sha256", binding["environment_sha256"],
                 "--input-manifest-sha256", binding["input_manifest_sha256"],

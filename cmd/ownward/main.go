@@ -52,7 +52,6 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	dataDir := flags.String("data-dir", "", "Ownward 数据目录")
-	runtimeDir := flags.String("runtime-dir", "", "模型条款确认等产品运行状态目录")
 	content := flags.String("content", "", "信息内容")
 	kindValue := flags.String("kind", string(domain.KindGeneral), "兼容既有资产的可选字段，不参与自主语义组织")
 	id := flags.String("id", "", "信息标识")
@@ -64,7 +63,6 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	backup := flags.String("backup", "", "待恢复的备份文件")
 	listen := flags.String("listen", "127.0.0.1:0", "Streamable HTTP MCP 监听地址，仅允许本机回环地址")
 	token := flags.String("token", "", "Streamable HTTP MCP 可选的 Bearer Token")
-	acceptTerms := flags.Bool("accept", false, "确认接受随包交付的 EmbeddingGemma 条款和用途限制")
 	contexts := stringList{}
 	flags.Var(&contexts, "context", "场景，格式为 key=value，可重复")
 	relations := stringList{}
@@ -76,28 +74,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(*runtimeDir) != "" {
-		loaded.RuntimeDir, err = filepath.Abs(strings.TrimSpace(*runtimeDir))
-		if err != nil {
-			return fmt.Errorf("解析运行状态目录: %w", err)
-		}
-	}
 	bundle, bundleErr := loadEmbeddingBundle()
-	if command == "terms" {
-		if bundleErr != nil {
-			return bundleErr
-		}
-		var status embedding.AcceptanceStatus
-		if *acceptTerms {
-			status, err = embedding.AcceptTerms(loaded.RuntimeDir, bundle, time.Now())
-		} else {
-			status, err = embedding.TermsStatus(loaded.RuntimeDir, bundle)
-		}
-		if err != nil {
-			return err
-		}
-		return writeJSON(stdout, status)
-	}
 	if command == "restore" {
 		if strings.TrimSpace(*backup) == "" {
 			return errors.New("restore 必须提供 --backup")
@@ -119,18 +96,11 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if bundleErr != nil {
 		vectorCapability = embedding.Unavailable{Reason: "无法加载本地向量能力包: " + bundleErr.Error()}
 	} else {
-		status, statusErr := embedding.TermsStatus(loaded.RuntimeDir, bundle)
-		if statusErr != nil {
-			vectorCapability = embedding.Unavailable{Reason: "无法验证模型条款确认: " + statusErr.Error()}
-		} else if !status.Accepted {
-			vectorCapability = embedding.Unavailable{Reason: "尚未接受随包交付的 EmbeddingGemma 条款；请先运行 ownward terms 查看并以 --accept 明确确认"}
+		managed, openErr := embedding.OpenManagedBundle(bundle)
+		if openErr != nil {
+			vectorCapability = embedding.Unavailable{Reason: "本地向量能力不可用: " + openErr.Error()}
 		} else {
-			managed, openErr := embedding.OpenManagedBundle(bundle)
-			if openErr != nil {
-				vectorCapability = embedding.Unavailable{Reason: "本地向量能力不可用: " + openErr.Error()}
-			} else {
-				vectorCapability = managed
-			}
+			vectorCapability = managed
 		}
 	}
 	service, err := core.NewCollaborative(store, derivedStore, vectorCapability)
@@ -329,7 +299,7 @@ func bearerTokenHandler(next http.Handler, token string) http.Handler {
 }
 
 func printUsage(writer io.Writer) {
-	fmt.Fprintln(writer, "用法: ownward <mcp|mcp-http|create|update|read|search|navigate|rules|backup|restore|maintain|rebuild|terms|version> [选项]")
+	fmt.Fprintln(writer, "用法: ownward <mcp|mcp-http|create|update|read|search|navigate|rules|backup|restore|maintain|rebuild|version> [选项]")
 	fmt.Fprintln(writer, "信息类型:", strings.Join(kindNames(), ", "))
 }
 

@@ -16,7 +16,7 @@ import (
 	"github.com/HJSunDev/ownward/internal/embedding"
 )
 
-const ManifestSchema = "ownward.release-bundle/v1"
+const ManifestSchema = "ownward.release-bundle/v2"
 
 type Options struct {
 	Binary       string
@@ -27,11 +27,11 @@ type Options struct {
 }
 
 type Manifest struct {
-	Schema              string            `json:"schema"`
-	Candidate           string            `json:"candidate"`
-	Files               map[string]string `json:"files"`
-	EmbeddingSpace      string            `json:"embedding_space"`
-	EmbeddingAcceptance string            `json:"embedding_acceptance"`
+	Schema                  string            `json:"schema"`
+	Candidate               string            `json:"candidate"`
+	Files                   map[string]string `json:"files"`
+	EmbeddingSpace          string            `json:"embedding_space"`
+	EmbeddingLegalMaterials string            `json:"embedding_legal_materials"`
 }
 
 // Assemble 原子生成完整的 Windows 第一版发布包。
@@ -62,7 +62,7 @@ func Assemble(options Options) (Manifest, error) {
 		return Manifest{}, err
 	}
 
-	embeddingBundle, err := embedding.LoadBundle(embeddingRoot)
+	embeddingBundle, err := embedding.LoadDistributionBundle(embeddingRoot)
 	if err != nil {
 		return Manifest{}, fmt.Errorf("校验向量能力包: %w", err)
 	}
@@ -100,7 +100,7 @@ func Assemble(options Options) (Manifest, error) {
 	}
 	manifest := Manifest{
 		Schema: ManifestSchema, Candidate: candidate, Files: files,
-		EmbeddingSpace: embeddingBundle.Manifest.Space.ID, EmbeddingAcceptance: embeddingBundle.Manifest.Legal.AcceptanceID,
+		EmbeddingSpace: embeddingBundle.Manifest.Space.ID, EmbeddingLegalMaterials: embeddingBundle.Manifest.Legal.LegalMaterialsID,
 	}
 	manifestBytes, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
