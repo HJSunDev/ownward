@@ -43,6 +43,22 @@ type Service struct {
 	stateMu          sync.RWMutex
 }
 
+func appendUniqueIDs(values []string, extra ...string) []string {
+	seen := make(map[string]struct{}, len(values)+len(extra))
+	result := make([]string, 0, len(values)+len(extra))
+	for _, id := range append(append([]string(nil), values...), extra...) {
+		if id == "" {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		result = append(result, id)
+	}
+	return result
+}
+
 type OrganizationState struct {
 	Status         string `json:"status"`
 	Provider       string `json:"provider,omitempty"`
@@ -336,6 +352,7 @@ func (s *Service) Update(ctx context.Context, input UpdateInput) (MutationResult
 	var dependents []string
 	if s.semantic != nil {
 		dependents = s.semantic.Dependents(updated.ID)
+		dependents = appendUniqueIDs(dependents, s.semantic.PendingDependents(updated.ID)...)
 	}
 	if err := s.store.Update(updated, input.ExpectedRevision); err != nil {
 		return MutationResult{}, err

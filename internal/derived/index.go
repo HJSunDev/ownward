@@ -29,15 +29,16 @@ type Edge struct {
 }
 
 type Index struct {
-	mu            sync.RWMutex
-	searchCacheMu sync.Mutex
-	records       []indexedRecord
-	blocks        map[int]*vectorBlock
-	activeVectors int
-	locations     map[string]uint32
-	forward       map[string][]Edge
-	reverse       map[string][]Edge
-	searchCache   map[string]*searchCacheEntry
+	mu             sync.RWMutex
+	searchCacheMu  sync.Mutex
+	records        []indexedRecord
+	blocks         map[int]*vectorBlock
+	activeVectors  int
+	locations      map[string]uint32
+	forward        map[string][]Edge
+	reverse        map[string][]Edge
+	pendingReverse map[string]map[string]struct{}
+	searchCache    map[string]*searchCacheEntry
 }
 
 const maxSearchCacheEntries = 64
@@ -68,12 +69,13 @@ type indexedRecord struct {
 
 func NewIndex(records []Record) *Index {
 	index := &Index{
-		records:     make([]indexedRecord, 0, len(records)),
-		blocks:      make(map[int]*vectorBlock),
-		locations:   make(map[string]uint32, len(records)),
-		forward:     make(map[string][]Edge),
-		reverse:     make(map[string][]Edge),
-		searchCache: make(map[string]*searchCacheEntry),
+		records:        make([]indexedRecord, 0, len(records)),
+		blocks:         make(map[int]*vectorBlock),
+		locations:      make(map[string]uint32, len(records)),
+		forward:        make(map[string][]Edge),
+		reverse:        make(map[string][]Edge),
+		pendingReverse: make(map[string]map[string]struct{}),
+		searchCache:    make(map[string]*searchCacheEntry),
 	}
 	counts := make(map[int]int)
 	for _, record := range records {
@@ -92,6 +94,7 @@ func NewIndex(records []Record) *Index {
 		location := uint32(len(index.records))
 		index.locations[record.AssetID] = location
 		index.records = append(index.records, indexedRecord{record: cloneForIndex(record)})
+		index.addPendingLocked(record)
 		index.upsertVectorLocked(location, record)
 		records[recordIndex].Embedding = nil
 	}
@@ -107,12 +110,14 @@ func (i *Index) Upsert(record Record) {
 		return
 	}
 	i.removeOutgoingLocked(record.AssetID)
+	i.removePendingLocked(record.AssetID)
 	if !exists {
 		location = uint32(len(i.records))
 		i.locations[record.AssetID] = location
 		i.records = append(i.records, indexedRecord{})
 	}
 	i.records[location].record = cloneForIndex(record)
+	i.addPendingLocked(record)
 	i.upsertVectorLocked(location, record)
 	i.removeStaleIncomingLocked(record.AssetID)
 	i.addOutgoingLocked(record.AssetID, record)
@@ -158,6 +163,53 @@ func (i *Index) Dependents(targetID string) []string {
 	}
 	sort.Strings(result)
 	return result
+}
+
+func (i *Index) PendingDependents(targetID string) []string {
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+	sources := i.pendingReverse[targetID]
+	result := make([]string, 0, len(sources))
+	for sourceID := range sources {
+		result = append(result, sourceID)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func (i *Index) addPendingLocked(record Record) {
+	if record.SemanticWork == nil || record.SemanticResult != nil {
+		return
+	}
+	for _, candidate := range record.SemanticWork.Candidates {
+		if candidate.ID == "" || candidate.ID == record.AssetID {
+			continue
+		}
+		sources := i.pendingReverse[candidate.ID]
+		if sources == nil {
+			sources = make(map[string]struct{})
+			i.pendingReverse[candidate.ID] = sources
+		}
+		sources[record.AssetID] = struct{}{}
+	}
+}
+
+func (i *Index) removePendingLocked(assetID string) {
+	location, exists := i.locations[assetID]
+	if !exists {
+		return
+	}
+	record := i.records[location].record
+	if record.SemanticWork == nil || record.SemanticResult != nil {
+		return
+	}
+	for _, candidate := range record.SemanticWork.Candidates {
+		sources := i.pendingReverse[candidate.ID]
+		delete(sources, assetID)
+		if len(sources) == 0 {
+			delete(i.pendingReverse, candidate.ID)
+		}
+	}
 }
 
 func (i *Index) Search(vector []float32, contexts []domain.Context, limit int) []SemanticHit {

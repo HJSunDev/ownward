@@ -51,6 +51,29 @@ func TestIndexReportsOnlyInferredDependents(t *testing.T) {
 	}
 }
 
+func TestIndexTracksOnlyUnresolvedSemanticWorkAsPendingDependencies(t *testing.T) {
+	work := semantics.Work{
+		Schema:     semantics.WorkSchema,
+		ID:         "work-source",
+		Generation: "generation",
+		Asset:      domain.Information{Schema: domain.AssetSchema, ID: "source", Revision: 1, Kind: domain.KindGeneral, Content: "source"},
+		Candidates: []semantics.Candidate{{ID: "target", Revision: 1, Content: "target"}},
+	}
+	pending := Record{AssetID: "source", AssetRevision: 1, Status: "pending", SemanticWork: &work}
+	index := NewIndex([]Record{pending})
+	if actual := index.PendingDependents("target"); len(actual) != 1 || actual[0] != "source" {
+		t.Fatalf("pending dependency was not indexed: %#v", actual)
+	}
+
+	accepted := semantics.Submission{Schema: semantics.SubmissionSchema}
+	pending.SemanticResult = &accepted
+	pending.Status = "ready"
+	index.Upsert(pending)
+	if actual := index.PendingDependents("target"); len(actual) != 0 {
+		t.Fatalf("resolved semantic work remained pending: %#v", actual)
+	}
+}
+
 func TestIndexRejectsNonFiniteVectors(t *testing.T) {
 	index := NewIndex([]Record{{AssetID: "invalid", AssetRevision: 1, Status: "ready", Embedding: []float32{1, float32(math.NaN())}}})
 	if index.HasVectors() {

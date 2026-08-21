@@ -133,6 +133,51 @@ func TestCollaborativeSemanticWorkIsVersionedAndAppliedByTheKernel(t *testing.T)
 	}
 }
 
+func TestUpdateRefreshesPendingSemanticWorkThatReferencesTheOldRevision(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	assets, err := assetlog.Open(filepath.Join(root, "assets"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := derived.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewCollaborative(assets, state, embedding.HashForTesting{Dimensions: 64})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer service.Close()
+
+	created, err := service.CreateBatch(ctx, []CreateInput{
+		{Content: "The workshop meets in the old hall."},
+		{Content: "The booking confirms the workshop venue."},
+	})
+	if err != nil || len(created) != 2 || created[0].Result == nil || created[1].Result == nil {
+		t.Fatalf("create batch failed: results=%#v err=%v", created, err)
+	}
+	firstID := created[0].Result.Information.ID
+	secondID := created[1].Result.Information.ID
+	changed := "The workshop now meets in the glass annex."
+	if _, err := service.Update(ctx, UpdateInput{ID: firstID, ExpectedRevision: 1, Content: &changed}); err != nil {
+		t.Fatal(err)
+	}
+	work, err := service.SemanticWorkFor(ctx, []string{secondID})
+	if err != nil || len(work) != 1 {
+		t.Fatalf("dependent semantic work is unavailable: work=%#v err=%v", work, err)
+	}
+	foundCurrent := false
+	for _, candidate := range work[0].Candidates {
+		if candidate.ID == firstID {
+			foundCurrent = candidate.Revision == 2 && candidate.Content == changed
+		}
+	}
+	if !foundCurrent {
+		t.Fatalf("pending semantic work retained an obsolete candidate: %#v", work[0].Candidates)
+	}
+}
+
 func TestCollaborativeRebuildSwitchesOnlyACompleteGeneration(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
