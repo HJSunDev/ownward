@@ -1,0 +1,43 @@
+{
+  "schema": "ownward.acceptance-adapters/v1",
+  "suite_version": "1.0.0",
+  "product_interface": {
+    "allowed": ["ownward_cli", "ownward_mcp"],
+    "test_only_product_path": false
+  },
+  "optimization_loop": {
+    "version": "ownward-core-frontier/v1",
+    "implementation": "../../../cmd/ownward-frontier/main.go",
+    "input": "materials/core/v1/dataset.json",
+    "output_schema": "ownward.core-frontier-observation/v1",
+    "external_intelligence": false
+  },
+  "layers": {
+    "core": {
+      "version": "ownward-core-baseline/v1",
+      "implementation": "adapters/core/verify.py",
+      "public_capabilities": ["version", "model terms", "serve", "backup", "restore", "rebuild", "MCP create/read/update/search"],
+      "external_intelligence": false,
+      "report_schema": "ownward.core-baseline-report/v1"
+    },
+    "product": {
+      "version": "ownward-product-dataset/v1",
+      "dataset": "materials/product/v1/dataset.json",
+      "qualification": "materials/product/v1/qualification.json",
+      "implementation": "adapters/product/verify.py",
+      "scorer": "product.py",
+      "resource_adapter": "adapters/product_resource/verify.py",
+      "public_capabilities": ["serve", "MCP create/read/update/search/navigate", "semantic work/submit"],
+      "report_schema": "ownward.product-report/v1"
+    },
+    "community": {
+      "version": "longmemeval-v2/2cc8c540bdb87fe6761629b585e727e1c4704520",
+      "official_repository": "https://github.com/xiaowu0162/LongMemEval-V2",
+      "official_revision": "2cc8c540bdb87fe6761629b585e727e1c4704520",
+      "official_track": "Small",
+      "domains": ["web", "enterprise"],
+      "adapter": "../../longmemeval_v2/run.py",
+      "report_schema": "ownward.longmemeval-report/v1"
+    }
+  }
+}

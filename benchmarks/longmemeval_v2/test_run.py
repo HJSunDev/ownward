@@ -37,8 +37,11 @@ class RunWrapperTests(unittest.TestCase):
                 ["--output-dir", str(output), "--memory-config-path", str(config)],
                 candidate="abc",
                 binary_sha256="def",
+                environment_sha256="b" * 64,
+                input_manifest_sha256="c" * 64,
+                tool_sha256="d" * 64,
                 adapter_root=adapter,
-                codex_version=run.ACTIVE_CODEX_CLI_VERSION,
+                codex_version="codex-cli test-version",
                 codex_sha256="f" * 64,
             )
             evidence = json.loads((output / "run_args.json").read_text(encoding="utf-8"))["ownward_evidence"]
@@ -46,5 +49,8 @@ class RunWrapperTests(unittest.TestCase):
         self.assertEqual(evidence["query_mode"], "codex")
         self.assertEqual(evidence["official_revision"], run.OFFICIAL_REVISION)
         self.assertEqual(evidence["codex_model"], run.ACTIVE_CODEX_MODEL)
-        self.assertEqual(evidence["codex_cli_version"], run.ACTIVE_CODEX_CLI_VERSION)
+        self.assertEqual(evidence["codex_cli_version"], "codex-cli test-version")
+        self.assertEqual(evidence["environment_sha256"], "b" * 64)
+        self.assertEqual(evidence["input_manifest_sha256"], "c" * 64)
+        self.assertEqual(evidence["tool_sha256"], "d" * 64)
         self.assertEqual(set(evidence["adapter_sha256"]), set(run.ADAPTER_FILES))

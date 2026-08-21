@@ -1,0 +1,2731 @@
+{
+  "schema": "ownward.product-dataset/v1",
+  "version": "ownward-product-dataset/v1",
+  "frozen": true,
+  "scenarios": [
+    {
+      "truth": {
+        "id": "s01-522febb1",
+        "task_class": "information_update",
+        "information_scope": [
+          "social_experience",
+          "reusable_path",
+          "experience"
+        ],
+        "nodes": [
+          {
+            "id": "s01-522febb1-n1",
+            "facts": [
+              "My weekly language-exchange meetup used to meet at Harbor Bean."
+            ]
+          },
+          {
+            "id": "s01-522febb1-n2",
+            "facts": [
+              "The bookshop's standing Thursday reservation keeps our meetup active there every week."
+            ]
+          },
+          {
+            "id": "s01-522febb1-n3",
+            "facts": [
+              "A folding sign-in table is part of that bookshop meetup setup."
+            ]
+          },
+          {
+            "id": "s01-522febb1-n4",
+            "facts": [
+              "The Harbor Bean cashier used to recognize our group by a chessboard tote that kept showing up."
+            ]
+          },
+          {
+            "id": "s01-522febb1-n5",
+            "facts": [
+              "That chessboard tote has a frayed leather zipper pull."
+            ]
+          }
+        ],
+        "relations": [
+          {
+            "source_id": "s01-522febb1-n2",
+            "type": "supports",
+            "target_id": "s01-522febb1-n1"
+          },
+          {
+            "source_id": "s01-522febb1-n3",
+            "type": "part_of",
+            "target_id": "s01-522febb1-n1"
+          },
+          {
+            "source_id": "s01-522febb1-n4",
+            "type": "related_to",
+            "target_id": "s01-522febb1-n1"
+          },
+          {
+            "source_id": "s01-522febb1-n5",
+            "type": "related_to",
+            "target_id": "s01-522febb1-n4"
+          }
+        ],
+        "updates": [
+          {
+            "node_id": "s01-522febb1-n1",
+            "replacement_facts": [
+              "My weekly language-exchange meetup now meets in the glass sunroom of Kite Lantern Bookshop."
+            ]
+          }
+        ],
+        "query": {
+          "intent": "Retrieve the current facts jointly supported by 3 required information items.",
+          "expected_ids": [
+            "s01-522febb1-n1",
+            "s01-522febb1-n2",
+            "s01-522febb1-n3"
+          ],
+          "forbidden_ids": [
+            "s01-522febb1-n4",
+            "s01-522febb1-n5"
+          ],
+          "answer_facts": [
+            "My weekly language-exchange meetup now meets in the glass sunroom of Kite Lantern Bookshop.",
+            "The bookshop's standing Thursday reservation keeps our meetup active there every week.",
+            "A folding sign-in table is part of that bookshop meetup setup."
+          ]
+        }
+      },
+      "expression": {
+        "id": "s01-522febb1",
+        "information": [
+          {
+            "node_id": "s01-522febb1-n1",
+            "content": "My weekly language-exchange meetup used to meet at Harbor Bean."
+          },
+          {
+            "node_id": "s01-522febb1-n2",
+            "content": "The bookshop's standing Thursday reservation keeps our meetup active there every week."
+          },
+          {
+            "node_id": "s01-522febb1-n3",
+            "content": "A folding sign-in table is part of that bookshop meetup setup."
+          },
+          {
+            "node_id": "s01-522febb1-n4",
+            "content": "The Harbor Bean cashier used to recognize our group by a chessboard tote that kept showing up."
+          },
+          {
+            "node_id": "s01-522febb1-n5",
+            "content": "That chessboard tote has a frayed leather zipper pull."
+          }
+        ],
+        "updates": [
+          {
+            "node_id": "s01-522febb1-n1",
+            "content": "My weekly language-exchange meetup now meets in the glass sunroom of Kite Lantern Bookshop."
+          }
+        ],
+        "query": {
+          "question": "What is my current weekly language-exchange meetup location, stated exactly enough to identify the specific area inside the venue, what separate result shows that location is still in use for the meetup, and what separate setup item belongs to that meetup there?"
+        }
+      }
+    },
+    {
+      "truth": {
+        "id": "s02-b199f5b9",
+        "task_class": "multi_hop",
+        "information_scope": [
+          "practice_method",
+          "skill",
+          "knowledge"
+        ],
+        "nodes": [
+          {
+            "id": "s02-b199f5b9-n1",
+            "facts": [
+              "When I marked sewing stations with a soft pencil, the graphite smudged onto the linen thread during stitching."
+            ]
+          },
+          {
+            "id": "s02-b199f5b9-n2",
+            "facts": [
+              "For hand-bound notebooks, waxed thread should be paired with a punched template instead of penciled sewing marks."
+            ]
+          },
+          {
+            "id": "s02-b199f5b9-n3",
+            "facts": [
+              "Using a punched template keeps the exposed thread light-colored after the binding is finished."
+            ]
+          },
+          {
+            "id": "s02-b199f5b9-n4",
+            "facts": [
+              "Marbled endpapers are commonly selected for notebooks with visible cream stitching."
+            ]
+          },
+          {
+            "id": "s02-b199f5b9-n5",
+            "facts": [
+              "A brass corner rounder is often stored in the same bookbinding tray as marbled endpaper sheets."
+            ]
+          }
+        ],
+        "relations": [
+          {
+            "source_id": "s02-b199f5b9-n2",
+            "type": "derived_from",
+            "target_id": "s02-b199f5b9-n1"
+          },
+          {
+            "source_id": "s02-b199f5b9-n2",
+            "type": "supports",
+            "target_id": "s02-b199f5b9-n3"
+          },
+          {
+            "source_id": "s02-b199f5b9-n4",
+            "type": "related_to",
+            "target_id": "s02-b199f5b9-n3"
+          },
+          {
+            "source_id": "s02-b199f5b9-n5",
+            "type": "related_to",
+            "target_id": "s02-b199f5b9-n4"
+          }
+        ],
+        "updates": [],
+        "query": {
+          "intent": "Retrieve the current facts jointly supported by 3 required information items.",
+          "expected_ids": [
+            "s02-b199f5b9-n1",
+            "s02-b199f5b9-n2",
+            "s02-b199f5b9-n3"
+          ],
+          "forbidden_ids": [
+            "s02-b199f5b9-n4",
+            "s02-b199f5b9-n5"
+          ],
+          "answer_facts": [
+            "When I marked sewing stations with a soft pencil, the graphite smudged onto the linen thread during stitching.",
+            "For hand-bound notebooks, waxed thread should be paired with a punched template instead of penciled sewing marks.",
+            "Using a punched template keeps the exposed thread light-colored after the binding is finished."
+          ]
+        }
+      },
+      "expression": {
+        "id": "s02-b199f5b9",
+        "information": [
+          {
+            "node_id": "s02-b199f5b9-n1",
+            "content": "When I marked sewing stations with a soft pencil, the graphite smudged onto the linen thread during stitching."
+          },
+          {
+            "node_id": "s02-b199f5b9-n2",
+            "content": "For hand-bound notebooks, waxed thread should be paired with a punched template instead of penciled sewing marks."
+          },
+          {
+            "node_id": "s02-b199f5b9-n3",
+            "content": "Using a punched template keeps the exposed thread light-colored after the binding is finished."
+          },
+          {
+            "node_id": "s02-b199f5b9-n4",
+            "content": "Marbled endpapers are commonly selected for notebooks with visible cream stitching."
+          },
+          {
+            "node_id": "s02-b199f5b9-n5",
+            "content": "A brass corner rounder is often stored in the same bookbinding tray as marbled endpaper sheets."
+          }
+        ],
+        "updates": [],
+        "query": {
+          "question": "What specific stitching problem was observed first, what binding conclusion was drawn from it, and what later thread outcome does that conclusion support?"
+        }
+      }
+    },
+    {
+      "truth": {
+        "id": "s03-744e6835",
+        "task_class": "information_update",
+        "information_scope": [
+          "lesson",
+          "work_information",
+          "thought"
+        ],
+        "nodes": [
+          {
+            "id": "s03-744e6835-n1",
+            "facts": [
+              "My lesson from running the print shop used to be to end every shift by checking paper stock."
+            ]
+          },
+          {
+            "id": "s03-744e6835-n2",
+            "facts": [
+              "When I checked the outage tag at shift end, I caught the next morning's maintenance shutdown before assigning rush jobs."
+            ]
+          },
+          {
+            "id": "s03-744e6835-n3",
+            "facts": [
+              "The restart window is one field on the tag I check at shift end."
+            ]
+          },
+          {
+            "id": "s03-744e6835-n4",
+            "facts": [
+              "Paper stock still changes how loudly the cutter complains on damp days."
+            ]
+          },
+          {
+            "id": "s03-744e6835-n5",
+            "facts": [
+              "A wall hygrometer hangs above the cutter."
+            ]
+          }
+        ],
+        "relations": [
+          {
+            "source_id": "s03-744e6835-n2",
+            "type": "supports",
+            "target_id": "s03-744e6835-n1"
+          },
+          {
+            "source_id": "s03-744e6835-n3",
+            "type": "part_of",
+            "target_id": "s03-744e6835-n1"
+          },
+          {
+            "source_id": "s03-744e6835-n4",
+            "type": "related_to",
+            "target_id": "s03-744e6835-n1"
+          },
+          {
+            "source_id": "s03-744e6835-n5",
+            "type": "related_to",
+            "target_id": "s03-744e6835-n4"
+          }
+        ],
+        "updates": [
+          {
+            "node_id": "s03-744e6835-n1",
+            "replacement_facts": [
+              "My lesson from running the print shop is now to end every shift by reading the orange outage tag clipped to the binding machine."
+            ]
+          }
+        ],
+        "query": {
+          "intent": "Retrieve the current facts jointly supported by 3 required information items.",
+          "expected_ids": [
+            "s03-744e6835-n1",
+            "s03-744e6835-n2",
+            "s03-744e6835-n3"
+          ],
+          "forbidden_ids": [
+            "s03-744e6835-n4",
+            "s03-744e6835-n5"
+          ],
+          "answer_facts": [
+            "My lesson from running the print shop is now to end every shift by reading the orange outage tag clipped to the binding machine.",
+            "When I checked the outage tag at shift end, I caught the next morning's maintenance shutdown before assigning rush jobs.",
+            "The restart window is one field on the tag I check at shift end."
+          ]
+        }
+      },
+      "expression": {
+        "id": "s03-744e6835",
+        "information": [
+          {
+            "node_id": "s03-744e6835-n1",
+            "content": "My lesson from running the print shop used to be to end every shift by checking paper stock."
+          },
+          {
+            "node_id": "s03-744e6835-n2",
+            "content": "When I checked the outage tag at shift end, I caught the next morning's maintenance shutdown before assigning rush jobs."
+          },
+          {
+            "node_id": "s03-744e6835-n3",
+            "content": "The restart window is one field on the tag I check at shift end."
+          },
+          {
+            "node_id": "s03-744e6835-n4",
+            "content": "Paper stock still changes how loudly the cutter complains on damp days."
+          },
+          {
+            "node_id": "s03-744e6835-n5",
+            "content": "A wall hygrometer hangs above the cutter."
+          }
+        ],
+        "updates": [
+          {
+            "node_id": "s03-744e6835-n1",
+            "content": "My lesson from running the print shop is now to end every shift by reading the orange outage tag clipped to the binding machine."
+          }
+        ],
+        "query": {
+          "question": "What is my current end-of-shift lesson from the print shop, including the exact identifying detail of what I read, what separate outcome supports using that lesson, and what separate part belongs to the item involved?"
+        }
+      }
+    },
+    {
+      "truth": {
+        "id": "s04-59bba82f",
+        "task_class": "context_applicability",
+        "information_scope": [
+          "solution_experience",
+          "social_experience",
+          "reusable_path"
+        ],
+        "nodes": [
+          {
+            "id": "s04-59bba82f-n1",
+            "facts": [
+              "In the postcard-only swap plan, Mara uses a one-page lodging preference sheet with checkboxes."
+            ]
+          },
+          {
+            "id": "s04-59bba82f-n2",
+            "facts": [
+              "Mara's current house-swap planning allows contact with hosts only by postcard because her phone service is suspended for ten days."
+            ]
+          },
+          {
+            "id": "s04-59bba82f-n3",
+            "facts": [
+              "During last year's group-chat hostel trip, Mara settled lodging details with voice notes instead of forms."
+            ]
+          },
+          {
+            "id": "s04-59bba82f-n4",
+            "facts": [
+              "Last year's hostel trip used an active group chat among the travelers, so it is not the current arrangement."
+            ]
+          },
+          {
+            "id": "s04-59bba82f-n5",
+            "facts": [
+              "That hostel trip ended with a midnight ferry to Bell Reef."
+            ]
+          }
+        ],
+        "relations": [
+          {
+            "source_id": "s04-59bba82f-n1",
+            "type": "applies_in",
+            "target_id": "s04-59bba82f-n2"
+          },
+          {
+            "source_id": "s04-59bba82f-n3",
+            "type": "applies_in",
+            "target_id": "s04-59bba82f-n4"
+          },
+          {
+            "source_id": "s04-59bba82f-n5",
+            "type": "related_to",
+            "target_id": "s04-59bba82f-n4"
+          }
+        ],
+        "updates": [],
+        "query": {
+          "intent": "Retrieve the current facts jointly supported by 2 required information items.",
+          "expected_ids": [
+            "s04-59bba82f-n1",
+            "s04-59bba82f-n2"
+          ],
+          "forbidden_ids": [
+            "s04-59bba82f-n3",
+            "s04-59bba82f-n4",
+            "s04-59bba82f-n5"
+          ],
+          "answer_facts": [
+            "In the postcard-only swap plan, Mara uses a one-page lodging preference sheet with checkboxes.",
+            "Mara's current house-swap planning allows contact with hosts only by postcard because her phone service is suspended for ten days."
+          ]
+        }
+      },
+      "expression": {
+        "id": "s04-59bba82f",
+        "information": [
+          {
+            "node_id": "s04-59bba82f-n1",
+            "content": "In the postcard-only swap plan, Mara uses a one-page lodging preference sheet with checkboxes."
+          },
+          {
+            "node_id": "s04-59bba82f-n2",
+            "content": "Mara's current house-swap planning allows contact with hosts only by postcard because her phone service is suspended for ten days."
+          },
+          {
+            "node_id": "s04-59bba82f-n3",
+            "content": "During last year's group-chat hostel trip, Mara settled lodging details with voice notes instead of forms."
+          },
+          {
+            "node_id": "s04-59bba82f-n4",
+            "content": "Last year's hostel trip used an active group chat among the travelers, so it is not the current arrangement."
+          },
+          {
+            "node_id": "s04-59bba82f-n5",
+            "content": "That hostel trip ended with a midnight ferry to Bell Reef."
+          }
+        ],
+        "updates": [],
+        "query": {
+          "question": "What is the current operational constraint on Mara's house-swap planning, and what lodging-coordination practice applies in that context?"
+        }
+      }
+    },
+    {
+      "truth": {
+        "id": "s05-6eb10c2b",
+        "task_class": "context_applicability",
+        "information_scope": [
+          "experience",
+          "practice_method",
+          "skill"
+        ],
+        "nodes": [
+          {
+            "id": "s05-6eb10c2b-n1",
+            "facts": [
+              "For the glove-on archive shift, Omar prints shelf codes in block capitals before copying them onto tags."
+            ]
+          },
+          {
+            "id": "s05-6eb10c2b-n2",
+            "facts": [
+              "Omar's current archive-volunteer shift requires every label to be written while wearing lint-proof gloves that make fine pen control difficult."
+            ]
+          },
+          {
+            "id": "s05-6eb10c2b-n3",
+            "facts": [
+              "When Omar previously sorted donated books barehanded at a street stall, he wrote labels in quick cursive."
+            ]
+          },
+          {
+            "id": "s05-6eb10c2b-n4",
+            "facts": [
+              "The street-stall sorting job was an earlier setup and is not Omar's current work context."
+            ]
+          },
+          {
+            "id": "s05-6eb10c2b-n5",
+            "facts": [
+              "That street stall stood beside a brass clock tower."
+            ]
+          }
+        ],
+        "relations": [
+          {
+            "source_id": "s05-6eb10c2b-n1",
+            "type": "applies_in",
+            "target_id": "s05-6eb10c2b-n2"
+          },
+          {
+            "source_id": "s05-6eb10c2b-n3",
+            "type": "applies_in",
+            "target_id": "s05-6eb10c2b-n4"
+          },
+          {
+            "source_id": "s05-6eb10c2b-n5",
+            "type": "related_to",
+            "target_id": "s05-6eb10c2b-n4"
+          }
+        ],
+        "updates": [],
+        "query": {
+          "intent": "Retrieve the current facts jointly supported by 2 required information items.",
+          "expected_ids": [
+            "s05-6eb10c2b-n1",
+            "s05-6eb10c2b-n2"
+          ],
+          "forbidden_ids": [
+            "s05-6eb10c2b-n3",
+            "s05-6eb10c2b-n4",
+            "s05-6eb10c2b-n5"
+          ],
+          "answer_facts": [
+            "For the glove-on archive shift, Omar prints shelf codes in block capitals before copying them onto tags.",
+            "Omar's current archive-volunteer shift requires every label to be written while wearing lint-proof gloves that make fine pen control difficult."
+          ]
+        }
+      },
+      "expression": {
+        "id": "s05-6eb10c2b",
+        "information": [
+          {
+            "node_id": "s05-6eb10c2b-n1",
+            "content": "For the glove-on archive shift, Omar prints shelf codes in block capitals before copying them onto tags."
+          },
+          {
+            "node_id": "s05-6eb10c2b-n2",
+            "content": "Omar's current archive-volunteer shift requires every label to be written while wearing lint-proof gloves that make fine pen control difficult."
+          },
+          {
+            "node_id": "s05-6eb10c2b-n3",
+            "content": "When Omar previously sorted donated books barehanded at a street stall, he wrote labels in quick cursive."
+          },
+          {
+            "node_id": "s05-6eb10c2b-n4",
+            "content": "The street-stall sorting job was an earlier setup and is not Omar's current work context."
+          },
+          {
+            "node_id": "s05-6eb10c2b-n5",
+            "content": "That street stall stood beside a brass clock tower."
+          }
+        ],
+        "updates": [],
+        "query": {
+          "question": "Which operational constraint defines Omar's current work context, and what labeling method applies within it?"
+        }
+      }
+    },
+    {
+      "truth": {
+        "id": "s06-814b9756",
+        "task_class": "multi_hop",
+        "information_scope": [
+          "knowledge",
+          "lesson",
+          "work_information"
+        ],
+        "nodes": [
+          {
+            "id": "s06-814b9756-n1",
+            "facts": [
+              "During an invoice handoff, three nearly identical project codenames caused the courier envelope to reach the wrong studio."
+            ]
+          },
+          {
+            "id": "s06-814b9756-n2",
+            "facts": [
+              "At work, outgoing packet labels need the client name in large text above any internal codename."
+            ]
+          },
+          {
+            "id": "s06-814b9756-n3",
+            "facts": [
+              "That labeling rule lets the receiving desk sort new packets without calling the sender for clarification."
+            ]
+          },
+          {
+            "id": "s06-814b9756-n4",
+            "facts": [
+              "The same receiving desk also logs framed artwork arrivals in a paper ledger."
+            ]
+          },
+          {
+            "id": "s06-814b9756-n5",
+            "facts": [
+              "A felt-tip date stamp is chained beside the paper ledger."
+            ]
+          }
+        ],
+        "relations": [
+          {
+            "source_id": "s06-814b9756-n2",
+            "type": "derived_from",
+            "target_id": "s06-814b9756-n1"
+          },
+          {
+            "source_id": "s06-814b9756-n2",
+            "type": "supports",
+            "target_id": "s06-814b9756-n3"
+          },
+          {
+            "source_id": "s06-814b9756-n4",
+            "type": "related_to",
+            "target_id": "s06-814b9756-n3"
+          },
+          {
+            "source_id": "s06-814b9756-n5",
+            "type": "related_to",
+            "target_id": "s06-814b9756-n4"
+          }
+        ],
+        "updates": [],
+        "query": {
+          "intent": "Retrieve the current facts jointly supported by 3 required information items.",
+          "expected_ids": [
+            "s06-814b9756-n1",
+            "s06-814b9756-n2",
+            "s06-814b9756-n3"
+          ],
+          "forbidden_ids": [
+            "s06-814b9756-n4",
+            "s06-814b9756-n5"
+          ],
+          "answer_facts": [
+            "During an invoice handoff, three nearly identical project codenames caused the courier envelope to reach the wrong studio.",
+            "At work, outgoing packet labels need the client name in large text above any internal codename.",
+            "That labeling rule lets the receiving desk sort new packets without calling the sender for clarification."
+          ]
+        }
+      },
+      "expression": {
+        "id": "s06-814b9756",
+        "information": [
+          {
+            "node_id": "s06-814b9756-n1",
+            "content": "During an invoice handoff, three nearly identical project codenames caused the courier envelope to reach the wrong studio."
+          },
+          {
+            "node_id": "s06-814b9756-n2",
+            "content": "At work, outgoing packet labels need the client name in large text above any internal codename."
+          },
+          {
+            "node_id": "s06-814b9756-n3",
+            "content": "That labeling rule lets the receiving desk sort new packets without calling the sender for clarification."
+          },
+          {
+            "node_id": "s06-814b9756-n4",
+            "content": "The same receiving desk also logs framed artwork arrivals in a paper ledger."
+          },
+          {
+            "node_id": "s06-814b9756-n5",
+            "content": "A felt-tip date stamp is chained beside the paper ledger."
+          }
+        ],
+        "updates": [],
+        "query": {
+          "question": "What original handoff observation exposed the labeling issue, what work rule was concluded from it, and what later receiving-desk benefit does that rule support?"
+        }
+      }
+    },
+    {
+      "truth": {
+        "id": "s07-c459d0cc",
+        "task_class": "multi_hop",
+        "information_scope": [
+          "thought",
+          "solution_experience",
+          "social_experience"
+        ],
+        "nodes": [
+          {
+            "id": "s07-c459d0cc-n1",
+            "facts": [
+              "At the first planning meeting, the quietest volunteers spoke only after everyone wrote suggestions on index cards instead of answering aloud."
+            ]
+          },
+          {
+            "id": "s07-c459d0cc-n2",
+            "facts": [
+              "For mixed-group discussions, collecting written suggestions before open debate brings in people who hesitate to join the room's first wave of talk."
+            ]
+          },
+          {
+            "id": "s07-c459d0cc-n3",
+            "facts": [
+              "Using that discussion format gave the volunteer team enough distinct activity ideas to build a full festival schedule in one evening."
+            ]
+          },
+          {
+            "id": "s07-c459d0cc-n4",
+            "facts": [
+              "The festival schedule was printed on a long strip of yellow butcher paper."
+            ]
+          },
+          {
+            "id": "s07-c459d0cc-n5",
+            "facts": [
+              "A roll of removable dots was kept next to the yellow butcher paper for last-minute markings."
+            ]
+          }
+        ],
+        "relations": [
+          {
+            "source_id": "s07-c459d0cc-n2",
+            "type": "derived_from",
+            "target_id": "s07-c459d0cc-n1"
+          },
+          {
+            "source_id": "s07-c459d0cc-n2",
+            "type": "supports",
+            "target_id": "s07-c459d0cc-n3"
+          },
+          {
+            "source_id": "s07-c459d0cc-n4",
+            "type": "related_to",
+            "target_id": "s07-c459d0cc-n3"
+          },
+          {
+            "source_id": "s07-c459d0cc-n5",
+            "type": "related_to",
+            "target_id": "s07-c459d0cc-n4"
+          }
+        ],
+        "updates": [],
+        "query": {
+          "intent": "Retrieve the current facts jointly supported by 3 required information items.",
+          "expected_ids": [
+            "s07-c459d0cc-n1",
+            "s07-c459d0cc-n2",
+            "s07-c459d0cc-n3"
+          ],
+          "forbidden_ids": [
+            "s07-c459d0cc-n4",
+            "s07-c459d0cc-n5"
+          ],
+          "answer_facts": [
+            "At the first planning meeting, the quietest volunteers spoke only after everyone wrote suggestions on index cards instead of answering aloud.",
+            "For mixed-group discussions, collecting written suggestions before open debate brings in people who hesitate to join the room's first wave of talk.",
+            "Using that discussion format gave the volunteer team enough distinct activity ideas to build a full festival schedule in one evening."
+          ]
+        }
+      },
+      "expression": {
+        "id": "s07-c459d0cc",
+        "information": [
+          {
+            "node_id": "s07-c459d0cc-n1",
+            "content": "At the first planning meeting, the quietest volunteers spoke only after everyone wrote suggestions on index cards instead of answering aloud."
+          },
+          {
+            "node_id": "s07-c459d0cc-n2",
+            "content": "For mixed-group discussions, collecting written suggestions before open debate brings in people who hesitate to join the room's first wave of talk."
+          },
+          {
+            "node_id": "s07-c459d0cc-n3",
+            "content": "Using that discussion format gave the volunteer team enough distinct activity ideas to build a full festival schedule in one evening."
+          },
+          {
+            "node_id": "s07-c459d0cc-n4",
+            "content": "The festival schedule was printed on a long strip of yellow butcher paper."
+          },
+          {
+            "node_id": "s07-c459d0cc-n5",
+            "content": "A roll of removable dots was kept next to the yellow butcher paper for last-minute markings."
+          }
+        ],
+        "updates": [],
+        "query": {
+          "question": "What exact early meeting observation came first, what discussion conclusion was drawn from it, and what later scheduling result did that conclusion support?"
+        }
+      }
+    },
+    {
+      "truth": {
+        "id": "s08-17f29c06",
+        "task_class": "context_applicability",
+        "information_scope": [
+          "reusable_path",
+          "experience",
+          "practice_method"
+        ],
+        "nodes": [
+          {
+            "id": "s08-17f29c06-n1",
+            "facts": [
+              "For the stub-journal routine, Lin records each trip as a station pair plus one weather word."
+            ]
+          },
+          {
+            "id": "s08-17f29c06-n2",
+            "facts": [
+              "Lin's current train-journal routine requires each daily entry to fit on a ticket stub with space for only twelve words."
+            ]
+          },
+          {
+            "id": "s08-17f29c06-n3",
+            "facts": [
+              "During a past backpacking month with a full notebook, Lin wrote long paragraph entries about each ride."
+            ]
+          },
+          {
+            "id": "s08-17f29c06-n4",
+            "facts": [
+              "The backpacking month belonged to an earlier travel period and is not Lin's current journaling context."
+            ]
+          },
+          {
+            "id": "s08-17f29c06-n5",
+            "facts": [
+              "That backpacking month included a stop at a hill market known for smoked pears."
+            ]
+          }
+        ],
+        "relations": [
+          {
+            "source_id": "s08-17f29c06-n1",
+            "type": "applies_in",
+            "target_id": "s08-17f29c06-n2"
+          },
+          {
+            "source_id": "s08-17f29c06-n3",
+            "type": "applies_in",
+            "target_id": "s08-17f29c06-n4"
+          },
+          {
+            "source_id": "s08-17f29c06-n5",
+            "type": "related_to",
+            "target_id": "s08-17f29c06-n4"
+          }
+        ],
+        "updates": [],
+        "query": {
+          "intent": "Retrieve the current facts jointly supported by 2 required information items.",
+          "expected_ids": [
+            "s08-17f29c06-n1",
+            "s08-17f29c06-n2"
+          ],
+          "forbidden_ids": [
+            "s08-17f29c06-n3",
+            "s08-17f29c06-n4",
+            "s08-17f29c06-n5"
+          ],
+          "answer_facts": [
+            "For the stub-journal routine, Lin records each trip as a station pair plus one weather word.",
+            "Lin's current train-journal routine requires each daily entry to fit on a ticket stub with space for only twelve words."
+          ]
+        }
+      },
+      "expression": {
+        "id": "s08-17f29c06",
+        "information": [
+          {
+            "node_id": "s08-17f29c06-n1",
+            "content": "For the stub-journal routine, Lin records each trip as a station pair plus one weather word."
+          },
+          {
+            "node_id": "s08-17f29c06-n2",
+            "content": "Lin's current train-journal routine requires each daily entry to fit on a ticket stub with space for only twelve words."
+          },
+          {
+            "node_id": "s08-17f29c06-n3",
+            "content": "During a past backpacking month with a full notebook, Lin wrote long paragraph entries about each ride."
+          },
+          {
+            "node_id": "s08-17f29c06-n4",
+            "content": "The backpacking month belonged to an earlier travel period and is not Lin's current journaling context."
+          },
+          {
+            "node_id": "s08-17f29c06-n5",
+            "content": "That backpacking month included a stop at a hill market known for smoked pears."
+          }
+        ],
+        "updates": [],
+        "query": {
+          "question": "What is the current constraint on Lin's journaling format, and what recording practice applies in that setting?"
+        }
+      }
+    },
+    {
+      "truth": {
+        "id": "s09-1a8fdc2b",
+        "task_class": "context_applicability",
+        "information_scope": [
+          "skill",
+          "knowledge",
+          "lesson"
+        ],
+        "nodes": [
+          {
+            "id": "s09-1a8fdc2b-n1",
+            "facts": [
+              "In the whisper-lesson setup, I teach new bird names by tapping the syllable count on the table."
+            ]
+          },
+          {
+            "id": "s09-1a8fdc2b-n2",
+            "facts": [
+              "My current tutoring session is inside a museum reading room where spoken explanations must stay below a whisper."
+            ]
+          },
+          {
+            "id": "s09-1a8fdc2b-n3",
+            "facts": [
+              "In a previous outdoor lesson, I taught bird names by calling them out at full volume across the field."
+            ]
+          },
+          {
+            "id": "s09-1a8fdc2b-n4",
+            "facts": [
+              "The outdoor lesson happened earlier in an open field and is not the current teaching context."
+            ]
+          },
+          {
+            "id": "s09-1a8fdc2b-n5",
+            "facts": [
+              "That field lesson ended when a red kite circled above the gate."
+            ]
+          }
+        ],
+        "relations": [
+          {
+            "source_id": "s09-1a8fdc2b-n1",
+            "type": "applies_in",
+            "target_id": "s09-1a8fdc2b-n2"
+          },
+          {
+            "source_id": "s09-1a8fdc2b-n3",
+            "type": "applies_in",
+            "target_id": "s09-1a8fdc2b-n4"
+          },
+          {
+            "source_id": "s09-1a8fdc2b-n5",
+            "type": "related_to",
+            "target_id": "s09-1a8fdc2b-n4"
+          }
+        ],
+        "updates": [],
+        "query": {
+          "intent": "Retrieve the current facts jointly supported by 2 required information items.",
+          "expected_ids": [
+            "s09-1a8fdc2b-n1",
+            "s09-1a8fdc2b-n2"
+          ],
+          "forbidden_ids": [
+            "s09-1a8fdc2b-n3",
+            "s09-1a8fdc2b-n4",
+            "s09-1a8fdc2b-n5"
+          ],
+          "answer_facts": [
+            "In the whisper-lesson setup, I teach new bird names by tapping the syllable count on the table.",
+            "My current tutoring session is inside a museum reading room where spoken explanations must stay below a whisper."
+          ]
+        }
+      },
+      "expression": {
+        "id": "s09-1a8fdc2b",
+        "information": [
+          {
+            "node_id": "s09-1a8fdc2b-n1",
+            "content": "In the whisper-lesson setup, I teach new bird names by tapping the syllable count on the table."
+          },
+          {
+            "node_id": "s09-1a8fdc2b-n2",
+            "content": "My current tutoring session is inside a museum reading room where spoken explanations must stay below a whisper."
+          },
+          {
+            "node_id": "s09-1a8fdc2b-n3",
+            "content": "In a previous outdoor lesson, I taught bird names by calling them out at full volume across the field."
+          },
+          {
+            "node_id": "s09-1a8fdc2b-n4",
+            "content": "The outdoor lesson happened earlier in an open field and is not the current teaching context."
+          },
+          {
+            "node_id": "s09-1a8fdc2b-n5",
+            "content": "That field lesson ended when a red kite circled above the gate."
+          }
+        ],
+        "updates": [],
+        "query": {
+          "question": "What operational constraint defines the current tutoring context, and what teaching method applies there?"
+        }
+      }
+    },
+    {
+      "truth": {
+        "id": "s10-920f770e",
+        "task_class": "cross_time",
+        "information_scope": [
+          "work_information",
+          "thought",
+          "solution_experience"
+        ],
+        "nodes": [
+          {
+            "id": "s10-920f770e-n1",
+            "facts": [
+              "While riding the archive ferry, Mira learned that using loose citation cards during travel could send her notes into the harbor."
+            ]
+          },
+          {
+            "id": "s10-920f770e-n2",
+            "facts": [
+              "Mira decided to keep research citations in a zippered notebook instead of on separate cards."
+            ]
+          },
+          {
+            "id": "s10-920f770e-n3",
+            "facts": [
+              "After the switch, every travel day ended with all of Mira's citation notes still intact at her desk."
+            ]
+          },
+          {
+            "id": "s10-920f770e-n4",
+            "facts": [
+              "Mobile work-recording practices are broader than using loose citation cards during travel."
+            ]
+          },
+          {
+            "id": "s10-920f770e-n5",
+            "facts": [
+              "Mira pairs a low-volume instrumental playlist with her mobile work-recording sessions."
+            ]
+          }
+        ],
+        "relations": [
+          {
+            "source_id": "s10-920f770e-n2",
+            "type": "derived_from",
+            "target_id": "s10-920f770e-n1"
+          },
+          {
+            "source_id": "s10-920f770e-n3",
+            "type": "supports",
+            "target_id": "s10-920f770e-n2"
+          },
+          {
+            "source_id": "s10-920f770e-n5",
+            "type": "related_to",
+            "target_id": "s10-920f770e-n4"
+          },
+          {
+            "source_id": "s10-920f770e-n4",
+            "type": "broader_than",
+            "target_id": "s10-920f770e-n1"
+          }
+        ],
+        "updates": [],
+        "query": {
+          "intent": "Retrieve the current facts jointly supported by 3 required information items.",
+          "expected_ids": [
+            "s10-920f770e-n1",
+            "s10-920f770e-n2",
+            "s10-920f770e-n3"
+          ],
+          "forbidden_ids": [
+            "s10-920f770e-n4",
+            "s10-920f770e-n5"
+          ],
+          "answer_facts": [
+            "While riding the archive ferry, Mira learned that using loose citation cards during travel could send her notes into the harbor.",
+            "Mira decided to keep research citations in a zippered notebook instead of on separate cards.",
+            "After the switch, every travel day ended with all of Mira's citation notes still intact at her desk."
+          ]
+        }
+      },
+      "expression": {
+        "id": "s10-920f770e",
+        "information": [
+          {
+            "node_id": "s10-920f770e-n1",
+            "content": "While riding the archive ferry, Mira learned that using loose citation cards during travel could send her notes into the harbor."
+          },
+          {
+            "node_id": "s10-920f770e-n2",
+            "content": "Mira decided to keep research citations in a zippered notebook instead of on separate cards."
+          },
+          {
+            "node_id": "s10-920f770e-n3",
+            "content": "After the switch, every travel day ended with all of Mira's citation notes still intact at her desk."
+          },
+          {
+            "node_id": "s10-920f770e-n4",
+            "content": "Mobile work-recording practices are broader than using loose citation cards during travel."
+          },
+          {
+            "node_id": "s10-920f770e-n5",
+            "content": "Mira pairs a low-volume instrumental playlist with her mobile work-recording sessions."
+          }
+        ],
+        "updates": [],
+        "query": {
+          "question": "What earlier travel-based observation, including its original setting, led Mira to a later note-keeping decision, and what later result supports that decision?"
+        }
+      }
+    },
+    {
+      "truth": {
+        "id": "s11-1a6ba287",
+        "task_class": "cross_time",
+        "information_scope": [
+          "social_experience",
+          "reusable_path",
+          "experience"
+        ],
+        "nodes": [
+          {
+            "id": "s11-1a6ba287-n1",
+            "facts": [
+              "At a lantern-making club's newcomer table, Jonah found that introducing himself through one shared hobby turned brief greetings into real conversations."
+            ]
+          },
+          {
+            "id": "s11-1a6ba287-n2",
+            "facts": [
+              "Jonah now starts conversations in unfamiliar groups with one specific shared-interest question."
+            ]
+          },
+          {
+            "id": "s11-1a6ba287-n3",
+            "facts": [
+              "Recently, people have begun pulling Jonah into ongoing chats before break time ends."
+            ]
+          },
+          {
+            "id": "s11-1a6ba287-n4",
+            "facts": [
+              "Conversation openers are broader social tools than a shared-hobby introduction at a newcomer table."
+            ]
+          },
+          {
+            "id": "s11-1a6ba287-n5",
+            "facts": [
+              "Jonah keeps a small tin of mints for use before conversation openers."
+            ]
+          }
+        ],
+        "relations": [
+          {
+            "source_id": "s11-1a6ba287-n2",
+            "type": "derived_from",
+            "target_id": "s11-1a6ba287-n1"
+          },
+          {
+            "source_id": "s11-1a6ba287-n3",
+            "type": "supports",
+            "target_id": "s11-1a6ba287-n2"
+          },
+          {
+            "source_id": "s11-1a6ba287-n5",
+            "type": "related_to",
+            "target_id": "s11-1a6ba287-n4"
+          },
+          {
+            "source_id": "s11-1a6ba287-n1",
+            "type": "narrower_than",
+            "target_id": "s11-1a6ba287-n4"
+          }
+        ],
+        "updates": [],
+        "query": {
+          "intent": "Retrieve the current facts jointly supported by 3 required information items.",
+          "expected_ids": [
+            "s11-1a6ba287-n1",
+            "s11-1a6ba287-n2",
+            "s11-1a6ba287-n3"
+          ],
+          "forbidden_ids": [
+            "s11-1a6ba287-n4",
+            "s11-1a6ba287-n5"
+          ],
+          "answer_facts": [
+            "At a lantern-making club's newcomer table, Jonah found that introducing himself through one shared hobby turned brief greetings into real conversations.",
+            "Jonah now starts conversations in unfamiliar groups with one specific shared-interest question.",
+            "Recently, people have begun pulling Jonah into ongoing chats before break time ends."
+          ]
+        }
+      },
+      "expression": {
+        "id": "s11-1a6ba287",
+        "information": [
+          {
+            "node_id": "s11-1a6ba287-n1",
+            "content": "At a lantern-making club's newcomer table, Jonah found that introducing himself through one shared hobby turned brief greetings into real conversations."
+          },
+          {
+            "node_id": "s11-1a6ba287-n2",
+            "content": "Jonah now starts conversations in unfamiliar groups with one specific shared-interest question."
+          },
+          {
+            "node_id": "s11-1a6ba287-n3",
+            "content": "Recently, people have begun pulling Jonah into ongoing chats before break time ends."
+          },
+          {
+            "node_id": "s11-1a6ba287-n4",
+            "content": "Conversation openers are broader social tools than a shared-hobby introduction at a newcomer table."
+          },
+          {
+            "node_id": "s11-1a6ba287-n5",
+            "content": "Jonah keeps a small tin of mints for use before conversation openers."
+          }
+        ],
+        "updates": [],
+        "query": {
+          "question": "What earlier social experience, with its original provenance, shaped Jonah's later reusable way of opening conversations, and what later outcome supports that approach?"
+        }
+      }
+    },
+    {
+      "truth": {
+        "id": "s12-93c940e2",
+        "task_class": "information_update",
+        "information_scope": [
+          "practice_method",
+          "skill",
+          "knowledge"
+        ],
+        "nodes": [
+          {
+            "id": "s12-93c940e2-n1",
+            "facts": [
+              "I used to practice knot-tying by repeating the same loop fifty times."
+            ]
+          },
+          {
+            "id": "s12-93c940e2-n2",
+            "facts": [
+              "The nightly clips exposed when my thumb drifted and cut my relearning time in half."
+            ]
+          },
+          {
+            "id": "s12-93c940e2-n3",
+            "facts": [
+              "A left-handed run is one segment of that nightly practice routine."
+            ]
+          },
+          {
+            "id": "s12-93c940e2-n4",
+            "facts": [
+              "That old counting rhythm came from a rowing coxswain chant I still remember."
+            ]
+          },
+          {
+            "id": "s12-93c940e2-n5",
+            "facts": [
+              "The chant used a clipped two-beat cadence."
+            ]
+          }
+        ],
+        "relations": [
+          {
+            "source_id": "s12-93c940e2-n2",
+            "type": "supports",
+            "target_id": "s12-93c940e2-n1"
+          },
+          {
+            "source_id": "s12-93c940e2-n3",
+            "type": "part_of",
+            "target_id": "s12-93c940e2-n1"
+          },
+          {
+            "source_id": "s12-93c940e2-n4",
+            "type": "related_to",
+            "target_id": "s12-93c940e2-n1"
+          },
+          {
+            "source_id": "s12-93c940e2-n5",
+            "type": "related_to",
+            "target_id": "s12-93c940e2-n4"
+          }
+        ],
+        "updates": [
+          {
+            "node_id": "s12-93c940e2-n1",
+            "replacement_facts": [
+              "I now practice knot-tying by filming one left-handed run each night on a yellow cutting mat."
+            ]
+          }
+        ],
+        "query": {
+          "intent": "Retrieve the current facts jointly supported by 3 required information items.",
+          "expected_ids": [
+            "s12-93c940e2-n1",
+            "s12-93c940e2-n2",
+            "s12-93c940e2-n3"
+          ],
+          "forbidden_ids": [
+            "s12-93c940e2-n4",
+            "s12-93c940e2-n5"
+          ],
+          "answer_facts": [
+            "I now practice knot-tying by filming one left-handed run each night on a yellow cutting mat.",
+            "The nightly clips exposed when my thumb drifted and cut my relearning time in half.",
+            "A left-handed run is one segment of that nightly practice routine."
+          ]
+        }
+      },
+      "expression": {
+        "id": "s12-93c940e2",
+        "information": [
+          {
+            "node_id": "s12-93c940e2-n1",
+            "content": "I used to practice knot-tying by repeating the same loop fifty times."
+          },
+          {
+            "node_id": "s12-93c940e2-n2",
+            "content": "The nightly clips exposed when my thumb drifted and cut my relearning time in half."
+          },
+          {
+            "node_id": "s12-93c940e2-n3",
+            "content": "A left-handed run is one segment of that nightly practice routine."
+          },
+          {
+            "node_id": "s12-93c940e2-n4",
+            "content": "That old counting rhythm came from a rowing coxswain chant I still remember."
+          },
+          {
+            "node_id": "s12-93c940e2-n5",
+            "content": "The chant used a clipped two-beat cadence."
+          }
+        ],
+        "updates": [
+          {
+            "node_id": "s12-93c940e2-n1",
+            "content": "I now practice knot-tying by filming one left-handed run each night on a yellow cutting mat."
+          }
+        ],
+        "query": {
+          "question": "What is my current knot-tying practice method, stated with the exact distinguishing detail of where it happens, what separate result supports that method, and what separate component belongs to the routine?"
+        }
+      }
+    },
+    {
+      "truth": {
+        "id": "s13-3b780c39",
+        "task_class": "context_applicability",
+        "information_scope": [
+          "lesson",
+          "work_information",
+          "thought"
+        ],
+        "nodes": [
+          {
+            "id": "s13-3b780c39-n1",
+            "facts": [
+              "In the hush-pass profile, each visitor's emergency contact is printed on the reverse side of the badge."
+            ]
+          },
+          {
+            "id": "s13-3b780c39-n2",
+            "facts": [
+              "The current sculpture-annex intake is running in hush-pass mode because staff may not use phones on the gallery floor."
+            ]
+          },
+          {
+            "id": "s13-3b780c39-n3",
+            "facts": [
+              "At a past harbor pop-up intake, emergency contacts were written on paper biodata cards."
+            ]
+          },
+          {
+            "id": "s13-3b780c39-n4",
+            "facts": [
+              "The harbor pop-up intake happened last winter in a shed where the registration tablets lost power by midday."
+            ]
+          },
+          {
+            "id": "s13-3b780c39-n5",
+            "facts": [
+              "That same harbor pop-up shed had a brass fog bell hanging by the doorway."
+            ]
+          }
+        ],
+        "relations": [
+          {
+            "source_id": "s13-3b780c39-n1",
+            "type": "applies_in",
+            "target_id": "s13-3b780c39-n2"
+          },
+          {
+            "source_id": "s13-3b780c39-n3",
+            "type": "applies_in",
+            "target_id": "s13-3b780c39-n4"
+          },
+          {
+            "source_id": "s13-3b780c39-n5",
+            "type": "related_to",
+            "target_id": "s13-3b780c39-n4"
+          }
+        ],
+        "updates": [],
+        "query": {
+          "intent": "Retrieve the current facts jointly supported by 2 required information items.",
+          "expected_ids": [
+            "s13-3b780c39-n1",
+            "s13-3b780c39-n2"
+          ],
+          "forbidden_ids": [
+            "s13-3b780c39-n3",
+            "s13-3b780c39-n4",
+            "s13-3b780c39-n5"
+          ],
+          "answer_facts": [
+            "In the hush-pass profile, each visitor's emergency contact is printed on the reverse side of the badge.",
+            "The current sculpture-annex intake is running in hush-pass mode because staff may not use phones on the gallery floor."
+          ]
+        }
+      },
+      "expression": {
+        "id": "s13-3b780c39",
+        "information": [
+          {
+            "node_id": "s13-3b780c39-n1",
+            "content": "In the hush-pass profile, each visitor's emergency contact is printed on the reverse side of the badge."
+          },
+          {
+            "node_id": "s13-3b780c39-n2",
+            "content": "The current sculpture-annex intake is running in hush-pass mode because staff may not use phones on the gallery floor."
+          },
+          {
+            "node_id": "s13-3b780c39-n3",
+            "content": "At a past harbor pop-up intake, emergency contacts were written on paper biodata cards."
+          },
+          {
+            "node_id": "s13-3b780c39-n4",
+            "content": "The harbor pop-up intake happened last winter in a shed where the registration tablets lost power by midday."
+          },
+          {
+            "node_id": "s13-3b780c39-n5",
+            "content": "That same harbor pop-up shed had a brass fog bell hanging by the doorway."
+          }
+        ],
+        "updates": [],
+        "query": {
+          "question": "In the current intake setup, what operating restriction defines the context, and what personal-information practice applies within that setup?"
+        }
+      }
+    },
+    {
+      "truth": {
+        "id": "s14-bbcc47dc",
+        "task_class": "information_update",
+        "information_scope": [
+          "solution_experience",
+          "social_experience",
+          "reusable_path"
+        ],
+        "nodes": [
+          {
+            "id": "s14-bbcc47dc-n1",
+            "facts": [
+              "When newcomers froze at community repair night, I used to hand them the densest task list first."
+            ]
+          },
+          {
+            "id": "s14-bbcc47dc-n2",
+            "facts": [
+              "That pairing gets first-timers talking within minutes and keeps them through cleanup."
+            ]
+          },
+          {
+            "id": "s14-bbcc47dc-n3",
+            "facts": [
+              "A tray of color tabs is part of the receipt-sorting station."
+            ]
+          },
+          {
+            "id": "s14-bbcc47dc-n4",
+            "facts": [
+              "The old task list was printed on stiff blue card that newcomers kept bending."
+            ]
+          },
+          {
+            "id": "s14-bbcc47dc-n5",
+            "facts": [
+              "A brass clip held that blue card to the sign-in crate."
+            ]
+          }
+        ],
+        "relations": [
+          {
+            "source_id": "s14-bbcc47dc-n2",
+            "type": "supports",
+            "target_id": "s14-bbcc47dc-n1"
+          },
+          {
+            "source_id": "s14-bbcc47dc-n3",
+            "type": "part_of",
+            "target_id": "s14-bbcc47dc-n1"
+          },
+          {
+            "source_id": "s14-bbcc47dc-n4",
+            "type": "related_to",
+            "target_id": "s14-bbcc47dc-n1"
+          },
+          {
+            "source_id": "s14-bbcc47dc-n5",
+            "type": "related_to",
+            "target_id": "s14-bbcc47dc-n4"
+          }
+        ],
+        "updates": [
+          {
+            "node_id": "s14-bbcc47dc-n1",
+            "replacement_facts": [
+              "When newcomers freeze at community repair night, I now start them by pairing them with the receipt-sorting station beside a tin windmill."
+            ]
+          }
+        ],
+        "query": {
+          "intent": "Retrieve the current facts jointly supported by 3 required information items.",
+          "expected_ids": [
+            "s14-bbcc47dc-n1",
+            "s14-bbcc47dc-n2",
+            "s14-bbcc47dc-n3"
+          ],
+          "forbidden_ids": [
+            "s14-bbcc47dc-n4",
+            "s14-bbcc47dc-n5"
+          ],
+          "answer_facts": [
+            "When newcomers freeze at community repair night, I now start them by pairing them with the receipt-sorting station beside a tin windmill.",
+            "That pairing gets first-timers talking within minutes and keeps them through cleanup.",
+            "A tray of color tabs is part of the receipt-sorting station."
+          ]
+        }
+      },
+      "expression": {
+        "id": "s14-bbcc47dc",
+        "information": [
+          {
+            "node_id": "s14-bbcc47dc-n1",
+            "content": "When newcomers froze at community repair night, I used to hand them the densest task list first."
+          },
+          {
+            "node_id": "s14-bbcc47dc-n2",
+            "content": "That pairing gets first-timers talking within minutes and keeps them through cleanup."
+          },
+          {
+            "node_id": "s14-bbcc47dc-n3",
+            "content": "A tray of color tabs is part of the receipt-sorting station."
+          },
+          {
+            "node_id": "s14-bbcc47dc-n4",
+            "content": "The old task list was printed on stiff blue card that newcomers kept bending."
+          },
+          {
+            "node_id": "s14-bbcc47dc-n5",
+            "content": "A brass clip held that blue card to the sign-in crate."
+          }
+        ],
+        "updates": [
+          {
+            "node_id": "s14-bbcc47dc-n1",
+            "content": "When newcomers freeze at community repair night, I now start them by pairing them with the receipt-sorting station beside a tin windmill."
+          }
+        ],
+        "query": {
+          "question": "What is my current way of starting frozen newcomers at community repair night, including the exact distinguishing detail that identifies the station, what separate outcome supports that approach, and what separate component belongs to the station?"
+        }
+      }
+    },
+    {
+      "truth": {
+        "id": "s15-52f974f6",
+        "task_class": "cross_time",
+        "information_scope": [
+          "experience",
+          "practice_method",
+          "skill"
+        ],
+        "nodes": [
+          {
+            "id": "s15-52f974f6-n1",
+            "facts": [
+              "While practicing basket weaving beside the north marsh, Lale discovered that pressing dry reed ends during tight turns made them split."
+            ]
+          },
+          {
+            "id": "s15-52f974f6-n2",
+            "facts": [
+              "Lale adopted a method of briefly soaking reed ends before fine weaving."
+            ]
+          },
+          {
+            "id": "s15-52f974f6-n3",
+            "facts": [
+              "Her recent baskets have shown smooth corners without frayed tips."
+            ]
+          },
+          {
+            "id": "s15-52f974f6-n4",
+            "facts": [
+              "Basket-weaving techniques are broader than handling dry reed ends during tight turns."
+            ]
+          },
+          {
+            "id": "s15-52f974f6-n5",
+            "facts": [
+              "A cedar stool is always set beside Lale's basket-weaving area."
+            ]
+          }
+        ],
+        "relations": [
+          {
+            "source_id": "s15-52f974f6-n2",
+            "type": "derived_from",
+            "target_id": "s15-52f974f6-n1"
+          },
+          {
+            "source_id": "s15-52f974f6-n3",
+            "type": "supports",
+            "target_id": "s15-52f974f6-n2"
+          },
+          {
+            "source_id": "s15-52f974f6-n5",
+            "type": "related_to",
+            "target_id": "s15-52f974f6-n4"
+          },
+          {
+            "source_id": "s15-52f974f6-n4",
+            "type": "broader_than",
+            "target_id": "s15-52f974f6-n1"
+          }
+        ],
+        "updates": [],
+        "query": {
+          "intent": "Retrieve the current facts jointly supported by 3 required information items.",
+          "expected_ids": [
+            "s15-52f974f6-n1",
+            "s15-52f974f6-n2",
+            "s15-52f974f6-n3"
+          ],
+          "forbidden_ids": [
+            "s15-52f974f6-n4",
+            "s15-52f974f6-n5"
+          ],
+          "answer_facts": [
+            "While practicing basket weaving beside the north marsh, Lale discovered that pressing dry reed ends during tight turns made them split.",
+            "Lale adopted a method of briefly soaking reed ends before fine weaving.",
+            "Her recent baskets have shown smooth corners without frayed tips."
+          ]
+        }
+      },
+      "expression": {
+        "id": "s15-52f974f6",
+        "information": [
+          {
+            "node_id": "s15-52f974f6-n1",
+            "content": "While practicing basket weaving beside the north marsh, Lale discovered that pressing dry reed ends during tight turns made them split."
+          },
+          {
+            "node_id": "s15-52f974f6-n2",
+            "content": "Lale adopted a method of briefly soaking reed ends before fine weaving."
+          },
+          {
+            "node_id": "s15-52f974f6-n3",
+            "content": "Her recent baskets have shown smooth corners without frayed tips."
+          },
+          {
+            "node_id": "s15-52f974f6-n4",
+            "content": "Basket-weaving techniques are broader than handling dry reed ends during tight turns."
+          },
+          {
+            "node_id": "s15-52f974f6-n5",
+            "content": "A cedar stool is always set beside Lale's basket-weaving area."
+          }
+        ],
+        "updates": [],
+        "query": {
+          "question": "What earlier practice experience, including where it happened, led Lale to a later weaving method, and what later result supports that method?"
+        }
+      }
+    },
+    {
+      "truth": {
+        "id": "s16-640eeb18",
+        "task_class": "information_update",
+        "information_scope": [
+          "knowledge",
+          "lesson",
+          "work_information"
+        ],
+        "nodes": [
+          {
+            "id": "s16-640eeb18-n1",
+            "facts": [
+              "My note-carrying book used to be a blue spiral pad."
+            ]
+          },
+          {
+            "id": "s16-640eeb18-n2",
+            "facts": [
+              "The cedar field ledger still had legible pages after a rain-soaked commute."
+            ]
+          },
+          {
+            "id": "s16-640eeb18-n3",
+            "facts": [
+              "The cedar field ledger includes a waxed-canvas page sleeve."
+            ]
+          },
+          {
+            "id": "s16-640eeb18-n4",
+            "facts": [
+              "A carved basalt page weight sits beside my desk ledger."
+            ]
+          },
+          {
+            "id": "s16-640eeb18-n5",
+            "facts": [
+              "The basalt page weight is stored in a felt-lined walnut tray."
+            ]
+          }
+        ],
+        "relations": [
+          {
+            "source_id": "s16-640eeb18-n2",
+            "type": "supports",
+            "target_id": "s16-640eeb18-n1"
+          },
+          {
+            "source_id": "s16-640eeb18-n3",
+            "type": "part_of",
+            "target_id": "s16-640eeb18-n1"
+          },
+          {
+            "source_id": "s16-640eeb18-n4",
+            "type": "related_to",
+            "target_id": "s16-640eeb18-n1"
+          },
+          {
+            "source_id": "s16-640eeb18-n5",
+            "type": "related_to",
+            "target_id": "s16-640eeb18-n4"
+          }
+        ],
+        "updates": [
+          {
+            "node_id": "s16-640eeb18-n1",
+            "replacement_facts": [
+              "My current note-carrying book is a cedar field ledger with a brass spine clasp."
+            ]
+          }
+        ],
+        "query": {
+          "intent": "Retrieve the current facts jointly supported by 3 required information items.",
+          "expected_ids": [
+            "s16-640eeb18-n1",
+            "s16-640eeb18-n2",
+            "s16-640eeb18-n3"
+          ],
+          "forbidden_ids": [
+            "s16-640eeb18-n4",
+            "s16-640eeb18-n5"
+          ],
+          "answer_facts": [
+            "My current note-carrying book is a cedar field ledger with a brass spine clasp.",
+            "The cedar field ledger still had legible pages after a rain-soaked commute.",
+            "The cedar field ledger includes a waxed-canvas page sleeve."
+          ]
+        }
+      },
+      "expression": {
+        "id": "s16-640eeb18",
+        "information": [
+          {
+            "node_id": "s16-640eeb18-n1",
+            "content": "My note-carrying book used to be a blue spiral pad."
+          },
+          {
+            "node_id": "s16-640eeb18-n2",
+            "content": "The cedar field ledger still had legible pages after a rain-soaked commute."
+          },
+          {
+            "node_id": "s16-640eeb18-n3",
+            "content": "The cedar field ledger includes a waxed-canvas page sleeve."
+          },
+          {
+            "node_id": "s16-640eeb18-n4",
+            "content": "A carved basalt page weight sits beside my desk ledger."
+          },
+          {
+            "node_id": "s16-640eeb18-n5",
+            "content": "The basalt page weight is stored in a felt-lined walnut tray."
+          }
+        ],
+        "updates": [
+          {
+            "node_id": "s16-640eeb18-n1",
+            "content": "My current note-carrying book is a cedar field ledger with a brass spine clasp."
+          }
+        ],
+        "query": {
+          "question": "What is my current note-carrying book, including its exact distinguishing detail, and what separate result supports using it now, and what separate component does it require?"
+        }
+      }
+    },
+    {
+      "truth": {
+        "id": "s18-d128422e",
+        "task_class": "information_update",
+        "information_scope": [
+          "reusable_path",
+          "experience",
+          "practice_method"
+        ],
+        "nodes": [
+          {
+            "id": "s18-d128422e-n1",
+            "facts": [
+              "My regular dawn walking route used to be the market alley loop."
+            ]
+          },
+          {
+            "id": "s18-d128422e-n2",
+            "facts": [
+              "The quarry rim path consistently gets me to the observatory gate eight minutes earlier than the market alley loop."
+            ]
+          },
+          {
+            "id": "s18-d128422e-n3",
+            "facts": [
+              "The quarry rim path includes a narrow switchback stair."
+            ]
+          },
+          {
+            "id": "s18-d128422e-n4",
+            "facts": [
+              "I sketch the quarry skyline from a bench near the rim path."
+            ]
+          },
+          {
+            "id": "s18-d128422e-n5",
+            "facts": [
+              "The bench near the rim path has a tin plaque showing an old survey mark."
+            ]
+          }
+        ],
+        "relations": [
+          {
+            "source_id": "s18-d128422e-n2",
+            "type": "supports",
+            "target_id": "s18-d128422e-n1"
+          },
+          {
+            "source_id": "s18-d128422e-n3",
+            "type": "part_of",
+            "target_id": "s18-d128422e-n1"
+          },
+          {
+            "source_id": "s18-d128422e-n4",
+            "type": "related_to",
+            "target_id": "s18-d128422e-n1"
+          },
+          {
+            "source_id": "s18-d128422e-n5",
+            "type": "related_to",
+            "target_id": "s18-d128422e-n4"
+          }
+        ],
+        "updates": [
+          {
+            "node_id": "s18-d128422e-n1",
+            "replacement_facts": [
+              "My regular dawn walking route is now the quarry rim path through Gate 3."
+            ]
+          }
+        ],
+        "query": {
+          "intent": "Retrieve the current facts jointly supported by 3 required information items.",
+          "expected_ids": [
+            "s18-d128422e-n1",
+            "s18-d128422e-n2",
+            "s18-d128422e-n3"
+          ],
+          "forbidden_ids": [
+            "s18-d128422e-n4",
+            "s18-d128422e-n5"
+          ],
+          "answer_facts": [
+            "My regular dawn walking route is now the quarry rim path through Gate 3.",
+            "The quarry rim path consistently gets me to the observatory gate eight minutes earlier than the market alley loop.",
+            "The quarry rim path includes a narrow switchback stair."
+          ]
+        }
+      },
+      "expression": {
+        "id": "s18-d128422e",
+        "information": [
+          {
+            "node_id": "s18-d128422e-n1",
+            "content": "My regular dawn walking route used to be the market alley loop."
+          },
+          {
+            "node_id": "s18-d128422e-n2",
+            "content": "The quarry rim path consistently gets me to the observatory gate eight minutes earlier than the market alley loop."
+          },
+          {
+            "node_id": "s18-d128422e-n3",
+            "content": "The quarry rim path includes a narrow switchback stair."
+          },
+          {
+            "node_id": "s18-d128422e-n4",
+            "content": "I sketch the quarry skyline from a bench near the rim path."
+          },
+          {
+            "node_id": "s18-d128422e-n5",
+            "content": "The bench near the rim path has a tin plaque showing an old survey mark."
+          }
+        ],
+        "updates": [
+          {
+            "node_id": "s18-d128422e-n1",
+            "content": "My regular dawn walking route is now the quarry rim path through Gate 3."
+          }
+        ],
+        "query": {
+          "question": "What is my current regular dawn walking route, including its exact distinguishing detail, and what separate result supports that change, and what separate component of the route must also be named?"
+        }
+      }
+    },
+    {
+      "truth": {
+        "id": "s19-f6fd0efd",
+        "task_class": "multi_hop",
+        "information_scope": [
+          "skill",
+          "knowledge",
+          "lesson"
+        ],
+        "nodes": [
+          {
+            "id": "s19-f6fd0efd-n1",
+            "facts": [
+              "While sharpening a chisel, the burr kept snapping off unevenly whenever I pressed harder at the blade's center than at its corners."
+            ]
+          },
+          {
+            "id": "s19-f6fd0efd-n2",
+            "facts": [
+              "A steady sharpening stroke has to distribute pressure evenly across the full edge."
+            ]
+          },
+          {
+            "id": "s19-f6fd0efd-n3",
+            "facts": [
+              "With even pressure, the honed edge will pare end grain without leaving ridges."
+            ]
+          },
+          {
+            "id": "s19-f6fd0efd-n4",
+            "facts": [
+              "End-grain test cuts are easier to read on basswood scraps than on oak."
+            ]
+          },
+          {
+            "id": "s19-f6fd0efd-n5",
+            "facts": [
+              "A shallow cardboard tray is used to keep the basswood scraps near the sharpening bench."
+            ]
+          }
+        ],
+        "relations": [
+          {
+            "source_id": "s19-f6fd0efd-n2",
+            "type": "derived_from",
+            "target_id": "s19-f6fd0efd-n1"
+          },
+          {
+            "source_id": "s19-f6fd0efd-n2",
+            "type": "supports",
+            "target_id": "s19-f6fd0efd-n3"
+          },
+          {
+            "source_id": "s19-f6fd0efd-n4",
+            "type": "related_to",
+            "target_id": "s19-f6fd0efd-n3"
+          },
+          {
+            "source_id": "s19-f6fd0efd-n5",
+            "type": "related_to",
+            "target_id": "s19-f6fd0efd-n4"
+          }
+        ],
+        "updates": [],
+        "query": {
+          "intent": "Retrieve the current facts jointly supported by 3 required information items.",
+          "expected_ids": [
+            "s19-f6fd0efd-n1",
+            "s19-f6fd0efd-n2",
+            "s19-f6fd0efd-n3"
+          ],
+          "forbidden_ids": [
+            "s19-f6fd0efd-n4",
+            "s19-f6fd0efd-n5"
+          ],
+          "answer_facts": [
+            "While sharpening a chisel, the burr kept snapping off unevenly whenever I pressed harder at the blade's center than at its corners.",
+            "A steady sharpening stroke has to distribute pressure evenly across the full edge.",
+            "With even pressure, the honed edge will pare end grain without leaving ridges."
+          ]
+        }
+      },
+      "expression": {
+        "id": "s19-f6fd0efd",
+        "information": [
+          {
+            "node_id": "s19-f6fd0efd-n1",
+            "content": "While sharpening a chisel, the burr kept snapping off unevenly whenever I pressed harder at the blade's center than at its corners."
+          },
+          {
+            "node_id": "s19-f6fd0efd-n2",
+            "content": "A steady sharpening stroke has to distribute pressure evenly across the full edge."
+          },
+          {
+            "node_id": "s19-f6fd0efd-n3",
+            "content": "With even pressure, the honed edge will pare end grain without leaving ridges."
+          },
+          {
+            "node_id": "s19-f6fd0efd-n4",
+            "content": "End-grain test cuts are easier to read on basswood scraps than on oak."
+          },
+          {
+            "node_id": "s19-f6fd0efd-n5",
+            "content": "A shallow cardboard tray is used to keep the basswood scraps near the sharpening bench."
+          }
+        ],
+        "updates": [],
+        "query": {
+          "question": "What sharpening observation was noticed first, what lesson was concluded from it, and what later cutting result does that lesson support?"
+        }
+      }
+    },
+    {
+      "truth": {
+        "id": "s20-0946a250",
+        "task_class": "multi_hop",
+        "information_scope": [
+          "work_information",
+          "thought",
+          "solution_experience"
+        ],
+        "nodes": [
+          {
+            "id": "s20-0946a250-n1",
+            "facts": [
+              "While proofreading cargo notices at a polar supply depot, I saw that every crate tagged with a split blue seal had condensation trapped under the film after unloading."
+            ]
+          },
+          {
+            "id": "s20-0946a250-n2",
+            "facts": [
+              "I concluded that the split blue seal was letting humid air into those crates during handling."
+            ]
+          },
+          {
+            "id": "s20-0946a250-n3",
+            "facts": [
+              "We switched those shipments to a gasketed clasp, and the paper manifests stopped warping in storage."
+            ]
+          },
+          {
+            "id": "s20-0946a250-n4",
+            "facts": [
+              "The depot's astronomy club scheduled its aurora-viewing nights around the moon phase."
+            ]
+          },
+          {
+            "id": "s20-0946a250-n5",
+            "facts": [
+              "One club member kept a thermos collection arranged by metal finish."
+            ]
+          }
+        ],
+        "relations": [
+          {
+            "source_id": "s20-0946a250-n2",
+            "type": "derived_from",
+            "target_id": "s20-0946a250-n1"
+          },
+          {
+            "source_id": "s20-0946a250-n2",
+            "type": "supports",
+            "target_id": "s20-0946a250-n3"
+          },
+          {
+            "source_id": "s20-0946a250-n4",
+            "type": "related_to",
+            "target_id": "s20-0946a250-n3"
+          },
+          {
+            "source_id": "s20-0946a250-n5",
+            "type": "related_to",
+            "target_id": "s20-0946a250-n4"
+          }
+        ],
+        "updates": [],
+        "query": {
+          "intent": "Retrieve the current facts jointly supported by 3 required information items.",
+          "expected_ids": [
+            "s20-0946a250-n1",
+            "s20-0946a250-n2",
+            "s20-0946a250-n3"
+          ],
+          "forbidden_ids": [
+            "s20-0946a250-n4",
+            "s20-0946a250-n5"
+          ],
+          "answer_facts": [
+            "While proofreading cargo notices at a polar supply depot, I saw that every crate tagged with a split blue seal had condensation trapped under the film after unloading.",
+            "I concluded that the split blue seal was letting humid air into those crates during handling.",
+            "We switched those shipments to a gasketed clasp, and the paper manifests stopped warping in storage."
+          ]
+        }
+      },
+      "expression": {
+        "id": "s20-0946a250",
+        "information": [
+          {
+            "node_id": "s20-0946a250-n1",
+            "content": "While proofreading cargo notices at a polar supply depot, I saw that every crate tagged with a split blue seal had condensation trapped under the film after unloading."
+          },
+          {
+            "node_id": "s20-0946a250-n2",
+            "content": "I concluded that the split blue seal was letting humid air into those crates during handling."
+          },
+          {
+            "node_id": "s20-0946a250-n3",
+            "content": "We switched those shipments to a gasketed clasp, and the paper manifests stopped warping in storage."
+          },
+          {
+            "node_id": "s20-0946a250-n4",
+            "content": "The depot's astronomy club scheduled its aurora-viewing nights around the moon phase."
+          },
+          {
+            "node_id": "s20-0946a250-n5",
+            "content": "One club member kept a thermos collection arranged by metal finish."
+          }
+        ],
+        "updates": [],
+        "query": {
+          "question": "What unique observation first pointed to the crate problem, what conclusion was drawn from that observation, and what later result showed the conclusion led to an effective fix?"
+        }
+      }
+    },
+    {
+      "truth": {
+        "id": "s21-7ecbef3c",
+        "task_class": "multi_hop",
+        "information_scope": [
+          "social_experience",
+          "reusable_path",
+          "experience"
+        ],
+        "nodes": [
+          {
+            "id": "s21-7ecbef3c-n1",
+            "facts": [
+              "At neighborhood potlucks, I noticed newcomers stayed longer when someone introduced them by mentioning one hobby they already enjoyed."
+            ]
+          },
+          {
+            "id": "s21-7ecbef3c-n2",
+            "facts": [
+              "I inferred that a brief hobby-based introduction made first conversations easier for newcomers."
+            ]
+          },
+          {
+            "id": "s21-7ecbef3c-n3",
+            "facts": [
+              "After I started using that introduction style at meetups, more first-time guests came back the next month."
+            ]
+          },
+          {
+            "id": "s21-7ecbef3c-n4",
+            "facts": [
+              "A local mural group chose wall colors by testing them beside brick at noon."
+            ]
+          },
+          {
+            "id": "s21-7ecbef3c-n5",
+            "facts": [
+              "The mural group's coordinator carried a folding stool with paint specks on the legs."
+            ]
+          }
+        ],
+        "relations": [
+          {
+            "source_id": "s21-7ecbef3c-n2",
+            "type": "derived_from",
+            "target_id": "s21-7ecbef3c-n1"
+          },
+          {
+            "source_id": "s21-7ecbef3c-n2",
+            "type": "supports",
+            "target_id": "s21-7ecbef3c-n3"
+          },
+          {
+            "source_id": "s21-7ecbef3c-n4",
+            "type": "related_to",
+            "target_id": "s21-7ecbef3c-n3"
+          },
+          {
+            "source_id": "s21-7ecbef3c-n5",
+            "type": "related_to",
+            "target_id": "s21-7ecbef3c-n4"
+          }
+        ],
+        "updates": [],
+        "query": {
+          "intent": "Retrieve the current facts jointly supported by 3 required information items.",
+          "expected_ids": [
+            "s21-7ecbef3c-n1",
+            "s21-7ecbef3c-n2",
+            "s21-7ecbef3c-n3"
+          ],
+          "forbidden_ids": [
+            "s21-7ecbef3c-n4",
+            "s21-7ecbef3c-n5"
+          ],
+          "answer_facts": [
+            "At neighborhood potlucks, I noticed newcomers stayed longer when someone introduced them by mentioning one hobby they already enjoyed.",
+            "I inferred that a brief hobby-based introduction made first conversations easier for newcomers.",
+            "After I started using that introduction style at meetups, more first-time guests came back the next month."
+          ]
+        }
+      },
+      "expression": {
+        "id": "s21-7ecbef3c",
+        "information": [
+          {
+            "node_id": "s21-7ecbef3c-n1",
+            "content": "At neighborhood potlucks, I noticed newcomers stayed longer when someone introduced them by mentioning one hobby they already enjoyed."
+          },
+          {
+            "node_id": "s21-7ecbef3c-n2",
+            "content": "I inferred that a brief hobby-based introduction made first conversations easier for newcomers."
+          },
+          {
+            "node_id": "s21-7ecbef3c-n3",
+            "content": "After I started using that introduction style at meetups, more first-time guests came back the next month."
+          },
+          {
+            "node_id": "s21-7ecbef3c-n4",
+            "content": "A local mural group chose wall colors by testing them beside brick at noon."
+          },
+          {
+            "node_id": "s21-7ecbef3c-n5",
+            "content": "The mural group's coordinator carried a folding stool with paint specks on the legs."
+          }
+        ],
+        "updates": [],
+        "query": {
+          "question": "Which specific social observation started the pattern, what reusable conclusion came from it, and what later experience showed that conclusion working in practice?"
+        }
+      }
+    },
+    {
+      "truth": {
+        "id": "s23-e9694e7b",
+        "task_class": "context_applicability",
+        "information_scope": [
+          "lesson",
+          "work_information",
+          "thought"
+        ],
+        "nodes": [
+          {
+            "id": "s23-e9694e7b-n1",
+            "facts": [
+              "In the lantern roster, allergy notes appear as colored symbols beside each person's name."
+            ]
+          },
+          {
+            "id": "s23-e9694e7b-n2",
+            "facts": [
+              "The current sleeper-car volunteer desk uses the lantern roster because spoken announcements are not allowed after 22:00."
+            ]
+          },
+          {
+            "id": "s23-e9694e7b-n3",
+            "facts": [
+              "On a hypothetical daytime platform desk, allergy notes could be read aloud from the clipboard during check-in."
+            ]
+          },
+          {
+            "id": "s23-e9694e7b-n4",
+            "facts": [
+              "That platform desk would be a daytime fallback setup with no quiet-hours rule."
+            ]
+          },
+          {
+            "id": "s23-e9694e7b-n5",
+            "facts": [
+              "The platform desk keeps a railway punch for stamping excursion leaflets."
+            ]
+          }
+        ],
+        "relations": [
+          {
+            "source_id": "s23-e9694e7b-n1",
+            "type": "applies_in",
+            "target_id": "s23-e9694e7b-n2"
+          },
+          {
+            "source_id": "s23-e9694e7b-n3",
+            "type": "applies_in",
+            "target_id": "s23-e9694e7b-n4"
+          },
+          {
+            "source_id": "s23-e9694e7b-n5",
+            "type": "related_to",
+            "target_id": "s23-e9694e7b-n4"
+          }
+        ],
+        "updates": [],
+        "query": {
+          "intent": "Retrieve the current facts jointly supported by 2 required information items.",
+          "expected_ids": [
+            "s23-e9694e7b-n1",
+            "s23-e9694e7b-n2"
+          ],
+          "forbidden_ids": [
+            "s23-e9694e7b-n3",
+            "s23-e9694e7b-n4",
+            "s23-e9694e7b-n5"
+          ],
+          "answer_facts": [
+            "In the lantern roster, allergy notes appear as colored symbols beside each person's name.",
+            "The current sleeper-car volunteer desk uses the lantern roster because spoken announcements are not allowed after 22:00."
+          ]
+        }
+      },
+      "expression": {
+        "id": "s23-e9694e7b",
+        "information": [
+          {
+            "node_id": "s23-e9694e7b-n1",
+            "content": "In the lantern roster, allergy notes appear as colored symbols beside each person's name."
+          },
+          {
+            "node_id": "s23-e9694e7b-n2",
+            "content": "The current sleeper-car volunteer desk uses the lantern roster because spoken announcements are not allowed after 22:00."
+          },
+          {
+            "node_id": "s23-e9694e7b-n3",
+            "content": "On a hypothetical daytime platform desk, allergy notes could be read aloud from the clipboard during check-in."
+          },
+          {
+            "node_id": "s23-e9694e7b-n4",
+            "content": "That platform desk would be a daytime fallback setup with no quiet-hours rule."
+          },
+          {
+            "node_id": "s23-e9694e7b-n5",
+            "content": "The platform desk keeps a railway punch for stamping excursion leaflets."
+          }
+        ],
+        "updates": [],
+        "query": {
+          "question": "What restriction defines the current volunteer-desk context, and which way of recording personal allergy information applies in that context?"
+        }
+      }
+    },
+    {
+      "truth": {
+        "id": "s24-2f127adb",
+        "task_class": "cross_time",
+        "information_scope": [
+          "solution_experience",
+          "social_experience",
+          "reusable_path"
+        ],
+        "nodes": [
+          {
+            "id": "s24-2f127adb-n1",
+            "facts": [
+              "At the Lantern Pier archive, I first learned a checklist-based volunteer onboarding tactic when newcomers replied to scheduling messages faster after receiving numbered index cards."
+            ]
+          },
+          {
+            "id": "s24-2f127adb-n2",
+            "facts": [
+              "I now begin any new group project by giving people a short numbered onboarding checklist."
+            ]
+          },
+          {
+            "id": "s24-2f127adb-n3",
+            "facts": [
+              "Across the last three neighborhood mural sessions, the first week ended with no missed meetups once that checklist routine was in place."
+            ]
+          },
+          {
+            "id": "s24-2f127adb-n4",
+            "facts": [
+              "Volunteer coordination methods are a broad set of ways to organize shared work among helpers."
+            ]
+          },
+          {
+            "id": "s24-2f127adb-n5",
+            "facts": [
+              "A brass handbell became a familiar emblem on flyers for volunteer coordination nights."
+            ]
+          }
+        ],
+        "relations": [
+          {
+            "source_id": "s24-2f127adb-n2",
+            "type": "derived_from",
+            "target_id": "s24-2f127adb-n1"
+          },
+          {
+            "source_id": "s24-2f127adb-n3",
+            "type": "supports",
+            "target_id": "s24-2f127adb-n2"
+          },
+          {
+            "source_id": "s24-2f127adb-n5",
+            "type": "related_to",
+            "target_id": "s24-2f127adb-n4"
+          },
+          {
+            "source_id": "s24-2f127adb-n4",
+            "type": "broader_than",
+            "target_id": "s24-2f127adb-n1"
+          }
+        ],
+        "updates": [],
+        "query": {
+          "intent": "Retrieve the current facts jointly supported by 3 required information items.",
+          "expected_ids": [
+            "s24-2f127adb-n1",
+            "s24-2f127adb-n2",
+            "s24-2f127adb-n3"
+          ],
+          "forbidden_ids": [
+            "s24-2f127adb-n4",
+            "s24-2f127adb-n5"
+          ],
+          "answer_facts": [
+            "At the Lantern Pier archive, I first learned a checklist-based volunteer onboarding tactic when newcomers replied to scheduling messages faster after receiving numbered index cards.",
+            "I now begin any new group project by giving people a short numbered onboarding checklist.",
+            "Across the last three neighborhood mural sessions, the first week ended with no missed meetups once that checklist routine was in place."
+          ]
+        }
+      },
+      "expression": {
+        "id": "s24-2f127adb",
+        "information": [
+          {
+            "node_id": "s24-2f127adb-n1",
+            "content": "At the Lantern Pier archive, I first learned a checklist-based volunteer onboarding tactic when newcomers replied to scheduling messages faster after receiving numbered index cards."
+          },
+          {
+            "node_id": "s24-2f127adb-n2",
+            "content": "I now begin any new group project by giving people a short numbered onboarding checklist."
+          },
+          {
+            "node_id": "s24-2f127adb-n3",
+            "content": "Across the last three neighborhood mural sessions, the first week ended with no missed meetups once that checklist routine was in place."
+          },
+          {
+            "node_id": "s24-2f127adb-n4",
+            "content": "Volunteer coordination methods are a broad set of ways to organize shared work among helpers."
+          },
+          {
+            "node_id": "s24-2f127adb-n5",
+            "content": "A brass handbell became a familiar emblem on flyers for volunteer coordination nights."
+          }
+        ],
+        "updates": [],
+        "query": {
+          "question": "What earlier experience, including the specific place where it happened, led to the later decision, what was that later decision, and what later result supports it?"
+        }
+      }
+    },
+    {
+      "truth": {
+        "id": "s25-f8573453",
+        "task_class": "cross_time",
+        "information_scope": [
+          "experience",
+          "practice_method",
+          "skill"
+        ],
+        "nodes": [
+          {
+            "id": "s25-f8573453-n1",
+            "facts": [
+              "During a winter residency in a hilltop print shop, I developed a margin-marking proofreading routine by catching layout slips before the presses started."
+            ]
+          },
+          {
+            "id": "s25-f8573453-n2",
+            "facts": [
+              "I now proofread long documents by marking the margins first and reading the pages in a second pass."
+            ]
+          },
+          {
+            "id": "s25-f8573453-n3",
+            "facts": [
+              "In the last four grant drafts I handled, no page-number mismatch survived to final submission after I used that two-pass routine."
+            ]
+          },
+          {
+            "id": "s25-f8573453-n4",
+            "facts": [
+              "Proofreading skills cover methods for finding and correcting written errors."
+            ]
+          },
+          {
+            "id": "s25-f8573453-n5",
+            "facts": [
+              "A green desk lamp is the object I most strongly associate with proofreading sessions."
+            ]
+          }
+        ],
+        "relations": [
+          {
+            "source_id": "s25-f8573453-n2",
+            "type": "derived_from",
+            "target_id": "s25-f8573453-n1"
+          },
+          {
+            "source_id": "s25-f8573453-n3",
+            "type": "supports",
+            "target_id": "s25-f8573453-n2"
+          },
+          {
+            "source_id": "s25-f8573453-n5",
+            "type": "related_to",
+            "target_id": "s25-f8573453-n4"
+          },
+          {
+            "source_id": "s25-f8573453-n1",
+            "type": "narrower_than",
+            "target_id": "s25-f8573453-n4"
+          }
+        ],
+        "updates": [],
+        "query": {
+          "intent": "Retrieve the current facts jointly supported by 3 required information items.",
+          "expected_ids": [
+            "s25-f8573453-n1",
+            "s25-f8573453-n2",
+            "s25-f8573453-n3"
+          ],
+          "forbidden_ids": [
+            "s25-f8573453-n4",
+            "s25-f8573453-n5"
+          ],
+          "answer_facts": [
+            "During a winter residency in a hilltop print shop, I developed a margin-marking proofreading routine by catching layout slips before the presses started.",
+            "I now proofread long documents by marking the margins first and reading the pages in a second pass.",
+            "In the last four grant drafts I handled, no page-number mismatch survived to final submission after I used that two-pass routine."
+          ]
+        }
+      },
+      "expression": {
+        "id": "s25-f8573453",
+        "information": [
+          {
+            "node_id": "s25-f8573453-n1",
+            "content": "During a winter residency in a hilltop print shop, I developed a margin-marking proofreading routine by catching layout slips before the presses started."
+          },
+          {
+            "node_id": "s25-f8573453-n2",
+            "content": "I now proofread long documents by marking the margins first and reading the pages in a second pass."
+          },
+          {
+            "node_id": "s25-f8573453-n3",
+            "content": "In the last four grant drafts I handled, no page-number mismatch survived to final submission after I used that two-pass routine."
+          },
+          {
+            "node_id": "s25-f8573453-n4",
+            "content": "Proofreading skills cover methods for finding and correcting written errors."
+          },
+          {
+            "node_id": "s25-f8573453-n5",
+            "content": "A green desk lamp is the object I most strongly associate with proofreading sessions."
+          }
+        ],
+        "updates": [],
+        "query": {
+          "question": "Which earlier experience, with its specific provenance, led to the later proofreading method, what is that later method, and what later evidence shows it works?"
+        }
+      }
+    },
+    {
+      "truth": {
+        "id": "s27-68857f46",
+        "task_class": "cross_time",
+        "information_scope": [
+          "thought",
+          "solution_experience",
+          "social_experience"
+        ],
+        "nodes": [
+          {
+            "id": "s27-68857f46-n1",
+            "facts": [
+              "After a midnight bus broke down outside Red Silt Pass, I realized that strangers stay calmer when one person quietly repeats the next confirmed step."
+            ]
+          },
+          {
+            "id": "s27-68857f46-n2",
+            "facts": [
+              "Since then, in tense group situations, I try to steady people by calmly repeating the next confirmed step."
+            ]
+          },
+          {
+            "id": "s27-68857f46-n3",
+            "facts": [
+              "During two later travel delays, arguments faded within minutes after I used that steadying approach."
+            ]
+          },
+          {
+            "id": "s27-68857f46-n4",
+            "facts": [
+              "Conflict-calming approaches are broad ways people reduce tension in stressed groups."
+            ]
+          },
+          {
+            "id": "s27-68857f46-n5",
+            "facts": [
+              "A deck of regional phrase cards is often sold beside books on conflict-calming approaches."
+            ]
+          }
+        ],
+        "relations": [
+          {
+            "source_id": "s27-68857f46-n2",
+            "type": "derived_from",
+            "target_id": "s27-68857f46-n1"
+          },
+          {
+            "source_id": "s27-68857f46-n3",
+            "type": "supports",
+            "target_id": "s27-68857f46-n2"
+          },
+          {
+            "source_id": "s27-68857f46-n5",
+            "type": "related_to",
+            "target_id": "s27-68857f46-n4"
+          },
+          {
+            "source_id": "s27-68857f46-n4",
+            "type": "broader_than",
+            "target_id": "s27-68857f46-n1"
+          }
+        ],
+        "updates": [],
+        "query": {
+          "intent": "Retrieve the current facts jointly supported by 3 required information items.",
+          "expected_ids": [
+            "s27-68857f46-n1",
+            "s27-68857f46-n2",
+            "s27-68857f46-n3"
+          ],
+          "forbidden_ids": [
+            "s27-68857f46-n4",
+            "s27-68857f46-n5"
+          ],
+          "answer_facts": [
+            "After a midnight bus broke down outside Red Silt Pass, I realized that strangers stay calmer when one person quietly repeats the next confirmed step.",
+            "Since then, in tense group situations, I try to steady people by calmly repeating the next confirmed step.",
+            "During two later travel delays, arguments faded within minutes after I used that steadying approach."
+          ]
+        }
+      },
+      "expression": {
+        "id": "s27-68857f46",
+        "information": [
+          {
+            "node_id": "s27-68857f46-n1",
+            "content": "After a midnight bus broke down outside Red Silt Pass, I realized that strangers stay calmer when one person quietly repeats the next confirmed step."
+          },
+          {
+            "node_id": "s27-68857f46-n2",
+            "content": "Since then, in tense group situations, I try to steady people by calmly repeating the next confirmed step."
+          },
+          {
+            "node_id": "s27-68857f46-n3",
+            "content": "During two later travel delays, arguments faded within minutes after I used that steadying approach."
+          },
+          {
+            "node_id": "s27-68857f46-n4",
+            "content": "Conflict-calming approaches are broad ways people reduce tension in stressed groups."
+          },
+          {
+            "node_id": "s27-68857f46-n5",
+            "content": "A deck of regional phrase cards is often sold beside books on conflict-calming approaches."
+          }
+        ],
+        "updates": [],
+        "query": {
+          "question": "What earlier incident, including the specific circumstance in which it happened, produced the later conclusion, what is that later conclusion, and what later result supports it?"
+        }
+      }
+    }
+  ]
+}

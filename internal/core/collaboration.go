@@ -130,12 +130,7 @@ func (s *Service) SubmitSemantic(_ context.Context, input semantics.Submission) 
 		relation.Direction = ""
 		outgoing = append(outgoing, relation)
 	}
-	if s.disableRelations {
-		incoming = nil
-		normalized.Analysis.Relations = nil
-	} else {
-		normalized.Analysis.Relations = s.finalizeRelations(asset, outgoing)
-	}
+	normalized.Analysis.Relations = s.finalizeRelations(asset, outgoing)
 	record.GeneratedAt = s.now().UTC()
 	record.Provider = "semantic:" + normalized.Capability.ID + "/" + normalized.Capability.Version
 	record.Analysis = normalized.Analysis
@@ -161,10 +156,8 @@ func (s *Service) SubmitSemantic(_ context.Context, input semantics.Submission) 
 		return OrganizationState{}, err
 	}
 	s.semantic.Upsert(record)
-	if !s.disableRelations {
-		if err := s.applyIncomingRelationsLocked(asset, previousDependents, incoming); err != nil {
-			return OrganizationState{}, err
-		}
+	if err := s.applyIncomingRelationsLocked(asset, previousDependents, incoming); err != nil {
+		return OrganizationState{}, err
 	}
 	return organizationState(record), nil
 }
@@ -270,12 +263,10 @@ func (s *Service) prepareSemanticWorkWithVector(value domain.Information, vector
 		return OrganizationState{Status: "pending", Provider: "external-semantic-capability", Error: err.Error()}
 	}
 	s.semantic.Upsert(record)
-	if !s.disableRelations {
-		if err := s.applyIncomingRelationsLocked(value, previousDependents, nil); err != nil {
-			record.Error = strings.Trim(strings.Join([]string{record.Error, err.Error()}, "; "), "; ")
-			_ = s.derivedStore.Put(record)
-			s.semantic.Upsert(record)
-		}
+	if err := s.applyIncomingRelationsLocked(value, previousDependents, nil); err != nil {
+		record.Error = strings.Trim(strings.Join([]string{record.Error, err.Error()}, "; "), "; ")
+		_ = s.derivedStore.Put(record)
+		s.semantic.Upsert(record)
 	}
 	return OrganizationState{
 		Status:         "pending",

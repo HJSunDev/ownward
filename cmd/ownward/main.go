@@ -133,7 +133,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 			}
 		}
 	}
-	service, err := core.NewCollaborativeWithOptions(store, derivedStore, vectorCapability, core.Options{DisableRelations: loaded.DisableRelations})
+	service, err := core.NewCollaborative(store, derivedStore, vectorCapability)
 	if err != nil {
 		_ = derivedStore.Close()
 		_ = store.Close()

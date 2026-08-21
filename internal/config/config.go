@@ -1,18 +1,15 @@
 package config
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 )
 
 type Config struct {
-	DataDir          string
-	RuntimeDir       string
-	DisableRelations bool
+	DataDir    string
+	RuntimeDir string
 }
 
 func Load(override string) (Config, error) {
@@ -43,17 +40,8 @@ func Load(override string) (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("解析运行状态目录: %w", err)
 	}
-	disableRelations := false
-	if raw := strings.TrimSpace(os.Getenv("OWNWARD_DISABLE_RELATIONS")); raw != "" {
-		value, parseErr := strconv.ParseBool(raw)
-		if parseErr != nil {
-			return Config{}, errors.New("OWNWARD_DISABLE_RELATIONS 必须是布尔值")
-		}
-		disableRelations = value
-	}
 	return Config{
-		DataDir:          absolute,
-		RuntimeDir:       absoluteRuntime,
-		DisableRelations: disableRelations,
+		DataDir:    absolute,
+		RuntimeDir: absoluteRuntime,
 	}, nil
 }

@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import queue
 import secrets
+import signal
 import shutil
 import subprocess
 import tempfile
@@ -55,6 +56,51 @@ def _command_prefix(binary: Path) -> list[str]:
         return [shell, "-NoProfile", "-File", str(binary)]
     require(suffix not in {".cmd", ".bat"}, f"unsafe command wrapper is not supported: {binary}")
     return [str(binary)]
+
+
+def _terminate_process_tree(process: subprocess.Popen[str]) -> None:
+    if process.poll() is not None:
+        return
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if process.poll() is None:
+            process.kill()
+        return
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+
+
+def _run_process(
+    command: list[str],
+    *,
+    timeout: float,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    process = subprocess.Popen(
+        command,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        env=env,
+        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
+        start_new_session=os.name != "nt",
+    )
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired as error:
+        _terminate_process_tree(process)
+        stdout, stderr = process.communicate()
+        raise RuntimeError(f"process exceeded its {timeout:.0f}-second wall-clock budget and was stopped") from error
+    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
 
 class _StreamableHTTPClient:
@@ -163,19 +209,18 @@ class _OwnwardRuntime:
         self._bearer_token = secrets.token_urlsafe(32)
 
     def start(self) -> _OwnwardRuntime:
-        terms = subprocess.run(
+        terms = _run_process(
             [str(self.binary), "terms", "--runtime-dir", str(self.runtime_dir)],
-            check=False,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
             timeout=self.timeout_seconds,
             env=self.environment,
         )
         require(terms.returncode == 0, f"cannot verify Ownward terms acceptance: {terms.stderr[-2000:]}")
         status = json.loads(terms.stdout)
         require(isinstance(status, dict) and status.get("accepted") is True, "the bundled model terms have not been explicitly accepted")
-        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+        flags = (
+            getattr(subprocess, "CREATE_NO_WINDOW", 0) | subprocess.CREATE_NEW_PROCESS_GROUP
+            if os.name == "nt" else 0
+        )
         self.process = subprocess.Popen(
             [
                 str(self.binary),
@@ -195,6 +240,7 @@ class _OwnwardRuntime:
             encoding="utf-8",
             env=self.environment,
             creationflags=flags,
+            start_new_session=os.name != "nt",
         )
         assert self.process.stdout is not None and self.process.stderr is not None
         stdout_messages: queue.Queue[str | None] = queue.Queue()
@@ -254,12 +300,8 @@ class _OwnwardRuntime:
         process = self.process
         self.process = None
         if process is not None and process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=10)
+            _terminate_process_tree(process)
+            process.wait(timeout=10)
         if process is not None:
             for stream in (process.stdout, process.stderr):
                 if stream is not None:
@@ -499,12 +541,8 @@ class OwnwardMemory(Memory):
 
     def _run(self, args: list[str], *, timeout: float | None = None) -> Any:
         command = _command_prefix(self.ownward_binary) + [args[0], "--runtime-dir", str(self.runtime_dir), *args[1:]]
-        completed = subprocess.run(
+        completed = _run_process(
             command,
-            check=False,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
             timeout=timeout or self.command_timeout_seconds,
         )
         require(
@@ -620,12 +658,8 @@ class OwnwardMemory(Memory):
             prompt,
         ]
         with tempfile.TemporaryDirectory(prefix="codex-home-", dir=self.workspace_dir) as temporary:
-            completed = subprocess.run(
+            completed = _run_process(
                 command,
-                check=False,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
                 timeout=self.codex_timeout_seconds,
                 env=self._codex_environment(Path(temporary)),
             )
@@ -755,12 +789,8 @@ class OwnwardMemory(Memory):
         command.append(prompt)
         require(self.workspace_dir is not None, "Ownward workspace is not configured")
         with tempfile.TemporaryDirectory(prefix="codex-home-", dir=self.workspace_dir) as temporary:
-            completed = subprocess.run(
+            completed = _run_process(
                 command,
-                check=False,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
                 timeout=self.codex_timeout_seconds,
                 env=self._codex_environment(Path(temporary)),
             )

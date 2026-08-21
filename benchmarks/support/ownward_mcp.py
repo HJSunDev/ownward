@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import queue
 import secrets
+import signal
 import subprocess
 import threading
 import time
@@ -30,7 +31,7 @@ class StreamableHTTPClient:
             {
                 "protocolVersion": "2025-06-18",
                 "capabilities": {},
-                "clientInfo": {"name": "ownward-acceptance", "version": "1"},
+                "clientInfo": {"name": "ownward-acceptance-suite", "version": "1"},
             },
         )
         if not isinstance(initialized, dict) or not isinstance(initialized.get("serverInfo"), dict):
@@ -171,7 +172,10 @@ class OwnwardRuntime:
             if not isinstance(terms, dict) or terms.get("accepted") is not True:
                 raise MCPError("the exact bundled model terms have not been explicitly accepted for this runtime")
 
-        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+        flags = (
+            getattr(subprocess, "CREATE_NO_WINDOW", 0) | subprocess.CREATE_NEW_PROCESS_GROUP
+            if os.name == "nt" else 0
+        )
         self.process = subprocess.Popen(
             [
                 str(self.binary),
@@ -191,6 +195,7 @@ class OwnwardRuntime:
             encoding="utf-8",
             env=self.environment,
             creationflags=flags,
+            start_new_session=os.name != "nt",
         )
         assert self.process.stdout is not None and self.process.stderr is not None
         messages: queue.Queue[str | None] = queue.Queue()
@@ -249,7 +254,20 @@ class OwnwardRuntime:
         if process is None:
             return
         if process.poll() is None:
-            process.terminate()
+            if os.name == "nt":
+                subprocess.run(
+                    ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                    check=False,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                if process.poll() is None:
+                    process.kill()
+            else:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
             try:
                 process.wait(timeout=10)
             except subprocess.TimeoutExpired:

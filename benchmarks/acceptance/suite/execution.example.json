@@ -1,0 +1,71 @@
+{
+  "schema": "ownward.acceptance-execution/v1",
+  "repository": "E:\\path\\to\\ownward",
+  "workspace": "E:\\path\\to\\ownward-acceptance\\candidate-commit",
+  "binding_dir": "E:\\path\\to\\ownward-acceptance\\candidate-commit\\binding",
+  "frontier": {
+    "tool": "E:\\path\\to\\ownward-acceptance\\tools\\ownward-frontier.exe",
+    "targeted_stages": ["lexical", "vector", "graph", "context", "fusion"]
+  },
+  "product": {
+    "binary": "E:\\path\\to\\candidate\\ownward.exe",
+    "runtime_dir": "E:\\path\\to\\ownward-runtime",
+    "package": "E:\\path\\to\\ownward-release",
+    "production_storage_report": "E:\\path\\to\\ownward-evidence\\production-storage.json",
+    "codex_binary": "E:\\path\\to\\codex.exe",
+    "codex_auth_file": "C:\\Users\\USERNAME\\.codex\\auth.json",
+    "codex_model": "gpt-5.4-mini",
+    "codex_reasoning_effort": "xhigh"
+  },
+  "community": {
+    "official_repo": "E:\\path\\to\\LongMemEval-V2",
+    "binary": "E:\\path\\to\\candidate\\ownward.exe",
+    "runtime_dir": "E:\\path\\to\\ownward-runtime",
+    "codex_binary": "E:\\path\\to\\codex.exe",
+    "codex_auth_file": "C:\\Users\\USERNAME\\.codex\\auth.json",
+    "submission_root": "E:\\path\\to\\ownward-acceptance\\candidate-commit\\longmemeval-submission",
+    "submission_name": "ownward-active-v1",
+    "web_arguments": [
+      "--domain", "web",
+      "--questions-path", "E:\\path\\to\\LongMemEval-V2-data\\web\\questions.json",
+      "--haystack-path", "E:\\path\\to\\LongMemEval-V2-data\\web\\haystack.json",
+      "--trajectories-path", "E:\\path\\to\\LongMemEval-V2-data\\web\\trajectories.jsonl",
+      "--memory-config-path", "E:\\path\\to\\ownward\\benchmarks\\longmemeval_v2\\memory_config.active.json",
+      "--output-dir", "E:\\path\\to\\ownward-acceptance\\candidate-commit\\longmemeval-web",
+      "--model", "Qwen/Qwen3.5-9B",
+      "--base-url", "http://127.0.0.1:8023/v1",
+      "--temperature", "0.6",
+      "--top-p", "0.95",
+      "--top-k", "20",
+      "--max-completion-tokens", "20000",
+      "--memory-context-max-tokens", "200000",
+      "--reader-max-concurrent-requests", "16",
+      "--evaluator-model", "gpt-5.2",
+      "--evaluator-api-key-env", "OPENAI_API_KEY",
+      "--evaluator-reasoning-effort", "medium",
+      "--evaluator-max-completion-tokens", "4096",
+      "--prompt-build-max-workers", "1"
+    ],
+    "enterprise_arguments": [
+      "--domain", "enterprise",
+      "--questions-path", "E:\\path\\to\\LongMemEval-V2-data\\enterprise\\questions.json",
+      "--haystack-path", "E:\\path\\to\\LongMemEval-V2-data\\enterprise\\haystack.json",
+      "--trajectories-path", "E:\\path\\to\\LongMemEval-V2-data\\enterprise\\trajectories.jsonl",
+      "--memory-config-path", "E:\\path\\to\\ownward\\benchmarks\\longmemeval_v2\\memory_config.active.json",
+      "--output-dir", "E:\\path\\to\\ownward-acceptance\\candidate-commit\\longmemeval-enterprise",
+      "--model", "Qwen/Qwen3.5-9B",
+      "--base-url", "http://127.0.0.1:8023/v1",
+      "--temperature", "0.6",
+      "--top-p", "0.95",
+      "--top-k", "20",
+      "--max-completion-tokens", "20000",
+      "--memory-context-max-tokens", "200000",
+      "--reader-max-concurrent-requests", "16",
+      "--evaluator-model", "gpt-5.2",
+      "--evaluator-api-key-env", "OPENAI_API_KEY",
+      "--evaluator-reasoning-effort", "medium",
+      "--evaluator-max-completion-tokens", "4096",
+      "--prompt-build-max-workers", "1"
+    ]
+  }
+}

@@ -44,6 +44,14 @@ def _load_adapter():
 
 
 class OwnwardMemoryTest(unittest.TestCase):
+    def test_timeout_stops_the_external_process_tree(self) -> None:
+        adapter = _load_adapter()
+        with self.assertRaisesRegex(RuntimeError, "process tree|was stopped"):
+            adapter._run_process(
+                [sys.executable, "-c", "import time; time.sleep(5)"],
+                timeout=0.05,
+            )
+
     def test_active_mode_creates_an_isolated_authentication_environment(self) -> None:
         adapter = _load_adapter()
         with tempfile.TemporaryDirectory() as root:

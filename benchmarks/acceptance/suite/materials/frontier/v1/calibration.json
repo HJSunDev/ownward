@@ -1,0 +1,25 @@
+{
+  "schema": "ownward.external-frontier-calibration/v1",
+  "version": "ownward-external-frontier-calibration/v1",
+  "status": "incomparable",
+  "checked_sources": [
+    {
+      "name": "LongMemEval-V2",
+      "version": "2cc8c540bdb87fe6761629b585e727e1c4704520",
+      "url": "https://github.com/xiaowu0162/LongMemEval-V2",
+      "reason": "公开产品级记忆基准，不使用 Ownward 固定内核输入、协议和环境。"
+    },
+    {
+      "name": "total-agent-memory",
+      "version": "12.4.0",
+      "url": "https://github.com/Martian-Engineering/total-agent-memory",
+      "reason": "已有资源对照不具备与 Ownward 相同的能力合同、输入和执行协议。"
+    }
+  ],
+  "conclusion": "当前没有可在同一输入、协议和环境中复现的直接同类内核前沿；优化环只报告候选相对有效内部基线的变化，不宣称外部前沿。",
+  "recalibrate_when": [
+    "benchmark_version_changes",
+    "comparator_changes",
+    "environment_changes"
+  ]
+}

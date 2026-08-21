@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 from typing import Any
@@ -14,7 +15,6 @@ from typing import Any
 OFFICIAL_REVISION = "2cc8c540bdb87fe6761629b585e727e1c4704520"
 ACTIVE_CODEX_MODEL = "gpt-5.4-mini"
 ACTIVE_CODEX_REASONING_EFFORT = "xhigh"
-ACTIVE_CODEX_CLI_VERSION = "codex-cli 0.117.0"
 ADAPTER_FILES = (
     "run.py",
     "ownward_memory.py",
@@ -32,11 +32,18 @@ def _parse_wrapper_args() -> tuple[argparse.Namespace, list[str]]:
     parser.add_argument("--codex-auth-file", required=True)
     parser.add_argument("--runtime-dir", required=True)
     parser.add_argument("--candidate", required=True)
+    parser.add_argument("--environment-sha256", required=True)
+    parser.add_argument("--input-manifest-sha256", required=True)
+    parser.add_argument("--tool-sha256", required=True)
     return parser.parse_known_args()
 
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _valid_sha256(value: str) -> bool:
+    return len(value) == 64 and all(character in "0123456789abcdef" for character in value)
 
 
 def _argument_value(arguments: list[str], name: str) -> str:
@@ -60,16 +67,28 @@ def _verify_candidate(binary: Path, candidate: str) -> str:
 
 def _verify_codex(binary: Path) -> tuple[str, str]:
     completed = subprocess.run(
-        [str(binary), "--version"], check=False, capture_output=True, text=True, encoding="utf-8"
+        [*_command_prefix(binary), "--version"], check=False, capture_output=True, text=True, encoding="utf-8"
     )
     version = completed.stdout.strip()
-    if completed.returncode != 0 or version != ACTIVE_CODEX_CLI_VERSION:
-        raise RuntimeError(f"active retrieval requires {ACTIVE_CODEX_CLI_VERSION}; found {version or completed.stderr.strip()!r}")
+    if completed.returncode != 0 or not version:
+        raise RuntimeError(f"could not execute Codex: {completed.stderr.strip()!r}")
     return version, _sha256(binary)
+
+
+def _command_prefix(binary: Path) -> list[str]:
+    if binary.suffix.lower() == ".ps1":
+        shell = shutil.which("pwsh") or shutil.which("powershell")
+        if shell is None:
+            raise RuntimeError("PowerShell is required to run the configured Codex entry")
+        return [shell, "-NoProfile", "-File", str(binary)]
+    if binary.suffix.lower() in {".cmd", ".bat"}:
+        raise RuntimeError("command wrappers are not accepted as the Codex evidence entry")
+    return [str(binary)]
 
 
 def _record_ownward_evidence(
     harness_args: list[str], *, candidate: str, binary_sha256: str, adapter_root: Path,
+    environment_sha256: str, input_manifest_sha256: str, tool_sha256: str,
     codex_version: str = "", codex_sha256: str = "",
 ) -> None:
     output_dir = Path(_argument_value(harness_args, "--output-dir")).resolve()
@@ -84,7 +103,7 @@ def _record_ownward_evidence(
     if params["query_mode"] == "codex" and (
         params.get("codex_model") != ACTIVE_CODEX_MODEL
         or params.get("codex_reasoning_effort") != ACTIVE_CODEX_REASONING_EFFORT
-        or codex_version != ACTIVE_CODEX_CLI_VERSION
+        or not codex_version
         or len(codex_sha256) != 64
     ):
         raise RuntimeError("Ownward active retrieval must use the fixed official Codex version, model, and reasoning effort")
@@ -92,6 +111,9 @@ def _record_ownward_evidence(
     payload["ownward_evidence"] = {
         "candidate": candidate.strip(),
         "release_binary_sha256": binary_sha256,
+        "environment_sha256": environment_sha256,
+        "input_manifest_sha256": input_manifest_sha256,
+        "tool_sha256": tool_sha256,
         "query_mode": params["query_mode"],
         "codex_model": params.get("codex_model", ""),
         "codex_reasoning_effort": params.get("codex_reasoning_effort", ""),
@@ -119,7 +141,7 @@ def _verify_official_revision(repo: Path) -> None:
         actual = completed.stdout.strip() or completed.stderr.strip() or "unknown"
         raise RuntimeError(f"LongMemEval-V2 must be checked out at {OFFICIAL_REVISION}; found {actual}")
     completed = subprocess.run(
-        ["git", "status", "--porcelain", "--untracked-files=no"],
+        ["git", "status", "--porcelain"],
         cwd=repo,
         check=False,
         capture_output=True,
@@ -127,11 +149,14 @@ def _verify_official_revision(repo: Path) -> None:
         encoding="utf-8",
     )
     if completed.returncode != 0 or completed.stdout.strip():
-        raise RuntimeError("LongMemEval-V2 tracked files differ from the pinned official revision")
+        raise RuntimeError("LongMemEval-V2 official checkout is not clean at the pinned revision")
 
 
 def main() -> None:
     wrapper, harness_args = _parse_wrapper_args()
+    for name in ("environment_sha256", "input_manifest_sha256", "tool_sha256"):
+        if not _valid_sha256(getattr(wrapper, name)):
+            raise RuntimeError(f"{name} must be a lowercase SHA-256 digest")
     official_repo = Path(wrapper.official_repo).resolve()
     _verify_official_revision(official_repo)
     binary = Path(wrapper.ownward_binary).resolve()
@@ -189,6 +214,9 @@ def main() -> None:
         harness_args,
         candidate=wrapper.candidate,
         binary_sha256=binary_sha256,
+        environment_sha256=wrapper.environment_sha256,
+        input_manifest_sha256=wrapper.input_manifest_sha256,
+        tool_sha256=wrapper.tool_sha256,
         adapter_root=Path(__file__).resolve().parent,
         codex_version=codex_version,
         codex_sha256=codex_sha256,

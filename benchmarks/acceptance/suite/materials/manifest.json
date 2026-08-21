@@ -1,0 +1,26 @@
+{
+  "schema": "ownward.acceptance-materials-manifest/v1",
+  "suite_version": "1.0.0",
+  "files": [
+    {
+      "path": "benchmarks/acceptance/suite/materials/core/v1/dataset.json",
+      "sha256": "cca229eb9000e08c49bb70bd15985e0bdb6d259d0fc33df1bcd3824ff5ff7274"
+    },
+    {
+      "path": "benchmarks/acceptance/suite/materials/product/v1/dataset.json",
+      "sha256": "818da669d9f168347dea9ac40c7cc8b8432e2c0f648353aae78e345d4628268a"
+    },
+    {
+      "path": "benchmarks/acceptance/suite/materials/product/v1/qualification.json",
+      "sha256": "4292aff3235da76adae55ccda055d7fdf22c05ab6cb3bdd18a5ce19cb9f4a47b"
+    },
+    {
+      "path": "benchmarks/acceptance/suite/materials/product/v1/review.json",
+      "sha256": "a6652bb79c1b3b3fefca42d853bc0d0a5e63f54df4f086db634db592a86b3547"
+    },
+    {
+      "path": "benchmarks/acceptance/suite/materials/frontier/v1/calibration.json",
+      "sha256": "35eb219d7778b862fb913816b769979bcc19fdb7590f35a357530f9467b3b2b3"
+    }
+  ]
+}

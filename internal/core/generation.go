@@ -128,9 +128,6 @@ func (s *Service) buildCollaborativeGeneration(ctx context.Context, generation s
 					}
 				}
 			}
-			if s.disableRelations {
-				record.Analysis.Relations = nil
-			}
 			records[start+offset] = record
 		}
 	}

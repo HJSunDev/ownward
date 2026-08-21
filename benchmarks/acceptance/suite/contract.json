@@ -1,0 +1,125 @@
+{
+  "schema": "ownward.acceptance-suite-contract/v1",
+  "suite_version": "1.0.0",
+  "optimization_loop": {
+    "benchmark_version": "ownward-core-frontier/v1",
+    "inputs": [
+      "asset_snapshots",
+      "change_sequences",
+      "queries",
+      "truth",
+      "frozen_embeddings",
+      "frozen_semantics",
+      "deterministic_variants"
+    ],
+    "modes": {
+      "targeted": {"max_wall_seconds": 180},
+      "full": {"max_wall_seconds": 600}
+    },
+    "dimensions": ["quality", "latency", "resources"],
+    "allow_compensating_score": false,
+    "promotion": {
+      "requires_no_protected_regression": true,
+      "requires_predeclared_material_improvement": true,
+      "requires_product_qualification": true
+    },
+    "external_frontier": {
+      "requires_same_inputs_protocol_environment": true,
+      "allow_estimated_conversion": false,
+      "recalibrate_on": ["benchmark_version", "comparator_version", "environment"]
+    },
+    "output_schema": "ownward.frontier-report/v1"
+  },
+  "evidence_layers": {
+    "core": {
+      "version": "ownward-core-baseline/v1",
+      "external_intelligence": false,
+      "max_wall_seconds": 300,
+      "inputs": ["candidate_manifest", "binary_manifest", "environment_manifest", "core_dataset_manifest"],
+      "required_invariants": [
+        "asset_preservation",
+        "asset_update",
+        "backup_restore",
+        "derived_rebuild",
+        "stable_identity",
+        "disposable_derived_state",
+        "replaceable_model"
+      ],
+      "output_schema": "ownward.core-baseline-report/v1"
+    },
+    "product": {
+      "version": "ownward-product-dataset/v1",
+      "categories": ["cross_time", "multi_hop", "context_applicability", "information_update"],
+      "relation_organization_gain_required": true,
+      "full_scenarios": 24,
+      "full_information": 120,
+      "qualification_scenarios": 8,
+      "qualification_scenarios_per_category": 2,
+      "modes": {
+        "qualification": {"max_wall_seconds": 1800},
+        "full": {"max_wall_seconds": 5400}
+      },
+      "inputs": ["candidate_manifest", "binary_manifest", "environment_manifest", "product_dataset_manifest"],
+      "output_schema": "ownward.product-report/v1"
+    },
+    "community": {
+      "version": "longmemeval-v2/2cc8c540bdb87fe6761629b585e727e1c4704520",
+      "benchmark": "LongMemEval-V2 Small",
+      "domains": ["web", "enterprise"],
+      "expected_wall_seconds": {"min": 14400, "max": 28800},
+      "inputs": ["candidate_manifest", "binary_manifest", "environment_manifest", "official_dataset_manifest", "adapter_manifest"],
+      "output_schema": "ownward.longmemeval-report/v1"
+    }
+  },
+  "execution": {
+    "modes": ["targeted", "core", "frontier", "qualification", "full", "longmemeval", "summarize", "self-check"],
+    "prerequisites": {
+      "frontier": ["targeted"],
+      "qualification": ["core", "frontier"],
+      "full": ["core", "qualification"],
+      "longmemeval": ["core", "full"],
+      "summarize": ["core", "full", "longmemeval"]
+    },
+    "binding_fields": ["suite_version", "candidate", "binary_sha256", "environment_sha256", "input_manifest_sha256"],
+    "reuse_requires_equal": ["candidate", "binary_sha256", "environment_sha256", "input_manifest_sha256", "tool_sha256"],
+    "artifact_manifest_required": true,
+    "invalidation": {
+      "targeted": ["targeted", "frontier", "qualification", "full", "longmemeval", "summarize"],
+      "core": ["core", "qualification", "full", "longmemeval", "summarize"],
+      "frontier": ["frontier", "qualification", "full", "longmemeval", "summarize"],
+      "qualification": ["qualification", "full", "longmemeval", "summarize"],
+      "full": ["full", "longmemeval", "summarize"],
+      "longmemeval": ["longmemeval", "summarize"]
+    },
+    "stop_on": ["budget_exceeded", "binding_changed", "prerequisite_failed", "incomplete_evidence"],
+    "self_check": {
+      "may_use_formal_samples": false,
+      "may_promote_baseline": false,
+      "may_emit_acceptance_result": false
+    }
+  },
+  "reports": {
+    "frontier": {
+      "schema": "ownward.frontier-report/v1",
+      "required": ["schema", "suite_version", "benchmark_version", "mode", "candidate", "baseline", "environment", "inputs", "quality", "latency", "resources", "diagnostics", "decision", "started_at", "finished_at"]
+    },
+    "core": {
+      "schema": "ownward.core-baseline-report/v1",
+      "required": ["schema", "suite_version", "candidate", "binary_sha256", "environment", "inputs", "invariants", "passed", "started_at", "finished_at"]
+    },
+    "product": {
+      "schema": "ownward.product-report/v1",
+      "required": ["schema", "suite_version", "dataset_version", "mode", "candidate", "binary_sha256", "environment", "inputs", "categories", "organization_gain", "quality", "latency", "resources", "passed", "started_at", "finished_at"]
+    },
+    "community": {
+      "schema": "ownward.longmemeval-report/v1",
+      "required": ["schema", "suite_version", "official_version", "candidate", "binary_sha256", "environment", "inputs", "domains", "submission", "passed", "started_at", "finished_at"]
+    },
+    "suite": {
+      "schema": "ownward.acceptance-suite-report/v1",
+      "required": ["schema", "suite_version", "candidate", "binary_sha256", "environment", "inputs", "tool_sha256", "core_report_sha256", "product_report_sha256", "community_report_sha256", "passed", "created_at"]
+    }
+  },
+  "public_artifacts": ["contract", "datasets", "truth", "scorers", "configuration", "manifests", "reports", "raw_evidence"],
+  "forbidden": ["dynamic_post_freeze_generation", "test_only_product_path", "compensating_score", "selective_rerun", "formal_result_from_self_check"]
+}

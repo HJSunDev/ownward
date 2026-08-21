@@ -83,48 +83,6 @@ func TestServiceNavigatesSemanticRelations(t *testing.T) {
 	}
 }
 
-func TestServiceCanDisableOnlyRelationOrganizationForAblation(t *testing.T) {
-	root := t.TempDir()
-	store, err := assetlog.Open(filepath.Join(root, "assets"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	state, err := derived.Open(filepath.Join(root, "state"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	service, err := NewOrganizedWithOptions(store, state, semantics.Heuristic{}, Options{DisableRelations: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer service.Close()
-	parent, err := service.Create(context.Background(), CreateInput{Content: "project atlas"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	child, err := service.Create(context.Background(), CreateInput{
-		Content: "private launch code", Relations: []domain.ExplicitRelation{{Type: "part_of", TargetID: parent.Information.ID}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if record, ok := state.Get(child.Information.ID); !ok || len(record.Analysis.Relations) != 0 {
-		t.Fatalf("ablation persisted relation organization: %#v", record)
-	}
-	if _, err := service.Navigate(context.Background(), []string{child.Information.ID}, nil, 1, 10); err == nil {
-		t.Fatal("ablation must disable relation navigation")
-	}
-	results, err := service.Search(context.Background(), SearchInput{Query: "project atlas", Limit: 10})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, result := range results {
-		if contains(result.Signals, "relation") {
-			t.Fatalf("ablation exposed relation evidence: %#v", results)
-		}
-	}
-}
-
 func TestSearchDoesNotForceContextOnGeneralInformation(t *testing.T) {
 	store, err := assetlog.Open(filepath.Join(t.TempDir(), "assets"))
 	if err != nil {

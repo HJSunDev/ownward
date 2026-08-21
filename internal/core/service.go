@@ -29,18 +29,17 @@ Ownward 只保存属于用户且可长期复用的信息。创建信息时保留
 `
 
 type Service struct {
-	store            *assetlog.Store
-	derivedStore     *derived.Store
-	index            *retrieval.Lexical
-	semantic         *derived.Index
-	provider         semantics.Provider
-	embedder         embedding.Provider
-	collaborative    bool
-	disableRelations bool
-	now              func() time.Time
-	mutationMu       [256]sync.Mutex
-	graphMu          sync.Mutex
-	stateMu          sync.RWMutex
+	store         *assetlog.Store
+	derivedStore  *derived.Store
+	index         *retrieval.Lexical
+	semantic      *derived.Index
+	provider      semantics.Provider
+	embedder      embedding.Provider
+	collaborative bool
+	now           func() time.Time
+	mutationMu    [256]sync.Mutex
+	graphMu       sync.Mutex
+	stateMu       sync.RWMutex
 }
 
 func appendUniqueIDs(values []string, extra ...string) []string {
@@ -124,19 +123,11 @@ type NavigationResult struct {
 	Edges []derived.Edge   `json:"edges"`
 }
 
-type Options struct {
-	DisableRelations bool
-}
-
 func New(store *assetlog.Store) *Service {
 	return &Service{store: store, index: retrieval.NewLexical(store.All()), now: time.Now}
 }
 
 func NewOrganized(store *assetlog.Store, derivedStore *derived.Store, provider semantics.Provider) (*Service, error) {
-	return NewOrganizedWithOptions(store, derivedStore, provider, Options{})
-}
-
-func NewOrganizedWithOptions(store *assetlog.Store, derivedStore *derived.Store, provider semantics.Provider, options Options) (*Service, error) {
 	if provider == nil {
 		provider = semantics.Heuristic{}
 	}
@@ -152,29 +143,21 @@ func NewOrganizedWithOptions(store *assetlog.Store, derivedStore *derived.Store,
 	currentRecords := records[:0]
 	for _, record := range records {
 		if currentRevision[record.AssetID] == record.AssetRevision {
-			if options.DisableRelations {
-				record.Analysis.Relations = nil
-			}
 			currentRecords = append(currentRecords, record)
 		}
 	}
 	return &Service{
-		store:            store,
-		derivedStore:     derivedStore,
-		index:            retrieval.NewLexical(assets),
-		semantic:         derived.NewIndex(currentRecords),
-		provider:         provider,
-		disableRelations: options.DisableRelations,
-		now:              time.Now,
+		store:        store,
+		derivedStore: derivedStore,
+		index:        retrieval.NewLexical(assets),
+		semantic:     derived.NewIndex(currentRecords),
+		provider:     provider,
+		now:          time.Now,
 	}, nil
 }
 
 // NewCollaborative 创建本地向量能力与外部语义理解相互独立的正式产品架构。
 func NewCollaborative(store *assetlog.Store, derivedStore *derived.Store, embedder embedding.Provider) (*Service, error) {
-	return NewCollaborativeWithOptions(store, derivedStore, embedder, Options{})
-}
-
-func NewCollaborativeWithOptions(store *assetlog.Store, derivedStore *derived.Store, embedder embedding.Provider, options Options) (*Service, error) {
 	if embedder == nil {
 		embedder = embedding.Unavailable{}
 	}
@@ -200,9 +183,6 @@ func NewCollaborativeWithOptions(store *assetlog.Store, derivedStore *derived.St
 			record.Error = strings.Trim(strings.Join([]string{record.Error, "向量空间与当前能力不一致"}, "; "), "; ")
 			invalidated = append(invalidated, record)
 		}
-		if options.DisableRelations {
-			record.Analysis.Relations = nil
-		}
 		currentRecords = append(currentRecords, record)
 	}
 	for _, record := range invalidated {
@@ -211,14 +191,13 @@ func NewCollaborativeWithOptions(store *assetlog.Store, derivedStore *derived.St
 		}
 	}
 	return &Service{
-		store:            store,
-		derivedStore:     derivedStore,
-		index:            retrieval.NewLexical(assets),
-		semantic:         derived.NewIndex(currentRecords),
-		embedder:         embedder,
-		collaborative:    true,
-		disableRelations: options.DisableRelations,
-		now:              time.Now,
+		store:         store,
+		derivedStore:  derivedStore,
+		index:         retrieval.NewLexical(assets),
+		semantic:      derived.NewIndex(currentRecords),
+		embedder:      embedder,
+		collaborative: true,
+		now:           time.Now,
 	}, nil
 }
 
@@ -488,7 +467,7 @@ func (s *Service) Search(ctx context.Context, input SearchInput) ([]SearchResult
 		seeds = append(seeds, seed.id)
 	}
 	var related []derived.Edge
-	if !input.DisableRelationExpansion && !s.disableRelations {
+	if !input.DisableRelationExpansion {
 		related = s.semantic.Navigate(seeds, nil, 1, candidateLimit)
 	}
 	seedScores := make(map[string]float64, len(rankedSeeds))
@@ -621,9 +600,6 @@ func (s *Service) compactResult(value domain.Information, contexts []domain.Cont
 func (s *Service) Navigate(_ context.Context, start, relationTypes []string, depth, limit int) (NavigationResult, error) {
 	s.stateMu.RLock()
 	defer s.stateMu.RUnlock()
-	if s.disableRelations {
-		return NavigationResult{}, errors.New("关系组织已禁用")
-	}
 	if s.semantic == nil {
 		return NavigationResult{}, errors.New("语义关系导航未启用")
 	}
@@ -812,12 +788,7 @@ func (s *Service) organize(ctx context.Context, value domain.Information) Organi
 		relation.Direction = ""
 		outgoing = append(outgoing, relation)
 	}
-	if s.disableRelations {
-		incoming = nil
-		analysis.Relations = nil
-	} else {
-		analysis.Relations = s.finalizeRelations(value, outgoing)
-	}
+	analysis.Relations = s.finalizeRelations(value, outgoing)
 	status := "ready"
 	errorText := ""
 	if _, fallback := s.provider.(semantics.Heuristic); fallback {
@@ -862,14 +833,12 @@ func (s *Service) organize(ctx context.Context, value domain.Information) Organi
 		return OrganizationState{Status: "pending", Provider: s.provider.Name(), Error: err.Error()}
 	}
 	s.semantic.Upsert(record)
-	if !s.disableRelations {
-		if err := s.applyIncomingRelationsLocked(value, previousDependents, incoming); err != nil {
-			record.Status = "pending"
-			record.Error = strings.Trim(strings.Join([]string{record.Error, err.Error()}, "; "), "; ")
-			_ = s.derivedStore.Put(record)
-			s.semantic.Upsert(record)
-			return OrganizationState{Status: "pending", Provider: record.Provider, Error: record.Error}
-		}
+	if err := s.applyIncomingRelationsLocked(value, previousDependents, incoming); err != nil {
+		record.Status = "pending"
+		record.Error = strings.Trim(strings.Join([]string{record.Error, err.Error()}, "; "), "; ")
+		_ = s.derivedStore.Put(record)
+		s.semantic.Upsert(record)
+		return OrganizationState{Status: "pending", Provider: record.Provider, Error: record.Error}
 	}
 	return OrganizationState{Status: status, Provider: record.Provider, Error: errorText}
 }

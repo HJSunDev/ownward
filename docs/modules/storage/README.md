@@ -74,4 +74,4 @@
 - [第一版交付定义](../../delivery/first-version-delivery-definition.md)
 - [当前长期资产实现](../../../internal/assetlog/store.go)
 - [当前派生状态实现](../../../internal/derived/store.go)
-- [当前资源前沿验收](../../../benchmarks/resource_frontier/README.md)
+- [Ownward Acceptance Suite v1](../../../benchmarks/acceptance/suite/README.md)

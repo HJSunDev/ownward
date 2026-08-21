@@ -1,0 +1,140 @@
+{
+  "schema": "ownward.product-dataset-review/v1",
+  "dataset_version": "ownward-product-dataset/v1",
+  "reviewed_scenarios": [
+    {
+      "id": "s01-522febb1",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s02-b199f5b9",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s03-744e6835",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s04-59bba82f",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s05-6eb10c2b",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s06-814b9756",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s07-c459d0cc",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s08-17f29c06",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s09-1a8fdc2b",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s10-920f770e",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s11-1a6ba287",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s12-93c940e2",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s13-3b780c39",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s14-bbcc47dc",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s15-52f974f6",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s16-640eeb18",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s18-d128422e",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s19-f6fd0efd",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s20-0946a250",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s21-7ecbef3c",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s23-e9694e7b",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s24-2f127adb",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s25-f8573453",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s27-68857f46",
+      "valid": true,
+      "issues": []
+    }
+  ],
+  "source": {
+    "candidate": "d91466f342c6b97cdf6c792cff0dbd4d74f3393a",
+    "generator": {
+      "model": "gpt-5.4",
+      "reasoning_effort": "medium"
+    },
+    "validator": {
+      "model": "gpt-5.4-mini",
+      "reasoning_effort": "xhigh"
+    },
+    "source_dataset_sha256": "b93abaa10df4250bbe7d823b6ec79276d7e380074c384173d4c7c547aa999f2d",
+    "source_validation_sha256": "5d6791d4c576e02f5244e2909b01cc66293577728f8f888f39a04e42f3fda597"
+  },
+  "limits": "一次性冷审证明该固定版本内部真值明确；不把 24 个场景包装为开放世界统计证明。"
+}

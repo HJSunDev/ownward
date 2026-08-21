@@ -100,12 +100,6 @@ go run ./cmd/ownward-performance --binary bin/ownward.exe --scale 100000 --dimen
 go run ./cmd/ownward-production-storage --binary bin/ownward.exe --candidate COMMIT_SHA --workspace .tmp/production-storage --output production-storage-report.json
 ```
 
-Public quality and latency comparison uses the pinned official [LongMemEval-V2 integration](benchmarks/longmemeval_v2/README.md) with external-agent active retrieval; direct retrieval is only an optional diagnostic mode.
-
-Open-world organization and relation-structure value use the post-freeze [dynamic unseen acceptance](benchmarks/acceptance/dynamic/README.md), with independently validated generated data and a same-state relation ablation.
-
-Public resource comparison uses the reproducible [resource-frontier harness](benchmarks/resource_frontier/README.md) at the same 100,000-item, 384-dimensional scale.
-Real external-agent mutation and cross-session consistency use the [Codex integration acceptance](benchmarks/agent_integration/README.md); the verifier rejects sessions that bypass Ownward through shell or file tools.
-The [final acceptance verifier](benchmarks/final_acceptance/README.md) accepts completion only when every formal report is bound to the same release binary and full Git candidate.
+The [Ownward Acceptance Suite v1](benchmarks/acceptance/suite/README.md) binds one core-frontier optimization loop and exactly three evidence layers to the same release candidate: a deterministic core baseline, the fixed Ownward product dataset, and the pinned official LongMemEval-V2 benchmark. Historical harnesses are not independent completion gates.
 
 See [Contributing](CONTRIBUTING.md), [Security](SECURITY.md), and the [Apache 2.0 license](LICENSE).

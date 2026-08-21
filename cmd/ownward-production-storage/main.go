@@ -15,7 +15,7 @@ func main() {
 	candidate := flag.String("candidate", "", "完整候选提交哈希")
 	scale := flag.Int("scale", 100_000, "生产信息数量")
 	dimensions := flag.Int("dimensions", 512, "第一版向量维度")
-	thresholds := flag.String("thresholds", "benchmarks/delivery_resource/thresholds.json", "完整交付资源阈值")
+	thresholds := flag.String("thresholds", "benchmarks/acceptance/suite/adapters/product_resource/thresholds.json", "完整交付资源阈值")
 	workspace := flag.String("workspace", "", "位于非系统盘的临时工作目录")
 	output := flag.String("output", "", "报告输出文件")
 	flag.Parse()
