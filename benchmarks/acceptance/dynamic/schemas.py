@@ -21,62 +21,47 @@ def _string_array() -> dict[str, Any]:
     return {"type": "array", "items": {"type": "string"}}
 
 
-def hidden_world_schema() -> dict[str, Any]:
-    node = {
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["id", "facts"],
-        "properties": {"id": {"type": "string"}, "facts": _string_array()},
-    }
-    relation = {
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["source_id", "type", "target_id"],
-        "properties": {
-            "source_id": {"type": "string"},
-            "type": {"type": "string", "enum": RELATION_TYPES},
-            "target_id": {"type": "string"},
-        },
-    }
-    update = {
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["node_id", "replacement_facts"],
-        "properties": {"node_id": {"type": "string"}, "replacement_facts": _string_array()},
-    }
-    query = {
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["intent", "expected_ids", "forbidden_ids", "answer_facts"],
-        "properties": {
-            "intent": {"type": "string"},
-            "expected_ids": _string_array(),
-            "forbidden_ids": _string_array(),
-            "answer_facts": _string_array(),
-        },
-    }
-    scenario = {
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["id", "task_class", "information_scope", "nodes", "relations", "updates", "query"],
-        "properties": {
-            "id": {"type": "string"},
-            "task_class": {"type": "string"},
-            "information_scope": _string_array(),
-            "nodes": {"type": "array", "items": node},
-            "relations": {"type": "array", "items": relation},
-            "updates": {"type": "array", "items": update},
-            "query": query,
-        },
-    }
+def hidden_content_schema(structure: dict[str, Any]) -> dict[str, Any]:
+    scenario_properties: dict[str, Any] = {}
+    scenario_ids: list[str] = []
+    for scenario in structure["scenarios"]:
+        scenario_id = str(scenario["id"])
+        scenario_ids.append(scenario_id)
+        node_ids = [str(value["id"]) for value in scenario["nodes"]]
+        update_ids = [str(value) for value in scenario["update_node_ids"]]
+        scenario_properties[scenario_id] = {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["nodes", "updates", "question"],
+            "properties": {
+                "nodes": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": node_ids,
+                    "properties": {node_id: _string_array() for node_id in node_ids},
+                },
+                "updates": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": update_ids,
+                    "properties": {node_id: _string_array() for node_id in update_ids},
+                },
+                "question": {"type": "string"},
+            },
+        }
     return {
         "type": "object",
         "additionalProperties": False,
         "required": ["scenarios"],
-        "properties": {"scenarios": {"type": "array", "items": scenario}},
+        "properties": {
+            "scenarios": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": scenario_ids,
+                "properties": scenario_properties,
+            }
+        },
     }
-
-
 def expression_schema() -> dict[str, Any]:
     information = {
         "type": "object",

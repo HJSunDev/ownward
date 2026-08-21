@@ -182,3 +182,10 @@
 - **结论**：冻结的 Codex CLI 0.117.0、`gpt-5.4/low` 语义路径实测单条需 25.27 秒、五条批次 P95 为 58.22 秒，无法达到 15 秒；固定旧关系金标的逐类型命中仅 20%，但同一候选的全部检索质量已通过，继续调整内容规则会破坏开放语义架构。
 - **影响**：恢复开发前必须重新收敛锁定验收依据，使组织时效采用可达且真实的产品口径，并以不依赖唯一主观标签的证据验证组织质量；不得降低产品前沿标准或引入内容特判。
 - **证据**：`.tmp/final-candidate-209cc78/reports/fixed-regression-report.json`、`.tmp/semantic-single-item-probe-209cc78/evidence/`、R-000016、R-000021、R-000025
+
+## R-000027｜关键决策｜语义组织验收改用职责匹配的证据
+
+- **时间**：2026-08-21 01:21（Asia/Shanghai）
+- **结论**：R-000026 的冲突通过重划证据职责解决：固定集硬性验证资产、语义协作完成、检索和历史回归，其单一关系标签与语义耗时只作诊断；动态未见按统一关系定义与方向生成真值，经独立歧义验证后，以关系准确率和覆盖率承担开放组织质量证明。Ownward 操作时延继续硬性验收，外部语义耗时与成本如实记录并受异常停止约束，不采用无依据的 15 秒门槛。
+- **影响**：正式验收不得针对固定主观标签调内容规则，也不得把外部智能推理时间伪装成内核时延；动态关系质量门槛、检索前沿和产品标准保持不变。
+- **证据**：`benchmarks/acceptance/fixed/verify.py`、`benchmarks/acceptance/dynamic/protocol.json`、`benchmarks/acceptance/dynamic/common.py`、`benchmarks/final_acceptance/verify.py`

@@ -52,12 +52,27 @@
       "reasoning_effort": "low"
     }
   },
+  "relation_contract": {
+    "direction": "Every relation is stated as source_id TYPE target_id.",
+    "types": {
+      "same_as": "The source and target express the same underlying information.",
+      "broader_than": "The source is a broader category or concept than the target.",
+      "narrower_than": "The source is a narrower category or concept than the target.",
+      "part_of": "The source is a component of the target mechanism, structure, process, system, or topic.",
+      "has_part": "The source contains the target as a component.",
+      "supports": "The source provides evidence, a mechanism, a condition, a method, or a solution for the target; a problem, cause, or background alone does not support its solution.",
+      "contradicts": "The source and target make claims that cannot both hold in the stated context.",
+      "derived_from": "The source conclusion, choice, or practice is derived from the target basis.",
+      "applies_in": "The source is applicable in the context represented by the target.",
+      "related_to": "The source and target have a direct semantic relation for which no other contract type is accurate."
+    }
+  },
   "execution": {
     "dataset_stage_seconds_max": 600,
     "codex_inactivity_seconds": 600,
     "inspection_operation_stall_seconds": 5,
-    "organization_operation_stall_seconds": 45,
-    "organization_p95_seconds_max": 15,
+    "ownward_operation_stall_seconds": 45,
+    "semantic_stage_seconds_max": 600,
     "agent_seconds_per_question_max": 130.54,
     "agent_tool_calls_per_query": 8,
     "parallel_conditions": 2

@@ -15,6 +15,21 @@ import verify
 
 
 class DynamicVerifierTests(unittest.TestCase):
+    def test_codex_command_uses_current_feature_names(self) -> None:
+        command = verify._codex_command(
+            argparse.Namespace(codex_binary=Path("codex.exe")),
+            model="gpt-test",
+            reasoning_effort="low",
+            work_dir=Path("work"),
+            schema_path=Path("schema.json"),
+            output_path=Path("output.json"),
+        )
+        joined = " ".join(command)
+        self.assertIn("features.apply_patch_freeform=false", joined)
+        self.assertIn("features.memories=false", joined)
+        self.assertNotIn("include_apply_patch_tool", joined)
+        self.assertNotIn("memory_tool", joined)
+
     def test_agent_and_generation_traces_reject_non_json_output(self) -> None:
         with self.assertRaisesRegex(RuntimeError, "non-JSON"):
             verify.parse_agent_trace('{"type":"thread.started","thread_id":"thread-1"}\nnot-json\n')
@@ -36,6 +51,49 @@ class DynamicVerifierTests(unittest.TestCase):
         self.assertTrue(trace.bypassed)
         self.assertEqual(trace.bypass_operations, ("command_execution",))
 
+    def test_agent_trace_allows_internal_planning_without_treating_it_as_evidence(self) -> None:
+        events = [
+            {"type": "thread.started", "thread_id": "thread-1"},
+            {"type": "item.completed", "item": {"type": "todo_list"}},
+            {
+                "type": "item.completed",
+                "item": {
+                    "type": "mcp_tool_call",
+                    "server": "ownward",
+                    "tool": "ownward_search",
+                    "arguments": {"query": "fact"},
+                    "result": {"structured_content": {"results": []}},
+                    "status": "completed",
+                },
+            },
+        ]
+        trace = verify.parse_agent_trace("\n".join(json.dumps(value) for value in events))
+        self.assertFalse(trace.bypassed)
+        self.assertEqual([call.name for call in trace.calls], ["ownward_search"])
+
+    def test_relation_disabled_is_only_expected_for_baseline_navigation(self) -> None:
+        events = [
+            {"type": "thread.started", "thread_id": "thread-1"},
+            {
+                "type": "item.completed",
+                "item": {
+                    "type": "mcp_tool_call",
+                    "server": "ownward",
+                    "tool": "ownward_navigate",
+                    "arguments": {"start_ids": ["one"]},
+                    "result": {"content": [{"type": "text", "text": "关系组织已禁用"}], "structured_content": None},
+                    "status": "failed",
+                },
+            },
+        ]
+        trace = verify.parse_agent_trace("\n".join(json.dumps(value) for value in events))
+        self.assertEqual(trace.calls[0].error, "关系组织已禁用")
+        self.assertTrue(verify._expected_ablation_unavailability("baseline", trace.calls[0]))
+        self.assertFalse(verify._expected_ablation_unavailability("full", trace.calls[0]))
+
+        other_error = verify.AgentToolCall("ownward_navigate", {}, {}, "corrupt state")
+        self.assertFalse(verify._expected_ablation_unavailability("baseline", other_error))
+
     def test_tool_evidence_is_bound_to_information_ids_and_successful_calls(self) -> None:
         evidence = verify._observed_tool_evidence(
             (
@@ -45,6 +103,43 @@ class DynamicVerifierTests(unittest.TestCase):
         )
         self.assertIn("grounded fact", evidence["one"])
         self.assertNotIn("two", evidence)
+
+    def test_answer_accepts_grounded_semantic_wording_but_requires_every_expected_asset(self) -> None:
+        evidence = {
+            "one": ["The current venue is the glass annex."],
+            "two": ["The booking confirms every Thursday session there."],
+        }
+        passed, grounded = verify._answer_matches_truth(
+            {"one", "two"},
+            {"one", "two"},
+            {"three"},
+            {"The current venue is the glass annex.", "The booking confirms every Thursday session there."},
+            2,
+            evidence,
+        )
+        self.assertTrue(passed)
+        self.assertTrue(grounded)
+
+        passed, grounded = verify._answer_matches_truth(
+            {"one", "two"},
+            {"one", "two"},
+            set(),
+            {"The current venue is the glass annex.", "A second wording from the first asset."},
+            2,
+            evidence,
+        )
+        self.assertFalse(passed)
+        self.assertFalse(grounded)
+
+    def test_semantic_prompt_exposes_relation_contract_and_reconciles_pairs(self) -> None:
+        prompt = verify._semantic_prompt(
+            ["one", "two"],
+            {"model": "gpt-test"},
+            {"direction": "source TYPE target", "types": {"supports": "evidence supports conclusion"}},
+        )
+        self.assertIn("evidence supports conclusion", prompt)
+        self.assertIn("single most precise canonical relation", prompt)
+        self.assertIn("Evaluate every supplied candidate", prompt)
 
     def test_semantic_collaboration_allows_only_bounded_correction(self) -> None:
         trace = verify.AgentTrace(
@@ -101,6 +196,23 @@ class DynamicVerifierTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(RuntimeError, "used a tool"):
                 verify._validate_generation_trace(path)
+
+    def test_dataset_generation_trace_allows_internal_planning(self) -> None:
+        with tempfile.TemporaryDirectory() as root_value:
+            path = Path(root_value) / "events.jsonl"
+            path.write_text(
+                "\n".join(
+                    json.dumps(value)
+                    for value in (
+                        {"type": "thread.started", "thread_id": "thread-1"},
+                        {"type": "item.completed", "item": {"type": "todo_list"}},
+                        {"type": "item.completed", "item": {"type": "agent_message", "text": "done"}},
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            verify._validate_generation_trace(path)
 
     def test_dataset_stage_resume_is_bound_to_runtime_and_prompt(self) -> None:
         with tempfile.TemporaryDirectory() as root_value:
@@ -192,6 +304,34 @@ class DynamicVerifierTests(unittest.TestCase):
                     events_path=events,
                     inactivity_seconds=2,
                     maximum_seconds=0.2,
+                )
+
+    def test_codex_watchdog_passes_large_prompts_through_standard_input(self) -> None:
+        with tempfile.TemporaryDirectory() as root_value:
+            events = Path(root_value) / "events.jsonl"
+            prompt = "x" * 40000
+            returncode, _ = verify._run_codex_with_inactivity_watchdog(
+                [sys.executable, "-c", "import json,sys; print(json.dumps({'length': len(sys.stdin.read())}))"],
+                environment=dict(os.environ),
+                events_path=events,
+                inactivity_seconds=2,
+                maximum_seconds=2,
+                stdin_text=prompt,
+            )
+            self.assertEqual(returncode, 0)
+            self.assertEqual(json.loads(events.read_text(encoding="utf-8"))["length"], len(prompt))
+
+    def test_large_blocked_input_cannot_bypass_the_execution_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as root_value:
+            events = Path(root_value) / "events.jsonl"
+            with self.assertRaisesRegex(RuntimeError, "execution limit"):
+                verify._run_codex_with_inactivity_watchdog(
+                    [sys.executable, "-c", "import time; time.sleep(5)"],
+                    environment=dict(os.environ),
+                    events_path=events,
+                    inactivity_seconds=2,
+                    maximum_seconds=0.2,
+                    stdin_text="x" * 1_000_000,
                 )
 
     def test_agent_conditions_are_executed_as_a_parallel_pair(self) -> None:
@@ -367,7 +507,8 @@ class DynamicVerifierTests(unittest.TestCase):
                             "query_id": scenario["truth"]["id"],
                             "question": scenario["expression"]["query"]["question"],
                         }
-                    ]
+                    ],
+                    8,
                 )
                 output = root / f"full-{task_class}-answers.json"
                 output.write_text(

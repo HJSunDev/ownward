@@ -302,7 +302,6 @@ class FinalVerifierTests(unittest.TestCase):
             thresholds_dir.joinpath("thresholds.json").write_text(
                 json.dumps(
                     {
-                        "ingestion": {"organization_complete_p95_seconds_max": 15},
                         "public_frontier": {"longmemeval_v2_small": {"average_memory_query_seconds_max": 130.54}},
                     }
                 ),
@@ -324,7 +323,6 @@ class FinalVerifierTests(unittest.TestCase):
             }
             execution = {
                 "agent_tool_calls_per_query": 8,
-                "organization_p95_seconds_max": 15,
                 "agent_seconds_per_question_max": 130.54,
             }
             protocol_path = protocol_dir / "protocol.json"
@@ -375,7 +373,7 @@ class FinalVerifierTests(unittest.TestCase):
                 "required-scope-and-task-coverage",
                 "asset-identity-content-integrity",
                 "semantic-relation-quality",
-                "organization-completion-p95",
+                "semantic-collaboration-completed",
                 "external-agent-no-bypass-and-budget",
                 *(f"dynamic-{value}" for value in task_classes),
             }

@@ -156,7 +156,7 @@ def load_exec_events(text: str) -> SessionTrace:
         if not isinstance(item, dict):
             continue
         item_type = item.get("type")
-        if item_type in {"agent_message", "reasoning"}:
+        if item_type in {"agent_message", "reasoning", "todo_list"}:
             continue
         tool_call_count += 1
         if item_type != "mcp_tool_call":

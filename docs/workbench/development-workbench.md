@@ -179,6 +179,7 @@ Ownward 以最低必要复杂度长期承载用户的信息资产，借助可替
 - `docs/research/first-version-benchmark-basis.md` 规定第一版公开对标与验收基线依据。
 - `benchmarks/longmemeval_v2/README.md` 规定 LongMemEval-V2 的正式接入、共享状态、并发查询和成本控制路径。
 - `benchmarks/acceptance/README.md` 规定动态未见、组织结构增益、检索编排校准和模块生命周期的验收契约。
+- `benchmarks/acceptance/v5/README.md` 与 `benchmarks/acceptance/v5/thresholds.json` 规定固定回归基线的职责与冻结阈值。
 - `benchmarks/acceptance/dynamic/README.md` 与 `benchmarks/acceptance/dynamic/protocol.json` 规定动态未见验收的执行路径和冻结协议。
 - `benchmarks/agent_integration/README.md` 规定外部智能体接入的验收契约。
 - `benchmarks/resource_frontier/README.md` 规定信息内核前沿与完整交付资源的验收契约。
@@ -186,7 +187,7 @@ Ownward 以最低必要复杂度长期承载用户的信息资产，借助可替
 - `docs/engineering/commit-guidelines.md` 规定提交审视、拆分、确认和提交信息。
 - `docs/records/README.md` 规定关键工作留痕的准入、格式和不可变规则。
 
-目标、产品需求、架构总纲、存储架构、向量能力架构、语义理解架构、向量模型方案、开发规范、提交规范、关键工作留痕规则、第一版交付定义、验收基线依据、LongMemEval-V2 执行契约、验收契约、动态验收协议、外部智能体验收契约、资源验收契约和最终汇总契约均不得在开发过程中自行修改。检索体系演进文档按照自身规则维护：当前版本是实现基线，只有验证证据支持改变时才能追加新版本并更新当前指向，不得改写既有版本。其余实现方案、尚未确定的技术选型、代码设计、项目结构、依赖和验证方法自主决定，以当前范围内最简单、完整、可靠且能达到质量与性能目标的方案为准。
+目标、产品需求、架构总纲、存储架构、向量能力架构、语义理解架构、向量模型方案、开发规范、提交规范、关键工作留痕规则、第一版交付定义、验收基线依据、LongMemEval-V2 执行契约、验收契约、固定回归基线与阈值、动态验收协议、外部智能体验收契约、资源验收契约和最终汇总契约均不得在开发过程中自行修改。检索体系演进文档按照自身规则维护：当前版本是实现基线，只有验证证据支持改变时才能追加新版本并更新当前指向，不得改写既有版本。其余实现方案、尚未确定的技术选型、代码设计、项目结构、依赖和验证方法自主决定，以当前范围内最简单、完整、可靠且能达到质量与性能目标的方案为准。
 
 任务首次启动、暂停后恢复、重新创建或上下文压缩后，先恢复工作状态：
 

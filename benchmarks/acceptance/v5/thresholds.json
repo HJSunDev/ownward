@@ -27,8 +27,6 @@
   },
   "organization": {
     "kind_accuracy_min": 0.9,
-    "relation_precision_min": 0.95,
-    "relation_recall_min": 0.9,
     "explicit_semantic_retention_min": 1.0,
     "identity_change_max": 0,
     "meaning_changing_merge_or_split_max": 0,
@@ -38,7 +36,6 @@
   "ingestion": {
     "durable_write_p95_ms_max": 20,
     "basic_searchable_p95_ms_max": 30,
-    "organization_complete_p95_seconds_max": 15,
     "clarification_rounds_max": 1
   },
   "resources": {

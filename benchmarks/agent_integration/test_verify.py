@@ -154,6 +154,29 @@ class VerifyTests(unittest.TestCase):
         trace = verify.load_exec_events("\n".join(lines))
         self.assertTrue(trace.bypassed)
 
+    def test_exec_events_allow_internal_planning_without_counting_it_as_a_tool(self) -> None:
+        lines = [
+            json.dumps({"type": "thread.started", "thread_id": "session-two"}),
+            json.dumps({"type": "item.completed", "item": {"type": "todo_list"}}),
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "type": "mcp_tool_call",
+                        "server": "ownward",
+                        "tool": "ownward_search",
+                        "arguments": {"query": "fact"},
+                        "result": {"structured_content": {"results": []}},
+                        "error": None,
+                        "status": "completed",
+                    },
+                }
+            ),
+        ]
+        trace = verify.load_exec_events("\n".join(lines))
+        self.assertFalse(trace.bypassed)
+        self.assertEqual(trace.tool_call_count, 1)
+
     def test_evidence_trace_contains_only_session_and_ownward_calls(self) -> None:
         trace = verify.SessionTrace(
             "session-one",

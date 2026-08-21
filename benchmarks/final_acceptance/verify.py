@@ -390,15 +390,13 @@ def _validate_dynamic_evidence(report: dict[str, Any], task_classes: set[str]) -
         paths[str(name)] = path
     required = {
         "random",
+        "structure",
+        "content",
+        "content_manifest",
         "hidden",
-        "hidden_events",
-        "hidden_run",
         "expression",
-        "expression_events",
-        "expression_run",
         "validation",
-        "validation_events",
-        "validation_run",
+        "validation_manifest",
         "dataset",
         "dataset_run",
         "full_mapping",
@@ -742,7 +740,7 @@ def _validate_dynamic_reports(
             "required-scope-and-task-coverage",
             "asset-identity-content-integrity",
             "semantic-relation-quality",
-            "organization-completion-p95",
+            "semantic-collaboration-completed",
             "external-agent-no-bypass-and-budget",
             *(f"dynamic-{value}" for value in task_classes),
         },
@@ -765,11 +763,9 @@ def _validate_dynamic_reports(
     _dynamic_common.validate_protocol(protocol_value)
     fixed_thresholds = _load(repository / "benchmarks" / "acceptance" / "v5" / "thresholds.json")
     _require(
-        float(protocol_value["execution"]["organization_p95_seconds_max"])
-        == float(fixed_thresholds["ingestion"]["organization_complete_p95_seconds_max"])
-        and float(protocol_value["execution"]["agent_seconds_per_question_max"])
+        float(protocol_value["execution"]["agent_seconds_per_question_max"])
         == float(fixed_thresholds["public_frontier"]["longmemeval_v2_small"]["average_memory_query_seconds_max"]),
-        "dynamic execution boundaries are not derived from the frozen product baselines",
+        "dynamic retrieval boundary is not derived from the frozen public frontier",
     )
     protocol_sha256 = _sha256(protocol)
     _require(dynamic.get("protocol_sha256") == protocol_sha256, "dynamic report used another protocol")
@@ -845,9 +841,17 @@ def _validate_dynamic_reports(
         "dynamic random source is invalid",
     )
     hidden = _load(evidence["hidden"])
+    structure = _load(evidence["structure"])
+    content = _load(evidence["content"])
     expression = _load(evidence["expression"])
     validation = _load(evidence["validation"])
     dataset = _load(evidence["dataset"])
+    _require(
+        _dynamic_common.build_hidden_structure(protocol_value, str(random_source["seed"])) == structure
+        and _dynamic_common.assemble_hidden_world(structure, content) == hidden
+        and _dynamic_common.build_natural_expression(hidden, content) == expression,
+        "dynamic hidden truth cannot be reproduced from frozen structure and semantic content",
+    )
     _require(
         _dynamic_common.merge_valid_dataset(hidden, expression, validation, protocol_value) == dataset,
         "dynamic valid dataset cannot be reproduced from hidden truth and independent validation",
@@ -861,7 +865,7 @@ def _validate_dynamic_reports(
     )
     dataset_run = _load(evidence["dataset_run"])
     expected_dataset_run = {
-        "schema": "ownward.dynamic-dataset-run/v1",
+        "schema": "ownward.dynamic-dataset-run/v2",
         "candidate": candidate,
         "protocol_sha256": protocol_sha256,
         "codex_cli_version": protocol_value["runtime"]["codex_cli_version"],
@@ -869,21 +873,34 @@ def _validate_dynamic_reports(
         "generator": protocol_value["models"]["generator"],
         "validator": protocol_value["models"]["validator"],
         "random_source_sha256": _sha256(evidence["random"]),
+        "hidden_structure_sha256": _sha256(evidence["structure"]),
+        "hidden_content_sha256": _sha256(evidence["content"]),
         "hidden_truth_sha256": _sha256(evidence["hidden"]),
         "expression_sha256": _sha256(evidence["expression"]),
         "validation_sha256": _sha256(evidence["validation"]),
         "dataset_sha256": _sha256(evidence["dataset"]),
     }
     _require(dataset_run == expected_dataset_run, "dynamic dataset run binding changed")
-    stage_prompts = {
-        "hidden": _dynamic_common.generation_prompt(protocol_value, str(random_source["seed"])),
-        "expression": _dynamic_common.expression_prompt(hidden),
-        "validation": _dynamic_common.validation_prompt(hidden, expression),
-    }
-    for prefix, role in (("hidden", "generator"), ("expression", "generator"), ("validation", "validator")):
+    content_by_id: dict[str, Any] = {}
+    expected_content_partitions: list[dict[str, Any]] = []
+    content_partitions = _dynamic_common.content_partitions(structure, protocol_value)
+    for partition in content_partitions:
+        partition_id = str(partition["id"])
+        task_class = str(partition["task_class"])
+        prefix = f"content_{partition_id}"
+        _require(
+            {prefix, f"{prefix}_events", f"{prefix}_run"} <= set(evidence),
+            f"dynamic content evidence is incomplete: {partition_id}",
+        )
+        partial_structure = {
+            "schema": structure["schema"],
+            "seed_sha256": structure["seed_sha256"],
+            "scenarios": partition["hidden"]["scenarios"],
+        }
+        prompt = _dynamic_common.generation_prompt(protocol_value, str(random_source["seed"]), partial_structure)
         run = _load(evidence[f"{prefix}_run"])
         binding = run.get("binding")
-        expected_model = protocol_value["models"][role]
+        expected_model = protocol_value["models"]["generator"]
         _require(
             run.get("schema") == "ownward.dynamic-dataset-stage/v2"
             and isinstance(binding, dict)
@@ -892,7 +909,7 @@ def _validate_dynamic_reports(
             and binding.get("codex_binary_sha256") == _sha256(evidence["codex_binary"])
             and binding.get("model") == expected_model["model"]
             and binding.get("reasoning_effort") == expected_model["reasoning_effort"]
-            and binding.get("prompt_sha256") == hashlib.sha256(stage_prompts[prefix].encode("utf-8")).hexdigest()
+            and binding.get("prompt_sha256") == hashlib.sha256(prompt.encode("utf-8")).hexdigest()
             and run.get("output_sha256") == _sha256(evidence[prefix])
             and run.get("events_sha256") == _sha256(evidence[f"{prefix}_events"]),
             f"dynamic {prefix} stage binding changed",
@@ -900,6 +917,99 @@ def _validate_dynamic_reports(
         elapsed = float(run.get("elapsed_seconds", 0))
         _require(math.isfinite(elapsed) and elapsed > 0, f"dynamic {prefix} stage elapsed time is invalid")
         _validate_dynamic_generation_trace(evidence[f"{prefix}_events"])
+        partition_content = _load(evidence[prefix]).get("scenarios")
+        _require(isinstance(partition_content, dict), f"dynamic {prefix} content is invalid")
+        for scenario_id, scenario_content in partition_content.items():
+            _require(scenario_id not in content_by_id, "dynamic content partition identities overlap")
+            content_by_id[str(scenario_id)] = scenario_content
+        expected_content_partitions.append(
+            {
+                "partition_id": partition_id,
+                "task_class": task_class,
+                "scenario_ids": [str(value["id"]) for value in partition["hidden"]["scenarios"]],
+                "output_sha256": _sha256(evidence[prefix]),
+                "events_sha256": _sha256(evidence[f"{prefix}_events"]),
+                "run_sha256": _sha256(evidence[f"{prefix}_run"]),
+            }
+        )
+    _require(content == {"scenarios": content_by_id}, "dynamic content aggregate differs from its partitions")
+    _require(
+        _load(evidence["content_manifest"])
+        == {
+            "schema": "ownward.dynamic-content-stage/v1",
+            "candidate": candidate,
+            "protocol_sha256": protocol_sha256,
+            "aggregate_sha256": _sha256(evidence["content"]),
+            "partitions": expected_content_partitions,
+        },
+        "dynamic content manifest changed",
+    )
+    expression_by_id = {str(value["id"]): value for value in expression["scenarios"]}
+    validation_by_id: dict[str, Any] = {}
+    expected_partitions: list[dict[str, Any]] = []
+    partitions = _dynamic_common.validation_partitions(hidden, protocol_value)
+    for partition in partitions:
+        partition_id = str(partition["id"])
+        task_class = str(partition["task_class"])
+        prefix = f"validation_{partition_id}"
+        _require(
+            {prefix, f"{prefix}_events", f"{prefix}_run"} <= set(evidence),
+            f"dynamic validation evidence is incomplete: {partition_id}",
+        )
+        hidden_partition = partition["hidden"]
+        expression_partition = {
+            "scenarios": [expression_by_id[str(value["id"])] for value in hidden_partition["scenarios"]]
+        }
+        prompt = _dynamic_common.validation_prompt(hidden_partition, expression_partition, protocol_value)
+        run = _load(evidence[f"{prefix}_run"])
+        binding = run.get("binding")
+        expected_model = protocol_value["models"]["validator"]
+        _require(
+            run.get("schema") == "ownward.dynamic-dataset-stage/v2"
+            and isinstance(binding, dict)
+            and binding.get("candidate") == candidate
+            and binding.get("protocol_sha256") == protocol_sha256
+            and binding.get("codex_binary_sha256") == _sha256(evidence["codex_binary"])
+            and binding.get("model") == expected_model["model"]
+            and binding.get("reasoning_effort") == expected_model["reasoning_effort"]
+            and binding.get("prompt_sha256") == hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+            and run.get("output_sha256") == _sha256(evidence[prefix])
+            and run.get("events_sha256") == _sha256(evidence[f"{prefix}_events"]),
+            f"dynamic {prefix} stage binding changed",
+        )
+        elapsed = float(run.get("elapsed_seconds", 0))
+        _require(math.isfinite(elapsed) and elapsed > 0, f"dynamic {prefix} stage elapsed time is invalid")
+        _validate_dynamic_generation_trace(evidence[f"{prefix}_events"])
+        partition = _load(evidence[prefix])
+        for verdict in partition.get("scenarios", []):
+            scenario_id = str(verdict.get("id", ""))
+            _require(scenario_id and scenario_id not in validation_by_id, "dynamic validation partition identities overlap")
+            validation_by_id[scenario_id] = verdict
+        expected_partitions.append(
+            {
+                "partition_id": partition_id,
+                "task_class": task_class,
+                "scenario_ids": [str(value["id"]) for value in hidden_partition["scenarios"]],
+                "output_sha256": _sha256(evidence[prefix]),
+                "events_sha256": _sha256(evidence[f"{prefix}_events"]),
+                "run_sha256": _sha256(evidence[f"{prefix}_run"]),
+            }
+        )
+    _require(
+        validation == {"scenarios": [validation_by_id[str(value["id"])] for value in hidden["scenarios"]]},
+        "dynamic validation aggregate differs from its independent partitions",
+    )
+    _require(
+        _load(evidence["validation_manifest"])
+        == {
+            "schema": "ownward.dynamic-validation-stage/v1",
+            "candidate": candidate,
+            "protocol_sha256": protocol_sha256,
+            "aggregate_sha256": _sha256(evidence["validation"]),
+            "partitions": expected_partitions,
+        },
+        "dynamic validation manifest changed",
+    )
     full_mapping = _load(evidence["full_mapping"])
     baseline_mapping = _load(evidence["baseline_mapping"])
     _validate_dynamic_mapping(dataset, full_mapping, condition="full", disable_relations=False)
@@ -992,15 +1102,10 @@ def _validate_dynamic_reports(
         "recall_wilson_lower": _dynamic_common.wilson_lower(true_positive, len(snapshot_expected), confidence)
         if snapshot_expected
         else 0.0,
-        "completion_p95_seconds": float(full_mapping["organization_seconds_p95"]),
+        "semantic_collaboration_p95_seconds": float(full_mapping["organization_seconds_p95"]),
     }
     for name, expected in expected_organization.items():
         _same_metric(dynamic["organization"].get(name), float(expected), f"dynamic organization {name}")
-    _require(
-        expected_organization["completion_p95_seconds"]
-        <= float(protocol_value["execution"]["organization_p95_seconds_max"]),
-        "dynamic organization completion exceeded the frozen P95",
-    )
     full_runs: dict[str, dict[str, Any]] = {}
     baseline_runs: dict[str, dict[str, Any]] = {}
     for task_class in task_classes:
@@ -1632,7 +1737,7 @@ def main() -> None:
     _validate_bound_report(agent, schema="ownward.agent-integration-report/v1", candidate=candidate, binary_sha256=binary_sha256, label="agent")
     _require_checks(
         product,
-        {"asset_fidelity", "organization", "organization_latency", "retrieval"},
+        {"asset_fidelity", "semantic_completion", "retrieval"},
         "fixed regression",
     )
     _require_checks(

@@ -5,6 +5,7 @@ import hashlib
 import json
 import math
 from pathlib import Path
+import random
 from typing import Any
 
 
@@ -23,6 +24,8 @@ RELATION_TYPES = {
     "applies_in",
     "related_to",
 }
+CONTENT_SCENARIOS_PER_PARTITION = 4
+VALIDATION_SCENARIOS_PER_PARTITION = 1
 
 
 def require(condition: bool, message: str) -> None:
@@ -77,31 +80,260 @@ def canonical_relation(source: str, relation_type: str, target: str) -> tuple[st
     return source, relation_type, target
 
 
-def generation_prompt(protocol: dict[str, Any], random_seed: str) -> str:
+def _seeded_random(random_seed: str) -> random.Random:
+    digest = hashlib.sha256(random_seed.encode("utf-8")).digest()
+    return random.Random(int.from_bytes(digest, "big"))
+
+
+def build_hidden_structure(protocol: dict[str, Any], random_seed: str) -> dict[str, Any]:
     generation = protocol["generation"]
-    return f"""Create the hidden semantic truth for a one-time, post-freeze acceptance run of a general personal-information system.
+    classes = list(generation["task_classes"])
+    scenario_count = int(generation["generated_scenarios"])
+    node_count = int(generation["information_per_scenario"])
+    require(scenario_count % len(classes) == 0, "scenario count must be divisible by task classes")
+    require(node_count >= 4, "hidden structure requires at least four nodes per scenario")
+    rng = _seeded_random(random_seed)
+    task_classes = [value for value in classes for _ in range(scenario_count // len(classes))]
+    rng.shuffle(task_classes)
+    scopes = list(generation["information_scope"])
+    rng.shuffle(scopes)
+    variants: Counter[str] = Counter()
+    scenarios: list[dict[str, Any]] = []
+    for index, task_class in enumerate(task_classes):
+        variant = variants[task_class]
+        variants[task_class] += 1
+        scenario_id = f"s{index + 1:02d}-{rng.getrandbits(32):08x}"
+        node_ids = [f"{scenario_id}-n{node + 1}" for node in range(node_count)]
+        scenario_scopes = list(dict.fromkeys(scopes[(index * 3 + offset) % len(scopes)] for offset in range(3)))
+        roles = ["independent distractor"] * node_count
+        updates: list[str] = []
+        if task_class == "cross_time":
+            roles[:4] = [
+                "earlier basis with a unique provenance detail absent from the later conclusion and evidence",
+                "later conclusion derived from the basis without restating its unique provenance detail",
+                "later evidence supporting the conclusion without restating the basis or conclusion",
+                "broader but query-irrelevant category",
+            ]
+            relations = [(1, "derived_from", 0), (2, "supports", 1)]
+            expected, forbidden = [0, 1, 2], [3]
+        elif task_class == "multi_hop":
+            roles[:4] = [
+                "origin fact with a unique cause or observation absent from later nodes",
+                "intermediate conclusion derived from the origin without restating that unique cause or observation",
+                "downstream fact supported by the intermediate conclusion without restating either earlier fact",
+                "query-irrelevant distractor",
+            ]
+            relations = [(1, "derived_from", 0), (1, "supports", 2), (3, "related_to", 2)]
+            expected, forbidden = [0, 1, 2], [3]
+        elif task_class == "context_applicability":
+            roles[:4] = [
+                "fact valid in the uniquely current required context",
+                "the only current context in the scenario",
+                "plausible competing fact valid only in a clearly non-current alternative context",
+                "clearly non-current alternative context",
+            ]
+            relations = [(0, "applies_in", 1), (2, "applies_in", 3)]
+            expected, forbidden = [0, 1], [2, 3]
+        elif task_class == "information_update":
+            roles[:4] = [
+                "outdated fact later replaced by a different current value whose exact specification includes a unique detail absent from all other nodes",
+                "evidence supporting only the replacement current value while neither stating nor entailing its unique exact detail",
+                "component of only the replacement current fact while neither stating nor entailing its unique exact detail or supporting result",
+                "query-irrelevant distractor",
+            ]
+            relations = [(1, "supports", 0), (2, "part_of", 0), (3, "related_to", 0)]
+            expected, forbidden, updates = [0, 1, 2], [3], [node_ids[0]]
+        else:
+            raise RuntimeError(f"unsupported task class: {task_class}")
+        if node_count > 4:
+            for node in range(4, node_count):
+                roles[node] = (
+                    "query-irrelevant item directly associated with the fourth node, "
+                    "but not its category, instance, component, evidence, basis, result, context, equivalent, or contradiction"
+                )
+            relations.extend((node, "related_to", 3) for node in range(4, node_count))
+            forbidden.extend(range(4, node_count))
+        # Hierarchy is a required batch-level capability. Alternate inverse labels so
+        # the frozen contract also exercises canonical direction normalization.
+        if task_class == "cross_time":
+            if variant % 2 == 0:
+                relations.append((3, "broader_than", 0))
+            else:
+                relations.append((0, "narrower_than", 3))
+        scenarios.append(
+            {
+                "id": scenario_id,
+                "task_class": task_class,
+                "information_scope": scenario_scopes,
+                "nodes": [{"id": node_id, "role": roles[node]} for node, node_id in enumerate(node_ids)],
+                "relations": [
+                    {"source_id": node_ids[source], "type": relation_type, "target_id": node_ids[target]}
+                    for source, relation_type, target in relations
+                ],
+                "update_node_ids": updates,
+                "query": {
+                    "expected_ids": [node_ids[value] for value in expected],
+                    "forbidden_ids": [node_ids[value] for value in forbidden],
+                },
+            }
+        )
+    return {
+        "schema": "ownward.dynamic-hidden-structure/v1",
+        "seed_sha256": hashlib.sha256(random_seed.encode("utf-8")).hexdigest(),
+        "scenarios": scenarios,
+    }
+
+
+def generation_prompt(protocol: dict[str, Any], random_seed: str, structure: dict[str, Any] | None = None) -> str:
+    structure = structure or build_hidden_structure(protocol, random_seed)
+    relation_contract = protocol["relation_contract"]
+    return f"""Create only the open-domain semantic facts for a one-time, post-freeze acceptance run of a general personal-information system.
 
 Random source: {random_seed}
-Required generation contract: {json.dumps(generation, ensure_ascii=False, separators=(',', ':'))}
+Canonical relation contract: {json.dumps(relation_contract, ensure_ascii=False, separators=(',', ':'))}
+Frozen structural skeleton: {json.dumps(structure, ensure_ascii=False, separators=(',', ':'))}
 
-Generate exactly the required number of independent scenarios, balanced equally across the four task classes. Each scenario must contain exactly the required number of nodes and use globally unique scenario and node IDs. Invent unrelated domains, cultures, activities, technologies, time periods, names, and wording; do not reuse common benchmark examples or Ownward examples. Across the full batch cover every information_scope value, cross-time links, multiple belonging, hierarchy, intersection, composition, contextual and non-contextual facts, changed information, and varied expression intent.
+The structure, identities, relation topology, update targets, query dependencies, and scopes are already frozen by deterministic code. Return natural-language facts and one question only for the exact scenario and node keys required by the response schema. Do not emit, reinterpret, or change structural fields. Invent unrelated domains, cultures, activities, technologies, time periods, names, and wording; do not reuse common benchmark examples or Ownward examples.
 
-This is hidden truth, so describe atomic facts and exact relation/query truth without writing the final natural-language information. Every query must require the expected nodes and exact answer_facts. Cross-time queries require at least two linked nodes. Multi-hop queries require at least three expected nodes connected by a path of two or more relation edges. A context task must include a plausible forbidden node from an incompatible context. Each update task must replace exactly one node and its query must depend on that updated node; all other task classes must contain no update. Across the batch, relation truth must include hierarchy, composition, contextual applicability, and at least one node with multiple direct semantic relations. Relations must use only the semantic relation vocabulary supported by the output schema. Do not mention the product or its implementation."""
+For each node, create concise atomic facts that exactly satisfy its frozen role and every incident canonical relation, including source-to-target direction. The relation must be unambiguously inferable from the node texts themselves; do not rely on hidden labels to supply missing meaning. In particular, an applies_in source fact must identify the target context without repeating the current-context fact that the context node contributes to the answer, and a supports or derived_from pair must make only the frozen, most precise type defensible in its required direction. A related_to pair must express a direct association for which none of the other canonical types is defensible: neither endpoint may be written as the other's category, instance, component, evidence, basis, result, context, equivalent, or contradiction. Make each node's first fact unique within its scenario. Every expected node must contribute an independently requested answer detail absent from and not entailed by every other node, so no proper subset of the expected nodes can fully answer the question. A later conclusion may name the subject of its earlier basis but must not repeat the basis's unique provenance, cause, or observation; later evidence may name what it supports but must not restate either earlier answer detail. In information_update scenarios, the initial update-target node must state only the old value, its replacement must state only a genuinely different new current value with one exact distinguishing detail found nowhere else, and no replacement fact may repeat any initial fact. Supporting evidence and components may use a short unique name to identify the replacement subject and make their relations inferable, but they must neither state nor entail the replacement's distinguishing detail and must each contribute a different requested answer fact. In context_applicability scenarios, only the required-context node may describe the user's current situation; the applicable-fact node may use a short context label but must not restate that current situation, while the incompatible-context node must explicitly be past, hypothetical, another person's, or otherwise non-current and its competing fact must remain plausible only there. Multi-hop facts must make the origin, intermediate conclusion, and downstream result independently necessary rather than provide a direct shortcut.
+
+Write one natural question per scenario that requires every expected node and no forbidden node. Make the requested evidence explicit according to the task class: cross_time asks separately for the earlier basis including its unique provenance, cause, or observation, the later conclusion or decision derived from it, and the later supporting result; multi_hop asks separately for the unique origin observation, the intermediate conclusion, and the downstream supported fact; context_applicability asks for both the current context and the fact or practice that applies in it; information_update asks for the exact current specification including its unique distinguishing detail, its separate supporting result, and its separate required component. Before returning, verify that a complete answer must state the first current fact of every expected node rather than merely implying one of them. Do not copy an answer sentence into the question. Do not mention the product, benchmark, graph, relation labels, IDs, scopes, or implementation."""
 
 
-def expression_prompt(hidden: dict[str, Any]) -> str:
+def assemble_hidden_world(structure: dict[str, Any], content: dict[str, Any]) -> dict[str, Any]:
+    require(structure.get("schema") == "ownward.dynamic-hidden-structure/v1", "hidden structure schema changed")
+    generated = content.get("scenarios")
+    require(isinstance(generated, dict), "hidden semantic content has no scenarios")
+    expected_scenarios = {str(value["id"]): value for value in structure["scenarios"]}
+    require(set(generated) == set(expected_scenarios), "hidden semantic content changed scenario identities")
+    scenarios: list[dict[str, Any]] = []
+    for scenario_id, structural in expected_scenarios.items():
+        semantic = generated[scenario_id]
+        require(isinstance(semantic, dict), f"scenario {scenario_id} semantic content is invalid")
+        node_content = semantic.get("nodes")
+        update_content = semantic.get("updates")
+        require(isinstance(node_content, dict) and isinstance(update_content, dict), f"scenario {scenario_id} semantic content is incomplete")
+        node_ids = [str(value["id"]) for value in structural["nodes"]]
+        update_ids = [str(value) for value in structural["update_node_ids"]]
+        require(set(node_content) == set(node_ids), f"scenario {scenario_id} semantic content changed node identities")
+        require(set(update_content) == set(update_ids), f"scenario {scenario_id} semantic content changed update identities")
+        nodes: list[dict[str, Any]] = []
+        first_facts: dict[str, str] = {}
+        all_facts: list[str] = []
+        for node_id in node_ids:
+            facts = node_content[node_id]
+            require(isinstance(facts, list) and facts and all(str(value).strip() for value in facts), f"scenario {scenario_id} has an empty fact")
+            normalized = [str(value).strip() for value in facts]
+            first_facts[node_id] = normalized[0]
+            all_facts.extend(normalized)
+            nodes.append({"id": node_id, "facts": normalized})
+        require(len(all_facts) == len(set(all_facts)), f"scenario {scenario_id} repeats hidden facts")
+        updates: list[dict[str, Any]] = []
+        current_first_facts = dict(first_facts)
+        for node_id in update_ids:
+            facts = update_content[node_id]
+            require(isinstance(facts, list) and facts and all(str(value).strip() for value in facts), f"scenario {scenario_id} has an empty update")
+            normalized = [str(value).strip() for value in facts]
+            require(not set(normalized) & set(all_facts), f"scenario {scenario_id} update does not establish new truth")
+            current_first_facts[node_id] = normalized[0]
+            updates.append({"node_id": node_id, "replacement_facts": normalized})
+        expected_ids = [str(value) for value in structural["query"]["expected_ids"]]
+        scenarios.append(
+            {
+                "id": scenario_id,
+                "task_class": structural["task_class"],
+                "information_scope": structural["information_scope"],
+                "nodes": nodes,
+                "relations": structural["relations"],
+                "updates": updates,
+                "query": {
+                    "intent": f"Retrieve the current facts jointly supported by {len(expected_ids)} required information items.",
+                    "expected_ids": expected_ids,
+                    "forbidden_ids": structural["query"]["forbidden_ids"],
+                    "answer_facts": [current_first_facts[node_id] for node_id in expected_ids],
+                },
+            }
+        )
+    return {"scenarios": scenarios}
+
+
+def build_natural_expression(hidden: dict[str, Any], content: dict[str, Any]) -> dict[str, Any]:
+    scenarios = hidden.get("scenarios")
+    generated = content.get("scenarios")
+    require(isinstance(scenarios, list) and isinstance(generated, dict), "natural expression inputs are incomplete")
+    expressed: list[dict[str, Any]] = []
+    for scenario in scenarios:
+        scenario_id = str(scenario["id"])
+        semantic = generated.get(scenario_id)
+        require(isinstance(semantic, dict), f"scenario {scenario_id} has no generated expression")
+        question = str(semantic.get("question", "")).strip()
+        require(question, f"scenario {scenario_id} has no natural-language question")
+        information = [
+            {"node_id": str(node["id"]), "content": " ".join(str(value) for value in node["facts"])}
+            for node in scenario["nodes"]
+        ]
+        updates = [
+            {"node_id": str(update["node_id"]), "content": " ".join(str(value) for value in update["replacement_facts"])}
+            for update in scenario["updates"]
+        ]
+        for fact in scenario["query"]["answer_facts"]:
+            require(str(fact) not in question, f"scenario {scenario_id} leaks an answer fact in the question")
+        expressed.append({"id": scenario_id, "information": information, "updates": updates, "query": {"question": question}})
+    return {"scenarios": expressed}
+
+
+def _scenario_partitions(
+    hidden: dict[str, Any], protocol: dict[str, Any], maximum_scenarios: int
+) -> list[dict[str, Any]]:
+    scenarios = hidden.get("scenarios")
+    require(isinstance(scenarios, list), "hidden world has no scenarios")
+    partitions: list[dict[str, Any]] = []
+    for task_class in protocol["generation"]["task_classes"]:
+        task_scenarios = [value for value in scenarios if value.get("task_class") == task_class]
+        require(bool(task_scenarios), f"validation task class is empty: {task_class}")
+        for offset in range(0, len(task_scenarios), maximum_scenarios):
+            sequence = offset // maximum_scenarios + 1
+            partitions.append(
+                {
+                    "id": f"{task_class}_{sequence:02d}",
+                    "task_class": task_class,
+                    "hidden": {"scenarios": task_scenarios[offset : offset + maximum_scenarios]},
+                }
+            )
+    require(
+        sum(len(value["hidden"]["scenarios"]) for value in partitions) == len(scenarios),
+        "validation partitions do not cover the hidden world",
+    )
+    return partitions
+
+
+def content_partitions(hidden: dict[str, Any], protocol: dict[str, Any]) -> list[dict[str, Any]]:
+    return _scenario_partitions(hidden, protocol, CONTENT_SCENARIOS_PER_PARTITION)
+
+
+def validation_partitions(hidden: dict[str, Any], protocol: dict[str, Any]) -> list[dict[str, Any]]:
+    return _scenario_partitions(hidden, protocol, VALIDATION_SCENARIOS_PER_PARTITION)
+
+
+def expression_prompt(hidden: dict[str, Any], protocol: dict[str, Any]) -> str:
     return f"""Turn each hidden semantic scenario below into natural-language personal information and one natural-language question.
 
-Preserve every scenario ID and node ID. Express all hidden facts faithfully, but vary language, sentence structure, chronology, domain vocabulary, and explicitness. Do not state relation labels, graph structure, expected IDs, forbidden IDs, information-scope labels, or that this is a test. Each initial node gets exactly one content string. Each hidden update gets exactly one replacement content string for the same node. The question must be answerable only from the intended facts, and answer facts must appear verbatim somewhere in the relevant current information. Do not add facts that create unintended relations or make a forbidden contextual item valid.
+Preserve every scenario ID and node ID. Express all hidden facts faithfully, but vary language, sentence structure, chronology, domain vocabulary, and explicitness. Do not state relation labels, graph structure, expected IDs, forbidden IDs, information-scope labels, or that this is a test. Each initial node gets exactly one content string. Each hidden update gets exactly one replacement content string for the same node. The question must be answerable only from the intended facts, and answer facts must appear verbatim somewhere in the relevant current information. Preserve the canonical relation meanings and directions below without making any expected relation equally defensible as another relation type. Do not add facts that create unintended relations or make a forbidden contextual item valid.
+
+Canonical relation contract:
+{json.dumps(protocol["relation_contract"], ensure_ascii=False, separators=(',', ':'))}
 
 Hidden truth:
 {json.dumps(hidden, ensure_ascii=False, separators=(',', ':'))}"""
 
 
-def validation_prompt(hidden: dict[str, Any], expression: dict[str, Any]) -> str:
+def validation_prompt(hidden: dict[str, Any], expression: dict[str, Any], protocol: dict[str, Any]) -> str:
     return f"""Independently validate generated natural-language information against its hidden semantic truth. You are a data validator, not the system under test.
 
-For every scenario, mark valid only if all facts, relation directions, context applicability, update replacement, expected query evidence, forbidden evidence, and exact answer facts are unambiguously expressed; the question must have one defensible answer from the current information. Reject ambiguity, missing evidence, accidental extra relations, answer leakage in the question, or any changed meaning. Preserve every scenario ID and provide concise issues. Evaluate all scenarios without selecting based on any product result; no product output exists yet.
+For every scenario, mark valid only if all facts, canonical relation types and directions, context applicability, update replacement, expected query evidence, forbidden evidence, and exact answer facts are unambiguously expressed; the question must have one defensible answer from the current information. Each expected node must contribute unique information required by the question: reject the scenario if any proper subset of expected nodes semantically answers the complete question, even when wording differs. Forbidden nodes are deliberate distractors that must remain present in the scenario's information; "forbidden" means they must not be needed for, included in, or made applicable to the answer, not that their text must be absent. Reject a scenario when its text supports a different canonical relation, more than one equally defensible canonical relation, either direction, missing evidence, duplicated expected evidence, accidental extra relations, answer leakage in the question, or any changed meaning. Preserve every scenario ID and provide concise issues. Evaluate all scenarios without selecting based on any product result; no product output exists yet.
+
+Canonical relation contract:
+{json.dumps(protocol["relation_contract"], ensure_ascii=False, separators=(',', ':'))}
 
 Hidden truth:
 {json.dumps(hidden, ensure_ascii=False, separators=(',', ':'))}
@@ -110,8 +342,9 @@ Natural-language expression:
 {json.dumps(expression, ensure_ascii=False, separators=(',', ':'))}"""
 
 
-def agent_prompt(questions: list[dict[str, str]]) -> str:
-    return f"""Use only the connected Ownward tools; do not use shell, file, web, or any other tools. First obtain Ownward's collaboration rules. Answer every question below from Ownward. For simple questions search once when sufficient; for complex questions use accumulated evidence, relation navigation when available, and reads until the evidence is complete. Never guess.
+def agent_prompt(questions: list[dict[str, str]], tool_calls_per_query: int) -> str:
+    total_tool_call_budget = len(questions) * tool_calls_per_query
+    return f"""Use only the connected Ownward tools; do not use shell, file, web, or any other tools. First obtain Ownward's collaboration rules. Answer every question below from Ownward. The complete session may use at most {total_tool_call_budget} Ownward tool calls, including the rules call, with no more than {tool_calls_per_query} calls allocated to any question. For simple questions search once when sufficient; for complex questions use accumulated evidence and relation navigation only until the exact supporting facts and IDs are complete. Do not inspect unrelated candidates after the required evidence is identified. Never guess.
 
 For each query_id return the exact answer facts as they appear in current information and the stable Ownward information IDs that jointly support the answer. Do not include unrelated IDs.
 
@@ -124,11 +357,21 @@ def validate_protocol(protocol: dict[str, Any]) -> None:
     generation = protocol.get("generation")
     statistics = protocol.get("statistics")
     execution = protocol.get("execution")
+    relation_contract = protocol.get("relation_contract")
     models = protocol.get("models")
     runtime = protocol.get("runtime")
     product_runtime = protocol.get("product_runtime")
     require(isinstance(generation, dict) and isinstance(statistics, dict), "protocol is incomplete")
     require(isinstance(execution, dict) and isinstance(models, dict), "protocol execution contract or models are missing")
+    require(isinstance(relation_contract, dict), "canonical relation contract is missing")
+    relation_definitions = relation_contract.get("types")
+    require(
+        isinstance(relation_definitions, dict)
+        and set(relation_definitions) == RELATION_TYPES
+        and all(str(value).strip() for value in relation_definitions.values()),
+        "canonical relation definitions are incomplete",
+    )
+    require("source_id" in str(relation_contract.get("direction", "")) and "target_id" in str(relation_contract.get("direction", "")), "canonical relation direction is missing")
     require(isinstance(runtime, dict) and str(runtime.get("codex_cli_version", "")).startswith("codex-cli "), "Codex CLI version is missing")
     require(
         isinstance(product_runtime, dict)
@@ -143,6 +386,7 @@ def validate_protocol(protocol: dict[str, Any]) -> None:
     minimum_valid = int(generation.get("minimum_valid_scenarios", 0))
     minimum_per_class = int(generation.get("minimum_scenarios_per_task_class", 0))
     require(generated >= minimum_valid >= minimum_per_class * len(classes) > 0, "scenario counts are inconsistent")
+    require(generated % len(classes) == 0, "scenario count must be divisible by task classes")
     require(int(generation.get("information_per_scenario", 0)) >= 4, "each scenario needs enough information to test organization")
     scope = generation.get("information_scope")
     require(isinstance(scope, list) and len(scope) == len(set(scope)) >= 10, "information scope is incomplete")
@@ -161,22 +405,13 @@ def validate_protocol(protocol: dict[str, Any]) -> None:
         "dataset_stage_seconds_max",
         "codex_inactivity_seconds",
         "inspection_operation_stall_seconds",
-        "organization_operation_stall_seconds",
-        "organization_p95_seconds_max",
+        "ownward_operation_stall_seconds",
+        "semantic_stage_seconds_max",
         "agent_seconds_per_question_max",
         "agent_tool_calls_per_query",
     ):
         require(float(execution.get(name, 0)) > 0, f"invalid dynamic execution value: {name}")
-    require(
-        float(execution["organization_operation_stall_seconds"])
-        > float(execution["organization_p95_seconds_max"]),
-        "organization stall protection must exceed the accepted P95",
-    )
-    require(
-        float(execution["inspection_operation_stall_seconds"])
-        <= float(execution["organization_p95_seconds_max"]),
-        "inspection stall protection must not exceed the accepted organization P95",
-    )
+    require(float(execution["inspection_operation_stall_seconds"]) <= float(execution["ownward_operation_stall_seconds"]), "inspection timeout must not exceed the Ownward operation boundary")
     require(int(execution.get("parallel_conditions", 0)) == 2, "full and baseline conditions must run as one parallel pair")
     for role in ("generator", "validator", "external_agent"):
         value = models.get(role)
