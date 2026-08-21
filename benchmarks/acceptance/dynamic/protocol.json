@@ -1,5 +1,5 @@
 {
-  "schema": "ownward.dynamic-acceptance-protocol/v2",
+  "schema": "ownward.dynamic-acceptance-protocol/v3",
   "runtime": {
     "codex_cli_version": "codex-cli 0.117.0"
   },
@@ -15,9 +15,10 @@
     ]
   },
   "generation": {
-    "generated_scenarios": 28,
+    "generated_scenarios": 32,
     "minimum_valid_scenarios": 24,
     "information_per_scenario": 5,
+    "validation_scenarios_per_batch": 3,
     "task_classes": [
       "cross_time",
       "multi_hop",
@@ -75,6 +76,7 @@
     "semantic_stage_seconds_max": 600,
     "agent_seconds_per_question_max": 130.54,
     "agent_tool_calls_per_query": 8,
+    "dataset_parallelism": 2,
     "parallel_conditions": 2
   },
   "statistics": {
@@ -85,7 +87,7 @@
     "ablation_equivalence_margin": 0.05,
     "minimum_quality_gain": 0.1,
     "minimum_latency_or_cost_reduction": 0.15,
-    "basis": "At 95% confidence, six successes in six independent scenarios have a Wilson lower bound above 0.60. With six valid scenarios per task class, the dynamic threshold therefore requires every class to pass every unseen scenario; one paired improvement is 16.7%, exceeding the 10% meaningful-gain threshold, while one regression exceeds the 5% equivalence margin. Four extra generated scenarios permit independent ambiguity rejection without selecting results by product outcome."
+    "basis": "At 95% confidence, six successes in six independent scenarios have a Wilson lower bound above 0.60. With six valid scenarios per task class, the dynamic threshold therefore requires every class to pass every unseen scenario; one paired improvement is 16.7%, exceeding the 10% meaningful-gain threshold, while one regression exceeds the 5% equivalence margin. A frozen pool of eight scenarios per class permits at most two independently rejected data items while formal validation stops as soon as six valid scenarios are locked."
   },
   "zero_tolerance": [
     "asset_content_changed",

@@ -26,6 +26,7 @@ class DynamicCommonTests(unittest.TestCase):
                 "generated_scenarios": 4,
                 "minimum_valid_scenarios": 4,
                 "information_per_scenario": 4,
+                "validation_scenarios_per_batch": 1,
                 "task_classes": ["cross_time", "multi_hop", "context_applicability", "information_update"],
                 "minimum_scenarios_per_task_class": 1,
                 "information_scope": [f"scope-{index}" for index in range(10)],
@@ -47,6 +48,7 @@ class DynamicCommonTests(unittest.TestCase):
                 "semantic_stage_seconds_max": 3,
                 "agent_seconds_per_question_max": 1,
                 "agent_tool_calls_per_query": 1,
+                "dataset_parallelism": 2,
                 "parallel_conditions": 2,
             },
             "statistics": {
@@ -137,6 +139,11 @@ class DynamicCommonTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "must not exceed"):
             common.validate_protocol(invalid_stall)
 
+        invalid_batch = copy.deepcopy(self.protocol)
+        invalid_batch["generation"]["validation_scenarios_per_batch"] = 2
+        with self.assertRaisesRegex(RuntimeError, "generated pool"):
+            common.validate_protocol(invalid_batch)
+
     def test_protocol_requires_complete_canonical_relation_contract(self) -> None:
         invalid = copy.deepcopy(self.protocol)
         del invalid["relation_contract"]["types"]["supports"]
@@ -205,9 +212,11 @@ class DynamicCommonTests(unittest.TestCase):
             ]
         }
         content = common.content_partitions(hidden, self.protocol)
-        validation = common.validation_partitions(hidden, self.protocol)
+        protocol = copy.deepcopy(self.protocol)
+        protocol["generation"]["validation_scenarios_per_batch"] = 3
+        validation = common.validation_partitions(hidden, protocol)
         self.assertEqual([len(value["hidden"]["scenarios"]) for value in content], [4, 3] * 4)
-        self.assertEqual([len(value["hidden"]["scenarios"]) for value in validation], [1] * 28)
+        self.assertEqual([len(value["hidden"]["scenarios"]) for value in validation], [3, 3, 1] * 4)
         self.assertEqual(sum(len(value["hidden"]["scenarios"]) for value in content), 28)
         self.assertEqual(sum(len(value["hidden"]["scenarios"]) for value in validation), 28)
 

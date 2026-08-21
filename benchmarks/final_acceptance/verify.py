@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 from datetime import datetime, timezone
 import hashlib
 import importlib.util
@@ -404,6 +405,7 @@ def _validate_dynamic_evidence(report: dict[str, Any], task_classes: set[str]) -
         "asset_integrity",
         "organization",
         "codex_binary",
+        "dataset_preflight_report",
     }
     for condition in ("full", "baseline"):
         for task_class in task_classes:
@@ -834,6 +836,24 @@ def _validate_dynamic_reports(
         evidence["codex_binary"].suffix.lower() not in {".ps1", ".cmd", ".bat", ".js"},
         "dynamic evidence binds a Codex launcher instead of the native executable",
     )
+    preflight = _load(evidence["dataset_preflight_report"])
+    preflight_counts = preflight.get("valid_scenarios_by_task_class")
+    _require(
+        preflight.get("schema") == "ownward.dynamic-data-preflight/v1"
+        and preflight.get("passed") is True
+        and preflight.get("formal_protocol_sha256") == protocol_sha256
+        and preflight.get("dataset_implementation_sha256") == _dynamic_common.dataset_implementation_sha256()
+        and preflight.get("codex_binary_sha256") == _sha256(evidence["codex_binary"])
+        and preflight.get("models")
+        == {"generator": protocol_value["models"]["generator"], "validator": protocol_value["models"]["validator"]}
+        and isinstance(preflight_counts, dict)
+        and set(preflight_counts) == set(protocol_value["generation"]["task_classes"])
+        and all(
+            isinstance(preflight_counts[value], int) and preflight_counts[value] >= 1
+            for value in protocol_value["generation"]["task_classes"]
+        ),
+        "dynamic data preflight binding changed",
+    )
     random_source = _load(evidence["random"])
     _require(
         random_source.get("method") == "secrets.token_hex(32)"
@@ -860,7 +880,12 @@ def _validate_dynamic_reports(
         dynamic.get("generated_scenarios") == protocol_value.get("generation", {}).get("generated_scenarios")
         and dynamic.get("valid_scenarios") == len(dataset.get("valid_scenarios", []))
         and dynamic.get("reserve_scenarios") == len(dataset.get("reserve_scenarios", []))
-        and dynamic.get("rejected_scenarios") == len(dataset.get("rejected_scenarios", [])),
+        and dynamic.get("rejected_scenarios") == len(dataset.get("rejected_scenarios", []))
+        and dynamic.get("unvalidated_reserve_scenarios")
+        == dynamic.get("generated_scenarios")
+        - dynamic.get("valid_scenarios")
+        - dynamic.get("reserve_scenarios")
+        - dynamic.get("rejected_scenarios"),
         "dynamic scenario counts do not match the frozen evidence",
     )
     dataset_run = _load(evidence["dataset_run"])
@@ -947,11 +972,23 @@ def _validate_dynamic_reports(
     expression_by_id = {str(value["id"]): value for value in expression["scenarios"]}
     validation_by_id: dict[str, Any] = {}
     expected_partitions: list[dict[str, Any]] = []
+    validation_manifest = _load(evidence["validation_manifest"])
+    manifest_partitions = validation_manifest.get("partitions")
+    _require(isinstance(manifest_partitions, list), "dynamic validation manifest has no partitions")
+    manifest_partition_ids = {
+        str(value.get("partition_id", "")) for value in manifest_partitions if isinstance(value, dict)
+    }
     partitions = _dynamic_common.validation_partitions(hidden, protocol_value)
     for partition in partitions:
         partition_id = str(partition["id"])
         task_class = str(partition["task_class"])
         prefix = f"validation_{partition_id}"
+        if partition_id not in manifest_partition_ids:
+            _require(
+                not ({prefix, f"{prefix}_events", f"{prefix}_run"} & set(evidence)),
+                f"unvalidated dynamic reserve has unexpected evidence: {partition_id}",
+            )
+            continue
         _require(
             {prefix, f"{prefix}_events", f"{prefix}_run"} <= set(evidence),
             f"dynamic validation evidence is incomplete: {partition_id}",
@@ -996,17 +1033,38 @@ def _validate_dynamic_reports(
             }
         )
     _require(
-        validation == {"scenarios": [validation_by_id[str(value["id"])] for value in hidden["scenarios"]]},
+        validation
+        == {
+            "scenarios": [
+                validation_by_id[str(value["id"])]
+                for value in hidden["scenarios"]
+                if str(value["id"]) in validation_by_id
+            ]
+        },
         "dynamic validation aggregate differs from its independent partitions",
     )
+    scenario_classes = {str(value["id"]): str(value["task_class"]) for value in hidden["scenarios"]}
+    valid_counts = Counter()
+    rejected_counts = Counter()
+    for scenario_id, verdict in validation_by_id.items():
+        if verdict.get("valid") is True:
+            valid_counts[scenario_classes[scenario_id]] += 1
+        else:
+            rejected_counts[scenario_classes[scenario_id]] += 1
+    for task_class in protocol_value["generation"]["task_classes"]:
+        valid_counts[str(task_class)] += 0
+        rejected_counts[str(task_class)] += 0
     _require(
-        _load(evidence["validation_manifest"])
+        validation_manifest
         == {
             "schema": "ownward.dynamic-validation-stage/v1",
             "candidate": candidate,
             "protocol_sha256": protocol_sha256,
             "aggregate_sha256": _sha256(evidence["validation"]),
             "partitions": expected_partitions,
+            "valid_scenarios_by_task_class": dict(valid_counts),
+            "rejected_scenarios_by_task_class": dict(rejected_counts),
+            "unvalidated_reserve_scenarios": len(hidden["scenarios"]) - len(validation_by_id),
         },
         "dynamic validation manifest changed",
     )

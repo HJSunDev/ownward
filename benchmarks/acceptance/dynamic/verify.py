@@ -42,6 +42,7 @@ from common import (  # noqa: E402
     build_hidden_structure,
     canonical_relation,
     content_partitions,
+    dataset_implementation_sha256,
     expression_prompt,
     generation_prompt,
     load_json,
@@ -347,7 +348,7 @@ def _run_codex_json(
     work_dir = events_path.with_suffix("")
     require(not work_dir.exists() or not any(work_dir.iterdir()), f"Codex work directory is not blank: {work_dir}")
     work_dir.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="ownward-dynamic-codex-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="ownward-dynamic-codex-", dir=events_path.parent) as temporary:
         root = Path(temporary)
         schema_path = root / "output.schema.json"
         schema_path.write_text(json.dumps(schema, ensure_ascii=False), encoding="utf-8")
@@ -509,6 +510,49 @@ def _expression_prompt(hidden: dict[str, Any], protocol: dict[str, Any]) -> str:
 
 def _validation_prompt(hidden: dict[str, Any], expression: dict[str, Any], protocol: dict[str, Any]) -> str:
     return validation_prompt(hidden, expression, protocol)
+
+
+def _next_validation_wave(
+    partitions: list[dict[str, Any]],
+    validated_partitions: dict[str, dict[str, Any]],
+    protocol: dict[str, Any],
+) -> tuple[list[dict[str, Any]], Counter[str], Counter[str]]:
+    required = int(protocol["generation"]["minimum_scenarios_per_task_class"])
+    partitions_by_class: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    valid_counts: Counter[str] = Counter()
+    rejected_counts: Counter[str] = Counter()
+    for partition in partitions:
+        task_class = str(partition["task_class"])
+        partitions_by_class[task_class].append(partition)
+        result = validated_partitions.get(str(partition["id"]))
+        if result is None:
+            continue
+        expected_ids = {str(value["id"]) for value in partition["hidden"]["scenarios"]}
+        verdicts = result.get("scenarios")
+        require(isinstance(verdicts, list), f"validator returned no scenarios for {partition['id']}")
+        actual_ids = {str(value.get("id", "")) for value in verdicts if isinstance(value, dict)}
+        require(actual_ids == expected_ids and len(verdicts) == len(expected_ids), f"validator changed scenario identities for {partition['id']}")
+        valid_counts[task_class] += sum(value.get("valid") is True for value in verdicts)
+        rejected_counts[task_class] += sum(value.get("valid") is not True for value in verdicts)
+
+    runnable: list[dict[str, Any]] = []
+    for task_class in protocol["generation"]["task_classes"]:
+        if valid_counts[task_class] >= required:
+            continue
+        remaining = [
+            value for value in partitions_by_class[task_class] if str(value["id"]) not in validated_partitions
+        ]
+        remaining_scenarios = sum(len(value["hidden"]["scenarios"]) for value in remaining)
+        require(
+            valid_counts[task_class] + remaining_scenarios >= required,
+            (
+                f"data generator is not producing enough valid {task_class} scenarios: "
+                f"{valid_counts[task_class]} valid, {rejected_counts[task_class]} rejected, "
+                f"only {remaining_scenarios} frozen reserves remain"
+            ),
+        )
+        runnable.append(remaining[0])
+    return runnable, valid_counts, rejected_counts
 
 
 def _dataset_stage(
@@ -697,16 +741,29 @@ def _prepare_dataset(args: argparse.Namespace, protocol: dict[str, Any], environ
         )
         return partition_id, result
 
-    # Reuse the frozen concurrency boundary: starting more Codex sessions than
-    # can execute concurrently makes queued time consume the per-stage limit.
-    with ThreadPoolExecutor(max_workers=int(protocol["execution"]["parallel_conditions"])) as pool:
-        validated_partitions = dict(pool.map(validate_partition, partitions))
+    validated_partitions: dict[str, dict[str, Any]] = {}
+    while True:
+        runnable, valid_counts, rejected_counts = _next_validation_wave(partitions, validated_partitions, protocol)
+        if not runnable:
+            break
+        # Run one bounded batch for each incomplete class. Accepted scenarios
+        # stay sealed; later waves only fill classes that remain below target.
+        with ThreadPoolExecutor(max_workers=int(protocol["execution"]["dataset_parallelism"])) as pool:
+            completed = dict(pool.map(validate_partition, runnable))
+        validated_partitions.update(completed)
     verdicts_by_id = {
         str(value["id"]): value
         for partition in partitions
+        if str(partition["id"]) in validated_partitions
         for value in validated_partitions[str(partition["id"])]["scenarios"]
     }
-    validation = {"scenarios": [verdicts_by_id[str(value["id"])] for value in hidden["scenarios"]]}
+    validation = {
+        "scenarios": [
+            verdicts_by_id[str(value["id"])]
+            for value in hidden["scenarios"]
+            if str(value["id"]) in verdicts_by_id
+        ]
+    }
     if paths["validation"].exists():
         require(args.resume and load_json(paths["validation"]) == validation, "independent validation aggregate changed")
     else:
@@ -726,7 +783,11 @@ def _prepare_dataset(args: argparse.Namespace, protocol: dict[str, Any], environ
                 "run_sha256": sha256(paths[f"validation_{partition['id']}_run"]),
             }
             for partition in partitions
+            if str(partition["id"]) in validated_partitions
         ],
+        "valid_scenarios_by_task_class": dict(valid_counts),
+        "rejected_scenarios_by_task_class": dict(rejected_counts),
+        "unvalidated_reserve_scenarios": len(hidden["scenarios"]) - len(verdicts_by_id),
     }
     if paths["validation_manifest"].exists():
         require(args.resume and load_json(paths["validation_manifest"]) == validation_manifest, "independent validation manifest changed")
@@ -757,7 +818,7 @@ def _prepare_dataset(args: argparse.Namespace, protocol: dict[str, Any], environ
         require(args.resume and load_json(paths["dataset_run"]) == dataset_run, "dynamic dataset run binding changed")
     else:
         write_json(paths["dataset_run"], dataset_run)
-    return dataset, paths
+    return dataset, {name: path for name, path in paths.items() if path.is_file()}
 
 
 def _ownward_environment(args: argparse.Namespace, *, disable_relations: bool) -> dict[str, str]:
@@ -1550,6 +1611,7 @@ def _build_reports(
     independent_agent_sessions = all(agent_sessions) and len(set(agent_sessions)) == len(agent_sessions)
     evidence = {**dataset_paths, **full_agent_evidence, **baseline_agent_evidence, **verification_evidence}
     evidence["codex_binary"] = args.codex_binary
+    evidence["dataset_preflight_report"] = args.dataset_preflight_report
     evidence["full_mapping"] = args.evidence_dir / "full-mapping.json"
     evidence["baseline_mapping"] = args.evidence_dir / "baseline-mapping.json"
     dynamic_checks = [
@@ -1584,6 +1646,10 @@ def _build_reports(
         "valid_scenarios": len(dataset["valid_scenarios"]),
         "reserve_scenarios": len(dataset["reserve_scenarios"]),
         "rejected_scenarios": len(dataset["rejected_scenarios"]),
+        "unvalidated_reserve_scenarios": int(protocol["generation"]["generated_scenarios"])
+        - len(dataset["valid_scenarios"])
+        - len(dataset["reserve_scenarios"])
+        - len(dataset["rejected_scenarios"]),
         "asset_integrity": asset_integrity,
         "organization": organization,
         "tasks": task_metrics,
@@ -1692,6 +1758,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--ablation-output", type=Path, required=True)
     parser.add_argument("--codex-binary", type=Path, required=True)
     parser.add_argument("--codex-auth-file", type=Path, required=True)
+    parser.add_argument("--dataset-preflight-report", type=Path, required=True)
     parser.add_argument("--runtime-dir", type=Path, required=True)
     parser.add_argument("--resume", action="store_true")
     return parser.parse_args()
@@ -1707,12 +1774,14 @@ def main() -> None:
     args.ablation_output = args.ablation_output.resolve()
     args.codex_binary = args.codex_binary.resolve()
     args.codex_auth_file = args.codex_auth_file.resolve()
+    args.dataset_preflight_report = args.dataset_preflight_report.resolve()
     args.runtime_dir = args.runtime_dir.resolve()
     for path, label in (
         (args.binary, "release binary"),
         (args.protocol_path, "dynamic protocol"),
         (args.codex_binary, "Codex binary"),
         (args.codex_auth_file, "Codex auth file"),
+        (args.dataset_preflight_report, "dynamic data preflight report"),
     ):
         require(path.is_file(), f"{label} does not exist: {path}")
     require(args.runtime_dir.is_dir(), f"accepted product runtime does not exist: {args.runtime_dir}")
@@ -1726,6 +1795,25 @@ def main() -> None:
     validate_protocol(protocol)
     args.protocol = protocol
     require(_binary_text(args.codex_binary, "--version") == protocol["runtime"]["codex_cli_version"], "Codex CLI version differs from the frozen protocol")
+    preflight = load_json(args.dataset_preflight_report)
+    require(preflight.get("schema") == "ownward.dynamic-data-preflight/v1" and preflight.get("passed") is True, "dynamic data preflight did not pass")
+    require(preflight.get("formal_protocol_sha256") == sha256(args.protocol_path), "dynamic data preflight protocol binding changed")
+    require(preflight.get("dataset_implementation_sha256") == dataset_implementation_sha256(), "dynamic data preflight implementation binding changed")
+    require(preflight.get("codex_binary_sha256") == sha256(args.codex_binary), "dynamic data preflight Codex binding changed")
+    require(
+        preflight.get("models") == {"generator": protocol["models"]["generator"], "validator": protocol["models"]["validator"]},
+        "dynamic data preflight model binding changed",
+    )
+    preflight_counts = preflight.get("valid_scenarios_by_task_class")
+    require(
+        isinstance(preflight_counts, dict)
+        and set(preflight_counts) == set(protocol["generation"]["task_classes"])
+        and all(
+            isinstance(preflight_counts[value], int) and preflight_counts[value] >= 1
+            for value in protocol["generation"]["task_classes"]
+        ),
+        "dynamic data preflight did not cover every task class",
+    )
     if args.evidence_dir.exists():
         require(args.resume, "evidence directory already exists; use --resume")
     else:

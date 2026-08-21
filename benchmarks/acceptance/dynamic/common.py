@@ -11,7 +11,7 @@ from typing import Any
 
 DYNAMIC_REPORT_SCHEMA = "ownward.dynamic-acceptance-report/v2"
 ABLATION_REPORT_SCHEMA = "ownward.organization-ablation-report/v2"
-PROTOCOL_SCHEMA = "ownward.dynamic-acceptance-protocol/v2"
+PROTOCOL_SCHEMA = "ownward.dynamic-acceptance-protocol/v3"
 RELATION_TYPES = {
     "same_as",
     "broader_than",
@@ -25,7 +25,6 @@ RELATION_TYPES = {
     "related_to",
 }
 CONTENT_SCENARIOS_PER_PARTITION = 4
-VALIDATION_SCENARIOS_PER_PARTITION = 1
 
 
 def require(condition: bool, message: str) -> None:
@@ -52,6 +51,19 @@ def sha256(path: Path) -> str:
     with path.open("rb") as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
+    return digest.hexdigest()
+
+
+def dataset_implementation_sha256() -> str:
+    digest = hashlib.sha256()
+    root = Path(__file__).resolve().parent
+    for name in ("common.py", "schemas.py", "verify.py", "preflight.py"):
+        path = root / name
+        require(path.is_file(), f"dynamic dataset implementation is incomplete: {name}")
+        encoded = name.encode("utf-8")
+        digest.update(len(encoded).to_bytes(8, "little"))
+        digest.update(encoded)
+        digest.update(bytes.fromhex(sha256(path)))
     return digest.hexdigest()
 
 
@@ -312,7 +324,7 @@ def content_partitions(hidden: dict[str, Any], protocol: dict[str, Any]) -> list
 
 
 def validation_partitions(hidden: dict[str, Any], protocol: dict[str, Any]) -> list[dict[str, Any]]:
-    return _scenario_partitions(hidden, protocol, VALIDATION_SCENARIOS_PER_PARTITION)
+    return _scenario_partitions(hidden, protocol, int(protocol["generation"]["validation_scenarios_per_batch"]))
 
 
 def expression_prompt(hidden: dict[str, Any], protocol: dict[str, Any]) -> str:
@@ -385,8 +397,13 @@ def validate_protocol(protocol: dict[str, Any]) -> None:
     generated = int(generation.get("generated_scenarios", 0))
     minimum_valid = int(generation.get("minimum_valid_scenarios", 0))
     minimum_per_class = int(generation.get("minimum_scenarios_per_task_class", 0))
+    validation_batch = int(generation.get("validation_scenarios_per_batch", 0))
     require(generated >= minimum_valid >= minimum_per_class * len(classes) > 0, "scenario counts are inconsistent")
     require(generated % len(classes) == 0, "scenario count must be divisible by task classes")
+    require(
+        0 < validation_batch <= generated // len(classes),
+        "validation batch size must fit the generated pool for each task class",
+    )
     require(int(generation.get("information_per_scenario", 0)) >= 4, "each scenario needs enough information to test organization")
     scope = generation.get("information_scope")
     require(isinstance(scope, list) and len(scope) == len(set(scope)) >= 10, "information scope is incomplete")
@@ -409,9 +426,11 @@ def validate_protocol(protocol: dict[str, Any]) -> None:
         "semantic_stage_seconds_max",
         "agent_seconds_per_question_max",
         "agent_tool_calls_per_query",
+        "dataset_parallelism",
     ):
         require(float(execution.get(name, 0)) > 0, f"invalid dynamic execution value: {name}")
     require(float(execution["inspection_operation_stall_seconds"]) <= float(execution["ownward_operation_stall_seconds"]), "inspection timeout must not exceed the Ownward operation boundary")
+    require(int(execution.get("dataset_parallelism", 0)) > 0, "dataset parallelism must be positive")
     require(int(execution.get("parallel_conditions", 0)) == 2, "full and baseline conditions must run as one parallel pair")
     for role in ("generator", "validator", "external_agent"):
         value = models.get(role)
@@ -533,13 +552,13 @@ def merge_valid_dataset(
     expression_by_id = {str(item.get("id", "")): item for item in expressed if isinstance(item, dict)}
     validation_by_id = {str(item.get("id", "")): item for item in verdicts if isinstance(item, dict)}
     require(set(expression_by_id) == set(hidden_scenarios), "expression output changed the scenario set")
-    require(set(validation_by_id) == set(hidden_scenarios), "validator changed the scenario set")
+    require(set(validation_by_id) <= set(hidden_scenarios), "validator introduced an unknown scenario")
     validated: list[dict[str, Any]] = []
     rejected: list[dict[str, Any]] = []
     class_counts: Counter[str] = Counter()
-    for scenario_id, truth in hidden_scenarios.items():
+    for scenario_id, verdict in validation_by_id.items():
+        truth = hidden_scenarios[scenario_id]
         text = expression_by_id[scenario_id]
-        verdict = validation_by_id[scenario_id]
         information = text.get("information")
         query = text.get("query")
         require(isinstance(information, list), f"scenario {scenario_id} has no expressed information")

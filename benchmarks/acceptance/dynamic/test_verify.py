@@ -214,6 +214,98 @@ class DynamicVerifierTests(unittest.TestCase):
             )
             verify._validate_generation_trace(path)
 
+    def test_validation_waves_keep_completed_classes_and_fill_only_the_gap(self) -> None:
+        task_classes = ["cross_time", "multi_hop"]
+        protocol = {
+            "generation": {
+                "task_classes": task_classes,
+                "minimum_scenarios_per_task_class": 2,
+            }
+        }
+        partitions = []
+        for task_class in task_classes:
+            for sequence in range(3):
+                scenario_id = f"{task_class}-{sequence}"
+                partitions.append(
+                    {
+                        "id": f"{task_class}_{sequence + 1:02d}",
+                        "task_class": task_class,
+                        "hidden": {"scenarios": [{"id": scenario_id}]},
+                    }
+                )
+        first, _, _ = verify._next_validation_wave(partitions, {}, protocol)
+        self.assertEqual([value["id"] for value in first], ["cross_time_01", "multi_hop_01"])
+        completed = {
+            "cross_time_01": {"scenarios": [{"id": "cross_time-0", "valid": True}]},
+            "multi_hop_01": {"scenarios": [{"id": "multi_hop-0", "valid": False}]},
+        }
+        second, _, _ = verify._next_validation_wave(partitions, completed, protocol)
+        self.assertEqual([value["id"] for value in second], ["cross_time_02", "multi_hop_02"])
+        completed["cross_time_02"] = {"scenarios": [{"id": "cross_time-1", "valid": True}]}
+        completed["multi_hop_02"] = {"scenarios": [{"id": "multi_hop-1", "valid": True}]}
+        third, _, _ = verify._next_validation_wave(partitions, completed, protocol)
+        self.assertEqual([value["id"] for value in third], ["multi_hop_03"])
+        completed["multi_hop_03"] = {"scenarios": [{"id": "multi_hop-2", "valid": True}]}
+        finished, valid, rejected = verify._next_validation_wave(partitions, completed, protocol)
+        self.assertEqual(finished, [])
+        self.assertEqual(dict(valid), {"cross_time": 2, "multi_hop": 2})
+        self.assertEqual(dict(rejected), {"cross_time": 0, "multi_hop": 1})
+
+    def test_validation_waves_stop_completed_classes_without_consuming_reserves(self) -> None:
+        protocol = {
+            "generation": {
+                "task_classes": ["cross_time", "multi_hop"],
+                "minimum_scenarios_per_task_class": 1,
+            }
+        }
+        partitions = [
+            {
+                "id": f"{task_class}_{sequence:02d}",
+                "task_class": task_class,
+                "hidden": {"scenarios": [{"id": f"{task_class}-{sequence}"}]},
+            }
+            for task_class in protocol["generation"]["task_classes"]
+            for sequence in (1, 2)
+        ]
+        completed = {
+            "cross_time_01": {"scenarios": [{"id": "cross_time-1", "valid": True}]},
+            "multi_hop_01": {"scenarios": [{"id": "multi_hop-1", "valid": False}]},
+        }
+        next_wave, valid, rejected = verify._next_validation_wave(partitions, completed, protocol)
+        self.assertEqual([value["id"] for value in next_wave], ["multi_hop_02"])
+        self.assertEqual(valid["cross_time"], 1)
+        self.assertEqual(rejected["multi_hop"], 1)
+
+    def test_validation_waves_stop_as_soon_as_the_frozen_pool_cannot_reach_target(self) -> None:
+        protocol = {
+            "generation": {
+                "task_classes": ["information_update"],
+                "minimum_scenarios_per_task_class": 2,
+            }
+        }
+        partitions = [
+            {
+                "id": "information_update_01",
+                "task_class": "information_update",
+                "hidden": {"scenarios": [{"id": "update-1"}, {"id": "update-2"}]},
+            },
+            {
+                "id": "information_update_02",
+                "task_class": "information_update",
+                "hidden": {"scenarios": [{"id": "update-3"}]},
+            },
+        ]
+        completed = {
+            "information_update_01": {
+                "scenarios": [
+                    {"id": "update-1", "valid": False},
+                    {"id": "update-2", "valid": False},
+                ]
+            }
+        }
+        with self.assertRaisesRegex(RuntimeError, "not producing enough valid information_update"):
+            verify._next_validation_wave(partitions, completed, protocol)
+
     def test_dataset_stage_resume_is_bound_to_runtime_and_prompt(self) -> None:
         with tempfile.TemporaryDirectory() as root_value:
             root = Path(root_value)
