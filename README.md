@@ -96,7 +96,8 @@ go vet ./...
 go test ./...
 go build ./...
 go build -trimpath -ldflags="-s -w -X main.version=COMMIT_SHA" -o bin/ownward ./cmd/ownward
-go run ./cmd/ownward-performance --binary bin/ownward.exe --scale 100000 --dimensions 384 --candidate COMMIT_SHA --thresholds benchmarks/acceptance/v5/thresholds.json --output performance-report.json
+python benchmarks/acceptance/suite/run.py check
+python benchmarks/acceptance/suite/run.py self-check
 go run ./cmd/ownward-production-storage --binary bin/ownward.exe --candidate COMMIT_SHA --workspace .tmp/production-storage --output production-storage-report.json
 ```
 

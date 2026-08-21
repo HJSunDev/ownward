@@ -47,12 +47,14 @@ def execute(
     workspace = Path(config["workspace"]).resolve()
     _require(repository == suite_root.parents[2].resolve(), "执行配置指向另一仓库")
     _require(workspace.drive and workspace.drive.lower() != Path.home().drive.lower(), "正式验收工作区不得位于系统盘")
-    binding.verify_current(suite_root, Path(config["binding_dir"]), config, state["binding"])
+    binding.verify_current(suite_root, Path(config["binding_dir"]), config, state["binding"], mode)
     lifecycle.can_start(contract, state, mode)
     reusable = lifecycle.reusable_report(contract, state, mode)
     if reusable is not None:
         _require(resume, f"{mode} 已有有效检查点；使用 --resume 复用")
         return {"outcome": "reused", "mode": mode, "report": str(reusable)}
+    active_state = dict(state)
+    active_state["binding"] = binding.for_mode(state["binding"], mode)
     workspace.mkdir(parents=True, exist_ok=True)
     report_path = workspace / "reports" / f"{mode}.json"
     if lifecycle.report_was_invalidated(state, mode, report_path):
@@ -64,7 +66,7 @@ def execute(
         except (OSError, json.JSONDecodeError):
             report_path.unlink()
         else:
-            _validate_completed_report(contract, state, mode, recovered, report_path)
+            _validate_completed_report(contract, active_state, mode, recovered, report_path)
             elapsed = _report_elapsed(recovered)
             outcome = lifecycle.record(
                 contract, state, mode, recovered, lifecycle.file_sha256(report_path), elapsed, str(report_path.resolve())
@@ -74,31 +76,31 @@ def execute(
     started = time.perf_counter()
     started_at = datetime.now(timezone.utc).isoformat()
     if mode in {"targeted", "frontier"}:
-        report, observation_path = _execute_frontier(suite_root, contract, state, mode, config, workspace, resume)
+        report, observation_path = _execute_frontier(suite_root, contract, active_state, mode, config, workspace, resume)
         artifact_paths = [observation_path]
     elif mode == "core":
-        report = _execute_core(suite_root, contract, state, config, workspace, resume)
+        report = _execute_core(suite_root, contract, active_state, config, workspace, resume)
         observation_path = None
         artifact_paths = [workspace / "evidence" / "core"]
     elif mode in {"qualification", "full"}:
         mode_budget = float(contract["evidence_layers"]["product"]["modes"][mode]["max_wall_seconds"])
         report = _execute_product(
-            suite_root, contract, state, mode, config, workspace, resume, deadline=started + mode_budget
+            suite_root, contract, active_state, mode, config, workspace, resume, deadline=started + mode_budget
         )
         observation_path = None
         artifact_paths = [workspace / "evidence" / "product", workspace / "evidence" / "product-resource"]
     else:
         section = dict(_mapping(config, "community"))
         section["_workspace"] = str(workspace)
-        report = community.execute(suite_root, contract, state["binding"], section, resume=resume)
-        validate_layer_report(contract, "community", report, expected_binding=state["binding"])
+        report = community.execute(suite_root, contract, active_state["binding"], section, resume=resume)
+        validate_layer_report(contract, "community", report, expected_binding=active_state["binding"])
         observation_path = None
         artifact_paths = community.artifact_paths(section)
     elapsed = time.perf_counter() - started
     report["started_at"] = started_at
     report["finished_at"] = datetime.now(timezone.utc).isoformat()
     evidence.attach_artifacts(report, report_path, artifact_paths)
-    _validate_completed_report(contract, state, mode, report, report_path)
+    _validate_completed_report(contract, active_state, mode, report, report_path)
     report_path.parent.mkdir(parents=True, exist_ok=True)
     temporary_report = report_path.with_suffix(report_path.suffix + ".tmp")
     temporary_report.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

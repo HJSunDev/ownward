@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import run
 import lifecycle
+import binding as candidate_binding
 from contract import load_contract
 
 
@@ -37,13 +38,23 @@ class UnifiedEntryTests(unittest.TestCase):
             report_path.write_text('{"sealed": true}\n', encoding="utf-8")
             contract = load_contract(run.HERE / "contract.json")
             binding = {
+                "schema": "ownward.acceptance-binding/v2",
                 "suite_version": "1.0.0", "candidate": "a" * 40,
-                "binary_sha256": "b" * 64, "environment_sha256": "c" * 64,
-                "input_manifest_sha256": "d" * 64, "tool_sha256": "e" * 64,
+                "binary_sha256": "b" * 64,
+                "scopes": {
+                    name: {
+                        "environment_sha256": values[0] * 64,
+                        "input_manifest_sha256": values[1] * 64,
+                        "tool_sha256": values[2] * 64,
+                    }
+                    for name, values in {
+                        "frontier": "cde", "core": "f01", "product": "234", "community": "567",
+                    }.items()
+                },
             }
             state = lifecycle.new_state(contract, binding)
             state["checkpoints"]["summarize"] = {
-                "binding": dict(binding), "report_path": str(report_path),
+                "binding": candidate_binding.for_mode(binding, "summarize"), "report_path": str(report_path),
                 "report_sha256": lifecycle.file_sha256(report_path), "passed": True,
             }
             state_path = root / "state.json"

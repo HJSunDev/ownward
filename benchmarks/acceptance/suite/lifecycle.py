@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import binding as candidate_binding
 from contract import validate_report
 from evidence import validate_layer_report, validate_report_artifacts
 
@@ -47,16 +49,13 @@ REPORT_KIND = {
 }
 
 
-def new_state(contract: dict[str, Any], binding: dict[str, str]) -> dict[str, Any]:
-    required = contract["execution"]["binding_fields"] + ["tool_sha256"]
-    _require(set(binding) == set(required), "候选绑定字段不完整")
+def new_state(contract: dict[str, Any], binding: dict[str, Any]) -> dict[str, Any]:
+    candidate_binding.validate_binding(binding)
     _require(binding["suite_version"] == contract["suite_version"], "候选绑定的体系版本无效")
-    for field in required:
-        _require(bool(binding[field]), f"候选绑定缺少 {field}")
     return {
         "schema": "ownward.acceptance-state/v1",
         "suite_version": contract["suite_version"],
-        "binding": dict(binding),
+        "binding": copy.deepcopy(binding),
         "checkpoints": {},
         "invalidated_reports": {},
         "baseline": None,
@@ -118,16 +117,17 @@ def record(
         raise LifecycleError(f"{mode} 落盘报告无法读取") from error
     _require(persisted == report, f"{mode} 内存报告与落盘报告不一致")
     artifact_manifest_sha256 = validate_report_artifacts(path, report)
+    active_binding = candidate_binding.for_mode(state["binding"], mode)
     existing = state["checkpoints"].get(mode)
     if (
         existing
         and existing.get("report_sha256") == report_sha256
-        and existing.get("binding") == state["binding"]
+        and existing.get("binding") == active_binding
         and existing.get("artifact_manifest_sha256", "") == artifact_manifest_sha256
     ):
         return "reused"
     state["checkpoints"][mode] = {
-        "binding": dict(state["binding"]),
+        "binding": active_binding,
         "report_sha256": report_sha256,
         "passed": report.get("passed", report.get("decision") in {"eligible_for_qualification", "bootstrap_reference"}),
         "elapsed_seconds": elapsed_seconds,
@@ -153,22 +153,40 @@ def invalidate(contract: dict[str, Any], state: dict[str, Any], mode: str) -> li
     return removed
 
 
-def rebind(contract: dict[str, Any], state: dict[str, Any], binding: dict[str, str]) -> list[str]:
+def rebind(contract: dict[str, Any], state: dict[str, Any], binding: dict[str, Any]) -> list[str]:
     _validate_state(contract, state)
-    required = contract["execution"]["binding_fields"] + ["tool_sha256"]
-    _require(set(binding) == set(required), "新候选绑定字段不完整")
+    candidate_binding.validate_binding(binding)
     _require(binding["suite_version"] == contract["suite_version"], "新候选绑定的体系版本无效")
-    reusable = contract["execution"]["reuse_requires_equal"]
-    changed = [field for field in reusable if binding.get(field) != state["binding"].get(field)]
-    if not changed:
+    current = state["binding"]
+    common_changed = any(binding.get(field) != current.get(field) for field in ("candidate", "binary_sha256"))
+    current_scopes = current["scopes"]
+    next_scopes = binding["scopes"]
+    changed_scopes = {
+        name for name in set(current_scopes) | set(next_scopes)
+        if current_scopes.get(name) != next_scopes.get(name)
+    }
+    if not common_changed and not changed_scopes:
         return []
-    removed = sorted(state["checkpoints"])
-    if state.get("baseline") is not None and set(changed) & {"environment_sha256", "input_manifest_sha256", "tool_sha256"}:
+    if common_changed:
+        affected = set(state["checkpoints"])
+    else:
+        scope_modes = {
+            "frontier": {"targeted", "frontier", "summarize"},
+            "core": {"core", "summarize"},
+            "product": {"qualification", "full", "summarize"},
+            "community": {"longmemeval", "summarize"},
+        }
+        affected = {mode for name in changed_scopes if name in current_scopes for mode in scope_modes[name]}
+    removed = sorted(name for name in affected if name in state["checkpoints"])
+    if state.get("baseline") is not None and not common_changed and changed_scopes & {"frontier", "core", "product"}:
         state.setdefault("baseline_history", []).append(state["baseline"])
         state["baseline"] = None
-    state["binding"] = dict(binding)
-    state["checkpoints"].clear()
-    state["invalidated_reports"].clear()
+    state["binding"] = copy.deepcopy(binding)
+    for name in removed:
+        checkpoint = state["checkpoints"].pop(name)
+        digest = checkpoint.get("report_sha256")
+        if isinstance(digest, str) and digest:
+            state["invalidated_reports"][name] = digest
     return removed
 
 
@@ -186,12 +204,13 @@ def promote_baseline(contract: dict[str, Any], state: dict[str, Any]) -> None:
     qualification_report = _checkpoint_report(contract, state, "qualification")
     if state.get("baseline") is not None:
         state.setdefault("baseline_history", []).append(state["baseline"])
+    core_binding = candidate_binding.for_mode(state["binding"], "core")
+    frontier_binding = candidate_binding.for_mode(state["binding"], "frontier")
+    product_binding = candidate_binding.for_mode(state["binding"], "qualification")
     state["baseline"] = {
         "candidate": state["binding"]["candidate"],
         "binary_sha256": state["binding"]["binary_sha256"],
-        "environment_sha256": state["binding"]["environment_sha256"],
-        "input_manifest_sha256": state["binding"]["input_manifest_sha256"],
-        "tool_sha256": state["binding"]["tool_sha256"],
+        "bindings": {"core": core_binding, "frontier": frontier_binding, "product": product_binding},
         "frontier_report_sha256": frontier["report_sha256"],
         "qualification_report_sha256": qualification["report_sha256"],
         "reports": {
@@ -217,7 +236,7 @@ def promote_baseline(contract: dict[str, Any], state: dict[str, Any]) -> None:
 
 def reusable_report(contract: dict[str, Any], state: dict[str, Any], mode: str) -> Path | None:
     checkpoint = state.get("checkpoints", {}).get(mode)
-    if not isinstance(checkpoint, dict) or checkpoint.get("binding") != state.get("binding"):
+    if not isinstance(checkpoint, dict) or checkpoint.get("binding") != candidate_binding.for_mode(state["binding"], mode):
         return None
     value = str(checkpoint.get("report_path", "")).strip()
     if not value:
@@ -244,14 +263,15 @@ def summarize(contract: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]
     checkpoints = state["checkpoints"]
     for mode in ("core", "full", "longmemeval"):
         _checkpoint_report(contract, state, mode)
+    summary_binding = candidate_binding.for_mode(state["binding"], "summarize")
     report = {
         "schema": contract["reports"]["suite"]["schema"],
         "suite_version": contract["suite_version"],
         "candidate": state["binding"]["candidate"],
         "binary_sha256": state["binding"]["binary_sha256"],
-        "environment": {"sha256": state["binding"]["environment_sha256"]},
-        "inputs": {"sha256": state["binding"]["input_manifest_sha256"]},
-        "tool_sha256": state["binding"]["tool_sha256"],
+        "environment": {"sha256": summary_binding["environment_sha256"]},
+        "inputs": {"sha256": summary_binding["input_manifest_sha256"]},
+        "tool_sha256": summary_binding["tool_sha256"],
         "core_report_sha256": checkpoints["core"]["report_sha256"],
         "product_report_sha256": checkpoints["full"]["report_sha256"],
         "community_report_sha256": checkpoints["longmemeval"]["report_sha256"],
@@ -303,9 +323,10 @@ def canonical_sha256(value: Any) -> str:
 
 
 def _validate_report_for_mode(contract: dict[str, Any], state: dict[str, Any], mode: str, report: dict[str, Any]) -> None:
+    active_binding = candidate_binding.for_mode(state["binding"], mode)
     kind = REPORT_KIND[mode]
     if kind in {"core", "product", "community"}:
-        validate_layer_report(contract, kind, report, expected_binding=state["binding"])
+        validate_layer_report(contract, kind, report, expected_binding=active_binding)
     else:
         validate_report(contract, kind, report)
         _require(report.get("candidate") == state["binding"]["candidate"], f"{mode} 报告候选身份不一致")
@@ -315,10 +336,10 @@ def _validate_report_for_mode(contract: dict[str, Any], state: dict[str, Any], m
         _require(report.get("mode") == mode, f"{mode} 报告模式无效")
     environment = report.get("environment", {})
     inputs = report.get("inputs", {})
-    _require(environment.get("sha256") == state["binding"]["environment_sha256"], f"{mode} 报告环境绑定不一致")
-    _require(inputs.get("sha256") == state["binding"]["input_manifest_sha256"], f"{mode} 报告输入绑定不一致")
+    _require(environment.get("sha256") == active_binding["environment_sha256"], f"{mode} 报告环境绑定不一致")
+    _require(inputs.get("sha256") == active_binding["input_manifest_sha256"], f"{mode} 报告输入绑定不一致")
     if mode == "summarize":
-        _require(report.get("tool_sha256") == state["binding"]["tool_sha256"], "汇总报告工具绑定不一致")
+        _require(report.get("tool_sha256") == active_binding["tool_sha256"], "汇总报告工具绑定不一致")
         fields = {
             "core_report_sha256": "core",
             "product_report_sha256": "full",
@@ -350,6 +371,7 @@ def _validate_state(contract: dict[str, Any], state: dict[str, Any]) -> None:
     _require(state.get("schema") == "ownward.acceptance-state/v1", "状态文件 schema 无效")
     _require(state.get("suite_version") == contract["suite_version"], "状态文件体系版本无效")
     _require(isinstance(state.get("binding"), dict), "状态文件缺少候选绑定")
+    candidate_binding.validate_binding(state["binding"])
     _require(isinstance(state.get("checkpoints"), dict), "状态文件缺少检查点")
     _require(isinstance(state.get("invalidated_reports"), dict), "状态文件缺少失效报告记录")
 

@@ -80,8 +80,8 @@
       "longmemeval": ["core", "full"],
       "summarize": ["core", "full", "longmemeval"]
     },
-    "binding_fields": ["suite_version", "candidate", "binary_sha256", "environment_sha256", "input_manifest_sha256"],
-    "reuse_requires_equal": ["candidate", "binary_sha256", "environment_sha256", "input_manifest_sha256", "tool_sha256"],
+    "binding_fields": ["schema", "suite_version", "candidate", "binary_sha256", "scopes"],
+    "binding_scopes": ["frontier", "core", "product", "community"],
     "artifact_manifest_required": true,
     "invalidation": {
       "targeted": ["targeted", "frontier", "qualification", "full", "longmemeval", "summarize"],

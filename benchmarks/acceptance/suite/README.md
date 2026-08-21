@@ -21,7 +21,7 @@ go build -trimpath -o <frontier-binary> ./cmd/ownward-frontier
 
 ## 候选绑定
 
-复制 `execution.example.json` 并填写真实路径、Qwen3.5-9B Reader 服务地址、官方裁判凭证变量名、官方数据参数和预检确定的并发数。Ownward 专项集和 LongMemEval‑V2 主动检索统一使用 `gpt-5.4-mini` / `xhigh`；Reader、裁判模型及其官方生成参数也已经冻结，不得改写。配置文件不进入仓库，不得把认证内容写入配置。候选代码与发布二进制稳定后，由唯一入口生成环境、输入、工具和候选绑定清单，再初始化或重新绑定状态：
+复制 `execution.example.json` 并填写当前阶段需要的真实路径。内部阶段的执行配置只保留 `frontier` 和 `product`，由此生成 `frontier`、`core`、`product` 三个绑定范围；不得配置、下载或绑定 `community`。到全部内部验证通过、准备执行 LongMemEval‑V2 时，才补充 Qwen3.5-9B Reader 服务地址、官方裁判凭证变量名、官方数据参数和预检确定的并发数。Ownward 专项集和 LongMemEval‑V2 主动检索统一使用 `gpt-5.4-mini` / `xhigh`；Reader、裁判模型及其官方生成参数也已经冻结，不得改写。配置文件不进入仓库，不得把认证内容写入配置。候选代码与发布二进制稳定后，由唯一入口生成共同候选身份及当前可用层级各自的环境、输入和工具绑定清单，再初始化或重新绑定状态：
 
 ```powershell
 python benchmarks/acceptance/suite/run.py bind --config <execution.json> --output <binding-directory>
@@ -29,7 +29,7 @@ python benchmarks/acceptance/suite/run.py init --binding <binding-directory>/bin
 python benchmarks/acceptance/suite/run.py rebind --binding <binding-directory>/binding.json --state <state.json>
 ```
 
-绑定会验证候选仓库完全干净，发布二进制由该候选提交的干净源码构建，专项集与社区基准使用同一候选和向量运行时，并将固定执行口径、环境、固定输入和验收工具分别纳入摘要。定向观察的阶段选择不属于冻结输入，不会使有效基线失效。每次执行前会重新验证这些事实；任一绑定事实变化即拒绝复用。
+候选提交与发布二进制是全部层级共享且不可拼接的身份；前沿观察、固定内核、Ownward 专项和社区基准分别绑定自身环境、固定输入、执行口径与工具。内部绑定不读取或要求 LongMemEval‑V2 材料；以后为同一候选新增 `community` 绑定不会使已经成立的内部检查点失效。某一层的绑定事实变化只使该层结果和最终汇总失效，共同候选或二进制变化才使全部候选检查点失效。定向观察的阶段选择不属于冻结输入，不会使有效基线失效。每次执行前只重新验证当前层所依赖的事实；任一相关事实变化即拒绝复用。
 
 ## 执行
 

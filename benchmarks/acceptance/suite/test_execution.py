@@ -21,9 +21,19 @@ class UnifiedExecutionTests(unittest.TestCase):
         self.workspace = Path(self.temporary.name)
         self.contract = load_contract(self.root / "contract.json")
         self.binding = {
+            "schema": "ownward.acceptance-binding/v2",
             "suite_version": self.contract["suite_version"], "candidate": "c" * 40,
-            "binary_sha256": "a" * 64, "environment_sha256": "b" * 64,
-            "input_manifest_sha256": "d" * 64, "tool_sha256": "e" * 64,
+            "binary_sha256": "a" * 64,
+            "scopes": {
+                name: {
+                    "environment_sha256": values[0] * 64,
+                    "input_manifest_sha256": values[1] * 64,
+                    "tool_sha256": values[2] * 64,
+                }
+                for name, values in {
+                    "frontier": "bde", "core": "f01", "product": "234", "community": "567",
+                }.items()
+            },
         }
         self.state_path = self.workspace / "state.json"
         lifecycle.save_state(self.state_path, lifecycle.new_state(self.contract, self.binding))

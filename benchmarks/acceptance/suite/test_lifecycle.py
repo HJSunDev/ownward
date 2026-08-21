@@ -6,6 +6,7 @@ from pathlib import Path
 
 import lifecycle
 import evidence
+import binding as candidate_binding
 from contract import load_contract
 
 
@@ -15,12 +16,20 @@ class EvidenceLifecycleTests(unittest.TestCase):
         cls.root = Path(__file__).resolve().parent
         cls.contract = load_contract(cls.root / "contract.json")
         cls.binding = {
+            "schema": "ownward.acceptance-binding/v2",
             "suite_version": "1.0.0",
-            "candidate": "candidate-1",
-            "binary_sha256": "a" * 64,
-            "environment_sha256": "b" * 64,
-            "input_manifest_sha256": "c" * 64,
-            "tool_sha256": "d" * 64,
+            "candidate": "a" * 40,
+            "binary_sha256": "b" * 64,
+            "scopes": {
+                name: {
+                    "environment_sha256": values[0] * 64,
+                    "input_manifest_sha256": values[1] * 64,
+                    "tool_sha256": values[2] * 64,
+                }
+                for name, values in {
+                    "frontier": "cde", "core": "f01", "product": "234", "community": "567",
+                }.items()
+            },
         }
 
     def state(self):
@@ -28,7 +37,7 @@ class EvidenceLifecycleTests(unittest.TestCase):
 
     def checkpoint(self, state, name, passed=True, report=None, directory=None):
         state["checkpoints"][name] = {
-            "binding": copy.deepcopy(state["binding"]),
+            "binding": candidate_binding.for_mode(state["binding"], name),
             "report_sha256": name[0] * 64,
             "passed": passed,
             "elapsed_seconds": 1,
@@ -110,14 +119,44 @@ class EvidenceLifecycleTests(unittest.TestCase):
         self.assertFalse(state["checkpoints"])
         self.assertEqual("previous", state["baseline"]["candidate"])
 
+    def test_state_owns_nested_binding_snapshots(self):
+        initial = copy.deepcopy(self.binding)
+        state = lifecycle.new_state(self.contract, initial)
+        initial["scopes"]["core"]["tool_sha256"] = "9" * 64
+        self.assertEqual("1" * 64, state["binding"]["scopes"]["core"]["tool_sha256"])
+
+        replacement = copy.deepcopy(self.binding)
+        replacement["scopes"]["product"]["tool_sha256"] = "f" * 64
+        lifecycle.rebind(self.contract, state, replacement)
+        replacement["scopes"]["product"]["tool_sha256"] = "0" * 64
+        self.assertEqual("f" * 64, state["binding"]["scopes"]["product"]["tool_sha256"])
+
     def test_environment_input_or_tool_change_archives_active_baseline(self):
         state = self.state()
         state["baseline"] = {"candidate": "previous"}
         changed = copy.deepcopy(self.binding)
-        changed["input_manifest_sha256"] = "f" * 64
+        changed["scopes"]["product"]["input_manifest_sha256"] = "f" * 64
         lifecycle.rebind(self.contract, state, changed)
         self.assertIsNone(state["baseline"])
         self.assertEqual("previous", state["baseline_history"][0]["candidate"])
+
+    def test_adding_deferred_community_binding_preserves_internal_checkpoints(self):
+        initial = copy.deepcopy(self.binding)
+        del initial["scopes"]["community"]
+        state = lifecycle.new_state(self.contract, initial)
+        for name in ("core", "frontier", "qualification"):
+            self.checkpoint(state, name)
+        self.assertEqual([], lifecycle.rebind(self.contract, state, copy.deepcopy(self.binding)))
+        self.assertEqual({"core", "frontier", "qualification"}, set(state["checkpoints"]))
+
+    def test_community_binding_change_only_invalidates_community_and_summary(self):
+        state = self.state()
+        for name in ("core", "frontier", "qualification", "full", "longmemeval", "summarize"):
+            self.checkpoint(state, name)
+        changed = copy.deepcopy(self.binding)
+        changed["scopes"]["community"]["input_manifest_sha256"] = "f" * 64
+        self.assertEqual(["longmemeval", "summarize"], lifecycle.rebind(self.contract, state, changed))
+        self.assertEqual({"core", "frontier", "qualification", "full"}, set(state["checkpoints"]))
 
     def test_state_round_trip_is_a_resume_checkpoint(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -228,34 +267,37 @@ class EvidenceLifecycleTests(unittest.TestCase):
         self.assertEqual(lifecycle.canonical_sha256(observation), embedded["canonical_sha256"])
 
     def frontier_report(self, mode):
+        active = candidate_binding.for_mode(self.binding, "frontier")
         return {
             "schema": "ownward.frontier-report/v1", "suite_version": "1.0.0",
             "benchmark_version": "ownward-core-frontier/v1", "mode": mode,
             "candidate": self.binding["candidate"], "baseline": "baseline",
-            "environment": {"sha256": self.binding["environment_sha256"]},
-            "inputs": {"sha256": self.binding["input_manifest_sha256"]},
+            "environment": {"sha256": active["environment_sha256"]},
+            "inputs": {"sha256": active["input_manifest_sha256"]},
             "quality": [], "latency": [], "resources": [], "diagnostics": {},
             "decision": "eligible_for_qualification", "started_at": "x", "finished_at": "y",
         }
 
     def core_report(self):
+        active = candidate_binding.for_mode(self.binding, "core")
         return {
             "schema": "ownward.core-baseline-report/v1", "suite_version": "1.0.0",
             "candidate": self.binding["candidate"], "binary_sha256": self.binding["binary_sha256"],
-            "environment": {"sha256": self.binding["environment_sha256"]},
-            "inputs": {"sha256": self.binding["input_manifest_sha256"]},
+            "environment": {"sha256": active["environment_sha256"]},
+            "inputs": {"sha256": active["input_manifest_sha256"]},
             "invariants": {name: True for name in self.contract["evidence_layers"]["core"]["required_invariants"]},
             "passed": True, "started_at": "x", "finished_at": "y",
         }
 
     def product_report(self, mode):
+        active = candidate_binding.for_mode(self.binding, mode)
         count = 2 if mode == "qualification" else 6
         return {
             "schema": "ownward.product-report/v1", "suite_version": "1.0.0",
             "dataset_version": "ownward-product-dataset/v1", "mode": mode,
             "candidate": self.binding["candidate"], "binary_sha256": self.binding["binary_sha256"],
-            "environment": {"sha256": self.binding["environment_sha256"]},
-            "inputs": {"sha256": self.binding["input_manifest_sha256"]},
+            "environment": {"sha256": active["environment_sha256"]},
+            "inputs": {"sha256": active["input_manifest_sha256"]},
             "categories": {name: {"scenarios": count, "passed": True} for name in self.contract["evidence_layers"]["product"]["categories"]},
             "organization_gain": {"passed": True}, "quality": {"passed": True},
             "latency": {"passed": True}, "resources": {"passed": True}, "passed": True,
@@ -263,12 +305,13 @@ class EvidenceLifecycleTests(unittest.TestCase):
         }
 
     def community_report(self):
+        active = candidate_binding.for_mode(self.binding, "longmemeval")
         return {
             "schema": "ownward.longmemeval-report/v1", "suite_version": "1.0.0",
             "official_version": "longmemeval-v2/2cc8c540bdb87fe6761629b585e727e1c4704520",
             "candidate": self.binding["candidate"], "binary_sha256": self.binding["binary_sha256"],
-            "environment": {"sha256": self.binding["environment_sha256"]},
-            "inputs": {"sha256": self.binding["input_manifest_sha256"]},
+            "environment": {"sha256": active["environment_sha256"]},
+            "inputs": {"sha256": active["input_manifest_sha256"]},
             "domains": {name: {"passed": True} for name in ("web", "enterprise")},
             "submission": {
                 "package_sha256": "f" * 64, "lafs": 1.0, "accuracy": 0.75,
