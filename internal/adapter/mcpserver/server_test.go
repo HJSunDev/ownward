@@ -69,7 +69,7 @@ func TestServerExposesUnifiedCoreOperations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, required := range []string{"ownward.semantic-submission/v1", "complete", "uncertain", "outgoing", "incoming", "只有存在直接关系但以上类型均不准确时才用 related_to", "方向决定关系陈述的主语", "没有可靠的关系、场景或主题时在相应字段使用空数组", "问题、原因或背景不能反向支持解决它的方法"} {
+	for _, required := range []string{"ownward.semantic-submission/v1", "complete", "uncertain", "outgoing", "incoming", "以上类型均不准确时才用 related_to", "方向决定关系陈述的主语", "没有可靠的关系、场景或主题时在相应字段使用空数组", "后来观察到的结果支持此前结论", "不能因源内容在场景中被使用就改写成 part_of", "仅词语或宽泛主题相近不构成关系"} {
 		if !strings.Contains(string(semanticSchema), required) {
 			t.Fatalf("semantic tool schema does not explain %q: %s", required, semanticSchema)
 		}

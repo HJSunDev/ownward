@@ -61,7 +61,7 @@ type Cue struct {
 }
 
 type Relation struct {
-	Type           string  `json:"type" jsonschema:"关系类型必须取最精确的一种：same_as 表示含义等价；broader_than/narrower_than 只表示类别或概念范围的上位/下位，不能代替组成关系；part_of/has_part 表示机制、结构、流程、体系或主题中的组成/包含；supports 表示源资产为目标资产提供证据、机制、条件、方法或解决方案，问题、原因或背景不能反向支持解决它的方法；contradicts 表示明确冲突；derived_from 表示源结论、选择或做法由目标依据推导，不能用双向 supports 代替；applies_in 表示源内容适用于目标场景；只有存在直接关系但以上类型均不准确时才用 related_to。候选支持当前资产时仍填写 supports 并使用 incoming，不能自创逆向类型"`
+	Type           string  `json:"type" jsonschema:"关系类型必须取最精确的一种：same_as 表示含义等价；broader_than/narrower_than 只表示类别或概念范围的上位/下位，不能代替组成关系；part_of/has_part 表示机制、结构、流程、体系或主题中的组成/包含；supports 表示源资产为目标资产提供证据、机制、条件、方法或解决方案，后来观察到的结果支持此前结论而不是反向，问题、原因或背景也不能反向支持解决它的方法；contradicts 表示明确冲突；derived_from 表示源结论、选择或做法由目标依据推导，不能用双向 supports 代替；applies_in 表示源内容的适用性依赖目标场景，不能因源内容在场景中被使用就改写成 part_of；只有存在具体、直接的共享事件或对象且以上类型均不准确时才用 related_to，仅词语或宽泛主题相近不构成关系。候选支持当前资产时仍填写 supports 并使用 incoming，不能自创逆向类型"`
 	TargetID       string  `json:"target_id" jsonschema:"必须是当前语义工作提供的候选资产 id"`
 	TargetRevision uint64  `json:"target_revision,omitempty"`
 	Confidence     float64 `json:"confidence" jsonschema:"基于明确证据的置信度，关系至少为 0.75"`
