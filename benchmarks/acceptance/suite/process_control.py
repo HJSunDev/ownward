@@ -8,7 +8,10 @@ from typing import Mapping
 
 
 class ProcessTimeout(TimeoutError):
-    pass
+    def __init__(self, message: str, stdout: str = "", stderr: str = "") -> None:
+        super().__init__(message)
+        self.stdout = stdout
+        self.stderr = stderr
 
 
 def run(
@@ -29,6 +32,7 @@ def run(
         stderr=subprocess.PIPE,
         text=True,
         encoding="utf-8",
+        errors="replace",
         env=env,
         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
         start_new_session=os.name != "nt",
@@ -38,7 +42,11 @@ def run(
     except subprocess.TimeoutExpired as error:
         _terminate_tree(process)
         stdout, stderr = process.communicate()
-        raise ProcessTimeout(f"process exceeded {timeout:.0f} seconds") from error
+        raise ProcessTimeout(
+            f"process exceeded {timeout:.0f} seconds",
+            stdout or "",
+            stderr or "",
+        ) from error
     return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
 

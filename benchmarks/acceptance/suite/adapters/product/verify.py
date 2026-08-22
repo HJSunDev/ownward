@@ -74,6 +74,21 @@ def _safe_reset(path: Path, parent: Path) -> None:
     shutil.rmtree(resolved)
 
 
+def _cleanup_temporary(path: Path) -> None:
+    last_error: OSError | None = None
+    for _ in range(20):
+        try:
+            shutil.rmtree(path)
+            return
+        except FileNotFoundError:
+            return
+        except OSError as error:
+            last_error = error
+            time.sleep(0.1)
+    assert last_error is not None
+    raise last_error
+
+
 def _codex_command(
     args: argparse.Namespace,
     *,
@@ -86,6 +101,7 @@ def _codex_command(
         "exec", "--ephemeral", "--json", "--color", "never", "--skip-git-repo-check",
         "-C", str(work_dir), "--sandbox", "read-only", "-m", args.codex_model,
         "-c", f"model_reasoning_effort={json.dumps(args.codex_reasoning_effort)}",
+        "-c", "project_doc_max_bytes=0",
     ]
     for feature in (
         "apply_patch_freeform", "apps", "image_generation", "js_repl", "memories", "multi_agent",
@@ -120,8 +136,9 @@ def _run_codex(
     work = stage / "work"
     require(not output.exists() and not events.exists() and not work.exists(), f"Codex stage is not blank: {stage}")
     work.mkdir()
-    with tempfile.TemporaryDirectory(prefix="codex-", dir=stage) as temporary:
-        temporary_root = Path(temporary)
+    temporary_root = Path(tempfile.mkdtemp(prefix="codex-", dir=stage))
+    failed = False
+    try:
         schema_path = temporary_root / "schema.json"
         schema_path.write_text(json.dumps(schema, ensure_ascii=False), encoding="utf-8")
         environment = codex_session.isolated_environment(args.codex_auth_file, temporary_root / "codex-home")
@@ -136,8 +153,21 @@ def _run_codex(
                 env=environment,
             )
         except process_control.ProcessTimeout as error:
-            raise RuntimeError("Codex stage exceeded its wall-clock budget and its process tree was stopped") from error
+            events.write_text(error.stdout, encoding="utf-8")
+            (stage / "stderr.txt").write_text(error.stderr, encoding="utf-8")
+            detail = error.stderr[-1000:].strip()
+            message = "Codex stage exceeded its wall-clock budget and its process tree was stopped"
+            raise RuntimeError(f"{message}: {detail}" if detail else message) from error
         elapsed = time.perf_counter() - started
+    except Exception:
+        failed = True
+        raise
+    finally:
+        try:
+            _cleanup_temporary(temporary_root)
+        except OSError:
+            if not failed:
+                raise
     events.write_text(completed.stdout, encoding="utf-8")
     require(completed.returncode == 0, f"Codex stage failed: {completed.stderr[-2000:]}")
     require(output.is_file(), "Codex stage produced no structured output")
@@ -352,7 +382,7 @@ def _run_scenario(
             ]})
             created_results = created.get("results") if isinstance(created, dict) else None
             require(isinstance(created_results, list) and len(created_results) == len(items), "create batch is incomplete")
-            for item, value in zip(items, created_results, strict=True):
+            for item, value in zip(items, created_results):
                 mutation = value.get("result") if isinstance(value, dict) else None
                 information = mutation.get("information") if isinstance(mutation, dict) else None
                 require(isinstance(information, dict), "create batch item failed")

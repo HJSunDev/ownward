@@ -2,14 +2,48 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
+import os
 import tempfile
 import unittest
 from types import SimpleNamespace
+from unittest import mock
 
 import verify
 
 
 class ProductAdapterTests(unittest.TestCase):
+    def test_codex_command_excludes_repository_project_instructions(self) -> None:
+        args = SimpleNamespace(
+            codex_binary=Path("codex.exe"),
+            codex_model="model",
+            codex_reasoning_effort="effort",
+        )
+        command = verify._codex_command(
+            args,
+            work_dir=Path("work"),
+            schema_path=Path("schema.json"),
+            output_path=Path("output.json"),
+            endpoint="http://127.0.0.1:1",
+        )
+        overrides = [command[index + 1] for index, value in enumerate(command[:-1]) if value == "-c"]
+        self.assertIn("project_doc_max_bytes=0", overrides)
+
+    def test_isolated_codex_environment_bypasses_proxy_for_loopback_mcp(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            auth = root / "auth.json"
+            auth.write_text("{}", encoding="utf-8")
+            with mock.patch.dict(
+                os.environ,
+                {"HTTP_PROXY": "http://127.0.0.1:7890", "NO_PROXY": "example.test"},
+                clear=True,
+            ):
+                environment = verify.codex_session.isolated_environment(auth, root / "codex-home")
+            self.assertEqual("http://127.0.0.1:7890", environment["HTTP_PROXY"])
+            for value in ("example.test", "127.0.0.1", "localhost", "::1"):
+                self.assertIn(value, environment["NO_PROXY"].split(","))
+                self.assertIn(value, environment["no_proxy"].split(","))
+
     def test_codex_events_preserve_ownward_calls_and_expose_bypasses(self) -> None:
         events = [
             {"type": "thread.started", "thread_id": "session"},
@@ -52,6 +86,15 @@ class ProductAdapterTests(unittest.TestCase):
             outside.mkdir()
             with self.assertRaisesRegex(RuntimeError, "unexpected"):
                 verify._safe_reset(outside, root / "expected")
+
+    def test_temporary_cleanup_retries_transient_windows_file_locks(self) -> None:
+        with mock.patch.object(
+            verify.shutil,
+            "rmtree",
+            side_effect=[PermissionError("locked"), None],
+        ) as remove, mock.patch.object(verify.time, "sleep"):
+            verify._cleanup_temporary(Path("temporary-codex-home"))
+        self.assertEqual(2, remove.call_count)
 
     def test_navigation_evidence_only_uses_successful_navigation_calls(self) -> None:
         events = [

@@ -26,13 +26,24 @@ class ProcessControlTests(unittest.TestCase):
     def test_timeout_stops_process_without_waiting_for_natural_exit(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             started = time.perf_counter()
-            with self.assertRaises(process_control.ProcessTimeout):
+            with self.assertRaises(process_control.ProcessTimeout) as raised:
                 process_control.run(
-                    [sys.executable, "-c", "import time; time.sleep(5)"],
+                    [sys.executable, "-c", "import sys,time; print('started', flush=True); time.sleep(5)"],
                     cwd=Path(directory),
                     timeout=0.05,
                 )
         self.assertLess(time.perf_counter() - started, 2)
+        self.assertIn("started", raised.exception.stdout)
+
+    def test_invalid_utf8_output_does_not_break_process_collection(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            completed = process_control.run(
+                [sys.executable, "-c", "import sys; sys.stderr.buffer.write(b'bad-\\xff-output')"],
+                cwd=Path(directory),
+                timeout=2,
+            )
+        self.assertEqual(0, completed.returncode)
+        self.assertIn("bad-\ufffd-output", completed.stderr)
 
 
 if __name__ == "__main__":
