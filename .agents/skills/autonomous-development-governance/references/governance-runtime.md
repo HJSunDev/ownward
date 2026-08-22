@@ -37,7 +37,9 @@
 
 建立新体系时从 Skill 的 `assets/governance-runtime/` 复制并适配 [状态 Schema](../assets/governance-runtime/state.schema.json)、[复核请求 Schema](../assets/governance-runtime/review-request.schema.json)、[复核结果 Schema](../assets/governance-runtime/review.schema.json)、[Governor 配置](../assets/governance-runtime/governor.toml)、[Hooks 模板](../assets/governance-runtime/hooks.template.json) 和 [运行配置模板](../assets/governance-runtime/config.template.json)。模板不绑定项目语言；`governance-cli`、Hook 命令和进程保护器使用项目已有运行时实现，必须满足下文命令契约与最小自检，不得为治理单独引入重量级依赖。
 
-安装时必须替换 Hooks 命令和 `governed_tool_matcher` 占位符，按项目真实工具清单覆盖产品修改、外部写入以及批量、付费、不可逆和资源密集动作；不得用 `mcp__.*` 等宽泛模式替代实际工具清单。Bash 同时承载读写动作，无法仅靠 matcher 区分；Hook 适配器必须只解析输入便完成低成本纯读取的快速放行，不读取或写入治理状态，也不产生事件。项目本地 Hooks 需按 Codex 官方机制审阅并信任当前定义，任何定义变化后重新审阅；随后运行 `doctor` 和最小自检，不能以模板已复制代替可执行验证。
+安装时必须替换 Hooks 命令和 `governed_tool_matcher` 占位符，按项目真实工具清单覆盖产品修改、外部写入以及批量、付费、不可逆和资源密集动作；不得用 `mcp__.*` 等宽泛模式替代实际工具清单。Bash 同时承载读写动作，无法仅靠 matcher 区分；Hook 适配器必须只解析输入便完成低成本纯读取的快速放行，不读取或写入治理状态，也不产生事件。项目本地 Hooks 需按 Codex 官方机制审阅并信任当前定义，任何定义变化后重新审阅；随后运行 `doctor` 和最小自检，不能以模板已复制、脚本直调或当前会话内测试代替全新会话的自动加载验证。
+
+在 Codex 本地项目中，自定义 Agent 文件必须能够作为独立配置层通过校验。项目配置了 Governor 不需要的 MCP 时，必须盘点子 Agent 的实际继承结果；对于使用固定状态目录、不能安全启动第二实例的 MCP，应在 Governor 文件中写出同名 MCP 的完整 transport，再明确设置 `enabled = false`、`required = false`。不得只写开关，因为缺少 `command` 或 URL transport 的独立配置会成为无效 Agent 定义。具体已验证环境、故障链与冷启动判据见 [Codex 运行集成与冷启动验收](codex-runtime-integration.md)。
 
 等待复核期间，Hook 适配器只能额外放行对固定 `governance-cli` 入口的精确治理控制调用；Shell 拼接、改写入口或任意同名命令不得借此绕过。`accept-review` 仍须在 CLI 内完成请求与结果 Schema、身份和哈希校验。
 
@@ -194,6 +196,8 @@ Hooks 只能执行确定性检查，不能自己充当 Governor，也不能直�
 
 Governor 配置不得关闭 Hooks。递归隔离依靠 Codex 主会话与子 Agent 生命周期事件的原生分离；治理模板不得注册 Governor 专用的 `SubagentStart` 或 `SubagentStop`。Governor 将 `state.json` 视为待验证声明，必须依据权威文档、仓库和原始证据独立形成判断；状态与事实冲突时不得迁就状态。
 
+Governor 启动前还必须审计项目级 MCP：只保留复核确实需要且可以安全独立运行的服务。Governor 不需要且可能争用主任务状态目录的 MCP 必须在其独立配置中以完整 transport 明确禁用，不能依赖主任务当前进程、临时启动参数或不完整覆盖。
+
 Governor 必须按 [Governor 宏观复核规范](governor-review.md) 先独立重建整体进度和最优下一工作包，再读取主 Agent 状态进行比较。它只能返回 `start`、`continue`、`replan`、`stage_complete`、`task_complete`、`product_decision_required` 或 `external_input_required`。`start` 只建立首个工作包，`continue` 只批准当前工作包；技术实现选择、普通失败、工具问题和可自主换路的效率问题不得升级给用户。复核请求包含已解决的待处理事项时，Governor 必须先判断输入是否充分，再恢复、换路或继续请求最小输入。具体请求、等待、返回与落盘协议见父子交互规范。
 
 ## 运行流程
@@ -236,6 +240,7 @@ Governor 必须按 [Governor 宏观复核规范](governor-review.md) 先独立�
 - Hooks 匹配器覆盖项目实际的修改与高风险工具且不使用全 MCP 通配；Bash 纯读取虽会进入适配器，但会在不访问治理状态、不写事件的情况下快速返回；已知不经过 Hook 的工具路径由主 Agent 契约约束并在自检中显式登记；
 - 无既有状态的 `SessionStart` 保持未激活，主线 `UserPromptSubmit` 能够原子初始化并进入固定复核，运行中状态只恢复，完成状态不会被覆盖；Hook 模板的全部子命令都与 `hook <event>` 契约一致；
 - 项目 Hooks 已按当前定义完成信任校验，定义变化后旧信任不会被误用；
+- 全新 Codex 会话会自动执行已信任的 `SessionStart` 与 `UserPromptSubmit`，Governor 配置能够独立加载且不会为明确禁用的状态型项目 MCP 创建第二实例；脚本直调、同一会话热测和单次父子通道成功不能替代该冷启动证据；
 - 事件流水不包含原始工具输出、终端流水或会话副本，只保存必要摘要和证据引用；
 - `stage_complete` 必须携带下一工作包且不能结束任务；只有无剩余条件并绑定完整证据的 `task_complete` 能被 `finish` 接受；
 - 确定性程序不能独立宣称语义证据充分或任务完成，最终判断必须绑定 Governor 结论；

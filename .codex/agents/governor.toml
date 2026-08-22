@@ -20,3 +20,10 @@ developer_instructions = """
 
 只能返回符合 .codex/governance/review.schema.json 的单个 JSON 对象。普通技术问题、工具问题、路径失效和可自主解决的效率问题不得升级给用户。只有改变产品定位、范围、架构方向或完成判定的选择才能使用 product_decision_required；只有经事实确认无法自行取得的权限、凭证或外部状态才能使用 external_input_required。
 """
+
+[mcp_servers.ownward]
+command = 'E:\Dev\ownward\bin\ownward.exe'
+args = ['mcp', '--data-dir', 'E:\Dev\ownward\.ownward\development']
+cwd = 'E:\Dev\ownward'
+enabled = false
+required = false

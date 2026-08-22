@@ -57,11 +57,14 @@ func (runtime *Runtime) Doctor() (*DoctorReport, error) {
 	if err != nil {
 		return nil, err
 	}
-	governorText := strings.ToLower(string(governorData))
-	if !strings.Contains(governorText, `sandbox_mode = "read-only"`) || strings.Contains(governorText, "hooks = false") {
-		return nil, errors.New("Governor must be read-only without disabling project hooks")
+	projectConfigData, err := os.ReadFile(filepath.Join(runtime.Root, ".codex", "config.toml"))
+	if err != nil {
+		return nil, err
 	}
-	checks = append(checks, "Governor is independently configured read-only")
+	if err := validateGovernorConfiguration(projectConfigData, governorData); err != nil {
+		return nil, err
+	}
+	checks = append(checks, "Governor is independently read-only and isolates the stateful project MCP")
 
 	fixture := *runtime
 	fixture.RuntimeDir = filepath.Join(runtime.RuntimeDir, ".doctor-"+newID("fixture"))
@@ -85,6 +88,16 @@ func (runtime *Runtime) Doctor() (*DoctorReport, error) {
 	if err != nil || state.Review.FixedReviewGeneration != 1 {
 		return nil, errors.New("fixed review generation is not deterministic")
 	}
+	for _, readInput := range []HookInput{
+		{ToolName: "Bash", ToolInput: json.RawMessage(`{"command":"Get-Content -LiteralPath '.codex/governance/runtime/review-request.json' -Raw"}`)},
+		{ToolName: "Bash", ToolInput: json.RawMessage(`{"cmd":"rg -n review_id .codex/governance/runtime/review-request.json"}`)},
+	} {
+		readOutput := &bytes.Buffer{}
+		if err := fixture.hookPreToolUse(readInput, readOutput); err != nil || strings.Contains(readOutput.String(), `"deny"`) {
+			return nil, errors.New("pending review blocked a low-cost Governor read")
+		}
+	}
+	checks = append(checks, "pending review keeps canonical low-cost Governor reads available")
 	denied := &bytes.Buffer{}
 	patchInput := HookInput{ToolName: "apply_patch", ToolInput: json.RawMessage(`{"patch":"*** Begin Patch\n*** Update File: internal/example.go\n*** End Patch"}`)}
 	if err := fixture.hookPreToolUse(patchInput, denied); err != nil || !strings.Contains(denied.String(), `"deny"`) {
@@ -262,4 +275,62 @@ func (runtime *Runtime) Doctor() (*DoctorReport, error) {
 	checks = append(checks, "ordinary discussions stay inactive while the configured mainline prompt activates governance")
 
 	return &DoctorReport{Status: "passed", Checks: checks}, nil
+}
+
+func validateGovernorConfiguration(projectConfigData, governorData []byte) error {
+	governorText := strings.ToLower(string(governorData))
+	if !strings.Contains(governorText, `sandbox_mode = "read-only"`) || strings.Contains(governorText, "hooks = false") {
+		return errors.New("Governor must be read-only without disabling project hooks")
+	}
+
+	projectMCP := tomlSection(string(projectConfigData), "mcp_servers.ownward")
+	if projectMCP == "" {
+		return nil
+	}
+	governorMCP := tomlSection(string(governorData), "mcp_servers.ownward")
+	if governorMCP == "" {
+		return errors.New("Governor must explicitly isolate the project Ownward MCP")
+	}
+	for _, key := range []string{"command", "args", "cwd"} {
+		if tomlAssignment(governorMCP, key) == "" {
+			return fmt.Errorf("Governor Ownward MCP requires a complete standalone transport: missing %s", key)
+		}
+	}
+	if !strings.EqualFold(tomlAssignment(governorMCP, "enabled"), "false") || !strings.EqualFold(tomlAssignment(governorMCP, "required"), "false") {
+		return errors.New("Governor must disable and unrequire the project Ownward MCP")
+	}
+	return nil
+}
+
+func tomlSection(data, sectionName string) string {
+	wanted := strings.ToLower(strings.TrimSpace(sectionName))
+	active := false
+	lines := []string{}
+	for _, rawLine := range strings.Split(data, "\n") {
+		trimmed := strings.TrimSpace(rawLine)
+		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+			name := strings.TrimSpace(strings.Trim(trimmed, "[]"))
+			if active && !strings.EqualFold(name, wanted) {
+				break
+			}
+			active = strings.EqualFold(name, wanted)
+			continue
+		}
+		if active {
+			lines = append(lines, rawLine)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func tomlAssignment(section, key string) string {
+	wanted := strings.ToLower(strings.TrimSpace(key))
+	for _, rawLine := range strings.Split(section, "\n") {
+		line := strings.TrimSpace(strings.SplitN(rawLine, "#", 2)[0])
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) == 2 && strings.ToLower(strings.TrimSpace(parts[0])) == wanted {
+			return strings.TrimSpace(parts[1])
+		}
+	}
+	return ""
 }

@@ -31,6 +31,18 @@ func TestStrictJSONRejectsUnknownFields(t *testing.T) {
 	}
 }
 
+func TestGovernorMCPIsolationRequiresStandaloneTransport(t *testing.T) {
+	project := []byte("[mcp_servers.ownward]\nenabled = true\nrequired = true\n")
+	partial := []byte("sandbox_mode = \"read-only\"\n[mcp_servers.ownward]\nenabled = false\nrequired = false\n")
+	if err := validateGovernorConfiguration(project, partial); err == nil || !strings.Contains(err.Error(), "standalone transport") {
+		t.Fatalf("partial MCP override was accepted: %v", err)
+	}
+	complete := []byte("sandbox_mode = \"read-only\"\n[mcp_servers.ownward]\ncommand = 'ownward'\nargs = ['mcp']\ncwd = '.'\nenabled = false\nrequired = false\n")
+	if err := validateGovernorConfiguration(project, complete); err != nil {
+		t.Fatalf("complete disabled MCP transport was rejected: %v", err)
+	}
+}
+
 func TestGovernedRunAllowsLiveProcessWithoutTotalDeadline(t *testing.T) {
 	heartbeat := filepath.Join(t.TempDir(), "heartbeat")
 	t.Setenv("GO_WANT_GOVERNANCE_HELPER", "live")

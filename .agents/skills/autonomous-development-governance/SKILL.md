@@ -59,4 +59,4 @@ description: 用于设计、维护高度自主的开发治理体系；不用于�
 
 批量、付费、不可逆或资源密集的动作先以最小代表性样本证明路径有效并取得客观资源事实；这不是开发工时预估，也不产生任务时长上限。独立有效结果即时形成检查点，后续只补失败或缺失部分。除真正的产品决策或经事实确认无法自行取得的外部权限、凭证与状态外，技术问题、路径失效和效率异常均由治理闭环自主处理并继续。真实用户介入必须形成可持久的待处理事项；用户答复与原事项绑定并经 Governor 复核后恢复原工作包，不得依赖对话记忆或丢失工作连续性。
 
-在搭建、维护或审查完整治理闭环时，完整读取 [自主治理运行时搭建规范](references/governance-runtime.md)；定义或审查 Governor 的宏观判断时，完整读取 [Governor 宏观复核规范](references/governor-review.md)；只涉及 Codex 主 Agent 与 Governor 的触发、等待和返回通道时，读取 [Codex 主 Agent 与 Governor 子 Agent 交互规范](references/codex-governor-interaction.md)。
+在搭建、维护或审查完整治理闭环时，完整读取 [自主治理运行时搭建规范](references/governance-runtime.md)；定义或审查 Governor 的宏观判断时，完整读取 [Governor 宏观复核规范](references/governor-review.md)；只涉及 Codex 主 Agent 与 Governor 的触发、等待和返回通道时，读取 [Codex 主 Agent 与 Governor 子 Agent 交互规范](references/codex-governor-interaction.md)；在 Codex 本地项目中安装、迁移或排查项目 Hooks、自定义 Governor 与项目 MCP 的冷启动问题时，读取 [Codex 运行集成与冷启动验收](references/codex-runtime-integration.md)。
