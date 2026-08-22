@@ -1,0 +1,69 @@
+{
+  "description": "Deterministic hooks for autonomous development governance. Replace command placeholders during installation.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{governance_hook_command}} hook session-start",
+            "commandWindows": "{{governance_hook_command_windows}} hook session-start",
+            "statusMessage": "Restoring governance state"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "manual|auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{governance_hook_command}} hook pre-compact",
+            "commandWindows": "{{governance_hook_command_windows}} hook pre-compact",
+            "statusMessage": "Persisting governance checkpoint"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "{{governed_tool_matcher}}",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{governance_hook_command}} hook pre-tool-use",
+            "commandWindows": "{{governance_hook_command_windows}} hook pre-tool-use",
+            "statusMessage": "Checking governed work packet"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "{{governed_tool_matcher}}",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{governance_hook_command}} hook post-tool-use",
+            "commandWindows": "{{governance_hook_command_windows}} hook post-tool-use",
+            "statusMessage": "Checking governed result"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{governance_hook_command}} hook stop",
+            "commandWindows": "{{governance_hook_command_windows}} hook stop",
+            "statusMessage": "Checking completion evidence"
+          }
+        ]
+      }
+    ]
+  }
+}

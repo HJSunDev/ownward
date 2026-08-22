@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "runtime_directory": ".codex/governance/runtime",
+  "authority_paths": [],
+  "completion_definition_paths": [],
+  "evidence_roots": [],
+  "governor_agent_name": "governor",
+  "governed_tool_matcher": "Bash|apply_patch|Edit|Write",
+  "explicit_resource_constraints": []
+}

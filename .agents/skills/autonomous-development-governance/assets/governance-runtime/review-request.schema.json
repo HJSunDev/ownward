@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/autonomous-development-governance/review-request.schema.json",
+  "title": "Governor review request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "review_id",
+    "trigger_instance_id",
+    "review_snapshot_hash",
+    "trigger",
+    "authority_paths",
+    "completion_definition_paths",
+    "repository_snapshot",
+    "state_path",
+    "current_condition_id",
+    "current_work_packet",
+    "resource_facts",
+    "recent_checkpoint",
+    "evidence_refs",
+    "created_at"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "review_id": { "$ref": "#/$defs/nonEmptyString" },
+    "trigger_instance_id": { "$ref": "#/$defs/nonEmptyString" },
+    "review_snapshot_hash": { "$ref": "#/$defs/hash" },
+    "trigger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "reason"],
+      "properties": {
+        "kind": { "enum": ["fixed", "event"] },
+        "reason": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    },
+    "authority_paths": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/nonEmptyString" },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "completion_definition_paths": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/nonEmptyString" },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "repository_snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["root", "head_commit", "working_tree_hash"],
+      "properties": {
+        "root": { "$ref": "#/$defs/nonEmptyString" },
+        "head_commit": { "$ref": "#/$defs/nonEmptyString" },
+        "working_tree_hash": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "state_path": { "$ref": "#/$defs/nonEmptyString" },
+    "current_condition_id": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/nonEmptyString" }
+      ]
+    },
+    "current_work_packet": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/workPacket" }
+      ]
+    },
+    "resource_facts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["measure", "value", "unit", "source"],
+        "properties": {
+          "measure": { "$ref": "#/$defs/nonEmptyString" },
+          "value": { "type": ["number", "string"] },
+          "unit": { "$ref": "#/$defs/nonEmptyString" },
+          "source": { "$ref": "#/$defs/nonEmptyString" }
+        }
+      }
+    },
+    "recent_checkpoint": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["checkpoint_id", "description", "evidence_ids"],
+          "properties": {
+            "checkpoint_id": { "$ref": "#/$defs/nonEmptyString" },
+            "description": { "$ref": "#/$defs/nonEmptyString" },
+            "evidence_ids": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/nonEmptyString" },
+              "uniqueItems": true
+            }
+          }
+        }
+      ]
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["evidence_id", "path", "hash"],
+        "properties": {
+          "evidence_id": { "$ref": "#/$defs/nonEmptyString" },
+          "path": { "$ref": "#/$defs/nonEmptyString" },
+          "hash": { "$ref": "#/$defs/hash" }
+        }
+      }
+    },
+    "created_at": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "nonEmptyString": { "type": "string", "minLength": 1 },
+    "hash": { "type": "string", "pattern": "^sha256:[0-9a-fA-F]{64}$" },
+    "workPacket": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "packet_id",
+        "condition_id",
+        "objective",
+        "value",
+        "allowed_scope",
+        "excluded_scope",
+        "expected_evidence",
+        "checkpoint_id",
+        "checkpoint_description",
+        "plan_hash"
+      ],
+      "properties": {
+        "packet_id": { "$ref": "#/$defs/nonEmptyString" },
+        "condition_id": { "$ref": "#/$defs/nonEmptyString" },
+        "objective": { "$ref": "#/$defs/nonEmptyString" },
+        "value": { "$ref": "#/$defs/nonEmptyString" },
+        "allowed_scope": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/nonEmptyString" },
+          "minItems": 1
+        },
+        "excluded_scope": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/nonEmptyString" }
+        },
+        "expected_evidence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/nonEmptyString" },
+          "minItems": 1
+        },
+        "checkpoint_id": { "$ref": "#/$defs/nonEmptyString" },
+        "checkpoint_description": { "$ref": "#/$defs/nonEmptyString" },
+        "plan_hash": { "$ref": "#/$defs/hash" }
+      }
+    }
+  }
+}

@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/autonomous-development-governance/state.schema.json",
+  "title": "Autonomous development governance state",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "status",
+    "authority_hash",
+    "completion_conditions",
+    "current_work_packet",
+    "explicit_resource_constraints",
+    "reusable_results",
+    "next_action",
+    "review"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "run_id": { "$ref": "#/$defs/nonEmptyString" },
+    "status": {
+      "enum": [
+        "running",
+        "product_decision_required",
+        "external_input_required",
+        "complete"
+      ]
+    },
+    "authority_hash": { "$ref": "#/$defs/hash" },
+    "completion_conditions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["condition_id", "status"],
+        "properties": {
+          "condition_id": { "$ref": "#/$defs/nonEmptyString" },
+          "status": { "enum": ["unmet", "in_progress", "met", "evidence_insufficient"] },
+          "evidence_ids": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/nonEmptyString" },
+            "uniqueItems": true
+          }
+        }
+      }
+    },
+    "current_work_packet": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/workPacket" }
+      ]
+    },
+    "explicit_resource_constraints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["constraint_id", "source", "measure", "limit"],
+        "properties": {
+          "constraint_id": { "$ref": "#/$defs/nonEmptyString" },
+          "source": { "$ref": "#/$defs/nonEmptyString" },
+          "measure": { "$ref": "#/$defs/nonEmptyString" },
+          "limit": {}
+        }
+      }
+    },
+    "reusable_results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["result_id", "scope", "evidence_path", "input_hash"],
+        "properties": {
+          "result_id": { "$ref": "#/$defs/nonEmptyString" },
+          "scope": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" } },
+          "evidence_path": { "$ref": "#/$defs/nonEmptyString" },
+          "input_hash": { "$ref": "#/$defs/hash" }
+        }
+      }
+    },
+    "next_action": { "type": ["string", "null"] },
+    "review": { "$ref": "#/$defs/reviewState" }
+  },
+  "$defs": {
+    "nonEmptyString": { "type": "string", "minLength": 1 },
+    "hash": { "type": "string", "pattern": "^sha256:[0-9a-fA-F]{64}$" },
+    "checkpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["checkpoint_id", "description", "reached"],
+      "properties": {
+        "checkpoint_id": { "$ref": "#/$defs/nonEmptyString" },
+        "description": { "$ref": "#/$defs/nonEmptyString" },
+        "reached": { "type": "boolean" }
+      }
+    },
+    "approval": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "review_id",
+            "trigger_instance_id",
+            "review_snapshot_hash",
+            "valid_until_checkpoint"
+          ],
+          "properties": {
+            "status": { "const": "approved" },
+            "review_id": { "$ref": "#/$defs/nonEmptyString" },
+            "trigger_instance_id": { "$ref": "#/$defs/nonEmptyString" },
+            "review_snapshot_hash": { "$ref": "#/$defs/hash" },
+            "valid_until_checkpoint": { "$ref": "#/$defs/nonEmptyString" }
+          }
+        }
+      ]
+    },
+    "workPacket": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "packet_id",
+        "condition_id",
+        "objective",
+        "value",
+        "allowed_scope",
+        "excluded_scope",
+        "expected_evidence",
+        "evidence_checkpoint",
+        "plan_hash",
+        "approval",
+        "started_at",
+        "last_evidence_at",
+        "checkpoint",
+        "failure_signatures"
+      ],
+      "properties": {
+        "packet_id": { "$ref": "#/$defs/nonEmptyString" },
+        "condition_id": { "$ref": "#/$defs/nonEmptyString" },
+        "objective": { "$ref": "#/$defs/nonEmptyString" },
+        "value": { "$ref": "#/$defs/nonEmptyString" },
+        "allowed_scope": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" }, "minItems": 1 },
+        "excluded_scope": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" } },
+        "expected_evidence": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" }, "minItems": 1 },
+        "evidence_checkpoint": { "$ref": "#/$defs/checkpoint" },
+        "plan_hash": { "$ref": "#/$defs/hash" },
+        "approval": { "$ref": "#/$defs/approval" },
+        "started_at": { "$ref": "#/$defs/nonEmptyString" },
+        "last_evidence_at": { "type": ["string", "null"] },
+        "checkpoint": { "type": ["string", "null"] },
+        "failure_signatures": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" }, "uniqueItems": true }
+      }
+    },
+    "reviewState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required",
+        "review_id",
+        "trigger_instance_id",
+        "fixed_review_generation",
+        "review_snapshot_hash",
+        "trigger",
+        "decision_path"
+      ],
+      "properties": {
+        "required": { "type": "boolean" },
+        "review_id": { "type": ["string", "null"] },
+        "trigger_instance_id": { "type": ["string", "null"] },
+        "fixed_review_generation": { "type": "integer", "minimum": 0 },
+        "review_snapshot_hash": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/hash" }
+          ]
+        },
+        "trigger": { "type": ["string", "null"] },
+        "decision_path": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

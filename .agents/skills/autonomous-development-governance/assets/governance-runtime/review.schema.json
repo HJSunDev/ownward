@@ -1,0 +1,214 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/autonomous-development-governance/review.schema.json",
+  "title": "Governor review result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "review_id",
+    "trigger_instance_id",
+    "review_snapshot_hash",
+    "decision",
+    "macro_assessment",
+    "highest_priority_gap",
+    "path_assessment",
+    "preserved_result_ids",
+    "invalidated_items",
+    "validated_evidence_ids",
+    "next_work_packet",
+    "external_input",
+    "reason"
+  ],
+  "properties": {
+    "review_id": { "$ref": "#/$defs/nonEmptyString" },
+    "trigger_instance_id": { "$ref": "#/$defs/nonEmptyString" },
+    "review_snapshot_hash": { "$ref": "#/$defs/hash" },
+    "decision": {
+      "enum": [
+        "continue",
+        "replan",
+        "stage_complete",
+        "task_complete",
+        "product_decision_required",
+        "external_input_required"
+      ]
+    },
+    "macro_assessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["overall_progress", "evidence_support", "completed", "unmet"],
+      "properties": {
+        "overall_progress": { "$ref": "#/$defs/nonEmptyString" },
+        "evidence_support": { "$ref": "#/$defs/nonEmptyString" },
+        "completed": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" } },
+        "unmet": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" } }
+      }
+    },
+    "highest_priority_gap": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/nonEmptyString" }
+      ]
+    },
+    "path_assessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["necessary", "efficient", "optimal", "problems", "better_plan"],
+      "properties": {
+        "necessary": { "type": "boolean" },
+        "efficient": { "type": "boolean" },
+        "optimal": { "type": "boolean" },
+        "problems": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" } },
+        "better_plan": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" } }
+      }
+    },
+    "preserved_result_ids": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" }, "uniqueItems": true },
+    "invalidated_items": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" } },
+    "validated_evidence_ids": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" }, "uniqueItems": true },
+    "next_work_packet": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/workPacket" }
+      ]
+    },
+    "external_input": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "fact", "exhausted_paths", "minimum_user_input"],
+          "properties": {
+            "kind": { "enum": ["product_decision", "permission", "credential", "external_state"] },
+            "fact": { "$ref": "#/$defs/nonEmptyString" },
+            "exhausted_paths": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" }, "minItems": 1 },
+            "minimum_user_input": { "$ref": "#/$defs/nonEmptyString" }
+          }
+        }
+      ]
+    },
+    "reason": { "$ref": "#/$defs/nonEmptyString" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "decision": { "enum": ["continue", "replan", "stage_complete"] } } },
+      "then": {
+        "properties": {
+          "highest_priority_gap": { "$ref": "#/$defs/nonEmptyString" },
+          "next_work_packet": { "$ref": "#/$defs/workPacket" },
+          "external_input": { "type": "null" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "decision": { "const": "continue" } } },
+      "then": {
+        "properties": {
+          "path_assessment": {
+            "properties": {
+              "necessary": { "const": true },
+              "efficient": { "const": true },
+              "optimal": { "const": true }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "decision": { "const": "replan" } } },
+      "then": {
+        "properties": {
+          "path_assessment": {
+            "properties": {
+              "optimal": { "const": false },
+              "problems": { "minItems": 1 },
+              "better_plan": { "minItems": 1 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "decision": { "const": "stage_complete" } } },
+      "then": {
+        "properties": {
+          "validated_evidence_ids": { "minItems": 1 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "decision": { "const": "task_complete" } } },
+      "then": {
+        "properties": {
+          "highest_priority_gap": { "type": "null" },
+          "next_work_packet": { "type": "null" },
+          "external_input": { "type": "null" },
+          "validated_evidence_ids": { "minItems": 1 },
+          "macro_assessment": {
+            "properties": {
+              "unmet": { "maxItems": 0 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "decision": { "const": "product_decision_required" } } },
+      "then": {
+        "properties": {
+          "highest_priority_gap": { "$ref": "#/$defs/nonEmptyString" },
+          "next_work_packet": { "type": "null" },
+          "external_input": {
+            "type": "object",
+            "required": ["kind", "fact", "exhausted_paths", "minimum_user_input"],
+            "properties": { "kind": { "const": "product_decision" } }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "decision": { "const": "external_input_required" } } },
+      "then": {
+        "properties": {
+          "highest_priority_gap": { "$ref": "#/$defs/nonEmptyString" },
+          "next_work_packet": { "type": "null" },
+          "external_input": {
+            "type": "object",
+            "required": ["kind", "fact", "exhausted_paths", "minimum_user_input"],
+            "properties": { "kind": { "enum": ["permission", "credential", "external_state"] } }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "nonEmptyString": { "type": "string", "minLength": 1 },
+    "hash": { "type": "string", "pattern": "^sha256:[0-9a-fA-F]{64}$" },
+    "workPacket": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "packet_id",
+        "condition_id",
+        "objective",
+        "value",
+        "allowed_scope",
+        "excluded_scope",
+        "expected_evidence",
+        "checkpoint_id",
+        "checkpoint_description"
+      ],
+      "properties": {
+        "packet_id": { "$ref": "#/$defs/nonEmptyString" },
+        "condition_id": { "$ref": "#/$defs/nonEmptyString" },
+        "objective": { "$ref": "#/$defs/nonEmptyString" },
+        "value": { "$ref": "#/$defs/nonEmptyString" },
+        "allowed_scope": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" }, "minItems": 1 },
+        "excluded_scope": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" } },
+        "expected_evidence": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" }, "minItems": 1 },
+        "checkpoint_id": { "$ref": "#/$defs/nonEmptyString" },
+        "checkpoint_description": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    }
+  }
+}
