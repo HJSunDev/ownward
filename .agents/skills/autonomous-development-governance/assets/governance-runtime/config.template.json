@@ -4,7 +4,11 @@
   "authority_paths": [],
   "completion_definition_paths": [],
   "evidence_roots": [],
+  "state_schema_path": ".codex/governance/state.schema.json",
+  "review_request_schema_path": ".codex/governance/review-request.schema.json",
+  "review_schema_path": ".codex/governance/review.schema.json",
   "governor_agent_name": "governor",
   "governed_tool_matcher": "Bash|apply_patch|Edit|Write",
+  "activation_prompt_patterns": [],
   "explicit_resource_constraints": []
 }

@@ -1,33 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://example.invalid/autonomous-development-governance/state.schema.json",
-  "title": "Autonomous development governance state",
+  "$id": "https://ownward.local/governance/state.schema.json",
+  "title": "Ownward autonomous development governance state",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "schema_version",
-    "run_id",
-    "status",
-    "authority_hash",
-    "completion_conditions",
-    "current_work_packet",
-    "pending_intervention",
-    "explicit_resource_constraints",
-    "reusable_results",
-    "next_action",
-    "review"
-  ],
+  "required": ["schema_version", "run_id", "status", "authority_hash", "completion_conditions", "current_work_packet", "pending_intervention", "explicit_resource_constraints", "reusable_results", "next_action", "review"],
   "properties": {
     "schema_version": { "const": 1 },
     "run_id": { "$ref": "#/$defs/nonEmptyString" },
-    "status": {
-      "enum": [
-        "running",
-        "product_decision_required",
-        "external_input_required",
-        "complete"
-      ]
-    },
+    "status": { "enum": ["running", "product_decision_required", "external_input_required", "complete"] },
     "authority_hash": { "$ref": "#/$defs/hash" },
     "completion_conditions": {
       "type": "array",
@@ -38,26 +19,12 @@
         "properties": {
           "condition_id": { "$ref": "#/$defs/nonEmptyString" },
           "status": { "enum": ["unmet", "in_progress", "met", "evidence_insufficient"] },
-          "evidence_ids": {
-            "type": "array",
-            "items": { "$ref": "#/$defs/nonEmptyString" },
-            "uniqueItems": true
-          }
+          "evidence_ids": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" }, "uniqueItems": true }
         }
       }
     },
-    "current_work_packet": {
-      "oneOf": [
-        { "type": "null" },
-        { "$ref": "#/$defs/workPacket" }
-      ]
-    },
-    "pending_intervention": {
-      "oneOf": [
-        { "type": "null" },
-        { "$ref": "#/$defs/pendingIntervention" }
-      ]
-    },
+    "current_work_packet": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/workPacket" }] },
+    "pending_intervention": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/pendingIntervention" }] },
     "explicit_resource_constraints": {
       "type": "array",
       "items": {
@@ -122,13 +89,7 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "status",
-            "review_id",
-            "trigger_instance_id",
-            "review_snapshot_hash",
-            "valid_until_checkpoint"
-          ],
+          "required": ["status", "review_id", "trigger_instance_id", "review_snapshot_hash", "valid_until_checkpoint"],
           "properties": {
             "status": { "const": "approved" },
             "review_id": { "$ref": "#/$defs/nonEmptyString" },
@@ -142,22 +103,7 @@
     "workPacket": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "packet_id",
-        "condition_id",
-        "objective",
-        "value",
-        "allowed_scope",
-        "excluded_scope",
-        "expected_evidence",
-        "evidence_checkpoint",
-        "plan_hash",
-        "approval",
-        "started_at",
-        "last_evidence_at",
-        "checkpoint",
-        "failure_signatures"
-      ],
+      "required": ["packet_id", "condition_id", "objective", "value", "allowed_scope", "excluded_scope", "expected_evidence", "evidence_checkpoint", "plan_hash", "approval", "started_at", "last_evidence_at", "checkpoint", "failure_signatures"],
       "properties": {
         "packet_id": { "$ref": "#/$defs/nonEmptyString" },
         "condition_id": { "$ref": "#/$defs/nonEmptyString" },
@@ -214,26 +160,13 @@
     "reviewState": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "required",
-        "review_id",
-        "trigger_instance_id",
-        "fixed_review_generation",
-        "review_snapshot_hash",
-        "trigger",
-        "decision_path"
-      ],
+      "required": ["required", "review_id", "trigger_instance_id", "fixed_review_generation", "review_snapshot_hash", "trigger", "decision_path"],
       "properties": {
         "required": { "type": "boolean" },
         "review_id": { "type": ["string", "null"] },
         "trigger_instance_id": { "type": ["string", "null"] },
         "fixed_review_generation": { "type": "integer", "minimum": 0 },
-        "review_snapshot_hash": {
-          "oneOf": [
-            { "type": "null" },
-            { "$ref": "#/$defs/hash" }
-          ]
-        },
+        "review_snapshot_hash": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/hash" }] },
         "trigger": { "type": ["string", "null"] },
         "decision_path": { "type": ["string", "null"] }
       }

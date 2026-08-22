@@ -1,0 +1,89 @@
+{
+  "description": "Ownward autonomous development governance hooks.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \".codex/governance/governance-hook.sh\" hook session-start",
+            "commandWindows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \".codex\\governance\\governance-hook.ps1\" hook session-start",
+            "timeout": 60,
+            "statusMessage": "Restoring autonomous governance state",
+            "additionalContextLimit": 1800
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \".codex/governance/governance-hook.sh\" hook user-prompt-submit",
+            "commandWindows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \".codex\\governance\\governance-hook.ps1\" hook user-prompt-submit",
+            "timeout": 60,
+            "statusMessage": "Activating autonomous governance",
+            "additionalContextLimit": 1800
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "manual|auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \".codex/governance/governance-hook.sh\" hook pre-compact",
+            "commandWindows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \".codex\\governance\\governance-hook.ps1\" hook pre-compact",
+            "timeout": 30,
+            "statusMessage": "Persisting autonomous governance checkpoint"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|apply_patch|Edit|Write|mcp__ownward__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \".codex/governance/governance-hook.sh\" hook pre-tool-use",
+            "commandWindows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \".codex\\governance\\governance-hook.ps1\" hook pre-tool-use",
+            "timeout": 30,
+            "statusMessage": "Checking governed work packet"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|apply_patch|Edit|Write|mcp__ownward__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \".codex/governance/governance-hook.sh\" hook post-tool-use",
+            "commandWindows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \".codex\\governance\\governance-hook.ps1\" hook post-tool-use",
+            "timeout": 30,
+            "statusMessage": "Recording governed result"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \".codex/governance/governance-hook.sh\" hook stop",
+            "commandWindows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \".codex\\governance\\governance-hook.ps1\" hook stop",
+            "timeout": 30,
+            "statusMessage": "Checking autonomous completion evidence"
+          }
+        ]
+      }
+    ]
+  }
+}

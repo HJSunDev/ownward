@@ -14,6 +14,18 @@
         ]
       }
     ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{governance_hook_command}} hook user-prompt-submit",
+            "commandWindows": "{{governance_hook_command_windows}} hook user-prompt-submit",
+            "statusMessage": "Activating mainline governance"
+          }
+        ]
+      }
+    ],
     "PreCompact": [
       {
         "matcher": "manual|auto",

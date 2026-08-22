@@ -3,6 +3,8 @@
 /coverage.out
 /.ownward/
 /.tmp/
+/.codex/governance/bin/
+/.codex/governance/runtime/
 *.test
 *.prof
 __pycache__/
