@@ -73,24 +73,10 @@
   },
   "execution": {
     "modes": ["targeted", "core", "frontier", "qualification", "full", "longmemeval", "summarize", "self-check"],
-    "prerequisites": {
-      "frontier": ["targeted"],
-      "qualification": ["core", "frontier"],
-      "full": ["core", "qualification"],
-      "longmemeval": ["core", "full"],
-      "summarize": ["core", "full", "longmemeval"]
-    },
-    "binding_fields": ["schema", "suite_version", "candidate", "binary_sha256", "scopes"],
+    "relationship_authority": "relationships.py",
+    "binding_fields": ["schema", "suite_version", "candidate", "scopes"],
     "binding_scopes": ["frontier", "core", "product", "community"],
     "artifact_manifest_required": true,
-    "invalidation": {
-      "targeted": ["targeted", "frontier", "qualification", "full", "longmemeval", "summarize"],
-      "core": ["core", "qualification", "full", "longmemeval", "summarize"],
-      "frontier": ["frontier", "qualification", "full", "longmemeval", "summarize"],
-      "qualification": ["qualification", "full", "longmemeval", "summarize"],
-      "full": ["full", "longmemeval", "summarize"],
-      "longmemeval": ["longmemeval", "summarize"]
-    },
     "stop_on": ["budget_exceeded", "binding_changed", "prerequisite_failed", "incomplete_evidence"],
     "self_check": {
       "may_use_formal_samples": false,

@@ -10,16 +10,18 @@ import subprocess
 import sys
 from typing import Any
 
+import relationships
+
 
 class BindingError(ValueError):
     pass
 
 
-TARGET_STAGES = {
-    "identity", "relations", "merge_split", "incremental_consistency", "organization", "indexing",
-    "lexical", "vector", "graph", "context", "fusion",
-}
-
+TARGET_STAGES = set(relationships.TARGET_STAGES)
+SCOPE_NAMES = set(relationships.SCOPE_CONFIG)
+MODE_SCOPES = relationships.MODE_SCOPES
+ACTIVE_CODEX_MODEL = "gpt-5.4-mini"
+ACTIVE_CODEX_REASONING_EFFORT = "xhigh"
 OFFICIAL_LONGMEM_ARGUMENTS = {
     "--model": "Qwen/Qwen3.5-9B",
     "--temperature": "0.6",
@@ -31,17 +33,6 @@ OFFICIAL_LONGMEM_ARGUMENTS = {
     "--evaluator-model": "gpt-5.2",
     "--evaluator-reasoning-effort": "medium",
     "--evaluator-max-completion-tokens": "4096",
-}
-ACTIVE_CODEX_MODEL = "gpt-5.4-mini"
-ACTIVE_CODEX_REASONING_EFFORT = "xhigh"
-SCOPE_NAMES = {"frontier", "core", "product", "community"}
-MODE_SCOPES = {
-    "targeted": "frontier",
-    "frontier": "frontier",
-    "core": "core",
-    "qualification": "product",
-    "full": "product",
-    "longmemeval": "community",
 }
 
 
@@ -59,64 +50,50 @@ def load_json(path: Path) -> dict[str, Any]:
     return value
 
 
-def create(
-    suite_root: Path,
-    config_path: Path,
-    output_dir: Path,
-) -> dict[str, Any]:
-    config_path = config_path.resolve()
-    config = load_json(config_path)
+def create(suite_root: Path, config_path: Path, output_dir: Path) -> dict[str, Any]:
+    config = load_json(config_path.resolve())
     validate_config(config)
-    product = _mapping(config, "product")
-    frontier = _mapping(config, "frontier")
-    repository = Path(config["repository"])
-    binary = Path(product["binary"])
-    embedding_bundle_dir = Path(product["embedding_bundle_dir"])
-    package = Path(product["package"])
-    production_report = Path(product["production_storage_report"])
-    codex_binary = Path(product["codex_binary"])
-    frontier_binary = Path(frontier["tool"])
-    repository = repository.resolve()
-    binary = binary.resolve()
-    embedding_bundle_dir = embedding_bundle_dir.resolve()
-    package = package.resolve()
-    production_report = production_report.resolve()
-    codex_binary = codex_binary.resolve()
-    frontier_binary = frontier_binary.resolve()
+    scopes_to_bind = relationships.enabled_scopes(config)
+    repository = Path(config["repository"]).resolve()
+    workspace = Path(config["workspace"]).resolve()
     output_dir = output_dir.resolve()
     _require(Path(config["binding_dir"]).resolve() == output_dir, "输出目录必须与执行配置 binding_dir 一致")
-    workspace = Path(config["workspace"]).resolve()
-    _require(workspace.drive.lower() != Path.home().drive.lower(), "验收工作区不得位于系统盘")
-    community = config.get("community")
-    if community is not None:
-        _require(isinstance(community, dict), "执行配置 community 必须是对象")
-        _require(Path(community["binary"]).resolve() == binary and Path(community["embedding_bundle_dir"]).resolve() == embedding_bundle_dir, "专项集与社区基准必须使用同一候选与向量能力包")
-        _require(Path(community["codex_binary"]).resolve() == codex_binary, "专项集与社区基准必须使用同一外部智能体程序")
-        for domain in ("web", "enterprise"):
-            run_output = Path(_argument_value(list(community[f"{domain}_arguments"]), "--output-dir")).resolve()
-            _require(run_output.is_relative_to(workspace) and run_output != workspace, f"{domain} 输出必须位于验收工作区内")
-        submission_root = Path(community["submission_root"]).resolve()
-        _require(submission_root.is_relative_to(workspace) and submission_root != workspace, "LongMemEval-V2 submission 必须位于验收工作区内")
-    _require(output_dir.drive and output_dir.drive.lower() != Path.home().drive.lower(), "绑定清单不得写入系统盘")
-    for path, label in ((binary, "候选二进制"), (codex_binary, "Codex"), (frontier_binary, "内核观察器")):
-        _require(path.is_file(), f"{label}不存在: {path}")
-    _require(embedding_bundle_dir.is_dir(), "本地向量能力包不存在")
-    _require(embedding_bundle_dir == (binary.parent / "embedding").resolve(), "绑定的向量能力包必须是候选二进制相邻的正式产品制品")
-    _require(package.is_dir() and (package / "manifest.json").is_file(), "候选发布包或清单不存在")
-    _require(production_report.is_file(), "生产规模存储证据不存在")
+    _require_isolated_path(workspace, "验收工作区")
+    _require_isolated_path(output_dir, "绑定清单")
     candidate = _git(repository, "rev-parse", "HEAD")
     _require(not _git(repository, "status", "--porcelain"), "候选仓库不是干净、冻结的提交")
-    version = subprocess.run([str(binary), "version"], cwd=repository, capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
-    _require(version.returncode == 0 and version.stdout.strip() == candidate, "候选二进制没有绑定候选提交")
-    _verify_go_binary(binary, candidate)
-    _verify_go_binary(frontier_binary, candidate)
-
+    if "frontier" in scopes_to_bind:
+        observer = Path(_mapping(config, "frontier")["tool"]).resolve()
+        _require(observer.is_file(), f"内核观察器不存在: {observer}")
+        _verify_go_binary(observer, candidate)
+    if set(scopes_to_bind) & {"core", "product", "community"}:
+        binary, embedding = _candidate_paths(config)
+        _require(binary.is_file(), f"候选二进制不存在: {binary}")
+        _require(embedding.is_dir(), "本地向量能力包不存在")
+        _require(embedding == (binary.parent / "embedding").resolve(), "向量能力包必须是候选二进制相邻的正式产品制品")
+        version = subprocess.run([str(binary), "version"], cwd=repository, capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
+        _require(version.returncode == 0 and version.stdout.strip() == candidate, "候选二进制没有绑定候选提交")
+        _verify_go_binary(binary, candidate)
+    if "product" in scopes_to_bind:
+        product = _mapping(config, "product")
+        package = Path(product["package"]).resolve()
+        production = Path(product["production_storage_report"]).resolve()
+        codex = Path(product["codex_binary"]).resolve()
+        auth = Path(product["codex_auth_file"]).resolve()
+        _require(package.is_dir() and (package / "manifest.json").is_file(), "候选发布包或清单不存在")
+        _require(production.is_file(), "生产规模存储证据不存在")
+        _require(codex.is_file(), "Codex 不存在")
+        _require(auth.is_file(), "Codex 认证文件不存在")
+    if "community" in scopes_to_bind:
+        _validate_community_workspace(config, workspace)
+        community = _mapping(config, "community")
+        _require(Path(community["codex_binary"]).resolve().is_file(), "社区验收 Codex 不存在")
+        _require(Path(community["codex_auth_file"]).resolve().is_file(), "社区验收 Codex 认证文件不存在")
     output_dir.mkdir(parents=True, exist_ok=True)
     scopes: dict[str, dict[str, str]] = {}
-    enabled_scopes = ["frontier", "core", "product"] + (["community"] if community is not None else [])
-    for scope in enabled_scopes:
+    for scope in scopes_to_bind:
         manifests = {
-            "environment": _environment_manifest(embedding_bundle_dir, codex_binary, frontier_binary, scope),
+            "environment": _environment_manifest(config, scope),
             "inputs": _input_manifest(suite_root, config, scope),
             "tools": _tool_manifest(suite_root, scope),
         }
@@ -127,196 +104,116 @@ def create(
             "environment_sha256": sha256(paths["environment"]),
             "input_manifest_sha256": sha256(paths["inputs"]),
             "tool_sha256": sha256(paths["tools"]),
+            "artifact_sha256": _artifact_sha256(config, scope),
         }
-    binding = {
-        "schema": "ownward.acceptance-binding/v3",
-        "suite_version": "1.0.0",
-        "candidate": candidate,
-        "binary_sha256": sha256(binary),
-        "scopes": scopes,
-    }
-    validate_binding(binding)
-    _write_json(output_dir / "binding.json", binding)
-    return binding
+    result = {"schema": "ownward.acceptance-binding/v4", "suite_version": "1.0.0", "candidate": candidate, "scopes": scopes}
+    validate_binding(result)
+    _write_json(output_dir / "binding.json", result)
+    return result
 
 
 def validate_config(config: dict[str, Any]) -> None:
-    _require(config.get("schema") == "ownward.acceptance-execution/v2", "执行配置 schema 无效")
+    _require(config.get("schema") == "ownward.acceptance-execution/v3", "执行配置 schema 无效")
     for name in ("repository", "workspace", "binding_dir"):
         _require(isinstance(config.get(name), str) and config[name].strip(), f"执行配置缺少 {name}")
-    frontier = _mapping(config, "frontier")
-    _require(isinstance(frontier.get("tool"), str) and frontier["tool"].strip(), "执行配置缺少 frontier.tool")
-    stages = frontier.get("targeted_stages")
-    _require(isinstance(stages, list) and all(isinstance(item, str) for item in stages), "frontier.targeted_stages 必须是字符串数组")
-    _require(len(stages) == len(set(stages)) and set(stages) <= TARGET_STAGES, "frontier.targeted_stages 包含重复或未知阶段")
-    product = _mapping(config, "product")
-    for name in (
-        "binary", "embedding_bundle_dir", "package", "production_storage_report", "codex_binary", "codex_auth_file",
-        "codex_model", "codex_reasoning_effort",
-    ):
-        _require(isinstance(product.get(name), str) and product[name].strip(), f"执行配置缺少 product.{name}")
-    _require(product["codex_model"] == ACTIVE_CODEX_MODEL, "专项集必须使用固定外部智能体模型")
-    _require(product["codex_reasoning_effort"] == ACTIVE_CODEX_REASONING_EFFORT, "专项集必须使用固定外部智能体推理强度")
-    community = config.get("community")
-    if community is None:
-        return
-    _require(isinstance(community, dict), "执行配置 community 必须是对象")
-    for name in (
-        "official_repo", "binary", "embedding_bundle_dir", "codex_binary", "codex_auth_file", "submission_root", "submission_name",
-    ):
-        _require(isinstance(community.get(name), str) and community[name].strip(), f"执行配置缺少 community.{name}")
-    for domain in ("web", "enterprise"):
-        arguments = community.get(f"{domain}_arguments")
-        _require(isinstance(arguments, list) and all(isinstance(item, str) for item in arguments), f"{domain} 参数必须是字符串数组")
-        _require(len(arguments) % 2 == 0, f"{domain} 参数必须由名称和值组成")
-        for required in (
-            "--domain", "--questions-path", "--haystack-path", "--trajectories-path", "--memory-config-path", "--output-dir",
-            "--base-url", "--evaluator-api-key-env", "--prompt-build-max-workers",
-        ):
-            _argument_value(arguments, required)
-        _require(_argument_value(arguments, "--domain") == domain, f"{domain} 参数选择了另一领域")
-        for name, expected in OFFICIAL_LONGMEM_ARGUMENTS.items():
-            _require(_argument_value(arguments, name) == expected, f"{domain} 参数 {name} 偏离固定官方口径")
-        _require(bool(_argument_value(arguments, "--base-url").strip()), f"{domain} 缺少固定 Reader 服务地址")
-        _require(bool(_argument_value(arguments, "--evaluator-api-key-env").strip()), f"{domain} 缺少官方裁判凭证变量名")
-        try:
-            workers = int(_argument_value(arguments, "--prompt-build-max-workers"))
-        except ValueError as error:
-            raise BindingError(f"{domain} 并发数无效") from error
-        _require(workers > 0, f"{domain} 并发数必须为正数")
+    enabled = relationships.enabled_scopes(config)
+    if "frontier" in enabled:
+        frontier = _mapping(config, "frontier")
+        _require(isinstance(frontier.get("tool"), str) and frontier["tool"].strip(), "执行配置缺少 frontier.tool")
+        stages = frontier.get("targeted_stages", [])
+        _require(isinstance(stages, list) and all(isinstance(item, str) for item in stages), "frontier.targeted_stages 必须是字符串数组")
+        _require(len(stages) == len(set(stages)) and set(stages) <= TARGET_STAGES, "frontier.targeted_stages 包含重复或未知阶段")
+    if set(enabled) & {"core", "product", "community"}:
+        candidate = _mapping(config, "candidate")
+        for name in ("binary", "embedding_bundle_dir"):
+            _require(isinstance(candidate.get(name), str) and candidate[name].strip(), f"执行配置缺少 candidate.{name}")
+    if "product" in enabled:
+        product = _mapping(config, "product")
+        for name in ("package", "production_storage_report", "codex_binary", "codex_auth_file", "codex_model", "codex_reasoning_effort"):
+            _require(isinstance(product.get(name), str) and product[name].strip(), f"执行配置缺少 product.{name}")
+        _require(product["codex_model"] == ACTIVE_CODEX_MODEL, "专项集必须使用固定外部智能体模型")
+        _require(product["codex_reasoning_effort"] == ACTIVE_CODEX_REASONING_EFFORT, "专项集必须使用固定外部智能体推理强度")
+    if "community" in enabled:
+        _validate_community_config(_mapping(config, "community"))
 
 
 def validate_binding(value: dict[str, Any]) -> None:
     _require(isinstance(value, dict), "候选绑定必须是对象")
-    _require(
-        set(value) == {"schema", "suite_version", "candidate", "binary_sha256", "scopes"},
-        "候选绑定顶层字段无效",
-    )
-    _require(value.get("schema") == "ownward.acceptance-binding/v3", "候选绑定 schema 无效")
+    _require(set(value) == {"schema", "suite_version", "candidate", "scopes"}, "候选绑定顶层字段无效")
+    _require(value.get("schema") == "ownward.acceptance-binding/v4", "候选绑定 schema 无效")
     _require(value.get("suite_version") == "1.0.0", "候选绑定体系版本无效")
     candidate = value.get("candidate")
-    _require(
-        isinstance(candidate, str)
-        and len(candidate) == 40
-        and all(character in "0123456789abcdef" for character in candidate),
-        "候选提交身份无效",
-    )
-    _require(_is_sha256(value.get("binary_sha256")), "候选二进制摘要无效")
+    _require(isinstance(candidate, str) and len(candidate) == 40 and all(ch in "0123456789abcdef" for ch in candidate), "候选提交身份无效")
     scopes = value.get("scopes")
-    _require(isinstance(scopes, dict), "候选绑定缺少分层范围")
-    _require({"frontier", "core", "product"}.issubset(scopes) and set(scopes) <= SCOPE_NAMES, "候选绑定范围无效")
+    _require(isinstance(scopes, dict) and scopes and set(scopes) <= SCOPE_NAMES, "候选绑定范围无效")
     for name, scope in scopes.items():
         _require(isinstance(scope, dict), f"{name} 绑定范围无效")
-        _require(set(scope) == {"environment_sha256", "input_manifest_sha256", "tool_sha256"}, f"{name} 绑定字段无效")
-        _require(all(_is_sha256(value) for value in scope.values()), f"{name} 绑定摘要无效")
+        _require(set(scope) == {"environment_sha256", "input_manifest_sha256", "tool_sha256", "artifact_sha256"}, f"{name} 绑定字段无效")
+        _require(all(_is_sha256(item) for item in scope.values()), f"{name} 绑定摘要无效")
+    binary_scopes = set(scopes) & {"core", "product", "community"}
+    _require(len({scopes[name]["artifact_sha256"] for name in binary_scopes}) <= 1, "固定内核、专项与社区没有绑定同一候选二进制")
 
 
 def scope_for_mode(mode: str) -> str:
-    scope = MODE_SCOPES.get(mode)
-    _require(scope is not None, f"模式 {mode} 没有独立绑定范围")
-    return scope
+    try:
+        return relationships.scope_for_mode(mode)
+    except relationships.RelationshipError as error:
+        raise BindingError(str(error)) from error
 
 
 def for_scope(value: dict[str, Any], scope: str) -> dict[str, str]:
     validate_binding(value)
-    scopes = value["scopes"]
-    _require(scope in scopes, f"候选尚未绑定 {scope} 验收材料")
-    return {
-        "suite_version": value["suite_version"],
-        "candidate": value["candidate"],
-        "binary_sha256": value["binary_sha256"],
-        **scopes[scope],
-    }
+    _require(scope in value["scopes"], f"候选尚未绑定 {scope} 验收材料")
+    active = value["scopes"][scope]
+    result = {"suite_version": value["suite_version"], "candidate": value["candidate"], "environment_sha256": active["environment_sha256"], "input_manifest_sha256": active["input_manifest_sha256"], "tool_sha256": active["tool_sha256"]}
+    if scope == "frontier":
+        result["observer_sha256"] = active["artifact_sha256"]
+    else:
+        result["binary_sha256"] = active["artifact_sha256"]
+    return result
 
 
 def for_mode(value: dict[str, Any], mode: str) -> dict[str, str]:
-    if mode == "summarize":
-        return aggregate(value)
-    return for_scope(value, scope_for_mode(mode))
+    return aggregate(value) if mode == "summarize" else for_scope(value, scope_for_mode(mode))
 
 
 def aggregate(value: dict[str, Any]) -> dict[str, str]:
     validate_binding(value)
     selected = {name: for_scope(value, name) for name in ("core", "product", "community")}
-    return {
-        "suite_version": value["suite_version"],
-        "candidate": value["candidate"],
-        "binary_sha256": value["binary_sha256"],
-        "environment_sha256": _canonical_sha256({name: item["environment_sha256"] for name, item in selected.items()}),
-        "input_manifest_sha256": _canonical_sha256({name: item["input_manifest_sha256"] for name, item in selected.items()}),
-        "tool_sha256": _canonical_sha256({name: item["tool_sha256"] for name, item in selected.items()}),
-    }
+    binaries = {item["binary_sha256"] for item in selected.values()}
+    _require(len(binaries) == 1, "正式三层没有绑定同一候选二进制")
+    return {"suite_version": value["suite_version"], "candidate": value["candidate"], "binary_sha256": binaries.pop(), "environment_sha256": _canonical_sha256({name: item["environment_sha256"] for name, item in selected.items()}), "input_manifest_sha256": _canonical_sha256({name: item["input_manifest_sha256"] for name, item in selected.items()}), "tool_sha256": _canonical_sha256({name: item["tool_sha256"] for name, item in selected.items()})}
 
 
-def verify_current(
-    suite_root: Path,
-    binding_dir: Path,
-    config: dict[str, Any],
-    expected: dict[str, Any],
-    mode: str,
-) -> None:
+def verify_current(suite_root: Path, binding_dir: Path, config: dict[str, Any], expected: dict[str, Any], mode: str) -> None:
+    validate_config(config)
     validate_binding(expected)
     scope = scope_for_mode(mode)
+    _require(scope in relationships.enabled_scopes(config), f"当前配置未启用 {scope}")
     active = for_scope(expected, scope)
     binding_dir = binding_dir.resolve()
-    manifests = {name: binding_dir / f"{scope}-{name}.json" for name in ("environment", "inputs", "tools")}
     binding_path = binding_dir / "binding.json"
     _require(binding_path.is_file() and load_json(binding_path) == expected, "绑定文件与状态不一致")
+    manifests = {name: binding_dir / f"{scope}-{name}.json" for name in ("environment", "inputs", "tools")}
+    current = {"environment": _environment_manifest(config, scope), "inputs": _input_manifest(suite_root, config, scope), "tools": _tool_manifest(suite_root, scope)}
     for name, field in (("environment", "environment_sha256"), ("inputs", "input_manifest_sha256"), ("tools", "tool_sha256")):
         _require(manifests[name].is_file() and sha256(manifests[name]) == active[field], f"{scope} {name} 清单发生变化")
-    _require(load_json(manifests["inputs"]) == _input_manifest(suite_root, config, scope), f"{scope} 验收输入或执行口径已经变化")
-    _require(load_json(manifests["tools"]) == _tool_manifest(suite_root, scope), f"{scope} 验收工具源码已经变化")
-    product = _mapping(config, "product")
-    frontier = _mapping(config, "frontier")
-    current_environment = _environment_manifest(
-        Path(product["embedding_bundle_dir"]).resolve(),
-        Path(product["codex_binary"]).resolve(),
-        Path(frontier["tool"]).resolve(),
-        scope,
-    )
-    _require(load_json(manifests["environment"]) == current_environment, f"{scope} 验收环境或执行文件已经变化")
-    _require(sha256(Path(product["binary"]).resolve()) == active["binary_sha256"], "候选二进制已经变化")
+        _require(load_json(manifests[name]) == current[name], f"{scope} {name} 直接事实已经变化")
+    expected_artifact = active["observer_sha256"] if scope == "frontier" else active["binary_sha256"]
+    _require(_artifact_sha256(config, scope) == expected_artifact, f"{scope} 候选执行制品已经变化")
 
 
 def _input_manifest(suite_root: Path, config: dict[str, Any], scope: str) -> dict[str, Any]:
     _require(scope in SCOPE_NAMES, f"未知绑定范围: {scope}")
-    materials = load_json(suite_root / "materials" / "manifest.json")
-    paths = [
-        suite_root / "contract.json",
-        suite_root / "adapters.json",
-    ]
-    selected_materials = {
-        "frontier": ("/core/", "/frontier/"),
-        "core": ("/core/",),
-        "product": ("/product/",),
-        "community": (),
-    }[scope]
-    paths.extend(
-        _resolve_material(suite_root, item["path"])
-        for item in materials["files"]
-        if any(marker in str(item["path"]).replace("\\", "/") for marker in selected_materials)
-    )
-    if scope == "product":
-        paths.append(suite_root / "adapters" / "product_resource" / "thresholds.json")
-    result: dict[str, Any] = {
-        "schema": "ownward.acceptance-input-manifest/v2",
-        "scope": scope,
-        "files": _files(suite_root.parents[2], paths),
-    }
+    paths = [_resolve_repository_input(suite_root, value) for value in relationships.SCOPE_MATERIALS[scope]]
+    result: dict[str, Any] = {"schema": "ownward.acceptance-input-manifest/v3", "scope": scope, "files": _files(suite_root.parents[2], paths), "contract": _contract_projection(suite_root, scope), "adapter": _adapter_projection(suite_root, scope)}
     if scope == "product":
         product = _mapping(config, "product")
         package = Path(product["package"]).resolve()
         production = Path(product["production_storage_report"]).resolve()
-        result["external_files"] = [{
-            "id": "production_storage_report",
-            "name": production.name,
-            "sha256": sha256(production),
-        }]
+        result["external_files"] = [{"id": "production_storage_report", "name": production.name, "sha256": sha256(production)}]
         result["external_trees"] = {"product_package": _directory_files(package)}
-        result["protocol"] = {
-            "codex_model": product["codex_model"],
-            "codex_reasoning_effort": product["codex_reasoning_effort"],
-        }
+        result["protocol"] = {"codex_model": product["codex_model"], "codex_reasoning_effort": product["codex_reasoning_effort"]}
     elif scope == "community":
         community = _mapping(config, "community")
         external: list[dict[str, str]] = []
@@ -324,103 +221,123 @@ def _input_manifest(suite_root: Path, config: dict[str, Any], scope: str) -> dic
         for domain in ("web", "enterprise"):
             arguments = list(community[f"{domain}_arguments"])
             normalized: list[Any] = []
-            index = 0
-            while index < len(arguments):
-                name = arguments[index]
-                _require(index + 1 < len(arguments), f"{domain} 参数不完整: {name}")
-                value = arguments[index + 1]
+            for index in range(0, len(arguments), 2):
+                name, value = arguments[index:index + 2]
                 if name in {"--questions-path", "--haystack-path", "--trajectories-path", "--memory-config-path"}:
                     path = Path(value).resolve()
-                    external.append({"id": f"{domain}.{name[2:-5]}", "name": path.name, "sha256": sha256(path)})
-                    normalized.extend([name, {"path": path.name, "sha256": sha256(path)}])
+                    digest = sha256(path)
+                    external.append({"id": f"{domain}.{name[2:-5]}", "name": path.name, "sha256": digest})
+                    normalized.extend([name, {"path": path.name, "sha256": digest}])
                 elif name != "--output-dir":
                     normalized.extend([name, value])
-                index += 2
             protocol["domains"][domain] = normalized
         result["external_files"] = sorted(external, key=lambda item: item["id"])
         result["protocol"] = protocol
     return result
 
 
+def _contract_projection(suite_root: Path, scope: str) -> dict[str, Any]:
+    contract = load_json(suite_root / "contract.json")
+    if scope == "frontier":
+        return {"suite_version": contract["suite_version"], "optimization_loop": contract["optimization_loop"], "report": contract["reports"]["frontier"]}
+    layer = {"core": "core", "product": "product", "community": "community"}[scope]
+    return {"suite_version": contract["suite_version"], "layer": contract["evidence_layers"][layer], "report": contract["reports"][layer]}
+
+
+def _adapter_projection(suite_root: Path, scope: str) -> dict[str, Any]:
+    adapters = load_json(suite_root / "adapters.json")
+    if scope == "frontier":
+        return {"suite_version": adapters["suite_version"], "definition": adapters["optimization_loop"]}
+    layer = {"core": "core", "product": "product", "community": "community"}[scope]
+    return {"suite_version": adapters["suite_version"], "definition": adapters["layers"][layer], "product_interface": adapters["product_interface"]}
+
+
 def _tool_manifest(suite_root: Path, scope: str) -> dict[str, Any]:
     _require(scope in SCOPE_NAMES, f"未知绑定范围: {scope}")
     repository = suite_root.parents[2]
-    shared = [
-        suite_root / name for name in (
-            "run.py", "binding.py", "execution.py", "lifecycle.py", "evidence.py",
-            "contract.py", "materials.py", "process_control.py",
-        )
-    ]
+    shared = [suite_root / name for name in ("run.py", "relationships.py", "binding.py", "execution.py", "execution_support.py", "lifecycle.py", "evidence.py", "contract.py", "materials.py", "process_control.py")]
     scoped = {
-        "frontier": [suite_root / "frontier.py", repository / "cmd" / "ownward-frontier" / "main.go"],
-        "core": [suite_root / "adapters" / "core" / "verify.py"],
-        "product": [
-            suite_root / "product.py",
-            *sorted(path for path in (suite_root / "adapters" / "product").glob("*.py") if not path.name.startswith("test_")),
-            *sorted(path for path in (suite_root / "adapters" / "product_resource").glob("*.py") if not path.name.startswith("test_")),
-            repository / "benchmarks" / "support" / "ownward_mcp.py",
-        ],
-        "community": [
-            suite_root / "community.py",
-            repository / "benchmarks" / "longmemeval_v2" / "run.py",
-            repository / "benchmarks" / "longmemeval_v2" / "ownward_memory.py",
-            repository / "benchmarks" / "longmemeval_v2" / "ownward_trajectory.py",
-            repository / "benchmarks" / "longmemeval_v2" / "memory_config.active.json",
-            repository / "benchmarks" / "longmemeval_v2" / "memory_config.direct.json",
-            repository / "benchmarks" / "longmemeval_v2" / "SYSTEM_DESCRIPTION.md",
-            repository / "benchmarks" / "support" / "ownward_mcp.py",
-        ],
+        "frontier": [suite_root / "execution_frontier.py", suite_root / "frontier.py", repository / "cmd" / "ownward-frontier" / "main.go"],
+        "core": [suite_root / "execution_core.py", suite_root / "adapters" / "core" / "verify.py", repository / "benchmarks" / "support" / "ownward_mcp.py"],
+        "product": [suite_root / "execution_core.py", suite_root / "execution_product.py", suite_root / "product.py", *sorted(path for path in (suite_root / "adapters" / "product").glob("*.py") if not path.name.startswith("test_")), *sorted(path for path in (suite_root / "adapters" / "product_resource").glob("*.py") if not path.name.startswith("test_")), repository / "benchmarks" / "support" / "ownward_mcp.py"],
+        "community": [suite_root / "execution_community.py", suite_root / "community.py", repository / "benchmarks" / "longmemeval_v2" / "run.py", repository / "benchmarks" / "longmemeval_v2" / "ownward_memory.py", repository / "benchmarks" / "longmemeval_v2" / "ownward_trajectory.py", repository / "benchmarks" / "longmemeval_v2" / "memory_config.active.json", repository / "benchmarks" / "longmemeval_v2" / "memory_config.direct.json", repository / "benchmarks" / "longmemeval_v2" / "SYSTEM_DESCRIPTION.md", repository / "benchmarks" / "support" / "ownward_mcp.py"],
     }[scope]
-    return {"schema": "ownward.acceptance-tool-manifest/v2", "scope": scope, "files": _files(repository, shared + scoped)}
+    return {"schema": "ownward.acceptance-tool-manifest/v3", "scope": scope, "files": _files(repository, shared + scoped)}
 
 
-def _environment_manifest(embedding_bundle_dir: Path, codex_binary: Path, frontier_binary: Path, scope: str) -> dict[str, Any]:
+def _environment_manifest(config: dict[str, Any], scope: str) -> dict[str, Any]:
     _require(scope in SCOPE_NAMES, f"未知绑定范围: {scope}")
-    runtime_manifest = embedding_bundle_dir / "manifest.json"
+    result: dict[str, Any] = {"schema": "ownward.acceptance-environment/v3", "scope": scope, "platform": {"system": platform.system(), "release": platform.release(), "machine": platform.machine(), "processor": _processor_name(), "cpu_count": os.cpu_count(), "physical_memory_bytes": _physical_memory_bytes()}}
+    if scope != "frontier" or Path(_mapping(config, "frontier")["tool"]).suffix.lower() == ".py":
+        result["python"] = {"version": platform.python_version(), "executable_sha256": sha256(Path(sys.executable).resolve())}
+    if relationships.SCOPE_CONFIG[scope]["embedding"]:
+        _, bundle = _candidate_paths(config)
+        result["embedding"] = _embedding_identity(bundle)
+    if relationships.SCOPE_CONFIG[scope]["codex"]:
+        section = _mapping(config, "product" if scope == "product" else "community")
+        codex = Path(section["codex_binary"]).resolve()
+        completed = subprocess.run([*_executable_command(codex), "--version"], capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
+        _require(completed.returncode == 0 and completed.stdout.strip(), "无法读取外部智能体版本")
+        result["codex"] = {"version": completed.stdout.strip(), "entry_sha256": sha256(codex)}
+    return result
+
+
+def _embedding_identity(bundle: Path) -> dict[str, Any]:
+    runtime_manifest = bundle / "manifest.json"
     _require(runtime_manifest.is_file(), "本地向量能力包清单不存在")
     manifest = load_json(runtime_manifest)
     _require(manifest.get("schema") == "ownward.embedding-bundle/v3", "本地向量能力包 schema 无效")
-    model = manifest.get("model")
-    runtime = manifest.get("runtime")
-    _require(isinstance(model, dict) and isinstance(runtime, dict), "本地向量运行时清单不完整")
-    declared = {str(model.get("path", "")): str(model.get("sha256", ""))}
-    runtime_files = runtime.get("files")
-    _require(isinstance(runtime_files, dict), "本地向量运行时文件清单无效")
-    declared.update({str(path): str(digest) for path, digest in runtime_files.items()})
-    verified_files: list[dict[str, str]] = []
+    model, runtime = manifest.get("model"), manifest.get("runtime")
+    _require(isinstance(model, dict) and isinstance(runtime, dict) and isinstance(runtime.get("files"), dict), "本地向量运行时清单不完整")
+    declared = {str(model.get("path", "")): str(model.get("sha256", "")), **{str(path): str(digest) for path, digest in runtime["files"].items()}}
+    files: list[dict[str, str]] = []
     for relative, expected in sorted(declared.items()):
         path = Path(relative)
-        _require(relative and not path.is_absolute() and ".." not in path.parts and len(expected) == 64, "本地向量运行时文件声明无效")
-        artifact = (embedding_bundle_dir / path).resolve()
-        _require(artifact.is_relative_to(embedding_bundle_dir) and artifact.is_file(), f"本地向量能力制品不存在: {relative}")
+        _require(relative and not path.is_absolute() and ".." not in path.parts and _is_sha256(expected), "本地向量运行时文件声明无效")
+        artifact = (bundle / path).resolve()
+        _require(artifact.is_relative_to(bundle) and artifact.is_file(), f"本地向量能力制品不存在: {relative}")
         actual = sha256(artifact)
         _require(actual == expected, f"本地向量运行时制品摘要不一致: {relative}")
-        verified_files.append({"path": path.as_posix(), "sha256": actual})
-    result: dict[str, Any] = {
-        "schema": "ownward.acceptance-environment/v2",
-        "scope": scope,
-        "platform": {
-            "system": platform.system(),
-            "release": platform.release(),
-            "machine": platform.machine(),
-            "processor": _processor_name(),
-            "cpu_count": os.cpu_count(),
-            "physical_memory_bytes": _physical_memory_bytes(),
-        },
-        "python": {"version": platform.python_version(), "executable_sha256": sha256(Path(sys.executable).resolve())},
-        "runtime_manifest_sha256": sha256(runtime_manifest),
-        "runtime_files": verified_files,
-    }
-    if scope in {"product", "community"}:
-        codex_version = subprocess.run(
-            [*_executable_command(codex_binary), "--version"],
-            capture_output=True, text=True, encoding="utf-8", timeout=30, check=False,
-        )
-        _require(codex_version.returncode == 0 and codex_version.stdout.strip(), "无法读取外部智能体版本")
-        result["codex"] = {"version": codex_version.stdout.strip(), "entry_sha256": sha256(codex_binary)}
-    if scope == "frontier":
-        result["frontier_observer"] = {"entry_sha256": sha256(frontier_binary)}
-    return result
+        files.append({"path": path.as_posix(), "sha256": actual})
+    return {"runtime_manifest_sha256": sha256(runtime_manifest), "runtime_files": files, "capability": manifest.get("capability")}
+
+
+def _artifact_sha256(config: dict[str, Any], scope: str) -> str:
+    path = Path(_mapping(config, "frontier")["tool"]).resolve() if scope == "frontier" else _candidate_paths(config)[0]
+    _require(path.is_file(), f"{scope} 候选执行制品不存在")
+    return sha256(path)
+
+
+def _candidate_paths(config: dict[str, Any]) -> tuple[Path, Path]:
+    candidate = _mapping(config, "candidate")
+    return Path(candidate["binary"]).resolve(), Path(candidate["embedding_bundle_dir"]).resolve()
+
+
+def _validate_community_config(community: dict[str, Any]) -> None:
+    for name in ("official_repo", "codex_binary", "codex_auth_file", "submission_root", "submission_name"):
+        _require(isinstance(community.get(name), str) and community[name].strip(), f"执行配置缺少 community.{name}")
+    for domain in ("web", "enterprise"):
+        arguments = community.get(f"{domain}_arguments")
+        _require(isinstance(arguments, list) and all(isinstance(item, str) for item in arguments) and len(arguments) % 2 == 0, f"{domain} 参数必须由名称和值组成")
+        for required in ("--domain", "--questions-path", "--haystack-path", "--trajectories-path", "--memory-config-path", "--output-dir", "--base-url", "--evaluator-api-key-env", "--prompt-build-max-workers"):
+            _argument_value(arguments, required)
+        _require(_argument_value(arguments, "--domain") == domain, f"{domain} 参数选择了另一领域")
+        for name, expected in OFFICIAL_LONGMEM_ARGUMENTS.items():
+            _require(_argument_value(arguments, name) == expected, f"{domain} 参数 {name} 偏离固定官方口径")
+        try:
+            workers = int(_argument_value(arguments, "--prompt-build-max-workers"))
+        except ValueError as error:
+            raise BindingError(f"{domain} 并发数无效") from error
+        _require(workers > 0, f"{domain} 并发数必须为正数")
+
+
+def _validate_community_workspace(config: dict[str, Any], workspace: Path) -> None:
+    community = _mapping(config, "community")
+    for domain in ("web", "enterprise"):
+        output = Path(_argument_value(list(community[f"{domain}_arguments"]), "--output-dir")).resolve()
+        _require(output.is_relative_to(workspace) and output != workspace, f"{domain} 输出必须位于验收工作区内")
+    submission = Path(community["submission_root"]).resolve()
+    _require(submission.is_relative_to(workspace) and submission != workspace, "LongMemEval-V2 submission 必须位于验收工作区内")
 
 
 def _executable_command(path: Path) -> list[str]:
@@ -432,12 +349,18 @@ def _executable_command(path: Path) -> list[str]:
     return [str(path)]
 
 
+def _require_isolated_path(path: Path, label: str) -> None:
+    if os.name == "nt":
+        _require(bool(path.drive) and path.drive.lower() != Path.home().drive.lower(), f"{label}不得位于系统盘")
+    else:
+        _require(path.is_absolute(), f"{label}必须使用绝对路径")
+
+
 def _processor_name() -> str:
     value = platform.processor().strip()
     if os.name == "nt":
         try:
             import winreg
-
             with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\DESCRIPTION\System\CentralProcessor\0") as key:
                 value = str(winreg.QueryValueEx(key, "ProcessorNameString")[0]).strip()
         except OSError:
@@ -448,69 +371,50 @@ def _processor_name() -> str:
 def _physical_memory_bytes() -> int:
     if os.name == "nt":
         import ctypes
-
         class MemoryStatus(ctypes.Structure):
-            _fields_ = [
-                ("length", ctypes.c_ulong), ("memory_load", ctypes.c_ulong),
-                ("total_physical", ctypes.c_ulonglong), ("available_physical", ctypes.c_ulonglong),
-                ("total_page_file", ctypes.c_ulonglong), ("available_page_file", ctypes.c_ulonglong),
-                ("total_virtual", ctypes.c_ulonglong), ("available_virtual", ctypes.c_ulonglong),
-                ("available_extended_virtual", ctypes.c_ulonglong),
-            ]
-
+            _fields_ = [("length", ctypes.c_ulong), ("memory_load", ctypes.c_ulong), ("total_physical", ctypes.c_ulonglong), ("available_physical", ctypes.c_ulonglong), ("total_page_file", ctypes.c_ulonglong), ("available_page_file", ctypes.c_ulonglong), ("total_virtual", ctypes.c_ulonglong), ("available_virtual", ctypes.c_ulonglong), ("available_extended_virtual", ctypes.c_ulonglong)]
         status = MemoryStatus()
         status.length = ctypes.sizeof(status)
         _require(bool(ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status))), "无法读取物理内存身份")
         return int(status.total_physical)
-    page_size = os.sysconf("SC_PAGE_SIZE")
-    pages = os.sysconf("SC_PHYS_PAGES")
-    return int(page_size * pages)
+    return int(os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES"))
 
 
 def _files(repository: Path, paths: list[Path]) -> list[dict[str, str]]:
-    unique = sorted({path.resolve() for path in paths})
     result = []
-    for path in unique:
-        _require(path.is_file(), f"清单文件不存在: {path}")
+    for path in sorted({item.resolve() for item in paths}):
+        _require(path.is_file(), f"绑定工具或材料不存在: {path}")
         try:
             relative = path.relative_to(repository.resolve()).as_posix()
-        except ValueError as error:
-            raise BindingError(f"清单文件不在仓库中: {path}") from error
+        except ValueError:
+            relative = path.name
         result.append({"path": relative, "sha256": sha256(path)})
     return result
 
 
 def _directory_files(root: Path) -> list[dict[str, Any]]:
-    _require(root.is_dir(), f"外部目录不存在: {root}")
-    result: list[dict[str, Any]] = []
-    for path in sorted(root.rglob("*")):
-        _require(not path.is_symlink(), f"外部目录不得包含符号链接: {path}")
-        if path.is_file():
-            result.append({
-                "path": path.relative_to(root).as_posix(),
-                "bytes": path.stat().st_size,
-                "sha256": sha256(path),
-            })
-    _require(result, f"外部目录为空: {root}")
-    return result
+    _require(root.is_dir(), f"目录不存在: {root}")
+    return [{"path": path.relative_to(root).as_posix(), "size": path.stat().st_size, "sha256": sha256(path)} for path in sorted(item for item in root.rglob("*") if item.is_file())]
 
 
-def _resolve_material(suite_root: Path, value: str) -> Path:
-    path = Path(value)
-    return path if path.is_absolute() else suite_root.parents[2] / path
+def _resolve_repository_input(suite_root: Path, value: str) -> Path:
+    repository = suite_root.parents[2].resolve()
+    path = (repository / value).resolve()
+    _require(path.is_relative_to(repository) and path.is_file(), f"固定输入路径无效: {value}")
+    return path
 
 
 def _git(repository: Path, *arguments: str) -> str:
-    completed = subprocess.run(["git", *arguments], cwd=repository, capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
+    completed = subprocess.run(["git", "-C", str(repository), *arguments], capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
     _require(completed.returncode == 0, f"Git 命令失败: {' '.join(arguments)}")
     return completed.stdout.strip()
 
 
 def _argument_value(arguments: list[str], name: str) -> str:
-    try:
-        return arguments[arguments.index(name) + 1]
-    except (ValueError, IndexError) as error:
-        raise BindingError(f"执行配置缺少 {name}") from error
+    _require(name in arguments, f"参数缺少 {name}")
+    index = arguments.index(name)
+    _require(index + 1 < len(arguments), f"参数 {name} 缺少值")
+    return arguments[index + 1]
 
 
 def _canonical_sha256(value: Any) -> str:
@@ -523,23 +427,16 @@ def _is_sha256(value: Any) -> bool:
 
 
 def _verify_go_binary(binary: Path, candidate: str) -> None:
-    completed = subprocess.run(
-        ["go", "version", "-m", str(binary)],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=30,
-        check=False,
-    )
-    _require(completed.returncode == 0, "无法读取候选二进制的 Go 构建身份")
-    settings: dict[str, str] = {}
+    completed = subprocess.run(["go", "version", "-m", str(binary)], capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
+    _require(completed.returncode == 0, f"无法读取 Go 构建身份: {binary}")
+    fields = {}
     for line in completed.stdout.splitlines():
-        fields = line.strip().split("\t")
-        if len(fields) == 2 and fields[0] == "build" and "=" in fields[1]:
-            key, value = fields[1].split("=", 1)
-            settings[key] = value
-    _require(settings.get("vcs.revision") == candidate, "候选二进制的源码版本与候选提交不一致")
-    _require(settings.get("vcs.modified") == "false", "候选二进制由脏工作区构建")
+        parts = line.strip().split("\t")
+        if len(parts) >= 2 and parts[0] == "build" and "=" in parts[1]:
+            name, value = parts[1].split("=", 1)
+            fields[name] = value
+    _require(fields.get("vcs.revision") == candidate, "Go 构建身份没有绑定候选提交")
+    _require(fields.get("vcs.modified") == "false", "Go 构建来自脏工作区")
 
 
 def _write_json(path: Path, value: Any) -> None:

@@ -50,9 +50,9 @@ def validate_contract(value: dict[str, Any]) -> None:
 
     execution = _mapping(value, "execution")
     _require(set(execution.get("modes", [])) == MODE_NAMES, "统一入口模式不完整或包含额外模式")
-    _require(_mapping(execution, "prerequisites").get("summarize") == ["core", "full", "longmemeval"], "最终汇总前置证据无效")
+    _require(execution.get("relationship_authority") == "relationships.py", "内部执行关系必须由唯一权威定义驱动")
     bindings = execution.get("binding_fields", [])
-    _require(set(bindings) == {"schema", "suite_version", "candidate", "binary_sha256", "scopes"}, "候选绑定字段不完整")
+    _require(set(bindings) == {"schema", "suite_version", "candidate", "scopes"}, "候选绑定字段不完整")
     _require(set(execution.get("binding_scopes", [])) == {"frontier", "core", "product", "community"}, "候选分层绑定范围不完整")
     _require(execution.get("artifact_manifest_required") is True, "正式报告必须绑定原始证据清单")
     self_check = _mapping(execution, "self_check")

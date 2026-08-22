@@ -8,7 +8,9 @@ import unittest
 from unittest import mock
 
 import execution
+import execution_product
 import lifecycle
+import binding as candidate_binding
 from contract import load_contract
 
 
@@ -21,22 +23,21 @@ class UnifiedExecutionTests(unittest.TestCase):
         self.workspace = Path(self.temporary.name)
         self.contract = load_contract(self.root / "contract.json")
         self.binding = {
-            "schema": "ownward.acceptance-binding/v3",
+            "schema": "ownward.acceptance-binding/v4",
             "suite_version": self.contract["suite_version"], "candidate": "c" * 40,
-            "binary_sha256": "a" * 64,
             "scopes": {
                 name: {
                     "environment_sha256": values[0] * 64,
                     "input_manifest_sha256": values[1] * 64,
                     "tool_sha256": values[2] * 64,
+                    "artifact_sha256": values[3] * 64,
                 }
                 for name, values in {
-                    "frontier": "bde", "core": "f01", "product": "234", "community": "567",
+                    "frontier": "bdea", "core": "f01a", "product": "234a", "community": "567a",
                 }.items()
             },
         }
         self.state_path = self.workspace / "state.json"
-        lifecycle.save_state(self.state_path, lifecycle.new_state(self.contract, self.binding))
         self.tool = self.workspace / "frontier.py"
         self.tool.write_text(textwrap.dedent("""
             import argparse, hashlib, json
@@ -55,10 +56,13 @@ class UnifiedExecutionTests(unittest.TestCase):
             Path(a.output).parent.mkdir(parents=True,exist_ok=True)
             Path(a.output).write_text(json.dumps(report),encoding='utf-8')
         """), encoding="utf-8")
+        self.binding["scopes"]["frontier"]["artifact_sha256"] = lifecycle.file_sha256(self.tool)
+        lifecycle.save_state(self.state_path, lifecycle.new_state(self.contract, self.binding))
         self.config = {
-            "schema": "ownward.acceptance-execution/v2", "repository": str(self.repository),
+            "schema": "ownward.acceptance-execution/v3", "repository": str(self.repository),
             "workspace": str(self.workspace / "work"), "binding_dir": str(self.workspace / "binding"),
-            "frontier": {"tool": str(self.tool), "targeted_stages": ["lexical"]}, "product": {}, "community": {},
+            "enabled_scopes": ["frontier"],
+            "frontier": {"tool": str(self.tool), "targeted_stages": ["lexical"]}, "product": {},
         }
 
     def tearDown(self) -> None:
@@ -112,6 +116,9 @@ class UnifiedExecutionTests(unittest.TestCase):
     @mock.patch("execution.binding.verify_current")
     def test_timeout_stops_without_checkpoint(self, _verify_current) -> None:
         self.tool.write_text("import time; time.sleep(2)\n", encoding="utf-8")
+        state = lifecycle.load_state(self.state_path)
+        state["binding"]["scopes"]["frontier"]["artifact_sha256"] = lifecycle.file_sha256(self.tool)
+        lifecycle.save_state(self.state_path, state)
         contract = copy.deepcopy(self.contract)
         contract["optimization_loop"]["modes"]["targeted"]["max_wall_seconds"] = 0.05
         with self.assertRaisesRegex(execution.ExecutionError, "已停止"):
@@ -120,14 +127,16 @@ class UnifiedExecutionTests(unittest.TestCase):
 
     def test_failed_resource_admission_cannot_resume_into_product_run(self) -> None:
         state = lifecycle.load_state(self.state_path)
+        state["binding"] = candidate_binding.for_mode(self.binding, "qualification")
         report = {
             "schema": "ownward.delivery-resource-report/v1",
             "candidate": self.binding["candidate"],
-            "release_binary_sha256": self.binding["binary_sha256"],
+            "release_binary_sha256": self.binding["scopes"]["product"]["artifact_sha256"],
+            "acceptance_binding": state["binding"],
             "passed": False,
         }
         with self.assertRaisesRegex(execution.ExecutionError, "停止高成本"):
-            execution._require_resource_admission(report, state)
+            execution_product.require_resource_admission(report, state)
 
     def test_valid_shared_resource_evidence_is_reused_across_product_modes(self) -> None:
         state = lifecycle.load_state(self.state_path)
@@ -144,25 +153,27 @@ class UnifiedExecutionTests(unittest.TestCase):
         report = {
             "schema": "ownward.delivery-resource-report/v1",
             "candidate": self.binding["candidate"],
-            "release_binary_sha256": self.binding["binary_sha256"],
+            "release_binary_sha256": self.binding["scopes"]["product"]["artifact_sha256"],
+            "acceptance_binding": candidate_binding.for_mode(self.binding, "qualification"),
             "evidence": artifacts,
             "passed": True,
         }
         report_path.write_text(json.dumps(report), encoding="utf-8")
-        actual = execution._resource_report(self.root, state, self.config, workspace, resume=False)
+        state["binding"] = candidate_binding.for_mode(self.binding, "qualification")
+        actual = execution_product.resource_report(self.root, state, self.config, workspace, resume=False)
         self.assertEqual(report_path, actual)
         (raw / "process_samples.json").write_text("changed\n", encoding="utf-8")
         with self.assertRaisesRegex(execution.ExecutionError, "发生变化"):
-            execution._resource_report(self.root, state, self.config, workspace, resume=False)
+            execution_product.resource_report(self.root, state, self.config, workspace, resume=False)
 
     def test_product_resource_admission_consumes_the_same_layer_budget(self) -> None:
         state = lifecycle.load_state(self.state_path)
         with (
-            mock.patch("execution._product_binary", return_value=self.tool),
-            mock.patch("execution._resource_report", return_value=self.tool),
+            mock.patch("execution_product.product_binary", return_value=self.tool),
+            mock.patch("execution_product.resource_report", return_value=self.tool),
         ):
             with self.assertRaisesRegex(execution.ExecutionError, "耗尽该层总成本预算"):
-                execution._execute_product(
+                execution_product.execute_product(
                     self.root,
                     self.contract,
                     state,

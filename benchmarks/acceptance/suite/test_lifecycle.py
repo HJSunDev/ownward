@@ -16,18 +16,18 @@ class EvidenceLifecycleTests(unittest.TestCase):
         cls.root = Path(__file__).resolve().parent
         cls.contract = load_contract(cls.root / "contract.json")
         cls.binding = {
-            "schema": "ownward.acceptance-binding/v3",
+            "schema": "ownward.acceptance-binding/v4",
             "suite_version": "1.0.0",
             "candidate": "a" * 40,
-            "binary_sha256": "b" * 64,
             "scopes": {
                 name: {
                     "environment_sha256": values[0] * 64,
                     "input_manifest_sha256": values[1] * 64,
                     "tool_sha256": values[2] * 64,
+                    "artifact_sha256": values[3] * 64,
                 }
                 for name, values in {
-                    "frontier": "cde", "core": "f01", "product": "234", "community": "567",
+                    "frontier": "cdef", "core": "f01b", "product": "234b", "community": "567b",
                 }.items()
             },
         }
@@ -57,12 +57,13 @@ class EvidenceLifecycleTests(unittest.TestCase):
 
     def test_change_scope_selects_only_required_levels(self):
         self.assertEqual([], lifecycle.plan_for_impacts(["local"]))
-        self.assertEqual(["targeted", "frontier"], lifecycle.plan_for_impacts(["retrieval"]))
+        self.assertEqual(["targeted"], lifecycle.plan_for_impacts(["retrieval"]))
         self.assertEqual(["core"], lifecycle.plan_for_impacts(["asset"]))
         self.assertEqual(
-            ["targeted", "core", "frontier", "qualification"],
+            ["targeted"],
             lifecycle.plan_for_impacts(["organization"]),
         )
+        self.assertEqual(["core", "frontier", "qualification"], lifecycle.plan_for_stage("kernel-baseline"))
         self.assertEqual(
             ["indexing", "lexical", "vector", "graph", "context", "fusion"],
             lifecycle.stages_for_impacts(["retrieval"]),
@@ -94,9 +95,9 @@ class EvidenceLifecycleTests(unittest.TestCase):
         for name in ("targeted", "core", "frontier", "qualification", "full", "longmemeval"):
             self.checkpoint(state, name)
         removed = lifecycle.invalidate(self.contract, state, "frontier")
-        self.assertEqual(["frontier", "qualification", "full", "longmemeval"], removed)
-        self.assertEqual({"targeted", "core"}, set(state["checkpoints"]))
-        self.assertEqual({"frontier", "qualification", "full", "longmemeval"}, set(state["invalidated_reports"]))
+        self.assertEqual(["frontier"], removed)
+        self.assertEqual({"targeted", "core", "qualification", "full", "longmemeval"}, set(state["checkpoints"]))
+        self.assertEqual({"frontier"}, set(state["invalidated_reports"]))
 
     def test_explicitly_invalidated_report_cannot_be_recovered_as_current(self):
         state = self.state()
@@ -114,10 +115,10 @@ class EvidenceLifecycleTests(unittest.TestCase):
         state["baseline"] = {"candidate": "previous"}
         self.assertEqual([], lifecycle.rebind(self.contract, state, copy.deepcopy(self.binding)))
         changed = copy.deepcopy(self.binding)
-        changed["binary_sha256"] = "e" * 64
+        changed["scopes"]["core"]["tool_sha256"] = "e" * 64
         self.assertEqual(["core"], lifecycle.rebind(self.contract, state, changed))
         self.assertFalse(state["checkpoints"])
-        self.assertEqual("previous", state["baseline"]["candidate"])
+        self.assertIsNone(state["baseline"])
 
     def test_state_owns_nested_binding_snapshots(self):
         initial = copy.deepcopy(self.binding)
@@ -191,6 +192,23 @@ class EvidenceLifecycleTests(unittest.TestCase):
                 self.contract, state, "targeted", report, digest, 1, str(report_path)
             ))
 
+    def test_targeted_stage_selection_is_part_of_checkpoint_identity(self):
+        state = self.state()
+        with tempfile.TemporaryDirectory() as directory:
+            report = self.frontier_report("targeted")
+            report_path = Path(directory) / "targeted.json"
+            raw = Path(directory) / "evidence" / "targeted.json"
+            raw.parent.mkdir()
+            raw.write_text("{}\n", encoding="utf-8")
+            evidence.attach_artifacts(report, report_path, [raw])
+            report_path.write_text(json.dumps(report), encoding="utf-8")
+            digest = lifecycle.file_sha256(report_path)
+            lexical = {"targeted_stages": ["lexical"]}
+            vector = {"targeted_stages": ["vector"]}
+            lifecycle.record(self.contract, state, "targeted", report, digest, 1, str(report_path), lexical)
+            self.assertEqual(report_path, lifecycle.reusable_report(self.contract, state, "targeted", lexical))
+            self.assertIsNone(lifecycle.reusable_report(self.contract, state, "targeted", vector))
+
     def test_formal_checkpoint_cannot_exist_only_in_memory(self):
         state = self.state()
         report = self.frontier_report("targeted")
@@ -225,12 +243,13 @@ class EvidenceLifecycleTests(unittest.TestCase):
             with self.assertRaisesRegex(lifecycle.LifecycleError, "检查点不一致"):
                 lifecycle.record(self.contract, state, "summarize", report, "f" * 64, 0)
 
-    def test_promotion_requires_both_frontier_and_qualification(self):
+    def test_promotion_requires_core_frontier_and_qualification(self):
         state = self.state()
         with tempfile.TemporaryDirectory() as directory:
             self.checkpoint(state, "frontier", report=self.frontier_report("full"), directory=directory)
-            with self.assertRaisesRegex(lifecycle.LifecycleError, "资格验证"):
+            with self.assertRaisesRegex(lifecycle.LifecycleError, "固定内核"):
                 lifecycle.promote_baseline(self.contract, state)
+            self.checkpoint(state, "core", report=self.core_report(), directory=directory)
             self.checkpoint(state, "qualification", report=self.product_report("qualification"), directory=directory)
             lifecycle.promote_baseline(self.contract, state)
         self.assertEqual(self.binding["candidate"], state["baseline"]["candidate"])
@@ -252,6 +271,7 @@ class EvidenceLifecycleTests(unittest.TestCase):
     def test_promoted_baseline_embeds_observation_before_workspace_cleanup(self):
         state = self.state()
         with tempfile.TemporaryDirectory() as directory:
+            self.checkpoint(state, "core", report=self.core_report(), directory=directory)
             self.checkpoint(state, "frontier", report=self.frontier_report("full"), directory=directory)
             self.checkpoint(state, "qualification", report=self.product_report("qualification"), directory=directory)
             observation_path = Path(directory) / "observation.json"
@@ -282,7 +302,7 @@ class EvidenceLifecycleTests(unittest.TestCase):
         active = candidate_binding.for_mode(self.binding, "core")
         return {
             "schema": "ownward.core-baseline-report/v1", "suite_version": "1.0.0",
-            "candidate": self.binding["candidate"], "binary_sha256": self.binding["binary_sha256"],
+            "candidate": self.binding["candidate"], "binary_sha256": active["binary_sha256"],
             "environment": {"sha256": active["environment_sha256"]},
             "inputs": {"sha256": active["input_manifest_sha256"]},
             "invariants": {name: True for name in self.contract["evidence_layers"]["core"]["required_invariants"]},
@@ -295,7 +315,7 @@ class EvidenceLifecycleTests(unittest.TestCase):
         return {
             "schema": "ownward.product-report/v1", "suite_version": "1.0.0",
             "dataset_version": "ownward-product-dataset/v1", "mode": mode,
-            "candidate": self.binding["candidate"], "binary_sha256": self.binding["binary_sha256"],
+            "candidate": self.binding["candidate"], "binary_sha256": active["binary_sha256"],
             "environment": {"sha256": active["environment_sha256"]},
             "inputs": {"sha256": active["input_manifest_sha256"]},
             "categories": {name: {"scenarios": count, "passed": True} for name in self.contract["evidence_layers"]["product"]["categories"]},
@@ -309,7 +329,7 @@ class EvidenceLifecycleTests(unittest.TestCase):
         return {
             "schema": "ownward.longmemeval-report/v1", "suite_version": "1.0.0",
             "official_version": "longmemeval-v2/2cc8c540bdb87fe6761629b585e727e1c4704520",
-            "candidate": self.binding["candidate"], "binary_sha256": self.binding["binary_sha256"],
+            "candidate": self.binding["candidate"], "binary_sha256": active["binary_sha256"],
             "environment": {"sha256": active["environment_sha256"]},
             "inputs": {"sha256": active["input_manifest_sha256"]},
             "domains": {name: {"passed": True} for name in ("web", "enterprise")},

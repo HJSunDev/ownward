@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import binding as candidate_binding
+import relationships
 from contract import validate_report
 from evidence import validate_layer_report, validate_report_artifacts
 
@@ -15,28 +16,6 @@ from evidence import validate_layer_report, validate_report_artifacts
 class LifecycleError(ValueError):
     pass
 
-
-IMPACT_PLAN = {
-    "local": [],
-    "asset": ["core"],
-    "retrieval": ["targeted", "frontier"],
-    "organization": ["targeted", "core", "frontier", "qualification"],
-    "candidate": ["targeted", "core", "frontier", "qualification", "full", "longmemeval", "summarize"],
-}
-
-IMPACT_STAGES = {
-    "local": [],
-    "asset": ["identity", "incremental_consistency", "organization", "indexing"],
-    "retrieval": ["lexical", "vector", "graph", "context", "fusion", "indexing"],
-    "organization": [
-        "relations", "merge_split", "incremental_consistency", "organization", "indexing",
-        "lexical", "vector", "graph", "context", "fusion",
-    ],
-    "candidate": [
-        "identity", "relations", "merge_split", "incremental_consistency", "organization", "indexing",
-        "lexical", "vector", "graph", "context", "fusion",
-    ],
-}
 
 REPORT_KIND = {
     "targeted": "frontier",
@@ -64,28 +43,30 @@ def new_state(contract: dict[str, Any], binding: dict[str, Any]) -> dict[str, An
 
 
 def plan_for_impacts(impacts: list[str]) -> list[str]:
-    _require(impacts, "至少需要一个变更影响范围")
-    unknown = set(impacts) - set(IMPACT_PLAN)
-    _require(not unknown, f"未知变更影响范围: {', '.join(sorted(unknown))}")
-    wanted = {mode for impact in impacts for mode in IMPACT_PLAN[impact]}
-    order = ["targeted", "core", "frontier", "qualification", "full", "longmemeval", "summarize"]
-    return [mode for mode in order if mode in wanted]
+    try:
+        return relationships.plan_for_impacts(impacts)
+    except relationships.RelationshipError as error:
+        raise LifecycleError(str(error)) from error
 
 
 def stages_for_impacts(impacts: list[str]) -> list[str]:
-    plan_for_impacts(impacts)
-    wanted = {stage for impact in impacts for stage in IMPACT_STAGES[impact]}
-    order = [
-        "identity", "relations", "merge_split", "incremental_consistency", "organization", "indexing",
-        "lexical", "vector", "graph", "context", "fusion",
-    ]
-    return [stage for stage in order if stage in wanted]
+    try:
+        return relationships.stages_for_impacts(impacts)
+    except relationships.RelationshipError as error:
+        raise LifecycleError(str(error)) from error
+
+
+def plan_for_stage(stage: str) -> list[str]:
+    try:
+        return relationships.plan_for_stage(stage)
+    except relationships.RelationshipError as error:
+        raise LifecycleError(str(error)) from error
 
 
 def can_start(contract: dict[str, Any], state: dict[str, Any], mode: str) -> None:
     _validate_state(contract, state)
     _require(mode in REPORT_KIND or mode == "self-check", f"未知执行模式: {mode}")
-    prerequisites = contract["execution"].get("prerequisites", {}).get(mode, [])
+    prerequisites = relationships.START_ELIGIBILITY.get(mode, ())
     for prerequisite in prerequisites:
         checkpoint = state["checkpoints"].get(prerequisite)
         _require(isinstance(checkpoint, dict), f"{mode} 缺少前置证据 {prerequisite}")
@@ -101,6 +82,7 @@ def record(
     report_sha256: str,
     elapsed_seconds: float,
     report_path: str = "",
+    selection: dict[str, Any] | None = None,
 ) -> str:
     can_start(contract, state, mode)
     _require(mode != "self-check", "体系自检不得写入正式检查点")
@@ -124,6 +106,7 @@ def record(
         and existing.get("report_sha256") == report_sha256
         and existing.get("binding") == active_binding
         and existing.get("artifact_manifest_sha256", "") == artifact_manifest_sha256
+        and existing.get("selection") == selection
     ):
         return "reused"
     state["checkpoints"][mode] = {
@@ -135,14 +118,16 @@ def record(
         "artifact_manifest_sha256": artifact_manifest_sha256,
         "recorded_at": datetime.now(timezone.utc).isoformat(),
     }
+    if selection is not None:
+        state["checkpoints"][mode]["selection"] = copy.deepcopy(selection)
     state["invalidated_reports"].pop(mode, None)
     return "recorded"
 
 
 def invalidate(contract: dict[str, Any], state: dict[str, Any], mode: str) -> list[str]:
     _validate_state(contract, state)
-    affected = contract["execution"]["invalidation"].get(mode)
-    _require(isinstance(affected, list), f"模式 {mode} 没有失效传播规则")
+    affected = relationships.MODE_INVALIDATION.get(mode)
+    _require(affected is not None, f"模式 {mode} 没有失效传播规则")
     removed = [name for name in affected if name in state["checkpoints"]]
     for name in removed:
         checkpoint = state["checkpoints"][name]
@@ -150,6 +135,9 @@ def invalidate(contract: dict[str, Any], state: dict[str, Any], mode: str) -> li
         if isinstance(digest, str) and digest:
             state["invalidated_reports"][name] = digest
         del state["checkpoints"][name]
+    if mode in relationships.BASELINE_AGGREGATES and state.get("baseline") is not None:
+        state.setdefault("baseline_history", []).append(state["baseline"])
+        state["baseline"] = None
     return removed
 
 
@@ -158,7 +146,7 @@ def rebind(contract: dict[str, Any], state: dict[str, Any], binding: dict[str, A
     candidate_binding.validate_binding(binding)
     _require(binding["suite_version"] == contract["suite_version"], "新候选绑定的体系版本无效")
     current = state["binding"]
-    common_changed = any(binding.get(field) != current.get(field) for field in ("candidate", "binary_sha256"))
+    common_changed = binding.get("candidate") != current.get("candidate")
     current_scopes = current["scopes"]
     next_scopes = binding["scopes"]
     changed_scopes = {
@@ -170,13 +158,10 @@ def rebind(contract: dict[str, Any], state: dict[str, Any], binding: dict[str, A
     if common_changed:
         affected = set(state["checkpoints"])
     else:
-        scope_modes = {
-            "frontier": {"targeted", "frontier", "summarize"},
-            "core": {"core", "summarize"},
-            "product": {"qualification", "full", "summarize"},
-            "community": {"longmemeval", "summarize"},
-        }
-        affected = {mode for name in changed_scopes if name in current_scopes for mode in scope_modes[name]}
+        affected = set()
+        for name in changed_scopes:
+            for mode in relationships.SCOPE_RESULTS.get(name, ()):
+                affected.update(relationships.MODE_INVALIDATION[mode])
     removed = sorted(name for name in affected if name in state["checkpoints"])
     if state.get("baseline") is not None and not common_changed and changed_scopes & {"frontier", "core", "product"}:
         state.setdefault("baseline_history", []).append(state["baseline"])
@@ -196,10 +181,13 @@ def report_was_invalidated(state: dict[str, Any], mode: str, path: Path) -> bool
 
 
 def promote_baseline(contract: dict[str, Any], state: dict[str, Any]) -> None:
+    core = state["checkpoints"].get("core")
     frontier = state["checkpoints"].get("frontier")
     qualification = state["checkpoints"].get("qualification")
+    _require(core is not None and core.get("passed") is True, "有效基线晋升要求固定内核通过")
     _require(frontier is not None and frontier.get("passed") is True, "有效基线晋升要求前沿完整模式通过")
     _require(qualification is not None and qualification.get("passed") is True, "有效基线晋升要求资格验证通过")
+    core_report = _checkpoint_report(contract, state, "core")
     frontier_report = _checkpoint_report(contract, state, "frontier")
     qualification_report = _checkpoint_report(contract, state, "qualification")
     if state.get("baseline") is not None:
@@ -209,11 +197,13 @@ def promote_baseline(contract: dict[str, Any], state: dict[str, Any]) -> None:
     product_binding = candidate_binding.for_mode(state["binding"], "qualification")
     state["baseline"] = {
         "candidate": state["binding"]["candidate"],
-        "binary_sha256": state["binding"]["binary_sha256"],
+        "binary_sha256": core_binding["binary_sha256"],
         "bindings": {"core": core_binding, "frontier": frontier_binding, "product": product_binding},
+        "core_report_sha256": core["report_sha256"],
         "frontier_report_sha256": frontier["report_sha256"],
         "qualification_report_sha256": qualification["report_sha256"],
         "reports": {
+            "core": {"canonical_sha256": canonical_sha256(core_report), "value": core_report},
             "frontier": {"canonical_sha256": canonical_sha256(frontier_report), "value": frontier_report},
             "qualification": {"canonical_sha256": canonical_sha256(qualification_report), "value": qualification_report},
         },
@@ -234,9 +224,9 @@ def promote_baseline(contract: dict[str, Any], state: dict[str, Any]) -> None:
         state["baseline"]["observations"] = observations
 
 
-def reusable_report(contract: dict[str, Any], state: dict[str, Any], mode: str) -> Path | None:
+def reusable_report(contract: dict[str, Any], state: dict[str, Any], mode: str, selection: dict[str, Any] | None = None) -> Path | None:
     checkpoint = state.get("checkpoints", {}).get(mode)
-    if not isinstance(checkpoint, dict) or checkpoint.get("binding") != candidate_binding.for_mode(state["binding"], mode):
+    if not isinstance(checkpoint, dict) or checkpoint.get("binding") != candidate_binding.for_mode(state["binding"], mode) or checkpoint.get("selection") != selection:
         return None
     value = str(checkpoint.get("report_path", "")).strip()
     if not value:
@@ -268,7 +258,7 @@ def summarize(contract: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]
         "schema": contract["reports"]["suite"]["schema"],
         "suite_version": contract["suite_version"],
         "candidate": state["binding"]["candidate"],
-        "binary_sha256": state["binding"]["binary_sha256"],
+        "binary_sha256": summary_binding["binary_sha256"],
         "environment": {"sha256": summary_binding["environment_sha256"]},
         "inputs": {"sha256": summary_binding["input_manifest_sha256"]},
         "tool_sha256": summary_binding["tool_sha256"],

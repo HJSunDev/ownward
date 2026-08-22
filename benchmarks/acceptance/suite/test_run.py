@@ -18,14 +18,13 @@ class UnifiedEntryTests(unittest.TestCase):
             root = Path(directory)
             arguments = argparse.Namespace(
                 mode="bind", config=root / "execution.json", output=root / "binding",
-                state=None, binding=None, impact=[], checkpoint_mode=None, repository=Path("."),
-                binary=None, embedding_bundle_dir=None, codex_binary=None, codex_auth_file=None,
+                state=None, binding=None, impact=[], stage=None, checkpoint_mode=None,
                 isolation_dir=None, resume=False,
             )
             expected = {"candidate": "a" * 40}
             with (
                 patch.object(run, "parse_args", return_value=arguments),
-                patch.object(run.binding, "create", return_value=expected) as create,
+                patch("binding.create", return_value=expected) as create,
                 patch("sys.stdout", new_callable=io.StringIO),
             ):
                 run.main()
@@ -38,17 +37,17 @@ class UnifiedEntryTests(unittest.TestCase):
             report_path.write_text('{"sealed": true}\n', encoding="utf-8")
             contract = load_contract(run.HERE / "contract.json")
             binding = {
-                "schema": "ownward.acceptance-binding/v3",
+                "schema": "ownward.acceptance-binding/v4",
                 "suite_version": "1.0.0", "candidate": "a" * 40,
-                "binary_sha256": "b" * 64,
                 "scopes": {
                     name: {
                         "environment_sha256": values[0] * 64,
                         "input_manifest_sha256": values[1] * 64,
                         "tool_sha256": values[2] * 64,
+                        "artifact_sha256": values[3] * 64,
                     }
                     for name, values in {
-                        "frontier": "cde", "core": "f01", "product": "234", "community": "567",
+                        "frontier": "cdef", "core": "f01b", "product": "234b", "community": "567b",
                     }.items()
                 },
             }
@@ -61,13 +60,12 @@ class UnifiedEntryTests(unittest.TestCase):
             lifecycle.save_state(state_path, state)
             arguments = argparse.Namespace(
                 mode="summarize", config=None, output=report_path, state=state_path,
-                binding=None, impact=[], checkpoint_mode=None, repository=Path("."),
-                binary=None, embedding_bundle_dir=None, codex_binary=None, codex_auth_file=None,
+                binding=None, impact=[], stage=None, checkpoint_mode=None,
                 isolation_dir=None, resume=True,
             )
             with (
                 patch.object(run, "parse_args", return_value=arguments),
-                patch.object(run.lifecycle, "reusable_report", return_value=report_path),
+                patch("lifecycle.reusable_report", return_value=report_path),
                 patch("sys.stdout", new_callable=io.StringIO) as output,
             ):
                 run.main()

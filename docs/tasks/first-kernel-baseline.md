@@ -10,13 +10,13 @@
 
 ## 二、进入条件
 
-- 当前 Acceptance Suite 实现能够准确隔离内部层级及其真实依赖；尚未解决的问题见 [`docs/workbench/problem-resolution-workbench.md`](../workbench/problem-resolution-workbench.md)。
+- 当前 Acceptance Suite 实现已用带类型关系定义、分层配置与绑定、延迟加载和精确失效隔离内部层级及其真实依赖；出现新的实际阻塞时再写入 [`docs/workbench/problem-resolution-workbench.md`](../workbench/problem-resolution-workbench.md)。
 - 产品候选、验收工具、运行环境与证据分别绑定，已有证据只按真实依赖局部失效。
 - 正式执行所需候选与工作区由主线当前事实建立，不复用已清理的旧外部状态。
 
 ## 三、阶段顺序
 
-1. 先解决阻碍内部基线成立的 Acceptance Suite 实现问题，只运行单元测试、隔离自检和非正式预检。
+1. 先解决阻碍内部基线成立的 Acceptance Suite 实现问题；按 `enabled_scopes` 分别证明 frontier、core 与 product 的最低依赖闭包，只运行单元测试、隔离自检和非正式预检。
 2. 冻结同一产品候选，依次运行固定内核基线、完整前沿观察和 Ownward 专项资格集。
 3. 失败时根据证据定位共同根因：验收工具变化只精确失效依赖旧工具的结果；产品变化形成新候选后只重跑受影响层级。
 4. 三层证据在同一候选上全部有效后，立即晋升首个内核基线，不继续执行完整专项或社区验收。

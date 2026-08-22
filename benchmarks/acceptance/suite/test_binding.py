@@ -23,19 +23,25 @@ class BindingManifestTests(unittest.TestCase):
         self.assertIn("benchmarks/acceptance/suite/materials/core/v1/dataset.json", core_paths)
         self.assertNotIn("benchmarks/acceptance/suite/materials/product/v1/dataset.json", frontier_paths | core_paths)
         self.assertNotIn("benchmarks/acceptance/suite/materials/frontier/v1/calibration.json", core_paths)
+        self.assertNotIn("evidence_layers", frontier["contract"])
+        self.assertEqual("ownward-core-baseline/v1", core["contract"]["layer"]["version"])
         self.assertTrue(all(len(item["sha256"]) == 64 for item in frontier["files"] + core["files"]))
 
     def test_tool_manifest_binds_executors_but_not_tests(self) -> None:
         community = {item["path"] for item in binding._tool_manifest(self.root, "community")["files"]}
         frontier = {item["path"] for item in binding._tool_manifest(self.root, "frontier")["files"]}
+        core = {item["path"] for item in binding._tool_manifest(self.root, "core")["files"]}
         product = {item["path"] for item in binding._tool_manifest(self.root, "product")["files"]}
         self.assertIn("cmd/ownward-frontier/main.go", frontier)
         self.assertIn("benchmarks/acceptance/suite/execution.py", community & frontier & product)
         self.assertIn("benchmarks/acceptance/suite/adapters/product/verify.py", product)
         self.assertIn("benchmarks/longmemeval_v2/ownward_trajectory.py", community)
         self.assertIn("benchmarks/longmemeval_v2/memory_config.active.json", community)
+        self.assertIn("benchmarks/support/ownward_mcp.py", core)
         self.assertNotIn("cmd/ownward-frontier/main.go", community)
-        self.assertFalse(any(Path(path).name.startswith("test_") for path in community | frontier | product))
+        self.assertNotIn("benchmarks/acceptance/suite/community.py", frontier | core)
+        self.assertNotIn("benchmarks/acceptance/suite/execution_product.py", frontier | core)
+        self.assertFalse(any(Path(path).name.startswith("test_") for path in community | frontier | core | product))
 
     def test_targeted_scope_is_not_a_frozen_input(self) -> None:
         external = self.root / "contract.json"
@@ -114,34 +120,29 @@ class BindingManifestTests(unittest.TestCase):
             codex.write_bytes(b"codex")
             frontier.write_bytes(b"frontier")
             completed = SimpleNamespace(returncode=0, stdout="codex 1.0\n")
+            config = {"candidate": {"binary": str(root / "ownward.exe"), "embedding_bundle_dir": str(runtime)}, "product": {"codex_binary": str(codex)}}
             with patch.object(binding.subprocess, "run", return_value=completed):
-                environment = binding._environment_manifest(runtime.resolve(), codex, frontier, "product")
-                self.assertEqual(2, len(environment["runtime_files"]))
+                environment = binding._environment_manifest(config, "product")
+                self.assertEqual(2, len(environment["embedding"]["runtime_files"]))
                 model.write_bytes(b"changed")
                 with self.assertRaisesRegex(binding.BindingError, "摘要不一致"):
-                    binding._environment_manifest(runtime.resolve(), codex, frontier, "product")
+                    binding._environment_manifest(config, "product")
 
     def test_internal_config_does_not_require_community_inputs(self) -> None:
         config = {
-            "schema": "ownward.acceptance-execution/v2",
+            "schema": "ownward.acceptance-execution/v3",
             "repository": "repo", "workspace": "workspace", "binding_dir": "binding",
-            "frontier": {"tool": "tool", "targeted_stages": []},
-            "product": {name: name for name in (
-                "binary", "embedding_bundle_dir", "package", "production_storage_report", "codex_binary", "codex_auth_file",
-            )},
+            "enabled_scopes": ["core"],
+            "candidate": {"binary": "binary", "embedding_bundle_dir": "embedding"},
         }
-        config["product"].update({
-            "codex_model": binding.ACTIVE_CODEX_MODEL,
-            "codex_reasoning_effort": binding.ACTIVE_CODEX_REASONING_EFFORT,
-        })
         binding.validate_config(config)
 
     def test_deferred_community_scope_is_required_only_when_used(self) -> None:
         value = {
-            "schema": "ownward.acceptance-binding/v3", "suite_version": "1.0.0",
-            "candidate": "a" * 40, "binary_sha256": "b" * 64,
+            "schema": "ownward.acceptance-binding/v4", "suite_version": "1.0.0",
+            "candidate": "a" * 40,
             "scopes": {
-                name: {"environment_sha256": "c" * 64, "input_manifest_sha256": "d" * 64, "tool_sha256": "e" * 64}
+                name: {"environment_sha256": "c" * 64, "input_manifest_sha256": "d" * 64, "tool_sha256": "e" * 64, "artifact_sha256": "f" * 64}
                 for name in ("frontier", "core", "product")
             },
         }
@@ -152,10 +153,10 @@ class BindingManifestTests(unittest.TestCase):
 
     def test_binding_rejects_unbound_fields_and_invalid_candidate(self) -> None:
         value = {
-            "schema": "ownward.acceptance-binding/v3", "suite_version": "1.0.0",
-            "candidate": "a" * 40, "binary_sha256": "b" * 64,
+            "schema": "ownward.acceptance-binding/v4", "suite_version": "1.0.0",
+            "candidate": "a" * 40,
             "scopes": {
-                name: {"environment_sha256": "c" * 64, "input_manifest_sha256": "d" * 64, "tool_sha256": "e" * 64}
+                name: {"environment_sha256": "c" * 64, "input_manifest_sha256": "d" * 64, "tool_sha256": "e" * 64, "artifact_sha256": "f" * 64}
                 for name in ("frontier", "core", "product")
             },
         }
@@ -176,7 +177,8 @@ class BindingManifestTests(unittest.TestCase):
             binary = root / "ownward.exe"
             codex = root / "codex.exe"
             frontier = root / "frontier.exe"
-            for path in (binary, codex, frontier):
+            auth = root / "auth.json"
+            for path in (binary, codex, frontier, auth):
                 path.write_bytes(path.name.encode())
             runtime = root / "embedding"
             runtime.mkdir()
@@ -187,14 +189,15 @@ class BindingManifestTests(unittest.TestCase):
             production.write_text("{}\n", encoding="utf-8")
             output = root / "binding"
             config = {
-                "schema": "ownward.acceptance-execution/v2",
+                "schema": "ownward.acceptance-execution/v3",
                 "repository": str(self.root.parents[2]), "workspace": str(root / "workspace"),
                 "binding_dir": str(output),
+                "enabled_scopes": ["frontier", "core", "product"],
+                "candidate": {"binary": str(binary), "embedding_bundle_dir": str(runtime)},
                 "frontier": {"tool": str(frontier), "targeted_stages": []},
                 "product": {
-                    "binary": str(binary), "embedding_bundle_dir": str(runtime), "package": str(package),
-                    "production_storage_report": str(production), "codex_binary": str(codex),
-                    "codex_auth_file": str(root / "auth.json"),
+                    "package": str(package), "production_storage_report": str(production), "codex_binary": str(codex),
+                    "codex_auth_file": str(auth),
                     "codex_model": binding.ACTIVE_CODEX_MODEL,
                     "codex_reasoning_effort": binding.ACTIVE_CODEX_REASONING_EFFORT,
                 },
@@ -202,7 +205,7 @@ class BindingManifestTests(unittest.TestCase):
             candidate = "a" * 40
             git_result = lambda _repository, *arguments: candidate if arguments == ("rev-parse", "HEAD") else ""
             version = SimpleNamespace(returncode=0, stdout=candidate + "\n")
-            environment = lambda _runtime, _codex, _frontier, scope: {"schema": "fixture", "scope": scope}
+            environment = lambda _config, scope: {"schema": "fixture", "scope": scope}
             with (
                 patch.object(binding, "_git", side_effect=git_result),
                 patch.object(binding, "_verify_go_binary"),
@@ -214,6 +217,26 @@ class BindingManifestTests(unittest.TestCase):
                 self.assertFalse(any(path.name.startswith("community-") for path in output.iterdir()))
                 binding.verify_current(self.root, output, config, result, "core")
 
+    def test_frontier_binding_does_not_require_candidate_or_model(self) -> None:
+        temporary_root = self.root.parents[2] / ".tmp"
+        temporary_root.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=temporary_root) as directory:
+            root = Path(directory)
+            observer = root / "frontier.exe"
+            observer.write_bytes(b"observer")
+            output = root / "binding"
+            config = {
+                "schema": "ownward.acceptance-execution/v3",
+                "repository": str(self.root.parents[2]), "workspace": str(root / "workspace"), "binding_dir": str(output),
+                "enabled_scopes": ["frontier"], "frontier": {"tool": str(observer), "targeted_stages": ["lexical"]},
+            }
+            candidate = "a" * 40
+            git_result = lambda _repository, *arguments: candidate if arguments == ("rev-parse", "HEAD") else ""
+            with patch.object(binding, "_git", side_effect=git_result), patch.object(binding, "_verify_go_binary"):
+                result = binding.create(self.root, self._write_config(root, config), output)
+            self.assertEqual({"frontier"}, set(result["scopes"]))
+            self.assertNotIn("binary_sha256", binding.for_mode(result, "frontier"))
+
     @staticmethod
     def _write_config(root: Path, config: dict) -> Path:
         path = root / "execution.json"
@@ -222,13 +245,12 @@ class BindingManifestTests(unittest.TestCase):
 
     def test_execution_config_rejects_unknown_targeted_stage(self) -> None:
         config = {
-            "schema": "ownward.acceptance-execution/v2",
+            "schema": "ownward.acceptance-execution/v3",
             "repository": "repo", "workspace": "workspace", "binding_dir": "binding",
+            "enabled_scopes": ["frontier", "core", "product", "community"],
+            "candidate": {"binary": "binary", "embedding_bundle_dir": "embedding"},
             "frontier": {"tool": "tool", "targeted_stages": ["unknown"]},
-            "product": {name: name for name in (
-                "binary", "embedding_bundle_dir", "package", "production_storage_report", "codex_binary", "codex_auth_file",
-                "codex_model", "codex_reasoning_effort",
-            )},
+            "product": {name: name for name in ("package", "production_storage_report", "codex_binary", "codex_auth_file", "codex_model", "codex_reasoning_effort")},
             "community": {name: name for name in (
                 "official_repo", "binary", "embedding_bundle_dir", "codex_binary", "codex_auth_file", "submission_root", "submission_name",
             )},
