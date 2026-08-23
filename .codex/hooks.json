@@ -43,30 +43,15 @@
         ]
       }
     ],
-    "PreToolUse": [
-      {
-        "matcher": "Agent|spawn_agent|Bash|apply_patch|Edit|Write|mcp__ownward__.*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "sh \".codex/governance/governance-hook.sh\" hook pre-tool-use",
-            "commandWindows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \".codex\\governance\\governance-hook.ps1\" hook pre-tool-use",
-            "timeout": 30,
-            "statusMessage": "Checking governed work packet"
-          }
-        ]
-      }
-    ],
     "PostToolUse": [
       {
-        "matcher": "Agent|spawn_agent|Bash|apply_patch|Edit|Write|mcp__ownward__.*",
+        "matcher": "Agent|spawn_agent|Bash|exec_command|apply_patch|Edit|Write|mcp__ownward__.*",
         "hooks": [
           {
             "type": "command",
             "command": "sh \".codex/governance/governance-hook.sh\" hook post-tool-use",
             "commandWindows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \".codex\\governance\\governance-hook.ps1\" hook post-tool-use",
-            "timeout": 30,
-            "statusMessage": "Recording governed result"
+            "timeout": 30
           }
         ]
       }

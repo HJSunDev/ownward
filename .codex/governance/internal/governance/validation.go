@@ -5,12 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"regexp"
 	"strings"
 	"time"
 )
-
-var hashPattern = regexp.MustCompile(`^sha256:[0-9a-fA-F]{64}$`)
 
 func nonempty(name, value string) error {
 	if strings.TrimSpace(value) == "" {
@@ -20,8 +17,13 @@ func nonempty(name, value string) error {
 }
 
 func validHash(name, value string) error {
-	if !hashPattern.MatchString(value) {
+	if len(value) != len("sha256:")+64 || !strings.HasPrefix(value, "sha256:") {
 		return fmt.Errorf("%s is not a sha256 identity", name)
+	}
+	for _, char := range value[len("sha256:"):] {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", char) {
+			return fmt.Errorf("%s is not a sha256 identity", name)
+		}
 	}
 	return nil
 }
@@ -32,8 +34,9 @@ func uniqueNonempty(name string, values []string, require bool) error {
 	}
 	seen := map[string]struct{}{}
 	for _, value := range values {
-		if err := nonempty(name, value); err != nil {
-			return err
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return fmt.Errorf("%s contains an empty value", name)
 		}
 		if _, exists := seen[value]; exists {
 			return fmt.Errorf("%s contains duplicate %q", name, value)
@@ -45,316 +48,170 @@ func uniqueNonempty(name string, values []string, require bool) error {
 
 func validateState(state *State) error {
 	if state == nil || state.SchemaVersion != schemaVersion {
-		return errors.New("state schema_version must be 1")
+		return fmt.Errorf("state schema_version must be %d", schemaVersion)
 	}
 	if err := nonempty("run_id", state.RunID); err != nil {
 		return err
 	}
+	if !oneOf(state.Status, "active", "awaiting_user", "complete") {
+		return fmt.Errorf("invalid governance status %q", state.Status)
+	}
 	if err := validHash("authority_hash", state.AuthorityHash); err != nil {
 		return err
 	}
-	if !oneOf(state.Status, "running", "product_decision_required", "external_input_required", "complete") {
-		return fmt.Errorf("invalid state status %q", state.Status)
-	}
-	conditionIDs := map[string]struct{}{}
+	seenConditions := map[string]struct{}{}
 	for _, condition := range state.CompletionConditions {
 		if err := nonempty("condition_id", condition.ConditionID); err != nil {
 			return err
 		}
-		if _, exists := conditionIDs[condition.ConditionID]; exists {
+		if _, exists := seenConditions[condition.ConditionID]; exists {
 			return fmt.Errorf("duplicate completion condition %q", condition.ConditionID)
 		}
-		conditionIDs[condition.ConditionID] = struct{}{}
+		seenConditions[condition.ConditionID] = struct{}{}
 		if !oneOf(condition.Status, "unmet", "in_progress", "met", "evidence_insufficient") {
-			return fmt.Errorf("invalid completion condition status %q", condition.Status)
+			return fmt.Errorf("invalid condition status %q", condition.Status)
 		}
-		if err := uniqueNonempty("completion evidence_ids", condition.EvidenceIDs, false); err != nil {
+		if err := uniqueNonempty("condition evidence_ids", condition.EvidenceIDs, false); err != nil {
 			return err
 		}
 	}
-	if len(conditionIDs) == 0 {
-		return errors.New("completion_conditions must not be empty")
-	}
-	for _, result := range state.ReusableResults {
-		if err := nonempty("result_id", result.ResultID); err != nil {
+	if state.CurrentFocus != nil {
+		if err := validateExecutionSnapshot(state.CurrentFocus); err != nil {
 			return err
 		}
-		if err := uniqueNonempty("result scope", result.Scope, false); err != nil {
-			return err
-		}
-		if err := nonempty("evidence_path", result.EvidencePath); err != nil {
-			return err
-		}
-		if err := validHash("input_hash", result.InputHash); err != nil {
-			return err
-		}
-	}
-	if state.CurrentWorkPacket != nil {
-		if _, exists := conditionIDs[state.CurrentWorkPacket.ConditionID]; !exists {
-			return fmt.Errorf("work packet references unknown condition %q", state.CurrentWorkPacket.ConditionID)
-		}
-		if err := validateWorkPacket(state.CurrentWorkPacket); err != nil {
-			return err
+		if _, exists := seenConditions[state.CurrentFocus.ConditionID]; !exists {
+			return errors.New("current focus references an unknown completion condition")
 		}
 	}
 	if state.PendingIntervention != nil {
 		if err := validatePendingIntervention(state.PendingIntervention); err != nil {
 			return err
 		}
+		if state.Status != "awaiting_user" && state.PendingIntervention.Status == "awaiting_user" {
+			return errors.New("an awaiting user intervention requires status awaiting_user")
+		}
+	} else if state.Status == "awaiting_user" {
+		return errors.New("status awaiting_user requires a pending intervention")
 	}
-	switch state.Status {
-	case "product_decision_required":
-		if state.PendingIntervention == nil || state.PendingIntervention.Kind != "product_decision" {
-			return errors.New("product_decision_required requires a matching pending intervention")
-		}
-	case "external_input_required":
-		if state.PendingIntervention == nil || !oneOf(state.PendingIntervention.Kind, "permission", "credential", "external_state") {
-			return errors.New("external_input_required requires a matching pending intervention")
-		}
-	case "running", "complete":
-		if state.PendingIntervention != nil {
-			return fmt.Errorf("%s state cannot retain a pending intervention", state.Status)
-		}
+	if state.Status == "complete" && state.CurrentFocus != nil {
+		return errors.New("complete state cannot retain a current focus")
 	}
-	if state.Review.FixedReviewGeneration < 0 {
-		return errors.New("fixed_review_generation must be non-negative")
+	if err := validateReviewState(&state.Review); err != nil {
+		return err
 	}
-	if state.Review.Required {
-		if state.Review.ReviewID == nil || state.Review.TriggerInstanceID == nil || state.Review.ReviewSnapshotHash == nil || state.Review.Trigger == nil {
-			return errors.New("required review must carry request identity and trigger")
-		}
-		if err := validHash("review_snapshot_hash", *state.Review.ReviewSnapshotHash); err != nil {
+	for _, result := range state.ReusableResults {
+		if err := nonempty("result_id", result.ResultID); err != nil {
 			return err
 		}
-	}
-	if state.Status == "complete" && state.Review.Required {
-		return errors.New("complete state cannot require review")
+		if err := validHash("result input_hash", result.InputHash); err != nil {
+			return err
+		}
 	}
 	if state.Owner != nil {
-		if err := nonempty("owner.session_id", state.Owner.SessionID); err != nil {
-			return err
-		}
-		if state.Owner.OwnerEpoch == 0 {
-			return errors.New("owner.owner_epoch must be positive")
+		if state.Owner.OwnerEpoch == 0 || strings.TrimSpace(state.Owner.SessionID) == "" {
+			return errors.New("governance owner identity is invalid")
 		}
 		if _, err := time.Parse(time.RFC3339Nano, state.Owner.AcquiredAt); err != nil {
-			return errors.New("owner.acquired_at must be RFC3339")
+			return errors.New("governance owner acquired_at is invalid")
 		}
 	}
 	if state.Handoff != nil {
-		if state.Owner == nil {
-			return errors.New("handoff requires an active owner")
-		}
-		if err := validHash("handoff.token_hash", state.Handoff.TokenHash); err != nil {
-			return err
-		}
-		if state.Handoff.SourceSessionID != state.Owner.SessionID || state.Handoff.SourceEpoch != state.Owner.OwnerEpoch {
-			return errors.New("handoff source does not match the active owner")
-		}
-		if !oneOf(state.Handoff.Status, "prepared", "bound") {
-			return errors.New("handoff status must be prepared or bound")
-		}
-		if _, err := time.Parse(time.RFC3339Nano, state.Handoff.ExpiresAt); err != nil {
-			return errors.New("handoff.expires_at must be RFC3339")
-		}
-	}
-	if state.InfrastructureFailure != nil {
-		failure := state.InfrastructureFailure
-		for name, value := range map[string]string{"infrastructure_failure.review_id": failure.ReviewID, "infrastructure_failure.trigger_instance_id": failure.TriggerInstance, "infrastructure_failure.signature": failure.Signature, "infrastructure_failure.owner_session_id": failure.OwnerSessionID, "infrastructure_failure.recovery_action": failure.RecoveryAction} {
-			if err := nonempty(name, value); err != nil {
-				return err
-			}
-		}
-		if err := validHash("infrastructure_failure.runtime_identity", failure.RuntimeIdentity); err != nil {
-			return err
-		}
-		if failure.Status != "latched" {
-			return errors.New("infrastructure_failure status must be latched")
-		}
-		if failure.OwnerEpoch == 0 {
-			return errors.New("infrastructure_failure owner_epoch must be positive")
+		if state.Owner == nil || !oneOf(state.Handoff.Status, "prepared", "bound") || state.Handoff.SourceEpoch != state.Owner.OwnerEpoch || state.Handoff.SourceSessionID != state.Owner.SessionID {
+			return errors.New("governance handoff is inconsistent with its owner")
 		}
 	}
 	return nil
 }
 
-func validateWorkPacket(packet *WorkPacket) error {
-	if packet == nil {
-		return errors.New("work packet is required")
+func validateReviewState(review *ReviewState) error {
+	if review == nil || !oneOf(review.Status, "idle", "requested", "feedback_ready", "responded", "missed") {
+		return errors.New("review status is invalid")
 	}
-	for name, value := range map[string]string{
-		"packet_id": packet.PacketID, "condition_id": packet.ConditionID, "objective": packet.Objective,
-		"value": packet.Value, "checkpoint_id": packet.EvidenceCheckpoint.CheckpointID,
-		"checkpoint_description": packet.EvidenceCheckpoint.Description, "started_at": packet.StartedAt,
-	} {
+	if review.FixedReviewGeneration < 0 {
+		return errors.New("fixed_review_generation must be non-negative")
+	}
+	active := review.Status != "idle"
+	if active && (review.ReviewID == nil || review.TriggerInstanceID == nil || review.ReviewSnapshotHash == nil || review.Trigger == nil) {
+		return errors.New("non-idle review must carry its complete identity")
+	}
+	if review.ReviewSnapshotHash != nil {
+		if err := validHash("review_snapshot_hash", *review.ReviewSnapshotHash); err != nil {
+			return err
+		}
+	}
+	if review.Status == "requested" && (review.FeedbackPath != nil || review.Response != nil) {
+		return errors.New("requested review cannot contain feedback or a response")
+	}
+	if review.Status == "feedback_ready" && (review.FeedbackPath == nil || review.Response != nil) {
+		return errors.New("feedback_ready review requires feedback and no response")
+	}
+	if review.Status == "responded" && (review.FeedbackPath == nil || review.Response == nil) {
+		return errors.New("responded review requires feedback and a main-Agent response")
+	}
+	if review.Status == "missed" && review.Response != nil {
+		return errors.New("missed review cannot contain a response")
+	}
+	return nil
+}
+
+func validateExecutionSnapshot(snapshot *ExecutionSnapshot) error {
+	if snapshot == nil {
+		return errors.New("execution snapshot is required")
+	}
+	for name, value := range map[string]string{"focus_id": snapshot.FocusID, "condition_id": snapshot.ConditionID, "objective": snapshot.Objective, "value": snapshot.Value, "checkpoint_id": snapshot.EvidenceCheckpoint.CheckpointID, "checkpoint_description": snapshot.EvidenceCheckpoint.Description, "started_at": snapshot.StartedAt} {
 		if err := nonempty(name, value); err != nil {
 			return err
 		}
 	}
-	if _, err := time.Parse(time.RFC3339Nano, packet.StartedAt); err != nil {
-		return errors.New("work packet started_at must be RFC3339")
-	}
-	if err := uniqueNonempty("allowed_scope", packet.AllowedScope, true); err != nil {
+	if err := uniqueNonempty("involved_scope", snapshot.InvolvedScope, true); err != nil {
 		return err
 	}
-	if err := uniqueNonempty("excluded_scope", packet.ExcludedScope, false); err != nil {
+	if err := uniqueNonempty("expected_evidence", snapshot.ExpectedEvidence, true); err != nil {
 		return err
 	}
-	if err := uniqueNonempty("expected_evidence", packet.ExpectedEvidence, true); err != nil {
+	if err := validHash("snapshot_hash", snapshot.SnapshotHash); err != nil {
 		return err
 	}
-	if err := uniqueNonempty("failure_signatures", packet.FailureSignatures, false); err != nil {
-		return err
+	if _, err := time.Parse(time.RFC3339Nano, snapshot.StartedAt); err != nil {
+		return errors.New("execution snapshot started_at is invalid")
 	}
-	if len(packet.FailureSignatures) != 0 {
-		return errors.New("legacy failure_signatures must be migrated before validation")
+	if snapshot.LastEvidenceAt != nil {
+		if _, err := time.Parse(time.RFC3339Nano, *snapshot.LastEvidenceAt); err != nil {
+			return errors.New("execution snapshot last_evidence_at is invalid")
+		}
 	}
-	eventIDs := map[string]FailureEvent{}
-	for _, event := range packet.FailureEvents {
-		for name, value := range map[string]string{
-			"failure event_id": event.EventID, "failure signature": event.Signature,
-			"failure work_packet_id": event.WorkPacketID, "failure source_kind": event.SourceKind,
-			"failure source_execution": event.SourceExecution, "failure tool_use_id": event.ToolUseID,
-		} {
-			if err := nonempty(name, value); err != nil {
-				return err
-			}
-		}
-		if event.WorkPacketID != packet.PacketID || !oneOf(event.SourceKind, "codex_hook", "governed_run", "legacy") || !oneOf(event.Trust, "verified", "legacy_unverified") || event.RepairGeneration < 0 {
-			return errors.New("failure event has invalid packet, source, trust or repair generation")
-		}
-		if err := validHash("failure evidence_hash", event.EvidenceHash); err != nil {
-			return err
-		}
-		if event.Trust == "verified" {
-			if event.KnownEvidenceIDs == nil {
-				return errors.New("verified failure known_evidence_ids must be present")
-			}
-			if err := uniqueNonempty("failure known_evidence_ids", event.KnownEvidenceIDs, false); err != nil {
-				return err
-			}
-			for name, value := range map[string]string{
-				"failure repository_identity": event.RepositoryIdentity,
-				"failure candidate_identity":  event.CandidateIdentity,
-				"failure config_identity":     event.ConfigIdentity,
-				"failure runtime_identity":    event.RuntimeIdentity,
-			} {
-				if err := validHash(name, value); err != nil {
-					return err
-				}
-			}
-		}
-		if _, err := time.Parse(time.RFC3339Nano, event.OccurredAt); err != nil {
-			return errors.New("failure event occurred_at must be RFC3339")
-		}
-		if _, exists := eventIDs[event.EventID]; exists {
-			return fmt.Errorf("duplicate failure event %q", event.EventID)
-		}
-		eventIDs[event.EventID] = event
+	if snapshot.EvidenceCheckpoint.Reached && (snapshot.Checkpoint == nil || *snapshot.Checkpoint != snapshot.EvidenceCheckpoint.CheckpointID) {
+		return errors.New("reached evidence checkpoint must be reflected by checkpoint")
 	}
-	repairIDs := map[string]struct{}{}
-	repairGenerations := map[string]struct{}{}
-	for _, repair := range packet.FailureRepairs {
-		for name, value := range map[string]string{
-			"repair_id": repair.RepairID, "repair signature": repair.Signature,
-			"repair previous_event_id": repair.PreviousEventID, "repair work_packet_id": repair.WorkPacketID,
-		} {
-			if err := nonempty(name, value); err != nil {
-				return err
-			}
+	for _, event := range snapshot.FailureEvents {
+		if event.FocusID != snapshot.FocusID || event.EventID == "" || event.Signature == "" {
+			return errors.New("failure event is not bound to the current focus")
 		}
-		if repair.WorkPacketID != packet.PacketID || repair.RepairGeneration < 1 {
-			return errors.New("failure repair has invalid packet or generation")
-		}
-		previous, exists := eventIDs[repair.PreviousEventID]
-		if !exists || previous.Trust != "verified" || previous.Signature != repair.Signature || repair.RepairGeneration != previous.RepairGeneration+1 {
-			return errors.New("failure repair does not advance its verified previous event by one generation")
-		}
-		for name, value := range map[string]string{
-			"repair repository_identity": repair.RepositoryIdentity, "repair candidate_identity": repair.CandidateIdentity,
-			"repair config_identity": repair.ConfigIdentity, "repair runtime_identity": repair.RuntimeIdentity,
-		} {
-			if err := validHash(name, value); err != nil {
-				return err
-			}
-		}
-		if err := uniqueNonempty("repair evidence_ids", repair.EvidenceIDs, true); err != nil {
-			return err
-		}
-		knownAtFailure := map[string]struct{}{}
-		for _, evidenceID := range previous.KnownEvidenceIDs {
-			knownAtFailure[evidenceID] = struct{}{}
-		}
-		for _, evidenceID := range repair.EvidenceIDs {
-			if _, existed := knownAtFailure[evidenceID]; existed {
-				return errors.New("failure repair cannot reuse evidence that predates its failure event")
-			}
-		}
-		if _, err := time.Parse(time.RFC3339Nano, repair.RecordedAt); err != nil {
-			return errors.New("failure repair recorded_at must be RFC3339")
-		}
-		if _, exists := repairIDs[repair.RepairID]; exists {
-			return fmt.Errorf("duplicate failure repair %q", repair.RepairID)
-		}
-		repairIDs[repair.RepairID] = struct{}{}
-		generationKey := fmt.Sprintf("%s:%d", repair.Signature, repair.RepairGeneration)
-		if _, exists := repairGenerations[generationKey]; exists {
-			return fmt.Errorf("duplicate failure repair generation %q", generationKey)
-		}
-		repairGenerations[generationKey] = struct{}{}
 	}
-	if err := validHash("plan_hash", packet.PlanHash); err != nil {
-		return err
-	}
-	expectedPlanHash, err := workPacketPlanHash(packet)
-	if err != nil {
-		return err
-	}
-	if packet.PlanHash != expectedPlanHash {
-		return errors.New("work packet plan_hash does not match its governed plan")
-	}
-	if packet.Approval != nil {
-		if packet.Approval.Status != "approved" || packet.Approval.ValidUntilCheckpoint != packet.EvidenceCheckpoint.CheckpointID {
-			return errors.New("work packet approval is invalid")
-		}
-		if err := validHash("approval review_snapshot_hash", packet.Approval.ReviewSnapshotHash); err != nil {
-			return err
+	for _, repair := range snapshot.FailureRepairs {
+		if repair.FocusID != snapshot.FocusID || repair.RepairID == "" || repair.RepairGeneration < 1 {
+			return errors.New("failure repair is not bound to the current focus")
 		}
 	}
 	return nil
-}
-
-func workPacketPlanHash(packet *WorkPacket) (string, error) {
-	proposal := WorkPacketProposal{
-		PacketID: packet.PacketID, ConditionID: packet.ConditionID, Objective: packet.Objective, Value: packet.Value,
-		AllowedScope: normalizeStrings(packet.AllowedScope), ExcludedScope: normalizeStrings(packet.ExcludedScope),
-		ExpectedEvidence: normalizeStrings(packet.ExpectedEvidence), CheckpointID: packet.EvidenceCheckpoint.CheckpointID,
-		CheckpointDescription: packet.EvidenceCheckpoint.Description,
-	}
-	return hashJSON(proposal)
 }
 
 func validateReviewRequest(request *ReviewRequest) error {
 	if request == nil || request.SchemaVersion != schemaVersion {
-		return errors.New("review request schema_version must be 1")
+		return fmt.Errorf("review request schema_version must be %d", schemaVersion)
 	}
-	for name, value := range map[string]string{
-		"review_id": request.ReviewID, "trigger_instance_id": request.TriggerInstanceID,
-		"repository.root":        request.RepositorySnapshot.Root,
-		"repository.head_commit": request.RepositorySnapshot.HeadCommit, "state_path": request.StatePath,
-		"created_at": request.CreatedAt,
-	} {
+	for name, value := range map[string]string{"review_id": request.ReviewID, "trigger_instance_id": request.TriggerInstanceID, "repository.root": request.RepositorySnapshot.Root, "repository.head_commit": request.RepositorySnapshot.HeadCommit, "state_path": request.StatePath, "created_at": request.CreatedAt} {
 		if err := nonempty(name, value); err != nil {
 			return err
 		}
-	}
-	if err := validateReviewTrigger(request.Trigger); err != nil {
-		return err
 	}
 	if err := validHash("review_snapshot_hash", request.ReviewSnapshotHash); err != nil {
 		return err
 	}
 	if err := validHash("repository.working_tree_hash", request.RepositorySnapshot.WorkingTreeHash); err != nil {
+		return err
+	}
+	if err := validateReviewTrigger(request.Trigger); err != nil {
 		return err
 	}
 	if err := uniqueNonempty("authority_paths", request.AuthorityPaths, true); err != nil {
@@ -363,42 +220,35 @@ func validateReviewRequest(request *ReviewRequest) error {
 	if err := uniqueNonempty("completion_definition_paths", request.CompletionDefinitionPaths, true); err != nil {
 		return err
 	}
-	if _, err := time.Parse(time.RFC3339Nano, request.CreatedAt); err != nil {
-		return errors.New("review request created_at must be RFC3339")
-	}
-	for _, evidence := range request.EvidenceRefs {
-		if err := nonempty("evidence_id", evidence.EvidenceID); err != nil {
+	if request.CurrentFocus != nil {
+		input := &ExecutionSnapshotInput{FocusID: request.CurrentFocus.FocusID, ConditionID: request.CurrentFocus.ConditionID, Objective: request.CurrentFocus.Objective, Value: request.CurrentFocus.Value, InvolvedScope: request.CurrentFocus.InvolvedScope, ExpectedEvidence: request.CurrentFocus.ExpectedEvidence, CheckpointID: request.CurrentFocus.CheckpointID, CheckpointDescription: request.CurrentFocus.CheckpointDescription}
+		if err := validateExecutionSnapshotInput(input); err != nil {
 			return err
 		}
-		if err := nonempty("evidence path", evidence.Path); err != nil {
-			return err
-		}
-		if err := validHash("evidence hash", evidence.Hash); err != nil {
+		if err := validHash("current_focus.snapshot_hash", request.CurrentFocus.SnapshotHash); err != nil {
 			return err
 		}
 	}
 	if request.PendingIntervention != nil {
 		if err := validatePendingIntervention(request.PendingIntervention); err != nil {
-			return fmt.Errorf("invalid pending intervention in review request: %w", err)
+			return err
 		}
+	}
+	if _, err := time.Parse(time.RFC3339Nano, request.CreatedAt); err != nil {
+		return errors.New("review request created_at must be RFC3339")
 	}
 	return nil
 }
 
 func validateReviewTrigger(trigger ReviewTrigger) error {
-	for name, value := range map[string]string{
-		"trigger.kind":      trigger.Kind,
-		"trigger.type":      trigger.Type,
-		"trigger.source_id": trigger.SourceID,
-		"trigger.reason":    trigger.Reason,
-	} {
+	for name, value := range map[string]string{"trigger.kind": trigger.Kind, "trigger.type": trigger.Type, "trigger.source_id": trigger.SourceID, "trigger.reason": trigger.Reason} {
 		if err := nonempty(name, value); err != nil {
 			return err
 		}
 	}
 	allowed := map[string][]string{
-		"fixed":    {"activation", "session-start", "explicit-resume", "runtime-repair-recovery", "legacy-state-migration"},
-		"event":    {"new-work-packet", "evidence-checkpoint", "repeated-failure", "authority-change", "intervention-resolution", "failure-recording-integrity", "completion-candidate"},
+		"fixed":    {"activation", "session-start", "post-compact", "legacy-state-migration"},
+		"event":    {"focus-change", "evidence-checkpoint", "evidence-checkpoint-missed", "evidence-identity-change", "repeated-failure", "authority-change", "intervention-resolution", "failure-recording-integrity", "completion-candidate"},
 		"advisory": {"explicit-advisory"},
 	}
 	types, exists := allowed[trigger.Kind]
@@ -410,13 +260,9 @@ func validateReviewTrigger(trigger ReviewTrigger) error {
 
 func validateReviewResult(result *ReviewResult) error {
 	if result == nil {
-		return errors.New("review result is required")
+		return errors.New("Governor feedback is required")
 	}
-	for name, value := range map[string]string{
-		"review_id": result.ReviewID, "trigger_instance_id": result.TriggerInstanceID,
-		"macro_assessment.overall_progress": result.MacroAssessment.OverallProgress,
-		"macro_assessment.evidence_support": result.MacroAssessment.EvidenceSupport, "reason": result.Reason,
-	} {
+	for name, value := range map[string]string{"review_id": result.ReviewID, "trigger_instance_id": result.TriggerInstanceID, "reason": result.Reason, "macro_assessment.overall_progress": result.MacroAssessment.OverallProgress, "macro_assessment.evidence_support": result.MacroAssessment.EvidenceSupport} {
 		if err := nonempty(name, value); err != nil {
 			return err
 		}
@@ -424,8 +270,8 @@ func validateReviewResult(result *ReviewResult) error {
 	if err := validHash("review_snapshot_hash", result.ReviewSnapshotHash); err != nil {
 		return err
 	}
-	if !oneOf(result.Decision, "start", "continue", "replan", "stage_complete", "task_complete", "product_decision_required", "external_input_required") {
-		return fmt.Errorf("invalid review decision %q", result.Decision)
+	if !oneOf(result.Recommendation, "continue", "adjust", "stage_complete", "goal_complete", "product_decision_needed", "external_input_needed") {
+		return fmt.Errorf("invalid Governor recommendation %q", result.Recommendation)
 	}
 	if err := uniqueNonempty("preserved_result_ids", result.PreservedResultIDs, false); err != nil {
 		return err
@@ -433,77 +279,69 @@ func validateReviewResult(result *ReviewResult) error {
 	if err := uniqueNonempty("validated_evidence_ids", result.ValidatedEvidenceIDs, false); err != nil {
 		return err
 	}
-	switch result.Decision {
-	case "start", "replan", "stage_complete":
-		if result.HighestPriorityGap == nil || result.NextWorkPacket == nil || result.ExternalInput != nil {
-			return errors.New("work-packet transition decisions require a gap and next work packet, without external input")
-		}
-		if err := validateProposal(result.NextWorkPacket); err != nil {
-			return err
-		}
+	switch result.Recommendation {
 	case "continue":
-		if result.HighestPriorityGap == nil || result.NextWorkPacket != nil || result.ExternalInput != nil {
-			return errors.New("continue requires a gap and the existing work packet, without a replacement packet or external input")
+		if result.SuggestedFocus != nil || result.ExternalInput != nil || !result.PathAssessment.Necessary || !result.PathAssessment.Efficient || !result.PathAssessment.Optimal {
+			return errors.New("continue feedback must affirm the current path without a replacement focus")
 		}
-	case "task_complete":
-		if result.HighestPriorityGap != nil || result.NextWorkPacket != nil || result.ExternalInput != nil || len(result.MacroAssessment.Unmet) != 0 || len(result.ValidatedEvidenceIDs) == 0 {
-			return errors.New("task_complete requires no gap, next packet, external input or unmet items, and validated evidence")
+	case "adjust", "stage_complete":
+		if result.SuggestedFocus == nil || result.ExternalInput != nil || result.HighestPriorityGap == nil {
+			return errors.New("adjust and stage_complete feedback require a suggested focus and no external input")
 		}
-	case "product_decision_required":
-		if result.HighestPriorityGap == nil || result.NextWorkPacket != nil || result.ExternalInput == nil || result.ExternalInput.Kind != "product_decision" {
-			return errors.New("product_decision_required has inconsistent external input")
-		}
-	case "external_input_required":
-		if result.HighestPriorityGap == nil || result.NextWorkPacket != nil || result.ExternalInput == nil || !oneOf(result.ExternalInput.Kind, "permission", "credential", "external_state") {
-			return errors.New("external_input_required has inconsistent external input")
-		}
-	}
-	if oneOf(result.Decision, "start", "continue") && (!result.PathAssessment.Necessary || !result.PathAssessment.Efficient || !result.PathAssessment.Optimal) {
-		return fmt.Errorf("%s requires a necessary, efficient and optimal path", result.Decision)
-	}
-	if result.Decision == "replan" && (result.PathAssessment.Optimal || len(result.PathAssessment.Problems) == 0 || len(result.PathAssessment.BetterPlan) == 0) {
-		return errors.New("replan requires a non-optimal path, problems and a better plan")
-	}
-	if result.Decision == "stage_complete" && len(result.ValidatedEvidenceIDs) == 0 {
-		return errors.New("stage_complete requires validated evidence")
-	}
-	if result.ExternalInput != nil {
-		if err := nonempty("external_input.fact", result.ExternalInput.Fact); err != nil {
+		if err := validateExecutionSnapshotInput(result.SuggestedFocus); err != nil {
 			return err
 		}
-		if err := uniqueNonempty("external_input.exhausted_paths", result.ExternalInput.ExhaustedPaths, true); err != nil {
+		if result.Recommendation == "adjust" && (result.PathAssessment.Optimal || len(result.PathAssessment.Problems) == 0 || len(result.PathAssessment.BetterPlan) == 0) {
+			return errors.New("adjust feedback must identify a real path problem and a better plan")
+		}
+	case "goal_complete":
+		if result.HighestPriorityGap != nil || result.SuggestedFocus != nil || result.ExternalInput != nil || len(result.ValidatedEvidenceIDs) == 0 || len(result.MacroAssessment.Unmet) != 0 {
+			return errors.New("goal_complete feedback must bind complete evidence without remaining work")
+		}
+	case "product_decision_needed", "external_input_needed":
+		if result.HighestPriorityGap == nil || result.SuggestedFocus != nil || result.ExternalInput == nil {
+			return errors.New("user-input feedback requires one bounded external input")
+		}
+		if err := validateExternalInput(result.ExternalInput); err != nil {
 			return err
 		}
-		if err := nonempty("external_input.minimum_user_input", result.ExternalInput.MinimumUserInput); err != nil {
-			return err
+		if result.Recommendation == "product_decision_needed" && result.ExternalInput.Kind != "product_decision" {
+			return errors.New("product_decision_needed requires product_decision input")
+		}
+		if result.Recommendation == "external_input_needed" && result.ExternalInput.Kind == "product_decision" {
+			return errors.New("external_input_needed cannot request a product decision")
 		}
 	}
 	return nil
 }
 
-func validateReviewResultForState(result *ReviewResult, state *State) error {
-	if result == nil || state == nil {
-		return errors.New("review result and state are required")
+func validateReviewResultForState(result *ReviewResult, request *ReviewRequest, state *State) error {
+	if result == nil || request == nil || state == nil {
+		return errors.New("Governor feedback, request and state are required")
 	}
-	switch result.Decision {
-	case "start":
-		if state.CurrentWorkPacket != nil {
-			return errors.New("start is only valid when no current work packet exists")
-		}
-	case "continue":
-		if state.CurrentWorkPacket == nil {
-			return errors.New("continue requires the existing current work packet")
-		}
-		if state.CurrentWorkPacket.EvidenceCheckpoint.Reached {
-			return errors.New("continue cannot approve a work packet whose evidence checkpoint is reached")
-		}
-	case "stage_complete":
-		if state.CurrentWorkPacket == nil {
-			return errors.New("stage_complete requires an existing current work packet")
+	if err := ensureKnownEvidence(state, result.ValidatedEvidenceIDs); err != nil {
+		return err
+	}
+	if err := ensureKnownEvidence(state, result.PreservedResultIDs); err != nil {
+		return err
+	}
+	if err := ensureReferencedEvidence(request, append(append([]string(nil), result.ValidatedEvidenceIDs...), result.PreservedResultIDs...)); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateReviewResponseInput(input *ReviewResponseInput) error {
+	if input == nil {
+		return errors.New("review response is required")
+	}
+	for name, value := range map[string]string{"review_id": input.ReviewID, "reason": input.Reason, "next_validation_point": input.NextValidationPoint} {
+		if err := nonempty(name, value); err != nil {
+			return err
 		}
 	}
-	if state.PendingIntervention != nil && state.PendingIntervention.Status == "awaiting_user" {
-		return errors.New("Governor cannot decide before the pending user intervention is resolved")
+	if !oneOf(input.Disposition, "adopt", "decline", "acknowledge") {
+		return errors.New("review response disposition must be adopt, decline or acknowledge")
 	}
 	return nil
 }
@@ -512,93 +350,110 @@ func validatePendingIntervention(pending *PendingIntervention) error {
 	if pending == nil {
 		return errors.New("pending intervention is required")
 	}
-	for name, value := range map[string]string{
-		"intervention_id": pending.InterventionID, "source_review_id": pending.SourceReviewID,
-		"kind": pending.Kind, "fact": pending.Fact, "minimum_user_input": pending.MinimumUserInput,
-	} {
+	for name, value := range map[string]string{"intervention_id": pending.InterventionID, "source_review_id": pending.SourceReviewID, "fact": pending.Fact, "minimum_user_input": pending.MinimumUserInput} {
 		if err := nonempty(name, value); err != nil {
 			return err
 		}
 	}
-	if !oneOf(pending.Kind, "product_decision", "permission", "credential", "external_state") {
-		return fmt.Errorf("invalid pending intervention kind %q", pending.Kind)
+	if !oneOf(pending.Kind, "product_decision", "permission", "credential", "external_state") || !oneOf(pending.Status, "awaiting_user", "resolution_pending_review") {
+		return errors.New("pending intervention kind or status is invalid")
 	}
 	if err := uniqueNonempty("pending intervention exhausted_paths", pending.ExhaustedPaths, true); err != nil {
 		return err
-	}
-	if !oneOf(pending.Status, "awaiting_user", "resolution_pending_review") {
-		return fmt.Errorf("invalid pending intervention status %q", pending.Status)
 	}
 	if pending.Status == "awaiting_user" && pending.Resolution != nil {
 		return errors.New("awaiting_user intervention cannot contain a resolution")
 	}
 	if pending.Status == "resolution_pending_review" {
 		if pending.Resolution == nil {
-			return errors.New("resolution_pending_review intervention requires a resolution")
+			return errors.New("resolution_pending_review requires a resolution")
 		}
-		if err := validateInterventionResolution(pending.Resolution); err != nil {
-			return err
-		}
+		return validateInterventionResolution(pending.Resolution)
 	}
 	return nil
+}
+
+func validateExternalInput(input *ExternalInput) error {
+	if input == nil || !oneOf(input.Kind, "product_decision", "permission", "credential", "external_state") {
+		return errors.New("external input kind is invalid")
+	}
+	if err := nonempty("external input fact", input.Fact); err != nil {
+		return err
+	}
+	if err := uniqueNonempty("external input exhausted_paths", input.ExhaustedPaths, true); err != nil {
+		return err
+	}
+	return nonempty("external input minimum_user_input", input.MinimumUserInput)
 }
 
 func validateInterventionResolutionInput(input *ResolveInterventionInput) error {
 	if input == nil {
 		return errors.New("intervention resolution is required")
 	}
-	for name, value := range map[string]string{
-		"intervention_id": input.InterventionID, "source_turn_id": input.SourceTurnID, "summary": input.Summary,
-	} {
+	for name, value := range map[string]string{"intervention_id": input.InterventionID, "source_turn_id": input.SourceTurnID, "summary": input.Summary} {
 		if err := nonempty(name, value); err != nil {
 			return err
 		}
 	}
-	if len([]rune(strings.TrimSpace(input.Summary))) > 4000 {
-		return errors.New("intervention resolution summary exceeds 4000 characters")
+	if len(input.Summary) > 4000 {
+		return errors.New("intervention summary is too long")
 	}
-	return uniqueNonempty("intervention resolution evidence_refs", input.EvidenceRefs, false)
+	return uniqueNonempty("intervention evidence_refs", input.EvidenceRefs, false)
 }
 
 func validateInterventionResolution(resolution *InterventionResolution) error {
 	if resolution == nil {
 		return errors.New("intervention resolution is required")
 	}
-	input := ResolveInterventionInput{
-		SourceTurnID:   resolution.SourceTurnID,
-		Summary:        resolution.Summary,
-		EvidenceRefs:   resolution.EvidenceRefs,
-		InterventionID: "persisted",
-	}
+	input := ResolveInterventionInput{SourceTurnID: resolution.SourceTurnID, Summary: resolution.Summary, EvidenceRefs: resolution.EvidenceRefs, InterventionID: "persisted"}
 	if err := validateInterventionResolutionInput(&input); err != nil {
 		return err
 	}
 	if _, err := time.Parse(time.RFC3339Nano, resolution.SubmittedAt); err != nil {
-		return errors.New("intervention resolution submitted_at must be RFC3339")
+		return errors.New("intervention resolution submitted_at is invalid")
 	}
 	return nil
 }
 
-func validateProposal(proposal *WorkPacketProposal) error {
-	if proposal == nil {
-		return errors.New("work packet proposal is required")
+func validateExecutionSnapshotInput(input *ExecutionSnapshotInput) error {
+	if input == nil {
+		return errors.New("execution snapshot input is required")
 	}
-	for name, value := range map[string]string{
-		"packet_id": proposal.PacketID, "condition_id": proposal.ConditionID, "objective": proposal.Objective,
-		"value": proposal.Value, "checkpoint_id": proposal.CheckpointID,
-		"checkpoint_description": proposal.CheckpointDescription,
-	} {
+	for name, value := range map[string]string{"focus_id": input.FocusID, "condition_id": input.ConditionID, "objective": input.Objective, "value": input.Value, "checkpoint_id": input.CheckpointID, "checkpoint_description": input.CheckpointDescription} {
 		if err := nonempty(name, value); err != nil {
 			return err
 		}
 	}
-	if err := uniqueNonempty("allowed_scope", proposal.AllowedScope, true); err != nil {
+	if err := uniqueNonempty("involved_scope", input.InvolvedScope, true); err != nil {
 		return err
 	}
-	if err := uniqueNonempty("excluded_scope", proposal.ExcludedScope, false); err != nil {
-		return err
+	return uniqueNonempty("expected_evidence", input.ExpectedEvidence, true)
+}
+
+func ensureKnownEvidence(state *State, ids []string) error {
+	known := map[string]struct{}{}
+	for _, result := range state.ReusableResults {
+		known[result.ResultID] = struct{}{}
 	}
-	return uniqueNonempty("expected_evidence", proposal.ExpectedEvidence, true)
+	for _, id := range ids {
+		if _, exists := known[id]; !exists {
+			return fmt.Errorf("unknown evidence id %q", id)
+		}
+	}
+	return nil
+}
+
+func ensureReferencedEvidence(request *ReviewRequest, ids []string) error {
+	referenced := map[string]struct{}{}
+	for _, evidence := range request.EvidenceRefs {
+		referenced[evidence.EvidenceID] = struct{}{}
+	}
+	for _, id := range normalizeStrings(ids) {
+		if _, exists := referenced[id]; !exists {
+			return fmt.Errorf("Governor referenced evidence id %q that was not present in its review request", id)
+		}
+	}
+	return nil
 }
 
 func validateSchemaDocuments(runtime *Runtime) error {
@@ -609,10 +464,10 @@ func validateSchemaDocuments(runtime *Runtime) error {
 		}
 		var document map[string]any
 		if err := json.Unmarshal(data, &document); err != nil {
-			return fmt.Errorf("invalid schema %s: %w", configured, err)
+			return fmt.Errorf("invalid JSON schema %s: %w", configured, err)
 		}
 		if document["type"] != "object" || document["additionalProperties"] != false {
-			return fmt.Errorf("schema %s must be a closed object", configured)
+			return fmt.Errorf("schema %s is not a closed object contract", configured)
 		}
 	}
 	return nil

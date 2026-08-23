@@ -1,102 +1,71 @@
 # Codex 主 Agent 与 Governor 子 Agent 交互规范
 
-本规范仅用于在 Codex 中建立、维护或审查自主开发治理的父子 Agent 交互。Governor 的判断顺序与质量标准见 [Governor 宏观复核规范](governor-review.md)。
+本规范只说明 Codex 中的父子 Agent 交互。Governor 的判断质量见 [Governor 宏观复核规范](governor-review.md)。
 
-## 职责边界
+## 职责
 
-- **主 Agent** 是唯一产品实现者，负责维护执行状态、启动复核、等待结果并继续任务。
-- **Governor** 使用独立上下文，只读目标、完成条件、状态、证据和实际投入，不修改产品或代替主 Agent 开发。执行状态只是待核对的主 Agent 陈述，不是 Governor 的事实权威；Governor 必须直接核对仓库和原始证据。
-- **确定性看门狗** 只识别触发条件、阻止未获有效复核的动作并校验监督结果，不判断开放问题。
+- 主 Agent 是唯一实现者，维护执行快照、启动复核、阅读反馈、明确回应并自行决定后续动作。
+- Governor 使用独立上下文，只读目标、完成条件、仓库、状态和证据，返回风险与更优路线，不修改任何文件。
+- 确定性运行时只识别自然边界、生成唯一请求、校验身份与 Schema、保存反馈和回应；它不判断语义，也不控制执行。
 
-## 触发与等待
+## 交互链路
 
-Hook 不能直接启动智能体。触发条件成立时，按以下固定链路执行：
-
-```text
-Hook 创建复核请求并阻止原动作
-        ↓
-主 Agent 启动 Governor
-        ↓
-主 Agent 等待，不继续原任务
-        ↓
-Governor 完成判断并通过 Codex 原生父子通道返回结果
-        ↓
-主 Agent 直接收到结果
-        ↓
-确定性程序校验并持久化
-        ↓
-看门狗验证有效后允许继续
-```
-
-对应的 Codex 执行关系是：
+Hook 不能直接启动智能体。合法触发成立后：
 
 ```text
-父线程：spawn_agent(governor, 复核请求)
-父线程：wait_agent(governor)
-子线程：final(结构化 JSON)
-父线程：直接收到 JSON
-父线程：governance-cli accept-review(复核请求, JSON)
+Hook 创建或复用 review-request.json
+        ↓
+Hook 在自然边界向主 Agent 交付一次操作说明
+        ↓
+主 Agent 复用当前主任务唯一的 Governor；没有活动 Governor 时只启动一个
+        ↓
+主 Agent 等待 Governor 通过 Codex 原生父子通道返回一个 JSON
+        ↓
+主 Agent 调用 accept-review，确定性校验后原样落盘
+        ↓
+主 Agent 阅读反馈并调用 record-review-response
+        ↓
+主 Agent 按自己的判断继续
 ```
 
-Skill 必须规定：复核触发后立即启动并等待 Governor；有效结论落盘前，原动作始终保持阻止。文件不负责通知子 Agent 已完成，实时交互由 Codex 原生父子通道承担。
+等待是为了在该自然边界取得完整反馈，不是冻结产品或夺取方向盘。Governor 无法启动、超时、返回错误或校验失败时，本次 Review 标记为 `missed`，主 Agent 继续；普通消息不得自动重试。
 
-主任务的首次明确激活、真实 `SessionStart` 恢复和规范主线提示词显式恢复属于固定触发；工作包、证据检查点、重复失败、权威变化、用户事项解决和显式完成属于事实事件复核；主动征求宏观建议属于 advisory。三类触发均携带结构化类型、来源身份和确定性实例 ID。通用 `Stop` 不注册为治理事件；Governor 的 `SubagentStart`、`SubagentStop` 也不注册，因此普通回复和 Governor 启停都不会递归复核。Governor 保持只读且不得通过 `hooks = false` 关闭全部 Hooks，其读取动作走低成本快速放行，其他安全、审计和项目 Hook 继续生效。
+## 单一支线与幂等
 
-## 交互契约
+同一主任务只维护一份治理状态、一个当前 Review 和一个 Governor 支线。主 Agent 在 Governor 可继续交互时复用它；一次性子 Agent 已自然结束时，新合法 Review 才重新启动同一角色。运行时以 `run_id + trigger kind + trigger type + source_id` 生成确定性触发身份：
 
-复核请求必须符合 [复核请求 Schema](../assets/governance-runtime/review-request.schema.json)，其稳定字段包括：
+- 同一目标模式提示重复投递使用完整提示内容哈希，复用已请求或已消费结果；
+- 同一待处理生命周期边界重放不新增代次，前次复核结束后的下一次真实生命周期边界产生下一次复核；
+- 当前 Review 未结束时不创建并行 Review；
+- 普通用户消息、普通回复结束和 Governor 自身启停都不是触发。
 
-- `review_id`、当前 `review_snapshot_hash` 与本次触发实例 `trigger_instance_id`；
-- 结构化触发种类、受限类型、来源身份和仅用于说明的原因；
-- 当前推进的完成条件；
-- 当前工作包、允许范围、价值、预期证据和自然检查点；
-- 已发生的时间、外部费用和资源消耗事实（仅在相关时提供，不要求预测开发工时）；
-- 最近检查点和证据路径。
-- 若任务因真实用户输入暂停，待处理事项的唯一身份、来源复核、最小问题及已经提交的安全解决摘要。
+## 请求与反馈
 
-请求中的状态、结论和证据清单都只是索引。Governor 必须直接读取适用的目标与完成定义、检查仓库事实，并复核原始证据身份和内容；不得仅对状态摘要进行文字审阅。
+请求符合 [复核请求 Schema](../assets/governance-runtime/review-request.schema.json)，包括请求与触发身份、权威路径、仓库快照、当前执行焦点、证据引用、资源事实和待处理用户事项。状态摘要只是索引，Governor 必须直接核对权威依据、仓库和原始证据。
 
-Governor 只能返回结构化 JSON，并带回相同的 `review_id`、`review_snapshot_hash` 和 `trigger_instance_id`，同时返回宏观进度判断、最关键未满足条件、当前路径评价、保留结果和下一工作包。`decision` 只能是：
+Governor 返回符合 [反馈 Schema](../assets/governance-runtime/review.schema.json) 的单个 JSON，带回相同 `review_id`、`trigger_instance_id` 和 `review_snapshot_hash`，并包含：
 
-- `start`：当前没有工作包时，批准首个工作包；
-- `continue`：当前路径不变，只刷新原工作包批准，不返回新工作包；
-- `replan`：保留有效结果并换路；
-- `stage_complete`：当前阶段证据充分但整个任务仍未完成，同时返回下一工作包；
-- `task_complete`：整个完成定义已经由同一最终成果及完整证据满足；
-- `product_decision_required`：存在真正需要用户决定的产品问题。
-- `external_input_required`：经事实确认缺少无法自行取得的权限、凭证或外部状态。
+- 宏观进度与证据支撑；
+- 最关键缺口；
+- 当前路径的必要性、效率和最优性；
+- 保留结果与建议失效项；
+- 可选建议焦点或最小外部输入；
+- `continue`、`adjust`、`stage_complete`、`goal_complete`、`product_decision_needed`、`external_input_needed` 之一。
 
-`product_decision_required` 或 `external_input_required` 落盘后，主 Agent 停止产品工作并向用户提出最小问题。`UserPromptSubmit` 只把待处理事项身份和规则交还主 Agent：追问保持暂停，真实答复由主 Agent 通过 `resolve-intervention` 提交准确、安全的解决摘要与来源 turn，确定性程序校验身份并生成新复核请求。Governor 判断输入充分后才能返回 `continue`、`start` 或 `replan`；敏感原文不得进入状态或复核材料。该链路必须依赖持久状态而不是对话记忆，确保答复后发生压缩或恢复仍能继续。
+`accept-review` 只校验 Schema、请求身份、快照哈希和证据引用，并保存原始反馈；不得据此自动更换焦点、失效证据、暂停任务或限制工具。`record-review-response` 保存主 Agent 的 `adopt`、`decline` 或 `acknowledge`、事实理由和下一验证点。
 
-## 确定性持久化
+只有主 Agent 明确采纳真实产品决策或无法自行取得的外部输入建议时，才建立持久待处理事项。用户答复由主 Agent 以安全摘要和来源身份调用 `resolve-intervention`；密码、令牌、密钥等敏感原文不得进入治理材料。
 
-Governor 保持只读，不亲自写入监督文件。主 Agent 收到返回 JSON 后调用普通本地程序 `governance-cli accept-review`；程序只执行以下确定性检查：
+## Hook 边界
 
-1. JSON 符合固定 Schema；
-2. `review_id` 与复核请求一致；
-3. `review_snapshot_hash` 与当前待复核快照一致；
-4. `trigger_instance_id` 与本次触发实例一致；
-5. `decision` 属于允许值。
+- `UserPromptSubmit`：只对首行稳定标识或绑定交接令牌工作；其他消息严格沉默。
+- `SessionStart`：只对治理所有者的 `startup`、`resume`、`clear`、`compact` 创建固定复核，并以 `additionalContext` 把操作说明交给主 Agent。
+- `PreCompact`：尽力验证状态已落盘，失败也不阻止压缩。
+- `PostToolUse`：只根据真实失败事实登记重复失败或 Governor 不可用；失败类别排除调用 ID、时间和耗时等易变元数据，不保存原始输出，也不返回阻断决定。
+- 不注册 `PreToolUse`、`Stop`、`SubagentStart` 或 `SubagentStop`。
 
-全部通过后，程序将原结果原子写入监督目录；任一检查失败则拒绝保存。复核返回前若目标、权威依据、工作包计划、仓库或证据快照已经变化，本次结果失效并重新复核。
+Hook 或运行时内部错误一律返回空结果并留下最小诊断；项目原有安全、权限与审计 Hook 继续独立生效。
 
-有效结论落盘后，确定性程序生成绑定 `authority_hash`、工作包 `plan_hash`、允许范围和自然检查点的批准令牌。工作包范围内为取得预期证据而产生的正常代码与证据变化不会使批准失效；目标、权威依据、工作包目标、允许范围、路径或检查点变化，越出获准范围，或者固定复核代次变化时，批准令牌立即失效。主 Agent 收到的原生返回用于当次继续，落盘结果与批准令牌用于跨上下文恢复和 Hook 的后续机械校验。
+## 已验证能力
 
-批准代次与工作包身份必须分离：`continue` 仅替换批准令牌，原工作包的开始时间、最近证据、检查点和失败历史原样保留；只有 `replan`、`stage_complete` 或首次 `start` 能创建工作包。
-
-## 失败边界
-
-- Governor 未返回、返回格式错误或校验失败时，原动作继续保持阻止，不得伪造通过。
-- 主 Agent 不得改写 Governor 的语义结论，只能原样提交确定性校验。
-- Governor 不得扩展产品范围、修改完成条件或把技术问题升级为产品决策。
-- `external_input_required` 不得用于可以通过安全调查、实现调整或换路自行解决的问题。
-
-## 已验证事实
-
-2026-08-22 已完成一次隔离最小实测：主 Agent 创建请求、启动并等待子 Agent；子 Agent 通过 Codex 原生通道返回 JSON；主 Agent 直接收到结果；确定性脚本校验当时最小协议中的 `review_id`、`state_hash` 和决策枚举后原子落盘；主 Agent 重新读取结果并确认一致。该实测只证明父子返回与确定性持久化的核心链路可行，不证明本规范后来扩展的工作包、宏观判断和批准令牌契约已经实现，也不代表 Hooks 自动触发、上下文压缩恢复或长时进程看门狗已经验证。
-
-## Codex 能力依据
-
-- [Long-running work](https://learn.chatgpt.com/docs/long-running-work)
-- [Subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents)
-- [Hooks](https://learn.chatgpt.com/docs/hooks)
+Codex 原生父子通道能够让主 Agent 启动并等待 Governor、直接接收其 JSON，再由本地确定性程序校验落盘。该能力验证只证明交互通道可行；项目仍须通过自动测试和全新任务冷启动，证明 Hooks 自动加载、稳定标识、重复触发、普通消息隔离、Governor MCP 隔离和失败开放全部成立。

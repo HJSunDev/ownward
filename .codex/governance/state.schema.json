@@ -1,266 +1,116 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://ownward.local/governance/state.schema.json",
-  "title": "Ownward autonomous development governance state",
+  "$id": "https://ownward.local/schemas/governance-state-v2.json",
+  "title": "Ownward Advisory Governance State",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "run_id", "status", "authority_hash", "completion_conditions", "current_work_packet", "pending_intervention", "explicit_resource_constraints", "reusable_results", "next_action", "review", "owner", "handoff", "infrastructure_failure"],
+  "required": ["schema_version", "run_id", "status", "authority_hash", "completion_conditions", "current_focus", "pending_intervention", "explicit_resource_constraints", "reusable_results", "next_action", "review", "owner", "handoff"],
   "properties": {
-    "schema_version": { "const": 1 },
-    "run_id": { "$ref": "#/$defs/nonEmptyString" },
-    "status": { "enum": ["running", "product_decision_required", "external_input_required", "complete"] },
+    "schema_version": { "const": 2 },
+    "run_id": { "$ref": "#/$defs/nonEmpty" },
+    "status": { "enum": ["active", "awaiting_user", "complete"] },
     "authority_hash": { "$ref": "#/$defs/hash" },
-    "completion_conditions": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["condition_id", "status"],
-        "properties": {
-          "condition_id": { "$ref": "#/$defs/nonEmptyString" },
-          "status": { "enum": ["unmet", "in_progress", "met", "evidence_insufficient"] },
-          "evidence_ids": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" }, "uniqueItems": true }
-        }
-      }
-    },
-    "current_work_packet": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/workPacket" }] },
+    "completion_conditions": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/completionCondition" } },
+    "current_focus": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/executionSnapshot" }] },
     "pending_intervention": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/pendingIntervention" }] },
-    "explicit_resource_constraints": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["constraint_id", "source", "measure", "limit"],
-        "properties": {
-          "constraint_id": { "$ref": "#/$defs/nonEmptyString" },
-          "source": { "$ref": "#/$defs/nonEmptyString" },
-          "measure": { "$ref": "#/$defs/nonEmptyString" },
-          "limit": {}
-        }
-      }
-    },
-    "reusable_results": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["result_id", "scope", "evidence_path", "input_hash"],
-        "properties": {
-          "result_id": { "$ref": "#/$defs/nonEmptyString" },
-          "scope": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" } },
-          "evidence_path": { "$ref": "#/$defs/nonEmptyString" },
-          "input_hash": { "$ref": "#/$defs/hash" }
-        }
-      }
-    },
+    "explicit_resource_constraints": { "type": "array", "items": { "$ref": "#/$defs/resourceConstraint" } },
+    "reusable_results": { "type": "array", "items": { "$ref": "#/$defs/reusableResult" } },
     "next_action": { "type": ["string", "null"] },
     "review": { "$ref": "#/$defs/reviewState" },
-    "owner": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/ownerState" }] },
-    "handoff": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/handoffState" }] },
-    "infrastructure_failure": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/infrastructureFailure" }] }
+    "owner": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/owner" }] },
+    "handoff": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/handoff" }] }
   },
-  "allOf": [
-    {
-      "if": { "properties": { "status": { "enum": ["running", "complete"] } } },
-      "then": { "properties": { "pending_intervention": { "type": "null" } } }
-    },
-    {
-      "if": { "properties": { "status": { "const": "product_decision_required" } } },
-      "then": { "properties": { "pending_intervention": { "type": "object", "properties": { "kind": { "const": "product_decision" } } } } }
-    },
-    {
-      "if": { "properties": { "status": { "const": "external_input_required" } } },
-      "then": { "properties": { "pending_intervention": { "type": "object", "properties": { "kind": { "enum": ["permission", "credential", "external_state"] } } } } }
-    }
-  ],
   "$defs": {
-    "nonEmptyString": { "type": "string", "minLength": 1 },
-    "hash": { "type": "string", "pattern": "^sha256:[0-9a-fA-F]{64}$" },
+    "nonEmpty": { "type": "string", "minLength": 1 },
+    "hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "stringList": { "type": "array", "items": { "$ref": "#/$defs/nonEmpty" }, "uniqueItems": true },
+    "completionCondition": {
+      "type": "object", "additionalProperties": false,
+      "required": ["condition_id", "status"],
+      "properties": { "condition_id": { "$ref": "#/$defs/nonEmpty" }, "status": { "enum": ["unmet", "in_progress", "evidence_insufficient", "met"] }, "evidence_ids": { "$ref": "#/$defs/stringList" } }
+    },
     "checkpoint": {
-      "type": "object",
-      "additionalProperties": false,
+      "type": "object", "additionalProperties": false,
       "required": ["checkpoint_id", "description", "reached"],
-      "properties": {
-        "checkpoint_id": { "$ref": "#/$defs/nonEmptyString" },
-        "description": { "$ref": "#/$defs/nonEmptyString" },
-        "reached": { "type": "boolean" }
-      }
-    },
-    "approval": {
-      "oneOf": [
-        { "type": "null" },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["status", "review_id", "trigger_instance_id", "review_snapshot_hash", "valid_until_checkpoint"],
-          "properties": {
-            "status": { "const": "approved" },
-            "review_id": { "$ref": "#/$defs/nonEmptyString" },
-            "trigger_instance_id": { "$ref": "#/$defs/nonEmptyString" },
-            "review_snapshot_hash": { "$ref": "#/$defs/hash" },
-            "valid_until_checkpoint": { "$ref": "#/$defs/nonEmptyString" }
-          }
-        }
-      ]
-    },
-    "workPacket": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["packet_id", "condition_id", "objective", "value", "allowed_scope", "excluded_scope", "expected_evidence", "evidence_checkpoint", "plan_hash", "approval", "started_at", "last_evidence_at", "checkpoint", "failure_signatures", "failure_events", "failure_repairs"],
-      "properties": {
-        "packet_id": { "$ref": "#/$defs/nonEmptyString" },
-        "condition_id": { "$ref": "#/$defs/nonEmptyString" },
-        "objective": { "$ref": "#/$defs/nonEmptyString" },
-        "value": { "$ref": "#/$defs/nonEmptyString" },
-        "allowed_scope": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" }, "minItems": 1 },
-        "excluded_scope": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" } },
-        "expected_evidence": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" }, "minItems": 1 },
-        "evidence_checkpoint": { "$ref": "#/$defs/checkpoint" },
-        "plan_hash": { "$ref": "#/$defs/hash" },
-        "approval": { "$ref": "#/$defs/approval" },
-        "started_at": { "$ref": "#/$defs/nonEmptyString" },
-        "last_evidence_at": { "type": ["string", "null"] },
-        "checkpoint": { "type": ["string", "null"] },
-        "failure_signatures": { "type": "array", "maxItems": 0 },
-        "failure_events": { "type": "array", "items": { "$ref": "#/$defs/failureEvent" } },
-        "failure_repairs": { "type": "array", "items": { "$ref": "#/$defs/failureRepair" } }
-      }
+      "properties": { "checkpoint_id": { "$ref": "#/$defs/nonEmpty" }, "description": { "$ref": "#/$defs/nonEmpty" }, "reached": { "type": "boolean" } }
     },
     "failureEvent": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["event_id", "signature", "work_packet_id", "source_kind", "source_execution", "tool_use_id", "repair_generation", "evidence_hash", "trust", "occurred_at"],
+      "type": "object", "additionalProperties": false,
+      "required": ["event_id", "signature", "focus_id", "source_kind", "source_execution", "tool_use_id", "repair_generation", "evidence_hash", "known_evidence_ids", "trust", "occurred_at"],
       "properties": {
-        "event_id": { "$ref": "#/$defs/nonEmptyString" },
-        "signature": { "$ref": "#/$defs/nonEmptyString" },
-        "work_packet_id": { "$ref": "#/$defs/nonEmptyString" },
-        "source_kind": { "enum": ["codex_hook", "governed_run", "legacy"] },
-        "source_execution": { "$ref": "#/$defs/nonEmptyString" },
-        "tool_use_id": { "$ref": "#/$defs/nonEmptyString" },
-        "repair_generation": { "type": "integer", "minimum": 0 },
-        "evidence_hash": { "$ref": "#/$defs/hash" },
-        "known_evidence_ids": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/nonEmptyString" } },
-        "repository_identity": { "$ref": "#/$defs/hash" },
-        "candidate_identity": { "$ref": "#/$defs/hash" },
-        "config_identity": { "$ref": "#/$defs/hash" },
-        "runtime_identity": { "$ref": "#/$defs/hash" },
-        "trust": { "enum": ["verified", "legacy_unverified"] },
-        "occurred_at": { "type": "string", "format": "date-time" }
-      },
-      "allOf": [{
-        "if": { "properties": { "trust": { "const": "verified" } } },
-        "then": { "required": ["known_evidence_ids", "repository_identity", "candidate_identity", "config_identity", "runtime_identity"] }
-      }]
+        "event_id": { "$ref": "#/$defs/nonEmpty" }, "signature": { "$ref": "#/$defs/nonEmpty" }, "focus_id": { "$ref": "#/$defs/nonEmpty" },
+        "source_kind": { "$ref": "#/$defs/nonEmpty" }, "source_execution": { "$ref": "#/$defs/nonEmpty" }, "tool_use_id": { "$ref": "#/$defs/nonEmpty" },
+        "repair_generation": { "type": "integer", "minimum": 0 }, "evidence_hash": { "$ref": "#/$defs/hash" }, "known_evidence_ids": { "$ref": "#/$defs/stringList" },
+        "repository_identity": { "type": "string" }, "candidate_identity": { "type": "string" }, "config_identity": { "type": "string" }, "runtime_identity": { "type": "string" },
+        "trust": { "enum": ["verified", "legacy_unverified"] }, "occurred_at": { "$ref": "#/$defs/nonEmpty" }
+      }
     },
     "failureRepair": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["repair_id", "signature", "previous_event_id", "work_packet_id", "repair_generation", "repository_identity", "candidate_identity", "config_identity", "runtime_identity", "evidence_ids", "recorded_at"],
+      "type": "object", "additionalProperties": false,
+      "required": ["repair_id", "signature", "previous_event_id", "focus_id", "repair_generation", "repository_identity", "candidate_identity", "config_identity", "runtime_identity", "evidence_ids", "recorded_at"],
       "properties": {
-        "repair_id": { "$ref": "#/$defs/nonEmptyString" },
-        "signature": { "$ref": "#/$defs/nonEmptyString" },
-        "previous_event_id": { "$ref": "#/$defs/nonEmptyString" },
-        "work_packet_id": { "$ref": "#/$defs/nonEmptyString" },
-        "repair_generation": { "type": "integer", "minimum": 1 },
-        "repository_identity": { "$ref": "#/$defs/hash" },
-        "candidate_identity": { "$ref": "#/$defs/hash" },
-        "config_identity": { "$ref": "#/$defs/hash" },
-        "runtime_identity": { "$ref": "#/$defs/hash" },
-        "evidence_ids": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/nonEmptyString" } },
-        "recorded_at": { "type": "string", "format": "date-time" }
+        "repair_id": { "$ref": "#/$defs/nonEmpty" }, "signature": { "$ref": "#/$defs/nonEmpty" }, "previous_event_id": { "$ref": "#/$defs/nonEmpty" }, "focus_id": { "$ref": "#/$defs/nonEmpty" },
+        "repair_generation": { "type": "integer", "minimum": 1 }, "repository_identity": { "$ref": "#/$defs/nonEmpty" }, "candidate_identity": { "$ref": "#/$defs/nonEmpty" },
+        "config_identity": { "$ref": "#/$defs/nonEmpty" }, "runtime_identity": { "$ref": "#/$defs/nonEmpty" }, "evidence_ids": { "$ref": "#/$defs/stringList" }, "recorded_at": { "$ref": "#/$defs/nonEmpty" }
       }
     },
-    "interventionResolution": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["source_turn_id", "summary", "evidence_refs", "submitted_at"],
+    "executionSnapshot": {
+      "type": "object", "additionalProperties": false,
+      "required": ["focus_id", "condition_id", "objective", "value", "involved_scope", "expected_evidence", "evidence_checkpoint", "snapshot_hash", "started_at", "last_evidence_at", "checkpoint", "failure_events", "failure_repairs"],
       "properties": {
-        "source_turn_id": { "$ref": "#/$defs/nonEmptyString" },
-        "summary": { "type": "string", "minLength": 1, "maxLength": 4000 },
-        "evidence_refs": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" }, "uniqueItems": true },
-        "submitted_at": { "type": "string", "format": "date-time" }
+        "focus_id": { "$ref": "#/$defs/nonEmpty" }, "condition_id": { "$ref": "#/$defs/nonEmpty" }, "objective": { "$ref": "#/$defs/nonEmpty" }, "value": { "$ref": "#/$defs/nonEmpty" },
+        "involved_scope": { "$ref": "#/$defs/stringList" }, "expected_evidence": { "$ref": "#/$defs/stringList" }, "evidence_checkpoint": { "$ref": "#/$defs/checkpoint" },
+        "snapshot_hash": { "$ref": "#/$defs/hash" }, "started_at": { "$ref": "#/$defs/nonEmpty" }, "last_evidence_at": { "type": ["string", "null"] }, "checkpoint": { "type": ["string", "null"] },
+        "failure_events": { "type": "array", "items": { "$ref": "#/$defs/failureEvent" } }, "failure_repairs": { "type": "array", "items": { "$ref": "#/$defs/failureRepair" } }
       }
     },
-    "pendingIntervention": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["intervention_id", "source_review_id", "kind", "fact", "exhausted_paths", "minimum_user_input", "status", "resolution"],
-      "properties": {
-        "intervention_id": { "$ref": "#/$defs/nonEmptyString" },
-        "source_review_id": { "$ref": "#/$defs/nonEmptyString" },
-        "kind": { "enum": ["product_decision", "permission", "credential", "external_state"] },
-        "fact": { "$ref": "#/$defs/nonEmptyString" },
-        "exhausted_paths": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" }, "minItems": 1, "uniqueItems": true },
-        "minimum_user_input": { "$ref": "#/$defs/nonEmptyString" },
-        "status": { "enum": ["awaiting_user", "resolution_pending_review"] },
-        "resolution": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/interventionResolution" }] }
-      },
-      "allOf": [
-        {
-          "if": { "properties": { "status": { "const": "awaiting_user" } } },
-          "then": { "properties": { "resolution": { "type": "null" } } }
-        },
-        {
-          "if": { "properties": { "status": { "const": "resolution_pending_review" } } },
-          "then": { "properties": { "resolution": { "$ref": "#/$defs/interventionResolution" } } }
-        }
-      ]
+    "reviewResponse": {
+      "type": "object", "additionalProperties": false,
+      "required": ["review_id", "disposition", "reason", "next_validation_point", "responded_at"],
+      "properties": { "review_id": { "$ref": "#/$defs/nonEmpty" }, "disposition": { "enum": ["adopt", "decline", "acknowledge"] }, "reason": { "$ref": "#/$defs/nonEmpty" }, "next_validation_point": { "$ref": "#/$defs/nonEmpty" }, "responded_at": { "$ref": "#/$defs/nonEmpty" } }
     },
     "reviewState": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["required", "review_id", "trigger_instance_id", "fixed_review_generation", "review_snapshot_hash", "trigger", "decision_path"],
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "review_id", "trigger_instance_id", "fixed_review_generation", "review_snapshot_hash", "trigger", "feedback_path", "response"],
       "properties": {
-        "required": { "type": "boolean" },
-        "review_id": { "type": ["string", "null"] },
-        "trigger_instance_id": { "type": ["string", "null"] },
-        "fixed_review_generation": { "type": "integer", "minimum": 0 },
-        "review_snapshot_hash": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/hash" }] },
-        "trigger": { "type": ["string", "null"] },
-        "decision_path": { "type": ["string", "null"] }
+        "status": { "enum": ["idle", "requested", "feedback_ready", "responded", "missed"] }, "review_id": { "type": ["string", "null"] }, "trigger_instance_id": { "type": ["string", "null"] },
+        "fixed_review_generation": { "type": "integer", "minimum": 0 }, "review_snapshot_hash": { "type": ["string", "null"] }, "trigger": { "type": ["string", "null"] },
+        "feedback_path": { "type": ["string", "null"] }, "response": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/reviewResponse" }] }
       }
     },
-    "ownerState": {
-      "type": "object",
-      "additionalProperties": false,
+    "resolution": {
+      "type": "object", "additionalProperties": false,
+      "required": ["source_turn_id", "summary", "evidence_refs", "submitted_at"],
+      "properties": { "source_turn_id": { "$ref": "#/$defs/nonEmpty" }, "summary": { "$ref": "#/$defs/nonEmpty" }, "evidence_refs": { "$ref": "#/$defs/stringList" }, "submitted_at": { "$ref": "#/$defs/nonEmpty" } }
+    },
+    "pendingIntervention": {
+      "type": "object", "additionalProperties": false,
+      "required": ["intervention_id", "source_review_id", "kind", "fact", "exhausted_paths", "minimum_user_input", "status", "resolution"],
+      "properties": {
+        "intervention_id": { "$ref": "#/$defs/nonEmpty" }, "source_review_id": { "$ref": "#/$defs/nonEmpty" }, "kind": { "$ref": "#/$defs/nonEmpty" }, "fact": { "$ref": "#/$defs/nonEmpty" },
+        "exhausted_paths": { "$ref": "#/$defs/stringList" }, "minimum_user_input": { "$ref": "#/$defs/nonEmpty" }, "status": { "enum": ["awaiting_user", "resolution_pending_review"] },
+        "resolution": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/resolution" }] }
+      }
+    },
+    "resourceConstraint": {
+      "type": "object", "additionalProperties": false,
+      "required": ["constraint_id", "source", "measure", "limit"],
+      "properties": { "constraint_id": { "$ref": "#/$defs/nonEmpty" }, "source": { "$ref": "#/$defs/nonEmpty" }, "measure": { "$ref": "#/$defs/nonEmpty" }, "limit": true }
+    },
+    "reusableResult": {
+      "type": "object", "additionalProperties": false,
+      "required": ["result_id", "scope", "evidence_path", "input_hash"],
+      "properties": { "result_id": { "$ref": "#/$defs/nonEmpty" }, "scope": { "$ref": "#/$defs/stringList" }, "evidence_path": { "$ref": "#/$defs/nonEmpty" }, "input_hash": { "$ref": "#/$defs/hash" } }
+    },
+    "owner": {
+      "type": "object", "additionalProperties": false,
       "required": ["session_id", "transcript_path", "owner_epoch", "acquired_at"],
-      "properties": {
-        "session_id": { "$ref": "#/$defs/nonEmptyString" },
-        "transcript_path": { "type": "string" },
-        "owner_epoch": { "type": "integer", "minimum": 1 },
-        "acquired_at": { "type": "string", "format": "date-time" }
-      }
+      "properties": { "session_id": { "$ref": "#/$defs/nonEmpty" }, "transcript_path": { "type": "string" }, "owner_epoch": { "type": "integer", "minimum": 1 }, "acquired_at": { "$ref": "#/$defs/nonEmpty" } }
     },
-    "handoffState": {
-      "type": "object",
-      "additionalProperties": false,
+    "handoff": {
+      "type": "object", "additionalProperties": false,
       "required": ["handoff_id", "token_hash", "source_session_id", "source_epoch", "target_thread_id", "status", "created_at", "expires_at"],
-      "properties": {
-        "handoff_id": { "$ref": "#/$defs/nonEmptyString" },
-        "token_hash": { "$ref": "#/$defs/hash" },
-        "source_session_id": { "$ref": "#/$defs/nonEmptyString" },
-        "source_epoch": { "type": "integer", "minimum": 1 },
-        "target_thread_id": { "type": "string" },
-        "status": { "enum": ["prepared", "bound"] },
-        "created_at": { "type": "string", "format": "date-time" },
-        "expires_at": { "type": "string", "format": "date-time" }
-      }
-    },
-    "infrastructureFailure": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["review_id", "trigger_instance_id", "signature", "runtime_identity", "owner_session_id", "owner_epoch", "status", "first_observed_at", "recovery_action"],
-      "properties": {
-        "review_id": { "$ref": "#/$defs/nonEmptyString" },
-        "trigger_instance_id": { "$ref": "#/$defs/nonEmptyString" },
-        "signature": { "$ref": "#/$defs/nonEmptyString" },
-        "runtime_identity": { "$ref": "#/$defs/hash" },
-        "owner_session_id": { "$ref": "#/$defs/nonEmptyString" },
-        "owner_epoch": { "type": "integer", "minimum": 1 },
-        "status": { "const": "latched" },
-        "first_observed_at": { "type": "string", "format": "date-time" },
-        "recovery_action": { "$ref": "#/$defs/nonEmptyString" }
-      }
+      "properties": { "handoff_id": { "$ref": "#/$defs/nonEmpty" }, "token_hash": { "$ref": "#/$defs/hash" }, "source_session_id": { "$ref": "#/$defs/nonEmpty" }, "source_epoch": { "type": "integer", "minimum": 1 }, "target_thread_id": { "type": "string" }, "status": { "enum": ["prepared", "bound"] }, "created_at": { "$ref": "#/$defs/nonEmpty" }, "expires_at": { "$ref": "#/$defs/nonEmpty" } }
     }
   }
 }

@@ -38,28 +38,14 @@
         ]
       }
     ],
-    "PreToolUse": [
-      {
-        "matcher": "{{governed_tool_matcher}}",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "{{governance_hook_command}} hook pre-tool-use",
-            "commandWindows": "{{governance_hook_command_windows}} hook pre-tool-use",
-            "statusMessage": "Checking governed work packet"
-          }
-        ]
-      }
-    ],
     "PostToolUse": [
       {
-        "matcher": "{{governed_tool_matcher}}",
+        "matcher": "{{observed_tool_matcher}}",
         "hooks": [
           {
             "type": "command",
             "command": "{{governance_hook_command}} hook post-tool-use",
-            "commandWindows": "{{governance_hook_command_windows}} hook post-tool-use",
-            "statusMessage": "Checking governed result"
+            "commandWindows": "{{governance_hook_command_windows}} hook post-tool-use"
           }
         ]
       }

@@ -178,6 +178,8 @@ Ownward 以最低必要复杂度长期承载用户的信息资产，借助可替
 ### 持续完成第一版开发
 
 ```text
+[ownward-governance:enable]
+
 目标：持续完成 Ownward 第一版，直到 `docs/delivery/first-version-delivery-definition.md` 的全部完成条件在同一最终版本上真实通过。首次启动或中断后恢复均以仓库当前事实为准，从最近的有效检查点继续。
 
 工作依据：

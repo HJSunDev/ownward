@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "runtime_directory": ".codex/governance/runtime",
   "authority_paths": [
     "docs/delivery/goal.md",
@@ -32,15 +32,6 @@
   "review_request_schema_path": ".codex/governance/review-request.schema.json",
   "review_schema_path": ".codex/governance/review.schema.json",
   "governor_agent_name": "governor",
-  "governed_tool_matcher": "Agent|spawn_agent|Bash|apply_patch|Edit|Write|mcp__ownward__.*",
-  "activation_prompt_patterns": [
-    "(?s)^\\s*目标：持续完成 Ownward 第一版"
-  ],
-  "agent_capabilities": [
-    { "role": "default", "product_mcp": "disabled" },
-    { "role": "explorer", "product_mcp": "disabled" },
-    { "role": "governor", "product_mcp": "disabled" },
-    { "role": "worker", "product_mcp": "disabled" }
-  ],
+  "activation_marker": "[ownward-governance:enable]",
   "explicit_resource_constraints": []
 }

@@ -39,8 +39,8 @@ func Open(start string) (*Runtime, error) {
 	}
 	runtime := &Runtime{Root: root, ConfigPath: configPath, Config: config, RuntimeDir: resolvePath(root, config.RuntimeDirectory)}
 	if runtime.StateExists() {
-		if err := runtime.migrateFailureEvents(); err != nil {
-			return nil, fmt.Errorf("migrate governance failure events: %w", err)
+		if err := runtime.migrateLegacyStateIfNeeded(); err != nil {
+			return nil, fmt.Errorf("migrate governance state: %w", err)
 		}
 	}
 	return runtime, nil
@@ -81,21 +81,11 @@ func validateConfig(root string, config Config) error {
 	if !within(root, resolvePath(root, config.RuntimeDirectory)) {
 		return errors.New("governance runtime_directory must remain inside the repository")
 	}
-	if config.GovernorAgentName == "" || config.GovernedToolMatcher == "" || len(config.ActivationPromptPatterns) == 0 {
-		return errors.New("governance config requires governor_agent_name, governed_tool_matcher and activation_prompt_patterns")
+	if strings.TrimSpace(config.GovernorAgentName) == "" || strings.TrimSpace(config.ActivationMarker) == "" {
+		return errors.New("governance config requires governor_agent_name and activation_marker")
 	}
-	if len(config.AgentCapabilities) == 0 {
-		return errors.New("governance config requires an explicit agent capability matrix")
-	}
-	roles := map[string]struct{}{}
-	for _, capability := range config.AgentCapabilities {
-		if strings.TrimSpace(capability.Role) == "" || !oneOf(capability.ProductMCP, "disabled", "shared-client") {
-			return errors.New("agent capabilities require a role and product_mcp disabled or shared-client")
-		}
-		if _, exists := roles[capability.Role]; exists {
-			return fmt.Errorf("duplicate agent capability role %q", capability.Role)
-		}
-		roles[capability.Role] = struct{}{}
+	if config.ActivationMarker != strings.TrimSpace(config.ActivationMarker) || strings.ContainsAny(config.ActivationMarker, "\r\n") {
+		return errors.New("activation_marker must be one exact, trimmed line")
 	}
 	all := append(append([]string{}, config.AuthorityPaths...), config.CompletionDefinitionPaths...)
 	all = append(all, config.StateSchemaPath, config.ReviewRequestSchemaPath, config.ReviewSchemaPath)
@@ -176,122 +166,327 @@ func (runtime *Runtime) LoadState() (*State, error) {
 	if err := decodeStrictFile(runtime.statePath(), &state); err != nil {
 		return nil, err
 	}
-	if state.CurrentWorkPacket != nil {
-		for index := range state.CurrentWorkPacket.FailureEvents {
-			if state.CurrentWorkPacket.FailureEvents[index].Trust == "legacy_unverified" && state.CurrentWorkPacket.FailureEvents[index].KnownEvidenceIDs == nil {
-				state.CurrentWorkPacket.FailureEvents[index].KnownEvidenceIDs = []string{}
-			}
-		}
-	}
 	if err := validateState(&state); err != nil {
 		return nil, fmt.Errorf("invalid governance state: %w", err)
 	}
 	return &state, nil
 }
 
-func (runtime *Runtime) migrateFailureEvents() error {
+type legacyReviewStateV1 struct {
+	FixedReviewGeneration int `json:"fixed_review_generation"`
+}
+
+type legacyFailureEventV1 struct {
+	EventID            string   `json:"event_id"`
+	Signature          string   `json:"signature"`
+	WorkPacketID       string   `json:"work_packet_id"`
+	SourceKind         string   `json:"source_kind"`
+	SourceExecution    string   `json:"source_execution"`
+	ToolUseID          string   `json:"tool_use_id"`
+	RepairGeneration   int      `json:"repair_generation"`
+	EvidenceHash       string   `json:"evidence_hash"`
+	KnownEvidenceIDs   []string `json:"known_evidence_ids"`
+	RepositoryIdentity string   `json:"repository_identity"`
+	CandidateIdentity  string   `json:"candidate_identity"`
+	ConfigIdentity     string   `json:"config_identity"`
+	RuntimeIdentity    string   `json:"runtime_identity"`
+	Trust              string   `json:"trust"`
+	OccurredAt         string   `json:"occurred_at"`
+}
+
+type legacyFailureRepairV1 struct {
+	RepairID           string   `json:"repair_id"`
+	Signature          string   `json:"signature"`
+	PreviousEventID    string   `json:"previous_event_id"`
+	WorkPacketID       string   `json:"work_packet_id"`
+	RepairGeneration   int      `json:"repair_generation"`
+	RepositoryIdentity string   `json:"repository_identity"`
+	CandidateIdentity  string   `json:"candidate_identity"`
+	ConfigIdentity     string   `json:"config_identity"`
+	RuntimeIdentity    string   `json:"runtime_identity"`
+	EvidenceIDs        []string `json:"evidence_ids"`
+	RecordedAt         string   `json:"recorded_at"`
+}
+
+type legacyWorkPacketV1 struct {
+	PacketID            string                  `json:"packet_id"`
+	ConditionID         string                  `json:"condition_id"`
+	Objective           string                  `json:"objective"`
+	Value               string                  `json:"value"`
+	AllowedScope        []string                `json:"allowed_scope"`
+	ExcludedScope       []string                `json:"excluded_scope"`
+	ExpectedEvidence    []string                `json:"expected_evidence"`
+	EvidenceCheckpoint  EvidenceCheckpoint      `json:"evidence_checkpoint"`
+	StartedAt           string                  `json:"started_at"`
+	LastEvidenceAt      *string                 `json:"last_evidence_at"`
+	Checkpoint          *string                 `json:"checkpoint"`
+	FailureEvents       []legacyFailureEventV1  `json:"failure_events"`
+	FailureRepairs      []legacyFailureRepairV1 `json:"failure_repairs"`
+	LegacyFailureLabels []string                `json:"failure_signatures"`
+}
+
+type legacyStateV1 struct {
+	SchemaVersion               int                   `json:"schema_version"`
+	RunID                       string                `json:"run_id"`
+	Status                      string                `json:"status"`
+	AuthorityHash               string                `json:"authority_hash"`
+	CompletionConditions        []CompletionCondition `json:"completion_conditions"`
+	CurrentWorkPacket           *legacyWorkPacketV1   `json:"current_work_packet"`
+	PendingIntervention         *PendingIntervention  `json:"pending_intervention"`
+	ExplicitResourceConstraints []ResourceConstraint  `json:"explicit_resource_constraints"`
+	ReusableResults             []ReusableResult      `json:"reusable_results"`
+	Review                      legacyReviewStateV1   `json:"review"`
+	Owner                       *OwnerState           `json:"owner"`
+	Handoff                     *HandoffState         `json:"handoff"`
+}
+
+func (runtime *Runtime) migrateLegacyStateIfNeeded() error {
 	return runtime.withLock(func() error {
-		var state State
-		if err := decodeStrictFile(runtime.statePath(), &state); err != nil {
+		raw, err := os.ReadFile(runtime.statePath())
+		if err != nil {
 			return err
 		}
-		markerPath := filepath.Join(runtime.RuntimeDir, "failure-event-migration.json")
-		marker := map[string]any{}
-		if data, err := os.ReadFile(markerPath); err == nil {
-			if err := json.Unmarshal(data, &marker); err != nil {
+		var header struct {
+			SchemaVersion int `json:"schema_version"`
+		}
+		if err := json.Unmarshal(raw, &header); err != nil {
+			return err
+		}
+		if header.SchemaVersion == schemaVersion {
+			var state State
+			if err := json.Unmarshal(raw, &state); err != nil {
 				return err
 			}
-		}
-		packet := state.CurrentWorkPacket
-		needsMigration := packet != nil && (packet.FailureEvents == nil || packet.FailureRepairs == nil || len(packet.FailureSignatures) > 0)
-		if marker["status"] == "complete" && !needsMigration {
-			return validateState(&state)
-		}
-		if marker["status"] == "complete" && needsMigration {
-			marker = map[string]any{}
-		}
-		if !needsMigration && len(marker) == 0 {
-			return validateState(&state)
-		}
-		migrationID := "failure-events-v1"
-		migrationReviewTrigger := "fixed:legacy-state-migration:" + migrationID
-		oldReviewRequired := state.Review.Required && (state.Review.Trigger == nil || *state.Review.Trigger != migrationReviewTrigger)
-		if len(marker) == 0 {
-			marker = map[string]any{"schema": "ownward.governance-migration/v1", "migration_id": migrationID, "status": "prepared", "replace_review": oldReviewRequired}
-			if err := atomicWriteJSON(markerPath, marker); err != nil {
-				return err
-			}
-		}
-		if packet != nil && needsMigration {
-			if packet.FailureEvents == nil {
-				packet.FailureEvents = []FailureEvent{}
-			}
-			if packet.FailureRepairs == nil {
-				packet.FailureRepairs = []FailureRepair{}
-			}
-			for _, raw := range packet.FailureSignatures {
-				signature := normalizeFailureSignature(raw)
-				identity, _ := hashJSON(map[string]string{"packet_id": packet.PacketID, "signature": signature, "trust": "legacy_unverified"})
-				evidence, _ := hashJSON(map[string]string{"legacy_signature": signature})
-				packet.FailureEvents = append(packet.FailureEvents, FailureEvent{
-					EventID: "legacy_" + strings.TrimPrefix(identity, "sha256:")[:24], Signature: signature,
-					WorkPacketID: packet.PacketID, SourceKind: "legacy", SourceExecution: "legacy:" + packet.PacketID,
-					ToolUseID: "legacy-unverified", RepairGeneration: 0, EvidenceHash: evidence,
-					KnownEvidenceIDs: []string{}, Trust: "legacy_unverified", OccurredAt: packet.StartedAt,
-				})
-			}
-			packet.FailureSignatures = []string{}
-		}
-		if oldReviewRequired {
-			if data, err := os.ReadFile(runtime.requestPath()); err == nil {
-				directory := filepath.Join(runtime.reviewsDir(), "superseded")
-				if err := os.MkdirAll(directory, 0o755); err != nil {
+			if state.CurrentFocus != nil && state.NextAction != nil && !state.CurrentFocus.EvidenceCheckpoint.Reached && strings.TrimSpace(*state.NextAction) == strings.TrimSpace(state.CurrentFocus.EvidenceCheckpoint.Description) {
+				previous := *state.NextAction
+				state.NextAction = stringPointer(state.CurrentFocus.Objective)
+				if err := runtime.saveState(&state); err != nil {
 					return err
 				}
-				name := "legacy-review-request.json"
-				if state.Review.ReviewID != nil {
-					name = *state.Review.ReviewID + ".json"
-				}
-				if err := atomicWrite(filepath.Join(directory, name), data); err != nil {
+				if err := runtime.appendEvent("advisory_v2_next_action_repaired", state.RunID, "replaced a premature checkpoint outcome with the active objective", map[string]any{"previous_next_action": previous, "focus_id": state.CurrentFocus.FocusID}); err != nil {
 					return err
 				}
 			}
-			state.Review = ReviewState{FixedReviewGeneration: state.Review.FixedReviewGeneration}
+			return runtime.finalizeAdvisoryV2Migration(&state)
 		}
-		if err := runtime.saveState(&state); err != nil {
+		if header.SchemaVersion != 1 {
+			return fmt.Errorf("unsupported governance state schema_version %d", header.SchemaVersion)
+		}
+		var legacy legacyStateV1
+		if err := json.Unmarshal(raw, &legacy); err != nil {
 			return err
 		}
-		if !runtime.migrationEventExists(migrationID) {
-			if err := runtime.appendEvent("failure_event_migration", state.RunID, "migrated legacy failure signatures as non-counting audit facts", map[string]any{"migration_id": migrationID, "legacy_events": len(packet.FailureEvents)}); err != nil {
+		archiveDir := filepath.Join(runtime.RuntimeDir, "migrations", "advisory-v2")
+		if err := os.MkdirAll(archiveDir, 0o755); err != nil {
+			return err
+		}
+		if err := writeOnce(filepath.Join(archiveDir, "state.v1.json"), raw); err != nil {
+			return err
+		}
+		if request, readErr := os.ReadFile(runtime.requestPath()); readErr == nil {
+			if err := writeOnce(filepath.Join(archiveDir, "review-request.v1.json"), request); err != nil {
 				return err
 			}
 		}
-		if replace, _ := marker["replace_review"].(bool); replace && !state.Review.Required {
-			trigger, err := newReviewTrigger("fixed", "legacy-state-migration", migrationID, "migrate legacy failure events")
-			if err != nil {
-				return err
-			}
-			if _, err := runtime.requestReviewLocked(&state, trigger, false); err != nil {
-				return err
-			}
+
+		status := "active"
+		if legacy.Status == "complete" {
+			status = "complete"
+		} else if legacy.PendingIntervention != nil {
+			status = "awaiting_user"
 		}
-		marker["status"] = "complete"
-		return atomicWriteJSON(markerPath, marker)
+		next := "continue from the migrated execution snapshot and its next validation point"
+		if status == "awaiting_user" {
+			next = "handle the persisted user decision or external input, then continue from the saved execution snapshot"
+		}
+		state := &State{
+			SchemaVersion:               schemaVersion,
+			RunID:                       legacy.RunID,
+			Status:                      status,
+			AuthorityHash:               legacy.AuthorityHash,
+			CompletionConditions:        legacy.CompletionConditions,
+			CurrentFocus:                migrateLegacyWorkPacket(legacy.CurrentWorkPacket),
+			PendingIntervention:         legacy.PendingIntervention,
+			ExplicitResourceConstraints: legacy.ExplicitResourceConstraints,
+			ReusableResults:             legacy.ReusableResults,
+			NextAction:                  &next,
+			Review: ReviewState{
+				Status:                "idle",
+				FixedReviewGeneration: legacy.Review.FixedReviewGeneration,
+			},
+			Owner:   legacy.Owner,
+			Handoff: legacy.Handoff,
+		}
+		if state.RunID == "" {
+			state.RunID = newID("run")
+		}
+		if state.ReusableResults == nil {
+			state.ReusableResults = []ReusableResult{}
+		}
+		if err := runtime.saveState(state); err != nil {
+			return err
+		}
+		return runtime.finalizeAdvisoryV2Migration(state)
 	})
 }
 
-func (runtime *Runtime) migrationEventExists(migrationID string) bool {
-	lines, err := readJSONLines(runtime.eventsPath())
-	if err != nil {
-		return false
+func (runtime *Runtime) finalizeAdvisoryV2Migration(state *State) error {
+	if err := runtime.archiveInactiveLegacyArtifacts(); err != nil {
+		return err
 	}
-	for _, line := range lines {
-		var event Event
-		if json.Unmarshal(line, &event) == nil && event.Kind == "failure_event_migration" && event.Fields["migration_id"] == migrationID {
-			return true
+	archiveDir := filepath.Join(runtime.RuntimeDir, "migrations", "advisory-v2")
+	if _, err := os.Stat(filepath.Join(archiveDir, "state.v1.json")); errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	marker := filepath.Join(archiveDir, "migration.json")
+	if _, err := os.Stat(marker); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	exists, err := runtime.eventKindExists("advisory_v2_migrated", state.RunID)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		if err := runtime.appendEvent("advisory_v2_migrated", state.RunID, "migrated approval-based governance state to an advisory execution snapshot", map[string]any{"migration": "advisory-v2", "preserved_focus": state.CurrentFocus != nil}); err != nil {
+			return err
 		}
 	}
-	return false
+	return atomicWriteJSON(marker, map[string]any{"schema_version": schemaVersion, "migration": "advisory-v2", "status": "complete"})
+}
+
+func (runtime *Runtime) eventKindExists(kind, runID string) (bool, error) {
+	file, err := os.Open(runtime.eventsPath())
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		var event Event
+		if json.Unmarshal(scanner.Bytes(), &event) == nil && event.Kind == kind && event.RunID == runID {
+			return true, nil
+		}
+	}
+	return false, scanner.Err()
+}
+
+func migrateLegacyWorkPacket(packet *legacyWorkPacketV1) *ExecutionSnapshot {
+	if packet == nil {
+		return nil
+	}
+	involvedScope := make([]string, 0, len(packet.AllowedScope)+len(packet.ExcludedScope))
+	for _, item := range normalizeStrings(packet.AllowedScope) {
+		involvedScope = append(involvedScope, "原执行范围说明（仅作上下文）："+item)
+	}
+	for _, item := range normalizeStrings(packet.ExcludedScope) {
+		involvedScope = append(involvedScope, "原边界说明（仅作上下文）："+item)
+	}
+	focus := &ExecutionSnapshot{
+		FocusID:            packet.PacketID,
+		ConditionID:        packet.ConditionID,
+		Objective:          packet.Objective,
+		Value:              packet.Value,
+		InvolvedScope:      involvedScope,
+		ExpectedEvidence:   normalizeStrings(packet.ExpectedEvidence),
+		EvidenceCheckpoint: packet.EvidenceCheckpoint,
+		StartedAt:          packet.StartedAt,
+		LastEvidenceAt:     packet.LastEvidenceAt,
+		Checkpoint:         packet.Checkpoint,
+		FailureEvents:      []FailureEvent{},
+		FailureRepairs:     []FailureRepair{},
+	}
+	if focus.StartedAt == "" {
+		focus.StartedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	}
+	for _, event := range packet.FailureEvents {
+		focus.FailureEvents = append(focus.FailureEvents, FailureEvent{
+			EventID: event.EventID, Signature: event.Signature, FocusID: focus.FocusID,
+			SourceKind: event.SourceKind, SourceExecution: event.SourceExecution, ToolUseID: event.ToolUseID,
+			RepairGeneration: event.RepairGeneration, EvidenceHash: event.EvidenceHash,
+			KnownEvidenceIDs: event.KnownEvidenceIDs, RepositoryIdentity: event.RepositoryIdentity,
+			CandidateIdentity: event.CandidateIdentity, ConfigIdentity: event.ConfigIdentity,
+			RuntimeIdentity: event.RuntimeIdentity, Trust: event.Trust, OccurredAt: event.OccurredAt,
+		})
+	}
+	for index, signature := range normalizeStrings(packet.LegacyFailureLabels) {
+		normalized := normalizeFailureSignature(signature)
+		if normalized == "" {
+			continue
+		}
+		identity, _ := hashJSON(map[string]any{"focus_id": focus.FocusID, "signature": normalized, "index": index})
+		occurredAt := focus.StartedAt
+		focus.FailureEvents = append(focus.FailureEvents, FailureEvent{
+			EventID: "legacy_failure_" + strings.TrimPrefix(identity, "sha256:")[:24], Signature: normalized, FocusID: focus.FocusID,
+			SourceKind: "legacy_state", SourceExecution: "advisory-v1-migration", ToolUseID: fmt.Sprintf("legacy-signature-%d", index+1),
+			RepairGeneration: 0, EvidenceHash: sha256Value([]byte(normalized)), KnownEvidenceIDs: []string{},
+			Trust: "legacy_unverified", OccurredAt: occurredAt,
+		})
+	}
+	for _, repair := range packet.FailureRepairs {
+		focus.FailureRepairs = append(focus.FailureRepairs, FailureRepair{
+			RepairID: repair.RepairID, Signature: repair.Signature, PreviousEventID: repair.PreviousEventID,
+			FocusID: focus.FocusID, RepairGeneration: repair.RepairGeneration,
+			RepositoryIdentity: repair.RepositoryIdentity, CandidateIdentity: repair.CandidateIdentity,
+			ConfigIdentity: repair.ConfigIdentity, RuntimeIdentity: repair.RuntimeIdentity,
+			EvidenceIDs: repair.EvidenceIDs, RecordedAt: repair.RecordedAt,
+		})
+	}
+	payload := ExecutionSnapshotInput{
+		FocusID: focus.FocusID, ConditionID: focus.ConditionID, Objective: focus.Objective,
+		Value: focus.Value, InvolvedScope: focus.InvolvedScope, ExpectedEvidence: focus.ExpectedEvidence,
+		CheckpointID:          focus.EvidenceCheckpoint.CheckpointID,
+		CheckpointDescription: focus.EvidenceCheckpoint.Description,
+	}
+	focus.SnapshotHash, _ = hashJSON(payload)
+	return focus
+}
+
+func (runtime *Runtime) archiveInactiveLegacyArtifacts() error {
+	archiveDir := filepath.Join(runtime.RuntimeDir, "migrations", "advisory-v2")
+	if err := os.MkdirAll(archiveDir, 0o755); err != nil {
+		return err
+	}
+	if raw, err := os.ReadFile(runtime.requestPath()); err == nil {
+		var header struct {
+			SchemaVersion int `json:"schema_version"`
+		}
+		if json.Unmarshal(raw, &header) == nil && header.SchemaVersion == 1 {
+			if err := writeOnce(filepath.Join(archiveDir, "review-request.v1.json"), raw); err != nil {
+				return err
+			}
+			if err := os.Remove(runtime.requestPath()); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+		}
+	}
+	for _, name := range []string{"failure-event-migration.json", "invalid-main-agent-stop-v1.json"} {
+		path := filepath.Join(runtime.RuntimeDir, name)
+		if raw, err := os.ReadFile(path); err == nil {
+			if err := writeOnce(filepath.Join(archiveDir, name), raw); err != nil {
+				return err
+			}
+			if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func writeOnce(path string, data []byte) error {
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return atomicWrite(path, data)
 }
 
 func (runtime *Runtime) saveState(state *State) error {

@@ -100,7 +100,7 @@ func (runtime *Runtime) recordGovernedRunFailure(executionID, message string, op
 	if err == nil {
 		return nil
 	}
-	if reviewErr := runtime.ensureFailureRecordingReview(executionID); reviewErr != nil {
+	if _, reviewErr := runtime.RequestAdvisoryReview("failure-recording-integrity:"+executionID, "a governed process failure could not be recorded: "+err.Error()); reviewErr != nil {
 		return errors.Join(fmt.Errorf("governance failure event was not recorded: %w", err), reviewErr)
 	}
 	return fmt.Errorf("governance failure event was not recorded; an integrity review was requested: %w", err)

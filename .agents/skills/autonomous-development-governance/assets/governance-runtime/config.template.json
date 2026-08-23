@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "runtime_directory": ".codex/governance/runtime",
   "authority_paths": [],
   "completion_definition_paths": [],
@@ -8,7 +8,6 @@
   "review_request_schema_path": ".codex/governance/review-request.schema.json",
   "review_schema_path": ".codex/governance/review.schema.json",
   "governor_agent_name": "governor",
-  "governed_tool_matcher": "Bash|apply_patch|Edit|Write",
-  "activation_prompt_patterns": [],
+  "activation_marker": "[autonomous-governance:enable]",
   "explicit_resource_constraints": []
 }

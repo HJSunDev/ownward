@@ -27,6 +27,12 @@ func run(args []string) error {
 	}
 	runtime, err := governance.Open("")
 	if err != nil {
+		// Governance is advisory. A broken or temporarily unavailable runtime
+		// must never make a Codex Hook block the main task.
+		if args[0] == "hook" {
+			_, _ = fmt.Fprintln(os.Stdout, "{}")
+			return nil
+		}
 		return err
 	}
 	switch args[0] {
@@ -41,12 +47,12 @@ func run(args []string) error {
 	case "status":
 		state, err := runtime.LoadState()
 		return output(state, err)
-	case "propose-work-packet":
-		var proposal governance.WorkPacketProposal
-		if err := decodeInput(args[1:], &proposal); err != nil {
+	case "update-execution-snapshot":
+		var snapshot governance.ExecutionSnapshotInput
+		if err := decodeInput(args[1:], &snapshot); err != nil {
 			return err
 		}
-		request, err := runtime.ProposeWorkPacket(proposal)
+		request, err := runtime.UpdateExecutionSnapshot(snapshot)
 		return output(request, err)
 	case "record-evidence":
 		var record governance.EvidenceRecord
@@ -81,9 +87,6 @@ func run(args []string) error {
 		}
 		request, err := runtime.RequestCompletionReview(*sourceID)
 		return output(request, err)
-	case "migrate-invalid-stop-review":
-		request, err := runtime.MigrateInvalidStopReview()
-		return output(request, err)
 	case "resolve-intervention":
 		var resolution governance.ResolveInterventionInput
 		if err := decodeInput(args[1:], &resolution); err != nil {
@@ -114,16 +117,6 @@ func run(args []string) error {
 			return err
 		}
 		return output(map[string]string{"status": "cancelled"}, runtime.CancelHandoff(*handoffID))
-	case "repair-stage":
-		manifest, path, err := runtime.StageRepair()
-		return output(map[string]any{"manifest": manifest, "staging_path": path}, err)
-	case "repair-apply":
-		parser := flag.NewFlagSet("repair-apply", flag.ContinueOnError)
-		repairID := parser.String("repair-id", "", "staged repair identity")
-		if err := parser.Parse(args[1:]); err != nil {
-			return err
-		}
-		return output(map[string]string{"status": "applied"}, runtime.ApplyRepair(*repairID))
 	case "accept-review":
 		var result governance.ReviewResult
 		if err := decodeInput(args[1:], &result); err != nil {
@@ -131,11 +124,18 @@ func run(args []string) error {
 		}
 		path, err := runtime.AcceptReview(result)
 		return output(map[string]any{"decision_path": path}, err)
-	case "apply-review":
-		state, err := runtime.ApplyReview()
+	case "record-review-response":
+		var response governance.ReviewResponseInput
+		if err := decodeInput(args[1:], &response); err != nil {
+			return err
+		}
+		state, err := runtime.RecordReviewResponse(response)
 		return output(state, err)
-	case "close-work-packet":
-		err := runtime.CloseWorkPacket()
+	case "apply-review":
+		state, err := runtime.ApplyReviewCompatibility()
+		return output(state, err)
+	case "complete-execution-snapshot":
+		err := runtime.CompleteExecutionSnapshot()
 		return output(map[string]string{"status": "closed"}, err)
 	case "finish":
 		err := runtime.Finish()

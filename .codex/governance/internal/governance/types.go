@@ -2,7 +2,7 @@ package governance
 
 import "encoding/json"
 
-const schemaVersion = 1
+const schemaVersion = 2
 
 type Config struct {
 	SchemaVersion               int                  `json:"schema_version"`
@@ -14,32 +14,24 @@ type Config struct {
 	ReviewRequestSchemaPath     string               `json:"review_request_schema_path"`
 	ReviewSchemaPath            string               `json:"review_schema_path"`
 	GovernorAgentName           string               `json:"governor_agent_name"`
-	GovernedToolMatcher         string               `json:"governed_tool_matcher"`
-	ActivationPromptPatterns    []string             `json:"activation_prompt_patterns"`
-	AgentCapabilities           []AgentCapability    `json:"agent_capabilities"`
+	ActivationMarker            string               `json:"activation_marker"`
 	ExplicitResourceConstraints []ResourceConstraint `json:"explicit_resource_constraints"`
 }
 
-type AgentCapability struct {
-	Role       string `json:"role"`
-	ProductMCP string `json:"product_mcp"`
-}
-
 type State struct {
-	SchemaVersion               int                    `json:"schema_version"`
-	RunID                       string                 `json:"run_id"`
-	Status                      string                 `json:"status"`
-	AuthorityHash               string                 `json:"authority_hash"`
-	CompletionConditions        []CompletionCondition  `json:"completion_conditions"`
-	CurrentWorkPacket           *WorkPacket            `json:"current_work_packet"`
-	PendingIntervention         *PendingIntervention   `json:"pending_intervention"`
-	ExplicitResourceConstraints []ResourceConstraint   `json:"explicit_resource_constraints"`
-	ReusableResults             []ReusableResult       `json:"reusable_results"`
-	NextAction                  *string                `json:"next_action"`
-	Review                      ReviewState            `json:"review"`
-	Owner                       *OwnerState            `json:"owner"`
-	Handoff                     *HandoffState          `json:"handoff"`
-	InfrastructureFailure       *InfrastructureFailure `json:"infrastructure_failure"`
+	SchemaVersion               int                   `json:"schema_version"`
+	RunID                       string                `json:"run_id"`
+	Status                      string                `json:"status"`
+	AuthorityHash               string                `json:"authority_hash"`
+	CompletionConditions        []CompletionCondition `json:"completion_conditions"`
+	CurrentFocus                *ExecutionSnapshot    `json:"current_focus"`
+	PendingIntervention         *PendingIntervention  `json:"pending_intervention"`
+	ExplicitResourceConstraints []ResourceConstraint  `json:"explicit_resource_constraints"`
+	ReusableResults             []ReusableResult      `json:"reusable_results"`
+	NextAction                  *string               `json:"next_action"`
+	Review                      ReviewState           `json:"review"`
+	Owner                       *OwnerState           `json:"owner"`
+	Handoff                     *HandoffState         `json:"handoff"`
 }
 
 type OwnerState struct {
@@ -58,18 +50,6 @@ type HandoffState struct {
 	Status          string `json:"status"`
 	CreatedAt       string `json:"created_at"`
 	ExpiresAt       string `json:"expires_at"`
-}
-
-type InfrastructureFailure struct {
-	ReviewID        string `json:"review_id"`
-	TriggerInstance string `json:"trigger_instance_id"`
-	Signature       string `json:"signature"`
-	RuntimeIdentity string `json:"runtime_identity"`
-	OwnerSessionID  string `json:"owner_session_id"`
-	OwnerEpoch      uint64 `json:"owner_epoch"`
-	Status          string `json:"status"`
-	FirstObservedAt string `json:"first_observed_at"`
-	RecoveryAction  string `json:"recovery_action"`
 }
 
 type HandoffTicket struct {
@@ -98,32 +78,28 @@ type ReusableResult struct {
 	InputHash    string   `json:"input_hash"`
 }
 
-type WorkPacket struct {
-	PacketID           string             `json:"packet_id"`
+// ExecutionSnapshot describes the main Agent's current work. It is never a
+// permission grant or a Governor-controlled scope.
+type ExecutionSnapshot struct {
+	FocusID            string             `json:"focus_id"`
 	ConditionID        string             `json:"condition_id"`
 	Objective          string             `json:"objective"`
 	Value              string             `json:"value"`
-	AllowedScope       []string           `json:"allowed_scope"`
-	ExcludedScope      []string           `json:"excluded_scope"`
+	InvolvedScope      []string           `json:"involved_scope"`
 	ExpectedEvidence   []string           `json:"expected_evidence"`
 	EvidenceCheckpoint EvidenceCheckpoint `json:"evidence_checkpoint"`
-	PlanHash           string             `json:"plan_hash"`
-	Approval           *Approval          `json:"approval"`
+	SnapshotHash       string             `json:"snapshot_hash"`
 	StartedAt          string             `json:"started_at"`
 	LastEvidenceAt     *string            `json:"last_evidence_at"`
 	Checkpoint         *string            `json:"checkpoint"`
-	FailureSignatures  []string           `json:"failure_signatures"`
 	FailureEvents      []FailureEvent     `json:"failure_events"`
 	FailureRepairs     []FailureRepair    `json:"failure_repairs"`
 }
 
-// FailureEvent is a verifiable occurrence, not a caller-controlled counter.
-// Legacy signatures are retained only with Trust=legacy_unverified and never
-// participate in repeated-failure decisions.
 type FailureEvent struct {
 	EventID            string   `json:"event_id"`
 	Signature          string   `json:"signature"`
-	WorkPacketID       string   `json:"work_packet_id"`
+	FocusID            string   `json:"focus_id"`
 	SourceKind         string   `json:"source_kind"`
 	SourceExecution    string   `json:"source_execution"`
 	ToolUseID          string   `json:"tool_use_id"`
@@ -142,7 +118,7 @@ type FailureRepair struct {
 	RepairID           string   `json:"repair_id"`
 	Signature          string   `json:"signature"`
 	PreviousEventID    string   `json:"previous_event_id"`
-	WorkPacketID       string   `json:"work_packet_id"`
+	FocusID            string   `json:"focus_id"`
 	RepairGeneration   int      `json:"repair_generation"`
 	RepositoryIdentity string   `json:"repository_identity"`
 	CandidateIdentity  string   `json:"candidate_identity"`
@@ -172,31 +148,23 @@ type EvidenceCheckpoint struct {
 	Reached      bool   `json:"reached"`
 }
 
-type Approval struct {
-	Status               string `json:"status"`
-	ReviewID             string `json:"review_id"`
-	TriggerInstanceID    string `json:"trigger_instance_id"`
-	ReviewSnapshotHash   string `json:"review_snapshot_hash"`
-	ValidUntilCheckpoint string `json:"valid_until_checkpoint"`
-}
-
 type ReviewState struct {
-	Required              bool    `json:"required"`
-	ReviewID              *string `json:"review_id"`
-	TriggerInstanceID     *string `json:"trigger_instance_id"`
-	FixedReviewGeneration int     `json:"fixed_review_generation"`
-	ReviewSnapshotHash    *string `json:"review_snapshot_hash"`
-	Trigger               *string `json:"trigger"`
-	DecisionPath          *string `json:"decision_path"`
+	Status                string          `json:"status"`
+	ReviewID              *string         `json:"review_id"`
+	TriggerInstanceID     *string         `json:"trigger_instance_id"`
+	FixedReviewGeneration int             `json:"fixed_review_generation"`
+	ReviewSnapshotHash    *string         `json:"review_snapshot_hash"`
+	Trigger               *string         `json:"trigger"`
+	FeedbackPath          *string         `json:"feedback_path"`
+	Response              *ReviewResponse `json:"response"`
 }
 
-type WorkPacketProposal struct {
-	PacketID              string   `json:"packet_id"`
+type ExecutionSnapshotInput struct {
+	FocusID               string   `json:"focus_id"`
 	ConditionID           string   `json:"condition_id"`
 	Objective             string   `json:"objective"`
 	Value                 string   `json:"value"`
-	AllowedScope          []string `json:"allowed_scope"`
-	ExcludedScope         []string `json:"excluded_scope"`
+	InvolvedScope         []string `json:"involved_scope"`
 	ExpectedEvidence      []string `json:"expected_evidence"`
 	CheckpointID          string   `json:"checkpoint_id"`
 	CheckpointDescription string   `json:"checkpoint_description"`
@@ -222,7 +190,7 @@ type ReviewRequest struct {
 	RepositorySnapshot        RepositorySnapshot   `json:"repository_snapshot"`
 	StatePath                 string               `json:"state_path"`
 	CurrentConditionID        *string              `json:"current_condition_id"`
-	CurrentWorkPacket         *RequestWorkPacket   `json:"current_work_packet"`
+	CurrentFocus              *RequestFocus        `json:"current_focus"`
 	PendingIntervention       *PendingIntervention `json:"pending_intervention"`
 	ResourceFacts             []ResourceFact       `json:"resource_facts"`
 	RecentCheckpoint          *RecentCheckpoint    `json:"recent_checkpoint"`
@@ -243,17 +211,16 @@ type RepositorySnapshot struct {
 	WorkingTreeHash string `json:"working_tree_hash"`
 }
 
-type RequestWorkPacket struct {
-	PacketID              string   `json:"packet_id"`
+type RequestFocus struct {
+	FocusID               string   `json:"focus_id"`
 	ConditionID           string   `json:"condition_id"`
 	Objective             string   `json:"objective"`
 	Value                 string   `json:"value"`
-	AllowedScope          []string `json:"allowed_scope"`
-	ExcludedScope         []string `json:"excluded_scope"`
+	InvolvedScope         []string `json:"involved_scope"`
 	ExpectedEvidence      []string `json:"expected_evidence"`
 	CheckpointID          string   `json:"checkpoint_id"`
 	CheckpointDescription string   `json:"checkpoint_description"`
-	PlanHash              string   `json:"plan_hash"`
+	SnapshotHash          string   `json:"snapshot_hash"`
 }
 
 type ResourceFact struct {
@@ -275,20 +242,37 @@ type EvidenceReference struct {
 	Hash       string `json:"hash"`
 }
 
+// ReviewResult is Governor feedback. It cannot mutate execution state without
+// a separate, explicit main-Agent response.
 type ReviewResult struct {
-	ReviewID             string              `json:"review_id"`
-	TriggerInstanceID    string              `json:"trigger_instance_id"`
-	ReviewSnapshotHash   string              `json:"review_snapshot_hash"`
-	Decision             string              `json:"decision"`
-	MacroAssessment      MacroAssessment     `json:"macro_assessment"`
-	HighestPriorityGap   *string             `json:"highest_priority_gap"`
-	PathAssessment       PathAssessment      `json:"path_assessment"`
-	PreservedResultIDs   []string            `json:"preserved_result_ids"`
-	InvalidatedItems     []string            `json:"invalidated_items"`
-	ValidatedEvidenceIDs []string            `json:"validated_evidence_ids"`
-	NextWorkPacket       *WorkPacketProposal `json:"next_work_packet"`
-	ExternalInput        *ExternalInput      `json:"external_input"`
-	Reason               string              `json:"reason"`
+	ReviewID               string                  `json:"review_id"`
+	TriggerInstanceID      string                  `json:"trigger_instance_id"`
+	ReviewSnapshotHash     string                  `json:"review_snapshot_hash"`
+	Recommendation         string                  `json:"recommendation"`
+	MacroAssessment        MacroAssessment         `json:"macro_assessment"`
+	HighestPriorityGap     *string                 `json:"highest_priority_gap"`
+	PathAssessment         PathAssessment          `json:"path_assessment"`
+	PreservedResultIDs     []string                `json:"preserved_result_ids"`
+	SuggestedInvalidations []string                `json:"suggested_invalidations"`
+	ValidatedEvidenceIDs   []string                `json:"validated_evidence_ids"`
+	SuggestedFocus         *ExecutionSnapshotInput `json:"suggested_focus"`
+	ExternalInput          *ExternalInput          `json:"external_input"`
+	Reason                 string                  `json:"reason"`
+}
+
+type ReviewResponse struct {
+	ReviewID            string `json:"review_id"`
+	Disposition         string `json:"disposition"`
+	Reason              string `json:"reason"`
+	NextValidationPoint string `json:"next_validation_point"`
+	RespondedAt         string `json:"responded_at"`
+}
+
+type ReviewResponseInput struct {
+	ReviewID            string `json:"review_id"`
+	Disposition         string `json:"disposition"`
+	Reason              string `json:"reason"`
+	NextValidationPoint string `json:"next_validation_point"`
 }
 
 type MacroAssessment struct {
