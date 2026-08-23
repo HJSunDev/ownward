@@ -46,7 +46,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Bash|apply_patch|Edit|Write|mcp__ownward__.*",
+        "matcher": "Agent|spawn_agent|Bash|apply_patch|Edit|Write|mcp__ownward__.*",
         "hooks": [
           {
             "type": "command",
@@ -60,7 +60,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Bash|apply_patch|Edit|Write|mcp__ownward__.*",
+        "matcher": "Agent|spawn_agent|Bash|apply_patch|Edit|Write|mcp__ownward__.*",
         "hooks": [
           {
             "type": "command",

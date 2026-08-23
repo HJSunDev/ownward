@@ -41,6 +41,9 @@ func (runtime *Runtime) Init() (*State, error) {
 			ReusableResults:             []ReusableResult{},
 			NextAction:                  &next,
 			Review:                      ReviewState{},
+			Owner:                       nil,
+			Handoff:                     nil,
+			InfrastructureFailure:       nil,
 		}
 		if err := runtime.saveState(state); err != nil {
 			return err

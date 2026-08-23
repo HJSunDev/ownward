@@ -4,7 +4,7 @@
   "title": "Ownward autonomous development governance state",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "run_id", "status", "authority_hash", "completion_conditions", "current_work_packet", "pending_intervention", "explicit_resource_constraints", "reusable_results", "next_action", "review"],
+  "required": ["schema_version", "run_id", "status", "authority_hash", "completion_conditions", "current_work_packet", "pending_intervention", "explicit_resource_constraints", "reusable_results", "next_action", "review", "owner", "handoff", "infrastructure_failure"],
   "properties": {
     "schema_version": { "const": 1 },
     "run_id": { "$ref": "#/$defs/nonEmptyString" },
@@ -54,7 +54,10 @@
       }
     },
     "next_action": { "type": ["string", "null"] },
-    "review": { "$ref": "#/$defs/reviewState" }
+    "review": { "$ref": "#/$defs/reviewState" },
+    "owner": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/ownerState" }] },
+    "handoff": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/handoffState" }] },
+    "infrastructure_failure": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/infrastructureFailure" }] }
   },
   "allOf": [
     {
@@ -169,6 +172,48 @@
         "review_snapshot_hash": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/hash" }] },
         "trigger": { "type": ["string", "null"] },
         "decision_path": { "type": ["string", "null"] }
+      }
+    },
+    "ownerState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session_id", "transcript_path", "owner_epoch", "acquired_at"],
+      "properties": {
+        "session_id": { "$ref": "#/$defs/nonEmptyString" },
+        "transcript_path": { "type": "string" },
+        "owner_epoch": { "type": "integer", "minimum": 1 },
+        "acquired_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "handoffState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["handoff_id", "token_hash", "source_session_id", "source_epoch", "target_thread_id", "status", "created_at", "expires_at"],
+      "properties": {
+        "handoff_id": { "$ref": "#/$defs/nonEmptyString" },
+        "token_hash": { "$ref": "#/$defs/hash" },
+        "source_session_id": { "$ref": "#/$defs/nonEmptyString" },
+        "source_epoch": { "type": "integer", "minimum": 1 },
+        "target_thread_id": { "type": "string" },
+        "status": { "enum": ["prepared", "bound"] },
+        "created_at": { "type": "string", "format": "date-time" },
+        "expires_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "infrastructureFailure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["review_id", "trigger_instance_id", "signature", "runtime_identity", "owner_session_id", "owner_epoch", "status", "first_observed_at", "recovery_action"],
+      "properties": {
+        "review_id": { "$ref": "#/$defs/nonEmptyString" },
+        "trigger_instance_id": { "$ref": "#/$defs/nonEmptyString" },
+        "signature": { "$ref": "#/$defs/nonEmptyString" },
+        "runtime_identity": { "$ref": "#/$defs/hash" },
+        "owner_session_id": { "$ref": "#/$defs/nonEmptyString" },
+        "owner_epoch": { "type": "integer", "minimum": 1 },
+        "status": { "const": "latched" },
+        "first_observed_at": { "type": "string", "format": "date-time" },
+        "recovery_action": { "$ref": "#/$defs/nonEmptyString" }
       }
     }
   }

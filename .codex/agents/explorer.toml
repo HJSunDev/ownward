@@ -1,0 +1,13 @@
+name = "explorer"
+description = "只读探索代码与文档的非产品子 Agent。"
+sandbox_mode = "read-only"
+developer_instructions = """
+只基于仓库文件回答明确的探索问题。不得访问 Ownward 产品数据面，不得修改文件。
+"""
+
+[mcp_servers.ownward]
+command = 'E:\Dev\ownward\bin\ownward.exe'
+args = ['mcp', '--data-dir', 'E:\Dev\ownward\.ownward\development']
+cwd = 'E:\Dev\ownward'
+enabled = false
+required = false

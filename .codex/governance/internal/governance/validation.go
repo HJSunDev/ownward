@@ -130,6 +130,51 @@ func validateState(state *State) error {
 	if state.Status == "complete" && state.Review.Required {
 		return errors.New("complete state cannot require review")
 	}
+	if state.Owner != nil {
+		if err := nonempty("owner.session_id", state.Owner.SessionID); err != nil {
+			return err
+		}
+		if state.Owner.OwnerEpoch == 0 {
+			return errors.New("owner.owner_epoch must be positive")
+		}
+		if _, err := time.Parse(time.RFC3339Nano, state.Owner.AcquiredAt); err != nil {
+			return errors.New("owner.acquired_at must be RFC3339")
+		}
+	}
+	if state.Handoff != nil {
+		if state.Owner == nil {
+			return errors.New("handoff requires an active owner")
+		}
+		if err := validHash("handoff.token_hash", state.Handoff.TokenHash); err != nil {
+			return err
+		}
+		if state.Handoff.SourceSessionID != state.Owner.SessionID || state.Handoff.SourceEpoch != state.Owner.OwnerEpoch {
+			return errors.New("handoff source does not match the active owner")
+		}
+		if !oneOf(state.Handoff.Status, "prepared", "bound") {
+			return errors.New("handoff status must be prepared or bound")
+		}
+		if _, err := time.Parse(time.RFC3339Nano, state.Handoff.ExpiresAt); err != nil {
+			return errors.New("handoff.expires_at must be RFC3339")
+		}
+	}
+	if state.InfrastructureFailure != nil {
+		failure := state.InfrastructureFailure
+		for name, value := range map[string]string{"infrastructure_failure.review_id": failure.ReviewID, "infrastructure_failure.trigger_instance_id": failure.TriggerInstance, "infrastructure_failure.signature": failure.Signature, "infrastructure_failure.owner_session_id": failure.OwnerSessionID, "infrastructure_failure.recovery_action": failure.RecoveryAction} {
+			if err := nonempty(name, value); err != nil {
+				return err
+			}
+		}
+		if err := validHash("infrastructure_failure.runtime_identity", failure.RuntimeIdentity); err != nil {
+			return err
+		}
+		if failure.Status != "latched" {
+			return errors.New("infrastructure_failure status must be latched")
+		}
+		if failure.OwnerEpoch == 0 {
+			return errors.New("infrastructure_failure owner_epoch must be positive")
+		}
+	}
 	return nil
 }
 

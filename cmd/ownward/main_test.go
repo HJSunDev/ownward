@@ -6,10 +6,15 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/HJSunDev/ownward/internal/core"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func TestCLICompletesAssetLifecycleAcrossIndependentInvocations(t *testing.T) {
@@ -77,6 +82,141 @@ func TestBearerTokenHandlerRejectsMissingOrWrongCredentials(t *testing.T) {
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusNoContent {
 		t.Fatalf("valid bearer token returned %d", response.Code)
+	}
+}
+
+type fakeHTTPMCPServer struct{}
+
+func (fakeHTTPMCPServer) HTTPHandler() http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) { writer.WriteHeader(http.StatusNoContent) })
+}
+
+func TestSharedMCPServicePublishesAuthenticatedIdentityAndShutsDown(t *testing.T) {
+	dataDir := filepath.Join(t.TempDir(), "data")
+	descriptorPath := filepath.Join(dataDir, "runtime", "mcp-service.json")
+	t.Setenv(sharedMCPDescriptorEnvironment, descriptorPath)
+	t.Setenv(sharedMCPTokenEnvironment, "test-token")
+	t.Setenv(sharedMCPIdentityEnvironment, "sha256:"+strings.Repeat("a", 64))
+	result := make(chan error, 1)
+	go func() {
+		result <- runHTTPMCP(context.Background(), fakeHTTPMCPServer{}, "127.0.0.1:0", "test-token", &bytes.Buffer{})
+	}()
+	var descriptor *sharedMCPDescriptor
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var err error
+		descriptor, err = readSharedMCPDescriptor(descriptorPath)
+		if err == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if descriptor == nil {
+		t.Fatal("shared service did not publish its descriptor")
+	}
+	identity, err := probeSharedMCP(context.Background(), descriptor)
+	if err != nil || identity != descriptor.ServiceIdentity {
+		t.Fatalf("shared service identity probe failed: %v %q", err, identity)
+	}
+	wrong := *descriptor
+	wrong.BearerToken = "wrong"
+	if _, err := probeSharedMCP(context.Background(), &wrong); err == nil {
+		t.Fatal("shared service accepted a wrong bearer token")
+	}
+	if err := shutdownSharedMCP(context.Background(), descriptor); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("shared service did not shut down")
+	}
+	if _, err := os.Stat(descriptorPath); !os.IsNotExist(err) {
+		t.Fatalf("shared descriptor survived owner shutdown: %v", err)
+	}
+}
+
+func TestSharedMCPDescriptorRejectsNonLoopbackEndpoint(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "descriptor.json")
+	descriptor := &sharedMCPDescriptor{Schema: "ownward.shared-mcp/v1", PID: 1, Endpoint: "http://192.0.2.1:9999", BearerToken: "secret", ServiceIdentity: "identity", DataIdentity: "data"}
+	if err := atomicWriteSharedMCPDescriptor(path, descriptor); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readSharedMCPDescriptor(path); err == nil || !strings.Contains(err.Error(), "回环") {
+		t.Fatalf("non-loopback descriptor was accepted: %v", err)
+	}
+}
+
+func TestSharedMCPExternalBinaryConcurrentClients(t *testing.T) {
+	binary := os.Getenv("OWNWARD_SHARED_MCP_BINARY")
+	if binary == "" {
+		t.Skip("set OWNWARD_SHARED_MCP_BINARY to run the packaged shared-core test")
+	}
+	dataDir := filepath.Join(t.TempDir(), "data")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	type connection struct {
+		session *mcp.ClientSession
+		err     error
+	}
+	ready := make(chan connection, 2)
+	for index := 0; index < 2; index++ {
+		go func(index int) {
+			client := mcp.NewClient(&mcp.Implementation{Name: "shared-test", Version: "1"}, nil)
+			command := exec.Command(binary, "mcp", "--data-dir", dataDir)
+			session, err := client.Connect(ctx, &mcp.CommandTransport{Command: command}, nil)
+			ready <- connection{session: session, err: err}
+		}(index)
+	}
+	connections := make([]*mcp.ClientSession, 0, 2)
+	for range 2 {
+		result := <-ready
+		if result.err != nil {
+			t.Fatalf("concurrent stdio connector failed: %v", result.err)
+		}
+		connections = append(connections, result.session)
+	}
+	defer func() {
+		for _, session := range connections {
+			_ = session.Close()
+		}
+		descriptor, err := readSharedMCPDescriptor(filepath.Join(dataDir, "runtime", "mcp-service.json"))
+		if err == nil {
+			_ = shutdownSharedMCP(context.Background(), descriptor)
+		}
+	}()
+	created, err := connections[0].CallTool(ctx, &mcp.CallToolParams{Name: "ownward_create", Arguments: map[string]any{"content": "shared-core-integration-value"}})
+	if err != nil || created.IsError {
+		t.Fatalf("first client could not create through shared core: %v %#v", err, created)
+	}
+	encoded, _ := json.Marshal(created.StructuredContent)
+	var createResult struct {
+		Result struct {
+			Information struct {
+				ID string `json:"id"`
+			} `json:"information"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(encoded, &createResult); err != nil || createResult.Result.Information.ID == "" {
+		t.Fatalf("create result had no stable identity: %v %s", err, encoded)
+	}
+	read, err := connections[1].CallTool(ctx, &mcp.CallToolParams{Name: "ownward_read", Arguments: map[string]any{"id": createResult.Result.Information.ID}})
+	if err != nil || read.IsError {
+		t.Fatalf("second client could not read first client result: %v %#v", err, read)
+	}
+	readJSON, _ := json.Marshal(read.StructuredContent)
+	if !bytes.Contains(readJSON, []byte("shared-core-integration-value")) {
+		t.Fatalf("clients did not observe one authoritative state: %s", readJSON)
+	}
+	if err := connections[0].Close(); err != nil {
+		t.Fatal(err)
+	}
+	connections = connections[1:]
+	if _, err := connections[0].CallTool(ctx, &mcp.CallToolParams{Name: "ownward_rules", Arguments: map[string]any{}}); err != nil {
+		t.Fatalf("remaining client lost the shared core when another client exited: %v", err)
 	}
 }
 

@@ -1,0 +1,13 @@
+name = "default"
+description = "通用非产品子 Agent；不接触 Ownward 用户信息。"
+sandbox_mode = "workspace-write"
+developer_instructions = """
+只完成父任务明确委派的局部工作。不得访问 Ownward 产品数据面；需要产品信息时返回父任务，由主任务在正式产品边界内处理。
+"""
+
+[mcp_servers.ownward]
+command = 'E:\Dev\ownward\bin\ownward.exe'
+args = ['mcp', '--data-dir', 'E:\Dev\ownward\.ownward\development']
+cwd = 'E:\Dev\ownward'
+enabled = false
+required = false

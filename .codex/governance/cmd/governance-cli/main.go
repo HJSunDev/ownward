@@ -86,6 +86,39 @@ func run(args []string) error {
 		}
 		request, err := runtime.ResolveIntervention(resolution)
 		return output(request, err)
+	case "prepare-handoff":
+		parser := flag.NewFlagSet("prepare-handoff", flag.ContinueOnError)
+		sessionID := parser.String("session-id", "", "current owner hook session id")
+		if err := parser.Parse(args[1:]); err != nil {
+			return err
+		}
+		ticket, err := runtime.PrepareHandoff(*sessionID)
+		return output(ticket, err)
+	case "bind-handoff":
+		parser := flag.NewFlagSet("bind-handoff", flag.ContinueOnError)
+		handoffID := parser.String("handoff-id", "", "prepared handoff id")
+		targetThreadID := parser.String("target-thread-id", "", "thread id returned by Codex fork")
+		if err := parser.Parse(args[1:]); err != nil {
+			return err
+		}
+		return output(map[string]string{"status": "bound"}, runtime.BindHandoff(*handoffID, *targetThreadID))
+	case "cancel-handoff":
+		parser := flag.NewFlagSet("cancel-handoff", flag.ContinueOnError)
+		handoffID := parser.String("handoff-id", "", "prepared handoff id")
+		if err := parser.Parse(args[1:]); err != nil {
+			return err
+		}
+		return output(map[string]string{"status": "cancelled"}, runtime.CancelHandoff(*handoffID))
+	case "repair-stage":
+		manifest, path, err := runtime.StageRepair()
+		return output(map[string]any{"manifest": manifest, "staging_path": path}, err)
+	case "repair-apply":
+		parser := flag.NewFlagSet("repair-apply", flag.ContinueOnError)
+		repairID := parser.String("repair-id", "", "staged repair identity")
+		if err := parser.Parse(args[1:]); err != nil {
+			return err
+		}
+		return output(map[string]string{"status": "applied"}, runtime.ApplyRepair(*repairID))
 	case "accept-review":
 		var result governance.ReviewResult
 		if err := decodeInput(args[1:], &result); err != nil {

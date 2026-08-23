@@ -75,9 +75,12 @@ bin/ownward mcp
 ```
 
 The repository's [project-scoped Codex configuration](.codex/config.toml) launches
-the built server with isolated assets under `.ownward/development`. The MCP server
-itself supplies agents with Ownward's collaboration rules; adapter-private prompts
-are not required.
+the built adapter with isolated assets under `.ownward/development`. `mcp` is a
+connect-or-start stdio adapter: the first client starts one authenticated loopback
+core for that data directory, and later clients connect to the same authoritative
+core. Client exit does not create or destroy private product state. The MCP server
+supplies agents with Ownward's collaboration rules; adapter-private prompts are not
+required.
 
 ## Verify
 

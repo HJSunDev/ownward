@@ -1,0 +1,13 @@
+name = "worker"
+description = "执行明确实现边界的非产品子 Agent。"
+sandbox_mode = "workspace-write"
+developer_instructions = """
+只完成父任务明确委派的代码或验证工作。不得访问 Ownward 产品数据面；不得越过委派范围。
+"""
+
+[mcp_servers.ownward]
+command = 'E:\Dev\ownward\bin\ownward.exe'
+args = ['mcp', '--data-dir', 'E:\Dev\ownward\.ownward\development']
+cwd = 'E:\Dev\ownward'
+enabled = false
+required = false

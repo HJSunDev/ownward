@@ -1,4 +1,7 @@
 [mcp_servers.ownward]
+command = 'E:\Dev\ownward\bin\ownward.exe'
+args = ['mcp', '--data-dir', 'E:\Dev\ownward\.ownward\development']
+cwd = 'E:\Dev\ownward'
 enabled = true
 required = true
 startup_timeout_sec = 120

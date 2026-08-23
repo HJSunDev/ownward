@@ -65,6 +65,10 @@ func (runtime *Runtime) Doctor() (*DoctorReport, error) {
 		return nil, err
 	}
 	checks = append(checks, "Governor is independently read-only and isolates the stateful project MCP")
+	if err := validateAgentCapabilityMatrix(runtime.Root, runtime.Config, projectConfigData, hooksText); err != nil {
+		return nil, err
+	}
+	checks = append(checks, "every allowed subagent role has an explicit fail-closed product MCP capability")
 
 	fixture := *runtime
 	fixture.RuntimeDir = filepath.Join(runtime.RuntimeDir, ".doctor-"+newID("fixture"))
@@ -273,6 +277,65 @@ func (runtime *Runtime) Doctor() (*DoctorReport, error) {
 		return nil, errors.New("configured mainline prompt did not activate fixed governance review")
 	}
 	checks = append(checks, "ordinary discussions stay inactive while the configured mainline prompt activates governance")
+	ownerBefore, err := inactive.LoadState()
+	if err != nil || ownerBefore.Owner == nil || ownerBefore.Owner.SessionID != "doctor" {
+		return nil, errors.New("activation did not bind a single active governance owner")
+	}
+	if err := inactive.hookSessionStart(HookInput{SessionID: "doctor-competitor", Source: "startup"}, &bytes.Buffer{}); err != nil {
+		return nil, err
+	}
+	ownerAfter, _ := inactive.LoadState()
+	if ownerAfter.Owner.SessionID != "doctor" || ownerAfter.Review.FixedReviewGeneration != ownerBefore.Review.FixedReviewGeneration {
+		return nil, errors.New("a competing task changed governance ownership or review generation")
+	}
+	ticket, err := inactive.PrepareHandoff("doctor")
+	if err != nil {
+		return nil, err
+	}
+	if err := inactive.BindHandoff(ticket.HandoffID, "doctor-successor"); err != nil {
+		return nil, err
+	}
+	handoffOutput := &bytes.Buffer{}
+	handoffPrompt := "continue [ownward-governance-handoff id=" + ticket.HandoffID + " token=" + ticket.Token + "]"
+	if err := inactive.hookUserPrompt(HookInput{SessionID: "doctor-wrong-target", Prompt: handoffPrompt}, &bytes.Buffer{}); err != nil {
+		return nil, err
+	}
+	stillOwned, _ := inactive.LoadState()
+	if stillOwned.Owner.SessionID != "doctor" || stillOwned.Handoff == nil {
+		return nil, errors.New("a task other than the bound handoff target acquired governance ownership")
+	}
+	if err := inactive.hookUserPrompt(HookInput{SessionID: "doctor-successor", Prompt: handoffPrompt}, handoffOutput); err != nil {
+		return nil, err
+	}
+	handedOff, _ := inactive.LoadState()
+	if handedOff.Owner.SessionID != "doctor-successor" || handedOff.Owner.OwnerEpoch != 2 || handedOff.Handoff != nil {
+		return nil, errors.New("one-time governance handoff did not transfer ownership")
+	}
+	checks = append(checks, "task ownership is single-writer and transfers through a bound one-time handoff")
+
+	failureFixture := *runtime
+	failureFixture.RuntimeDir = filepath.Join(runtime.RuntimeDir, ".doctor-failure-"+newID("fixture"))
+	failureFixture.Config.EvidenceRoots = []string{filepath.Join(failureFixture.RuntimeDir, "evidence")}
+	defer os.RemoveAll(failureFixture.RuntimeDir)
+	if _, err := failureFixture.Init(); err != nil {
+		return nil, err
+	}
+	if err := failureFixture.hookSessionStart(HookInput{SessionID: "failure-owner", Source: "startup"}, &bytes.Buffer{}); err != nil {
+		return nil, err
+	}
+	failureInput := HookInput{SessionID: "failure-owner", ToolName: "Agent", ToolInput: json.RawMessage(`{"name":"governor"}`), ToolResponse: json.RawMessage(`{"isError":true,"message":"injected Governor startup failure"}`)}
+	if err := failureFixture.hookPostToolUse(failureInput, &bytes.Buffer{}); err != nil {
+		return nil, err
+	}
+	stopOutput := &bytes.Buffer{}
+	if err := failureFixture.hookStop(HookInput{SessionID: "failure-owner"}, stopOutput); err != nil || strings.Contains(stopOutput.String(), `"decision":"block"`) {
+		return nil, errors.New("latched Governor infrastructure failure still caused a Stop retry loop")
+	}
+	failureState, _ := failureFixture.LoadState()
+	if failureState.InfrastructureFailure == nil || failureState.CurrentWorkPacket != nil {
+		return nil, errors.New("Governor failure latch did not preserve the closed control-plane state")
+	}
+	checks = append(checks, "Governor infrastructure failures latch once, keep product writes closed and allow the task to end")
 
 	return &DoctorReport{Status: "passed", Checks: checks}, nil
 }
@@ -298,6 +361,55 @@ func validateGovernorConfiguration(projectConfigData, governorData []byte) error
 	}
 	if !strings.EqualFold(tomlAssignment(governorMCP, "enabled"), "false") || !strings.EqualFold(tomlAssignment(governorMCP, "required"), "false") {
 		return errors.New("Governor must disable and unrequire the project Ownward MCP")
+	}
+	return nil
+}
+
+func validateAgentCapabilityMatrix(root string, config Config, projectConfigData []byte, hooksText string) error {
+	projectMCP := tomlSection(string(projectConfigData), "mcp_servers.ownward")
+	for _, key := range []string{"command", "args", "cwd"} {
+		if tomlAssignment(projectMCP, key) == "" {
+			return fmt.Errorf("project Ownward MCP transport is incomplete: missing %s", key)
+		}
+	}
+	if !strings.Contains(hooksText, "Agent") {
+		return errors.New("Agent lifecycle is absent from governance tool hooks")
+	}
+	expected := map[string]string{}
+	for _, capability := range config.AgentCapabilities {
+		expected[capability.Role] = capability.ProductMCP
+		path := filepath.Join(root, ".codex", "agents", capability.Role+".toml")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("agent capability %q has no project configuration: %w", capability.Role, err)
+		}
+		section := tomlSection(string(data), "mcp_servers.ownward")
+		if section == "" {
+			return fmt.Errorf("agent %q does not explicitly declare Ownward MCP capability", capability.Role)
+		}
+		if capability.ProductMCP == "disabled" {
+			for _, key := range []string{"command", "args", "cwd"} {
+				if tomlAssignment(section, key) == "" {
+					return fmt.Errorf("agent %q has a partial disabled Ownward transport: missing %s", capability.Role, key)
+				}
+			}
+			if !strings.EqualFold(tomlAssignment(section, "enabled"), "false") || !strings.EqualFold(tomlAssignment(section, "required"), "false") {
+				return fmt.Errorf("agent %q must explicitly disable and unrequire Ownward MCP", capability.Role)
+			}
+		}
+	}
+	entries, err := os.ReadDir(filepath.Join(root, ".codex", "agents"))
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".toml") {
+			continue
+		}
+		role := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
+		if _, exists := expected[role]; !exists {
+			return fmt.Errorf("project agent role %q is absent from the capability matrix", role)
+		}
 	}
 	return nil
 }

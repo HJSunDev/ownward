@@ -16,21 +16,66 @@ type Config struct {
 	GovernorAgentName           string               `json:"governor_agent_name"`
 	GovernedToolMatcher         string               `json:"governed_tool_matcher"`
 	ActivationPromptPatterns    []string             `json:"activation_prompt_patterns"`
+	AgentCapabilities           []AgentCapability    `json:"agent_capabilities"`
 	ExplicitResourceConstraints []ResourceConstraint `json:"explicit_resource_constraints"`
 }
 
+type AgentCapability struct {
+	Role       string `json:"role"`
+	ProductMCP string `json:"product_mcp"`
+}
+
 type State struct {
-	SchemaVersion               int                   `json:"schema_version"`
-	RunID                       string                `json:"run_id"`
-	Status                      string                `json:"status"`
-	AuthorityHash               string                `json:"authority_hash"`
-	CompletionConditions        []CompletionCondition `json:"completion_conditions"`
-	CurrentWorkPacket           *WorkPacket           `json:"current_work_packet"`
-	PendingIntervention         *PendingIntervention  `json:"pending_intervention"`
-	ExplicitResourceConstraints []ResourceConstraint  `json:"explicit_resource_constraints"`
-	ReusableResults             []ReusableResult      `json:"reusable_results"`
-	NextAction                  *string               `json:"next_action"`
-	Review                      ReviewState           `json:"review"`
+	SchemaVersion               int                    `json:"schema_version"`
+	RunID                       string                 `json:"run_id"`
+	Status                      string                 `json:"status"`
+	AuthorityHash               string                 `json:"authority_hash"`
+	CompletionConditions        []CompletionCondition  `json:"completion_conditions"`
+	CurrentWorkPacket           *WorkPacket            `json:"current_work_packet"`
+	PendingIntervention         *PendingIntervention   `json:"pending_intervention"`
+	ExplicitResourceConstraints []ResourceConstraint   `json:"explicit_resource_constraints"`
+	ReusableResults             []ReusableResult       `json:"reusable_results"`
+	NextAction                  *string                `json:"next_action"`
+	Review                      ReviewState            `json:"review"`
+	Owner                       *OwnerState            `json:"owner"`
+	Handoff                     *HandoffState          `json:"handoff"`
+	InfrastructureFailure       *InfrastructureFailure `json:"infrastructure_failure"`
+}
+
+type OwnerState struct {
+	SessionID      string `json:"session_id"`
+	TranscriptPath string `json:"transcript_path"`
+	OwnerEpoch     uint64 `json:"owner_epoch"`
+	AcquiredAt     string `json:"acquired_at"`
+}
+
+type HandoffState struct {
+	HandoffID       string `json:"handoff_id"`
+	TokenHash       string `json:"token_hash"`
+	SourceSessionID string `json:"source_session_id"`
+	SourceEpoch     uint64 `json:"source_epoch"`
+	TargetThreadID  string `json:"target_thread_id"`
+	Status          string `json:"status"`
+	CreatedAt       string `json:"created_at"`
+	ExpiresAt       string `json:"expires_at"`
+}
+
+type InfrastructureFailure struct {
+	ReviewID        string `json:"review_id"`
+	TriggerInstance string `json:"trigger_instance_id"`
+	Signature       string `json:"signature"`
+	RuntimeIdentity string `json:"runtime_identity"`
+	OwnerSessionID  string `json:"owner_session_id"`
+	OwnerEpoch      uint64 `json:"owner_epoch"`
+	Status          string `json:"status"`
+	FirstObservedAt string `json:"first_observed_at"`
+	RecoveryAction  string `json:"recovery_action"`
+}
+
+type HandoffTicket struct {
+	HandoffID string `json:"handoff_id"`
+	Token     string `json:"token"`
+	ExpiresAt string `json:"expires_at"`
 }
 
 type CompletionCondition struct {

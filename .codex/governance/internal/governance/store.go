@@ -78,6 +78,19 @@ func validateConfig(root string, config Config) error {
 	if config.GovernorAgentName == "" || config.GovernedToolMatcher == "" || len(config.ActivationPromptPatterns) == 0 {
 		return errors.New("governance config requires governor_agent_name, governed_tool_matcher and activation_prompt_patterns")
 	}
+	if len(config.AgentCapabilities) == 0 {
+		return errors.New("governance config requires an explicit agent capability matrix")
+	}
+	roles := map[string]struct{}{}
+	for _, capability := range config.AgentCapabilities {
+		if strings.TrimSpace(capability.Role) == "" || !oneOf(capability.ProductMCP, "disabled", "shared-client") {
+			return errors.New("agent capabilities require a role and product_mcp disabled or shared-client")
+		}
+		if _, exists := roles[capability.Role]; exists {
+			return fmt.Errorf("duplicate agent capability role %q", capability.Role)
+		}
+		roles[capability.Role] = struct{}{}
+	}
 	all := append(append([]string{}, config.AuthorityPaths...), config.CompletionDefinitionPaths...)
 	all = append(all, config.StateSchemaPath, config.ReviewRequestSchemaPath, config.ReviewSchemaPath)
 	for _, path := range all {
@@ -175,14 +188,11 @@ func (runtime *Runtime) withLock(action func() error) error {
 		return err
 	}
 	lockPath := filepath.Join(runtime.RuntimeDir, ".lock")
-	lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	lock, err := acquireStateLock(lockPath, 2*time.Second)
 	if err != nil {
-		return fmt.Errorf("governance state is locked by another writer: %w", err)
+		return err
 	}
-	_, _ = fmt.Fprintf(lock, "%d\n", os.Getpid())
-	_ = lock.Sync()
-	_ = lock.Close()
-	defer os.Remove(lockPath)
+	defer lock.release()
 	return action()
 }
 

@@ -25,7 +25,6 @@ import (
 	"github.com/HJSunDev/ownward/internal/derived"
 	"github.com/HJSunDev/ownward/internal/domain"
 	"github.com/HJSunDev/ownward/internal/embedding"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 var version = "0.1.0-dev"
@@ -74,6 +73,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if command == "mcp" {
+		return runSharedMCPConnector(ctx, loaded.DataDir, version, stdout, stderr)
+	}
 	bundle, bundleErr := loadEmbeddingBundle()
 	if command == "restore" {
 		if strings.TrimSpace(*backup) == "" {
@@ -115,14 +117,13 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	switch command {
-	case "mcp":
-		// 启动重放会产生大量短生命周期对象；常驻服务开始工作前将这部分内存归还操作系统。
-		debug.FreeOSMemory()
-		server := mcpserver.New(service, version)
-		return server.Run(ctx, &mcp.StdioTransport{})
 	case "mcp-http":
 		debug.FreeOSMemory()
-		return runHTTPMCP(ctx, mcpserver.New(service, version), *listen, *token, stdout)
+		resolvedToken := strings.TrimSpace(*token)
+		if resolvedToken == "" {
+			resolvedToken = strings.TrimSpace(os.Getenv(sharedMCPTokenEnvironment))
+		}
+		return runHTTPMCP(ctx, mcpserver.New(service, version), *listen, resolvedToken, stdout)
 	case "create":
 		kind, err := domain.ParseKind(*kindValue)
 		if err != nil {
@@ -240,7 +241,11 @@ func loadEmbeddingBundle() (embedding.Bundle, error) {
 	return embedding.LoadBundle(filepath.Join(filepath.Dir(executable), "embedding"))
 }
 
-func runHTTPMCP(ctx context.Context, server *mcpserver.Server, address, token string, stdout io.Writer) error {
+type httpMCPServer interface {
+	HTTPHandler() http.Handler
+}
+
+func runHTTPMCP(ctx context.Context, server httpMCPServer, address, token string, stdout io.Writer) error {
 	listener, err := net.Listen("tcp", strings.TrimSpace(address))
 	if err != nil {
 		return fmt.Errorf("启动 Streamable HTTP MCP: %w", err)
@@ -250,7 +255,34 @@ func runHTTPMCP(ctx context.Context, server *mcpserver.Server, address, token st
 		_ = listener.Close()
 		return errors.New("Streamable HTTP MCP 只允许监听本机回环地址")
 	}
-	handler := server.HTTPHandler()
+	shutdownRequested := make(chan struct{}, 1)
+	baseHandler := server.HTTPHandler()
+	var handler http.Handler = baseHandler
+	if strings.TrimSpace(os.Getenv(sharedMCPDescriptorEnvironment)) != "" {
+		handler = http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			switch request.URL.Path {
+			case sharedMCPStatusPath:
+				if request.Method != http.MethodGet {
+					http.Error(writer, "method not allowed", http.StatusMethodNotAllowed)
+					return
+				}
+				writer.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(writer).Encode(map[string]string{"service_identity": os.Getenv(sharedMCPIdentityEnvironment)})
+			case sharedMCPShutdownPath:
+				if request.Method != http.MethodPost {
+					http.Error(writer, "method not allowed", http.StatusMethodNotAllowed)
+					return
+				}
+				writer.WriteHeader(http.StatusAccepted)
+				select {
+				case shutdownRequested <- struct{}{}:
+				default:
+				}
+			default:
+				baseHandler.ServeHTTP(writer, request)
+			}
+		})
+	}
 	if strings.TrimSpace(token) != "" {
 		handler = bearerTokenHandler(handler, strings.TrimSpace(token))
 	}
@@ -259,6 +291,12 @@ func runHTTPMCP(ctx context.Context, server *mcpserver.Server, address, token st
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	endpoint := "http://" + net.JoinHostPort(tcpAddress.IP.String(), strconv.Itoa(tcpAddress.Port))
+	cleanupDescriptor, err := publishSharedMCPDescriptorFromEnvironment(endpoint)
+	if err != nil {
+		_ = listener.Close()
+		return err
+	}
+	defer cleanupDescriptor()
 	if err := writeJSON(stdout, map[string]string{"endpoint": endpoint}); err != nil {
 		_ = listener.Close()
 		return err
@@ -267,22 +305,23 @@ func runHTTPMCP(ctx context.Context, server *mcpserver.Server, address, token st
 	go func() { result <- httpServer.Serve(listener) }()
 	select {
 	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := httpServer.Shutdown(shutdownCtx); err != nil {
-			return err
-		}
-		serveErr := <-result
-		if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
-			return serveErr
-		}
-		return nil
+	case <-shutdownRequested:
 	case serveErr := <-result:
 		if errors.Is(serveErr, http.ErrServerClosed) {
 			return nil
 		}
 		return serveErr
 	}
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := httpServer.Shutdown(shutdownCtx); err != nil {
+		return err
+	}
+	serveErr := <-result
+	if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+		return serveErr
+	}
+	return nil
 }
 
 func bearerTokenHandler(next http.Handler, token string) http.Handler {
