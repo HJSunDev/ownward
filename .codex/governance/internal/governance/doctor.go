@@ -31,15 +31,28 @@ func (runtime *Runtime) Doctor() (*DoctorReport, error) {
 		return nil, fmt.Errorf("invalid hooks.json: %w", err)
 	}
 	hooksText := string(hooksData)
-	for _, required := range []string{"SessionStart", "UserPromptSubmit", "PreCompact", "PreToolUse", "PostToolUse", "Stop"} {
+	for _, required := range []string{"SessionStart", "UserPromptSubmit", "PreCompact", "PreToolUse", "PostToolUse"} {
 		if !strings.Contains(hooksText, `"`+required+`"`) {
 			return nil, fmt.Errorf("hooks.json is missing %s", required)
 		}
 	}
+	if strings.Contains(hooksText, `"Stop"`) {
+		return nil, errors.New("hooks.json must not register Stop as a governance event")
+	}
+	if strings.Contains(hooksText, "Activating autonomous governance") {
+		return nil, errors.New("ordinary UserPromptSubmit must not display a governance activation status")
+	}
+	templateData, err := os.ReadFile(filepath.Join(runtime.Root, ".agents", "skills", "autonomous-development-governance", "assets", "governance-runtime", "hooks.template.json"))
+	if err != nil {
+		return nil, err
+	}
+	if strings.Contains(string(templateData), `"Stop"`) || strings.Contains(string(templateData), "Activating mainline governance") {
+		return nil, errors.New("reusable hook template still installs intrusive Stop or UserPrompt activation behavior")
+	}
 	if strings.Contains(hooksText, "SubagentStart") || strings.Contains(hooksText, "SubagentStop") || strings.Contains(hooksText, "<") || strings.Contains(hooksText, ">") {
 		return nil, errors.New("hooks.json contains recursive subagent hooks or unresolved placeholders")
 	}
-	checks = append(checks, "hook lifecycle is complete and excludes recursive subagent triggers")
+	checks = append(checks, "hook lifecycle excludes Stop and recursive subagent triggers")
 
 	configData, _ := json.Marshal(runtime.Config)
 	lowerConfig := strings.ToLower(string(configData))
@@ -80,11 +93,11 @@ func (runtime *Runtime) Doctor() (*DoctorReport, error) {
 	if _, err := fixture.Init(); err == nil {
 		return nil, errors.New("duplicate init unexpectedly overwrote state")
 	}
-	firstRequest, err := fixture.Resume("doctor-startup")
+	firstRequest, err := fixture.RequestFixedReview("session-start", "doctor-startup")
 	if err != nil {
 		return nil, err
 	}
-	secondRequest, err := fixture.Resume("doctor-startup")
+	secondRequest, err := fixture.RequestFixedReview("session-start", "doctor-startup")
 	if err != nil || secondRequest.ReviewID != firstRequest.ReviewID {
 		return nil, errors.New("pending fixed review was not reused on reentry")
 	}
@@ -162,7 +175,7 @@ func (runtime *Runtime) Doctor() (*DoctorReport, error) {
 	if err != nil {
 		return nil, err
 	}
-	continueRequest, err := fixture.Resume("doctor-compact")
+	continueRequest, err := fixture.RequestFixedReview("session-start", "doctor-compact")
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +200,7 @@ func (runtime *Runtime) Doctor() (*DoctorReport, error) {
 	}
 	checks = append(checks, "continue refreshes approval without rebuilding the existing work packet")
 
-	interventionRequest, err := fixture.RequestReview("doctor-user-decision")
+	interventionRequest, err := fixture.RequestAdvisoryReview("doctor-user-decision", "doctor user decision")
 	if err != nil {
 		return nil, err
 	}
@@ -235,7 +248,7 @@ func (runtime *Runtime) Doctor() (*DoctorReport, error) {
 	if err != nil || resolutionRequest == nil || resolutionRequest.PendingIntervention == nil || resolutionRequest.PendingIntervention.Resolution == nil {
 		return nil, errors.New("valid user intervention did not create a reviewable persisted resolution")
 	}
-	recoveredRequest, err := fixture.Resume("doctor-resume-after-resolution")
+	recoveredRequest, err := fixture.RequestFixedReview("session-start", "doctor-resume-after-resolution")
 	if err != nil || recoveredRequest == nil || recoveredRequest.PendingIntervention == nil || recoveredRequest.PendingIntervention.Resolution == nil {
 		return nil, errors.New("resolved intervention was not recoverable after session resume")
 	}
@@ -285,12 +298,37 @@ func (runtime *Runtime) Doctor() (*DoctorReport, error) {
 		return nil, errors.New("configured mainline prompt did not activate fixed governance review")
 	}
 	checks = append(checks, "ordinary discussions stay inactive while the configured mainline prompt activates governance")
+	silentBefore, err := runtimeControlSnapshot(&inactive)
+	if err != nil {
+		return nil, err
+	}
+	ordinaryOutput := &bytes.Buffer{}
+	if err := inactive.hookUserPrompt(HookInput{SessionID: "doctor", TurnID: "ordinary", Prompt: "只回答当前问题"}, ordinaryOutput); err != nil || strings.TrimSpace(ordinaryOutput.String()) != "{}" {
+		return nil, errors.New("ordinary active-run prompt was not silent")
+	}
+	stopOutput := &bytes.Buffer{}
+	if err := inactive.hookStop(HookInput{SessionID: "doctor"}, stopOutput); err != nil || strings.TrimSpace(stopOutput.String()) != "{}" {
+		return nil, errors.New("compatibility Stop was not a strict no-op")
+	}
+	silentAfter, err := runtimeControlSnapshot(&inactive)
+	if err != nil || silentBefore != silentAfter {
+		return nil, errors.New("ordinary prompt or compatibility Stop changed governance state")
+	}
+	checks = append(checks, "ordinary active-run prompts and compatibility Stop are silent and side-effect free")
 	ownerBefore, err := inactive.LoadState()
 	if err != nil || ownerBefore.Owner == nil || ownerBefore.Owner.SessionID != "doctor" {
 		return nil, errors.New("activation did not bind a single active governance owner")
 	}
-	if err := inactive.hookSessionStart(HookInput{SessionID: "doctor-competitor", Source: "startup"}, &bytes.Buffer{}); err != nil {
+	competitorOutput := &bytes.Buffer{}
+	if err := inactive.hookSessionStart(HookInput{SessionID: "doctor-competitor", Source: "startup"}, competitorOutput); err != nil {
 		return nil, err
+	}
+	if !strings.Contains(competitorOutput.String(), "read-only") {
+		return nil, errors.New("non-owner SessionStart did not provide its one-time read-only fact")
+	}
+	nonOwnerPrompt := &bytes.Buffer{}
+	if err := inactive.hookUserPrompt(HookInput{SessionID: "doctor-competitor", Prompt: "普通问题"}, nonOwnerPrompt); err != nil || strings.TrimSpace(nonOwnerPrompt.String()) != "{}" {
+		return nil, errors.New("non-owner ordinary prompt repeated governance instructions")
 	}
 	ownerAfter, _ := inactive.LoadState()
 	if ownerAfter.Owner.SessionID != "doctor" || ownerAfter.Review.FixedReviewGeneration != ownerBefore.Review.FixedReviewGeneration {
@@ -335,8 +373,8 @@ func (runtime *Runtime) Doctor() (*DoctorReport, error) {
 	if err := failureFixture.hookPostToolUse(failureInput, &bytes.Buffer{}); err != nil {
 		return nil, err
 	}
-	stopOutput := &bytes.Buffer{}
-	if err := failureFixture.hookStop(HookInput{SessionID: "failure-owner"}, stopOutput); err != nil || strings.Contains(stopOutput.String(), `"decision":"block"`) {
+	failureStopOutput := &bytes.Buffer{}
+	if err := failureFixture.hookStop(HookInput{SessionID: "failure-owner"}, failureStopOutput); err != nil || strings.Contains(failureStopOutput.String(), `"decision":"block"`) {
 		return nil, errors.New("latched Governor infrastructure failure still caused a Stop retry loop")
 	}
 	failureState, _ := failureFixture.LoadState()
@@ -346,6 +384,18 @@ func (runtime *Runtime) Doctor() (*DoctorReport, error) {
 	checks = append(checks, "Governor infrastructure failures latch once, keep product writes closed and allow the task to end")
 
 	return &DoctorReport{Status: "passed", Checks: checks}, nil
+}
+
+func runtimeControlSnapshot(runtime *Runtime) (string, error) {
+	values := map[string]string{}
+	for _, path := range []string{runtime.statePath(), runtime.requestPath(), runtime.eventsPath()} {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return "", err
+		}
+		values[path] = sha256Value(data)
+	}
+	return hashJSON(values)
 }
 
 func validateGovernorConfiguration(projectConfigData, governorData []byte) error {

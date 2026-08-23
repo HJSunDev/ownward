@@ -2,6 +2,7 @@ package governance
 
 import (
 	"bufio"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -97,9 +98,13 @@ func (runtime *Runtime) readCompletionConditions() ([]CompletionCondition, error
 	return conditions, nil
 }
 
-func (runtime *Runtime) Resume(reason string) (*ReviewRequest, error) {
+func (runtime *Runtime) RequestFixedReview(triggerType, sourceID string) (*ReviewRequest, error) {
+	trigger, err := newReviewTrigger("fixed", triggerType, sourceID, "")
+	if err != nil {
+		return nil, err
+	}
 	var request *ReviewRequest
-	err := runtime.withLock(func() error {
+	err = runtime.withLock(func() error {
 		state, err := runtime.LoadState()
 		if err != nil {
 			return err
@@ -112,6 +117,7 @@ func (runtime *Runtime) Resume(reason string) (*ReviewRequest, error) {
 			return err
 		}
 		if currentAuthority != state.AuthorityHash {
+			previousAuthority := state.AuthorityHash
 			state.AuthorityHash = currentAuthority
 			state.CurrentWorkPacket = nil
 			state.PendingIntervention = nil
@@ -120,12 +126,22 @@ func (runtime *Runtime) Resume(reason string) (*ReviewRequest, error) {
 					state.CompletionConditions[index].Status = "evidence_insufficient"
 				}
 			}
+			authorityTrigger, triggerErr := newReviewTrigger("event", "authority-change", previousAuthority+":"+currentAuthority, "authority changed")
+			if triggerErr != nil {
+				return triggerErr
+			}
+			created, triggerErr := runtime.requestReviewLocked(state, authorityTrigger, true)
+			if triggerErr != nil {
+				return triggerErr
+			}
+			request = created
+			return nil
 		}
 		if state.PendingIntervention != nil && state.PendingIntervention.Status == "awaiting_user" {
 			return nil
 		}
-		fixedTrigger := "fixed:" + strings.TrimSpace(reason)
-		if state.Review.Required && state.Review.Trigger != nil && *state.Review.Trigger == fixedTrigger {
+		identity := reviewTriggerIdentity(trigger)
+		if state.Review.Required && state.Review.Trigger != nil && *state.Review.Trigger == identity {
 			loaded, err := runtime.loadRequest()
 			if err != nil {
 				return err
@@ -133,8 +149,19 @@ func (runtime *Runtime) Resume(reason string) (*ReviewRequest, error) {
 			request = loaded
 			return nil
 		}
+		if state.Review.Required {
+			loaded, err := runtime.loadRequest()
+			if err != nil {
+				return err
+			}
+			request = loaded
+			return nil
+		}
+		if state.Review.Trigger != nil && *state.Review.Trigger == identity {
+			return nil
+		}
 		state.Review.FixedReviewGeneration++
-		created, err := runtime.requestReviewLocked(state, "fixed", strings.TrimSpace(reason))
+		created, err := runtime.requestReviewLocked(state, trigger, false)
 		if err != nil {
 			return err
 		}
@@ -166,7 +193,11 @@ func (runtime *Runtime) ProposeWorkPacket(proposal WorkPacketProposal) (*ReviewR
 		}
 		state.CurrentWorkPacket = packet
 		setConditionStatus(state, proposal.ConditionID, "in_progress", nil)
-		created, err := runtime.requestReviewLocked(state, "event", "new-work-packet")
+		trigger, err := newReviewTrigger("event", "new-work-packet", packet.PacketID+":"+packet.PlanHash, "new work packet")
+		if err != nil {
+			return err
+		}
+		created, err := runtime.requestReviewLocked(state, trigger, false)
 		if err != nil {
 			return err
 		}
@@ -240,7 +271,11 @@ func (runtime *Runtime) RecordEvidence(record EvidenceRecord) (*ReviewRequest, e
 		if expectedEvidenceReached(state.CurrentWorkPacket, state.ReusableResults) {
 			state.CurrentWorkPacket.EvidenceCheckpoint.Reached = true
 			state.CurrentWorkPacket.Checkpoint = &state.CurrentWorkPacket.EvidenceCheckpoint.CheckpointID
-			created, err := runtime.requestReviewLocked(state, "event", "evidence-checkpoint-reached")
+			trigger, err := newReviewTrigger("event", "evidence-checkpoint", state.CurrentWorkPacket.EvidenceCheckpoint.CheckpointID, "evidence checkpoint reached")
+			if err != nil {
+				return err
+			}
+			created, err := runtime.requestReviewLocked(state, trigger, false)
 			if err != nil {
 				return err
 			}
@@ -326,7 +361,11 @@ func (runtime *Runtime) RecordFailureEvent(input FailureEventInput) (*ReviewRequ
 			}
 		}
 		if shouldReview {
-			created, reviewErr := runtime.requestReviewLocked(state, "event", "repeated-failure:"+event.Signature)
+			trigger, triggerErr := newReviewTrigger("event", "repeated-failure", event.EventID, "verified failure repeated after repair: "+event.Signature)
+			if triggerErr != nil {
+				return triggerErr
+			}
+			created, reviewErr := runtime.requestReviewLocked(state, trigger, false)
 			if reviewErr != nil {
 				return reviewErr
 			}
@@ -341,7 +380,7 @@ func (runtime *Runtime) RecordFailureEvent(input FailureEventInput) (*ReviewRequ
 	return request, err
 }
 
-func (runtime *Runtime) ensureFailureRecordingReview() error {
+func (runtime *Runtime) ensureFailureRecordingReview(sourceID string) error {
 	state, err := runtime.LoadState()
 	if err != nil {
 		return err
@@ -349,7 +388,7 @@ func (runtime *Runtime) ensureFailureRecordingReview() error {
 	if state.Review.Required {
 		return nil
 	}
-	_, err = runtime.RequestReview("failure-event-recording-integrity")
+	_, err = runtime.requestEventReview("failure-recording-integrity", sourceID, "verified failure event could not be recorded")
 	return err
 }
 
@@ -498,12 +537,13 @@ func (runtime *Runtime) currentFailureIdentities() (map[string]string, error) {
 	}, nil
 }
 
-func (runtime *Runtime) RequestReview(reason string) (*ReviewRequest, error) {
-	if err := nonempty("review reason", reason); err != nil {
+func (runtime *Runtime) RequestAdvisoryReview(requestID, reason string) (*ReviewRequest, error) {
+	trigger, err := newReviewTrigger("advisory", "explicit-advisory", requestID, reason)
+	if err != nil {
 		return nil, err
 	}
 	var request *ReviewRequest
-	err := runtime.withLock(func() error {
+	err = runtime.withLock(func() error {
 		state, err := runtime.LoadState()
 		if err != nil {
 			return err
@@ -519,7 +559,63 @@ func (runtime *Runtime) RequestReview(reason string) (*ReviewRequest, error) {
 			request = loaded
 			return nil
 		}
-		created, err := runtime.requestReviewLocked(state, "event", reason)
+		created, err := runtime.requestReviewLocked(state, trigger, false)
+		if err != nil {
+			return err
+		}
+		request = created
+		return nil
+	})
+	return request, err
+}
+
+func (runtime *Runtime) RequestCompletionReview(sourceID string) (*ReviewRequest, error) {
+	if err := nonempty("completion source_id", sourceID); err != nil {
+		return nil, err
+	}
+	var request *ReviewRequest
+	err := runtime.withLock(func() error {
+		state, err := runtime.LoadState()
+		if err != nil {
+			return err
+		}
+		evidenceSummary, err := hashJSON(map[string]any{
+			"authority_hash": state.AuthorityHash,
+			"conditions":     state.CompletionConditions,
+			"results":        state.ReusableResults,
+		})
+		if err != nil {
+			return err
+		}
+		trigger, err := newReviewTrigger("event", "completion-candidate", strings.TrimSpace(sourceID)+":"+evidenceSummary, "explicit completion candidate")
+		if err != nil {
+			return err
+		}
+		created, err := runtime.requestReviewLocked(state, trigger, false)
+		if err != nil {
+			return err
+		}
+		request = created
+		return nil
+	})
+	return request, err
+}
+
+func (runtime *Runtime) requestEventReview(triggerType, sourceID, reason string) (*ReviewRequest, error) {
+	trigger, err := newReviewTrigger("event", triggerType, sourceID, reason)
+	if err != nil {
+		return nil, err
+	}
+	var request *ReviewRequest
+	err = runtime.withLock(func() error {
+		state, err := runtime.LoadState()
+		if err != nil {
+			return err
+		}
+		if state.PendingIntervention != nil && state.PendingIntervention.Status == "awaiting_user" {
+			return errors.New("pending intervention must be resolved before requesting another review")
+		}
+		created, err := runtime.requestReviewLocked(state, trigger, false)
 		if err != nil {
 			return err
 		}
@@ -559,7 +655,11 @@ func (runtime *Runtime) ResolveIntervention(input ResolveInterventionInput) (*Re
 			EvidenceRefs: normalizeStrings(input.EvidenceRefs),
 			SubmittedAt:  time.Now().UTC().Format(time.RFC3339Nano),
 		}
-		created, err := runtime.requestReviewLocked(state, "event", "intervention-resolved:"+pending.InterventionID)
+		trigger, err := newReviewTrigger("event", "intervention-resolution", pending.InterventionID+":"+pending.Resolution.SourceTurnID, "user intervention resolved")
+		if err != nil {
+			return err
+		}
+		created, err := runtime.requestReviewLocked(state, trigger, false)
 		if err != nil {
 			return err
 		}
@@ -587,6 +687,7 @@ func (runtime *Runtime) ReconcileAuthority() (*ReviewRequest, error) {
 		if current == state.AuthorityHash {
 			return nil
 		}
+		previous := state.AuthorityHash
 		state.AuthorityHash = current
 		state.CurrentWorkPacket = nil
 		state.PendingIntervention = nil
@@ -595,7 +696,11 @@ func (runtime *Runtime) ReconcileAuthority() (*ReviewRequest, error) {
 				state.CompletionConditions[index].Status = "evidence_insufficient"
 			}
 		}
-		created, err := runtime.requestReviewLocked(state, "event", "authority-changed")
+		trigger, err := newReviewTrigger("event", "authority-change", previous+":"+current, "authority changed")
+		if err != nil {
+			return err
+		}
+		created, err := runtime.requestReviewLocked(state, trigger, true)
 		if err != nil {
 			return err
 		}
@@ -605,19 +710,73 @@ func (runtime *Runtime) ReconcileAuthority() (*ReviewRequest, error) {
 	return request, err
 }
 
-func (runtime *Runtime) requestReviewLocked(state *State, kind, reason string) (*ReviewRequest, error) {
+func newReviewTrigger(kind, triggerType, sourceID, reason string) (ReviewTrigger, error) {
+	trigger := ReviewTrigger{
+		Kind:     strings.TrimSpace(kind),
+		Type:     strings.TrimSpace(triggerType),
+		SourceID: strings.TrimSpace(sourceID),
+		Reason:   strings.TrimSpace(reason),
+	}
+	if trigger.Reason == "" {
+		trigger.Reason = strings.ReplaceAll(trigger.Type, "-", " ")
+	}
+	if err := validateReviewTrigger(trigger); err != nil {
+		return ReviewTrigger{}, err
+	}
+	return trigger, nil
+}
+
+func reviewTriggerIdentity(trigger ReviewTrigger) string {
+	return trigger.Kind + ":" + trigger.Type + ":" + trigger.SourceID
+}
+
+func reviewTriggerInstanceID(runID string, trigger ReviewTrigger) (string, error) {
+	hash, err := hashJSON(map[string]string{
+		"run_id":    runID,
+		"kind":      trigger.Kind,
+		"type":      trigger.Type,
+		"source_id": trigger.SourceID,
+	})
+	if err != nil {
+		return "", err
+	}
+	return "trigger_" + strings.TrimPrefix(hash, "sha256:")[:32], nil
+}
+
+func (runtime *Runtime) requestReviewLocked(state *State, trigger ReviewTrigger, replacePending bool) (*ReviewRequest, error) {
+	identity := reviewTriggerIdentity(trigger)
+	instanceID, err := reviewTriggerInstanceID(state.RunID, trigger)
+	if err != nil {
+		return nil, err
+	}
+	if state.Review.Trigger != nil && *state.Review.Trigger == identity {
+		if state.Review.Required {
+			return runtime.loadRequest()
+		}
+		return nil, nil
+	}
 	if state.Review.Required {
+		if !replacePending {
+			return runtime.loadRequest()
+		}
 		if err := runtime.archiveSupersededReviewLocked(state); err != nil {
 			return nil, err
 		}
+	}
+	seen, err := runtime.reviewTriggerInstanceSeen(instanceID)
+	if err != nil {
+		return nil, err
+	}
+	if seen {
+		return nil, nil
 	}
 	snapshot, err := runtime.repositorySnapshot()
 	if err != nil {
 		return nil, err
 	}
 	request := &ReviewRequest{
-		SchemaVersion: schemaVersion, ReviewID: newID("review"), TriggerInstanceID: newID("trigger"),
-		Trigger: ReviewTrigger{Kind: kind, Reason: reason}, AuthorityPaths: normalizeStrings(runtime.Config.AuthorityPaths),
+		SchemaVersion: schemaVersion, ReviewID: newID("review"), TriggerInstanceID: instanceID,
+		Trigger: trigger, AuthorityPaths: normalizeStrings(runtime.Config.AuthorityPaths),
 		CompletionDefinitionPaths: normalizeStrings(runtime.Config.CompletionDefinitionPaths), RepositorySnapshot: snapshot,
 		StatePath: filepath.ToSlash(mustRelative(runtime.Root, runtime.statePath())), PendingIntervention: state.PendingIntervention, ResourceFacts: []ResourceFact{},
 		EvidenceRefs: []EvidenceReference{}, CreatedAt: time.Now().UTC().Format(time.RFC3339Nano),
@@ -661,7 +820,7 @@ func (runtime *Runtime) requestReviewLocked(state *State, kind, reason string) (
 	state.Review.ReviewID = stringPointer(request.ReviewID)
 	state.Review.TriggerInstanceID = stringPointer(request.TriggerInstanceID)
 	state.Review.ReviewSnapshotHash = stringPointer(request.ReviewSnapshotHash)
-	state.Review.Trigger = stringPointer(kind + ":" + reason)
+	state.Review.Trigger = stringPointer(identity)
 	state.Review.DecisionPath = nil
 	if state.CurrentWorkPacket != nil {
 		state.CurrentWorkPacket.Approval = nil
@@ -674,10 +833,24 @@ func (runtime *Runtime) requestReviewLocked(state *State, kind, reason string) (
 	if err := runtime.saveState(state); err != nil {
 		return nil, err
 	}
-	if err := runtime.appendEvent("review_requested", state.RunID, "created Governor review request", map[string]any{"review_id": request.ReviewID, "trigger": request.Trigger}); err != nil {
+	if err := runtime.appendEvent("review_requested", state.RunID, "created Governor review request", map[string]any{"review_id": request.ReviewID, "trigger_instance_id": request.TriggerInstanceID, "trigger": request.Trigger}); err != nil {
 		return nil, err
 	}
 	return request, nil
+}
+
+func (runtime *Runtime) reviewTriggerInstanceSeen(instanceID string) (bool, error) {
+	lines, err := readJSONLines(runtime.eventsPath())
+	if err != nil {
+		return false, err
+	}
+	for _, line := range lines {
+		var event Event
+		if json.Unmarshal(line, &event) == nil && event.Kind == "review_requested" && event.Fields["trigger_instance_id"] == instanceID {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (runtime *Runtime) archiveSupersededReviewLocked(state *State) error {

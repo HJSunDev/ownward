@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 	"time"
 
 	"ownward.local/governance/internal/governance"
@@ -34,13 +33,6 @@ func run(args []string) error {
 	case "init":
 		state, err := runtime.Init()
 		return output(state, err)
-	case "resume":
-		reason := "manual-resume"
-		if len(args) > 1 {
-			reason = strings.Join(args[1:], " ")
-		}
-		request, err := runtime.Resume(reason)
-		return output(request, err)
 	case "hook":
 		if len(args) != 2 {
 			return errors.New("hook requires exactly one event name")
@@ -64,7 +56,7 @@ func run(args []string) error {
 		request, err := runtime.RecordEvidence(record)
 		return output(request, err)
 	case "record-failure":
-		return errors.New("manual failure counters are disabled; governed hooks and governed-run record verified events automatically, use request-review for an immediate review")
+		return errors.New("manual failure counters are disabled; governed hooks and governed-run record verified events automatically")
 	case "record-repair":
 		var repair governance.FailureRepairInput
 		if err := decodeInput(args[1:], &repair); err != nil {
@@ -72,13 +64,25 @@ func run(args []string) error {
 		}
 		value, err := runtime.RecordRepair(repair)
 		return output(value, err)
-	case "request-review":
-		parser := flag.NewFlagSet("request-review", flag.ContinueOnError)
+	case "request-advisory-review":
+		parser := flag.NewFlagSet("request-advisory-review", flag.ContinueOnError)
+		requestID := parser.String("request-id", "", "stable identity of this explicit advisory request")
 		reason := parser.String("reason", "", "review trigger reason")
 		if err := parser.Parse(args[1:]); err != nil {
 			return err
 		}
-		request, err := runtime.RequestReview(*reason)
+		request, err := runtime.RequestAdvisoryReview(*requestID, *reason)
+		return output(request, err)
+	case "request-completion-review":
+		parser := flag.NewFlagSet("request-completion-review", flag.ContinueOnError)
+		sourceID := parser.String("source-id", "", "stable identity of the explicit completion attempt")
+		if err := parser.Parse(args[1:]); err != nil {
+			return err
+		}
+		request, err := runtime.RequestCompletionReview(*sourceID)
+		return output(request, err)
+	case "migrate-invalid-stop-review":
+		request, err := runtime.MigrateInvalidStopReview()
 		return output(request, err)
 	case "resolve-intervention":
 		var resolution governance.ResolveInterventionInput

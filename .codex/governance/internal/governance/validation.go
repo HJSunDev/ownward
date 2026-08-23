@@ -340,7 +340,7 @@ func validateReviewRequest(request *ReviewRequest) error {
 	}
 	for name, value := range map[string]string{
 		"review_id": request.ReviewID, "trigger_instance_id": request.TriggerInstanceID,
-		"trigger.reason": request.Trigger.Reason, "repository.root": request.RepositorySnapshot.Root,
+		"repository.root":        request.RepositorySnapshot.Root,
 		"repository.head_commit": request.RepositorySnapshot.HeadCommit, "state_path": request.StatePath,
 		"created_at": request.CreatedAt,
 	} {
@@ -348,8 +348,8 @@ func validateReviewRequest(request *ReviewRequest) error {
 			return err
 		}
 	}
-	if !oneOf(request.Trigger.Kind, "fixed", "event") {
-		return errors.New("review trigger kind must be fixed or event")
+	if err := validateReviewTrigger(request.Trigger); err != nil {
+		return err
 	}
 	if err := validHash("review_snapshot_hash", request.ReviewSnapshotHash); err != nil {
 		return err
@@ -381,6 +381,29 @@ func validateReviewRequest(request *ReviewRequest) error {
 		if err := validatePendingIntervention(request.PendingIntervention); err != nil {
 			return fmt.Errorf("invalid pending intervention in review request: %w", err)
 		}
+	}
+	return nil
+}
+
+func validateReviewTrigger(trigger ReviewTrigger) error {
+	for name, value := range map[string]string{
+		"trigger.kind":      trigger.Kind,
+		"trigger.type":      trigger.Type,
+		"trigger.source_id": trigger.SourceID,
+		"trigger.reason":    trigger.Reason,
+	} {
+		if err := nonempty(name, value); err != nil {
+			return err
+		}
+	}
+	allowed := map[string][]string{
+		"fixed":    {"activation", "session-start", "explicit-resume", "runtime-repair-recovery", "legacy-state-migration"},
+		"event":    {"new-work-packet", "evidence-checkpoint", "repeated-failure", "authority-change", "intervention-resolution", "failure-recording-integrity", "completion-candidate"},
+		"advisory": {"explicit-advisory"},
+	}
+	types, exists := allowed[trigger.Kind]
+	if !exists || !oneOf(trigger.Type, types...) {
+		return fmt.Errorf("review trigger %q/%q is not an allowed structured trigger", trigger.Kind, trigger.Type)
 	}
 	return nil
 }

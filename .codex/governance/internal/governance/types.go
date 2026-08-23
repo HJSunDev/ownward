@@ -231,8 +231,10 @@ type ReviewRequest struct {
 }
 
 type ReviewTrigger struct {
-	Kind   string `json:"kind"`
-	Reason string `json:"reason"`
+	Kind     string `json:"kind"`
+	Type     string `json:"type"`
+	SourceID string `json:"source_id"`
+	Reason   string `json:"reason"`
 }
 
 type RepositorySnapshot struct {

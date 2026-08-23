@@ -214,7 +214,7 @@ func (runtime *Runtime) migrateFailureEvents() error {
 			return validateState(&state)
 		}
 		migrationID := "failure-events-v1"
-		migrationReviewTrigger := "fixed:failure-event-migration-current-snapshot"
+		migrationReviewTrigger := "fixed:legacy-state-migration:" + migrationID
 		oldReviewRequired := state.Review.Required && (state.Review.Trigger == nil || *state.Review.Trigger != migrationReviewTrigger)
 		if len(marker) == 0 {
 			marker = map[string]any{"schema": "ownward.governance-migration/v1", "migration_id": migrationID, "status": "prepared", "replace_review": oldReviewRequired}
@@ -267,7 +267,11 @@ func (runtime *Runtime) migrateFailureEvents() error {
 			}
 		}
 		if replace, _ := marker["replace_review"].(bool); replace && !state.Review.Required {
-			if _, err := runtime.requestReviewLocked(&state, "fixed", "failure-event-migration-current-snapshot"); err != nil {
+			trigger, err := newReviewTrigger("fixed", "legacy-state-migration", migrationID, "migrate legacy failure events")
+			if err != nil {
+				return err
+			}
+			if _, err := runtime.requestReviewLocked(&state, trigger, false); err != nil {
 				return err
 			}
 		}

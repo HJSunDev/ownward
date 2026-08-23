@@ -20,8 +20,7 @@
           {
             "type": "command",
             "command": "{{governance_hook_command}} hook user-prompt-submit",
-            "commandWindows": "{{governance_hook_command_windows}} hook user-prompt-submit",
-            "statusMessage": "Activating mainline governance"
+            "commandWindows": "{{governance_hook_command_windows}} hook user-prompt-submit"
           }
         ]
       }
@@ -61,18 +60,6 @@
             "command": "{{governance_hook_command}} hook post-tool-use",
             "commandWindows": "{{governance_hook_command_windows}} hook post-tool-use",
             "statusMessage": "Checking governed result"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "{{governance_hook_command}} hook stop",
-            "commandWindows": "{{governance_hook_command_windows}} hook stop",
-            "statusMessage": "Checking completion evidence"
           }
         ]
       }

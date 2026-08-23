@@ -33,12 +33,12 @@
 ## 解决方案
 
 1. 在项目 Governor 配置中保留 Ownward MCP 的完整 `command`、`args`、`cwd` transport，再明确设置 `enabled = false`、`required = false`。这样自定义 Agent 文件可以独立通过配置校验，同时 Governor 不会启动第二个产品 MCP。
-2. 将本机 Codex CLI 更新到 `0.149.0`，通过官方 Hook 管理界面审阅并信任当前 `.codex/hooks.json` 的六个 Hook：`SessionStart`、`UserPromptSubmit`、`PreCompact`、`PreToolUse`、`PostToolUse`、`Stop`。
-3. 使用全新会话而不是当前会话或脚本直调进行冷启动验收：确认 `SessionStart`、`UserPromptSubmit` 自动注入治理指令，Governor 配置无 `malformed agent` 警告，Governor 能返回结果，并确认没有第二个 Ownward MCP 进程。
+2. 将本机 Codex CLI 更新到 `0.149.0`，通过官方 Hook 管理界面审阅并信任当前 `.codex/hooks.json` 的五个 Hook：`SessionStart`、`UserPromptSubmit`、`PreCompact`、`PreToolUse`、`PostToolUse`。不得注册通用 `Stop`；它只表示一轮输出结束，不能代表任务完成或复核边界。
+3. 使用全新会话而不是当前会话或脚本直调进行冷启动验收：确认首次激活与真实恢复边界会注入一次治理指令，连续普通消息保持沉默，Governor 配置无 `malformed agent` 警告，Governor 能返回结果，并确认没有第二个 Ownward MCP 进程。
 4. `doctor` 必须机械检查 Governor 的只读属性、Hooks 未被整体关闭，以及项目存在 Ownward MCP 时 Governor 同名 MCP 段包含完整 transport 并明确禁用；同时验证待复核状态下的低成本读取仍被快速放行。
 
 ## 最终说明
 
-本次 Governor 重复 MCP 与 Hook 未自动加载的问题已经修复并完成真实冷启动验证：六个 Hooks 均为 Active，`SessionStart` 与 `UserPromptSubmit` 已自动执行，Governor 能正常加载且没有启动第二个 Ownward MCP。
+本次 Governor 重复 MCP 与 Hook 未自动加载的问题已经修复并完成真实冷启动验证。后来发现通用 `Stop` 会把每轮回复误判成复核边界，现行配置因此只保留五个确定性 Hook；`SessionStart` 与首次明确激活仍能自动执行，普通消息不注入治理动作，Governor 能正常加载且没有启动第二个 Ownward MCP。
 
 以后在同一环境中新建任务，预期直接进入自动 Hook → Governor 复核链，不再停在 MCP 握手，也不再出现 `invalid transport`。如果 Governor 或项目 MCP 定义变化，必须重新运行 `doctor` 和全新会话冷启动验收；如果 `.codex/hooks.json` 变化，Codex 会要求重新信任新哈希，这是正常安全行为。Windows Sandbox 初始化故障不在本修复范围内；再次出现时应作为 Codex 环境问题独立处理，不能误判为治理链路重新失效。

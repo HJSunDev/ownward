@@ -22,7 +22,7 @@ func approvedRuntimeFixture(t *testing.T) *Runtime {
 	if _, err := fixture.Init(); err != nil {
 		t.Fatal(err)
 	}
-	request, err := fixture.Resume("test-start")
+	request, err := fixture.RequestFixedReview("session-start", "test-start")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,6 +68,234 @@ func TestStrictJSONRejectsUnknownFields(t *testing.T) {
 	if err := decodeStrict(strings.NewReader(input), &proposal); err == nil {
 		t.Fatal("unknown field was accepted")
 	}
+}
+
+func TestOrdinaryPromptsAndStopAreStrictlySilentAndSideEffectFree(t *testing.T) {
+	runtime := approvedRuntimeFixture(t)
+	if err := runtime.hookSessionStart(HookInput{SessionID: "owner", Source: "startup"}, &strings.Builder{}); err != nil {
+		t.Fatal(err)
+	}
+	before := governanceRuntimeSnapshot(t, runtime)
+	for _, prompt := range []string{"查看最近三个提交", "现在可以继续工作吗", "只回答这个问题"} {
+		output := &strings.Builder{}
+		if err := runtime.hookUserPrompt(HookInput{SessionID: "owner", TurnID: "ordinary-" + prompt, Prompt: prompt}, output); err != nil {
+			t.Fatal(err)
+		}
+		if strings.TrimSpace(output.String()) != "{}" {
+			t.Fatalf("ordinary prompt received governance context: %s", output.String())
+		}
+	}
+	for index := 0; index < 3; index++ {
+		output := &strings.Builder{}
+		if err := runtime.hookStop(HookInput{SessionID: "owner", StopHookActive: index > 0}, output); err != nil {
+			t.Fatal(err)
+		}
+		if strings.TrimSpace(output.String()) != "{}" {
+			t.Fatalf("compatibility Stop produced a decision or context: %s", output.String())
+		}
+	}
+	after := governanceRuntimeSnapshot(t, runtime)
+	if before != after {
+		t.Fatal("ordinary prompts or compatibility Stop changed governance state, request, or events")
+	}
+}
+
+func TestCompactSessionStartCreatesExactlyOneFixedReview(t *testing.T) {
+	runtime := approvedRuntimeFixture(t)
+	transcriptPath := filepath.Join(runtime.RuntimeDir, "compact-transcript.jsonl")
+	if err := os.WriteFile(transcriptPath, []byte("compacted\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	input := HookInput{SessionID: "owner", Source: "compact", TranscriptPath: transcriptPath}
+	firstOutput := &strings.Builder{}
+	if err := runtime.hookSessionStart(input, firstOutput); err != nil {
+		t.Fatal(err)
+	}
+	firstState, err := runtime.LoadState()
+	if err != nil || !firstState.Review.Required || firstState.Review.ReviewID == nil || firstState.Review.Trigger == nil || !strings.HasPrefix(*firstState.Review.Trigger, "fixed:session-start:") {
+		t.Fatalf("compact lifecycle did not create one fixed review: %v %#v", err, firstState.Review)
+	}
+	firstReviewID := *firstState.Review.ReviewID
+	firstGeneration := firstState.Review.FixedReviewGeneration
+	secondOutput := &strings.Builder{}
+	if err := runtime.hookSessionStart(input, secondOutput); err != nil {
+		t.Fatal(err)
+	}
+	secondState, err := runtime.LoadState()
+	if err != nil || secondState.Review.ReviewID == nil || *secondState.Review.ReviewID != firstReviewID || secondState.Review.FixedReviewGeneration != firstGeneration {
+		t.Fatalf("compact lifecycle replay created another review: %v %#v", err, secondState.Review)
+	}
+}
+
+func TestStructuredReviewTriggersAreDeterministicAndCannotBeReclassifiedByReason(t *testing.T) {
+	runtime, err := Open("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture := *runtime
+	fixture.RuntimeDir = filepath.Join(t.TempDir(), "runtime")
+	if _, err := fixture.Init(); err != nil {
+		t.Fatal(err)
+	}
+	first, err := fixture.RequestFixedReview("activation", "turn-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	replay, err := fixture.RequestFixedReview("activation", "turn-1")
+	if err != nil || replay == nil || replay.ReviewID != first.ReviewID || replay.TriggerInstanceID != first.TriggerInstanceID {
+		t.Fatalf("same fixed trigger was not idempotent: %v %#v", err, replay)
+	}
+	if _, err := newReviewTrigger("fixed", "caller-invented", "x", "looks important"); err == nil {
+		t.Fatal("caller-invented fixed trigger type was accepted")
+	}
+	if _, err := newReviewTrigger("event", "caller-invented", "x", "looks important"); err == nil {
+		t.Fatal("caller-invented event trigger type was accepted")
+	}
+	if _, err := fixture.RequestAdvisoryReview("advice-1", "please inspect the path"); err != nil {
+		t.Fatal(err)
+	}
+	state, err := fixture.LoadState()
+	if err != nil || state.Review.Trigger == nil || !strings.HasPrefix(*state.Review.Trigger, "fixed:activation:") {
+		t.Fatal("advisory request replaced an already-pending fixed review")
+	}
+}
+
+func TestInvalidStopReviewMigrationIsExplicitPreservingAndIdempotent(t *testing.T) {
+	for _, failAfter := range []string{"", "prepared", "archived", "state_saved", "state_cleared", "recovery_saved", "recovery_created"} {
+		t.Run(firstNonempty(failAfter, "uninterrupted"), func(t *testing.T) {
+			runtime := approvedRuntimeFixture(t)
+			old, err := runtime.RequestAdvisoryReview("legacy-stop-fixture", "legacy stop fixture")
+			if err != nil {
+				t.Fatal(err)
+			}
+			state, err := runtime.LoadState()
+			if err != nil {
+				t.Fatal(err)
+			}
+			state.Review.Trigger = stringPointer("event:main-agent-stop")
+			if err := runtime.saveState(state); err != nil {
+				t.Fatal(err)
+			}
+			var raw map[string]any
+			data, err := os.ReadFile(runtime.requestPath())
+			if err != nil || json.Unmarshal(data, &raw) != nil {
+				t.Fatal("cannot prepare legacy Stop request fixture")
+			}
+			raw["trigger"] = map[string]any{"kind": "event", "reason": "main-agent-stop"}
+			if err := atomicWriteJSON(runtime.requestPath(), raw); err != nil {
+				t.Fatal(err)
+			}
+			beforeState, _ := runtime.LoadState()
+			beforeHash, _ := governanceProgressHash(beforeState)
+			if failAfter != "" {
+				if _, err := runtime.migrateInvalidStopReview(failAfter); err == nil || !strings.Contains(err.Error(), "injected") {
+					t.Fatalf("fault injection %s did not stop migration: %v", failAfter, err)
+				}
+			}
+			recovery, err := runtime.MigrateInvalidStopReview()
+			if err != nil || recovery == nil || recovery.Trigger.Kind != "fixed" || recovery.Trigger.Type != "runtime-repair-recovery" {
+				t.Fatalf("migration did not create one structured recovery review: %v %#v", err, recovery)
+			}
+			replay, err := runtime.MigrateInvalidStopReview()
+			if err != nil || replay == nil || replay.ReviewID != recovery.ReviewID {
+				t.Fatalf("migration replay was not idempotent: %v %#v", err, replay)
+			}
+			afterState, _ := runtime.LoadState()
+			afterHash, _ := governanceProgressHash(afterState)
+			if beforeHash != afterHash {
+				t.Fatal("migration changed owner, work packet, conditions, evidence, or intervention")
+			}
+			if _, err := os.Stat(filepath.Join(runtime.reviewsDir(), "superseded", old.ReviewID+".json")); err != nil {
+				t.Fatal("legacy Stop request was not archived")
+			}
+			var marker invalidStopReviewMigration
+			if err := decodeStrictFile(filepath.Join(runtime.RuntimeDir, invalidStopReviewMigrationID+".json"), &marker); err != nil {
+				t.Fatal(err)
+			}
+			correctionPath := resolvePath(runtime.Root, marker.CorrectionIndexPath)
+			if !within(runtime.RuntimeDir, correctionPath) {
+				t.Fatalf("migration correction index escaped its runtime directory: %s", correctionPath)
+			}
+			if _, err := os.Stat(correctionPath); err != nil {
+				t.Fatal("migration correction index was not written to its runtime directory")
+			}
+		})
+	}
+}
+
+func TestInvalidStopReviewMigrationPreservesAcceptedResultAsAuditOnly(t *testing.T) {
+	runtime := approvedRuntimeFixture(t)
+	old, err := runtime.RequestAdvisoryReview("legacy-stop-accepted", "legacy stop accepted")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gap := "continue the existing fixture"
+	result := ReviewResult{
+		ReviewID: old.ReviewID, TriggerInstanceID: old.TriggerInstanceID, ReviewSnapshotHash: old.ReviewSnapshotHash,
+		Decision: "continue", MacroAssessment: MacroAssessment{OverallProgress: "continue", EvidenceSupport: "fixture", Unmet: []string{"test"}},
+		HighestPriorityGap: &gap, PathAssessment: PathAssessment{Necessary: true, Efficient: true, Optimal: true},
+		PreservedResultIDs: []string{}, InvalidatedItems: []string{}, ValidatedEvidenceIDs: []string{}, Reason: "legacy result",
+	}
+	decisionPath, err := runtime.AcceptReview(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, _ := runtime.LoadState()
+	state.Review.Trigger = stringPointer("event:main-agent-stop")
+	if err := runtime.saveState(state); err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]any
+	data, _ := os.ReadFile(runtime.requestPath())
+	if json.Unmarshal(data, &raw) != nil {
+		t.Fatal("cannot prepare accepted legacy Stop fixture")
+	}
+	raw["trigger"] = map[string]any{"kind": "event", "reason": "main-agent-stop"}
+	if err := atomicWriteJSON(runtime.requestPath(), raw); err != nil {
+		t.Fatal(err)
+	}
+	recovery, err := runtime.MigrateInvalidStopReview()
+	if err != nil || recovery == nil {
+		t.Fatalf("accepted legacy Stop state did not migrate: %v", err)
+	}
+	if _, err := os.Stat(decisionPath); err != nil {
+		t.Fatal("accepted legacy result was deleted instead of preserved for audit")
+	}
+	if _, err := runtime.ApplyReview(); err == nil {
+		t.Fatal("legacy accepted Stop result remained executable after migration")
+	}
+}
+
+func TestCompletionReviewIsStructuredAndFinishRemainsFailClosed(t *testing.T) {
+	runtime := approvedRuntimeFixture(t)
+	request, err := runtime.RequestCompletionReview("explicit-finish-attempt-1")
+	if err != nil || request == nil || request.Trigger.Kind != "event" || request.Trigger.Type != "completion-candidate" {
+		t.Fatalf("completion review was not structurally bound: %v %#v", err, request)
+	}
+	replay, err := runtime.RequestCompletionReview("explicit-finish-attempt-1")
+	if err != nil || replay == nil || replay.ReviewID != request.ReviewID {
+		t.Fatalf("completion trigger replay was not idempotent: %v %#v", err, replay)
+	}
+	if err := runtime.Finish(); err == nil || !strings.Contains(err.Error(), "applied task_complete") {
+		t.Fatalf("finish stopped failing closed without an applied task_complete: %v", err)
+	}
+}
+
+func governanceRuntimeSnapshot(t *testing.T, runtime *Runtime) string {
+	t.Helper()
+	values := map[string]string{}
+	for _, path := range []string{runtime.statePath(), runtime.requestPath(), runtime.eventsPath()} {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		values[path] = sha256Value(data)
+	}
+	value, err := hashJSON(values)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return value
 }
 
 func TestFailureEventsAreIdempotentAndOnlyRepeatAcrossVerifiedRepair(t *testing.T) {
@@ -120,7 +348,7 @@ func TestFailureEventsAreIdempotentAndOnlyRepeatAcrossVerifiedRepair(t *testing.
 	third.ToolUseID = "tool-3"
 	third.EvidenceHash = sha256Value([]byte("third"))
 	request, err := runtime.RecordFailureEvent(third)
-	if err != nil || request == nil || request.Trigger.Reason != "repeated-failure:same failure" {
+	if err != nil || request == nil || request.Trigger.Kind != "event" || request.Trigger.Type != "repeated-failure" {
 		t.Fatalf("post-repair recurrence did not trigger one review: %v %#v", err, request)
 	}
 	if replay, err := runtime.RecordRepair(repairInput); err != nil || replay.RepairID != repair.RepairID {
@@ -210,7 +438,7 @@ func TestHookBlocksAndRequestsReviewWhenFailureRecordingConflicts(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !state.Review.Required || state.Review.Trigger == nil || *state.Review.Trigger != "event:failure-event-recording-integrity" {
+	if !state.Review.Required || state.Review.Trigger == nil || !strings.HasPrefix(*state.Review.Trigger, "event:failure-recording-integrity:") {
 		t.Fatalf("failure recording conflict did not create a truthful review: %#v", state.Review)
 	}
 }
@@ -247,7 +475,7 @@ func mustHashJSON(value any) string {
 
 func TestLegacyFailuresMigrateAsNonCountingFactsAndReplacePendingReview(t *testing.T) {
 	runtime := approvedRuntimeFixture(t)
-	request, err := runtime.RequestReview("legacy-pending")
+	request, err := runtime.RequestAdvisoryReview("legacy-pending", "legacy pending")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,7 +514,7 @@ func TestLegacyFailuresMigrateAsNonCountingFactsAndReplacePendingReview(t *testi
 
 func TestFailureMigrationResumeKeepsItsAlreadyCreatedCurrentReview(t *testing.T) {
 	runtime := approvedRuntimeFixture(t)
-	if _, err := runtime.RequestReview("legacy pending review"); err != nil {
+	if _, err := runtime.RequestAdvisoryReview("legacy-pending-review", "legacy pending review"); err != nil {
 		t.Fatal(err)
 	}
 	state, err := runtime.LoadState()
@@ -330,21 +558,21 @@ func TestFailureMigrationResumeKeepsItsAlreadyCreatedCurrentReview(t *testing.T)
 	}
 }
 
-func TestResumeArchivesAStalePendingReviewBeforeReplacingIt(t *testing.T) {
+func TestFixedResumePreservesAnExistingPendingReview(t *testing.T) {
 	runtime := approvedRuntimeFixture(t)
-	old, err := runtime.RequestReview("old-snapshot")
+	old, err := runtime.RequestAdvisoryReview("old-snapshot", "old snapshot")
 	if err != nil {
 		t.Fatal(err)
 	}
-	current, err := runtime.Resume("current-snapshot")
+	current, err := runtime.RequestFixedReview("session-start", "current-snapshot")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if current == nil || current.ReviewID == old.ReviewID {
-		t.Fatal("resume did not create a current-snapshot review")
+	if current == nil || current.ReviewID != old.ReviewID {
+		t.Fatal("resume replaced an existing valid pending review")
 	}
-	if _, err := os.Stat(filepath.Join(runtime.reviewsDir(), "superseded", old.ReviewID+".json")); err != nil {
-		t.Fatal("stale pending review was not preserved for audit")
+	if _, err := os.Stat(filepath.Join(runtime.reviewsDir(), "superseded", old.ReviewID+".json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("valid pending review was incorrectly superseded")
 	}
 }
 
@@ -539,8 +767,12 @@ func TestGovernorFailureLatchesAndStopDoesNotLoop(t *testing.T) {
 		t.Fatalf("latched infrastructure failure caused a Stop loop: %v %s", err, stop.String())
 	}
 	prompt := &strings.Builder{}
-	if err := fixture.hookUserPrompt(HookInput{SessionID: "owner", Prompt: "continue"}, prompt); err != nil || !strings.Contains(prompt.String(), "Do not retry") {
-		t.Fatalf("latched failure did not return deterministic recovery context: %v %s", err, prompt.String())
+	if err := fixture.hookUserPrompt(HookInput{SessionID: "owner", Prompt: "continue"}, prompt); err != nil || strings.TrimSpace(prompt.String()) != "{}" {
+		t.Fatalf("latched failure leaked governance instructions into an ordinary prompt: %v %s", err, prompt.String())
+	}
+	denied := &strings.Builder{}
+	if err := fixture.hookPreToolUse(HookInput{SessionID: "owner", ToolName: "apply_patch", ToolInput: json.RawMessage(`{"patch":"*** Update File: internal/example.go"}`)}, denied); err != nil || !strings.Contains(denied.String(), `"deny"`) {
+		t.Fatalf("latched failure stopped protecting product writes: %v %s", err, denied.String())
 	}
 }
 

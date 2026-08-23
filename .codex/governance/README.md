@@ -6,10 +6,11 @@
 
 - 普通讨论和支线任务不会创建治理状态。
 - 用户提交以“目标：持续完成 Ownward 第一版”开头的主线提示词时，`UserPromptSubmit` Hook 原子初始化运行状态并创建首次固定复核。
+- 治理已激活后，普通 `UserPromptSubmit` 与兼容 `hook stop` 都严格沉默且不改变状态；只有规范主线提示词、真实 `SessionStart` 或已经登记的结构化治理事实才能交付复核。
 - 状态绑定唯一活动任务和单调所有权代次；同一任务的恢复与压缩可以继续，其他任务保持只读。跨任务恢复必须使用一次性交接标识原子转移所有权，不能靠新任务自动抢占。
 - 活动任务首次启动、恢复、清空上下文和上下文压缩会创建新的固定复核代次；有效 Governor 结论落盘前，产品修改保持阻止。
 - Governor 请求真实用户决策或外部输入时，运行时保留被暂停的工作包并建立唯一待处理事项。用户答复由主 Agent 通过 `resolve-intervention` 绑定到该事项，经 Governor 复核后恢复；追问不会误解除暂停，敏感原文不得进入治理状态。
-- Governor 基础设施故障按 Review、失败签名和运行身份闩锁；同一故障不再由 Stop 或下一条消息自动重试，产品修改继续关闭，但任务可以保存状态并结束。控制面只能经 `repair-stage` / `repair-apply` 的冻结范围修复，新运行身份必须重新取得真实 Governor 结论。
+- Governor 基础设施故障按 Review、失败签名和运行身份闩锁；同一故障不再由普通消息自动重试，产品修改继续关闭，但任务可以保存状态并结束。控制面只能经 `repair-stage` / `repair-apply` 的冻结范围修复，新运行身份必须重新取得真实 Governor 结论。
 - Governor、Explorer、Worker 与默认子 Agent 均由能力矩阵显式禁用 Ownward 产品 MCP；未登记角色不能依赖父任务继承获得用户数据面。
 - 状态事务由操作系统持有的排他文件锁保护，进程异常退出会自动释放；磁盘上的 `.lock` 文件本身不代表锁仍被占用。
 - `.codex/governance/runtime/` 与本地编译产物不提交；权威文档、Schema、CLI 源码、Governor 和 Hooks 随项目维护。
@@ -30,7 +31,9 @@ sh .codex/governance/governance-hook.sh doctor
 sh .codex/governance/governance-hook.sh status --json
 ```
 
-CLI 还提供 `init`、`resume`、`propose-work-packet`、`record-evidence`、`record-repair`、`request-review`、`resolve-intervention`、`accept-review`、`apply-review`、`prepare-handoff`、`bind-handoff`、`cancel-handoff`、`repair-stage`、`repair-apply`、`close-work-packet`、`finish` 与 `governed-run`。结构化输入默认从标准输入读取，也可用 `--file <path>` 提供。普通失败只能由 Hook 或 `governed-run` 按真实执行身份自动登记；需要立即复核时直接使用 `request-review`，不得重复上报同一失败。
+CLI 还提供 `init`、`propose-work-packet`、`record-evidence`、`record-repair`、`request-advisory-review`、`request-completion-review`、`resolve-intervention`、`accept-review`、`apply-review`、`prepare-handoff`、`bind-handoff`、`cancel-handoff`、`repair-stage`、`repair-apply`、`migrate-invalid-stop-review`、`close-work-packet`、`finish` 与 `governed-run`。结构化输入默认从标准输入读取，也可用 `--file <path>` 提供。固定复核与事实事件只能由拥有真实来源身份的 Hook 或运行时方法创建；主动宏观建议必须使用带稳定 `request-id` 的 advisory，不能伪装为固定或事实事件。
+
+`migrate-invalid-stop-review` 只处理旧版本精确写入的活动 `event:main-agent-stop`：归档错误请求与结果、保留工作包和证据，并创建一次结构化恢复复核。它不会由消息或生命周期 Hook 自动执行，重复调用只返回同一迁移结果。
 
 失败是结构化事件，不是签名计数器。同一 `tool_use_id` 重放保持幂等；同一修复代次的重复失败只保留事实。`record-repair` 引用已验证事件和该事件发生后新登记的验证证据，仓库、候选、配置与实际运行程序身份由运行时自行计算并确认发生变化，调用者不能自报身份；只有此后同类失败再次真实发生才触发 `repeated-failure`。旧 `failure_signatures` 首次加载时迁移为永久不计数的 `legacy_unverified` 审计事实，旧待处理请求保留后由当前仓库快照的新请求取代。
 

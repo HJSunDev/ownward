@@ -39,67 +39,96 @@ func (runtime *Runtime) HandleHook(event string, reader io.Reader, writer io.Wri
 }
 
 func (runtime *Runtime) hookUserPrompt(input HookInput, writer io.Writer) error {
+	canonical, err := runtime.matchesActivationPrompt(input.Prompt)
+	if err != nil {
+		return err
+	}
 	if !runtime.StateExists() {
-		matched := false
-		for _, pattern := range runtime.Config.ActivationPromptPatterns {
-			expression, err := regexp.Compile(pattern)
-			if err != nil {
-				return fmt.Errorf("invalid activation prompt pattern: %w", err)
-			}
-			if expression.MatchString(input.Prompt) {
-				matched = true
-				break
-			}
-		}
-		if !matched {
+		if !canonical {
 			return writeJSON(writer, map[string]any{})
 		}
 		if _, err := runtime.Init(); err != nil {
 			return err
 		}
-		if _, err := runtime.Resume("activation:" + hookInstanceKey(input)); err != nil {
+		if _, err := runtime.RequestFixedReview("activation", firstNonempty(input.TurnID, hookInstanceKey(input))); err != nil {
 			return err
 		}
 	}
-	if consumed, err := runtime.consumeHandoff(input); err != nil {
+	consumed, err := runtime.consumeHandoff(input)
+	if err != nil {
 		return writeAdditionalContext(writer, "UserPromptSubmit", "Governance handoff was rejected: "+err.Error())
 	} else if consumed {
 		// Continue below with the new owner and the persisted work packet.
+	}
+	if !canonical && !consumed {
+		state, err := runtime.LoadState()
+		if err != nil {
+			return err
+		}
+		if state.PendingIntervention == nil {
+			return writeJSON(writer, map[string]any{})
+		}
 	}
 	owned, err := runtime.ensureHookOwner(input)
 	if err != nil {
 		return err
 	}
 	if !owned {
-		return writeAdditionalContext(writer, "UserPromptSubmit", "This task is not the active governance owner. It is read-only and must not create reviews, change work packets, or invalidate evidence.")
+		return writeJSON(writer, map[string]any{})
 	}
 	state, err := runtime.LoadState()
 	if err != nil {
 		return err
 	}
 	if state.Handoff != nil {
-		return writeAdditionalContext(writer, "UserPromptSubmit", runtime.handoffInstruction(state))
+		return writeJSON(writer, map[string]any{})
 	}
 	if latched, err := runtime.reconcileInfrastructureFailure(input); err != nil {
 		return err
 	} else if latched {
-		state, _ := runtime.LoadState()
-		return writeAdditionalContext(writer, "UserPromptSubmit", runtime.infrastructureInstruction(state))
+		return writeJSON(writer, map[string]any{})
 	}
 	state, err = runtime.LoadState()
 	if err != nil {
 		return err
 	}
 	if state.Status == "complete" {
-		return writeAdditionalContext(writer, "UserPromptSubmit", "Ownward autonomous governance is complete. Do not create a second run unless the user explicitly starts a new goal.")
-	}
-	if state.Review.Required {
-		return writeAdditionalContext(writer, "UserPromptSubmit", runtime.reviewInstruction(state))
+		return writeJSON(writer, map[string]any{})
 	}
 	if state.PendingIntervention != nil {
 		return writeAdditionalContext(writer, "UserPromptSubmit", runtime.interventionInstruction(state, input.TurnID))
 	}
-	return writeAdditionalContext(writer, "UserPromptSubmit", runtime.activeInstruction(state))
+	if !canonical {
+		return writeJSON(writer, map[string]any{})
+	}
+	if state.Review.Required {
+		return writeAdditionalContext(writer, "UserPromptSubmit", runtime.reviewInstruction(state))
+	}
+	request, err := runtime.RequestFixedReview("explicit-resume", firstNonempty(input.TurnID, hookInstanceKey(input)))
+	if err != nil {
+		return err
+	}
+	if request == nil {
+		return writeJSON(writer, map[string]any{})
+	}
+	state, err = runtime.LoadState()
+	if err != nil {
+		return err
+	}
+	return writeAdditionalContext(writer, "UserPromptSubmit", runtime.reviewInstruction(state))
+}
+
+func (runtime *Runtime) matchesActivationPrompt(prompt string) (bool, error) {
+	for _, pattern := range runtime.Config.ActivationPromptPatterns {
+		expression, err := regexp.Compile(pattern)
+		if err != nil {
+			return false, fmt.Errorf("invalid activation prompt pattern: %w", err)
+		}
+		if expression.MatchString(prompt) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (runtime *Runtime) hookSessionStart(input HookInput, writer io.Writer) error {
@@ -133,7 +162,13 @@ func (runtime *Runtime) hookSessionStart(input HookInput, writer io.Writer) erro
 		state, _ = runtime.LoadState()
 		return writeAdditionalContext(writer, "SessionStart", runtime.infrastructureInstruction(state))
 	}
-	request, err := runtime.Resume("session-start:" + firstNonempty(input.Source, "unknown") + ":" + hookInstanceKey(input))
+	if state.Review.Required {
+		return writeAdditionalContext(writer, "SessionStart", runtime.reviewInstruction(state))
+	}
+	if state.PendingIntervention != nil {
+		return writeAdditionalContext(writer, "SessionStart", runtime.interventionInstruction(state, ""))
+	}
+	request, err := runtime.RequestFixedReview("session-start", firstNonempty(input.Source, "unknown")+":"+hookInstanceKey(input))
 	if err != nil {
 		return err
 	}
@@ -277,7 +312,7 @@ func (runtime *Runtime) hookPostToolUse(input HookInput, writer io.Writer) error
 		ToolUseID: input.ToolUseID, EvidenceHash: evidenceHash,
 	})
 	if err != nil {
-		escalationErr := runtime.ensureFailureRecordingReview()
+		escalationErr := runtime.ensureFailureRecordingReview(firstNonempty(input.ToolUseID, hookInstanceKey(input)))
 		reason := "A real tool failure could not be recorded as a verified governance event; product work is blocked for an integrity review: " + err.Error()
 		if escalationErr != nil {
 			reason += "; the review request also failed: " + escalationErr.Error()
@@ -291,32 +326,7 @@ func (runtime *Runtime) hookPostToolUse(input HookInput, writer io.Writer) error
 }
 
 func (runtime *Runtime) hookStop(input HookInput, writer io.Writer) error {
-	if input.StopHookActive || !runtime.StateExists() {
-		return writeJSON(writer, map[string]any{})
-	}
-	state, err := runtime.LoadState()
-	if err != nil {
-		return writeJSON(writer, map[string]any{"decision": "block", "reason": "Governance state is invalid; repair it before claiming completion: " + err.Error()})
-	}
-	if owned, ownerErr := runtime.ensureHookOwner(input); ownerErr != nil || !owned {
-		return writeJSON(writer, map[string]any{})
-	}
-	if state.InfrastructureFailure != nil || state.Handoff != nil {
-		return writeJSON(writer, map[string]any{})
-	}
-	if state.Status == "complete" || state.Status == "product_decision_required" || state.Status == "external_input_required" {
-		return writeJSON(writer, map[string]any{})
-	}
-	if !state.Review.Required {
-		if _, err := runtime.RequestReview("main-agent-stop"); err != nil {
-			return err
-		}
-		state, err = runtime.LoadState()
-		if err != nil {
-			return err
-		}
-	}
-	return writeJSON(writer, map[string]any{"decision": "block", "reason": runtime.reviewInstruction(state)})
+	return writeJSON(writer, map[string]any{})
 }
 
 func isGovernorAgentAttempt(runtime *Runtime, input HookInput) bool {
@@ -367,10 +377,6 @@ func (runtime *Runtime) agentCapability(role string) (AgentCapability, bool) {
 func (runtime *Runtime) reviewInstruction(state *State) string {
 	return "Autonomous governance requires a read-only Governor review. Read " + runtime.requestLocation() +
 		", spawn agent `" + runtime.Config.GovernorAgentName + "`, pass it the request path, wait for its single JSON result, base64-encode that exact JSON and run `.codex/governance/governance-hook.ps1 accept-review --json-base64 <base64>` followed by `apply-review`. Do not rewrite the result or continue product work before both commands succeed."
-}
-
-func (runtime *Runtime) activeInstruction(state *State) string {
-	return "Autonomous governance is active. Read `.codex/governance/runtime/state.json`; execute only the approved work packet, record independently valid evidence immediately, and request Governor review at the registered natural checkpoint. Current next action: " + valueOr(state.NextAction, "none")
 }
 
 func (runtime *Runtime) interventionInstruction(state *State, sourceTurnID string) string {
@@ -478,7 +484,7 @@ func containsCommandFlag(arguments []string, names ...string) bool {
 
 func isExactGovernanceControl(command string) bool {
 	action, ok := governanceControlAction(command)
-	return ok && stringIn(action, []string{"status", "accept-review", "apply-review", "request-review", "resolve-intervention", "record-evidence", "record-repair", "propose-work-packet", "close-work-packet", "finish", "doctor", "prepare-handoff", "bind-handoff", "cancel-handoff", "repair-stage", "repair-apply"})
+	return ok && stringIn(action, []string{"status", "accept-review", "apply-review", "request-advisory-review", "request-completion-review", "migrate-invalid-stop-review", "resolve-intervention", "record-evidence", "record-repair", "propose-work-packet", "close-work-packet", "finish", "doctor", "prepare-handoff", "bind-handoff", "cancel-handoff", "repair-stage", "repair-apply"})
 }
 
 func isExactInfrastructureRecoveryControl(command string) bool {

@@ -24,7 +24,6 @@
             "command": "sh \".codex/governance/governance-hook.sh\" hook user-prompt-submit",
             "commandWindows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \".codex\\governance\\governance-hook.ps1\" hook user-prompt-submit",
             "timeout": 60,
-            "statusMessage": "Activating autonomous governance",
             "additionalContextLimit": 1800
           }
         ]
@@ -68,19 +67,6 @@
             "commandWindows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \".codex\\governance\\governance-hook.ps1\" hook post-tool-use",
             "timeout": 30,
             "statusMessage": "Recording governed result"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "sh \".codex/governance/governance-hook.sh\" hook stop",
-            "commandWindows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \".codex\\governance\\governance-hook.ps1\" hook stop",
-            "timeout": 30,
-            "statusMessage": "Checking autonomous completion evidence"
           }
         ]
       }

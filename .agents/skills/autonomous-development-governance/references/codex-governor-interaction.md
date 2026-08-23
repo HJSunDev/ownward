@@ -40,14 +40,14 @@ Governor 完成判断并通过 Codex 原生父子通道返回结果
 
 Skill 必须规定：复核触发后立即启动并等待 Governor；有效结论落盘前，原动作始终保持阻止。文件不负责通知子 Agent 已完成，实时交互由 Codex 原生父子通道承担。
 
-主任务的首次启动、恢复、清空上下文和上下文压缩后复核属于固定触发；其他触发属于事件复核。Codex 以 `SessionStart`、`Stop` 管理主会话，以独立的 `SubagentStart`、`SubagentStop` 管理子 Agent；治理模板不注册后两种事件，因此 Governor 启停不会递归触发固定复核。Governor 保持只读且不得通过 `hooks = false` 关闭全部 Hooks，其读取动作走低成本快速放行，其他安全、审计和项目 Hook 继续生效。
+主任务的首次明确激活、真实 `SessionStart` 恢复和规范主线提示词显式恢复属于固定触发；工作包、证据检查点、重复失败、权威变化、用户事项解决和显式完成属于事实事件复核；主动征求宏观建议属于 advisory。三类触发均携带结构化类型、来源身份和确定性实例 ID。通用 `Stop` 不注册为治理事件；Governor 的 `SubagentStart`、`SubagentStop` 也不注册，因此普通回复和 Governor 启停都不会递归复核。Governor 保持只读且不得通过 `hooks = false` 关闭全部 Hooks，其读取动作走低成本快速放行，其他安全、审计和项目 Hook 继续生效。
 
 ## 交互契约
 
 复核请求必须符合 [复核请求 Schema](../assets/governance-runtime/review-request.schema.json)，其稳定字段包括：
 
 - `review_id`、当前 `review_snapshot_hash` 与本次触发实例 `trigger_instance_id`；
-- 触发原因；
+- 结构化触发种类、受限类型、来源身份和仅用于说明的原因；
 - 当前推进的完成条件；
 - 当前工作包、允许范围、价值、预期证据和自然检查点；
 - 已发生的时间、外部费用和资源消耗事实（仅在相关时提供，不要求预测开发工时）；

@@ -13,8 +13,13 @@
     "trigger": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "reason"],
-      "properties": { "kind": { "enum": ["fixed", "event"] }, "reason": { "$ref": "#/$defs/nonEmptyString" } }
+      "required": ["kind", "type", "source_id", "reason"],
+      "properties": {
+        "kind": { "enum": ["fixed", "event", "advisory"] },
+        "type": { "enum": ["activation", "session-start", "explicit-resume", "runtime-repair-recovery", "legacy-state-migration", "new-work-packet", "evidence-checkpoint", "repeated-failure", "authority-change", "intervention-resolution", "failure-recording-integrity", "completion-candidate", "explicit-advisory"] },
+        "source_id": { "$ref": "#/$defs/nonEmptyString" },
+        "reason": { "$ref": "#/$defs/nonEmptyString" }
+      }
     },
     "authority_paths": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" }, "minItems": 1, "uniqueItems": true },
     "completion_definition_paths": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" }, "minItems": 1, "uniqueItems": true },
