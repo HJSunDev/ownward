@@ -64,13 +64,14 @@ func run(args []string) error {
 		request, err := runtime.RecordEvidence(record)
 		return output(request, err)
 	case "record-failure":
-		parser := flag.NewFlagSet("record-failure", flag.ContinueOnError)
-		signature := parser.String("signature", "", "normalized failure source")
-		if err := parser.Parse(args[1:]); err != nil {
+		return errors.New("manual failure counters are disabled; governed hooks and governed-run record verified events automatically, use request-review for an immediate review")
+	case "record-repair":
+		var repair governance.FailureRepairInput
+		if err := decodeInput(args[1:], &repair); err != nil {
 			return err
 		}
-		request, err := runtime.RecordFailure(*signature)
-		return output(request, err)
+		value, err := runtime.RecordRepair(repair)
+		return output(value, err)
 	case "request-review":
 		parser := flag.NewFlagSet("request-review", flag.ContinueOnError)
 		reason := parser.String("reason", "", "review trigger reason")
@@ -198,7 +199,11 @@ func governedRun(args []string) error {
 	if len(command) > 0 && command[0] == "--" {
 		command = command[1:]
 	}
-	return governance.GovernedRun(governance.GovernedRunOptions{Command: command, HeartbeatPath: *heartbeat, StaleAfter: *stale, StartupGrace: *grace, WorkingDir: *cwd})
+	runtime, err := governance.Open("")
+	if err != nil {
+		return err
+	}
+	return runtime.GovernedRun(governance.GovernedRunOptions{Command: command, HeartbeatPath: *heartbeat, StaleAfter: *stale, StartupGrace: *grace, WorkingDir: *cwd})
 }
 
 func output(value any, err error) error {

@@ -206,6 +206,103 @@ func validateWorkPacket(packet *WorkPacket) error {
 	if err := uniqueNonempty("failure_signatures", packet.FailureSignatures, false); err != nil {
 		return err
 	}
+	if len(packet.FailureSignatures) != 0 {
+		return errors.New("legacy failure_signatures must be migrated before validation")
+	}
+	eventIDs := map[string]FailureEvent{}
+	for _, event := range packet.FailureEvents {
+		for name, value := range map[string]string{
+			"failure event_id": event.EventID, "failure signature": event.Signature,
+			"failure work_packet_id": event.WorkPacketID, "failure source_kind": event.SourceKind,
+			"failure source_execution": event.SourceExecution, "failure tool_use_id": event.ToolUseID,
+		} {
+			if err := nonempty(name, value); err != nil {
+				return err
+			}
+		}
+		if event.WorkPacketID != packet.PacketID || !oneOf(event.SourceKind, "codex_hook", "governed_run", "legacy") || !oneOf(event.Trust, "verified", "legacy_unverified") || event.RepairGeneration < 0 {
+			return errors.New("failure event has invalid packet, source, trust or repair generation")
+		}
+		if err := validHash("failure evidence_hash", event.EvidenceHash); err != nil {
+			return err
+		}
+		if event.Trust == "verified" {
+			if event.KnownEvidenceIDs == nil {
+				return errors.New("verified failure known_evidence_ids must be present")
+			}
+			if err := uniqueNonempty("failure known_evidence_ids", event.KnownEvidenceIDs, false); err != nil {
+				return err
+			}
+			for name, value := range map[string]string{
+				"failure repository_identity": event.RepositoryIdentity,
+				"failure candidate_identity":  event.CandidateIdentity,
+				"failure config_identity":     event.ConfigIdentity,
+				"failure runtime_identity":    event.RuntimeIdentity,
+			} {
+				if err := validHash(name, value); err != nil {
+					return err
+				}
+			}
+		}
+		if _, err := time.Parse(time.RFC3339Nano, event.OccurredAt); err != nil {
+			return errors.New("failure event occurred_at must be RFC3339")
+		}
+		if _, exists := eventIDs[event.EventID]; exists {
+			return fmt.Errorf("duplicate failure event %q", event.EventID)
+		}
+		eventIDs[event.EventID] = event
+	}
+	repairIDs := map[string]struct{}{}
+	repairGenerations := map[string]struct{}{}
+	for _, repair := range packet.FailureRepairs {
+		for name, value := range map[string]string{
+			"repair_id": repair.RepairID, "repair signature": repair.Signature,
+			"repair previous_event_id": repair.PreviousEventID, "repair work_packet_id": repair.WorkPacketID,
+		} {
+			if err := nonempty(name, value); err != nil {
+				return err
+			}
+		}
+		if repair.WorkPacketID != packet.PacketID || repair.RepairGeneration < 1 {
+			return errors.New("failure repair has invalid packet or generation")
+		}
+		previous, exists := eventIDs[repair.PreviousEventID]
+		if !exists || previous.Trust != "verified" || previous.Signature != repair.Signature || repair.RepairGeneration != previous.RepairGeneration+1 {
+			return errors.New("failure repair does not advance its verified previous event by one generation")
+		}
+		for name, value := range map[string]string{
+			"repair repository_identity": repair.RepositoryIdentity, "repair candidate_identity": repair.CandidateIdentity,
+			"repair config_identity": repair.ConfigIdentity, "repair runtime_identity": repair.RuntimeIdentity,
+		} {
+			if err := validHash(name, value); err != nil {
+				return err
+			}
+		}
+		if err := uniqueNonempty("repair evidence_ids", repair.EvidenceIDs, true); err != nil {
+			return err
+		}
+		knownAtFailure := map[string]struct{}{}
+		for _, evidenceID := range previous.KnownEvidenceIDs {
+			knownAtFailure[evidenceID] = struct{}{}
+		}
+		for _, evidenceID := range repair.EvidenceIDs {
+			if _, existed := knownAtFailure[evidenceID]; existed {
+				return errors.New("failure repair cannot reuse evidence that predates its failure event")
+			}
+		}
+		if _, err := time.Parse(time.RFC3339Nano, repair.RecordedAt); err != nil {
+			return errors.New("failure repair recorded_at must be RFC3339")
+		}
+		if _, exists := repairIDs[repair.RepairID]; exists {
+			return fmt.Errorf("duplicate failure repair %q", repair.RepairID)
+		}
+		repairIDs[repair.RepairID] = struct{}{}
+		generationKey := fmt.Sprintf("%s:%d", repair.Signature, repair.RepairGeneration)
+		if _, exists := repairGenerations[generationKey]; exists {
+			return fmt.Errorf("duplicate failure repair generation %q", generationKey)
+		}
+		repairGenerations[generationKey] = struct{}{}
+	}
 	if err := validHash("plan_hash", packet.PlanHash); err != nil {
 		return err
 	}

@@ -130,8 +130,15 @@ func (runtime *Runtime) Doctor() (*DoctorReport, error) {
 	if err := fixture.hookPreToolUse(excludedInput, excluded); err != nil || !strings.Contains(excluded.String(), `"deny"`) {
 		return nil, errors.New("excluded-scope modification was not denied")
 	}
-	if _, err := fixture.RecordFailure("doctor-first-failure"); err != nil {
+	failureEventInput := FailureEventInput{
+		Signature: "doctor-first-failure", SourceKind: "codex_hook", SourceExecution: "doctor:turn-1",
+		ToolUseID: "doctor-tool-1", EvidenceHash: sha256Value([]byte("doctor failure evidence")),
+	}
+	if _, err := fixture.RecordFailureEvent(failureEventInput); err != nil {
 		return nil, err
+	}
+	if duplicate, err := fixture.RecordFailureEvent(failureEventInput); err != nil || duplicate != nil {
+		return nil, errors.New("duplicate failure event was not idempotent")
 	}
 	evidencePath := filepath.Join(fixture.RuntimeDir, "evidence", "doctor-partial.txt")
 	if err := os.MkdirAll(filepath.Dir(evidencePath), 0o755); err != nil {
@@ -145,9 +152,10 @@ func (runtime *Runtime) Doctor() (*DoctorReport, error) {
 		return nil, errors.New("partial evidence unexpectedly reached the natural checkpoint")
 	}
 	state, err = fixture.LoadState()
-	if err != nil || state.CurrentWorkPacket == nil || state.CurrentWorkPacket.LastEvidenceAt == nil || len(state.CurrentWorkPacket.FailureSignatures) != 1 {
+	if err != nil || state.CurrentWorkPacket == nil || state.CurrentWorkPacket.LastEvidenceAt == nil || len(state.CurrentWorkPacket.FailureEvents) != 1 || len(state.CurrentWorkPacket.FailureSignatures) != 0 {
 		return nil, errors.New("fixture did not persist work-packet continuity facts")
 	}
+	checks = append(checks, "verified failure events are identity-bound and duplicate delivery is idempotent")
 	continuityBefore := *state.CurrentWorkPacket
 	continuityBefore.Approval = nil
 	continuityHashBefore, err := hashJSON(continuityBefore)

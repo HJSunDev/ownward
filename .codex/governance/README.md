@@ -30,7 +30,9 @@ sh .codex/governance/governance-hook.sh doctor
 sh .codex/governance/governance-hook.sh status --json
 ```
 
-CLI 还提供 `init`、`resume`、`propose-work-packet`、`record-evidence`、`record-failure`、`request-review`、`resolve-intervention`、`accept-review`、`apply-review`、`prepare-handoff`、`bind-handoff`、`cancel-handoff`、`repair-stage`、`repair-apply`、`close-work-packet`、`finish` 与 `governed-run`。结构化输入默认从标准输入读取，也可用 `--file <path>` 提供。
+CLI 还提供 `init`、`resume`、`propose-work-packet`、`record-evidence`、`record-repair`、`request-review`、`resolve-intervention`、`accept-review`、`apply-review`、`prepare-handoff`、`bind-handoff`、`cancel-handoff`、`repair-stage`、`repair-apply`、`close-work-packet`、`finish` 与 `governed-run`。结构化输入默认从标准输入读取，也可用 `--file <path>` 提供。普通失败只能由 Hook 或 `governed-run` 按真实执行身份自动登记；需要立即复核时直接使用 `request-review`，不得重复上报同一失败。
+
+失败是结构化事件，不是签名计数器。同一 `tool_use_id` 重放保持幂等；同一修复代次的重复失败只保留事实。`record-repair` 引用已验证事件和该事件发生后新登记的验证证据，仓库、候选、配置与实际运行程序身份由运行时自行计算并确认发生变化，调用者不能自报身份；只有此后同类失败再次真实发生才触发 `repeated-failure`。旧 `failure_signatures` 首次加载时迁移为永久不计数的 `legacy_unverified` 审计事实，旧待处理请求保留后由当前仓库快照的新请求取代。
 
 `resolve-intervention` 接收 `intervention_id`、Hook 返回的 `source_turn_id`、准确且不含敏感原文的 `summary` 以及可为空的 `evidence_refs`；它只提交解决事实供 Governor 复核，不会自行解除暂停。
 

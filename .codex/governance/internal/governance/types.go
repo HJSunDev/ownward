@@ -113,6 +113,57 @@ type WorkPacket struct {
 	LastEvidenceAt     *string            `json:"last_evidence_at"`
 	Checkpoint         *string            `json:"checkpoint"`
 	FailureSignatures  []string           `json:"failure_signatures"`
+	FailureEvents      []FailureEvent     `json:"failure_events"`
+	FailureRepairs     []FailureRepair    `json:"failure_repairs"`
+}
+
+// FailureEvent is a verifiable occurrence, not a caller-controlled counter.
+// Legacy signatures are retained only with Trust=legacy_unverified and never
+// participate in repeated-failure decisions.
+type FailureEvent struct {
+	EventID            string   `json:"event_id"`
+	Signature          string   `json:"signature"`
+	WorkPacketID       string   `json:"work_packet_id"`
+	SourceKind         string   `json:"source_kind"`
+	SourceExecution    string   `json:"source_execution"`
+	ToolUseID          string   `json:"tool_use_id"`
+	RepairGeneration   int      `json:"repair_generation"`
+	EvidenceHash       string   `json:"evidence_hash"`
+	KnownEvidenceIDs   []string `json:"known_evidence_ids"`
+	RepositoryIdentity string   `json:"repository_identity,omitempty"`
+	CandidateIdentity  string   `json:"candidate_identity,omitempty"`
+	ConfigIdentity     string   `json:"config_identity,omitempty"`
+	RuntimeIdentity    string   `json:"runtime_identity,omitempty"`
+	Trust              string   `json:"trust"`
+	OccurredAt         string   `json:"occurred_at"`
+}
+
+type FailureRepair struct {
+	RepairID           string   `json:"repair_id"`
+	Signature          string   `json:"signature"`
+	PreviousEventID    string   `json:"previous_event_id"`
+	WorkPacketID       string   `json:"work_packet_id"`
+	RepairGeneration   int      `json:"repair_generation"`
+	RepositoryIdentity string   `json:"repository_identity"`
+	CandidateIdentity  string   `json:"candidate_identity"`
+	ConfigIdentity     string   `json:"config_identity"`
+	RuntimeIdentity    string   `json:"runtime_identity"`
+	EvidenceIDs        []string `json:"evidence_ids"`
+	RecordedAt         string   `json:"recorded_at"`
+}
+
+type FailureEventInput struct {
+	Signature       string `json:"signature"`
+	SourceKind      string `json:"source_kind"`
+	SourceExecution string `json:"source_execution"`
+	ToolUseID       string `json:"tool_use_id"`
+	EvidenceHash    string `json:"evidence_hash"`
+}
+
+type FailureRepairInput struct {
+	Signature       string   `json:"signature"`
+	PreviousEventID string   `json:"previous_event_id"`
+	EvidenceIDs     []string `json:"evidence_ids"`
 }
 
 type EvidenceCheckpoint struct {

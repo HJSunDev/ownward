@@ -28,10 +28,13 @@ class BindingManifestTests(unittest.TestCase):
         self.assertTrue(all(len(item["sha256"]) == 64 for item in frontier["files"] + core["files"]))
 
     def test_tool_manifest_binds_executors_but_not_tests(self) -> None:
-        community = {item["path"] for item in binding._tool_manifest(self.root, "community")["files"]}
-        frontier = {item["path"] for item in binding._tool_manifest(self.root, "frontier")["files"]}
-        core = {item["path"] for item in binding._tool_manifest(self.root, "core")["files"]}
-        product = {item["path"] for item in binding._tool_manifest(self.root, "product")["files"]}
+        manifests = {scope: binding._tool_manifest(self.root, scope) for scope in ("community", "frontier", "core", "product")}
+        community = {item["path"] for item in manifests["community"]["files"]}
+        frontier = {item["path"] for item in manifests["frontier"]["files"]}
+        core = {item["path"] for item in manifests["core"]["files"]}
+        product = {item["path"] for item in manifests["product"]["files"]}
+        self.assertTrue(all(manifest["schema"] == "ownward.acceptance-tool-manifest/v4" for manifest in manifests.values()))
+        self.assertTrue(all(len(manifest["repository_commit"]) == 40 for manifest in manifests.values()))
         self.assertIn("cmd/ownward-frontier/main.go", frontier)
         self.assertIn("benchmarks/acceptance/suite/execution.py", community & frontier & product)
         self.assertIn("benchmarks/acceptance/suite/adapters/product/verify.py", product)
@@ -273,6 +276,83 @@ class BindingManifestTests(unittest.TestCase):
             arguments = config["community"][f"{domain}_arguments"]
             for name, expected in binding.OFFICIAL_LONGMEM_ARGUMENTS.items():
                 self.assertEqual(expected, binding._argument_value(arguments, name))
+
+    def test_scope_rebind_preserves_candidate_and_other_scope_generations(self) -> None:
+        temporary_root = self.root.parents[2] / ".tmp"
+        temporary_root.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=temporary_root) as directory:
+            root = Path(directory)
+            output = root / "binding"
+            binary = root / "ownward.exe"
+            binary.write_bytes(b"candidate")
+            embedding = root / "embedding"
+            embedding.mkdir()
+            candidate = "a" * 40
+            manifests = {}
+            scopes = {}
+            for scope in ("frontier", "core", "product"):
+                values = {kind: {"scope": scope, "kind": kind, "version": 1} for kind in ("environment", "inputs", "tools")}
+                manifests.update({f"{scope}-{kind}.json": value for kind, value in values.items()})
+                scopes[scope] = {
+                    "environment_sha256": binding._serialized_json_sha256(values["environment"]),
+                    "input_manifest_sha256": binding._serialized_json_sha256(values["inputs"]),
+                    "tool_sha256": binding._serialized_json_sha256(values["tools"]),
+                    "artifact_sha256": "f" * 64,
+                }
+            previous = {"schema": "ownward.acceptance-binding/v4", "suite_version": "1.0.0", "candidate": candidate, "scopes": scopes}
+            binding._activate_generation(output, previous, manifests)
+            old_active = binding._active_generation_dir(output)
+            old_core = (old_active / "core-tools.json").read_bytes()
+            config = {
+                "schema": "ownward.acceptance-execution/v3", "repository": str(self.root.parents[2]),
+                "workspace": str(root / "workspace"), "binding_dir": str(output),
+                "enabled_scopes": ["frontier", "core", "product"],
+                "candidate": {"binary": str(binary), "embedding_bundle_dir": str(embedding)},
+                "frontier": {"tool": str(binary), "targeted_stages": []},
+                "product": {"package": str(root), "production_storage_report": str(binary), "codex_binary": str(binary), "codex_auth_file": str(binary), "codex_model": binding.ACTIVE_CODEX_MODEL, "codex_reasoning_effort": binding.ACTIVE_CODEX_REASONING_EFFORT},
+            }
+            config_path = self._write_config(root, config)
+            replacement = {"scope": "product", "kind": "tools", "version": 2}
+            with (
+                patch.object(binding, "_git", return_value=""),
+                patch.object(binding, "_verify_go_binary"),
+                patch.object(binding.subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout=candidate + "\n")),
+                patch.object(binding, "_environment_manifest", return_value=manifests["product-environment.json"]),
+                patch.object(binding, "_input_manifest", return_value=manifests["product-inputs.json"]),
+                patch.object(binding, "_tool_manifest", return_value=replacement),
+                patch.object(binding, "_artifact_sha256", return_value="f" * 64),
+            ):
+                current = binding.rebind_scope(self.root, config_path, output, "product")
+            active = binding._active_generation_dir(output)
+            self.assertEqual(candidate, current["candidate"])
+            self.assertEqual(previous["scopes"]["core"], current["scopes"]["core"])
+            self.assertEqual(old_core, (active / "core-tools.json").read_bytes())
+            self.assertNotEqual(old_active, active)
+            self.assertEqual(replacement, json.loads((active / "product-tools.json").read_text(encoding="utf-8")))
+
+    def test_active_generation_rejects_a_tampered_manifest(self) -> None:
+        temporary_root = self.root.parents[2] / ".tmp"
+        temporary_root.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=temporary_root) as directory:
+            output = Path(directory) / "binding"
+            manifests = {
+                "frontier-environment.json": {"kind": "environment"},
+                "frontier-inputs.json": {"kind": "inputs"},
+                "frontier-tools.json": {"kind": "tools"},
+            }
+            scope = {
+                "environment_sha256": binding._serialized_json_sha256(manifests["frontier-environment.json"]),
+                "input_manifest_sha256": binding._serialized_json_sha256(manifests["frontier-inputs.json"]),
+                "tool_sha256": binding._serialized_json_sha256(manifests["frontier-tools.json"]),
+                "artifact_sha256": "f" * 64,
+            }
+            value = {"schema": "ownward.acceptance-binding/v4", "suite_version": "1.0.0", "candidate": "a" * 40, "scopes": {"frontier": scope}}
+            binding._activate_generation(output, value, manifests)
+            active = json.loads((output / "active.json").read_text(encoding="utf-8"))
+            generation = output / "generations" / active["generation"]
+            (generation / "frontier-tools.json").write_text('{"tampered":true}\n', encoding="utf-8")
+            with self.assertRaisesRegex(binding.BindingError, "摘要不一致"):
+                binding.load_active_binding(output)
 
 
 if __name__ == "__main__":

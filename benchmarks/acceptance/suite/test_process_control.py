@@ -45,6 +45,22 @@ class ProcessControlTests(unittest.TestCase):
         self.assertEqual(0, completed.returncode)
         self.assertIn("bad-\ufffd-output", completed.stderr)
 
+    def test_streams_durable_output_before_timeout(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stdout_path = root / "stdout.log"
+            stderr_path = root / "stderr.log"
+            with self.assertRaises(process_control.ProcessTimeout):
+                process_control.run(
+                    [sys.executable, "-c", "import sys,time; print('durable-out', flush=True); print('durable-err', file=sys.stderr, flush=True); time.sleep(5)"],
+                    cwd=root,
+                    timeout=0.1,
+                    stdout_path=stdout_path,
+                    stderr_path=stderr_path,
+                )
+            self.assertIn("durable-out", stdout_path.read_text(encoding="utf-8"))
+            self.assertIn("durable-err", stderr_path.read_text(encoding="utf-8"))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -132,11 +132,11 @@ class UnifiedExecutionTests(unittest.TestCase):
             "schema": "ownward.delivery-resource-report/v1",
             "candidate": self.binding["candidate"],
             "release_binary_sha256": self.binding["scopes"]["product"]["artifact_sha256"],
-            "acceptance_binding": state["binding"],
+            "resource_binding": {"schema": "fixture"},
             "passed": False,
         }
         with self.assertRaisesRegex(execution.ExecutionError, "停止高成本"):
-            execution_product.require_resource_admission(report, state)
+            execution_product.require_resource_admission(report, state, resource_binding={"schema": "fixture"})
 
     def test_valid_shared_resource_evidence_is_reused_across_product_modes(self) -> None:
         state = lifecycle.load_state(self.state_path)
@@ -154,17 +154,19 @@ class UnifiedExecutionTests(unittest.TestCase):
             "schema": "ownward.delivery-resource-report/v1",
             "candidate": self.binding["candidate"],
             "release_binary_sha256": self.binding["scopes"]["product"]["artifact_sha256"],
-            "acceptance_binding": candidate_binding.for_mode(self.binding, "qualification"),
+            "resource_binding": {"schema": "fixture", "candidate": self.binding["candidate"]},
             "evidence": artifacts,
             "passed": True,
         }
         report_path.write_text(json.dumps(report), encoding="utf-8")
+        resource_binding = report["resource_binding"]
         state["binding"] = candidate_binding.for_mode(self.binding, "qualification")
-        actual = execution_product.resource_report(self.root, state, self.config, workspace, resume=False)
-        self.assertEqual(report_path, actual)
+        execution_product.require_resource_admission(report, state, report_path, resource_binding=resource_binding)
+        state["binding"] = candidate_binding.for_mode(self.binding, "full")
+        execution_product.require_resource_admission(report, state, report_path, resource_binding=resource_binding)
         (raw / "process_samples.json").write_text("changed\n", encoding="utf-8")
         with self.assertRaisesRegex(execution.ExecutionError, "发生变化"):
-            execution_product.resource_report(self.root, state, self.config, workspace, resume=False)
+            execution_product.require_resource_admission(report, state, report_path, resource_binding=resource_binding)
 
     def test_product_resource_admission_consumes_the_same_layer_budget(self) -> None:
         state = lifecycle.load_state(self.state_path)
@@ -183,6 +185,56 @@ class UnifiedExecutionTests(unittest.TestCase):
                     False,
                     deadline=time.perf_counter() - 1,
                 )
+
+    def test_cached_product_preflight_must_fit_the_current_remaining_budget(self) -> None:
+        report = {"projected": {"wall_seconds": 120.0}}
+        with self.assertRaisesRegex(execution.ExecutionError, "剩余预算"):
+            execution_product._require_product_preflight_budget(report, time.perf_counter() + 100.0)
+        execution_product._require_product_preflight_budget(report, time.perf_counter() + 181.0)
+
+    def test_interrupted_resource_report_is_bound_after_exact_dependency_check(self) -> None:
+        report_path = self.workspace / "resource" / "report.json"
+        report_path.parent.mkdir(parents=True)
+        report = {"candidate": "candidate", "release_binary_sha256": "b" * 64}
+        report_path.write_text(json.dumps(report), encoding="utf-8")
+        identity = {"candidate": "candidate", "binary_sha256": "b" * 64}
+        with (
+            mock.patch("execution_product._resource_identity", return_value=identity),
+            mock.patch("execution_product._verify_resource_dependencies") as verify_dependencies,
+        ):
+            actual = execution_product._bind_interrupted_resource_report(self.root, {}, {}, report, report_path)
+        self.assertEqual(report_path, actual)
+        self.assertEqual(identity, json.loads(report_path.read_text(encoding="utf-8"))["resource_binding"])
+        verify_dependencies.assert_called_once()
+
+    def test_resource_reuse_rejects_a_different_machine_identity(self) -> None:
+        report = {
+            "environment": {"processor": "old", "physical_memory_bytes": 1},
+            "evidence": {
+                "package_manifest": {"path": "package.json"},
+                "process_samples": {"path": "samples.json"},
+                "workload_results": {"path": "workload.json"},
+            },
+        }
+        identity = {
+            "package_files": [
+                {"path": "manifest.json", "size": 1, "sha256": "m" * 64},
+                {"path": "ownward.exe", "size": 1, "sha256": "b" * 64},
+            ],
+            "production_storage_report_sha256": "p" * 64,
+            "machine": {"processor": "current", "physical_memory_bytes": 2},
+        }
+        package = {
+            "files": {"ownward.exe": {"bytes": 1, "sha256": "b" * 64}},
+            "release_manifest_sha256": "m" * 64,
+        }
+        workload = {"production_storage_report_sha256": "p" * 64}
+        with (
+            mock.patch("execution_product._raw_evidence", return_value={}),
+            mock.patch("execution_product.load_json", side_effect=[package, workload]),
+        ):
+            with self.assertRaisesRegex(execution.ExecutionError, "机器环境已经变化"):
+                execution_product._verify_resource_dependencies(report, self.workspace / "report.json", identity)
 
 
 if __name__ == "__main__":

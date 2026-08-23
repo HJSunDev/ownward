@@ -8,6 +8,7 @@ import platform
 import shutil
 import subprocess
 import sys
+import time
 from typing import Any
 
 import relationships
@@ -60,6 +61,7 @@ def create(suite_root: Path, config_path: Path, output_dir: Path) -> dict[str, A
     _require(Path(config["binding_dir"]).resolve() == output_dir, "输出目录必须与执行配置 binding_dir 一致")
     _require_isolated_path(workspace, "验收工作区")
     _require_isolated_path(output_dir, "绑定清单")
+    _require_clean_tool_repository(suite_root)
     candidate = _git(repository, "rev-parse", "HEAD")
     _require(not _git(repository, "status", "--porcelain"), "候选仓库不是干净、冻结的提交")
     if "frontier" in scopes_to_bind:
@@ -90,14 +92,19 @@ def create(suite_root: Path, config_path: Path, output_dir: Path) -> dict[str, A
         _require(Path(community["codex_binary"]).resolve().is_file(), "社区验收 Codex 不存在")
         _require(Path(community["codex_auth_file"]).resolve().is_file(), "社区验收 Codex 认证文件不存在")
     output_dir.mkdir(parents=True, exist_ok=True)
+    hash_workspace = output_dir / ".binding-hash"
+    if hash_workspace.exists():
+        shutil.rmtree(hash_workspace)
     scopes: dict[str, dict[str, str]] = {}
+    manifest_values: dict[str, dict[str, Any]] = {}
     for scope in scopes_to_bind:
         manifests = {
             "environment": _environment_manifest(config, scope),
             "inputs": _input_manifest(suite_root, config, scope),
             "tools": _tool_manifest(suite_root, scope),
         }
-        paths = {name: output_dir / f"{scope}-{name}.json" for name in manifests}
+        manifest_values.update({f"{scope}-{name}.json": value for name, value in manifests.items()})
+        paths = {name: output_dir / ".binding-hash" / f"{scope}-{name}.json" for name in manifests}
         for name, value in manifests.items():
             _write_json(paths[name], value)
         scopes[scope] = {
@@ -108,8 +115,127 @@ def create(suite_root: Path, config_path: Path, output_dir: Path) -> dict[str, A
         }
     result = {"schema": "ownward.acceptance-binding/v4", "suite_version": "1.0.0", "candidate": candidate, "scopes": scopes}
     validate_binding(result)
-    _write_json(output_dir / "binding.json", result)
+    shutil.rmtree(output_dir / ".binding-hash")
+    _activate_generation(output_dir, result, manifest_values)
     return result
+
+
+def rebind_scope(suite_root: Path, config_path: Path, output_dir: Path, scope: str) -> dict[str, Any]:
+    """Rebind one acceptance-tool scope without changing the frozen product candidate."""
+    _require(scope in SCOPE_NAMES, f"未知绑定范围: {scope}")
+    config = load_json(config_path.resolve())
+    validate_config(config)
+    _require(scope in relationships.enabled_scopes(config), f"当前配置未启用 {scope}")
+    output_dir = output_dir.resolve()
+    _require(Path(config["binding_dir"]).resolve() == output_dir, "输出目录必须与执行配置 binding_dir 一致")
+    _require_clean_tool_repository(suite_root)
+    active_dir = _active_generation_dir(output_dir)
+    previous = load_json(active_dir / "binding.json")
+    validate_binding(previous)
+    repository = Path(config["repository"]).resolve()
+    _require(not _git(repository, "status", "--porcelain"), "验收工具仓库不是干净、冻结的提交")
+    candidate = previous["candidate"]
+    _git(repository, "cat-file", "-e", candidate + "^{commit}")
+    if scope == "frontier":
+        _verify_go_binary(Path(_mapping(config, "frontier")["tool"]).resolve(), candidate)
+    else:
+        binary, embedding = _candidate_paths(config)
+        _require(binary.is_file() and embedding.is_dir(), "冻结候选制品不完整")
+        version = subprocess.run([str(binary), "version"], cwd=repository, capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
+        _require(version.returncode == 0 and version.stdout.strip() == candidate, "候选二进制没有绑定既有冻结提交")
+        _verify_go_binary(binary, candidate)
+
+    manifest_values: dict[str, dict[str, Any]] = {}
+    scopes = {name: dict(value) for name, value in previous["scopes"].items()}
+    for name in previous["scopes"]:
+        for kind in ("environment", "inputs", "tools"):
+            filename = f"{name}-{kind}.json"
+            manifest_values[filename] = load_json(active_dir / filename)
+    replacement = {
+        "environment": _environment_manifest(config, scope),
+        "inputs": _input_manifest(suite_root, config, scope),
+        "tools": _tool_manifest(suite_root, scope),
+    }
+    manifest_values.update({f"{scope}-{name}.json": value for name, value in replacement.items()})
+    hashes = {name: _serialized_json_sha256(value) for name, value in replacement.items()}
+    scopes[scope] = {
+        "environment_sha256": hashes["environment"],
+        "input_manifest_sha256": hashes["inputs"],
+        "tool_sha256": hashes["tools"],
+        "artifact_sha256": _artifact_sha256(config, scope),
+    }
+    result = {"schema": "ownward.acceptance-binding/v4", "suite_version": previous["suite_version"], "candidate": candidate, "scopes": scopes}
+    validate_binding(result)
+    _activate_generation(output_dir, result, manifest_values)
+    return result
+
+
+def load_active_binding(path: Path) -> dict[str, Any]:
+    path = path.resolve()
+    binding_dir = path if path.is_dir() else path.parent
+    active = _active_generation_dir(binding_dir)
+    return load_json(active / "binding.json")
+
+
+def _active_generation_dir(binding_dir: Path) -> Path:
+    active_path = binding_dir / "active.json"
+    if not active_path.is_file():
+        _validate_generation(binding_dir)
+        return binding_dir
+    active = load_json(active_path)
+    _require(active.get("schema") == "ownward.acceptance-binding-active/v1", "活动绑定指针无效")
+    generation = str(active.get("generation", ""))
+    _require(generation and Path(generation).name == generation, "活动绑定代次无效")
+    root = (binding_dir / "generations" / generation).resolve()
+    _require(root.is_relative_to(binding_dir.resolve()) and root.is_dir(), "活动绑定代次不存在")
+    _require(sha256(root / "binding.json") == active.get("binding_sha256"), "活动绑定指针摘要不一致")
+    _validate_generation(root)
+    return root
+
+
+def _activate_generation(output_dir: Path, binding: dict[str, Any], manifests: dict[str, dict[str, Any]]) -> None:
+    generation = _canonical_sha256({"binding": binding, "manifests": manifests})[:24]
+    generations = output_dir / "generations"
+    generations.mkdir(parents=True, exist_ok=True)
+    destination = generations / generation
+    if not destination.exists():
+        temporary = generations / f".tmp-{os.getpid()}-{time.time_ns()}"
+        temporary.mkdir()
+        _write_json(temporary / "binding.json", binding)
+        for filename, value in manifests.items():
+            _write_json(temporary / filename, value)
+        _require(load_json(temporary / "binding.json") == binding, "新绑定代次自检失败")
+        temporary.replace(destination)
+    _validate_generation(destination, expected_binding=binding, expected_manifests=manifests)
+    active = {"schema": "ownward.acceptance-binding-active/v1", "generation": generation, "binding_sha256": sha256(destination / "binding.json")}
+    _write_json(output_dir / "active.json", active)
+    # Compatibility mirrors are not authoritative; readers resolve active.json first.
+    _write_json(output_dir / "binding.json", binding)
+    for filename, value in manifests.items():
+        _write_json(output_dir / filename, value)
+
+
+def _validate_generation(
+    directory: Path,
+    *,
+    expected_binding: dict[str, Any] | None = None,
+    expected_manifests: dict[str, dict[str, Any]] | None = None,
+) -> None:
+    binding = load_json(directory / "binding.json")
+    validate_binding(binding)
+    if expected_binding is not None:
+        _require(binding == expected_binding, "不可变绑定代次的候选身份不一致")
+    for scope, identity in binding["scopes"].items():
+        for kind, field in (
+            ("environment", "environment_sha256"),
+            ("inputs", "input_manifest_sha256"),
+            ("tools", "tool_sha256"),
+        ):
+            filename = f"{scope}-{kind}.json"
+            path = directory / filename
+            _require(path.is_file() and sha256(path) == identity[field], f"不可变绑定代次的 {filename} 缺失或摘要不一致")
+            if expected_manifests is not None:
+                _require(load_json(path) == expected_manifests[filename], f"不可变绑定代次的 {filename} 内容不一致")
 
 
 def validate_config(config: dict[str, Any]) -> None:
@@ -192,9 +318,10 @@ def verify_current(suite_root: Path, binding_dir: Path, config: dict[str, Any], 
     _require(scope in relationships.enabled_scopes(config), f"当前配置未启用 {scope}")
     active = for_scope(expected, scope)
     binding_dir = binding_dir.resolve()
-    binding_path = binding_dir / "binding.json"
+    active_dir = _active_generation_dir(binding_dir)
+    binding_path = active_dir / "binding.json"
     _require(binding_path.is_file() and load_json(binding_path) == expected, "绑定文件与状态不一致")
-    manifests = {name: binding_dir / f"{scope}-{name}.json" for name in ("environment", "inputs", "tools")}
+    manifests = {name: active_dir / f"{scope}-{name}.json" for name in ("environment", "inputs", "tools")}
     current = {"environment": _environment_manifest(config, scope), "inputs": _input_manifest(suite_root, config, scope), "tools": _tool_manifest(suite_root, scope)}
     for name, field in (("environment", "environment_sha256"), ("inputs", "input_manifest_sha256"), ("tools", "tool_sha256")):
         _require(manifests[name].is_file() and sha256(manifests[name]) == active[field], f"{scope} {name} 清单发生变化")
@@ -259,10 +386,20 @@ def _tool_manifest(suite_root: Path, scope: str) -> dict[str, Any]:
     scoped = {
         "frontier": [suite_root / "execution_frontier.py", suite_root / "frontier.py", repository / "cmd" / "ownward-frontier" / "main.go"],
         "core": [suite_root / "execution_core.py", suite_root / "adapters" / "core" / "verify.py", repository / "benchmarks" / "support" / "ownward_mcp.py"],
-        "product": [suite_root / "execution_core.py", suite_root / "execution_product.py", suite_root / "product.py", *sorted(path for path in (suite_root / "adapters" / "product").glob("*.py") if not path.name.startswith("test_")), *sorted(path for path in (suite_root / "adapters" / "product_resource").glob("*.py") if not path.name.startswith("test_")), repository / "benchmarks" / "support" / "ownward_mcp.py"],
+        "product": [suite_root / "execution_core.py", suite_root / "execution_product.py", suite_root / "product.py", suite_root / "resource_environment.py", *sorted(path for path in (suite_root / "adapters" / "product").glob("*.py") if not path.name.startswith("test_")), *sorted(path for path in (suite_root / "adapters" / "product_resource").glob("*.py") if not path.name.startswith("test_")), repository / "benchmarks" / "support" / "ownward_mcp.py"],
         "community": [suite_root / "execution_community.py", suite_root / "community.py", repository / "benchmarks" / "longmemeval_v2" / "run.py", repository / "benchmarks" / "longmemeval_v2" / "ownward_memory.py", repository / "benchmarks" / "longmemeval_v2" / "ownward_trajectory.py", repository / "benchmarks" / "longmemeval_v2" / "memory_config.active.json", repository / "benchmarks" / "longmemeval_v2" / "memory_config.direct.json", repository / "benchmarks" / "longmemeval_v2" / "SYSTEM_DESCRIPTION.md", repository / "benchmarks" / "support" / "ownward_mcp.py"],
     }[scope]
-    return {"schema": "ownward.acceptance-tool-manifest/v3", "scope": scope, "files": _files(repository, shared + scoped)}
+    return {
+        "schema": "ownward.acceptance-tool-manifest/v4",
+        "scope": scope,
+        "repository_commit": _git(repository, "rev-parse", "HEAD"),
+        "files": _files(repository, shared + scoped),
+    }
+
+
+def _require_clean_tool_repository(suite_root: Path) -> None:
+    repository = suite_root.parents[2].resolve()
+    _require(not _git(repository, "status", "--porcelain"), "验收工具仓库不是干净、可复现的提交")
 
 
 def _environment_manifest(config: dict[str, Any], scope: str) -> dict[str, Any]:
@@ -422,6 +559,11 @@ def _canonical_sha256(value: Any) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _serialized_json_sha256(value: Any) -> str:
+    encoded = (json.dumps(value, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def _is_sha256(value: Any) -> bool:
     return isinstance(value, str) and len(value) == 64 and all(character in "0123456789abcdef" for character in value)
 
@@ -441,9 +583,12 @@ def _verify_go_binary(binary: Path, candidate: str) -> None:
 
 def _write_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    temporary.replace(path)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.{time.time_ns()}.tmp")
+    with temporary.open("w", encoding="utf-8", newline="\n") as stream:
+        stream.write(json.dumps(value, ensure_ascii=False, indent=2) + "\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, path)
 
 
 def _mapping(value: dict[str, Any], name: str) -> dict[str, Any]:

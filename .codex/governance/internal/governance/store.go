@@ -37,7 +37,13 @@ func Open(start string) (*Runtime, error) {
 	if err := validateConfig(root, config); err != nil {
 		return nil, err
 	}
-	return &Runtime{Root: root, ConfigPath: configPath, Config: config, RuntimeDir: resolvePath(root, config.RuntimeDirectory)}, nil
+	runtime := &Runtime{Root: root, ConfigPath: configPath, Config: config, RuntimeDir: resolvePath(root, config.RuntimeDirectory)}
+	if runtime.StateExists() {
+		if err := runtime.migrateFailureEvents(); err != nil {
+			return nil, fmt.Errorf("migrate governance failure events: %w", err)
+		}
+	}
+	return runtime, nil
 }
 
 func findRoot(start string) (string, error) {
@@ -170,10 +176,118 @@ func (runtime *Runtime) LoadState() (*State, error) {
 	if err := decodeStrictFile(runtime.statePath(), &state); err != nil {
 		return nil, err
 	}
+	if state.CurrentWorkPacket != nil {
+		for index := range state.CurrentWorkPacket.FailureEvents {
+			if state.CurrentWorkPacket.FailureEvents[index].Trust == "legacy_unverified" && state.CurrentWorkPacket.FailureEvents[index].KnownEvidenceIDs == nil {
+				state.CurrentWorkPacket.FailureEvents[index].KnownEvidenceIDs = []string{}
+			}
+		}
+	}
 	if err := validateState(&state); err != nil {
 		return nil, fmt.Errorf("invalid governance state: %w", err)
 	}
 	return &state, nil
+}
+
+func (runtime *Runtime) migrateFailureEvents() error {
+	return runtime.withLock(func() error {
+		var state State
+		if err := decodeStrictFile(runtime.statePath(), &state); err != nil {
+			return err
+		}
+		markerPath := filepath.Join(runtime.RuntimeDir, "failure-event-migration.json")
+		marker := map[string]any{}
+		if data, err := os.ReadFile(markerPath); err == nil {
+			if err := json.Unmarshal(data, &marker); err != nil {
+				return err
+			}
+		}
+		packet := state.CurrentWorkPacket
+		needsMigration := packet != nil && (packet.FailureEvents == nil || packet.FailureRepairs == nil || len(packet.FailureSignatures) > 0)
+		if marker["status"] == "complete" && !needsMigration {
+			return validateState(&state)
+		}
+		if marker["status"] == "complete" && needsMigration {
+			marker = map[string]any{}
+		}
+		if !needsMigration && len(marker) == 0 {
+			return validateState(&state)
+		}
+		migrationID := "failure-events-v1"
+		migrationReviewTrigger := "fixed:failure-event-migration-current-snapshot"
+		oldReviewRequired := state.Review.Required && (state.Review.Trigger == nil || *state.Review.Trigger != migrationReviewTrigger)
+		if len(marker) == 0 {
+			marker = map[string]any{"schema": "ownward.governance-migration/v1", "migration_id": migrationID, "status": "prepared", "replace_review": oldReviewRequired}
+			if err := atomicWriteJSON(markerPath, marker); err != nil {
+				return err
+			}
+		}
+		if packet != nil && needsMigration {
+			if packet.FailureEvents == nil {
+				packet.FailureEvents = []FailureEvent{}
+			}
+			if packet.FailureRepairs == nil {
+				packet.FailureRepairs = []FailureRepair{}
+			}
+			for _, raw := range packet.FailureSignatures {
+				signature := normalizeFailureSignature(raw)
+				identity, _ := hashJSON(map[string]string{"packet_id": packet.PacketID, "signature": signature, "trust": "legacy_unverified"})
+				evidence, _ := hashJSON(map[string]string{"legacy_signature": signature})
+				packet.FailureEvents = append(packet.FailureEvents, FailureEvent{
+					EventID: "legacy_" + strings.TrimPrefix(identity, "sha256:")[:24], Signature: signature,
+					WorkPacketID: packet.PacketID, SourceKind: "legacy", SourceExecution: "legacy:" + packet.PacketID,
+					ToolUseID: "legacy-unverified", RepairGeneration: 0, EvidenceHash: evidence,
+					KnownEvidenceIDs: []string{}, Trust: "legacy_unverified", OccurredAt: packet.StartedAt,
+				})
+			}
+			packet.FailureSignatures = []string{}
+		}
+		if oldReviewRequired {
+			if data, err := os.ReadFile(runtime.requestPath()); err == nil {
+				directory := filepath.Join(runtime.reviewsDir(), "superseded")
+				if err := os.MkdirAll(directory, 0o755); err != nil {
+					return err
+				}
+				name := "legacy-review-request.json"
+				if state.Review.ReviewID != nil {
+					name = *state.Review.ReviewID + ".json"
+				}
+				if err := atomicWrite(filepath.Join(directory, name), data); err != nil {
+					return err
+				}
+			}
+			state.Review = ReviewState{FixedReviewGeneration: state.Review.FixedReviewGeneration}
+		}
+		if err := runtime.saveState(&state); err != nil {
+			return err
+		}
+		if !runtime.migrationEventExists(migrationID) {
+			if err := runtime.appendEvent("failure_event_migration", state.RunID, "migrated legacy failure signatures as non-counting audit facts", map[string]any{"migration_id": migrationID, "legacy_events": len(packet.FailureEvents)}); err != nil {
+				return err
+			}
+		}
+		if replace, _ := marker["replace_review"].(bool); replace && !state.Review.Required {
+			if _, err := runtime.requestReviewLocked(&state, "fixed", "failure-event-migration-current-snapshot"); err != nil {
+				return err
+			}
+		}
+		marker["status"] = "complete"
+		return atomicWriteJSON(markerPath, marker)
+	})
+}
+
+func (runtime *Runtime) migrationEventExists(migrationID string) bool {
+	lines, err := readJSONLines(runtime.eventsPath())
+	if err != nil {
+		return false
+	}
+	for _, line := range lines {
+		var event Event
+		if json.Unmarshal(line, &event) == nil && event.Kind == "failure_event_migration" && event.Fields["migration_id"] == migrationID {
+			return true
+		}
+	}
+	return false
 }
 
 func (runtime *Runtime) saveState(state *State) error {

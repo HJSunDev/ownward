@@ -130,8 +130,45 @@ class ProductAdapterTests(unittest.TestCase):
                 "result": {"passed": True},
             }
             self.assertTrue(verify._sealed_scenario_valid(sealed, root, binding, True))
+            removed = next(iter(sealed["evidence"]))
+            sealed["evidence"].pop(removed)
+            self.assertFalse(verify._sealed_scenario_valid(sealed, root, binding, True))
+            sealed["evidence"] = verify._scenario_evidence(root, True)
             (root / files[0]).write_text("changed", encoding="utf-8")
             self.assertFalse(verify._sealed_scenario_valid(sealed, root, binding, True))
+
+    def test_transactional_checkpoint_requires_committed_semantics_and_one_complete_query_attempt(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            semantic = root / "semantic-initial" / "unit" / "attempt-001" / "events.jsonl"
+            semantic.parent.mkdir(parents=True)
+            semantic.write_text("semantic", encoding="utf-8")
+            progress = {
+                "schema": "ownward.product-scenario-progress/v1",
+                "completed_units": {"initial:one": {"done": True}},
+                "evidence": {semantic.relative_to(root).as_posix(): verify.sha256(semantic)},
+            }
+            for name in ("output.json", "stderr.txt"):
+                path = semantic.parent / name
+                path.write_text(name, encoding="utf-8")
+                progress["evidence"][path.relative_to(root).as_posix()] = verify.sha256(path)
+            verify.write_json(root / "progress.json", progress)
+            query = root / "query" / "attempt-001"
+            query.mkdir(parents=True)
+            for name in ("output.json", "events.jsonl", "stderr.txt"):
+                (query / name).write_text(name, encoding="utf-8")
+            evidence = dict(progress["evidence"])
+            evidence.update(verify._relative_evidence(root, query))
+            sealed = {
+                "schema": "ownward.product-scenario-checkpoint/v2",
+                "binding": {"candidate": "candidate"},
+                "progress_sha256": verify.sha256(root / "progress.json"),
+                "evidence": evidence,
+                "result": {"passed": True},
+            }
+            self.assertTrue(verify._sealed_scenario_valid(sealed, root, sealed["binding"], False))
+            sealed["evidence"].pop(next(path for path in sealed["evidence"] if path.endswith("events.jsonl") and path.startswith("query/")))
+            self.assertFalse(verify._sealed_scenario_valid(sealed, root, sealed["binding"], False))
 
     def test_valid_qualification_scenario_is_reused_by_full_without_resume_flag(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -167,6 +204,41 @@ class ProductAdapterTests(unittest.TestCase):
             })
             actual = verify._run_scenario(args, task, binding, 0, True, 1, "e" * 64, 0)
             self.assertEqual(result, actual)
+
+    def test_uncommitted_mutation_restores_only_current_unit(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            data = root / "data"
+            data.mkdir()
+            (data / "state.json").write_text("before", encoding="utf-8")
+            progress = {"data_tree_sha256": verify._tree_sha256(data), "evidence": {}, "completed_units": {"initial:one": {"done": True}}}
+            verify.write_json(root / "progress.json", progress)
+            verify._begin_rollback(root, progress, "initial:two")
+            (data / "state.json").write_text("half-committed", encoding="utf-8")
+            verify._recover_rollback(root, progress)
+            self.assertEqual("before", (data / "state.json").read_text(encoding="utf-8"))
+            self.assertEqual({"initial:one": {"done": True}}, progress["completed_units"])
+            self.assertFalse((root / "rollback").exists())
+
+    def test_committed_progress_survives_crash_before_rollback_cleanup(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            data = root / "data"
+            data.mkdir()
+            (data / "state.json").write_text("before", encoding="utf-8")
+            progress = {"data_tree_sha256": verify._tree_sha256(data), "evidence": {}, "completed_units": {}}
+            verify._begin_rollback(root, progress, "initial:one")
+            (data / "state.json").write_text("after", encoding="utf-8")
+            evidence = root / "semantic" / "events.jsonl"
+            evidence.parent.mkdir()
+            evidence.write_text("evidence", encoding="utf-8")
+            progress["completed_units"]["initial:one"] = {"done": True}
+            progress["evidence"] = {"semantic/events.jsonl": verify.sha256(evidence)}
+            progress["data_tree_sha256"] = verify._tree_sha256(data)
+            verify.write_json(root / "progress.json", progress)
+            verify._recover_rollback(root, progress)
+            self.assertEqual("after", (data / "state.json").read_text(encoding="utf-8"))
+            self.assertFalse((root / "rollback").exists())
 
 
 if __name__ == "__main__":

@@ -10,7 +10,6 @@ import json
 import math
 import os
 from pathlib import Path
-import platform
 import re
 import statistics
 import subprocess
@@ -23,8 +22,12 @@ from typing import Any
 REPOSITORY = Path(__file__).resolve().parents[5]
 if str(REPOSITORY) not in sys.path:
     sys.path.insert(0, str(REPOSITORY))
+SUITE = Path(__file__).resolve().parents[2]
+if str(SUITE) not in sys.path:
+    sys.path.insert(0, str(SUITE))
 
 from benchmarks.support.ownward_mcp import OwnwardRuntime  # noqa: E402
+import resource_environment  # noqa: E402
 
 
 REPORT_SCHEMA = "ownward.delivery-resource-report/v1"
@@ -457,7 +460,7 @@ def main() -> None:
         "release_binary_version": candidate,
         "release_binary_sha256": binary_digest,
         "measured_at": datetime.now(timezone.utc).isoformat(),
-        "environment": {"os": platform.platform(), "machine": platform.machine(), "logical_cpus": os.cpu_count()},
+        "environment": resource_environment.machine_identity(),
         "thresholds_sha256": sha256(thresholds_path),
         "production_storage_report_sha256": sha256(performance_path),
         "evidence": {

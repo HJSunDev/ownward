@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -190,6 +191,7 @@ func packetFromProposal(proposal *WorkPacketProposal) (*WorkPacket, error) {
 		ExpectedEvidence:   plan.ExpectedEvidence,
 		EvidenceCheckpoint: EvidenceCheckpoint{CheckpointID: proposal.CheckpointID, Description: proposal.CheckpointDescription},
 		PlanHash:           hash, StartedAt: time.Now().UTC().Format(time.RFC3339Nano), FailureSignatures: []string{},
+		FailureEvents: []FailureEvent{}, FailureRepairs: []FailureRepair{},
 	}, nil
 }
 
@@ -253,10 +255,16 @@ func (runtime *Runtime) RecordEvidence(record EvidenceRecord) (*ReviewRequest, e
 	return request, err
 }
 
-func (runtime *Runtime) RecordFailure(signature string) (*ReviewRequest, error) {
-	signature = normalizeFailureSignature(signature)
-	if signature == "" {
-		return nil, errors.New("failure signature must not be empty")
+func (runtime *Runtime) RecordFailureEvent(input FailureEventInput) (*ReviewRequest, error) {
+	input.Signature = normalizeFailureSignature(input.Signature)
+	if input.Signature == "" || strings.TrimSpace(input.SourceExecution) == "" || strings.TrimSpace(input.ToolUseID) == "" {
+		return nil, errors.New("failure event requires a signature, source execution and tool_use_id")
+	}
+	if input.SourceKind != "codex_hook" && input.SourceKind != "governed_run" {
+		return nil, errors.New("failure event source is not a trusted governed execution path")
+	}
+	if err := validHash("failure evidence_hash", input.EvidenceHash); err != nil {
+		return nil, err
 	}
 	var request *ReviewRequest
 	err := runtime.withLock(func() error {
@@ -264,26 +272,230 @@ func (runtime *Runtime) RecordFailure(signature string) (*ReviewRequest, error) 
 		if err != nil {
 			return err
 		}
-		if state.Status != "running" || state.Review.Required || state.CurrentWorkPacket == nil || state.CurrentWorkPacket.Approval == nil {
-			return errors.New("failure requires an active approved work packet without a pending review")
+		if state.CurrentWorkPacket == nil {
+			return errors.New("failure requires a current work packet")
 		}
-		for _, existing := range state.CurrentWorkPacket.FailureSignatures {
-			if existing == signature {
-				created, err := runtime.requestReviewLocked(state, "event", "repeated-failure:"+signature)
-				if err != nil {
-					return err
+		packet := state.CurrentWorkPacket
+		identity, hashErr := hashJSON(map[string]any{
+			"packet_id": packet.PacketID, "source_kind": input.SourceKind,
+			"source_execution": input.SourceExecution, "tool_use_id": input.ToolUseID,
+		})
+		if hashErr != nil {
+			return hashErr
+		}
+		eventID := "failure_" + strings.TrimPrefix(identity, "sha256:")[:24]
+		for _, existing := range packet.FailureEvents {
+			if existing.EventID == eventID {
+				if existing.Signature != input.Signature || existing.EvidenceHash != input.EvidenceHash ||
+					existing.SourceKind != input.SourceKind || existing.SourceExecution != input.SourceExecution || existing.ToolUseID != input.ToolUseID {
+					return errors.New("governed failure event identity was replayed with conflicting facts")
 				}
-				request = created
 				return nil
 			}
 		}
-		state.CurrentWorkPacket.FailureSignatures = append(state.CurrentWorkPacket.FailureSignatures, signature)
+		if state.Status != "running" || state.Review.Required || packet.Approval == nil {
+			return errors.New("failure requires an active approved work packet without a pending review")
+		}
+		identities, err := runtime.currentFailureIdentities()
+		if err != nil {
+			return err
+		}
+		generation := 0
+		for _, repair := range packet.FailureRepairs {
+			if repair.Signature == input.Signature && repair.RepairGeneration > generation {
+				generation = repair.RepairGeneration
+			}
+		}
+		event := FailureEvent{
+			EventID: eventID, Signature: input.Signature, WorkPacketID: packet.PacketID,
+			SourceKind: input.SourceKind, SourceExecution: input.SourceExecution,
+			ToolUseID: input.ToolUseID, RepairGeneration: generation,
+			EvidenceHash: input.EvidenceHash, KnownEvidenceIDs: reusableResultIDs(state.ReusableResults), Trust: "verified",
+			RepositoryIdentity: identities["repository"], CandidateIdentity: identities["candidate"],
+			ConfigIdentity: identities["config"], RuntimeIdentity: identities["runtime"],
+			OccurredAt: time.Now().UTC().Format(time.RFC3339Nano),
+		}
+		packet.FailureEvents = append(packet.FailureEvents, event)
+		shouldReview := false
+		if generation > 0 {
+			for _, existing := range packet.FailureEvents {
+				if existing.EventID != event.EventID && existing.Trust == "verified" && existing.Signature == event.Signature && existing.RepairGeneration < generation {
+					shouldReview = true
+					break
+				}
+			}
+		}
+		if shouldReview {
+			created, reviewErr := runtime.requestReviewLocked(state, "event", "repeated-failure:"+event.Signature)
+			if reviewErr != nil {
+				return reviewErr
+			}
+			request = created
+			return nil
+		}
 		if err := runtime.saveState(state); err != nil {
 			return err
 		}
-		return runtime.appendEvent("failure_recorded", state.RunID, "recorded normalized failure", map[string]any{"signature": signature})
+		return runtime.appendEvent("failure_recorded", state.RunID, "recorded verified failure event", map[string]any{"event_id": event.EventID, "signature": event.Signature, "repair_generation": generation})
 	})
 	return request, err
+}
+
+func (runtime *Runtime) ensureFailureRecordingReview() error {
+	state, err := runtime.LoadState()
+	if err != nil {
+		return err
+	}
+	if state.Review.Required {
+		return nil
+	}
+	_, err = runtime.RequestReview("failure-event-recording-integrity")
+	return err
+}
+
+func (runtime *Runtime) RecordRepair(input FailureRepairInput) (*FailureRepair, error) {
+	input.Signature = normalizeFailureSignature(input.Signature)
+	input.EvidenceIDs = normalizeStrings(input.EvidenceIDs)
+	if input.Signature == "" || strings.TrimSpace(input.PreviousEventID) == "" || len(input.EvidenceIDs) == 0 {
+		return nil, errors.New("repair requires a signature, previous event and validated evidence")
+	}
+	var recorded *FailureRepair
+	err := runtime.withLock(func() error {
+		state, err := runtime.LoadState()
+		if err != nil {
+			return err
+		}
+		if state.CurrentWorkPacket == nil {
+			return errors.New("repair requires a current work packet")
+		}
+		packet := state.CurrentWorkPacket
+		for _, existing := range packet.FailureRepairs {
+			if existing.Signature == input.Signature && existing.PreviousEventID == input.PreviousEventID {
+				if !slices.Equal(existing.EvidenceIDs, input.EvidenceIDs) {
+					return errors.New("governed failure repair identity was replayed with conflicting evidence")
+				}
+				recorded = &existing
+				return nil
+			}
+		}
+		if state.Status != "running" || state.Review.Required || packet.Approval == nil {
+			return errors.New("repair requires an active approved work packet without a pending review")
+		}
+		var previous *FailureEvent
+		generation := 0
+		for index := range packet.FailureEvents {
+			event := &packet.FailureEvents[index]
+			if event.EventID == input.PreviousEventID && event.Signature == input.Signature && event.Trust == "verified" {
+				previous = event
+			}
+			if event.Signature == input.Signature && event.RepairGeneration > generation {
+				generation = event.RepairGeneration
+			}
+		}
+		for _, existing := range packet.FailureRepairs {
+			if existing.Signature == input.Signature && existing.RepairGeneration > generation {
+				generation = existing.RepairGeneration
+			}
+		}
+		if previous == nil {
+			return errors.New("repair does not reference a verified failure event in the current work packet")
+		}
+		if previous.RepairGeneration != generation {
+			return errors.New("repair references a stale failure generation")
+		}
+		available := map[string]struct{}{}
+		knownAtFailure := map[string]struct{}{}
+		for _, evidenceID := range previous.KnownEvidenceIDs {
+			knownAtFailure[evidenceID] = struct{}{}
+		}
+		for _, evidence := range state.ReusableResults {
+			available[evidence.ResultID] = struct{}{}
+		}
+		for _, evidenceID := range input.EvidenceIDs {
+			if _, existed := knownAtFailure[evidenceID]; existed {
+				return fmt.Errorf("repair evidence %q predates the verified failure event", evidenceID)
+			}
+			if _, exists := available[evidenceID]; !exists {
+				return fmt.Errorf("repair evidence %q is not registered and validated", evidenceID)
+			}
+		}
+		identities, err := runtime.currentFailureIdentities()
+		if err != nil {
+			return err
+		}
+		if identities["repository"] == previous.RepositoryIdentity &&
+			identities["candidate"] == previous.CandidateIdentity &&
+			identities["config"] == previous.ConfigIdentity &&
+			identities["runtime"] == previous.RuntimeIdentity {
+			return errors.New("repair identity is unchanged from the verified failure occurrence")
+		}
+		repairIdentity := map[string]any{
+			"signature": input.Signature, "previous_event_id": input.PreviousEventID,
+			"packet_id": packet.PacketID, "repository_identity": identities["repository"],
+			"candidate_identity": identities["candidate"], "config_identity": identities["config"],
+			"runtime_identity": identities["runtime"], "evidence_ids": input.EvidenceIDs,
+		}
+		hash, err := hashJSON(repairIdentity)
+		if err != nil {
+			return err
+		}
+		repairID := "repair_" + strings.TrimPrefix(hash, "sha256:")[:24]
+		for index := range packet.FailureRepairs {
+			if packet.FailureRepairs[index].RepairID == repairID {
+				recorded = &packet.FailureRepairs[index]
+				return nil
+			}
+		}
+		repair := FailureRepair{
+			RepairID: repairID, Signature: input.Signature, PreviousEventID: input.PreviousEventID,
+			WorkPacketID: packet.PacketID, RepairGeneration: generation + 1,
+			RepositoryIdentity: identities["repository"], CandidateIdentity: identities["candidate"],
+			ConfigIdentity: identities["config"], RuntimeIdentity: identities["runtime"],
+			EvidenceIDs: input.EvidenceIDs, RecordedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		}
+		packet.FailureRepairs = append(packet.FailureRepairs, repair)
+		if err := runtime.saveState(state); err != nil {
+			return err
+		}
+		if err := runtime.appendEvent("failure_repair_recorded", state.RunID, "advanced a verified failure repair generation", map[string]any{"repair_id": repair.RepairID, "signature": repair.Signature, "repair_generation": repair.RepairGeneration}); err != nil {
+			return err
+		}
+		recorded = &repair
+		return nil
+	})
+	return recorded, err
+}
+
+// currentFailureIdentities derives every repair boundary from facts observed by
+// the governance runtime. Callers cannot claim that a repair changed the
+// candidate, configuration or runtime by supplying arbitrary hashes.
+func (runtime *Runtime) currentFailureIdentities() (map[string]string, error) {
+	snapshot, err := runtime.repositorySnapshot()
+	if err != nil {
+		return nil, err
+	}
+	configIdentity, err := fileHash(runtime.ConfigPath)
+	if err != nil {
+		return nil, err
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		return nil, err
+	}
+	runtimeIdentity, err := fileHash(executable)
+	if err != nil {
+		return nil, err
+	}
+	candidateIdentity, err := hashJSON(map[string]string{"head_commit": snapshot.HeadCommit})
+	if err != nil {
+		return nil, err
+	}
+	return map[string]string{
+		"repository": snapshot.WorkingTreeHash,
+		"candidate":  candidateIdentity,
+		"config":     configIdentity,
+		"runtime":    runtimeIdentity,
+	}, nil
 }
 
 func (runtime *Runtime) RequestReview(reason string) (*ReviewRequest, error) {
@@ -394,6 +606,11 @@ func (runtime *Runtime) ReconcileAuthority() (*ReviewRequest, error) {
 }
 
 func (runtime *Runtime) requestReviewLocked(state *State, kind, reason string) (*ReviewRequest, error) {
+	if state.Review.Required {
+		if err := runtime.archiveSupersededReviewLocked(state); err != nil {
+			return nil, err
+		}
+	}
 	snapshot, err := runtime.repositorySnapshot()
 	if err != nil {
 		return nil, err
@@ -461,6 +678,30 @@ func (runtime *Runtime) requestReviewLocked(state *State, kind, reason string) (
 		return nil, err
 	}
 	return request, nil
+}
+
+func (runtime *Runtime) archiveSupersededReviewLocked(state *State) error {
+	if !state.Review.Required || state.Review.ReviewID == nil {
+		return nil
+	}
+	data, err := os.ReadFile(runtime.requestPath())
+	if err != nil {
+		return fmt.Errorf("pending review request cannot be preserved: %w", err)
+	}
+	directory := filepath.Join(runtime.reviewsDir(), "superseded")
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		return err
+	}
+	destination := filepath.Join(directory, *state.Review.ReviewID+".json")
+	if _, err := os.Stat(destination); errors.Is(err, os.ErrNotExist) {
+		if err := atomicWrite(destination, data); err != nil {
+			return err
+		}
+		return runtime.appendEvent("review_superseded", state.RunID, "preserved a stale review before creating its current-snapshot replacement", map[string]any{"review_id": *state.Review.ReviewID})
+	} else if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (runtime *Runtime) loadRequest() (*ReviewRequest, error) {
@@ -842,6 +1083,14 @@ func normalizeFailureSignature(value string) string {
 		value = value[:240]
 	}
 	return value
+}
+
+func reusableResultIDs(results []ReusableResult) []string {
+	ids := make([]string, 0, len(results))
+	for _, result := range results {
+		ids = append(ids, result.ResultID)
+	}
+	return normalizeStrings(ids)
 }
 
 func stringPointer(value string) *string { return &value }

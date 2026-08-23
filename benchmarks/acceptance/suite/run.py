@@ -30,6 +30,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--isolation-dir", type=Path)
     parser.add_argument("--config", type=Path)
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--scope")
     return parser.parse_args()
 
 
@@ -76,7 +77,8 @@ def main() -> None:
     if args.mode == "init":
         if args.binding is None:
             raise lifecycle.LifecycleError("init 需要 --binding")
-        value = json.loads(args.binding.read_text(encoding="utf-8"))
+        import binding
+        value = binding.load_active_binding(args.binding)
         lifecycle.save_state(args.state, lifecycle.new_state(contract, value))
         print(json.dumps({"initialized": True, "state": str(args.state)}, ensure_ascii=False))
         return
@@ -89,9 +91,16 @@ def main() -> None:
         print(json.dumps(result, ensure_ascii=False))
         return
     if args.mode == "rebind":
-        if args.binding is None:
-            raise lifecycle.LifecycleError("rebind 需要 --binding")
-        value = json.loads(args.binding.read_text(encoding="utf-8"))
+        import binding
+        if args.scope is not None:
+            if args.config is None:
+                raise lifecycle.LifecycleError("scope rebind 需要 --config")
+            config = binding.load_json(args.config)
+            value = binding.rebind_scope(HERE, args.config, Path(config["binding_dir"]), args.scope)
+        else:
+            if args.binding is None:
+                raise lifecycle.LifecycleError("rebind 需要 --binding，scope rebind 需要 --scope 与 --config")
+            value = binding.load_active_binding(args.binding)
         removed = lifecycle.rebind(contract, state, value)
         lifecycle.save_state(args.state, state)
         print(json.dumps({"removed": removed, "baseline_preserved": state.get("baseline") is not None}, ensure_ascii=False))

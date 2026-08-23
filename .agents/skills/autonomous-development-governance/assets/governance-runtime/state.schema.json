@@ -156,7 +156,9 @@
         "started_at",
         "last_evidence_at",
         "checkpoint",
-        "failure_signatures"
+        "failure_signatures",
+        "failure_events",
+        "failure_repairs"
       ],
       "properties": {
         "packet_id": { "$ref": "#/$defs/nonEmptyString" },
@@ -172,7 +174,53 @@
         "started_at": { "$ref": "#/$defs/nonEmptyString" },
         "last_evidence_at": { "type": ["string", "null"] },
         "checkpoint": { "type": ["string", "null"] },
-        "failure_signatures": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" }, "uniqueItems": true }
+        "failure_signatures": { "type": "array", "maxItems": 0 },
+        "failure_events": { "type": "array", "items": { "$ref": "#/$defs/failureEvent" } },
+        "failure_repairs": { "type": "array", "items": { "$ref": "#/$defs/failureRepair" } }
+      }
+    },
+    "failureEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event_id", "signature", "work_packet_id", "source_kind", "source_execution", "tool_use_id", "repair_generation", "evidence_hash", "trust", "occurred_at"],
+      "properties": {
+        "event_id": { "$ref": "#/$defs/nonEmptyString" },
+        "signature": { "$ref": "#/$defs/nonEmptyString" },
+        "work_packet_id": { "$ref": "#/$defs/nonEmptyString" },
+        "source_kind": { "enum": ["codex_hook", "governed_run", "legacy"] },
+        "source_execution": { "$ref": "#/$defs/nonEmptyString" },
+        "tool_use_id": { "$ref": "#/$defs/nonEmptyString" },
+        "repair_generation": { "type": "integer", "minimum": 0 },
+        "evidence_hash": { "$ref": "#/$defs/hash" },
+        "known_evidence_ids": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/nonEmptyString" } },
+        "repository_identity": { "$ref": "#/$defs/hash" },
+        "candidate_identity": { "$ref": "#/$defs/hash" },
+        "config_identity": { "$ref": "#/$defs/hash" },
+        "runtime_identity": { "$ref": "#/$defs/hash" },
+        "trust": { "enum": ["verified", "legacy_unverified"] },
+        "occurred_at": { "type": "string", "format": "date-time" }
+      },
+      "allOf": [{
+        "if": { "properties": { "trust": { "const": "verified" } } },
+        "then": { "required": ["known_evidence_ids", "repository_identity", "candidate_identity", "config_identity", "runtime_identity"] }
+      }]
+    },
+    "failureRepair": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repair_id", "signature", "previous_event_id", "work_packet_id", "repair_generation", "repository_identity", "candidate_identity", "config_identity", "runtime_identity", "evidence_ids", "recorded_at"],
+      "properties": {
+        "repair_id": { "$ref": "#/$defs/nonEmptyString" },
+        "signature": { "$ref": "#/$defs/nonEmptyString" },
+        "previous_event_id": { "$ref": "#/$defs/nonEmptyString" },
+        "work_packet_id": { "$ref": "#/$defs/nonEmptyString" },
+        "repair_generation": { "type": "integer", "minimum": 1 },
+        "repository_identity": { "$ref": "#/$defs/hash" },
+        "candidate_identity": { "$ref": "#/$defs/hash" },
+        "config_identity": { "$ref": "#/$defs/hash" },
+        "runtime_identity": { "$ref": "#/$defs/hash" },
+        "evidence_ids": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/nonEmptyString" } },
+        "recorded_at": { "type": "string", "format": "date-time" }
       }
     },
     "interventionResolution": {

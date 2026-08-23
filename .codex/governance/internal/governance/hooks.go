@@ -267,9 +267,22 @@ func (runtime *Runtime) hookPostToolUse(input HookInput, writer io.Writer) error
 		}
 		return writeJSON(writer, map[string]any{"decision": "block", "reason": "Governor infrastructure failed once and is now latched. Product writes remain closed; automatic retries and Stop continuation are disabled for this runtime identity."})
 	}
-	request, err := runtime.RecordFailure(signature)
-	if err != nil {
+	if strings.TrimSpace(input.ToolUseID) == "" {
 		return writeJSON(writer, map[string]any{})
+	}
+	evidenceHash := sha256Value(bytes.TrimSpace(input.ToolResponse))
+	sourceExecution := strings.TrimSpace(input.SessionID) + ":" + strings.TrimSpace(input.TurnID)
+	request, err := runtime.RecordFailureEvent(FailureEventInput{
+		Signature: signature, SourceKind: "codex_hook", SourceExecution: sourceExecution,
+		ToolUseID: input.ToolUseID, EvidenceHash: evidenceHash,
+	})
+	if err != nil {
+		escalationErr := runtime.ensureFailureRecordingReview()
+		reason := "A real tool failure could not be recorded as a verified governance event; product work is blocked for an integrity review: " + err.Error()
+		if escalationErr != nil {
+			reason += "; the review request also failed: " + escalationErr.Error()
+		}
+		return writeJSON(writer, map[string]any{"decision": "block", "reason": reason})
 	}
 	if request != nil {
 		return writeJSON(writer, map[string]any{"decision": "block", "reason": "Repeated failure requires Governor review. " + runtime.requestLocation()})
@@ -465,7 +478,7 @@ func containsCommandFlag(arguments []string, names ...string) bool {
 
 func isExactGovernanceControl(command string) bool {
 	action, ok := governanceControlAction(command)
-	return ok && stringIn(action, []string{"status", "accept-review", "apply-review", "request-review", "resolve-intervention", "record-evidence", "record-failure", "propose-work-packet", "close-work-packet", "finish", "doctor", "prepare-handoff", "bind-handoff", "cancel-handoff", "repair-stage", "repair-apply"})
+	return ok && stringIn(action, []string{"status", "accept-review", "apply-review", "request-review", "resolve-intervention", "record-evidence", "record-repair", "propose-work-packet", "close-work-packet", "finish", "doctor", "prepare-handoff", "bind-handoff", "cancel-handoff", "repair-stage", "repair-apply"})
 }
 
 func isExactInfrastructureRecoveryControl(command string) bool {
