@@ -189,3 +189,10 @@
 - **结论**：R-000026 的冲突通过重划证据职责解决：固定集硬性验证资产、语义协作完成、检索和历史回归，其单一关系标签与语义耗时只作诊断；动态未见按统一关系定义与方向生成真值，经独立歧义验证后，以关系准确率和覆盖率承担开放组织质量证明。Ownward 操作时延继续硬性验收，外部语义耗时与成本如实记录并受异常停止约束，不采用无依据的 15 秒门槛。
 - **影响**：正式验收不得针对固定主观标签调内容规则，也不得把外部智能推理时间伪装成内核时延；动态关系质量门槛、检索前沿和产品标准保持不变。
 - **证据**：`benchmarks/acceptance/fixed/verify.py`、`benchmarks/acceptance/dynamic/protocol.json`、`benchmarks/acceptance/dynamic/common.py`、`benchmarks/final_acceptance/verify.py`
+
+## R-000028｜关键问题｜产品资格执行产生两类工具假失败
+
+- **时间**：2026-08-24 12:11（Asia/Shanghai）
+- **结论**：旧适配器将未预热的首次查询按 600 毫秒热查询门槛判定，并在语义提交已正确绑定且产品终态为 `ready` 时因 Codex 未及时写出结构化结果误判超时。修复后仍以四路并发执行硬查询，但先独立预热；语义超时仅在事件绑定与产品终态同时成立时恢复。
+- **影响**：本次只改变验收工具；候选 `38ca955` 及 core/frontier 证据保留，旧 product 绑定仅供审计，正式 product 证据必须重绑后重新取得。
+- **证据**：`.codex/governance/runtime/evidence/product-recovery-diagnostic-v1.json`、`benchmarks/acceptance/suite/adapters/product/verify.py`

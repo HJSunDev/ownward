@@ -151,6 +151,11 @@ def rebind_scope(suite_root: Path, config_path: Path, output_dir: Path, scope: s
         for kind in ("environment", "inputs", "tools"):
             filename = f"{name}-{kind}.json"
             manifest_values[filename] = load_json(active_dir / filename)
+    if active_dir == output_dir:
+        # 旧版根目录清单可能使用平台换行，摘要绑定的是原始字节；必须逐字节固化，
+        # 不能重新序列化。后续资源复核仍需按旧工具摘要找到真实测量依赖。
+        _preserve_legacy_generation(output_dir, previous)
+        active_dir = _active_generation_dir(output_dir)
     replacement = {
         "environment": _environment_manifest(config, scope),
         "inputs": _input_manifest(suite_root, config, scope),
@@ -166,7 +171,12 @@ def rebind_scope(suite_root: Path, config_path: Path, output_dir: Path, scope: s
     }
     result = {"schema": "ownward.acceptance-binding/v4", "suite_version": previous["suite_version"], "candidate": candidate, "scopes": scopes}
     validate_binding(result)
-    _activate_generation(output_dir, result, manifest_values)
+    preserved_sources = {
+        filename: active_dir / filename
+        for filename in manifest_values
+        if not filename.startswith(f"{scope}-")
+    }
+    _activate_generation(output_dir, result, manifest_values, raw_sources=preserved_sources)
     return result
 
 
@@ -193,19 +203,33 @@ def _active_generation_dir(binding_dir: Path) -> Path:
     return root
 
 
-def _activate_generation(output_dir: Path, binding: dict[str, Any], manifests: dict[str, dict[str, Any]]) -> None:
+def _activate_generation(
+    output_dir: Path,
+    binding: dict[str, Any],
+    manifests: dict[str, dict[str, Any]],
+    *,
+    raw_sources: dict[str, Path] | None = None,
+) -> None:
     generation = _canonical_sha256({"binding": binding, "manifests": manifests})[:24]
     generations = output_dir / "generations"
     generations.mkdir(parents=True, exist_ok=True)
     destination = generations / generation
     if not destination.exists():
         temporary = generations / f".tmp-{os.getpid()}-{time.time_ns()}"
-        temporary.mkdir()
-        _write_json(temporary / "binding.json", binding)
-        for filename, value in manifests.items():
-            _write_json(temporary / filename, value)
-        _require(load_json(temporary / "binding.json") == binding, "新绑定代次自检失败")
-        temporary.replace(destination)
+        try:
+            temporary.mkdir()
+            _write_json(temporary / "binding.json", binding)
+            for filename, value in manifests.items():
+                source = (raw_sources or {}).get(filename)
+                if source is None:
+                    _write_json(temporary / filename, value)
+                else:
+                    _copy_exact(source, temporary / filename)
+            _validate_generation(temporary, expected_binding=binding, expected_manifests=manifests)
+            temporary.replace(destination)
+        finally:
+            if temporary.exists():
+                shutil.rmtree(temporary)
     _validate_generation(destination, expected_binding=binding, expected_manifests=manifests)
     active = {"schema": "ownward.acceptance-binding-active/v1", "generation": generation, "binding_sha256": sha256(destination / "binding.json")}
     _write_json(output_dir / "active.json", active)
@@ -213,6 +237,40 @@ def _activate_generation(output_dir: Path, binding: dict[str, Any], manifests: d
     _write_json(output_dir / "binding.json", binding)
     for filename, value in manifests.items():
         _write_json(output_dir / filename, value)
+
+
+def _preserve_legacy_generation(output_dir: Path, binding: dict[str, Any]) -> None:
+    filenames = ["binding.json"] + [
+        f"{scope}-{kind}.json"
+        for scope in binding["scopes"]
+        for kind in ("environment", "inputs", "tools")
+    ]
+    hashes = {filename: sha256(output_dir / filename) for filename in filenames}
+    generation = _canonical_sha256({"schema": "ownward.acceptance-legacy-binding-files/v1", "files": hashes})[:24]
+    generations = output_dir / "generations"
+    generations.mkdir(parents=True, exist_ok=True)
+    destination = generations / generation
+    if not destination.exists():
+        temporary = generations / f".tmp-{os.getpid()}-{time.time_ns()}"
+        try:
+            temporary.mkdir()
+            for filename in filenames:
+                _copy_exact(output_dir / filename, temporary / filename)
+            _validate_generation(temporary, expected_binding=binding)
+            temporary.replace(destination)
+        finally:
+            if temporary.exists():
+                shutil.rmtree(temporary)
+    _validate_generation(destination, expected_binding=binding)
+    active = {"schema": "ownward.acceptance-binding-active/v1", "generation": generation, "binding_sha256": sha256(destination / "binding.json")}
+    _write_json(output_dir / "active.json", active)
+
+
+def _copy_exact(source: Path, target: Path) -> None:
+    with target.open("wb") as stream:
+        stream.write(source.read_bytes())
+        stream.flush()
+        os.fsync(stream.fileno())
 
 
 def _validate_generation(

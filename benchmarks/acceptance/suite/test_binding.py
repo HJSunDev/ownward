@@ -330,6 +330,88 @@ class BindingManifestTests(unittest.TestCase):
             self.assertNotEqual(old_active, active)
             self.assertEqual(replacement, json.loads((active / "product-tools.json").read_text(encoding="utf-8")))
 
+    def test_scope_rebind_preserves_a_legacy_root_binding_as_an_immutable_generation(self) -> None:
+        temporary_root = self.root.parents[2] / ".tmp"
+        temporary_root.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=temporary_root) as directory:
+            root = Path(directory)
+            output = root / "binding"
+            output.mkdir()
+            binary = root / "ownward.exe"
+            binary.write_bytes(b"candidate")
+            embedding = root / "embedding"
+            embedding.mkdir()
+            candidate = "a" * 40
+            manifests = {}
+            scopes = {}
+            for scope in ("frontier", "core", "product"):
+                values = {kind: {"scope": scope, "kind": kind, "version": 1} for kind in ("environment", "inputs", "tools")}
+                manifests.update({f"{scope}-{kind}.json": value for kind, value in values.items()})
+                scopes[scope] = {
+                    "environment_sha256": "0" * 64,
+                    "input_manifest_sha256": "0" * 64,
+                    "tool_sha256": "0" * 64,
+                    "artifact_sha256": "f" * 64,
+                }
+            for filename, value in manifests.items():
+                encoded = (json.dumps(value, ensure_ascii=False, indent=2) + "\n").replace("\n", "\r\n").encode("utf-8")
+                (output / filename).write_bytes(encoded)
+                scope, kind = filename.removesuffix(".json").split("-", 1)
+                field = {"environment": "environment_sha256", "inputs": "input_manifest_sha256", "tools": "tool_sha256"}[kind]
+                scopes[scope][field] = binding.sha256(output / filename)
+            previous = {"schema": "ownward.acceptance-binding/v4", "suite_version": "1.0.0", "candidate": candidate, "scopes": scopes}
+            legacy_binding = (json.dumps(previous, ensure_ascii=False, indent=2) + "\n").replace("\n", "\r\n").encode("utf-8")
+            (output / "binding.json").write_bytes(legacy_binding)
+            config = {
+                "schema": "ownward.acceptance-execution/v3", "repository": str(self.root.parents[2]),
+                "workspace": str(root / "workspace"), "binding_dir": str(output),
+                "enabled_scopes": ["frontier", "core", "product"],
+                "candidate": {"binary": str(binary), "embedding_bundle_dir": str(embedding)},
+                "frontier": {"tool": str(binary), "targeted_stages": []},
+                "product": {"package": str(root), "production_storage_report": str(binary), "codex_binary": str(binary), "codex_auth_file": str(binary), "codex_model": binding.ACTIVE_CODEX_MODEL, "codex_reasoning_effort": binding.ACTIVE_CODEX_REASONING_EFFORT},
+            }
+            config_path = self._write_config(root, config)
+            replacement = {"scope": "product", "kind": "tools", "version": 2}
+            old_product_sha = previous["scopes"]["product"]["tool_sha256"]
+            with (
+                patch.object(binding, "_git", return_value=""),
+                patch.object(binding, "_verify_go_binary"),
+                patch.object(binding.subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout=candidate + "\n")),
+                patch.object(binding, "_environment_manifest", return_value=manifests["product-environment.json"]),
+                patch.object(binding, "_input_manifest", return_value=manifests["product-inputs.json"]),
+                patch.object(binding, "_tool_manifest", return_value=replacement),
+                patch.object(binding, "_artifact_sha256", return_value="f" * 64),
+            ):
+                binding.rebind_scope(self.root, config_path, output, "product")
+            generations = list((output / "generations").iterdir())
+            self.assertEqual(2, len(generations))
+            legacy_tools = [path for path in output.rglob("product-tools.json") if binding.sha256(path) == old_product_sha]
+            self.assertEqual(1, len(legacy_tools))
+            self.assertIn(b"\r\n", legacy_tools[0].read_bytes())
+            self.assertEqual(manifests["product-tools.json"], json.loads(legacy_tools[0].read_text(encoding="utf-8")))
+            self.assertEqual(replacement, json.loads((binding._active_generation_dir(output) / "product-tools.json").read_text(encoding="utf-8")))
+
+    def test_invalid_generation_is_not_published(self) -> None:
+        temporary_root = self.root.parents[2] / ".tmp"
+        temporary_root.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=temporary_root) as directory:
+            output = Path(directory) / "binding"
+            manifests = {
+                "frontier-environment.json": {"kind": "environment"},
+                "frontier-inputs.json": {"kind": "inputs"},
+                "frontier-tools.json": {"kind": "tools"},
+            }
+            scope = {
+                "environment_sha256": "f" * 64,
+                "input_manifest_sha256": "f" * 64,
+                "tool_sha256": "f" * 64,
+                "artifact_sha256": "f" * 64,
+            }
+            value = {"schema": "ownward.acceptance-binding/v4", "suite_version": "1.0.0", "candidate": "a" * 40, "scopes": {"frontier": scope}}
+            with self.assertRaisesRegex(binding.BindingError, "摘要不一致"):
+                binding._activate_generation(output, value, manifests)
+            self.assertEqual([], list((output / "generations").iterdir()))
+
     def test_active_generation_rejects_a_tampered_manifest(self) -> None:
         temporary_root = self.root.parents[2] / ".tmp"
         temporary_root.mkdir(exist_ok=True)

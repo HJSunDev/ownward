@@ -33,6 +33,27 @@ def _json_sha256(value: Any) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _activate_workspace_binding(workspace: Path, current: dict[str, Any], *, resume: bool) -> Path:
+    binding_path = workspace / "binding.json"
+    if not binding_path.is_file():
+        _write_json(binding_path, current)
+        return binding_path
+    previous = load_json(binding_path)
+    require(isinstance(previous, dict), "专项工作区旧绑定无效")
+    if previous == current:
+        return binding_path
+    require(resume, "专项工作区绑定已变化；使用 --resume 恢复同一候选")
+    for name in ("suite_version", "candidate", "binary_sha256"):
+        require(previous.get(name) == current.get(name), "专项工作区绑定另一候选或二进制")
+    archive = workspace / "evidence" / "product" / "_audit" / "workspace-bindings" / f"{_json_sha256(previous)}.json"
+    if archive.is_file():
+        require(load_json(archive) == previous, "专项工作区旧绑定归档发生变化")
+    else:
+        _write_json(archive, previous)
+    _write_json(binding_path, current)
+    return binding_path
+
+
 def _product_command(
     suite_root: Path, state: dict[str, Any], config: dict[str, Any], tasks_path: Path,
     binding_path: Path, resource: Path, evidence: Path, output: Path, maximum: float,
@@ -52,6 +73,8 @@ def _product_command(
 def _ensure_product_preflight(
     suite_root: Path, state: dict[str, Any], config: dict[str, Any], workspace: Path,
     tasks: dict[str, Any], tasks_path: Path, binding_path: Path, resource: Path, deadline: float,
+    *,
+    resume: bool,
 ) -> None:
     root = workspace / "evidence" / "product-preflight"
     report_path = root / "report.json"
@@ -69,7 +92,14 @@ def _ensure_product_preflight(
         if actual == expected and report.get("passed") is True:
             _require_product_preflight_budget(report, deadline)
             return
-        safe_remove(root, workspace / "evidence")
+        require(resume, "专项执行预检未通过或绑定已变化；使用 --resume 保留现场后恢复")
+        archive = root / "_audit" / "reports" / f"{_json_sha256(report)}.json"
+        if archive.is_file():
+            require(load_json(archive) == report, "专项执行预检旧报告归档发生变化")
+        else:
+            _write_json(archive, report)
+    elif root.exists():
+        require(resume, "专项执行预检未完成；使用 --resume 恢复")
     maximum = min(420.0, deadline - time.perf_counter())
     require(maximum > 0, "专项执行预检没有剩余成本预算")
     command = _product_command(
@@ -77,6 +107,8 @@ def _ensure_product_preflight(
         root / "scenarios", root / "unused-results.json", maximum,
     )
     command.extend(["--preflight-only", "--preflight-output", str(report_path)])
+    if resume:
+        command.append("--resume")
     run(command, cwd=suite_root.parents[2], timeout=maximum)
     report = load_json(report_path)
     require(report.get("passed") is True, "专项执行预检未证明资格集能在三十分钟内完成")
@@ -295,13 +327,12 @@ def execute_product(
         require(load_json(tasks_path) == tasks, "冻结专项任务发生变化")
     else:
         tasks_path.write_text(json.dumps(tasks, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    binding_path = workspace / "binding.json"
-    if not binding_path.is_file():
-        binding_path.write_text(json.dumps(state["binding"], ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    else:
-        require(load_json(binding_path) == state["binding"], "专项工作区绑定另一候选")
+    binding_path = _activate_workspace_binding(workspace, state["binding"], resume=resume)
     if mode == "qualification":
-        _ensure_product_preflight(suite_root, state, config, workspace, tasks, tasks_path, binding_path, resource, deadline)
+        _ensure_product_preflight(
+            suite_root, state, config, workspace, tasks, tasks_path, binding_path, resource, deadline,
+            resume=resume,
+        )
     results_path = workspace / "evidence" / "product" / "results" / f"{mode}.json"
     evidence = workspace / "evidence" / "product" / "scenarios"
     maximum = deadline - time.perf_counter()

@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import argparse
+import copy
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import importlib.util
 import json
@@ -38,6 +40,18 @@ codex_session = _load_module("ownward_suite_codex_session", HERE / "codex_sessio
 resource = _load_module("ownward_suite_resource", SUITE / "adapters" / "product_resource" / "verify.py")
 support = _load_module("ownward_suite_mcp_support", REPOSITORY / "benchmarks" / "support" / "ownward_mcp.py")
 process_control = _load_module("ownward_suite_process_control", SUITE / "process_control.py")
+
+SCENARIO_WORKERS = 4
+PREFLIGHT_SAFETY_FACTOR = 1.25
+PREFLIGHT_MAXIMUM_WALL_SECONDS = 1800.0
+PREFLIGHT_REQUIRED_MARGIN_SECONDS = 300.0
+
+
+class CodexStageTimeout(RuntimeError):
+    def __init__(self, message: str, trace: Any, elapsed_seconds: float) -> None:
+        super().__init__(message)
+        self.trace = trace
+        self.elapsed_seconds = elapsed_seconds
 
 
 def sha256(path: Path) -> str:
@@ -157,9 +171,13 @@ def _run_codex(
                 stderr_path=stage / "stderr.txt",
             )
         except process_control.ProcessTimeout as error:
+            elapsed = time.perf_counter() - started
             detail = error.stderr[-1000:].strip()
             message = "Codex stage exceeded its wall-clock budget and its process tree was stopped"
-            raise RuntimeError(f"{message}: {detail}" if detail else message) from error
+            trace = codex_session.load_exec_events(error.stdout)
+            if output.is_file():
+                return load_json(output), trace, elapsed
+            raise CodexStageTimeout(f"{message}: {detail}" if detail else message, trace, elapsed) from error
         elapsed = time.perf_counter() - started
     except Exception:
         failed = True
@@ -224,10 +242,20 @@ SEMANTIC_SCHEMA = {
 ANSWER_SCHEMA = {
     "type": "object", "additionalProperties": False, "required": ["information_ids", "answer_facts"],
     "properties": {
-        "information_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": True},
-        "answer_facts": {"type": "array", "items": {"type": "string"}, "uniqueItems": True},
+        "information_ids": {"type": "array", "items": {"type": "string"}},
+        "answer_facts": {"type": "array", "items": {"type": "string"}},
     },
 }
+
+
+def _validated_answer(answer: dict[str, Any]) -> tuple[list[str], list[str]]:
+    information_ids = answer.get("information_ids")
+    facts = answer.get("answer_facts")
+    require(isinstance(information_ids, list) and all(isinstance(value, str) for value in information_ids), "query agent returned invalid information IDs")
+    require(isinstance(facts, list) and all(isinstance(value, str) for value in facts), "query agent returned invalid answer facts")
+    require(len(information_ids) == len(set(information_ids)), "query agent returned duplicate information IDs")
+    require(len(facts) == len(set(facts)), "query agent returned duplicate answer facts")
+    return information_ids, facts
 
 
 def _strings(value: Any) -> list[str]:
@@ -286,7 +314,10 @@ def _tree_manifest(root: Path) -> list[dict[str, Any]]:
         return []
     return [
         {"path": path.relative_to(root).as_posix(), "size": path.stat().st_size, "sha256": sha256(path)}
-        for path in sorted(item for item in root.rglob("*") if item.is_file() and not item.is_symlink())
+        for path in sorted(
+            item for item in root.rglob("*")
+            if item.is_file() and not item.is_symlink() and item.name != ".ownward.lock"
+        )
     ]
 
 
@@ -316,10 +347,11 @@ def _progress_evidence_complete(progress: dict[str, Any]) -> bool:
         if not (parent.startswith("semantic-initial/") or parent.startswith("semantic-update/")) or "/attempt-" not in parent:
             return False
         groups.setdefault(parent, set()).add(path.name)
-    return len(groups) == len(completed) and all(
-        names == {"output.json", "events.jsonl", "stderr.txt"}
-        for names in groups.values()
+    complete_attempts = (
+        {"output.json", "events.jsonl", "stderr.txt"},
+        {"terminal.json", "events.jsonl", "stderr.txt"},
     )
+    return len(groups) == len(completed) and all(names in complete_attempts for names in groups.values())
 
 
 def _scenario_evidence_files(has_updates: bool) -> tuple[str, ...]:
@@ -339,34 +371,109 @@ def _scenario_evidence(scenario_root: Path, has_updates: bool) -> dict[str, str]
     return result
 
 
+def _agent_checkpoint_valid(checkpoint: dict[str, Any], scenario_root: Path, binding: dict[str, Any]) -> bool:
+    try:
+        require(
+            checkpoint.get("schema") in {
+                "ownward.product-scenario-checkpoint/v2",
+                "ownward.product-scenario-agent-checkpoint/v1",
+            },
+            "scenario agent checkpoint schema is invalid",
+        )
+        require(checkpoint.get("binding") == binding and isinstance(checkpoint.get("result"), dict), "scenario agent checkpoint binding is invalid")
+        evidence = checkpoint.get("evidence")
+        require(isinstance(evidence, dict), "scenario agent raw evidence is invalid")
+        progress_path = scenario_root / "progress.json"
+        require(progress_path.is_file() and sha256(progress_path) == checkpoint.get("progress_sha256"), "scenario progress checkpoint changed")
+        progress = load_json(progress_path)
+        progress_evidence = progress.get("evidence")
+        require(isinstance(progress_evidence, dict) and _progress_evidence_complete(progress), "scenario progress evidence is incomplete")
+        require(all(evidence.get(path) == digest for path, digest in progress_evidence.items()), "scenario checkpoint omits committed semantic evidence")
+        query_evidence = {path: digest for path, digest in evidence.items() if path not in progress_evidence}
+        query_parents = {Path(path).parent.as_posix() for path in query_evidence}
+        query_names = {Path(path).name for path in query_evidence}
+        require(
+            len(query_parents) == 1
+            and next(iter(query_parents)).startswith("query/attempt-")
+            and query_names == {"output.json", "events.jsonl", "stderr.txt"},
+            "scenario checkpoint lacks one complete query evidence attempt",
+        )
+        require(_evidence_valid(scenario_root, evidence), "scenario raw evidence changed")
+    except RuntimeError:
+        return False
+    return True
+
+
+def _direct_measurement_valid(
+    measurement: dict[str, Any], binding: dict[str, Any], progress: dict[str, Any], agent_sha: str,
+) -> bool:
+    try:
+        require(measurement.get("schema") == "ownward.product-direct-measurement/v1", "direct measurement schema is invalid")
+        require(measurement.get("binding") == binding, "direct measurement binding is invalid")
+        require(measurement.get("progress_sha256") == json_sha256(progress), "direct measurement progress binding changed")
+        require(measurement.get("agent_checkpoint_sha256") == agent_sha, "direct measurement agent binding changed")
+        require(measurement.get("data_tree_sha256") == progress.get("data_tree_sha256"), "direct measurement data binding changed")
+        require(isinstance(measurement.get("question_sha256"), str) and len(measurement["question_sha256"]) == 64, "direct measurement query binding is invalid")
+        for name in ("warmup_ms", "latency_ms", "stage_ms", "sampled_peak_mib"):
+            require(isinstance(measurement.get(name), (int, float)) and float(measurement[name]) >= 0, f"direct measurement {name} is invalid")
+        limit = measurement.get("query_limit_ms")
+        require(isinstance(limit, (int, float)) and float(limit) > 0, "direct measurement latency limit is invalid")
+        decision = measurement.get("within_latency_budget")
+        require(isinstance(decision, bool) and decision == (float(measurement["latency_ms"]) <= float(limit)), "direct measurement latency decision is inconsistent")
+        direct = measurement.get("direct_result")
+        values = direct.get("results") if isinstance(direct, dict) else None
+        require(isinstance(values, list), "direct measurement result is invalid")
+        stable_by_node = progress.get("stable_by_node")
+        require(isinstance(stable_by_node, dict), "scenario progress has no stable identity map")
+        reverse = {str(stable): str(node) for node, stable in stable_by_node.items()}
+        direct_ids = [reverse[str(item.get("id", ""))] for item in values if isinstance(item, dict) and str(item.get("id", "")) in reverse]
+        expected = list(dict.fromkeys(direct_ids))
+        require(measurement.get("direct_ids") == expected, "direct measurement IDs do not match its raw result")
+    except RuntimeError:
+        return False
+    return True
+
+
+def _merge_direct_result(agent_result: dict[str, Any], measurement: dict[str, Any]) -> dict[str, Any]:
+    result = dict(agent_result)
+    result.update({
+        "direct_ids": list(measurement["direct_ids"]),
+        "latency_ms": float(measurement["latency_ms"]),
+        "direct_stage_ms": float(measurement["stage_ms"]),
+        "peak_mib": max(float(result.get("peak_mib", 0)), float(measurement["sampled_peak_mib"])),
+        "within_latency_budget": bool(measurement["within_latency_budget"]),
+    })
+    result["end_to_end_ms"] = float(agent_result.get("end_to_end_ms", 0)) + float(measurement["stage_ms"])
+    return result
+
+
 def _sealed_scenario_valid(
     sealed: dict[str, Any], scenario_root: Path, binding: dict[str, Any], has_updates: bool
 ) -> bool:
     try:
         schema = sealed.get("schema")
-        require(schema in {"ownward.product-scenario-checkpoint/v1", "ownward.product-scenario-checkpoint/v2"}, "scenario checkpoint schema is invalid")
+        require(schema in {"ownward.product-scenario-checkpoint/v1", "ownward.product-scenario-checkpoint/v2", "ownward.product-scenario-checkpoint/v3"}, "scenario checkpoint schema is invalid")
         require(sealed.get("binding") == binding and isinstance(sealed.get("result"), dict), "scenario checkpoint binding is invalid")
-        evidence = sealed.get("evidence")
-        require(isinstance(evidence, dict), "scenario raw evidence is invalid")
         if schema == "ownward.product-scenario-checkpoint/v1":
+            evidence = sealed.get("evidence")
+            require(isinstance(evidence, dict), "scenario raw evidence is invalid")
             require(evidence == _scenario_evidence(scenario_root, has_updates), "legacy scenario raw evidence is incomplete or changed")
+            require(_evidence_valid(scenario_root, evidence), "scenario raw evidence changed")
+        elif schema == "ownward.product-scenario-checkpoint/v2":
+            require(_agent_checkpoint_valid(sealed, scenario_root, binding), "scenario checkpoint evidence is invalid")
         else:
-            progress_path = scenario_root / "progress.json"
-            require(progress_path.is_file() and sha256(progress_path) == sealed.get("progress_sha256"), "scenario progress checkpoint changed")
-            progress = load_json(progress_path)
-            progress_evidence = progress.get("evidence")
-            require(isinstance(progress_evidence, dict) and _progress_evidence_complete(progress), "scenario progress evidence is incomplete")
-            require(all(evidence.get(path) == digest for path, digest in progress_evidence.items()), "scenario checkpoint omits committed semantic evidence")
-            query_evidence = {path: digest for path, digest in evidence.items() if path not in progress_evidence}
-            query_parents = {Path(path).parent.as_posix() for path in query_evidence}
-            query_names = {Path(path).name for path in query_evidence}
-            require(
-                len(query_parents) == 1
-                and next(iter(query_parents)).startswith("query/attempt-")
-                and query_names == {"output.json", "events.jsonl", "stderr.txt"},
-                "scenario checkpoint lacks one complete query evidence attempt",
-            )
-        require(_evidence_valid(scenario_root, evidence), "scenario raw evidence changed")
+            agent_path = scenario_root / "agent-result.json"
+            require(agent_path.is_file() and sha256(agent_path) == sealed.get("agent_checkpoint_sha256"), "scenario agent checkpoint changed")
+            agent = load_json(agent_path)
+            require(_agent_checkpoint_valid(agent, scenario_root, binding), "scenario agent checkpoint is invalid")
+            relative = Path(str(sealed.get("direct_evidence_path", "")))
+            require(not relative.is_absolute() and ".." not in relative.parts, "scenario direct evidence path is invalid")
+            direct_path = scenario_root / relative
+            require(direct_path.is_file() and sha256(direct_path) == sealed.get("direct_evidence_sha256"), "scenario direct evidence changed")
+            progress = load_json(scenario_root / "progress.json")
+            measurement = load_json(direct_path)
+            require(_direct_measurement_valid(measurement, binding, progress, sha256(agent_path)), "scenario direct evidence is invalid")
+            require(sealed["result"] == _merge_direct_result(agent["result"], measurement), "scenario result differs from its checkpoints")
     except RuntimeError:
         return False
     return True
@@ -392,7 +499,7 @@ def _begin_rollback(scenario_root: Path, progress: dict[str, Any], unit: str) ->
     require(not rollback_root.exists(), "a previous scenario mutation still has an unresolved rollback point")
     rollback_root.mkdir(parents=True)
     before = _tree_manifest(data_dir)
-    shutil.copytree(data_dir, rollback_root / "data")
+    shutil.copytree(data_dir, rollback_root / "data", ignore=shutil.ignore_patterns(".ownward.lock"))
     after = _tree_manifest(data_dir)
     copied = _tree_manifest(rollback_root / "data")
     require(before == after == copied, "scenario data changed while creating its rollback point")
@@ -439,7 +546,7 @@ def _next_attempt(stage_root: Path) -> Path:
 
 def _relative_evidence(scenario_root: Path, stage: Path) -> dict[str, str]:
     evidence: dict[str, str] = {}
-    for name in ("output.json", "events.jsonl", "stderr.txt"):
+    for name in ("output.json", "terminal.json", "events.jsonl", "stderr.txt"):
         path = stage / name
         if path.is_file():
             evidence[path.relative_to(scenario_root).as_posix()] = sha256(path)
@@ -447,9 +554,19 @@ def _relative_evidence(scenario_root: Path, stage: Path) -> dict[str, str]:
 
 
 def _semantic_trace_identity(trace: Any, asset_id: str, revision: int) -> dict[str, Any]:
-    work_calls = [call for call in trace.calls if call.name == "ownward_semantic_work" and not call.error]
-    submit_calls = [call for call in trace.calls if call.name == "ownward_semantic_submit" and not call.error]
-    require(len(work_calls) == 1 and submit_calls, "semantic attempt lacks a single work call and a successful submit")
+    require(
+        all(call.name in {"ownward_semantic_work", "ownward_semantic_submit"} for call in trace.calls),
+        "semantic capability used an invalid path",
+    )
+    work_calls = [call for call in trace.calls if call.name == "ownward_semantic_work"]
+    submit_calls = [call for call in trace.calls if call.name == "ownward_semantic_submit"]
+    require(len(work_calls) == 1 and not work_calls[0].error, "semantic attempt lacks one successful work call")
+    require(
+        1 <= len(submit_calls) <= 3
+        and not submit_calls[-1].error
+        and all(call.error for call in submit_calls[:-1]),
+        "semantic attempt did not end with one successful submit after at most two rejected submissions",
+    )
     work_items = work_calls[0].result.get("work") if isinstance(work_calls[0].result, dict) else None
     require(isinstance(work_items, list) and len(work_items) == 1, "semantic work did not return exactly one item")
     work = work_items[0]
@@ -479,30 +596,42 @@ def _complete_semantic_unit(
     remaining = deadline - time.monotonic()
     require(remaining > 0, "product execution exceeded its total budget")
     stage = _next_attempt(stage_root)
-    semantic, semantic_trace, elapsed = _run_codex(
-        args,
-        stage=stage,
-        prompt=_semantic_prompt(asset_id, args),
-        schema=SEMANTIC_SCHEMA,
-        endpoint=runtime.binding.endpoint,
-        bearer_token=runtime.binding.bearer_token,
-        timeout_seconds=min(args.stage_timeout, remaining),
-    )
-    require(int(semantic.get("processed", -1)) == 1, "semantic capability did not process exactly one asset")
+    recovered_timeout = False
+    try:
+        semantic, semantic_trace, elapsed = _run_codex(
+            args,
+            stage=stage,
+            prompt=_semantic_prompt(asset_id, args),
+            schema=SEMANTIC_SCHEMA,
+            endpoint=runtime.binding.endpoint,
+            bearer_token=runtime.binding.bearer_token,
+            timeout_seconds=min(args.stage_timeout, remaining),
+        )
+    except CodexStageTimeout as error:
+        semantic = None
+        semantic_trace = error.trace
+        elapsed = error.elapsed_seconds
+        recovered_timeout = True
+    if semantic is not None:
+        require(int(semantic.get("processed", -1)) == 1, "semantic capability did not process exactly one asset")
     require(not semantic_trace.bypassed and semantic_trace.calls, "semantic capability bypassed Ownward")
-    require(
-        all(
-            call.name in {"ownward_semantic_work", "ownward_semantic_submit"}
-            and not call.error
-            for call in semantic_trace.calls
-        ),
-        "semantic capability used an invalid path",
-    )
     identity = _semantic_trace_identity(semantic_trace, asset_id, revision)
     status = runtime.client.call_tool("ownward_status", {"id": asset_id})
     terminal = status.get("organization", {}).get("status")
     require(terminal in {"ready", "uncertain"}, "semantic work did not reach a terminal state")
     identity["terminal_status"] = terminal
+    if recovered_timeout:
+        identity["completion"] = "terminal-submit-recovered-after-stage-timeout"
+        write_json(stage / "terminal.json", {
+            "schema": "ownward.semantic-terminal-recovery/v1",
+            "reason": "stage-timeout-after-successful-terminal-submit",
+            "asset_id": asset_id,
+            "asset_revision": revision,
+            "work_id": identity["work_id"],
+            "submission_sha256": identity["submission_sha256"],
+            "terminal_status": terminal,
+            "elapsed_seconds": elapsed,
+        })
     return elapsed, identity, _relative_evidence(scenario_root, stage)
 
 
@@ -535,13 +664,15 @@ def _run_scenario(
 ) -> dict[str, Any]:
     scenario_root = args.evidence_dir / str(task["scenario_id"])
     result_path = scenario_root / "result.json"
+    agent_path = scenario_root / "agent-result.json"
     progress_path = scenario_root / "progress.json"
     expected_binding = _scenario_binding(args, task, binding, resource_sha)
     if result_path.is_file():
         sealed = load_json(result_path)
         if _sealed_scenario_valid(sealed, scenario_root, expected_binding, bool(task["updates"])):
-            _safe_reset(scenario_root / "data", scenario_root)
-            _safe_reset(scenario_root / "rollback", scenario_root)
+            if cleanup_data:
+                _safe_reset(scenario_root / "data", scenario_root)
+                _safe_reset(scenario_root / "rollback", scenario_root)
             return dict(sealed["result"])
         require(args.resume, f"scenario {task['scenario_id']} evidence is stale; use --resume to archive it")
         _archive_incomplete(scenario_root, args.evidence_dir, "sealed scenario binding or evidence changed")
@@ -561,6 +692,12 @@ def _run_scenario(
                 require(_tree_sha256(scenario_root / "data") == progress.get("data_tree_sha256"), "scenario data changed after its last valid checkpoint")
                 require(_progress_evidence_complete(progress), "scenario checkpoint omits a completed semantic attempt")
                 require(_evidence_valid(scenario_root, progress.get("evidence", {})), "scenario checkpoint evidence changed")
+                if agent_path.is_file():
+                    agent = load_json(agent_path)
+                    if _agent_checkpoint_valid(agent, scenario_root, expected_binding):
+                        return dict(agent["result"])
+                    _archive_incomplete(scenario_root, args.evidence_dir, "scenario agent checkpoint changed")
+                    progress = None
     scenario_root.mkdir(parents=True, exist_ok=True)
     scenario_started = time.perf_counter()
     data_dir = scenario_root / "data"
@@ -640,9 +777,6 @@ def _run_scenario(
                 }, evidence)
 
             semantic_seconds = sum(float(value.get("elapsed_seconds", 0)) for value in completed_units.values())
-            query_started = time.perf_counter()
-            direct = runtime.client.call_tool("ownward_search", {"query": task["query"]["question"], "limit": 10})
-            direct_ms = (time.perf_counter() - query_started) * 1000
             remaining = deadline - time.monotonic()
             require(remaining > 0, "product execution exceeded its total budget")
             query_stage = _next_attempt(scenario_root / "query")
@@ -655,16 +789,12 @@ def _run_scenario(
         allowed_calls = {"ownward_rules", "ownward_search", "ownward_read", "ownward_navigate", "ownward_status"}
         require(len(query_trace.calls) <= 8 and all(call.name in allowed_calls and not call.error for call in query_trace.calls), "query agent exceeded or violated its public read-only path")
         observed = _observed(query_trace)
-        returned_stable = [str(value) for value in answer.get("information_ids", [])]
-        facts = [str(value) for value in answer.get("answer_facts", [])]
+        returned_stable, facts = _validated_answer(answer)
         grounded = set(returned_stable) <= set(observed) and all(
             any(fact in text for stable_id in returned_stable for text in observed.get(stable_id, [])) for fact in facts
         )
         reverse = {stable: node for node, stable in stable_by_node.items()}
         require(set(returned_stable) <= set(reverse), "query agent returned evidence outside the frozen scenario")
-        direct_values = direct.get("results") if isinstance(direct, dict) else None
-        require(isinstance(direct_values, list), "direct search returned invalid results")
-        direct_ids = [reverse[str(item["id"])] for item in direct_values if str(item.get("id", "")) in reverse]
         returned_ids = [reverse[value] for value in returned_stable]
         navigation_ids = [
             reverse[value]
@@ -674,35 +804,334 @@ def _run_scenario(
         sampled_peak = max((int(sample.get("rss_bytes", 0)) for sample in sampler.samples), default=0) / (1024 * 1024)
     end_to_end_ms = (time.perf_counter() - scenario_started) * 1000
     result = {
-        "scenario_id": task["scenario_id"], "direct_ids": list(dict.fromkeys(direct_ids)),
+        "scenario_id": task["scenario_id"],
         "returned_ids": list(dict.fromkeys(returned_ids)), "answer_facts": list(dict.fromkeys(facts)),
         "navigation_ids": list(dict.fromkeys(navigation_ids)),
-        "grounded": grounded, "latency_ms": direct_ms,
+        "grounded": grounded,
         "semantic_ms": semantic_seconds * 1000,
         "rollback_ms": sum(float(value.get("rollback_seconds", 0)) for value in completed_units.values()) * 1000,
         "agent_query_ms": agent_query_seconds * 1000,
         "end_to_end_ms": end_to_end_ms,
         "peak_mib": max(peak_mib, sampled_peak),
         "used_navigation": any(call.name == "ownward_navigate" and not call.error for call in query_trace.calls),
-        "within_latency_budget": direct_ms <= query_limit_ms, "within_resource_budget": resource_passed,
+        "within_resource_budget": resource_passed,
     }
     query_evidence = _relative_evidence(scenario_root, query_stage)
     evidence = dict(progress["evidence"])
     evidence.update(query_evidence)
-    write_json(result_path, {
-        "schema": "ownward.product-scenario-checkpoint/v2",
+    write_json(agent_path, {
+        "schema": "ownward.product-scenario-agent-checkpoint/v1",
         "binding": expected_binding,
         "progress_sha256": sha256(progress_path),
         "evidence": evidence,
         "result": result,
     })
-    if cleanup_data:
-        _safe_reset(data_dir, scenario_root)
-        _safe_reset(scenario_root / "rollback", scenario_root)
     for work in scenario_root.rglob("work"):
         if work.is_dir():
             _safe_reset(work, work.parent)
     return result
+
+
+def _complete_direct_measurement(
+    args: argparse.Namespace,
+    task: dict[str, Any],
+    binding: dict[str, Any],
+    agent_result: dict[str, Any],
+    query_limit_ms: float,
+    resource_sha: str,
+    deadline: float,
+    *,
+    cleanup_data: bool,
+) -> dict[str, Any]:
+    scenario_root = args.evidence_dir / str(task["scenario_id"])
+    result_path = scenario_root / "result.json"
+    progress_path = scenario_root / "progress.json"
+    agent_path = scenario_root / "agent-result.json"
+    expected_binding = _scenario_binding(args, task, binding, resource_sha)
+    if result_path.is_file():
+        sealed = load_json(result_path)
+        require(_sealed_scenario_valid(sealed, scenario_root, expected_binding, bool(task["updates"])), "sealed scenario changed before direct measurement")
+        if cleanup_data:
+            _safe_reset(scenario_root / "data", scenario_root)
+            _safe_reset(scenario_root / "rollback", scenario_root)
+        return dict(sealed["result"])
+
+    require(agent_path.is_file(), "scenario agent checkpoint is missing")
+    agent = load_json(agent_path)
+    require(_agent_checkpoint_valid(agent, scenario_root, expected_binding), "scenario agent checkpoint is invalid")
+    require(agent.get("result") == agent_result, "scenario agent result changed before direct measurement")
+    progress = load_json(progress_path)
+    data_dir = scenario_root / "data"
+    require(data_dir.is_dir() and _tree_sha256(data_dir) == progress.get("data_tree_sha256"), "scenario data changed before direct measurement")
+    agent_sha = sha256(agent_path)
+
+    measurement: dict[str, Any] | None = None
+    measurement_path: Path | None = None
+    direct_root = scenario_root / "direct"
+    if direct_root.exists():
+        for attempt in sorted((item for item in direct_root.iterdir() if item.is_dir() and item.name.startswith("attempt-")), reverse=True):
+            candidate_path = attempt / "measurement.json"
+            if not candidate_path.is_file():
+                continue
+            candidate = load_json(candidate_path)
+            if _direct_measurement_valid(candidate, expected_binding, progress, agent_sha):
+                measurement = candidate
+                measurement_path = candidate_path
+                break
+
+    if measurement is None:
+        remaining = deadline - time.monotonic()
+        require(remaining > 0, "product execution exceeded its total budget before direct measurement")
+        attempt = _next_attempt(direct_root)
+        attempt.mkdir(parents=True)
+        started = time.perf_counter()
+        environment = os.environ.copy()
+        with support.OwnwardRuntime(args.binary, data_dir, environment) as runtime:
+            require(runtime.client is not None and runtime.process is not None, "Ownward runtime did not start for direct measurement")
+            with resource.TreeSampler(runtime.process.pid) as sampler:
+                warm_started = time.perf_counter()
+                warm = runtime.client.call_tool("ownward_search", {"query": "Warm the local vector search path before the bound latency measurement.", "limit": 10})
+                warmup_ms = (time.perf_counter() - warm_started) * 1000
+                require(isinstance(warm, dict) and isinstance(warm.get("results"), list), "direct measurement warmup failed")
+                query_started = time.perf_counter()
+                direct = runtime.client.call_tool("ownward_search", {"query": task["query"]["question"], "limit": 10})
+                direct_ms = (time.perf_counter() - query_started) * 1000
+            sampled_peak = max((int(sample.get("rss_bytes", 0)) for sample in sampler.samples), default=0) / (1024 * 1024)
+        require(_tree_sha256(data_dir) == progress.get("data_tree_sha256"), "direct measurement changed scenario data")
+        values = direct.get("results") if isinstance(direct, dict) else None
+        require(isinstance(values, list), "direct search returned invalid results")
+        reverse = {str(stable): str(node) for node, stable in progress["stable_by_node"].items()}
+        direct_ids = [reverse[str(item.get("id", ""))] for item in values if isinstance(item, dict) and str(item.get("id", "")) in reverse]
+        measurement = {
+            "schema": "ownward.product-direct-measurement/v1",
+            "binding": expected_binding,
+            "progress_sha256": json_sha256(progress),
+            "agent_checkpoint_sha256": agent_sha,
+            "data_tree_sha256": progress["data_tree_sha256"],
+            "question_sha256": json_sha256(task["query"]["question"]),
+            "query_limit_ms": query_limit_ms,
+            "warmup_ms": warmup_ms,
+            "latency_ms": direct_ms,
+            "stage_ms": (time.perf_counter() - started) * 1000,
+            "sampled_peak_mib": sampled_peak,
+            "direct_result": direct,
+            "direct_ids": list(dict.fromkeys(direct_ids)),
+            "within_latency_budget": direct_ms <= query_limit_ms,
+        }
+        measurement_path = attempt / "measurement.json"
+        write_json(measurement_path, measurement)
+
+    assert measurement_path is not None
+    result = _merge_direct_result(agent_result, measurement)
+    write_json(result_path, {
+        "schema": "ownward.product-scenario-checkpoint/v3",
+        "binding": expected_binding,
+        "agent_checkpoint_sha256": agent_sha,
+        "direct_evidence_path": measurement_path.relative_to(scenario_root).as_posix(),
+        "direct_evidence_sha256": sha256(measurement_path),
+        "result": result,
+    })
+    if cleanup_data:
+        _safe_reset(data_dir, scenario_root)
+        _safe_reset(scenario_root / "rollback", scenario_root)
+    return result
+
+
+def _run_scenarios(
+    args: argparse.Namespace,
+    tasks: list[dict[str, Any]],
+    binding: dict[str, Any],
+    peak_mib: float,
+    resource_passed: bool,
+    query_limit_ms: float,
+    resource_sha: str,
+    deadline: float,
+    *,
+    workers: int = SCENARIO_WORKERS,
+    cleanup_data: bool = True,
+) -> list[dict[str, Any]]:
+    require(tasks, "product execution requires scenarios")
+    require(workers > 0, "product execution requires at least one scenario worker")
+    worker_count = min(workers, len(tasks))
+    with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="ownward-product") as executor:
+        futures = [
+            executor.submit(
+                _run_scenario,
+                args,
+                task,
+                binding,
+                peak_mib,
+                resource_passed,
+                query_limit_ms,
+                resource_sha,
+                deadline,
+                cleanup_data=cleanup_data,
+            )
+            for task in tasks
+        ]
+        agent_results = [future.result() for future in futures]
+        direct_futures = [
+            executor.submit(
+                _complete_direct_measurement,
+                args,
+                task,
+                binding,
+                result,
+                query_limit_ms,
+                resource_sha,
+                deadline,
+                cleanup_data=cleanup_data,
+            )
+            for task, result in zip(tasks, agent_results)
+        ]
+        return [future.result() for future in direct_futures]
+
+
+def _preflight_tasks(tasks: dict[str, Any]) -> list[dict[str, Any]]:
+    sources = tasks.get("tasks")
+    require(isinstance(sources, list) and len(sources) >= SCENARIO_WORKERS, "product preflight requires four independent scenarios")
+    selected_tasks: list[dict[str, Any]] = []
+    for index, source in enumerate(sources[:SCENARIO_WORKERS]):
+        information = source.get("information", [])
+        require(len(information) >= 2, "product preflight needs two independent semantic items per scenario")
+        selected_tasks.append({
+            "scenario_id": f"nonformal-preflight-{index + 1:02d}-{source['scenario_id']}",
+            "information": [information[0], information[-1]],
+            "updates": [],
+            "query": {"question": "Retrieve the two independently stored statements and cite both information items."},
+        })
+    return selected_tasks
+
+
+def _project_qualification_wall(
+    formal_tasks: list[dict[str, Any]],
+    preflight_tasks: list[dict[str, Any]],
+    results: list[dict[str, Any]],
+    workers: int,
+    batch_wall_seconds: float,
+) -> dict[str, float]:
+    require(len(preflight_tasks) == len(results) and results, "product preflight result set is incomplete")
+    semantic_rates: list[float] = []
+    rollback_rates: list[float] = []
+    query_times: list[float] = []
+    direct_stage_times: list[float] = []
+    overhead_times: list[float] = []
+    for task, result in zip(preflight_tasks, results):
+        semantic_units = len(task["information"]) + len(task["updates"])
+        require(semantic_units > 0, "product preflight scenario has no semantic work")
+        semantic_seconds = float(result["semantic_ms"]) / 1000.0
+        rollback_seconds = float(result["rollback_ms"]) / 1000.0
+        query_seconds = float(result["agent_query_ms"]) / 1000.0
+        direct_stage_seconds = float(result["direct_stage_ms"]) / 1000.0
+        end_to_end_seconds = float(result["end_to_end_ms"]) / 1000.0
+        semantic_rates.append(semantic_seconds / semantic_units)
+        rollback_rates.append(rollback_seconds / semantic_units)
+        query_times.append(query_seconds)
+        direct_stage_times.append(direct_stage_seconds)
+        overhead_times.append(max(0.0, end_to_end_seconds - semantic_seconds - rollback_seconds - query_seconds - direct_stage_seconds))
+
+    per_semantic = max(semantic_rates)
+    per_rollback = max(rollback_rates)
+    per_query = max(query_times)
+    per_direct_stage = max(direct_stage_times)
+    per_scenario_overhead = max(overhead_times)
+    predicted_scenarios = [
+        (len(task["information"]) + len(task["updates"])) * (per_semantic + per_rollback)
+        + per_query
+        + per_scenario_overhead
+        for task in formal_tasks
+    ]
+    worker_loads = [0.0] * min(workers, len(predicted_scenarios))
+    for predicted in predicted_scenarios:
+        next_worker = min(range(len(worker_loads)), key=lambda index: (worker_loads[index], index))
+        worker_loads[next_worker] += predicted
+    observed_parallel_wall = max(
+        (float(result["end_to_end_ms"]) - float(result["direct_stage_ms"])) / 1000.0
+        for result in results
+    )
+    observed_direct_wall = max(direct_stage_times)
+    batch_overhead = max(0.0, batch_wall_seconds - observed_parallel_wall - observed_direct_wall)
+    waves = (len(predicted_scenarios) + len(worker_loads) - 1) // len(worker_loads)
+    scheduled_wall = max(worker_loads) + waves * per_direct_stage + waves * batch_overhead
+    return {
+        "per_semantic_seconds": per_semantic,
+        "per_rollback_seconds": per_rollback,
+        "per_query_seconds": per_query,
+        "per_direct_stage_seconds": per_direct_stage,
+        "per_scenario_overhead_seconds": per_scenario_overhead,
+        "independent_work_seconds": sum(predicted_scenarios),
+        "scheduled_wall_seconds": scheduled_wall,
+        "wall_seconds": PREFLIGHT_SAFETY_FACTOR * scheduled_wall,
+    }
+
+
+def _run_full_information_query_preflight(
+    args: argparse.Namespace,
+    source: dict[str, Any],
+    binding: dict[str, Any],
+    query_limit_ms: float,
+    resource_sha: str,
+    root: Path,
+) -> tuple[dict[str, Any], Path]:
+    report_path = root / "report.json"
+    identity = {
+        "binding": binding,
+        "task_sha256": json_sha256(source),
+        "resource_report_sha256": resource_sha,
+        "query_limit_ms": query_limit_ms,
+    }
+    if report_path.is_file():
+        report = load_json(report_path)
+        if report.get("identity") == identity and report.get("passed") is True:
+            return report, report_path
+        require(args.resume, "full-information query preflight changed; use --resume to preserve and replace it")
+        archive = root / "_audit" / f"{json_sha256(report)}.json"
+        if archive.is_file():
+            require(load_json(archive) == report, "full-information query preflight archive changed")
+        else:
+            write_json(archive, report)
+
+    workspace = root / "workspace"
+    if workspace.exists():
+        require(args.resume, "full-information query preflight is incomplete; use --resume")
+        _safe_reset(workspace, root)
+    data_dir = workspace / "data"
+    data_dir.mkdir(parents=True)
+    started = time.perf_counter()
+    with support.OwnwardRuntime(args.binary, data_dir, os.environ.copy()) as runtime:
+        require(runtime.client is not None, "Ownward runtime did not start for full-information query preflight")
+        created = runtime.client.call_tool("ownward_create_batch", {"items": [
+            {"content": item["content"], "source": {"actor": "acceptance-preflight", "ref": item["node_id"]}}
+            for item in source["information"]
+        ]})
+        created_values = created.get("results") if isinstance(created, dict) else None
+        require(isinstance(created_values, list) and len(created_values) == len(source["information"]), "full-information query preflight did not persist all information")
+        data_before = _tree_sha256(data_dir)
+        warm_started = time.perf_counter()
+        warm = runtime.client.call_tool("ownward_search", {"query": "Warm the local vector search path before the full-information preflight.", "limit": 10})
+        warmup_ms = (time.perf_counter() - warm_started) * 1000
+        require(isinstance(warm, dict) and isinstance(warm.get("results"), list), "full-information query preflight warmup failed")
+        query_started = time.perf_counter()
+        direct = runtime.client.call_tool("ownward_search", {"query": source["query"]["question"], "limit": 10})
+        latency_ms = (time.perf_counter() - query_started) * 1000
+        require(isinstance(direct, dict) and isinstance(direct.get("results"), list), "full-information query preflight returned invalid results")
+    data_after = _tree_sha256(data_dir)
+    require(data_before == data_after, "full-information query preflight changed state while reading")
+    report = {
+        "schema": "ownward.product-full-information-query-preflight/v1",
+        "formal_evidence": False,
+        "identity": identity,
+        "information_count": len(source["information"]),
+        "warmup_ms": warmup_ms,
+        "latency_ms": latency_ms,
+        "wall_seconds": time.perf_counter() - started,
+        "data_tree_sha256": data_after,
+        "direct_result": direct,
+        "passed": len(source["information"]) == 5 and latency_ms <= query_limit_ms,
+    }
+    write_json(report_path, report)
+    _safe_reset(workspace, root)
+    return report, report_path
 
 
 def _run_product_preflight(
@@ -714,79 +1143,85 @@ def _run_product_preflight(
     query_limit_ms: float,
     resource_sha: str,
 ) -> dict[str, Any]:
-    require(tasks.get("tasks"), "product preflight requires frozen tasks")
-    source = tasks["tasks"][0]
-    require(len(source.get("information", [])) >= 2, "product preflight needs two independent semantic items")
-    selected = [source["information"][0], source["information"][-1]]
-    task = {
-        "scenario_id": "nonformal-preflight",
-        "information": selected,
-        "updates": [],
-        "query": {"question": "Retrieve the two independently stored statements and cite both information items."},
-    }
+    formal_tasks = tasks.get("tasks")
+    require(isinstance(formal_tasks, list) and formal_tasks, "product preflight requires frozen tasks")
+    selected_tasks = _preflight_tasks(tasks)
     preflight_root = args.evidence_dir / "_preflight"
-    if preflight_root.exists():
-        _safe_reset(preflight_root, args.evidence_dir)
-    preflight_root.mkdir()
-    original_root = args.evidence_dir
-    args.evidence_dir = preflight_root
+    preflight_root.mkdir(parents=True, exist_ok=True)
+    preflight_args = copy.copy(args)
+    preflight_args.evidence_dir = preflight_root
     started = time.perf_counter()
-    try:
-        result = _run_scenario(
-            args, task, binding, peak_mib, resource_passed, query_limit_ms, resource_sha,
-            time.monotonic() + min(420, args.max_wall_seconds), cleanup_data=False,
-        )
-        scenario_root = preflight_root / "nonformal-preflight"
+    results = _run_scenarios(
+        preflight_args,
+        selected_tasks,
+        binding,
+        peak_mib,
+        resource_passed,
+        query_limit_ms,
+        resource_sha,
+        time.monotonic() + min(420, args.max_wall_seconds),
+        workers=SCENARIO_WORKERS,
+        cleanup_data=False,
+    )
+    batch_wall_seconds = time.perf_counter() - started
+    for task, result in zip(selected_tasks, results):
+        selected_ids = {str(item["node_id"]) for item in task["information"]}
         require(
-            result["grounded"] and set(result["returned_ids"]) == {str(item["node_id"]) for item in selected},
+            result["grounded"] and set(result["returned_ids"]) == selected_ids,
             "product preflight query did not retrieve and ground both independent items",
         )
-        progress = load_json(scenario_root / "progress.json")
-        rollback_started = time.perf_counter()
-        _begin_rollback(scenario_root, progress, "preflight-restore-cost")
-        (scenario_root / "data" / ".preflight-fault").write_text("fault", encoding="utf-8")
-        _recover_rollback(scenario_root, progress)
-        restore_seconds = time.perf_counter() - rollback_started
-        require(_tree_sha256(scenario_root / "data") == progress["data_tree_sha256"], "preflight rollback round trip changed scenario data")
-    finally:
-        args.evidence_dir = original_root
-    semantic_units = sum(len(item["information"]) + len(item["updates"]) for item in tasks["tasks"])
-    query_units = len(tasks["tasks"])
-    per_semantic = result["semantic_ms"] / 1000 / len(selected)
-    per_query = result["agent_query_ms"] / 1000
-    per_rollback = result["rollback_ms"] / 1000 / len(selected)
-    per_scenario_overhead = max(
-        0.0,
-        result["end_to_end_ms"] / 1000
-        - result["semantic_ms"] / 1000
-        - result["rollback_ms"] / 1000
-        - per_query,
+        require(result["within_latency_budget"], "product preflight direct query exceeded the frozen warm-query threshold")
+    full_query, full_query_path = _run_full_information_query_preflight(
+        preflight_args,
+        formal_tasks[1],
+        binding,
+        query_limit_ms,
+        resource_sha,
+        preflight_root / "full-information-query",
     )
-    estimated = 1.25 * (
-        semantic_units * per_semantic
-        + query_units * per_query
-        + query_units * per_scenario_overhead
-        + semantic_units * per_rollback
+    require(full_query["passed"], "full-information query preflight exceeded the frozen warm-query threshold")
+    scenario_root = preflight_root / str(selected_tasks[0]["scenario_id"])
+    progress = load_json(scenario_root / "progress.json")
+    rollback_started = time.perf_counter()
+    _begin_rollback(scenario_root, progress, "preflight-restore-cost")
+    (scenario_root / "data" / ".preflight-fault").write_text("fault", encoding="utf-8")
+    _recover_rollback(scenario_root, progress)
+    restore_seconds = time.perf_counter() - rollback_started
+    require(_tree_sha256(scenario_root / "data") == progress["data_tree_sha256"], "preflight rollback round trip changed scenario data")
+    projection = _project_qualification_wall(
+        formal_tasks, selected_tasks, results, SCENARIO_WORKERS, batch_wall_seconds,
     )
+    semantic_units = sum(len(item["information"]) + len(item["updates"]) for item in formal_tasks)
+    query_units = len(formal_tasks)
+    estimated = projection["wall_seconds"]
     report = {
-        "schema": "ownward.product-execution-preflight/v1",
+        "schema": "ownward.product-execution-preflight/v3",
         "formal_evidence": False,
         "qualification_binding": binding,
-        "binding": _scenario_binding(args, task, binding, resource_sha),
+        "bindings": [_scenario_binding(preflight_args, task, binding, resource_sha) for task in selected_tasks],
         "task_set_sha256": json_sha256(tasks),
         "resource_report_sha256": resource_sha,
         "observed": {
-            "semantic_items": len(selected), "semantic_seconds": result["semantic_ms"] / 1000,
-            "agent_query_seconds": per_query, "rollback_round_trip_seconds": restore_seconds,
+            "scenarios": len(selected_tasks), "workers": SCENARIO_WORKERS,
+            "semantic_items": sum(len(task["information"]) for task in selected_tasks),
+            "semantic_seconds": sum(float(result["semantic_ms"]) for result in results) / 1000.0,
+            "agent_query_seconds": sum(float(result["agent_query_ms"]) for result in results) / 1000.0,
+            "rollback_round_trip_seconds": restore_seconds,
+            "full_information_query_latency_ms": full_query["latency_ms"],
+            "full_information_query_wall_seconds": full_query["wall_seconds"],
+            "concurrent_batch_wall_seconds": batch_wall_seconds,
             "wall_seconds": time.perf_counter() - started,
         },
-        "projected": {"semantic_items": semantic_units, "queries": query_units, "wall_seconds": estimated},
-        "maximum_wall_seconds": 1800,
-        "required_margin_seconds": 300,
-        "passed": estimated <= 1500,
+        "projected": {
+            "scenarios": query_units, "workers": SCENARIO_WORKERS,
+            "semantic_items": semantic_units, "queries": query_units,
+            **projection,
+        },
+        "maximum_wall_seconds": PREFLIGHT_MAXIMUM_WALL_SECONDS,
+        "required_margin_seconds": PREFLIGHT_REQUIRED_MARGIN_SECONDS,
+        "full_information_query": {"path": str(full_query_path), "sha256": sha256(full_query_path)},
+        "passed": full_query["passed"] and estimated <= PREFLIGHT_MAXIMUM_WALL_SECONDS - PREFLIGHT_REQUIRED_MARGIN_SECONDS,
     }
-    _safe_reset(preflight_root, original_root)
-    require(report["passed"], f"product qualification is projected to exceed its safe budget: {estimated:.1f}s")
     return report
 
 
@@ -833,10 +1268,9 @@ def main() -> None:
         write_json(args.preflight_output.resolve(), report)
         print(json.dumps(report, ensure_ascii=False))
         return
-    results = [
-        _run_scenario(args, task, binding, peak_mib, resource_passed, query_limit_ms, resource_sha, deadline)
-        for task in tasks["tasks"]
-    ]
+    results = _run_scenarios(
+        args, tasks["tasks"], binding, peak_mib, resource_passed, query_limit_ms, resource_sha, deadline,
+    )
     envelope = {
         "schema": "ownward.product-results/v1", "dataset_version": tasks["dataset_version"],
         "mode": tasks["mode"], "results": results,

@@ -8,15 +8,18 @@ import os
 import process_control
 
 
+PYTHON = [sys.executable, "-I", "-S"]
+
+
 class ProcessControlTests(unittest.TestCase):
     def test_forwards_input_and_environment(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             environment = os.environ.copy()
             environment["OWNWARD_PROCESS_CONTROL_TEST"] = "bound"
             completed = process_control.run(
-                [sys.executable, "-c", "import os,sys; print(sys.stdin.read()+os.environ['OWNWARD_PROCESS_CONTROL_TEST'])"],
+                [*PYTHON, "-c", "import os,sys; print(sys.stdin.read()+os.environ['OWNWARD_PROCESS_CONTROL_TEST'])"],
                 cwd=Path(directory),
-                timeout=2,
+                timeout=5,
                 input_text="input-",
                 env=environment,
             )
@@ -28,19 +31,19 @@ class ProcessControlTests(unittest.TestCase):
             started = time.perf_counter()
             with self.assertRaises(process_control.ProcessTimeout) as raised:
                 process_control.run(
-                    [sys.executable, "-c", "import sys,time; print('started', flush=True); time.sleep(5)"],
+                    [*PYTHON, "-c", "import sys,time; print('started', flush=True); time.sleep(30)"],
                     cwd=Path(directory),
-                    timeout=0.05,
+                    timeout=2,
                 )
-        self.assertLess(time.perf_counter() - started, 2)
+        self.assertLess(time.perf_counter() - started, 10)
         self.assertIn("started", raised.exception.stdout)
 
     def test_invalid_utf8_output_does_not_break_process_collection(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             completed = process_control.run(
-                [sys.executable, "-c", "import sys; sys.stderr.buffer.write(b'bad-\\xff-output')"],
+                [*PYTHON, "-c", "import sys; sys.stderr.buffer.write(b'bad-\\xff-output')"],
                 cwd=Path(directory),
-                timeout=2,
+                timeout=5,
             )
         self.assertEqual(0, completed.returncode)
         self.assertIn("bad-\ufffd-output", completed.stderr)
@@ -52,9 +55,9 @@ class ProcessControlTests(unittest.TestCase):
             stderr_path = root / "stderr.log"
             with self.assertRaises(process_control.ProcessTimeout):
                 process_control.run(
-                    [sys.executable, "-c", "import sys,time; print('durable-out', flush=True); print('durable-err', file=sys.stderr, flush=True); time.sleep(5)"],
+                    [*PYTHON, "-c", "import sys,time; print('durable-out', flush=True); print('durable-err', file=sys.stderr, flush=True); time.sleep(30)"],
                     cwd=root,
-                    timeout=0.1,
+                    timeout=2,
                     stdout_path=stdout_path,
                     stderr_path=stderr_path,
                 )

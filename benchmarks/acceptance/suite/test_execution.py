@@ -192,6 +192,105 @@ class UnifiedExecutionTests(unittest.TestCase):
             execution_product._require_product_preflight_budget(report, time.perf_counter() + 100.0)
         execution_product._require_product_preflight_budget(report, time.perf_counter() + 181.0)
 
+    def test_incomplete_product_preflight_resumes_its_scenario_recovery(self) -> None:
+        workspace = Path(self.config["workspace"])
+        root = workspace / "evidence" / "product-preflight"
+        root.mkdir(parents=True)
+        tasks = {"schema": "tasks", "items": []}
+        tasks_path = workspace / "tasks.json"
+        binding_path = workspace / "binding.json"
+        resource = workspace / "resource.json"
+        for path in (tasks_path, binding_path, resource):
+            path.write_text("{}\n", encoding="utf-8")
+        state = lifecycle.load_state(self.state_path)
+        state["binding"] = candidate_binding.for_mode(self.binding, "qualification")
+
+        def complete(command: list[str], **_kwargs: object) -> None:
+            self.assertIn("--resume", command)
+            execution_product._write_json(root / "report.json", {
+                "passed": True,
+                "qualification_binding": state["binding"],
+                "task_set_sha256": execution_product._json_sha256(tasks),
+                "resource_report_sha256": lifecycle.file_sha256(resource),
+                "projected": {"wall_seconds": 1.0},
+            })
+
+        with (
+            mock.patch("execution_product._product_command", return_value=["adapter"]),
+            mock.patch("execution_product.run", side_effect=complete),
+        ):
+            execution_product._ensure_product_preflight(
+                self.root, state, self.config, workspace, tasks, tasks_path, binding_path, resource,
+                time.perf_counter() + 120.0, resume=True,
+            )
+
+    def test_failed_product_preflight_report_is_archived_before_resume(self) -> None:
+        workspace = Path(self.config["workspace"])
+        root = workspace / "evidence" / "product-preflight"
+        tasks = {"schema": "tasks", "items": []}
+        tasks_path = workspace / "tasks.json"
+        binding_path = workspace / "binding.json"
+        resource = workspace / "resource.json"
+        for path in (tasks_path, binding_path, resource):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("{}\n", encoding="utf-8")
+        state = lifecycle.load_state(self.state_path)
+        state["binding"] = candidate_binding.for_mode(self.binding, "qualification")
+        failed = {
+            "passed": False,
+            "qualification_binding": state["binding"],
+            "task_set_sha256": execution_product._json_sha256(tasks),
+            "resource_report_sha256": lifecycle.file_sha256(resource),
+            "projected": {"wall_seconds": 1600.0},
+        }
+        execution_product._write_json(root / "report.json", failed)
+
+        def complete(_command: list[str], **_kwargs: object) -> None:
+            execution_product._write_json(root / "report.json", {
+                **failed,
+                "passed": True,
+                "projected": {"wall_seconds": 1.0},
+            })
+
+        with (
+            mock.patch("execution_product._product_command", return_value=["adapter"]),
+            mock.patch("execution_product.run", side_effect=complete),
+        ):
+            execution_product._ensure_product_preflight(
+                self.root, state, self.config, workspace, tasks, tasks_path, binding_path, resource,
+                time.perf_counter() + 120.0, resume=True,
+            )
+        archived = root / "_audit" / "reports" / f"{execution_product._json_sha256(failed)}.json"
+        self.assertEqual(failed, json.loads(archived.read_text(encoding="utf-8")))
+
+    def test_product_workspace_binding_migrates_only_the_same_candidate_binary(self) -> None:
+        workspace = Path(self.config["workspace"])
+        previous = candidate_binding.for_mode(self.binding, "qualification")
+        current = dict(previous)
+        current["tool_sha256"] = "9" * 64
+        execution_product._write_json(workspace / "binding.json", previous)
+
+        with self.assertRaisesRegex(execution.ExecutionError, "--resume"):
+            execution_product._activate_workspace_binding(workspace, current, resume=False)
+        self.assertEqual(previous, json.loads((workspace / "binding.json").read_text(encoding="utf-8")))
+
+        execution_product._activate_workspace_binding(workspace, current, resume=True)
+        archives = list((workspace / "evidence" / "product" / "_audit" / "workspace-bindings").glob("*.json"))
+        self.assertEqual(1, len(archives))
+        self.assertEqual(previous, json.loads(archives[0].read_text(encoding="utf-8")))
+        self.assertEqual(current, json.loads((workspace / "binding.json").read_text(encoding="utf-8")))
+
+        execution_product._activate_workspace_binding(workspace, current, resume=True)
+        self.assertEqual(archives, list((workspace / "evidence" / "product" / "_audit" / "workspace-bindings").glob("*.json")))
+
+        for name in ("candidate", "binary_sha256"):
+            execution_product._write_json(workspace / "binding.json", previous)
+            changed = dict(current)
+            changed[name] = ("d" if name == "candidate" else "e") * (40 if name == "candidate" else 64)
+            with self.assertRaisesRegex(execution.ExecutionError, "另一候选或二进制"):
+                execution_product._activate_workspace_binding(workspace, changed, resume=True)
+            self.assertEqual(previous, json.loads((workspace / "binding.json").read_text(encoding="utf-8")))
+
     def test_interrupted_resource_report_is_bound_after_exact_dependency_check(self) -> None:
         report_path = self.workspace / "resource" / "report.json"
         report_path.parent.mkdir(parents=True)
