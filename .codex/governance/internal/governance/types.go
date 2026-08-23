@@ -29,6 +29,8 @@ type State struct {
 	ExplicitResourceConstraints []ResourceConstraint  `json:"explicit_resource_constraints"`
 	ReusableResults             []ReusableResult      `json:"reusable_results"`
 	NextAction                  *string               `json:"next_action"`
+	ActivationSourceID          *string               `json:"activation_source_id"`
+	LastDiagnostic              *RuntimeDiagnostic    `json:"last_diagnostic"`
 	Review                      ReviewState           `json:"review"`
 	Owner                       *OwnerState           `json:"owner"`
 	Handoff                     *HandoffState         `json:"handoff"`
@@ -76,6 +78,12 @@ type ReusableResult struct {
 	Scope        []string `json:"scope"`
 	EvidencePath string   `json:"evidence_path"`
 	InputHash    string   `json:"input_hash"`
+}
+
+type RuntimeDiagnostic struct {
+	Source     string `json:"source"`
+	Summary    string `json:"summary"`
+	OccurredAt string `json:"occurred_at"`
 }
 
 // ExecutionSnapshot describes the main Agent's current work. It is never a
@@ -155,7 +163,6 @@ type ReviewState struct {
 	FixedReviewGeneration int             `json:"fixed_review_generation"`
 	ReviewSnapshotHash    *string         `json:"review_snapshot_hash"`
 	Trigger               *string         `json:"trigger"`
-	FeedbackPath          *string         `json:"feedback_path"`
 	Response              *ReviewResponse `json:"response"`
 }
 
@@ -337,14 +344,4 @@ type HookInput struct {
 	Prompt               string          `json:"prompt"`
 	StopHookActive       bool            `json:"stop_hook_active"`
 	LastAssistantMessage *string         `json:"last_assistant_message"`
-}
-
-type Event struct {
-	SchemaVersion int            `json:"schema_version"`
-	EventID       string         `json:"event_id"`
-	OccurredAt    string         `json:"occurred_at"`
-	Kind          string         `json:"kind"`
-	RunID         string         `json:"run_id"`
-	Summary       string         `json:"summary"`
-	Fields        map[string]any `json:"fields,omitempty"`
 }

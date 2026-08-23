@@ -3,6 +3,7 @@ package governance
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -93,6 +94,56 @@ func TestStableActivationAndOrdinaryMessagesAreIsolated(t *testing.T) {
 	after, _ := os.ReadFile(runtime.statePath())
 	if !bytes.Equal(before, after) {
 		t.Fatal("ordinary message changed governance state")
+	}
+}
+
+func TestGoalModeReplayRemainsIdempotentAfterOtherReviews(t *testing.T) {
+	runtime := testRuntime(t)
+	prompt := runtime.Config.ActivationMarker + "\ncontinue the product goal"
+	_ = hookJSON(t, runtime, "user-prompt-submit", map[string]any{"session_id": "main", "turn_id": "activation-1", "prompt": prompt})
+	respondToCurrentReview(t, runtime)
+	request, err := runtime.RequestAdvisoryReview("explicit-check", "check another natural boundary")
+	if err != nil || request == nil {
+		t.Fatalf("explicit review: %v", err)
+	}
+	respondToCurrentReview(t, runtime)
+	state, err := runtime.LoadState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviewID := valueOr(state.Review.ReviewID, "")
+	generation := state.Review.FixedReviewGeneration
+	if got := hookJSON(t, runtime, "user-prompt-submit", map[string]any{"session_id": "main", "turn_id": "activation-replay", "prompt": prompt}); got != "{}" {
+		t.Fatalf("a consumed Goal Mode activation emitted governance work again: %s", got)
+	}
+	state, err = runtime.LoadState()
+	if err != nil || valueOr(state.Review.ReviewID, "") != reviewID || state.Review.FixedReviewGeneration != generation {
+		t.Fatal("a consumed Goal Mode activation changed the current review")
+	}
+}
+
+func TestExistingStateLearnsMissingActivationIdentityWithoutExtraReview(t *testing.T) {
+	runtime := testRuntime(t)
+	if _, err := runtime.Init(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.ensureHookOwner(HookInput{SessionID: "main"}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := runtime.LoadState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt := runtime.Config.ActivationMarker + "\ncontinue the existing product goal"
+	if got := hookJSON(t, runtime, "user-prompt-submit", map[string]any{"session_id": "main", "turn_id": "activation-after-migration", "prompt": prompt}); got != "{}" {
+		t.Fatalf("an existing run with an unknown legacy activation emitted a redundant review: %s", got)
+	}
+	after, err := runtime.LoadState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.ActivationSourceID == nil || *after.ActivationSourceID != activationSourceID(prompt) || after.Review.FixedReviewGeneration != before.Review.FixedReviewGeneration || after.Review.ReviewID != nil {
+		t.Fatal("existing governance state did not learn the activation identity without changing review state")
 	}
 }
 
@@ -198,8 +249,11 @@ func TestAvailableGovernorFeedbackCannotBeDowngradedToMissed(t *testing.T) {
 		t.Fatal(err)
 	}
 	state, err := runtime.LoadState()
-	if err != nil || state.Review.Status != "feedback_ready" || state.Review.FeedbackPath == nil {
+	if err != nil || state.Review.Status != "feedback_ready" {
 		t.Fatalf("available feedback was discarded instead of awaiting the main Agent response: %v", err)
+	}
+	if _, err := os.Stat(runtime.reviewPath()); err != nil {
+		t.Fatal("available feedback was not preserved in the current review file")
 	}
 }
 
@@ -225,6 +279,43 @@ func TestLostGovernorFeedbackCanFailOpenAsMissed(t *testing.T) {
 	state, err := runtime.LoadState()
 	if err != nil || state.Review.Status != "missed" {
 		t.Fatalf("unavailable feedback did not fail open: %v", err)
+	}
+}
+
+func TestReviewLifecycleUsesOnlyFixedCurrentFiles(t *testing.T) {
+	runtime := testRuntime(t)
+	if _, err := runtime.Init(); err != nil {
+		t.Fatal(err)
+	}
+	first, err := runtime.RequestAdvisoryReview("current-file-1", "first current review")
+	if err != nil || first == nil {
+		t.Fatalf("first review: %v", err)
+	}
+	path, err := runtime.AcceptReview(validContinueFeedback(first))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Clean(path) != filepath.Clean(runtime.reviewPath()) {
+		t.Fatalf("feedback was not stored in the fixed current file: %s", path)
+	}
+	if _, err := runtime.RecordReviewResponse(ReviewResponseInput{ReviewID: first.ReviewID, Disposition: "acknowledge", Reason: "first review considered", NextValidationPoint: "next boundary"}); err != nil {
+		t.Fatal(err)
+	}
+	second, err := runtime.RequestAdvisoryReview("current-file-2", "second current review")
+	if err != nil || second == nil {
+		t.Fatalf("second review: %v", err)
+	}
+	if _, err := os.Stat(runtime.reviewPath()); !os.IsNotExist(err) {
+		t.Fatal("a new request did not invalidate the previous current feedback file")
+	}
+	if _, err := runtime.AcceptReview(validContinueFeedback(second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(runtime.RuntimeDir, "reviews")); !os.IsNotExist(err) {
+		t.Fatal("review lifecycle created a historical review directory")
+	}
+	if _, err := os.Stat(filepath.Join(runtime.RuntimeDir, "events.jsonl")); !os.IsNotExist(err) {
+		t.Fatal("review lifecycle created an append-only event stream")
 	}
 }
 
@@ -273,9 +364,24 @@ func TestPostToolFailureStoresOnlyAHashedSignature(t *testing.T) {
 	if len(state.CurrentFocus.FailureEvents) != 1 || strings.Contains(state.CurrentFocus.FailureEvents[0].Signature, secret) || !strings.Contains(state.CurrentFocus.FailureEvents[0].Signature, "sha256:") {
 		t.Fatal("failed tool output was not reduced to a safe hash signature")
 	}
-	raw, _ := os.ReadFile(runtime.eventsPath())
-	if bytes.Contains(raw, []byte(secret)) {
-		t.Fatal("failed tool output leaked into the governance event log")
+	if _, err := os.Stat(filepath.Join(runtime.RuntimeDir, "events.jsonl")); !os.IsNotExist(err) {
+		t.Fatal("failure handling created a legacy governance event log")
+	}
+}
+
+func TestHookDiagnosticStoresOnlyASafeHash(t *testing.T) {
+	runtime := testRuntime(t)
+	if _, err := runtime.Init(); err != nil {
+		t.Fatal(err)
+	}
+	secret := "private-error-detail"
+	runtime.recordHookDiagnostic("user-prompt-submit", errors.New(secret))
+	state, err := runtime.LoadState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.LastDiagnostic == nil || !strings.HasPrefix(state.LastDiagnostic.Summary, "sha256:") || strings.Contains(state.LastDiagnostic.Summary, secret) {
+		t.Fatal("hook diagnostic did not reduce the error to a safe hash")
 	}
 }
 
@@ -734,7 +840,7 @@ func TestLegacyStateMigrationPreservesProgressAndRemovesActiveControl(t *testing
 
 func TestAdvisoryV2MigrationFinalizationIsReentrant(t *testing.T) {
 	runtime := testRuntime(t)
-	state, err := runtime.Init()
+	_, err := runtime.Init()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -751,12 +857,78 @@ func TestAdvisoryV2MigrationFinalizationIsReentrant(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(archiveDir, "migration.json")); err != nil {
 		t.Fatal("an interrupted migration did not write its completion marker")
 	}
-	exists, err := runtime.eventKindExists("advisory_v2_migrated", state.RunID)
-	if err != nil || !exists {
-		t.Fatal("an interrupted migration did not restore its audit event")
+	if _, err := os.Stat(filepath.Join(runtime.RuntimeDir, "events.jsonl")); !os.IsNotExist(err) {
+		t.Fatal("migration finalization recreated the removed event stream")
 	}
 	if err := runtime.migrateLegacyStateIfNeeded(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCurrentStateMigrationPreservesActiveFactsAndRemovesHistory(t *testing.T) {
+	runtime := testRuntime(t)
+	if _, err := runtime.Init(); err != nil {
+		t.Fatal(err)
+	}
+	request, err := runtime.RequestFixedReview("activation", "legacy-activation-source")
+	if err != nil || request == nil {
+		t.Fatalf("request review: %v", err)
+	}
+	if _, err := runtime.AcceptReview(validContinueFeedback(request)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.RecordReviewResponse(ReviewResponseInput{ReviewID: request.ReviewID, Disposition: "acknowledge", Reason: "preserve this response", NextValidationPoint: "continue from the preserved point"}); err != nil {
+		t.Fatal(err)
+	}
+	legacyDir := filepath.Join(runtime.RuntimeDir, "reviews")
+	if err := os.MkdirAll(legacyDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacyReview := filepath.Join(legacyDir, request.ReviewID+".json")
+	if err := os.Rename(runtime.reviewPath(), legacyReview); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(runtime.statePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var legacyState map[string]any
+	if err := json.Unmarshal(raw, &legacyState); err != nil {
+		t.Fatal(err)
+	}
+	legacyState["review"].(map[string]any)["feedback_path"] = filepath.ToSlash(mustRelative(runtime.Root, legacyReview))
+	if err := atomicWriteJSON(runtime.statePath(), legacyState); err != nil {
+		t.Fatal(err)
+	}
+	event := map[string]any{"kind": "review_requested", "fields": map[string]any{"trigger": map[string]any{"type": "activation", "source_id": "legacy-activation-source"}}}
+	eventData, _ := json.Marshal(event)
+	if err := os.WriteFile(filepath.Join(runtime.RuntimeDir, "events.jsonl"), append(eventData, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.migrateLegacyStateIfNeeded(); err != nil {
+		t.Fatal(err)
+	}
+	state, err := runtime.LoadState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Review.Status != "responded" || state.Review.Response == nil || state.ActivationSourceID == nil || *state.ActivationSourceID != "legacy-activation-source" {
+		t.Fatal("current-state migration lost the active response or activation identity")
+	}
+	if !runtime.currentReviewValid(state) {
+		t.Fatal("current-state migration did not preserve the current validated Governor feedback")
+	}
+	if _, err := os.Stat(legacyDir); !os.IsNotExist(err) {
+		t.Fatal("current-state migration retained the historical review directory")
+	}
+	if _, err := os.Stat(filepath.Join(runtime.RuntimeDir, "events.jsonl")); !os.IsNotExist(err) {
+		t.Fatal("current-state migration retained the append-only event stream")
+	}
+	if _, err := os.Stat(filepath.Join(runtime.RuntimeDir, "migrations", "current-state-v1", "migration.json")); err != nil {
+		t.Fatal("current-state migration did not write its explicit completion marker")
+	}
+	if err := runtime.migrateLegacyStateIfNeeded(); err != nil {
+		t.Fatal("current-state migration is not reentrant")
 	}
 }
 

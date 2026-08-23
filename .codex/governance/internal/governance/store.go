@@ -153,8 +153,7 @@ func (runtime *Runtime) statePath() string { return filepath.Join(runtime.Runtim
 func (runtime *Runtime) requestPath() string {
 	return filepath.Join(runtime.RuntimeDir, "review-request.json")
 }
-func (runtime *Runtime) eventsPath() string { return filepath.Join(runtime.RuntimeDir, "events.jsonl") }
-func (runtime *Runtime) reviewsDir() string { return filepath.Join(runtime.RuntimeDir, "reviews") }
+func (runtime *Runtime) reviewPath() string { return filepath.Join(runtime.RuntimeDir, "review.json") }
 
 func (runtime *Runtime) StateExists() bool {
 	info, err := os.Stat(runtime.statePath())
@@ -253,21 +252,21 @@ func (runtime *Runtime) migrateLegacyStateIfNeeded() error {
 			return err
 		}
 		if header.SchemaVersion == schemaVersion {
+			legacyFeedbackPath := legacyFeedbackPath(raw)
 			var state State
 			if err := json.Unmarshal(raw, &state); err != nil {
 				return err
 			}
 			if state.CurrentFocus != nil && state.NextAction != nil && !state.CurrentFocus.EvidenceCheckpoint.Reached && strings.TrimSpace(*state.NextAction) == strings.TrimSpace(state.CurrentFocus.EvidenceCheckpoint.Description) {
-				previous := *state.NextAction
 				state.NextAction = stringPointer(state.CurrentFocus.Objective)
 				if err := runtime.saveState(&state); err != nil {
 					return err
 				}
-				if err := runtime.appendEvent("advisory_v2_next_action_repaired", state.RunID, "replaced a premature checkpoint outcome with the active objective", map[string]any{"previous_next_action": previous, "focus_id": state.CurrentFocus.FocusID}); err != nil {
-					return err
-				}
 			}
-			return runtime.finalizeAdvisoryV2Migration(&state)
+			if err := runtime.finalizeAdvisoryV2Migration(); err != nil {
+				return err
+			}
+			return runtime.migrateCurrentStateStorage(&state, legacyFeedbackPath)
 		}
 		if header.SchemaVersion != 1 {
 			return fmt.Errorf("unsupported governance state schema_version %d", header.SchemaVersion)
@@ -326,11 +325,14 @@ func (runtime *Runtime) migrateLegacyStateIfNeeded() error {
 		if err := runtime.saveState(state); err != nil {
 			return err
 		}
-		return runtime.finalizeAdvisoryV2Migration(state)
+		if err := runtime.finalizeAdvisoryV2Migration(); err != nil {
+			return err
+		}
+		return runtime.migrateCurrentStateStorage(state, nil)
 	})
 }
 
-func (runtime *Runtime) finalizeAdvisoryV2Migration(state *State) error {
+func (runtime *Runtime) finalizeAdvisoryV2Migration() error {
 	if err := runtime.archiveInactiveLegacyArtifacts(); err != nil {
 		return err
 	}
@@ -346,35 +348,105 @@ func (runtime *Runtime) finalizeAdvisoryV2Migration(state *State) error {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	exists, err := runtime.eventKindExists("advisory_v2_migrated", state.RunID)
-	if err != nil {
-		return err
-	}
-	if !exists {
-		if err := runtime.appendEvent("advisory_v2_migrated", state.RunID, "migrated approval-based governance state to an advisory execution snapshot", map[string]any{"migration": "advisory-v2", "preserved_focus": state.CurrentFocus != nil}); err != nil {
-			return err
-		}
-	}
 	return atomicWriteJSON(marker, map[string]any{"schema_version": schemaVersion, "migration": "advisory-v2", "status": "complete"})
 }
 
-func (runtime *Runtime) eventKindExists(kind, runID string) (bool, error) {
-	file, err := os.Open(runtime.eventsPath())
-	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
+func legacyFeedbackPath(raw []byte) *string {
+	var envelope struct {
+		Review struct {
+			FeedbackPath *string `json:"feedback_path"`
+		} `json:"review"`
 	}
+	if json.Unmarshal(raw, &envelope) != nil || envelope.Review.FeedbackPath == nil || strings.TrimSpace(*envelope.Review.FeedbackPath) == "" {
+		return nil
+	}
+	return envelope.Review.FeedbackPath
+}
+
+func (runtime *Runtime) migrateCurrentStateStorage(state *State, legacyFeedback *string) error {
+	markerDir := filepath.Join(runtime.RuntimeDir, "migrations", "current-state-v1")
+	marker := filepath.Join(markerDir, "migration.json")
+	if _, err := os.Stat(marker); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if state.ActivationSourceID == nil {
+		state.ActivationSourceID = runtime.activationSourceFromLegacyEvents()
+	}
+	migratedReview := false
+	if state.Review.Status == "feedback_ready" || state.Review.Status == "responded" {
+		migratedReview = runtime.currentReviewValid(state)
+		if !migratedReview && legacyFeedback != nil {
+			var result ReviewResult
+			legacyPath := resolvePath(runtime.Root, *legacyFeedback)
+			if decodeStrictFile(legacyPath, &result) == nil && reviewMatchesState(&result, state) {
+				if err := atomicWriteJSON(runtime.reviewPath(), &result); err != nil {
+					return err
+				}
+				migratedReview = true
+			}
+		}
+		if !migratedReview {
+			state.Review.Status = "missed"
+			state.Review.Response = nil
+			state.LastDiagnostic = &RuntimeDiagnostic{Source: "current-state-migration", Summary: "current Governor feedback was unavailable or invalid during migration", OccurredAt: time.Now().UTC().Format(time.RFC3339Nano)}
+		}
+	} else if err := removeFileIfExists(runtime.reviewPath()); err != nil {
+		return err
+	}
+	if err := runtime.saveState(state); err != nil {
+		return err
+	}
+	if err := removeFileIfExists(filepath.Join(runtime.RuntimeDir, "events.jsonl")); err != nil {
+		return err
+	}
+	if err := os.RemoveAll(filepath.Join(runtime.RuntimeDir, "reviews")); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(markerDir, 0o755); err != nil {
+		return err
+	}
+	return atomicWriteJSON(marker, map[string]any{"schema_version": schemaVersion, "migration": "current-state-v1", "status": "complete", "current_review_preserved": migratedReview})
+}
+
+func (runtime *Runtime) activationSourceFromLegacyEvents() *string {
+	file, err := os.Open(filepath.Join(runtime.RuntimeDir, "events.jsonl"))
 	if err != nil {
-		return false, err
+		return nil
 	}
 	defer file.Close()
+	var source *string
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		var event Event
-		if json.Unmarshal(scanner.Bytes(), &event) == nil && event.Kind == kind && event.RunID == runID {
-			return true, nil
+		var event struct {
+			Kind   string         `json:"kind"`
+			Fields map[string]any `json:"fields"`
+		}
+		if json.Unmarshal(scanner.Bytes(), &event) != nil || event.Kind != "review_requested" {
+			continue
+		}
+		trigger, ok := event.Fields["trigger"].(map[string]any)
+		if !ok || trigger["type"] != "activation" {
+			continue
+		}
+		value, ok := trigger["source_id"].(string)
+		if ok && strings.TrimSpace(value) != "" {
+			copy := value
+			source = &copy
 		}
 	}
-	return false, scanner.Err()
+	return source
+}
+
+func (runtime *Runtime) currentReviewValid(state *State) bool {
+	var result ReviewResult
+	return decodeStrictFile(runtime.reviewPath(), &result) == nil && reviewMatchesState(&result, state)
+}
+
+func reviewMatchesState(result *ReviewResult, state *State) bool {
+	return result != nil && state != nil && state.Review.ReviewID != nil && state.Review.TriggerInstanceID != nil && state.Review.ReviewSnapshotHash != nil &&
+		result.ReviewID == *state.Review.ReviewID && result.TriggerInstanceID == *state.Review.TriggerInstanceID && result.ReviewSnapshotHash == *state.Review.ReviewSnapshotHash && validateReviewResult(result) == nil
 }
 
 func migrateLegacyWorkPacket(packet *legacyWorkPacketV1) *ExecutionSnapshot {
@@ -554,24 +626,12 @@ func atomicWrite(path string, data []byte) error {
 	return nil
 }
 
-func (runtime *Runtime) appendEvent(kind, runID, summary string, fields map[string]any) error {
-	if err := os.MkdirAll(runtime.RuntimeDir, 0o755); err != nil {
-		return err
+func removeFileIfExists(path string) error {
+	err := os.Remove(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
 	}
-	event := Event{SchemaVersion: schemaVersion, EventID: newID("event"), OccurredAt: time.Now().UTC().Format(time.RFC3339Nano), Kind: kind, RunID: runID, Summary: summary, Fields: fields}
-	data, err := json.Marshal(event)
-	if err != nil {
-		return err
-	}
-	file, err := os.OpenFile(runtime.eventsPath(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	if _, err := file.Write(append(data, '\n')); err != nil {
-		return err
-	}
-	return file.Sync()
+	return err
 }
 
 func newID(prefix string) string {
@@ -702,27 +762,4 @@ func normalizeStrings(values []string) []string {
 	}
 	sort.Strings(result)
 	return result
-}
-
-func readJSONLines(path string) ([]json.RawMessage, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-	var lines []json.RawMessage
-	scanner := bufio.NewScanner(file)
-	buffer := make([]byte, 64*1024)
-	scanner.Buffer(buffer, 1024*1024)
-	for scanner.Scan() {
-		line := bytes.TrimSpace(scanner.Bytes())
-		if len(line) == 0 {
-			continue
-		}
-		if !json.Valid(line) {
-			return nil, errors.New("events.jsonl contains invalid JSON")
-		}
-		lines = append(lines, append(json.RawMessage(nil), line...))
-	}
-	return lines, scanner.Err()
 }

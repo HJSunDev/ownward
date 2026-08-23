@@ -5,6 +5,7 @@
 ## 工作关系
 
 - `state.json` 保存当前完成条件、执行快照、证据、下一验证点、复核反馈与主 Agent 回应；执行快照不是批准、许可或受控范围。
+- `review-request.json` 和 `review.json` 分别保存当前 Governor 请求与当前原始反馈；三个当前态文件均先校验再原子覆盖，不保留日常历史流水。
 - Governor 反馈必须被主 Agent 阅读并明确回应，但是否采纳及如何执行始终由主 Agent 决定。
 - Governor、Review 和治理 Hook 不拦截工具、不拒绝写入、不冻结或暂停任务，也不限制同一对话中的其他工作。
 - Governor 或治理运行时失败时，本次反馈标记为缺失，主线继续；项目原有安全、权限和审计机制保持不变。
@@ -20,7 +21,7 @@
 - 治理不注册 `PreToolUse`、`Stop` 或子 Agent 生命周期 Hook。已加载旧配置产生的兼容调用严格返回空结果。
 - 所有权只决定哪个主任务的生命周期事件可以创建复核，不赋予工作许可，也不限制其他任务。交接只转移该复核归属。
 
-旧版状态首次加载时自动迁移：有效目标、价值、进展、证据、检查点、失败事实和所有权被保留；活动批准、许可、冻结、基础设施闩锁和旧请求退出活动链路并归档到 `runtime/migrations/advisory-v2/`。
+旧版状态首次加载时自动迁移：有效目标、价值、进展、证据、检查点、失败事实和所有权被保留；活动批准、许可、冻结、基础设施闩锁和旧请求退出活动链路并归档到 `runtime/migrations/advisory-v2/`。历史 Review 与追加事件流升级时只提取仍然有效的当前请求、反馈和触发身份，写入三个当前态文件后清理；迁移幂等只由 `runtime/migrations/current-state-v1/` 的明确标记保证。
 
 ## 入口
 
@@ -63,6 +64,8 @@ sh .codex/governance/governance-hook.sh status
 ## 本地状态与构建产物
 
 - `.codex/governance/runtime/` 是不提交的本地治理状态，任务进行中不得随意删除。
+- 日常持久化只有 `state.json`、`review-request.json` 和 `review.json` 三个固定当前态文件：状态和请求更新时覆盖旧内容，新请求使旧反馈失效，反馈校验通过后覆盖 `review.json`。
+- 运行时不创建历史 Review 目录或追加事件日志，也不增加轮转、摘要、归档或第二套记忆；恢复所需事实直接存在于 `state.json` 和有效证据，长期重要结论仍进入项目关键工作留痕体系。
 - `.codex/governance/bin/` 是不提交的本地编译产物。
 - 配置、Schema、CLI 源码、Governor 和 Hooks 随项目维护。
 - 项目级 Hook 定义变化后，Codex 会要求用户重新审阅并信任新哈希；不得通过绕过 Hook 信任来替代正常审阅。

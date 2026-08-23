@@ -123,7 +123,7 @@ func run(args []string) error {
 			return err
 		}
 		path, err := runtime.AcceptReview(result)
-		return output(map[string]any{"decision_path": path}, err)
+		return output(map[string]any{"review_path": path}, err)
 	case "record-review-response":
 		var response governance.ReviewResponseInput
 		if err := decodeInput(args[1:], &response); err != nil {

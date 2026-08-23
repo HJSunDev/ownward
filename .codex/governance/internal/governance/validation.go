@@ -96,6 +96,22 @@ func validateState(state *State) error {
 	if state.Status == "complete" && state.CurrentFocus != nil {
 		return errors.New("complete state cannot retain a current focus")
 	}
+	if state.ActivationSourceID != nil {
+		if err := nonempty("activation_source_id", *state.ActivationSourceID); err != nil {
+			return err
+		}
+	}
+	if state.LastDiagnostic != nil {
+		if err := nonempty("last_diagnostic source", state.LastDiagnostic.Source); err != nil {
+			return err
+		}
+		if err := nonempty("last_diagnostic summary", state.LastDiagnostic.Summary); err != nil {
+			return err
+		}
+		if _, err := time.Parse(time.RFC3339Nano, state.LastDiagnostic.OccurredAt); err != nil {
+			return errors.New("last_diagnostic occurred_at is invalid")
+		}
+	}
 	if err := validateReviewState(&state.Review); err != nil {
 		return err
 	}
@@ -139,13 +155,13 @@ func validateReviewState(review *ReviewState) error {
 			return err
 		}
 	}
-	if review.Status == "requested" && (review.FeedbackPath != nil || review.Response != nil) {
+	if review.Status == "requested" && review.Response != nil {
 		return errors.New("requested review cannot contain feedback or a response")
 	}
-	if review.Status == "feedback_ready" && (review.FeedbackPath == nil || review.Response != nil) {
+	if review.Status == "feedback_ready" && review.Response != nil {
 		return errors.New("feedback_ready review requires feedback and no response")
 	}
-	if review.Status == "responded" && (review.FeedbackPath == nil || review.Response == nil) {
+	if review.Status == "responded" && review.Response == nil {
 		return errors.New("responded review requires feedback and a main-Agent response")
 	}
 	if review.Status == "missed" && review.Response != nil {

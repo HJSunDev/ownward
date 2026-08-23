@@ -4,7 +4,7 @@
   "title": "Ownward Advisory Governance State",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "run_id", "status", "authority_hash", "completion_conditions", "current_focus", "pending_intervention", "explicit_resource_constraints", "reusable_results", "next_action", "review", "owner", "handoff"],
+  "required": ["schema_version", "run_id", "status", "authority_hash", "completion_conditions", "current_focus", "pending_intervention", "explicit_resource_constraints", "reusable_results", "next_action", "activation_source_id", "last_diagnostic", "review", "owner", "handoff"],
   "properties": {
     "schema_version": { "const": 2 },
     "run_id": { "$ref": "#/$defs/nonEmpty" },
@@ -16,6 +16,8 @@
     "explicit_resource_constraints": { "type": "array", "items": { "$ref": "#/$defs/resourceConstraint" } },
     "reusable_results": { "type": "array", "items": { "$ref": "#/$defs/reusableResult" } },
     "next_action": { "type": ["string", "null"] },
+    "activation_source_id": { "type": ["string", "null"] },
+    "last_diagnostic": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/runtimeDiagnostic" }] },
     "review": { "$ref": "#/$defs/reviewState" },
     "owner": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/owner" }] },
     "handoff": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/handoff" }] }
@@ -71,12 +73,17 @@
     },
     "reviewState": {
       "type": "object", "additionalProperties": false,
-      "required": ["status", "review_id", "trigger_instance_id", "fixed_review_generation", "review_snapshot_hash", "trigger", "feedback_path", "response"],
+      "required": ["status", "review_id", "trigger_instance_id", "fixed_review_generation", "review_snapshot_hash", "trigger", "response"],
       "properties": {
         "status": { "enum": ["idle", "requested", "feedback_ready", "responded", "missed"] }, "review_id": { "type": ["string", "null"] }, "trigger_instance_id": { "type": ["string", "null"] },
         "fixed_review_generation": { "type": "integer", "minimum": 0 }, "review_snapshot_hash": { "type": ["string", "null"] }, "trigger": { "type": ["string", "null"] },
-        "feedback_path": { "type": ["string", "null"] }, "response": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/reviewResponse" }] }
+        "response": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/reviewResponse" }] }
       }
+    },
+    "runtimeDiagnostic": {
+      "type": "object", "additionalProperties": false,
+      "required": ["source", "summary", "occurred_at"],
+      "properties": { "source": { "$ref": "#/$defs/nonEmpty" }, "summary": { "$ref": "#/$defs/nonEmpty" }, "occurred_at": { "$ref": "#/$defs/nonEmpty" } }
     },
     "resolution": {
       "type": "object", "additionalProperties": false,

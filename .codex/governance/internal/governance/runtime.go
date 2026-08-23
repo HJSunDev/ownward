@@ -2,7 +2,6 @@ package governance
 
 import (
 	"bufio"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -38,9 +37,6 @@ func (runtime *Runtime) Init() (*State, error) {
 			NextAction: &next, Review: ReviewState{Status: "idle"}, Owner: nil, Handoff: nil,
 		}
 		if err := runtime.saveState(state); err != nil {
-			return err
-		}
-		if err := runtime.appendEvent("initialized", state.RunID, "created advisory governance state", nil); err != nil {
 			return err
 		}
 		created = state
@@ -209,9 +205,6 @@ func (runtime *Runtime) UpdateExecutionSnapshot(input ExecutionSnapshotInput) (*
 		if err := runtime.saveState(state); err != nil {
 			return err
 		}
-		if err := runtime.appendEvent("execution_snapshot_updated", state.RunID, "updated the main Agent execution snapshot", map[string]any{"focus_id": snapshot.FocusID, "snapshot_hash": snapshot.SnapshotHash}); err != nil {
-			return err
-		}
 		trigger, err := newReviewTrigger("event", "focus-change", snapshot.FocusID+":"+snapshot.SnapshotHash, "execution focus changed")
 		if len(invalidEvidence) > 0 {
 			trigger, err = evidenceIdentityChangeTrigger(invalidEvidence)
@@ -296,15 +289,6 @@ func (runtime *Runtime) RecordEvidence(record EvidenceRecord) (*ReviewRequest, e
 		if err := runtime.saveState(state); err != nil {
 			return err
 		}
-		eventKind := "evidence_recorded"
-		eventSummary := "recorded validated evidence"
-		if alreadyKnown {
-			eventKind = "evidence_reused"
-			eventSummary = "bound an unchanged reusable result to the current execution snapshot"
-		}
-		if err := runtime.appendEvent(eventKind, state.RunID, eventSummary, map[string]any{"evidence_id": record.EvidenceID, "path": record.Path, "hash": hash}); err != nil {
-			return err
-		}
 		if len(invalidEvidence) > 0 {
 			trigger, err := evidenceIdentityChangeTrigger(invalidEvidence)
 			if err != nil {
@@ -379,9 +363,6 @@ func (runtime *Runtime) RecordFailureEvent(input FailureEventInput) (*ReviewRequ
 		}
 		focus.FailureEvents = append(focus.FailureEvents, event)
 		if err := runtime.saveState(state); err != nil {
-			return err
-		}
-		if err := runtime.appendEvent("failure_recorded", state.RunID, "recorded verified failure event", map[string]any{"event_id": event.EventID, "signature": event.Signature, "repair_generation": generation}); err != nil {
 			return err
 		}
 		if generation > 0 {
@@ -478,9 +459,6 @@ func (runtime *Runtime) RecordRepair(input FailureRepairInput) (*FailureRepair, 
 		if err := runtime.saveState(state); err != nil {
 			return err
 		}
-		if err := runtime.appendEvent("failure_repair_recorded", state.RunID, "advanced a verified failure repair generation", map[string]any{"repair_id": repair.RepairID, "signature": repair.Signature, "repair_generation": repair.RepairGeneration}); err != nil {
-			return err
-		}
 		recorded = &repair
 		return nil
 	})
@@ -571,9 +549,6 @@ func (runtime *Runtime) ResolveIntervention(input ResolveInterventionInput) (*Re
 		if err := runtime.saveState(state); err != nil {
 			return err
 		}
-		if err := runtime.appendEvent("intervention_resolved", state.RunID, "recorded a safe user intervention resolution", map[string]any{"intervention_id": pending.InterventionID, "kind": pending.Kind, "source_turn_id": pending.Resolution.SourceTurnID}); err != nil {
-			return err
-		}
 		trigger, err := newReviewTrigger("event", "intervention-resolution", pending.InterventionID+":"+pending.Resolution.SourceTurnID, "user intervention resolved")
 		if err != nil {
 			return err
@@ -645,15 +620,17 @@ func (runtime *Runtime) requestReviewLocked(state *State, trigger ReviewTrigger)
 		}
 	}
 	identity := reviewTriggerIdentity(trigger)
-	supersededReviewID := ""
 	if state.Review.Status == "requested" || state.Review.Status == "feedback_ready" {
 		existing, loadErr := runtime.loadRequest()
 		if loadErr == nil && runtime.verifyReviewSnapshot(existing, state) == nil {
+			if state.Review.Status == "requested" {
+				if err := removeFileIfExists(runtime.reviewPath()); err != nil {
+					return nil, err
+				}
+			}
 			return existing, nil
 		}
-		supersededReviewID = valueOr(state.Review.ReviewID, "")
 		state.Review.Status = "missed"
-		state.Review.FeedbackPath = nil
 		state.Review.Response = nil
 	}
 	if state.Review.Trigger != nil && *state.Review.Trigger == identity {
@@ -661,10 +638,6 @@ func (runtime *Runtime) requestReviewLocked(state *State, trigger ReviewTrigger)
 	}
 	instanceID, err := reviewTriggerInstanceID(state.RunID, trigger)
 	if err != nil {
-		return nil, err
-	}
-	seen, err := runtime.reviewTriggerInstanceSeen(instanceID)
-	if err != nil || seen {
 		return nil, err
 	}
 	if trigger.Kind == "fixed" {
@@ -704,7 +677,6 @@ func (runtime *Runtime) requestReviewLocked(state *State, trigger ReviewTrigger)
 	state.Review.TriggerInstanceID = stringPointer(request.TriggerInstanceID)
 	state.Review.ReviewSnapshotHash = stringPointer(request.ReviewSnapshotHash)
 	state.Review.Trigger = stringPointer(identity)
-	state.Review.FeedbackPath = nil
 	state.Review.Response = nil
 	if err := atomicWriteJSON(runtime.requestPath(), request); err != nil {
 		return nil, err
@@ -712,32 +684,10 @@ func (runtime *Runtime) requestReviewLocked(state *State, trigger ReviewTrigger)
 	if err := runtime.saveState(state); err != nil {
 		return nil, err
 	}
-	if supersededReviewID != "" {
-		if err := runtime.appendEvent("review_superseded", state.RunID, "replaced a stale advisory review after its bound facts changed", map[string]any{"review_id": supersededReviewID, "replacement_review_id": request.ReviewID}); err != nil {
-			return nil, err
-		}
-	}
-	if err := runtime.appendEvent("review_requested", state.RunID, "created advisory Governor review request", map[string]any{"review_id": request.ReviewID, "trigger_instance_id": request.TriggerInstanceID, "trigger": request.Trigger}); err != nil {
+	if err := removeFileIfExists(runtime.reviewPath()); err != nil {
 		return nil, err
 	}
 	return request, nil
-}
-
-func (runtime *Runtime) reviewTriggerInstanceSeen(instanceID string) (bool, error) {
-	lines, err := readJSONLines(runtime.eventsPath())
-	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	for _, line := range lines {
-		var event Event
-		if json.Unmarshal(line, &event) == nil && event.Kind == "review_requested" && event.Fields["trigger_instance_id"] == instanceID {
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
 func (runtime *Runtime) loadRequest() (*ReviewRequest, error) {
@@ -791,20 +741,15 @@ func (runtime *Runtime) AcceptReview(result ReviewResult) (string, error) {
 		if err := validateReviewResultForState(&result, request, state); err != nil {
 			return err
 		}
-		if err := os.MkdirAll(runtime.reviewsDir(), 0o755); err != nil {
-			return err
-		}
-		path = filepath.Join(runtime.reviewsDir(), result.ReviewID+".json")
+		path = runtime.reviewPath()
 		if err := atomicWriteJSON(path, &result); err != nil {
 			return err
 		}
-		relative := filepath.ToSlash(mustRelative(runtime.Root, path))
-		state.Review.FeedbackPath = &relative
 		state.Review.Status = "feedback_ready"
 		if err := runtime.saveState(state); err != nil {
 			return err
 		}
-		return runtime.appendEvent("review_feedback_received", state.RunID, "stored validated advisory Governor feedback", map[string]any{"review_id": result.ReviewID, "recommendation": result.Recommendation})
+		return nil
 	})
 	return path, err
 }
@@ -822,26 +767,22 @@ func (runtime *Runtime) MarkReviewMissed(reason string) error {
 		if err != nil {
 			return err
 		}
-		if state.Review.Status == "feedback_ready" && state.Review.FeedbackPath != nil {
+		if state.Review.Status == "feedback_ready" {
 			var feedback ReviewResult
-			if err := decodeStrictFile(resolvePath(runtime.Root, *state.Review.FeedbackPath), &feedback); err == nil && validateReviewResult(&feedback) == nil {
+			if err := decodeStrictFile(runtime.reviewPath(), &feedback); err == nil && reviewMatchesState(&feedback, state) {
 				return nil
 			}
 		}
 		if state.Review.Status != "requested" && state.Review.Status != "feedback_ready" {
 			return nil
 		}
-		reviewID := ""
-		if state.Review.ReviewID != nil {
-			reviewID = *state.Review.ReviewID
-		}
 		state.Review.Status = "missed"
-		state.Review.FeedbackPath = nil
 		state.Review.Response = nil
+		state.LastDiagnostic = &RuntimeDiagnostic{Source: "governor-review", Summary: reason, OccurredAt: time.Now().UTC().Format(time.RFC3339Nano)}
 		if err := runtime.saveState(state); err != nil {
 			return err
 		}
-		return runtime.appendEvent("review_missed", state.RunID, "Governor feedback was unavailable; main execution remains available", map[string]any{"review_id": reviewID, "reason": reason})
+		return removeFileIfExists(runtime.reviewPath())
 	})
 }
 
@@ -926,12 +867,15 @@ func (runtime *Runtime) RecordReviewResponse(input ReviewResponseInput) (*State,
 			}
 			return errors.New("evidence identity changed; stale Governor feedback response was rejected and a fresh advisory review was requested")
 		}
-		if state.Review.Status != "feedback_ready" || state.Review.ReviewID == nil || state.Review.FeedbackPath == nil || *state.Review.ReviewID != input.ReviewID {
+		if state.Review.Status != "feedback_ready" || state.Review.ReviewID == nil || *state.Review.ReviewID != input.ReviewID {
 			return errors.New("no matching Governor feedback is awaiting the main Agent response")
 		}
 		var result ReviewResult
-		if err := decodeStrictFile(resolvePath(runtime.Root, *state.Review.FeedbackPath), &result); err != nil {
+		if err := decodeStrictFile(runtime.reviewPath(), &result); err != nil {
 			return err
+		}
+		if !reviewMatchesState(&result, state) {
+			return errors.New("current Governor feedback identity does not match governance state")
 		}
 		response := &ReviewResponse{ReviewID: input.ReviewID, Disposition: input.Disposition, Reason: strings.TrimSpace(input.Reason), NextValidationPoint: strings.TrimSpace(input.NextValidationPoint), RespondedAt: time.Now().UTC().Format(time.RFC3339Nano)}
 		state.Review.Response = response
@@ -946,9 +890,6 @@ func (runtime *Runtime) RecordReviewResponse(input ReviewResponseInput) (*State,
 			state.Status = "active"
 		}
 		if err := runtime.saveState(state); err != nil {
-			return err
-		}
-		if err := runtime.appendEvent("review_response_recorded", state.RunID, "recorded the main Agent response to Governor feedback", map[string]any{"review_id": input.ReviewID, "disposition": input.Disposition, "next_validation_point": input.NextValidationPoint}); err != nil {
 			return err
 		}
 		updated = state
@@ -999,9 +940,6 @@ func (runtime *Runtime) CompleteExecutionSnapshot() error {
 		}
 		if !state.CurrentFocus.EvidenceCheckpoint.Reached {
 			missing := missingEvidenceForFocus(state.CurrentFocus, state.ReusableResults)
-			if err := runtime.appendEvent("evidence_checkpoint_missed", state.RunID, "execution reached its validation point without the expected evidence", map[string]any{"focus_id": state.CurrentFocus.FocusID, "checkpoint_id": state.CurrentFocus.EvidenceCheckpoint.CheckpointID, "missing_evidence_ids": missing}); err != nil {
-				return err
-			}
 			trigger, triggerErr := newReviewTrigger("event", "evidence-checkpoint-missed", state.CurrentFocus.FocusID+":"+state.CurrentFocus.SnapshotHash+":"+state.CurrentFocus.EvidenceCheckpoint.CheckpointID+":"+strings.Join(missing, ","), "evidence checkpoint reached without expected evidence")
 			if triggerErr != nil {
 				return triggerErr
@@ -1016,13 +954,12 @@ func (runtime *Runtime) CompleteExecutionSnapshot() error {
 		}
 		conditionID := state.CurrentFocus.ConditionID
 		setConditionStatus(state, conditionID, "met", conditionEvidence(state, conditionID))
-		completedFocus := state.CurrentFocus.FocusID
 		state.CurrentFocus = nil
 		state.NextAction = stringPointer("select the next highest-value unmet completion condition")
 		if err := runtime.saveState(state); err != nil {
 			return err
 		}
-		return runtime.appendEvent("execution_snapshot_completed", state.RunID, "completed the current execution snapshot", map[string]any{"focus_id": completedFocus, "condition_id": conditionID})
+		return nil
 	})
 }
 
@@ -1052,7 +989,7 @@ func (runtime *Runtime) Finish() error {
 		if state.Review.Status != "responded" && state.Review.Status != "missed" {
 			return errors.New("finish requires the completion-candidate feedback to be answered or recorded as unavailable")
 		}
-		if state.Review.Status == "responded" && (state.Review.Response == nil || state.Review.FeedbackPath == nil) {
+		if state.Review.Status == "responded" && state.Review.Response == nil {
 			return errors.New("responded completion review is missing its feedback or main Agent response")
 		}
 		request, err := runtime.loadRequest()
@@ -1064,7 +1001,7 @@ func (runtime *Runtime) Finish() error {
 		}
 		if state.Review.Status == "responded" {
 			var feedback ReviewResult
-			if err := decodeStrictFile(resolvePath(runtime.Root, *state.Review.FeedbackPath), &feedback); err != nil {
+			if err := decodeStrictFile(runtime.reviewPath(), &feedback); err != nil {
 				return err
 			}
 			if err := validateReviewResult(&feedback); err != nil {
@@ -1085,7 +1022,7 @@ func (runtime *Runtime) Finish() error {
 		if err := runtime.saveState(state); err != nil {
 			return err
 		}
-		return runtime.appendEvent("completed", state.RunID, "mechanically closed the fully evidenced task after advisory review", nil)
+		return nil
 	})
 }
 
@@ -1280,13 +1217,12 @@ func (runtime *Runtime) reconcileEvidenceIdentitiesLocked(state *State) ([]strin
 	state.NextAction = stringPointer("replace or revalidate invalid evidence: " + strings.Join(invalid, ", "))
 	if state.Review.Status == "requested" || state.Review.Status == "feedback_ready" || state.Review.Status == "responded" {
 		state.Review.Status = "missed"
-		state.Review.FeedbackPath = nil
 		state.Review.Response = nil
 	}
 	if err := runtime.saveState(state); err != nil {
 		return nil, err
 	}
-	if err := runtime.appendEvent("evidence_invalidated", state.RunID, "removed reusable evidence whose file identity changed", map[string]any{"evidence_ids": invalid}); err != nil {
+	if err := removeFileIfExists(runtime.reviewPath()); err != nil {
 		return nil, err
 	}
 	return invalid, nil

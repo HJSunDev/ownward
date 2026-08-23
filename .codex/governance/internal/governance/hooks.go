@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var (
@@ -72,7 +73,11 @@ func (runtime *Runtime) hookUserPrompt(input HookInput, writer io.Writer) error 
 		if _, err := runtime.ensureHookOwner(input); err != nil {
 			return err
 		}
-		request, err := runtime.RequestFixedReview("activation", activationSourceID(input.Prompt))
+		sourceID := activationSourceID(input.Prompt)
+		if _, err := runtime.rememberActivationSource(sourceID); err != nil {
+			return err
+		}
+		request, err := runtime.RequestFixedReview("activation", sourceID)
 		if err != nil {
 			return err
 		}
@@ -108,6 +113,12 @@ func (runtime *Runtime) hookUserPrompt(input HookInput, writer io.Writer) error 
 	if consumed {
 		triggerType = "session-start"
 		sourceID = "handoff:" + firstNonempty(input.SessionID, sourceID)
+	} else {
+		hadActivationIdentity := state.ActivationSourceID != nil
+		changed, err := runtime.rememberActivationSource(sourceID)
+		if err != nil || !changed || !hadActivationIdentity {
+			return writeJSON(writer, map[string]any{})
+		}
 	}
 	request, err := runtime.RequestFixedReview(triggerType, sourceID)
 	if err != nil || request == nil {
@@ -118,6 +129,26 @@ func (runtime *Runtime) hookUserPrompt(input HookInput, writer io.Writer) error 
 		return err
 	}
 	return writeAdditionalContext(writer, "UserPromptSubmit", runtime.reviewInstruction(state))
+}
+
+func (runtime *Runtime) rememberActivationSource(sourceID string) (bool, error) {
+	if strings.TrimSpace(sourceID) == "" {
+		return false, errors.New("activation source identity is empty")
+	}
+	changed := false
+	err := runtime.withLock(func() error {
+		state, err := runtime.LoadState()
+		if err != nil {
+			return err
+		}
+		if state.ActivationSourceID != nil && *state.ActivationSourceID == sourceID {
+			return nil
+		}
+		state.ActivationSourceID = stringPointer(sourceID)
+		changed = true
+		return runtime.saveState(state)
+	})
+	return changed, err
 }
 
 func (runtime *Runtime) matchesActivationPrompt(prompt string) bool {
@@ -244,8 +275,8 @@ func requestedAgentRole(input HookInput) (string, bool, error) {
 }
 
 func (runtime *Runtime) reviewInstruction(state *State) string {
-	if state.Review.Status == "feedback_ready" && state.Review.FeedbackPath != nil && state.Review.ReviewID != nil {
-		return "Governor advisory feedback is ready at `" + filepath.ToSlash(*state.Review.FeedbackPath) + "`. Read and explicitly respond through `.codex/governance/governance-hook.ps1 record-review-response`; adopt, decline, or acknowledge it with evidence and a next validation point, then continue under the main Agent's own decision."
+	if state.Review.Status == "feedback_ready" && state.Review.ReviewID != nil {
+		return "Governor advisory feedback is ready at `" + runtime.reviewLocation() + "`. Read and explicitly respond through `.codex/governance/governance-hook.ps1 record-review-response`; adopt, decline, or acknowledge it with evidence and a next validation point, then continue under the main Agent's own decision."
 	}
 	return "An advisory governance review is ready at `" + runtime.requestLocation() + "`. Reuse the single Governor for this main task (spawn `" + runtime.Config.GovernorAgentName + "` only if none is active), pass it the request path, wait for one JSON result, and persist that exact result with `.codex/governance/governance-hook.ps1 accept-review --json-base64 <base64>`. Then read the feedback and explicitly answer it with `record-review-response`. Governor feedback is mandatory input to the main Agent's reasoning, never permission or a tool gate; product work remains under the main Agent's control if Governor is unavailable."
 }
@@ -254,15 +285,22 @@ func (runtime *Runtime) requestLocation() string {
 	return filepath.ToSlash(mustRelative(runtime.Root, runtime.requestPath()))
 }
 
+func (runtime *Runtime) reviewLocation() string {
+	return filepath.ToSlash(mustRelative(runtime.Root, runtime.reviewPath()))
+}
+
 func (runtime *Runtime) recordHookDiagnostic(event string, hookErr error) {
 	if hookErr == nil || !runtime.StateExists() {
 		return
 	}
-	state, err := runtime.LoadState()
-	if err != nil {
-		return
-	}
-	_ = runtime.appendEvent("hook_diagnostic", state.RunID, "governance hook failed open", map[string]any{"hook": event, "error": hookErr.Error()})
+	_ = runtime.withLock(func() error {
+		state, err := runtime.LoadState()
+		if err != nil {
+			return err
+		}
+		state.LastDiagnostic = &RuntimeDiagnostic{Source: "hook:" + event, Summary: sha256Value([]byte(hookErr.Error())), OccurredAt: time.Now().UTC().Format(time.RFC3339Nano)}
+		return runtime.saveState(state)
+	})
 }
 
 func writeJSON(writer io.Writer, value any) error {

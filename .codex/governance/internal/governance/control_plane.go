@@ -33,9 +33,6 @@ func (runtime *Runtime) ensureHookOwner(input HookInput) (bool, error) {
 			if err := runtime.saveState(state); err != nil {
 				return err
 			}
-			if err := runtime.appendEvent("owner_claimed", state.RunID, "bound advisory governance to its main task", map[string]any{"session_id": input.SessionID, "owner_epoch": 1}); err != nil {
-				return err
-			}
 			owned = true
 			return nil
 		}
@@ -80,9 +77,6 @@ func (runtime *Runtime) PrepareHandoff(sourceSessionID string) (*HandoffTicket, 
 		}
 		state.Handoff = handoff
 		if err := runtime.saveState(state); err != nil {
-			return err
-		}
-		if err := runtime.appendEvent("handoff_prepared", state.RunID, "prepared advisory governance ownership handoff", map[string]any{"handoff_id": handoff.HandoffID, "source_epoch": handoff.SourceEpoch}); err != nil {
 			return err
 		}
 		ticket = &HandoffTicket{HandoffID: handoff.HandoffID, Token: token, ExpiresAt: handoff.ExpiresAt}
@@ -142,10 +136,6 @@ func (runtime *Runtime) consumeHandoff(input HookInput) (bool, error) {
 		if err != nil || time.Now().UTC().After(expiresAt) {
 			return errors.New("governance handoff token has expired")
 		}
-		oldSession := ""
-		if state.Owner != nil {
-			oldSession = state.Owner.SessionID
-		}
 		state.Owner = &OwnerState{
 			SessionID:      input.SessionID,
 			TranscriptPath: input.TranscriptPath,
@@ -154,9 +144,6 @@ func (runtime *Runtime) consumeHandoff(input HookInput) (bool, error) {
 		}
 		state.Handoff = nil
 		if err := runtime.saveState(state); err != nil {
-			return err
-		}
-		if err := runtime.appendEvent("handoff_consumed", state.RunID, "transferred advisory governance ownership", map[string]any{"from_session": oldSession, "to_session": input.SessionID, "owner_epoch": state.Owner.OwnerEpoch}); err != nil {
 			return err
 		}
 		consumed = true

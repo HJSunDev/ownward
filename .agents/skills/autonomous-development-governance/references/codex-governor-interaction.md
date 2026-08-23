@@ -21,7 +21,7 @@ Hook 在自然边界向主 Agent 交付一次操作说明
         ↓
 主 Agent 等待 Governor 通过 Codex 原生父子通道返回一个 JSON
         ↓
-主 Agent 调用 accept-review，确定性校验后原样落盘
+主 Agent 调用 accept-review，确定性校验后原子覆盖当前 review.json
         ↓
 主 Agent 阅读反馈并调用 record-review-response
         ↓
@@ -52,7 +52,7 @@ Governor 返回符合 [反馈 Schema](../assets/governance-runtime/review.schema
 - 可选建议焦点或最小外部输入；
 - `continue`、`adjust`、`stage_complete`、`goal_complete`、`product_decision_needed`、`external_input_needed` 之一。
 
-`accept-review` 只校验 Schema、请求身份、快照哈希和证据引用，并保存原始反馈；不得据此自动更换焦点、失效证据、暂停任务或限制工具。`record-review-response` 保存主 Agent 的 `adopt`、`decline` 或 `acknowledge`、事实理由和下一验证点。
+`accept-review` 只校验 Schema、请求身份、快照哈希和证据引用，并原子覆盖唯一的当前 `review.json`；不得据此自动更换焦点、失效证据、暂停任务或限制工具。`record-review-response` 保存主 Agent 的 `adopt`、`decline` 或 `acknowledge`、事实理由和下一验证点。新请求原子覆盖 `review-request.json` 并使上一份反馈失效；运行时不保留历史 Review，完整持久化生命周期以 [自主治理运行时搭建规范](governance-runtime.md) 为准。
 
 只有主 Agent 明确采纳真实产品决策或无法自行取得的外部输入建议时，才建立持久待处理事项。用户答复由主 Agent 以安全摘要和来源身份调用 `resolve-intervention`；密码、令牌、密钥等敏感原文不得进入治理材料。
 

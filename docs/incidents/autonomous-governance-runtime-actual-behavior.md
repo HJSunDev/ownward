@@ -48,7 +48,7 @@ Hook 是固定的确定性程序，不具备语义判断能力，也不会自行
 → 主 Agent 复用 Governor；没有活动实例时才启动 governor
 → Governor 只读核对动态请求、权威依据、仓库和证据
 → Governor 返回一个符合 Schema 的 JSON
-→ 主 Agent 用 accept-review 原样校验并保存
+→ 主 Agent 用 accept-review 原样校验并原子覆盖 review.json
 → 主 Agent 阅读反馈并用 record-review-response 记录采纳、拒绝或确认
 → 主 Agent 按自己的判断继续工作
 ```
@@ -95,15 +95,16 @@ PreCompact 尽力确认状态可读
 
 ## 六、单一治理状态与幂等性
 
-- 每个主任务只维护一份 `state.json` 和一个当前 Review 槽位。
-- 相同触发由稳定 `trigger_instance_id` 去重；重复投递只复用当前请求。
-- 新事实使旧请求失效时，程序以新代次替换旧请求并记录 `review_superseded`，不会并行维护两个有效 Review。
+- 每个主任务只维护三个固定当前态文件：`state.json` 是唯一执行事实，`review-request.json` 是当前 Governor 输入，`review.json` 是当前 Governor 原始输出。
+- 三个文件均先校验再原子覆盖；相同触发由当前状态中的稳定身份去重，目标模式重复提示由 `activation_source_id` 识别并复用已有结果。
+- 新事实使旧请求失效时，程序以新代次覆盖请求并使上一份 `review.json` 失效，不会并行维护两个有效 Review。
 - Governor 结果必须匹配当前 `review_id`、触发身份、执行快照、证据引用和检查点，过期结果不能回填新事实。
 - Governor 子任务返回 JSON 后自然结束；治理状态在主 Agent 保存并回应反馈后进入 `responded`，Governor 不直接写状态。
+- 运行时不再创建历史 Review 目录或追加事件日志；恢复所需事实直接存在于当前状态和有效证据，不通过历史重放恢复。
 
 ## 七、失败与不可用时怎样处理
 
-治理 Hook 和启动脚本均为 fail-open：解析、构建、状态或 Governor 链路失败时返回空 Hook 结果，不封锁 Codex。Governor 不可用时，当前 Review 可记为 `missed`，主线继续。
+治理 Hook 和启动脚本均为 fail-open：解析、构建、状态或 Governor 链路失败时返回空 Hook 结果，不封锁 Codex。最近一次必要诊断覆盖写入 `state.json`，不会形成不断增长的日志。Governor 不可用时，当前 Review 可记为 `missed`，主线继续。
 
 已经收到且校验通过的 `feedback_ready` 不能被后续失败降级为 `missed`；只有请求尚未得到反馈，或者反馈文件确实缺失、损坏时，才允许按不可用处理。这避免用一次失败绕过主 Agent 必须面对的有效反馈。
 
@@ -122,7 +123,9 @@ PreCompact 尽力确认状态可读
 
 旧版状态首次加载时自动迁移到 advisory v2：目标、价值、完成条件、进展、有效证据、检查点、失败事实、下一动作和所有权均保留；旧批准、许可、冻结、基础设施闩锁和旧请求退出活动链路，并归档到 `runtime/migrations/advisory-v2/` 供审计。
 
-当前本地状态已经完成迁移，仍保持原主线 `run_3d5669569ce62500410764c4`、11 项完成条件、既有执行焦点与可复用证据。当前 Review 为 `missed`，表示该次顾问反馈不可用，不是阻塞或暂停；主线下一动作仍按迁移前的真实进度保留。
+旧历史持久化随后通过 `current-state-v1` 一次性迁移：从事件流提取仍然有效的启动身份，将当前请求、当前有效反馈和主 Agent 回应保留到三个固定当前态文件，验证新状态成立后删除 `events.jsonl` 与历史 `reviews/`。迁移完成只写一个明确标记，后续正常运行不增加迁移文件。
+
+当前本地状态已经完成两层迁移，仍保持原主线 `run_3d5669569ce62500410764c4`、11 项完成条件、既有执行焦点与可复用证据。当前 Review `review_f780d11c58592138dc015c8e`、Governor 原始反馈、主 Agent 的 `adopt` 回应和下一验证点均已保留；旧事件流与历史 Review 目录已经清理。
 
 ## 十、当前 Hook 集合
 
@@ -139,12 +142,13 @@ PreCompact 尽力确认状态可读
 
 同一最终版本已经通过：
 
-- 治理模块全部 Go 测试、`go vet` 与构建；
-- `doctor` 隔离自检，包括启动、普通消息隔离、重复触发、明确回应、压缩恢复和失败开放；
+- 治理模块全部 Go 测试、`go vet` 与 CLI 构建；
+- `doctor` 隔离自检，包括三个固定当前态文件、启动、普通消息隔离、重复触发、明确回应、压缩恢复和失败开放；
 - 项目 Schema 与可复用 Skill 资产一致性检查；
 - Hook 集合与禁止控制语义检查；
-- 真实 Codex 冷启动，`SessionStart` 和普通 `UserPromptSubmit` 均正常完成，普通提示词没有触发 Governor；
-- 最终只读 Governor 对抗式复审，结论为 `PASS`。
+- 真实旧状态迁移与重复加载，当前请求、反馈和主 Agent 回应身份一致，旧事件流与历史 Review 不再存在；
+- `--ephemeral` 真实 Codex 冷启动，Hooks 正常加载，普通消息正常完成且治理状态未改变；
+- 以两份当前态需求规范为唯一判据的最终对抗式复审，未发现本任务范围内的真实偏差。
 
 ## 核对依据
 

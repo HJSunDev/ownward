@@ -29,9 +29,8 @@
    ├─ governed-run.*
    └─ runtime/                 # 本地运行状态，不提交
       ├─ state.json
-      ├─ events.jsonl
       ├─ review-request.json
-      ├─ reviews/
+      ├─ review.json
       └─ migrations/
 ```
 
@@ -88,7 +87,27 @@
 
 `current_focus` 只是主 Agent 的执行快照，描述当前目标、价值、进展、涉及范围、预期证据和下一自然验证点；它不包含允许范围、排除范围、批准令牌或执行许可。Governor 的建议不得直接改写它，只有主 Agent 的显式状态操作可以更新。
 
-`events.jsonl` 只增记录状态转换、证据身份、真实失败、修复代次、复核请求、反馈和主 Agent 回应。原始结果另存为证据文件，事件只记录必要摘要、路径和哈希；不得复制会话、终端流水或敏感原文。
+### 当前态持久化
+
+治理运行时只维护三个当前态文件，不保存日常历史：
+
+- `state.json` 是唯一执行事实，保存当前目标、进展、证据、检查点、所有权、Review 状态和主 Agent 回应；每次变更原子覆盖。
+- `review-request.json` 是当前 Governor 输入，绑定请求身份、快照、证据与检查点；产生新请求时原子覆盖。
+- `review.json` 是当前 Governor 原始输出；通过 Schema、请求身份和快照校验后原子覆盖。
+
+生命周期固定为：
+
+```text
+产生新请求
+→ 原子覆盖 review-request.json，并使上一份 review.json 失效
+→ Governor 返回后校验并原子覆盖 review.json
+→ 主 Agent 阅读反馈，将回应和下一验证点写入 state.json
+→ 下一次合法复核重复这一过程
+```
+
+运行时不维护历史 Review 目录或只增事件日志，也不通过历史重放恢复状态。恢复所需事实必须直接存在于 `state.json`，当前请求和当前反馈分别由两个固定文件承载；失败、修复代次和证据身份等仍影响执行的事实属于当前状态或证据，不得依赖历史流水。一次性 Schema 迁移只使用 `migrations/` 中的明确标记保证幂等，不以日常事件历史充当迁移状态。
+
+Governor 反馈是当前决策输入，不是长期记忆。新请求产生后，旧请求和旧反馈已经被当前状态吸收，不再保留；只有满足关键工作留痕准入条件的长期结论，才由项目既有记录体系独立保存。不得为治理运行时增加轮转、压缩摘要、历史归档或另一套记忆机制。
 
 ## 复核触发
 
@@ -120,7 +139,7 @@ Hook 不能启动子 Agent。合法触发只生成或复用 `review-request.json
 自然边界产生请求
 → 主 Agent 复用单一 Governor
 → Governor 只读独立复核并返回一个 JSON
-→ accept-review 校验 Schema、请求身份和快照哈希后原样保存
+→ accept-review 校验 Schema、请求身份和快照哈希后原子覆盖 review.json
 → 主 Agent 阅读反馈并用 record-review-response 明确采纳、拒绝或确认
 → 主 Agent 按自己的判断继续
 ```
@@ -143,7 +162,7 @@ Governor 启动、执行、返回或校验失败且尚未形成可用反馈时�
 | `request-advisory-review` | 用稳定 `request-id` 创建主动宏观复核 |
 | `request-completion-review` | 绑定当前权威和完整证据创建完成候选复核 |
 | `resolve-intervention` | 只保存准确、安全的解决摘要和来源身份，生成新复核 |
-| `accept-review` | 校验并原样保存 Governor 反馈，不应用为控制 |
+| `accept-review` | 校验并原子覆盖当前 `review.json`，不应用为控制 |
 | `record-review-response` | 保存主 Agent 的采纳、拒绝或确认及下一验证点 |
 | `apply-review` | 仅兼容已加载旧指令，等价于不改变执行状态的确认 |
 | `complete-execution-snapshot` | 由主 Agent 在自然检查点完成后关闭当前快照 |
@@ -171,8 +190,8 @@ Governor 启动、执行、返回或校验失败且尚未形成可用反馈时�
 2. 保留运行身份、完成条件、执行目标、价值、进展、证据、检查点、失败事实、所有者和交接；
 3. 将旧工作包转换为 `current_focus`，把旧允许与排除描述仅作为涉及范围事实保存；
 4. 删除活动批准、许可、冻结、基础设施闩锁和阻断状态；
-5. 旧复核结果只保留为审计材料，不再是活动控制输入；
-6. 迁移可重入，完成后只由新 Schema 加载。
+5. 仍待主 Agent 回应且身份有效的当前反馈迁移到固定 `review.json`；其余历史 Review 和事件流水不进入新运行目录；
+6. 迁移可重入，完成后只由新 Schema 和明确迁移标记加载，正常运行不继续增加迁移文件。
 
 ## 最小自检与冷启动
 
@@ -185,7 +204,7 @@ Governor 启动、执行、返回或校验失败且尚未形成可用反馈时�
 - Hooks 不含 `PreToolUse`、`Stop` 和子 Agent 生命周期事件，兼容旧调用严格空操作；
 - 旧状态迁移保留有效进度与证据，活动控制语义全部失效；
 - Governor 配置只读，项目状态型 MCP 在 Governor 中以完整 transport 明确禁用；
-- 配置、项目 Schema 与可复用资产一致，事件中没有会话副本和敏感原文；
+- 配置、项目 Schema 与可复用资产一致，运行目录只有三个覆盖更新的当前态文件，不生成历史 Review 或事件流水；
 - 全新 Codex 任务会自动加载当前 Hooks：无标识普通消息正常，带标识首次激活只交付一次顾问复核，Governor 能返回且失败时主线仍可继续。
 
 确定性自检、自动测试和全新任务冷启动均通过后，运行时才算搭建完成。脚本直调或单次父子通道成功不能替代真实冷启动。

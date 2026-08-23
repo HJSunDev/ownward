@@ -49,7 +49,7 @@ func (runtime *Runtime) Doctor() (*DoctorReport, error) {
 	if err := runtime.runAdvisoryFixture(); err != nil {
 		return nil, err
 	}
-	checks = append(checks, "activation, ordinary messages, duplicate triggers, explicit response, compact recovery, and fail-open behavior passed an isolated runtime fixture")
+	checks = append(checks, "activation, ordinary messages, duplicate triggers, fixed current-state files, explicit response, compact recovery, and fail-open behavior passed an isolated runtime fixture")
 
 	return &DoctorReport{Status: "passed", Checks: checks}, nil
 }
@@ -224,6 +224,12 @@ func (runtime *Runtime) runAdvisoryFixture() error {
 	var compatibility bytes.Buffer
 	if err := fixture.HandleHook("pre-tool-use", bytes.NewBufferString(`{"tool_name":"apply_patch"}`), &compatibility); err != nil || strings.TrimSpace(compatibility.String()) != "{}" {
 		return errors.New("legacy pre-tool compatibility path can still deny work")
+	}
+	if _, err := os.Stat(filepath.Join(directory, "events.jsonl")); !errors.Is(err, os.ErrNotExist) {
+		return errors.New("isolated runtime created a legacy event stream")
+	}
+	if _, err := os.Stat(filepath.Join(directory, "reviews")); !errors.Is(err, os.ErrNotExist) {
+		return errors.New("isolated runtime created a historical review directory")
 	}
 	return nil
 }
