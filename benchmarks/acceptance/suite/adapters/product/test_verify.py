@@ -19,10 +19,13 @@ class ProductAdapterTests(unittest.TestCase):
         barrier = threading.Barrier(4)
         active = 0
         maximum_active = 0
+        live_direct_active = 0
+        live_direct_maximum = 0
+        live_direct_scenarios: list[str] = []
         lock = threading.Lock()
 
         def run(_args: object, task: dict[str, object], *_positional: object, **_keyword: object) -> dict[str, object]:
-            nonlocal active, maximum_active
+            nonlocal active, maximum_active, live_direct_active, live_direct_maximum
             with lock:
                 active += 1
                 maximum_active = max(maximum_active, active)
@@ -30,18 +33,30 @@ class ProductAdapterTests(unittest.TestCase):
             time.sleep(0.01 * (4 - int(str(task["scenario_id"]).split("-")[-1])))
             with lock:
                 active -= 1
+            direct_barrier = _keyword["direct_barrier"]
+            direct_lock = _keyword["direct_lock"]
+            direct_barrier.wait(timeout=2)
+            with direct_lock:
+                with lock:
+                    live_direct_active += 1
+                    live_direct_maximum = max(live_direct_maximum, live_direct_active)
+                    live_direct_scenarios.append(str(task["scenario_id"]))
+                time.sleep(0.005)
+                with lock:
+                    live_direct_active -= 1
             return {"scenario_id": task["scenario_id"]}
 
-        direct_barrier = threading.Barrier(4)
         direct_active = 0
         direct_maximum_active = 0
+        direct_order: list[str] = []
 
         def complete(_args: object, task: dict[str, object], _binding: object, result: dict[str, object], *_positional: object, **_keyword: object) -> dict[str, object]:
             nonlocal direct_active, direct_maximum_active
             with lock:
                 direct_active += 1
                 direct_maximum_active = max(direct_maximum_active, direct_active)
-            direct_barrier.wait(timeout=2)
+                direct_order.append(str(task["scenario_id"]))
+            time.sleep(0.005)
             with lock:
                 direct_active -= 1
             return result
@@ -50,10 +65,14 @@ class ProductAdapterTests(unittest.TestCase):
             verify, "_complete_direct_measurement", side_effect=complete,
         ):
             results = verify._run_scenarios(
-                SimpleNamespace(), tasks, {}, 0.0, True, 1.0, "a" * 64, time.monotonic() + 5,
+                SimpleNamespace(evidence_dir=Path("not-created-product-test-evidence")),
+                tasks, {}, 0.0, True, 1.0, "a" * 64, time.monotonic() + 5,
             )
         self.assertEqual(4, maximum_active)
-        self.assertEqual(4, direct_maximum_active)
+        self.assertEqual(1, live_direct_maximum)
+        self.assertEqual({task["scenario_id"] for task in tasks}, set(live_direct_scenarios))
+        self.assertEqual(1, direct_maximum_active)
+        self.assertEqual([task["scenario_id"] for task in tasks], direct_order)
         self.assertEqual([task["scenario_id"] for task in tasks], [result["scenario_id"] for result in results])
 
     def test_qualification_projection_uses_four_worker_schedule_and_safety_margin(self) -> None:
@@ -96,9 +115,67 @@ class ProductAdapterTests(unittest.TestCase):
             schema_path=Path("schema.json"),
             output_path=Path("output.json"),
             endpoint="http://127.0.0.1:1",
+            enabled_tools=verify.QUERY_TOOLS,
         )
         overrides = [command[index + 1] for index, value in enumerate(command[:-1]) if value == "-c"]
         self.assertIn("project_doc_max_bytes=0", overrides)
+        self.assertIn(
+            'mcp_servers.ownward.enabled_tools=["ownward_search","ownward_read","ownward_navigate"]',
+            overrides,
+        )
+
+    def test_agent_prompts_state_the_irrecoverable_execution_contracts(self) -> None:
+        semantic = verify._semantic_prompt("asset", SimpleNamespace(codex_model="model"))
+        query = verify._query_prompt("question")
+        self.assertIn("successful `ownward_semantic_submit` is mandatory", semantic)
+        self.assertIn("do not exhaustively compare every candidate", semantic)
+        self.assertIn("Do not create a plan or todo list", semantic)
+        self.assertIn("immediately submit complete with no relation", semantic)
+        self.assertIn("copy only the exact top-level `id` field", query)
+        self.assertIn("Never construct, infer, transform, autocomplete, or copy an ID", query)
+        self.assertIn("read each candidate once and answer immediately", query)
+        self.assertIn("Search again or navigate only when", query)
+        self.assertEqual(3, verify.MAX_QUERY_ATTEMPTS)
+        self.assertEqual(3, verify.WARM_READINESS_REQUIRED_CONSECUTIVE)
+        self.assertTrue(all(len(stem) >= 70 for stem in verify.WARM_READINESS_PROBE_STEMS))
+
+    def test_query_trace_accepts_groundable_read_recovery_but_rejects_nonpublic_paths(self) -> None:
+        search = verify.codex_session.ToolCall(
+            "ownward_search",
+            {"query": "x"},
+            {"results": [{"id": "observed", "source": {"id": "metadata"}}]},
+            False,
+        )
+        failed = verify.codex_session.ToolCall("ownward_read", {"id": "observed"}, None, True)
+        recovered = verify.codex_session.ToolCall(
+            "ownward_read", {"id": "observed"}, {"information": {"id": "observed", "content": "fact"}}, False,
+        )
+        trace = SimpleNamespace(calls=[search, failed, recovered], bypassed=False)
+        self.assertEqual(
+            {"tool_calls": 3, "successful_tool_calls": 2, "failed_tool_calls": 1},
+            verify._query_trace_metrics(trace),
+        )
+        self.assertEqual({"observed"}, verify._successfully_read_ids(trace))
+        self.assertTrue(verify._grounded_query_answer(trace, ["observed"], ["fact"]))
+        with self.assertRaisesRegex(RuntimeError, "was not successfully read"):
+            verify._grounded_query_answer(SimpleNamespace(calls=[search]), ["observed"], ["fact"])
+        mutation = verify.codex_session.ToolCall("ownward_update", {}, {}, False)
+        with self.assertRaisesRegex(RuntimeError, "outside public search/read/navigate"):
+            verify._query_trace_metrics(SimpleNamespace(calls=[search, mutation], bypassed=False))
+        for unobserved in ("missing", "metadata"):
+            fabricated = verify.codex_session.ToolCall("ownward_read", {"id": unobserved}, None, True)
+            with self.assertRaisesRegex(RuntimeError, "not observed from an earlier public result"):
+                verify._query_trace_metrics(SimpleNamespace(calls=[search, fabricated], bypassed=False))
+        invalid_navigation = verify.codex_session.ToolCall(
+            "ownward_navigate", {"start_ids": ["observed", "missing"]}, None, True,
+        )
+        with self.assertRaisesRegex(RuntimeError, "not observed from an earlier public result"):
+            verify._query_trace_metrics(SimpleNamespace(calls=[search, invalid_navigation], bypassed=False))
+        mismatched_read = verify.codex_session.ToolCall(
+            "ownward_read", {"id": "observed"}, {"information": {"id": "other"}}, False,
+        )
+        with self.assertRaisesRegex(RuntimeError, "did not bind the requested information ID"):
+            verify._query_trace_metrics(SimpleNamespace(calls=[search, mismatched_read], bypassed=False))
 
     def test_isolated_codex_environment_bypasses_proxy_for_loopback_mcp(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -163,6 +240,7 @@ class ProductAdapterTests(unittest.TestCase):
                     endpoint="http://127.0.0.1:1",
                     bearer_token="token",
                     timeout_seconds=1,
+                    enabled_tools=verify.SEMANTIC_TOOLS,
                 )
             self.assertEqual({"processed": 1, "uncertain": 0}, output)
             self.assertEqual("session", trace.session_id)
@@ -396,22 +474,34 @@ class ProductAdapterTests(unittest.TestCase):
                 path.write_text(name, encoding="utf-8")
                 progress["evidence"][path.relative_to(root).as_posix()] = verify.sha256(path)
             verify.write_json(root / "progress.json", progress)
-            query = root / "query" / "attempt-001"
-            query.mkdir(parents=True)
-            for name in ("output.json", "events.jsonl", "stderr.txt"):
-                (query / name).write_text(name, encoding="utf-8")
+            queries = [root / "query" / f"attempt-{index:03d}" for index in (1, 2)]
+            for index, query in enumerate(queries):
+                query.mkdir(parents=True)
+                for name in ("output.json", "events.jsonl", "stderr.txt"):
+                    (query / name).write_text(name, encoding="utf-8")
+                verify.write_json(query / "attempt.json", {
+                    "schema": "ownward.product-query-attempt/v1",
+                    "path": query.relative_to(root).as_posix(),
+                    "elapsed_seconds": 1.0,
+                    "tool_calls": 1,
+                    "failed_tool_calls": 1 if index == 0 else 0,
+                    "status": "rejected" if index == 0 else "accepted",
+                })
             evidence = dict(progress["evidence"])
-            evidence.update(verify._relative_evidence(root, query))
+            for query in queries:
+                evidence.update(verify._relative_evidence(root, query))
+            attempts = [verify.load_json(query / "attempt.json") for query in queries]
             sealed = {
-                "schema": "ownward.product-scenario-checkpoint/v2",
+                "schema": "ownward.product-scenario-agent-checkpoint/v2",
                 "binding": {"candidate": "candidate"},
                 "progress_sha256": verify.sha256(root / "progress.json"),
                 "evidence": evidence,
-                "result": {"passed": True},
+                "query_attempts": attempts,
+                "result": {"passed": True, "agent_query_attempts": 2},
             }
-            self.assertTrue(verify._sealed_scenario_valid(sealed, root, sealed["binding"], False))
-            sealed["evidence"].pop(next(path for path in sealed["evidence"] if path.endswith("events.jsonl") and path.startswith("query/")))
-            self.assertFalse(verify._sealed_scenario_valid(sealed, root, sealed["binding"], False))
+            self.assertTrue(verify._agent_checkpoint_valid(sealed, root, sealed["binding"]))
+            sealed["evidence"].pop(next(path for path in sealed["evidence"] if path.endswith("events.jsonl") and path.startswith("query/attempt-002/")))
+            self.assertFalse(verify._agent_checkpoint_valid(sealed, root, sealed["binding"]))
 
     def test_final_checkpoint_combines_agent_evidence_with_isolated_direct_measurement(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -437,7 +527,7 @@ class ProductAdapterTests(unittest.TestCase):
                 "data_tree_sha256": verify._tree_sha256(data),
             }
             verify.write_json(root / "progress.json", progress)
-            binding = {"candidate": "candidate"}
+            binding = {"candidate": "candidate", "question_sha256": "a" * 64, "question_chars": 80}
             agent_result = {
                 "scenario_id": "scenario", "end_to_end_ms": 1000.0, "peak_mib": 10.0,
                 "returned_ids": ["node"], "within_resource_budget": True,
@@ -452,14 +542,17 @@ class ProductAdapterTests(unittest.TestCase):
             verify.write_json(root / "agent-result.json", agent)
             direct = root / "direct" / "attempt-001" / "measurement.json"
             measurement = {
-                "schema": "ownward.product-direct-measurement/v1",
+                "schema": "ownward.product-direct-measurement/v3",
                 "binding": binding,
                 "progress_sha256": verify.json_sha256(progress),
                 "agent_checkpoint_sha256": verify.sha256(root / "agent-result.json"),
                 "data_tree_sha256": progress["data_tree_sha256"],
                 "question_sha256": "a" * 64,
                 "query_limit_ms": 600.0,
-                "warmup_ms": 200.0,
+                "warmup_probe_chars": 80,
+                "prior_readiness_failures": {},
+                "warmup_samples_ms": [200.0] * 3,
+                "warmup_ms": 600.0,
                 "latency_ms": 300.0,
                 "stage_ms": 2500.0,
                 "sampled_peak_mib": 12.0,
@@ -479,11 +572,16 @@ class ProductAdapterTests(unittest.TestCase):
             verify.write_json(root / "result.json", sealed)
             verify._safe_reset(data, root)
             self.assertTrue(verify._sealed_scenario_valid(sealed, root, binding, False))
+            measurement["question_sha256"] = "b" * 64
+            verify.write_json(direct, measurement)
+            sealed["direct_evidence_sha256"] = verify.sha256(direct)
+            self.assertFalse(verify._sealed_scenario_valid(sealed, root, binding, False))
+            measurement["question_sha256"] = "a" * 64
             measurement["latency_ms"] = 700.0
             verify.write_json(direct, measurement)
             self.assertFalse(verify._sealed_scenario_valid(sealed, root, binding, False))
 
-    def test_direct_measurement_reuses_the_active_scenario_runtime(self) -> None:
+    def test_direct_measurement_uses_the_serialized_live_scenario_runtime(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             scenario = root / "scenario"
@@ -541,13 +639,40 @@ class ProductAdapterTests(unittest.TestCase):
                 "evidence": evidence,
                 "result": agent_result,
             })
+            args.resume = True
+            with mock.patch.object(verify.support, "OwnwardRuntime", side_effect=AssertionError("valid agent checkpoint repeated product work")):
+                self.assertEqual(
+                    agent_result,
+                    verify._run_scenario(args, task, binding, 10.0, True, 600.0, "r" * 64, time.monotonic() + 30),
+                )
             client = mock.Mock()
             client.call_tool.side_effect = [
+                {"results": []},
+                {"results": []},
                 {"results": []},
                 {"results": [{"id": "stable"}]},
             ]
             active = SimpleNamespace(client=client, process=SimpleNamespace(pid=os.getpid()))
             with mock.patch.object(verify.support, "OwnwardRuntime", side_effect=AssertionError("unexpected restart")):
+                with mock.patch.object(
+                    verify,
+                    "_establish_warm_query_readiness",
+                    side_effect=verify.WarmReadinessError("not ready", [700.0] * verify.WARM_READINESS_MAX_SAMPLES),
+                ):
+                    with self.assertRaisesRegex(verify.WarmReadinessError, "not ready"):
+                        verify._complete_direct_measurement(
+                            args,
+                            task,
+                            binding,
+                            agent_result,
+                            600.0,
+                            "r" * 64,
+                            time.monotonic() + 30,
+                            cleanup_data=False,
+                            active_runtime=active,
+                        )
+                readiness = scenario / "direct" / "attempt-001" / "readiness.json"
+                self.assertTrue(readiness.is_file())
                 result = verify._complete_direct_measurement(
                     args,
                     task,
@@ -561,8 +686,19 @@ class ProductAdapterTests(unittest.TestCase):
                 )
             self.assertEqual(["node"], result["direct_ids"])
             self.assertTrue(result["within_latency_budget"])
-            self.assertEqual(2, client.call_tool.call_count)
+            self.assertEqual(4, client.call_tool.call_count)
             self.assertTrue((scenario / "result.json").is_file())
+            measurement = verify.load_json(scenario / "direct" / "attempt-002" / "measurement.json")
+            self.assertEqual({readiness.relative_to(scenario).as_posix()}, set(measurement["prior_readiness_failures"]))
+
+            not_ready = mock.Mock()
+            not_ready.call_tool.return_value = {"results": []}
+            with mock.patch.object(verify.time, "perf_counter", side_effect=[
+                value for index in range(verify.WARM_READINESS_MAX_SAMPLES) for value in (index * 0.7, index * 0.7 + 0.7)
+            ]):
+                with self.assertRaisesRegex(RuntimeError, "did not reach 3 consecutive"):
+                    verify._establish_warm_query_readiness(not_ready, 600.0, time.monotonic() + 30, "test", 80)
+            self.assertEqual(verify.WARM_READINESS_MAX_SAMPLES, not_ready.call_tool.call_count)
 
     def test_valid_qualification_scenario_is_reused_by_full_without_resume_flag(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -582,7 +718,7 @@ class ProductAdapterTests(unittest.TestCase):
                 codex_reasoning_effort="effort",
                 resume=False,
             )
-            task = {"scenario_id": "scenario-1", "updates": [], "information": [], "query": {}}
+            task = {"scenario_id": "scenario-1", "updates": [], "information": [], "query": {"question": "question"}}
             binding = {
                 "suite_version": "1.0.0", "candidate": "candidate", "binary_sha256": "a" * 64,
                 "environment_sha256": "b" * 64, "input_manifest_sha256": "c" * 64,
@@ -598,6 +734,28 @@ class ProductAdapterTests(unittest.TestCase):
             })
             actual = verify._run_scenario(args, task, binding, 0, True, 1, "e" * 64, 0)
             self.assertEqual(result, actual)
+
+    def test_full_information_bound_query_cannot_be_selectively_rerun(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = {"information": [{"node_id": str(index), "content": str(index)} for index in range(5)], "query": {"question": "question"}}
+            binding = {"candidate": "candidate"}
+            identity = {
+                "binding": binding,
+                "task_sha256": verify.json_sha256(source),
+                "resource_report_sha256": "r" * 64,
+                "query_limit_ms": 600.0,
+            }
+            verify.write_json(root / "report.json", {
+                "schema": "ownward.product-full-information-query-preflight/v3",
+                "identity": identity,
+                "readiness_failures": {},
+                "passed": False,
+            })
+            args = SimpleNamespace(resume=True)
+            with mock.patch.object(verify.support, "OwnwardRuntime", side_effect=AssertionError("bound query repeated")):
+                with self.assertRaisesRegex(RuntimeError, "selective rerun is prohibited"):
+                    verify._run_full_information_query_preflight(args, source, binding, 600.0, "r" * 64, root)
 
     def test_resume_archives_a_scenario_from_the_previous_binding(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -621,7 +779,7 @@ class ProductAdapterTests(unittest.TestCase):
                 codex_reasoning_effort="effort",
                 resume=True,
             )
-            task = {"scenario_id": "scenario-1", "updates": [], "information": [], "query": {}}
+            task = {"scenario_id": "scenario-1", "updates": [], "information": [], "query": {"question": "question"}}
             binding = {
                 "suite_version": "1.0.0", "candidate": "current", "binary_sha256": "a" * 64,
                 "environment_sha256": "b" * 64, "input_manifest_sha256": "c" * 64,

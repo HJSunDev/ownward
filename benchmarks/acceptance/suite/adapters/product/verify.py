@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from typing import Any
 
@@ -45,6 +46,16 @@ SCENARIO_WORKERS = 4
 PREFLIGHT_SAFETY_FACTOR = 1.25
 PREFLIGHT_MAXIMUM_WALL_SECONDS = 1800.0
 PREFLIGHT_REQUIRED_MARGIN_SECONDS = 300.0
+SEMANTIC_TOOLS = ("ownward_semantic_work", "ownward_semantic_submit")
+QUERY_TOOLS = ("ownward_search", "ownward_read", "ownward_navigate")
+MAX_QUERY_ATTEMPTS = 3
+WARM_READINESS_REQUIRED_CONSECUTIVE = 3
+WARM_READINESS_MAX_SAMPLES = 12
+WARM_READINESS_PROBE_STEMS = (
+    "Readiness probe for an independent local memory search before the bound measurement. ",
+    "Preparation probe exercising the public embedding and retrieval path with neutral text. ",
+    "Stability probe confirming that comparable semantic-search work is consistently warm. ",
+)
 
 
 class CodexStageTimeout(RuntimeError):
@@ -52,6 +63,21 @@ class CodexStageTimeout(RuntimeError):
         super().__init__(message)
         self.trace = trace
         self.elapsed_seconds = elapsed_seconds
+
+
+class QueryAttemptRejected(RuntimeError):
+    pass
+
+
+class WarmReadinessError(RuntimeError):
+    def __init__(self, message: str, samples_ms: list[float]) -> None:
+        super().__init__(message)
+        self.samples_ms = list(samples_ms)
+
+
+def query_require(condition: bool, message: str) -> None:
+    if not condition:
+        raise QueryAttemptRejected(message)
 
 
 def sha256(path: Path) -> str:
@@ -113,6 +139,7 @@ def _codex_command(
     schema_path: Path,
     output_path: Path,
     endpoint: str,
+    enabled_tools: tuple[str, ...],
 ) -> list[str]:
     command = codex_session.command_prefix(args.codex_binary) + [
         "exec", "--ephemeral", "--json", "--color", "never", "--skip-git-repo-check",
@@ -130,6 +157,7 @@ def _codex_command(
         "-c", 'web_search="disabled"',
         "-c", f"mcp_servers.ownward.url={json.dumps(endpoint)}",
         "-c", 'mcp_servers.ownward.bearer_token_env_var="OWNWARD_MCP_BEARER_TOKEN"',
+        "-c", f"mcp_servers.ownward.enabled_tools={json.dumps(enabled_tools, separators=(',', ':'))}",
         "-c", 'mcp_servers.ownward.tools.ownward_semantic_submit.approval_mode="approve"',
         "--output-schema", str(schema_path), "-o", str(output_path), "-",
     ])
@@ -145,6 +173,7 @@ def _run_codex(
     endpoint: str,
     bearer_token: str,
     timeout_seconds: float,
+    enabled_tools: tuple[str, ...],
 ) -> tuple[dict[str, Any], Any, float]:
     stage.mkdir(parents=True, exist_ok=True)
     output = stage / "output.json"
@@ -162,7 +191,14 @@ def _run_codex(
         started = time.perf_counter()
         try:
             completed = process_control.run(
-                _codex_command(args, work_dir=work, schema_path=schema_path, output_path=output, endpoint=endpoint),
+                _codex_command(
+                    args,
+                    work_dir=work,
+                    schema_path=schema_path,
+                    output_path=output,
+                    endpoint=endpoint,
+                    enabled_tools=enabled_tools,
+                ),
                 cwd=work,
                 input_text=prompt,
                 timeout=timeout_seconds,
@@ -216,12 +252,16 @@ def _semantic_prompt(asset_id: str, args: argparse.Namespace) -> str:
 Call `ownward_semantic_work` once with exactly this one asset ID:
 {json.dumps([asset_id], ensure_ascii=False)}
 
-Analyze only the returned asset and candidate contexts. Do not infer from a query, expected answer, test truth, or outside knowledge. Immediately submit exactly one result through `ownward_semantic_submit` using schema `ownward.semantic-submission/v1`, capability id `codex`, capability version `{args.codex_model}`, and execution `ownward-product-dataset-v1`. Correct and retry a rejected submission at most twice.
+Analyze only the returned asset and candidate contexts. Do not infer from a query, expected answer, test truth, or outside knowledge. Do one bounded pass over the strongest candidate evidence; do not exhaustively compare every candidate. Immediately submit exactly one result through `ownward_semantic_submit` using schema `ownward.semantic-submission/v1`, capability id `codex`, capability version `{args.codex_model}`, and execution `ownward-product-dataset-v1`. Correct and retry a rejected submission at most twice.
+
+Do not create a plan or todo list. After `ownward_semantic_work`, inspect each returned candidate once. If no explicit relation is already justified by the asset and those candidates, immediately submit complete with no relation; do not keep deliberating over the relation taxonomy.
 
 Use this relation contract exactly:
 {json.dumps(RELATION_CONTRACT, ensure_ascii=False, separators=(',', ':'))}
 
 Relations must target candidates supplied for the same work item and must cite explicit evidence. Prefer the single most precise relation; topical similarity alone is not a relation. If the content is understandable but no reliable relation exists, submit complete with no relation. Submit uncertain only when the asset's basic meaning cannot be understood reliably.
+
+Hard completion contract: a successful `ownward_semantic_submit` is mandatory before returning. Never continue analysis in place of submitting. If one bounded pass cannot justify a relation, immediately use the no-relation or uncertain outcome above; an omitted submission invalidates the attempt.
 
 Return processed=1 and the number submitted as uncertain."""
 
@@ -232,7 +272,11 @@ def _query_prompt(question: str) -> str:
 Answer this question by actively searching Ownward, following useful relations when needed, and reading every item used as evidence:
 {question}
 
-Return `information_ids` containing only the stable IDs that jointly support the answer, and `answer_facts` containing the exact complete fact sentences from those items. Do not include irrelevant or merely related facts. Use no more than eight Ownward tool calls."""
+Return `information_ids` containing only the stable IDs that jointly support the answer, and `answer_facts` containing the exact complete fact sentences from those items. Do not include irrelevant or merely related facts.
+
+Use this ID-safe sequence: search first; copy only the exact top-level `id` field of a returned result; pass that copied value unchanged to `ownward_read.id` or `ownward_navigate.start_ids`; then answer once every supporting item has been read. Never construct, infer, transform, autocomplete, or copy an ID from the question, content, source metadata, or relation text. Use only `ownward_search`, `ownward_read`, and `ownward_navigate`.
+
+Work efficiently: when a search already returns enough distinct candidate summaries to answer, read each candidate once and answer immediately; do not search again or navigate. Search again or navigate only when the current results do not expose enough supporting candidates. Aim to finish within eight Ownward calls, stop calling tools as soon as the supporting facts are complete, and recover from a failed read only through IDs actually observed from Ownward. The stage has a fixed wall-clock budget and every call remains in the evidence trace."""
 
 
 SEMANTIC_SCHEMA = {
@@ -251,11 +295,96 @@ ANSWER_SCHEMA = {
 def _validated_answer(answer: dict[str, Any]) -> tuple[list[str], list[str]]:
     information_ids = answer.get("information_ids")
     facts = answer.get("answer_facts")
-    require(isinstance(information_ids, list) and all(isinstance(value, str) for value in information_ids), "query agent returned invalid information IDs")
-    require(isinstance(facts, list) and all(isinstance(value, str) for value in facts), "query agent returned invalid answer facts")
-    require(len(information_ids) == len(set(information_ids)), "query agent returned duplicate information IDs")
-    require(len(facts) == len(set(facts)), "query agent returned duplicate answer facts")
+    query_require(isinstance(information_ids, list) and all(isinstance(value, str) for value in information_ids), "query agent returned invalid information IDs")
+    query_require(isinstance(facts, list) and all(isinstance(value, str) for value in facts), "query agent returned invalid answer facts")
+    query_require(len(information_ids) == len(set(information_ids)), "query agent returned duplicate information IDs")
+    query_require(len(facts) == len(set(facts)), "query agent returned duplicate answer facts")
     return information_ids, facts
+
+
+def _public_result_ids(call: Any) -> set[str]:
+    result = call.result
+    if not isinstance(result, dict):
+        return set()
+    if call.name == "ownward_search":
+        values = result.get("results")
+    elif call.name == "ownward_read":
+        information = result.get("information")
+        values = [information] if isinstance(information, dict) else None
+    elif call.name == "ownward_navigate":
+        navigation = result.get("result")
+        values = navigation.get("nodes") if isinstance(navigation, dict) else None
+    else:
+        return set()
+    if not isinstance(values, list):
+        return set()
+    return {
+        identifier
+        for value in values
+        if isinstance(value, dict)
+        and isinstance((identifier := value.get("id")), str)
+        and identifier
+    }
+
+
+def _query_trace_metrics(trace: Any) -> dict[str, int]:
+    require(not trace.bypassed and trace.calls, "query agent bypassed Ownward")
+    allowed_calls = set(QUERY_TOOLS)
+    require(all(call.name in allowed_calls for call in trace.calls), "query agent used a path outside public search/read/navigate")
+    observed_ids: set[str] = set()
+    for call in trace.calls:
+        if call.name == "ownward_read":
+            referenced_ids = [call.arguments.get("id")]
+        elif call.name == "ownward_navigate":
+            referenced_ids = call.arguments.get("start_ids")
+            query_require(
+                isinstance(referenced_ids, list)
+                and referenced_ids
+                and all(isinstance(value, str) and value for value in referenced_ids),
+                "query agent used invalid navigation IDs",
+            )
+        else:
+            referenced_ids = []
+        query_require(
+            all(isinstance(value, str) and value in observed_ids for value in referenced_ids),
+            "query agent used an ID that was not observed from an earlier public result",
+        )
+        if call.name == "ownward_read" and not call.error:
+            query_require(
+                _public_result_ids(call) == set(referenced_ids),
+                "query agent read result did not bind the requested information ID",
+            )
+        if not call.error:
+            observed_ids.update(_public_result_ids(call))
+    successful = sum(1 for call in trace.calls if not call.error)
+    query_require(successful > 0, "query agent produced no successful Ownward evidence")
+    return {
+        "tool_calls": len(trace.calls),
+        "successful_tool_calls": successful,
+        "failed_tool_calls": len(trace.calls) - successful,
+    }
+
+
+def _successfully_read_ids(trace: Any) -> set[str]:
+    return {
+        str(call.arguments["id"])
+        for call in trace.calls
+        if call.name == "ownward_read"
+        and not call.error
+        and isinstance(call.arguments.get("id"), str)
+    }
+
+
+def _grounded_query_answer(trace: Any, returned_stable: list[str], facts: list[str]) -> bool:
+    query_require(
+        set(returned_stable) <= _successfully_read_ids(trace),
+        "query agent returned evidence that was not successfully read",
+    )
+    observed = _observed(trace)
+    return set(returned_stable) <= set(observed) and all(
+        any(fact in text for stable_id in returned_stable for text in observed.get(stable_id, []))
+        for fact in facts
+    )
 
 
 def _strings(value: Any) -> list[str]:
@@ -299,11 +428,15 @@ def _resource_values(report: dict[str, Any], candidate: str, binary_sha256: str)
 
 
 def _scenario_binding(args: argparse.Namespace, task: dict[str, Any], binding: dict[str, Any], resource_sha: str) -> dict[str, Any]:
+    query = task.get("query")
+    question = query.get("question") if isinstance(query, dict) else None
+    require(isinstance(question, str) and question, "scenario query question is invalid")
     return {
         "suite_version": binding["suite_version"], "candidate": binding["candidate"],
         "binary_sha256": binding["binary_sha256"], "environment_sha256": binding["environment_sha256"],
         "input_manifest_sha256": binding["input_manifest_sha256"], "tool_sha256": binding["tool_sha256"],
         "task_sha256": json_sha256(task), "resource_report_sha256": resource_sha,
+        "question_sha256": json_sha256(question), "question_chars": len(question),
         "codex_binary_sha256": sha256(args.codex_binary), "codex_model": args.codex_model,
         "codex_reasoning_effort": args.codex_reasoning_effort,
     }
@@ -377,6 +510,7 @@ def _agent_checkpoint_valid(checkpoint: dict[str, Any], scenario_root: Path, bin
             checkpoint.get("schema") in {
                 "ownward.product-scenario-checkpoint/v2",
                 "ownward.product-scenario-agent-checkpoint/v1",
+                "ownward.product-scenario-agent-checkpoint/v2",
             },
             "scenario agent checkpoint schema is invalid",
         )
@@ -392,12 +526,37 @@ def _agent_checkpoint_valid(checkpoint: dict[str, Any], scenario_root: Path, bin
         query_evidence = {path: digest for path, digest in evidence.items() if path not in progress_evidence}
         query_parents = {Path(path).parent.as_posix() for path in query_evidence}
         query_names = {Path(path).name for path in query_evidence}
-        require(
-            len(query_parents) == 1
-            and next(iter(query_parents)).startswith("query/attempt-")
-            and query_names == {"output.json", "events.jsonl", "stderr.txt"},
-            "scenario checkpoint lacks one complete query evidence attempt",
-        )
+        query_groups: dict[str, set[str]] = {}
+        for path in query_evidence:
+            query_groups.setdefault(Path(path).parent.as_posix(), set()).add(Path(path).name)
+        if checkpoint.get("schema") == "ownward.product-scenario-agent-checkpoint/v2":
+            attempts = checkpoint.get("query_attempts")
+            require(isinstance(attempts, list) and 1 <= len(attempts) <= MAX_QUERY_ATTEMPTS, "scenario checkpoint has invalid query attempts")
+            expected_parents = {str(item.get("path")) for item in attempts if isinstance(item, dict)}
+            require(
+                len(expected_parents) == len(attempts)
+                and expected_parents == query_parents
+                and all(path.startswith("query/attempt-") for path in expected_parents),
+                "scenario checkpoint query attempt paths are incomplete",
+            )
+            require(
+                all(isinstance(item, dict) and item.get("status") == "rejected" for item in attempts[:-1])
+                and isinstance(attempts[-1], dict)
+                and attempts[-1].get("status") == "accepted",
+                "scenario checkpoint query attempts do not end in one accepted attempt",
+            )
+            require(
+                all(names == {"output.json", "events.jsonl", "stderr.txt", "attempt.json"} for names in query_groups.values())
+                and checkpoint["result"].get("agent_query_attempts") == len(attempts),
+                "scenario checkpoint lacks complete bounded query evidence",
+            )
+        else:
+            require(
+                len(query_parents) == 1
+                and next(iter(query_parents)).startswith("query/attempt-")
+                and query_names == {"output.json", "events.jsonl", "stderr.txt"},
+                "scenario checkpoint lacks one complete query evidence attempt",
+            )
         require(_evidence_valid(scenario_root, evidence), "scenario raw evidence changed")
     except RuntimeError:
         return False
@@ -406,18 +565,41 @@ def _agent_checkpoint_valid(checkpoint: dict[str, Any], scenario_root: Path, bin
 
 def _direct_measurement_valid(
     measurement: dict[str, Any], binding: dict[str, Any], progress: dict[str, Any], agent_sha: str,
+    scenario_root: Path,
 ) -> bool:
     try:
-        require(measurement.get("schema") == "ownward.product-direct-measurement/v1", "direct measurement schema is invalid")
+        require(measurement.get("schema") == "ownward.product-direct-measurement/v3", "direct measurement schema is invalid")
         require(measurement.get("binding") == binding, "direct measurement binding is invalid")
         require(measurement.get("progress_sha256") == json_sha256(progress), "direct measurement progress binding changed")
         require(measurement.get("agent_checkpoint_sha256") == agent_sha, "direct measurement agent binding changed")
         require(measurement.get("data_tree_sha256") == progress.get("data_tree_sha256"), "direct measurement data binding changed")
-        require(isinstance(measurement.get("question_sha256"), str) and len(measurement["question_sha256"]) == 64, "direct measurement query binding is invalid")
+        require(measurement.get("question_sha256") == binding.get("question_sha256"), "direct measurement query binding is invalid")
         for name in ("warmup_ms", "latency_ms", "stage_ms", "sampled_peak_mib"):
             require(isinstance(measurement.get(name), (int, float)) and float(measurement[name]) >= 0, f"direct measurement {name} is invalid")
         limit = measurement.get("query_limit_ms")
         require(isinstance(limit, (int, float)) and float(limit) > 0, "direct measurement latency limit is invalid")
+        require(measurement.get("warmup_probe_chars") == binding.get("question_chars"), "direct measurement warm readiness workload is invalid")
+        failures = measurement.get("prior_readiness_failures")
+        require(isinstance(failures, dict) and failures == _readiness_failure_evidence(scenario_root / "direct", scenario_root), "direct measurement readiness failure evidence is incomplete")
+        require(
+            all(
+                _warm_readiness_failure_valid(load_json(scenario_root / relative), binding, progress, agent_sha)
+                for relative in failures
+            ),
+            "direct measurement readiness failure evidence is invalid",
+        )
+        warmup_samples = measurement.get("warmup_samples_ms")
+        require(
+            isinstance(warmup_samples, list)
+            and WARM_READINESS_REQUIRED_CONSECUTIVE <= len(warmup_samples) <= WARM_READINESS_MAX_SAMPLES
+            and all(isinstance(sample, (int, float)) and float(sample) >= 0 for sample in warmup_samples),
+            "direct measurement warm readiness samples are invalid",
+        )
+        require(
+            all(float(sample) <= float(limit) for sample in warmup_samples[-WARM_READINESS_REQUIRED_CONSECUTIVE:]),
+            "direct measurement started before the warm-query path was ready",
+        )
+        require(abs(float(measurement["warmup_ms"]) - sum(float(sample) for sample in warmup_samples)) < 1.0, "direct measurement warmup total is inconsistent")
         decision = measurement.get("within_latency_budget")
         require(isinstance(decision, bool) and decision == (float(measurement["latency_ms"]) <= float(limit)), "direct measurement latency decision is inconsistent")
         direct = measurement.get("direct_result")
@@ -447,6 +629,82 @@ def _merge_direct_result(agent_result: dict[str, Any], measurement: dict[str, An
     return result
 
 
+def _establish_warm_query_readiness(
+    client: Any,
+    query_limit_ms: float,
+    deadline: float,
+    label: str,
+    query_chars: int,
+) -> list[float]:
+    require(query_chars > 0, f"{label} requires a positive bound-query length")
+    probes = [
+        (stem * ((query_chars // len(stem)) + 1))[:query_chars]
+        for stem in WARM_READINESS_PROBE_STEMS
+    ]
+    samples: list[float] = []
+    consecutive = 0
+    for index in range(WARM_READINESS_MAX_SAMPLES):
+        require(time.monotonic() < deadline, f"{label} exceeded its bounded warm-readiness time")
+        started = time.perf_counter()
+        result = client.call_tool(
+            "ownward_search",
+            {"query": probes[index % len(probes)], "limit": 10},
+        )
+        latency_ms = (time.perf_counter() - started) * 1000
+        require(isinstance(result, dict) and isinstance(result.get("results"), list), f"{label} warm-readiness query failed")
+        samples.append(latency_ms)
+        consecutive = consecutive + 1 if latency_ms <= query_limit_ms else 0
+        if consecutive == WARM_READINESS_REQUIRED_CONSECUTIVE:
+            return samples
+    raise WarmReadinessError(
+        f"{label} did not reach {WARM_READINESS_REQUIRED_CONSECUTIVE} consecutive warm-query samples "
+        f"within {query_limit_ms:.1f} ms after {WARM_READINESS_MAX_SAMPLES} bounded checks",
+        samples,
+    )
+
+
+def _readiness_failure_evidence(root: Path, relative_to: Path) -> dict[str, str]:
+    if not root.exists():
+        return {}
+    return {
+        path.relative_to(relative_to).as_posix(): sha256(path)
+        for path in sorted(root.rglob("readiness.json"))
+        if path.is_file() and not path.is_symlink()
+    }
+
+
+def _warm_readiness_failure_valid(
+    failure: dict[str, Any], binding: dict[str, Any], progress: dict[str, Any], agent_sha: str,
+) -> bool:
+    try:
+        require(failure.get("schema") == "ownward.product-warm-readiness-failure/v1", "warm readiness failure schema is invalid")
+        require(failure.get("binding") == binding, "warm readiness failure binding is invalid")
+        require(failure.get("progress_sha256") == json_sha256(progress), "warm readiness failure progress binding changed")
+        require(failure.get("agent_checkpoint_sha256") == agent_sha, "warm readiness failure agent binding changed")
+        require(failure.get("data_tree_sha256") == progress.get("data_tree_sha256"), "warm readiness failure data binding changed")
+        require(failure.get("question_sha256") == binding.get("question_sha256"), "warm readiness failure query binding changed")
+        require(failure.get("warmup_probe_chars") == binding.get("question_chars"), "warm readiness failure workload is invalid")
+        limit = failure.get("query_limit_ms")
+        samples = failure.get("warmup_samples_ms")
+        require(isinstance(limit, (int, float)) and float(limit) > 0, "warm readiness failure limit is invalid")
+        require(
+            isinstance(samples, list)
+            and len(samples) == WARM_READINESS_MAX_SAMPLES
+            and all(isinstance(sample, (int, float)) and float(sample) >= 0 for sample in samples),
+            "warm readiness failure samples are invalid",
+        )
+        require(
+            not any(
+                all(float(sample) <= float(limit) for sample in samples[start : start + WARM_READINESS_REQUIRED_CONSECUTIVE])
+                for start in range(len(samples) - WARM_READINESS_REQUIRED_CONSECUTIVE + 1)
+            ),
+            "warm readiness failure contains a successful readiness window",
+        )
+    except RuntimeError:
+        return False
+    return True
+
+
 def _sealed_scenario_valid(
     sealed: dict[str, Any], scenario_root: Path, binding: dict[str, Any], has_updates: bool
 ) -> bool:
@@ -472,7 +730,7 @@ def _sealed_scenario_valid(
             require(direct_path.is_file() and sha256(direct_path) == sealed.get("direct_evidence_sha256"), "scenario direct evidence changed")
             progress = load_json(scenario_root / "progress.json")
             measurement = load_json(direct_path)
-            require(_direct_measurement_valid(measurement, binding, progress, sha256(agent_path)), "scenario direct evidence is invalid")
+            require(_direct_measurement_valid(measurement, binding, progress, sha256(agent_path), scenario_root), "scenario direct evidence is invalid")
             require(sealed["result"] == _merge_direct_result(agent["result"], measurement), "scenario result differs from its checkpoints")
     except RuntimeError:
         return False
@@ -546,7 +804,7 @@ def _next_attempt(stage_root: Path) -> Path:
 
 def _relative_evidence(scenario_root: Path, stage: Path) -> dict[str, str]:
     evidence: dict[str, str] = {}
-    for name in ("output.json", "terminal.json", "events.jsonl", "stderr.txt"):
+    for name in ("output.json", "terminal.json", "events.jsonl", "stderr.txt", "attempt.json"):
         path = stage / name
         if path.is_file():
             evidence[path.relative_to(scenario_root).as_posix()] = sha256(path)
@@ -606,6 +864,7 @@ def _complete_semantic_unit(
             endpoint=runtime.binding.endpoint,
             bearer_token=runtime.binding.bearer_token,
             timeout_seconds=min(args.stage_timeout, remaining),
+            enabled_tools=SEMANTIC_TOOLS,
         )
     except CodexStageTimeout as error:
         semantic = None
@@ -661,6 +920,8 @@ def _run_scenario(
     deadline: float,
     *,
     cleanup_data: bool = True,
+    direct_barrier: Any | None = None,
+    direct_lock: Any | None = None,
 ) -> dict[str, Any]:
     scenario_root = args.evidence_dir / str(task["scenario_id"])
     result_path = scenario_root / "result.json"
@@ -695,16 +956,7 @@ def _run_scenario(
                 if agent_path.is_file():
                     agent = load_json(agent_path)
                     if _agent_checkpoint_valid(agent, scenario_root, expected_binding):
-                        return _complete_direct_measurement(
-                            args,
-                            task,
-                            binding,
-                            dict(agent["result"]),
-                            query_limit_ms,
-                            resource_sha,
-                            deadline,
-                            cleanup_data=cleanup_data,
-                        )
+                        return dict(agent["result"])
                     _archive_incomplete(scenario_root, args.evidence_dir, "scenario agent checkpoint changed")
                     progress = None
     scenario_root.mkdir(parents=True, exist_ok=True)
@@ -786,24 +1038,53 @@ def _run_scenario(
                 }, evidence)
 
             semantic_seconds = sum(float(value.get("elapsed_seconds", 0)) for value in completed_units.values())
-            remaining = deadline - time.monotonic()
-            require(remaining > 0, "product execution exceeded its total budget")
-            query_stage = _next_attempt(scenario_root / "query")
-            answer, query_trace, agent_query_seconds = _run_codex(
-                args, stage=query_stage, prompt=_query_prompt(task["query"]["question"]),
-                schema=ANSWER_SCHEMA, endpoint=runtime.binding.endpoint, bearer_token=runtime.binding.bearer_token,
-                timeout_seconds=min(args.stage_timeout, remaining),
-            )
-        require(not query_trace.bypassed and query_trace.calls, "query agent bypassed Ownward")
-        allowed_calls = {"ownward_rules", "ownward_search", "ownward_read", "ownward_navigate", "ownward_status"}
-        require(len(query_trace.calls) <= 8 and all(call.name in allowed_calls and not call.error for call in query_trace.calls), "query agent exceeded or violated its public read-only path")
-        observed = _observed(query_trace)
-        returned_stable, facts = _validated_answer(answer)
-        grounded = set(returned_stable) <= set(observed) and all(
-            any(fact in text for stable_id in returned_stable for text in observed.get(stable_id, [])) for fact in facts
-        )
-        reverse = {stable: node for node, stable in stable_by_node.items()}
-        require(set(returned_stable) <= set(reverse), "query agent returned evidence outside the frozen scenario")
+            reverse = {stable: node for node, stable in stable_by_node.items()}
+            query_attempts: list[dict[str, Any]] = []
+            query_evidence: dict[str, str] = {}
+            query_traces: list[Any] = []
+            agent_query_seconds = 0.0
+            accepted: tuple[Any, list[str], list[str], bool] | None = None
+            for attempt_index in range(MAX_QUERY_ATTEMPTS):
+                remaining = deadline - time.monotonic()
+                require(remaining > 0, "product execution exceeded its total budget")
+                query_stage = _next_attempt(scenario_root / "query")
+                answer, query_trace, elapsed = _run_codex(
+                    args, stage=query_stage, prompt=_query_prompt(task["query"]["question"]),
+                    schema=ANSWER_SCHEMA, endpoint=runtime.binding.endpoint, bearer_token=runtime.binding.bearer_token,
+                    timeout_seconds=min(args.stage_timeout, remaining),
+                    enabled_tools=QUERY_TOOLS,
+                )
+                agent_query_seconds += elapsed
+                query_traces.append(query_trace)
+                attempt = {
+                    "path": query_stage.relative_to(scenario_root).as_posix(),
+                    "elapsed_seconds": elapsed,
+                    "tool_calls": len(query_trace.calls),
+                    "failed_tool_calls": sum(1 for call in query_trace.calls if call.error),
+                }
+                try:
+                    _query_trace_metrics(query_trace)
+                    returned_stable, facts = _validated_answer(answer)
+                    grounded = _grounded_query_answer(query_trace, returned_stable, facts)
+                    query_require(grounded, "query agent answer was not grounded in successfully read evidence")
+                    query_require(set(returned_stable) <= set(reverse), "query agent returned evidence outside the frozen scenario")
+                except QueryAttemptRejected as error:
+                    attempt.update({"status": "rejected", "reason": str(error)})
+                    write_json(query_stage / "attempt.json", {"schema": "ownward.product-query-attempt/v1", **attempt})
+                    query_evidence.update(_relative_evidence(scenario_root, query_stage))
+                    query_attempts.append(attempt)
+                    if attempt_index + 1 == MAX_QUERY_ATTEMPTS:
+                        raise RuntimeError(f"query agent exhausted {MAX_QUERY_ATTEMPTS} bounded attempts: {error}") from error
+                    continue
+                attempt["status"] = "accepted"
+                write_json(query_stage / "attempt.json", {"schema": "ownward.product-query-attempt/v1", **attempt})
+                query_evidence.update(_relative_evidence(scenario_root, query_stage))
+                query_attempts.append(attempt)
+                accepted = (query_trace, returned_stable, facts, grounded)
+                break
+            assert accepted is not None
+            query_trace, returned_stable, facts, grounded = accepted
+            observed = _observed(query_trace)
         returned_ids = [reverse[value] for value in returned_stable]
         navigation_ids = [
             reverse[value]
@@ -824,31 +1105,40 @@ def _run_scenario(
             "peak_mib": max(peak_mib, sampled_peak),
             "used_navigation": any(call.name == "ownward_navigate" and not call.error for call in query_trace.calls),
             "within_resource_budget": resource_passed,
+            "agent_query_attempts": len(query_attempts),
+            "agent_tool_calls": sum(len(trace.calls) for trace in query_traces),
+            "agent_successful_tool_calls": sum(1 for trace in query_traces for call in trace.calls if not call.error),
+            "agent_failed_tool_calls": sum(1 for trace in query_traces for call in trace.calls if call.error),
         }
-        query_evidence = _relative_evidence(scenario_root, query_stage)
         evidence = dict(progress["evidence"])
         evidence.update(query_evidence)
         write_json(agent_path, {
-            "schema": "ownward.product-scenario-agent-checkpoint/v1",
+            "schema": "ownward.product-scenario-agent-checkpoint/v2",
             "binding": expected_binding,
             "progress_sha256": sha256(progress_path),
             "evidence": evidence,
+            "query_attempts": query_attempts,
             "result": agent_result,
         })
-        result = _complete_direct_measurement(
-            args,
-            task,
-            binding,
-            agent_result,
-            query_limit_ms,
-            resource_sha,
-            deadline,
-            cleanup_data=False,
-            active_runtime=runtime,
-        )
-    if cleanup_data:
-        _safe_reset(data_dir, scenario_root)
-        _safe_reset(scenario_root / "rollback", scenario_root)
+        result = agent_result
+        if direct_barrier is not None:
+            require(direct_lock is not None, "live direct measurement requires a serialization lock")
+            try:
+                direct_barrier.wait(timeout=max(0.1, deadline - time.monotonic()))
+            except threading.BrokenBarrierError as error:
+                raise RuntimeError("parallel agent phase did not reach the live direct-measurement checkpoint") from error
+            with direct_lock:
+                result = _complete_direct_measurement(
+                    args,
+                    task,
+                    binding,
+                    agent_result,
+                    query_limit_ms,
+                    resource_sha,
+                    deadline,
+                    cleanup_data=False,
+                    active_runtime=runtime,
+                )
     for work in scenario_root.rglob("work"):
         if work.is_dir():
             _safe_reset(work, work.parent)
@@ -898,7 +1188,7 @@ def _complete_direct_measurement(
             if not candidate_path.is_file():
                 continue
             candidate = load_json(candidate_path)
-            if _direct_measurement_valid(candidate, expected_binding, progress, agent_sha):
+            if _direct_measurement_valid(candidate, expected_binding, progress, agent_sha, scenario_root):
                 measurement = candidate
                 measurement_path = candidate_path
                 break
@@ -909,39 +1199,60 @@ def _complete_direct_measurement(
         attempt = _next_attempt(direct_root)
         attempt.mkdir(parents=True)
         started = time.perf_counter()
-        def measure(runtime: Any) -> tuple[float, dict[str, Any], float, float]:
+        def measure(runtime: Any) -> tuple[list[float], dict[str, Any], float, float]:
             require(runtime.client is not None and runtime.process is not None, "Ownward runtime did not start for direct measurement")
             with resource.TreeSampler(runtime.process.pid) as sampler:
-                warm_started = time.perf_counter()
-                warm = runtime.client.call_tool("ownward_search", {"query": "Warm the local vector search path before the bound latency measurement.", "limit": 10})
-                warmup_ms = (time.perf_counter() - warm_started) * 1000
-                require(isinstance(warm, dict) and isinstance(warm.get("results"), list), "direct measurement warmup failed")
+                warmup_samples = _establish_warm_query_readiness(
+                    runtime.client,
+                    query_limit_ms,
+                    deadline,
+                    "direct measurement",
+                    len(task["query"]["question"]),
+                )
                 query_started = time.perf_counter()
                 direct = runtime.client.call_tool("ownward_search", {"query": task["query"]["question"], "limit": 10})
                 direct_ms = (time.perf_counter() - query_started) * 1000
             sampled_peak = max((int(sample.get("rss_bytes", 0)) for sample in sampler.samples), default=0) / (1024 * 1024)
-            return warmup_ms, direct, direct_ms, sampled_peak
+            return warmup_samples, direct, direct_ms, sampled_peak
 
-        if active_runtime is None:
-            environment = os.environ.copy()
-            with support.OwnwardRuntime(args.binary, data_dir, environment) as runtime:
-                warmup_ms, direct, direct_ms, sampled_peak = measure(runtime)
-        else:
-            warmup_ms, direct, direct_ms, sampled_peak = measure(active_runtime)
+        try:
+            if active_runtime is None:
+                environment = os.environ.copy()
+                with support.OwnwardRuntime(args.binary, data_dir, environment) as runtime:
+                    warmup_samples, direct, direct_ms, sampled_peak = measure(runtime)
+            else:
+                warmup_samples, direct, direct_ms, sampled_peak = measure(active_runtime)
+        except WarmReadinessError as error:
+            write_json(attempt / "readiness.json", {
+                "schema": "ownward.product-warm-readiness-failure/v1",
+                "binding": expected_binding,
+                "progress_sha256": json_sha256(progress),
+                "agent_checkpoint_sha256": agent_sha,
+                "data_tree_sha256": progress["data_tree_sha256"],
+                "question_sha256": expected_binding["question_sha256"],
+                "query_limit_ms": query_limit_ms,
+                "warmup_probe_chars": expected_binding["question_chars"],
+                "warmup_samples_ms": error.samples_ms,
+                "passed": False,
+            })
+            raise
         require(_tree_sha256(data_dir) == progress.get("data_tree_sha256"), "direct measurement changed scenario data")
         values = direct.get("results") if isinstance(direct, dict) else None
         require(isinstance(values, list), "direct search returned invalid results")
         reverse = {str(stable): str(node) for node, stable in progress["stable_by_node"].items()}
         direct_ids = [reverse[str(item.get("id", ""))] for item in values if isinstance(item, dict) and str(item.get("id", "")) in reverse]
         measurement = {
-            "schema": "ownward.product-direct-measurement/v1",
+            "schema": "ownward.product-direct-measurement/v3",
             "binding": expected_binding,
             "progress_sha256": json_sha256(progress),
             "agent_checkpoint_sha256": agent_sha,
             "data_tree_sha256": progress["data_tree_sha256"],
-            "question_sha256": json_sha256(task["query"]["question"]),
+            "question_sha256": expected_binding["question_sha256"],
             "query_limit_ms": query_limit_ms,
-            "warmup_ms": warmup_ms,
+            "warmup_probe_chars": expected_binding["question_chars"],
+            "prior_readiness_failures": _readiness_failure_evidence(direct_root, scenario_root),
+            "warmup_samples_ms": warmup_samples,
+            "warmup_ms": sum(warmup_samples),
             "latency_ms": direct_ms,
             "stage_ms": (time.perf_counter() - started) * 1000,
             "sampled_peak_mib": sampled_peak,
@@ -984,26 +1295,37 @@ def _run_scenarios(
     require(tasks, "product execution requires scenarios")
     require(workers > 0, "product execution requires at least one scenario worker")
     worker_count = min(workers, len(tasks))
-    with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="ownward-product") as executor:
-        futures = [
-            executor.submit(
-                _run_scenario,
-                args,
-                task,
-                binding,
-                peak_mib,
-                resource_passed,
-                query_limit_ms,
-                resource_sha,
-                deadline,
-                cleanup_data=cleanup_data,
-            )
-            for task in tasks
-        ]
-        agent_results = [future.result() for future in futures]
-        direct_futures = [
-            executor.submit(
-                _complete_direct_measurement,
+    results: list[dict[str, Any]] = []
+    for start in range(0, len(tasks), worker_count):
+        wave = tasks[start : start + worker_count]
+        fresh = all(not (args.evidence_dir / str(task["scenario_id"])).exists() for task in wave)
+        barrier = threading.Barrier(len(wave)) if fresh else None
+        direct_lock = threading.Lock() if fresh else None
+
+        def run(task: dict[str, Any]) -> dict[str, Any]:
+            try:
+                return _run_scenario(
+                    args,
+                    task,
+                    binding,
+                    peak_mib,
+                    resource_passed,
+                    query_limit_ms,
+                    resource_sha,
+                    deadline,
+                    cleanup_data=cleanup_data,
+                    direct_barrier=barrier,
+                    direct_lock=direct_lock,
+                )
+            except BaseException:
+                if barrier is not None:
+                    barrier.abort()
+                raise
+
+        with ThreadPoolExecutor(max_workers=len(wave), thread_name_prefix="ownward-product") as executor:
+            agent_results = [future.result() for future in [executor.submit(run, task) for task in wave]]
+        results.extend(
+            _complete_direct_measurement(
                 args,
                 task,
                 binding,
@@ -1013,9 +1335,9 @@ def _run_scenarios(
                 deadline,
                 cleanup_data=cleanup_data,
             )
-            for task, result in zip(tasks, agent_results)
-        ]
-        return [future.result() for future in direct_futures]
+            for task, result in zip(wave, agent_results)
+        )
+    return results
 
 
 def _preflight_tasks(tasks: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1080,17 +1402,17 @@ def _project_qualification_wall(
         (float(result["end_to_end_ms"]) - float(result["direct_stage_ms"])) / 1000.0
         for result in results
     )
-    observed_direct_wall = max(direct_stage_times)
+    observed_direct_wall = sum(direct_stage_times)
     batch_overhead = max(0.0, batch_wall_seconds - observed_parallel_wall - observed_direct_wall)
     waves = (len(predicted_scenarios) + len(worker_loads) - 1) // len(worker_loads)
-    scheduled_wall = max(worker_loads) + waves * per_direct_stage + waves * batch_overhead
+    scheduled_wall = max(worker_loads) + len(formal_tasks) * per_direct_stage + waves * batch_overhead
     return {
         "per_semantic_seconds": per_semantic,
         "per_rollback_seconds": per_rollback,
         "per_query_seconds": per_query,
         "per_direct_stage_seconds": per_direct_stage,
         "per_scenario_overhead_seconds": per_scenario_overhead,
-        "independent_work_seconds": sum(predicted_scenarios),
+        "independent_work_seconds": sum(predicted_scenarios) + len(formal_tasks) * per_direct_stage,
         "scheduled_wall_seconds": scheduled_wall,
         "wall_seconds": PREFLIGHT_SAFETY_FACTOR * scheduled_wall,
     }
@@ -1113,7 +1435,14 @@ def _run_full_information_query_preflight(
     }
     if report_path.is_file():
         report = load_json(report_path)
-        if report.get("identity") == identity and report.get("passed") is True:
+        readiness_failures = report.get("readiness_failures")
+        if report.get("identity") == identity:
+            require(
+                report.get("passed") is True
+                and isinstance(readiness_failures, dict)
+                and _evidence_valid(root, readiness_failures),
+                "full-information bound query already produced terminal failed or damaged evidence; selective rerun is prohibited",
+            )
             return report, report_path
         require(args.resume, "full-information query preflight changed; use --resume to preserve and replace it")
         archive = root / "_audit" / f"{json_sha256(report)}.json"
@@ -1138,10 +1467,27 @@ def _run_full_information_query_preflight(
         created_values = created.get("results") if isinstance(created, dict) else None
         require(isinstance(created_values, list) and len(created_values) == len(source["information"]), "full-information query preflight did not persist all information")
         data_before = _tree_sha256(data_dir)
-        warm_started = time.perf_counter()
-        warm = runtime.client.call_tool("ownward_search", {"query": "Warm the local vector search path before the full-information preflight.", "limit": 10})
-        warmup_ms = (time.perf_counter() - warm_started) * 1000
-        require(isinstance(warm, dict) and isinstance(warm.get("results"), list), "full-information query preflight warmup failed")
+        try:
+            warmup_samples = _establish_warm_query_readiness(
+                runtime.client,
+                query_limit_ms,
+                time.monotonic() + min(60.0, args.max_wall_seconds),
+                "full-information query preflight",
+                len(source["query"]["question"]),
+            )
+        except WarmReadinessError as error:
+            failure = _next_attempt(root / "readiness-failures")
+            failure.mkdir(parents=True)
+            write_json(failure / "readiness.json", {
+                "schema": "ownward.product-full-information-readiness-failure/v1",
+                "identity": identity,
+                "data_tree_sha256": data_before,
+                "query_limit_ms": query_limit_ms,
+                "warmup_probe_chars": len(source["query"]["question"]),
+                "warmup_samples_ms": error.samples_ms,
+                "passed": False,
+            })
+            raise
         query_started = time.perf_counter()
         direct = runtime.client.call_tool("ownward_search", {"query": source["query"]["question"], "limit": 10})
         latency_ms = (time.perf_counter() - query_started) * 1000
@@ -1149,15 +1495,18 @@ def _run_full_information_query_preflight(
     data_after = _tree_sha256(data_dir)
     require(data_before == data_after, "full-information query preflight changed state while reading")
     report = {
-        "schema": "ownward.product-full-information-query-preflight/v1",
+        "schema": "ownward.product-full-information-query-preflight/v3",
         "formal_evidence": False,
         "identity": identity,
         "information_count": len(source["information"]),
-        "warmup_ms": warmup_ms,
+        "warmup_probe_chars": len(source["query"]["question"]),
+        "warmup_samples_ms": warmup_samples,
+        "warmup_ms": sum(warmup_samples),
         "latency_ms": latency_ms,
         "wall_seconds": time.perf_counter() - started,
         "data_tree_sha256": data_after,
         "direct_result": direct,
+        "readiness_failures": _readiness_failure_evidence(root / "readiness-failures", root),
         "passed": len(source["information"]) == 5 and latency_ms <= query_limit_ms,
     }
     write_json(report_path, report)
