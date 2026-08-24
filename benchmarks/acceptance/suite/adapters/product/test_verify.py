@@ -75,6 +75,30 @@ class ProductAdapterTests(unittest.TestCase):
         self.assertEqual([task["scenario_id"] for task in tasks], direct_order)
         self.assertEqual([task["scenario_id"] for task in tasks], [result["scenario_id"] for result in results])
 
+    def test_parallel_scenarios_report_all_root_failures_without_barrier_noise(self) -> None:
+        tasks = [{"scenario_id": f"scenario-{index}"} for index in range(4)]
+        barrier_message = "parallel agent phase did not reach the live direct-measurement checkpoint"
+        errors = {
+            "scenario-0": RuntimeError(barrier_message),
+            "scenario-1": RuntimeError("semantic capability used an invalid path"),
+            "scenario-2": RuntimeError("semantic attempt exceeded corrected submission limit"),
+            "scenario-3": threading.BrokenBarrierError(),
+        }
+
+        def run(_args: object, task: dict[str, object], *_positional: object, **_keyword: object) -> dict[str, object]:
+            raise errors[str(task["scenario_id"])]
+
+        with mock.patch.object(verify, "_run_scenario", side_effect=run):
+            with self.assertRaisesRegex(RuntimeError, "parallel scenario phase failed") as captured:
+                verify._run_scenarios(
+                    SimpleNamespace(evidence_dir=Path("not-created-product-test-evidence")),
+                    tasks, {}, 0.0, True, 1.0, "a" * 64, time.monotonic() + 5,
+                )
+        message = str(captured.exception)
+        self.assertIn("scenario-1: RuntimeError: semantic capability used an invalid path", message)
+        self.assertIn("scenario-2: RuntimeError: semantic attempt exceeded corrected submission limit", message)
+        self.assertNotIn(barrier_message, message)
+
     def test_qualification_projection_uses_four_worker_schedule_and_safety_margin(self) -> None:
         preflight_tasks = [
             {"information": [{}, {}], "updates": []}
@@ -131,6 +155,10 @@ class ProductAdapterTests(unittest.TestCase):
         self.assertIn("do not exhaustively compare every candidate", semantic)
         self.assertIn("Do not create a plan or todo list", semantic)
         self.assertIn("immediately submit complete with no relation", semantic)
+        self.assertIn("Do not call `list_mcp_resources`", semantic)
+        self.assertIn("exactly one top-level argument named `submission`", semantic)
+        self.assertIn('"analysis":{"summary":"<summary>","topics":[],"cues":[],"inferred_contexts":[],"relations":[]}', semantic)
+        self.assertIn("Never move those fields to the tool-call root", semantic)
         self.assertIn("copy only the exact top-level `id` field", query)
         self.assertIn("Never construct, infer, transform, autocomplete, or copy an ID", query)
         self.assertIn("read each candidate once and answer immediately", query)

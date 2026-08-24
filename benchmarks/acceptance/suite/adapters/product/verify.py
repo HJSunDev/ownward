@@ -247,12 +247,14 @@ RELATION_CONTRACT = {
 
 
 def _semantic_prompt(asset_id: str, args: argparse.Namespace) -> str:
-    return f"""Act only as Ownward's external semantic capability. Use only the connected Ownward tools.
+    return f"""Act only as Ownward's external semantic capability. The tool definitions are already loaded. Do not call `list_mcp_resources`, `list_mcp_resource_templates`, or any discovery, shell, file, web, query, read, navigation, status, or mutation operation. The only valid calls in this stage are one `ownward_semantic_work` followed by one successful `ownward_semantic_submit` (plus at most two corrected submit retries after schema rejection).
 
 Call `ownward_semantic_work` once with exactly this one asset ID:
 {json.dumps([asset_id], ensure_ascii=False)}
 
-Analyze only the returned asset and candidate contexts. Do not infer from a query, expected answer, test truth, or outside knowledge. Do one bounded pass over the strongest candidate evidence; do not exhaustively compare every candidate. Immediately submit exactly one result through `ownward_semantic_submit` using schema `ownward.semantic-submission/v1`, capability id `codex`, capability version `{args.codex_model}`, and execution `ownward-product-dataset-v1`. Correct and retry a rejected submission at most twice.
+Analyze only the returned asset and candidate contexts. Do not infer from a query, expected answer, test truth, or outside knowledge. Do one bounded pass over the strongest candidate evidence; do not exhaustively compare every candidate. Immediately call `ownward_semantic_submit` with exactly one top-level argument named `submission`. Its value must use this exact field nesting; replace placeholders only with values copied from the work item and your analysis:
+{{"submission":{{"schema":"ownward.semantic-submission/v1","work_id":"<work.id>","asset_id":"<work.asset.id>","asset_revision":<work.asset.revision>,"capability":{{"id":"codex","version":"{args.codex_model}","execution":"ownward-product-dataset-v1"}},"status":"complete","analysis":{{"summary":"<summary>","topics":[],"cues":[],"inferred_contexts":[],"relations":[]}}}}}}
+Keep `schema`, `work_id`, `asset_id`, `asset_revision`, `capability`, and `status` inside `submission`; keep `summary`, `topics`, `cues`, `inferred_contexts`, and `relations` inside `submission.analysis`. Never move those fields to the tool-call root or alongside `analysis`. Correct and retry a rejected submission at most twice.
 
 Do not create a plan or todo list. After `ownward_semantic_work`, inspect each returned candidate once. If no explicit relation is already justified by the asset and those candidates, immediately submit complete with no relation; do not keep deliberating over the relation taxonomy.
 
@@ -1323,7 +1325,26 @@ def _run_scenarios(
                 raise
 
         with ThreadPoolExecutor(max_workers=len(wave), thread_name_prefix="ownward-product") as executor:
-            agent_results = [future.result() for future in [executor.submit(run, task) for task in wave]]
+            futures = [(task, executor.submit(run, task)) for task in wave]
+            agent_results: list[dict[str, Any]] = []
+            failures: list[tuple[str, BaseException]] = []
+            for task, future in futures:
+                try:
+                    agent_results.append(future.result())
+                except BaseException as error:
+                    failures.append((str(task["scenario_id"]), error))
+        if failures:
+            barrier_message = "parallel agent phase did not reach the live direct-measurement checkpoint"
+            causes = [
+                (scenario_id, error)
+                for scenario_id, error in failures
+                if not isinstance(error, threading.BrokenBarrierError) and str(error) != barrier_message
+            ] or failures
+            details = "; ".join(
+                f"{scenario_id}: {type(error).__name__}: {error}"
+                for scenario_id, error in causes
+            )
+            raise RuntimeError(f"parallel scenario phase failed: {details}") from causes[0][1]
         results.extend(
             _complete_direct_measurement(
                 args,
