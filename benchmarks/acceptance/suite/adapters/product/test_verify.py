@@ -155,10 +155,11 @@ class ProductAdapterTests(unittest.TestCase):
         self.assertIn("do not exhaustively compare every candidate", semantic)
         self.assertIn("Do not create a plan or todo list", semantic)
         self.assertIn("immediately submit complete with no relation", semantic)
-        self.assertIn("Do not call `list_mcp_resources`", semantic)
+        self.assertIn("Immediately use the semantic tools", semantic)
         self.assertIn("exactly one top-level argument named `submission`", semantic)
         self.assertIn('"analysis":{"summary":"<summary>","topics":[],"cues":[],"inferred_contexts":[],"relations":[]}', semantic)
         self.assertIn("Never move those fields to the tool-call root", semantic)
+        self.assertEqual(3, verify.MAX_SEMANTIC_STAGE_ATTEMPTS)
         self.assertIn("copy only the exact top-level `id` field", query)
         self.assertIn("Never construct, infer, transform, autocomplete, or copy an ID", query)
         self.assertIn("read each candidate once and answer immediately", query)
@@ -235,6 +236,76 @@ class ProductAdapterTests(unittest.TestCase):
         self.assertTrue(trace.bypassed)
         self.assertEqual("ownward_search", trace.calls[0].name)
         self.assertFalse(trace.calls[0].error)
+
+    def test_empty_ownward_resource_discovery_is_protocol_metadata_not_a_product_bypass(self) -> None:
+        events = [
+            {"type": "thread.started", "thread_id": "session"},
+            {"type": "item.completed", "item": {
+                "type": "mcp_tool_call", "server": "ownward", "tool": "list_mcp_resources",
+                "status": "completed", "error": None, "arguments": {"server": "ownward"},
+                "result": {"content": [{"type": "text", "text": '{"server":"ownward","resources":[]}'}], "structured_content": None},
+            }},
+            {"type": "item.completed", "item": {
+                "type": "mcp_tool_call", "server": "ownward", "tool": "ownward_semantic_work",
+                "status": "completed", "error": None, "arguments": {"asset_ids": ["asset"]},
+                "result": {"structured_content": {"work": []}},
+            }},
+        ]
+        trace = verify.codex_session.load_exec_events("\n".join(json.dumps(item) for item in events))
+        self.assertFalse(trace.bypassed)
+        self.assertEqual(("list_mcp_resources:empty",), trace.protocol_operations)
+        self.assertEqual(["ownward_semantic_work"], [call.name for call in trace.calls])
+
+        events[1]["item"]["result"]["content"][0]["text"] = '{"server":"ownward","resources":[{"uri":"secret"}]}'
+        trace = verify.codex_session.load_exec_events("\n".join(json.dumps(item) for item in events))
+        self.assertTrue(trace.bypassed)
+
+    def test_semantic_unit_retries_only_a_no_call_attempt_and_preserves_both_traces(self) -> None:
+        asset_id = "asset"
+        work_id = "work"
+        no_call = SimpleNamespace(calls=[], bypassed=False, bypass_operations=(), protocol_operations=())
+        work = verify.codex_session.ToolCall(
+            "ownward_semantic_work",
+            {"asset_ids": [asset_id]},
+            {"work": [{"id": work_id, "asset": {"id": asset_id, "revision": 1}}]},
+            False,
+        )
+        submit = verify.codex_session.ToolCall(
+            "ownward_semantic_submit",
+            {"submission": {"work_id": work_id, "asset_id": asset_id, "asset_revision": 1}},
+            {"organization": {"status": "ready"}},
+            False,
+        )
+        valid = SimpleNamespace(
+            calls=[work, submit], bypassed=False, bypass_operations=(),
+            protocol_operations=("list_mcp_resources:empty",),
+        )
+
+        def run(*_positional: object, **keyword: object) -> tuple[dict[str, int], object, float]:
+            stage = keyword["stage"]
+            assert isinstance(stage, Path)
+            stage.mkdir(parents=True)
+            (stage / "output.json").write_text('{"processed":1,"uncertain":0}', encoding="utf-8")
+            (stage / "events.jsonl").write_text("events", encoding="utf-8")
+            (stage / "stderr.txt").write_text("", encoding="utf-8")
+            trace = no_call if stage.name == "attempt-001" else valid
+            return {"processed": 1, "uncertain": 0}, trace, 2.0
+
+        runtime = SimpleNamespace(
+            binding=SimpleNamespace(endpoint="http://127.0.0.1:1", bearer_token="token"),
+            client=SimpleNamespace(call_tool=mock.Mock(return_value={"organization": {"status": "ready"}})),
+        )
+        args = SimpleNamespace(stage_timeout=240, codex_model="model")
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(verify, "_run_codex", side_effect=run):
+            root = Path(directory)
+            elapsed, identity, evidence = verify._complete_semantic_unit(
+                args, runtime, root, root / "semantic-initial" / "unit", asset_id, 1, time.monotonic() + 300,
+            )
+            self.assertEqual(4.0, elapsed)
+            self.assertEqual(2, identity["agent_attempts"])
+            self.assertEqual(["list_mcp_resources:empty"], identity["protocol_operations"])
+            self.assertIn("semantic-initial/unit/attempt-001/attempt.json", evidence)
+            self.assertIn("semantic-initial/unit/attempt-002/events.jsonl", evidence)
 
     def test_codex_timeout_accepts_already_persisted_structured_output(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

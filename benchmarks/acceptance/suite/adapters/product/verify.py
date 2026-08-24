@@ -48,6 +48,7 @@ PREFLIGHT_MAXIMUM_WALL_SECONDS = 1800.0
 PREFLIGHT_REQUIRED_MARGIN_SECONDS = 300.0
 SEMANTIC_TOOLS = ("ownward_semantic_work", "ownward_semantic_submit")
 QUERY_TOOLS = ("ownward_search", "ownward_read", "ownward_navigate")
+MAX_SEMANTIC_STAGE_ATTEMPTS = 3
 MAX_QUERY_ATTEMPTS = 3
 WARM_READINESS_REQUIRED_CONSECUTIVE = 3
 WARM_READINESS_MAX_SAMPLES = 12
@@ -247,7 +248,7 @@ RELATION_CONTRACT = {
 
 
 def _semantic_prompt(asset_id: str, args: argparse.Namespace) -> str:
-    return f"""Act only as Ownward's external semantic capability. The tool definitions are already loaded. Do not call `list_mcp_resources`, `list_mcp_resource_templates`, or any discovery, shell, file, web, query, read, navigation, status, or mutation operation. The only valid calls in this stage are one `ownward_semantic_work` followed by one successful `ownward_semantic_submit` (plus at most two corrected submit retries after schema rejection).
+    return f"""Act only as Ownward's external semantic capability. The tool definitions are already loaded. Immediately use the semantic tools; do not use shell, files, web, query, read, navigation, status, mutation, or any other product capability. The only valid product calls in this stage are one `ownward_semantic_work` followed by one successful `ownward_semantic_submit` (plus at most two corrected submit retries after schema rejection).
 
 Call `ownward_semantic_work` once with exactly this one asset ID:
 {json.dumps([asset_id], ensure_ascii=False)}
@@ -841,7 +842,11 @@ def _semantic_trace_identity(trace: Any, asset_id: str, revision: int) -> dict[s
         and int(submission.get("asset_revision", -1)) == revision,
         "semantic work and submission do not bind the requested asset revision",
     )
-    return {"work_id": str(work["id"]), "submission_sha256": json_sha256(submission)}
+    return {
+        "work_id": str(work["id"]),
+        "submission_sha256": json_sha256(submission),
+        "protocol_operations": list(getattr(trace, "protocol_operations", ())),
+    }
 
 
 def _complete_semantic_unit(
@@ -853,47 +858,87 @@ def _complete_semantic_unit(
     revision: int,
     deadline: float,
 ) -> tuple[float, dict[str, Any], dict[str, str]]:
-    remaining = deadline - time.monotonic()
-    require(remaining > 0, "product execution exceeded its total budget")
-    stage = _next_attempt(stage_root)
-    recovered_timeout = False
-    try:
-        semantic, semantic_trace, elapsed = _run_codex(
-            args,
-            stage=stage,
-            prompt=_semantic_prompt(asset_id, args),
-            schema=SEMANTIC_SCHEMA,
-            endpoint=runtime.binding.endpoint,
-            bearer_token=runtime.binding.bearer_token,
-            timeout_seconds=min(args.stage_timeout, remaining),
-            enabled_tools=SEMANTIC_TOOLS,
+    attempts = sorted(item for item in stage_root.glob("attempt-*") if item.is_dir())
+    evidence: dict[str, str] = {}
+    total_elapsed = 0.0
+    protocol_operations: list[str] = []
+    for attempt in attempts:
+        evidence.update(_relative_evidence(scenario_root, attempt))
+        attempt_path = attempt / "attempt.json"
+        if attempt_path.is_file():
+            record = load_json(attempt_path)
+            total_elapsed += float(record.get("elapsed_seconds", 0))
+            protocol_operations.extend(str(value) for value in record.get("protocol_operations", []))
+
+    while len(attempts) < MAX_SEMANTIC_STAGE_ATTEMPTS:
+        remaining = deadline - time.monotonic()
+        require(remaining > 0, "product execution exceeded its total budget")
+        stage = _next_attempt(stage_root)
+        attempts.append(stage)
+        recovered_timeout = False
+        try:
+            semantic, semantic_trace, elapsed = _run_codex(
+                args,
+                stage=stage,
+                prompt=_semantic_prompt(asset_id, args),
+                schema=SEMANTIC_SCHEMA,
+                endpoint=runtime.binding.endpoint,
+                bearer_token=runtime.binding.bearer_token,
+                timeout_seconds=min(args.stage_timeout, remaining),
+                enabled_tools=SEMANTIC_TOOLS,
+            )
+        except CodexStageTimeout as error:
+            semantic = None
+            semantic_trace = error.trace
+            elapsed = error.elapsed_seconds
+            recovered_timeout = True
+        total_elapsed += elapsed
+        current_protocol = list(getattr(semantic_trace, "protocol_operations", ()))
+        protocol_operations.extend(current_protocol)
+        if semantic is not None:
+            require(int(semantic.get("processed", -1)) == 1, "semantic capability did not process exactly one asset")
+        if not semantic_trace.bypassed and not semantic_trace.calls:
+            write_json(stage / "attempt.json", {
+                "schema": "ownward.semantic-attempt/v1",
+                "status": "rejected",
+                "reason": "no-ownward-product-tool-calls",
+                "elapsed_seconds": elapsed,
+                "protocol_operations": current_protocol,
+            })
+            evidence.update(_relative_evidence(scenario_root, stage))
+            if len(attempts) < MAX_SEMANTIC_STAGE_ATTEMPTS:
+                continue
+            raise RuntimeError(
+                f"semantic capability made no Ownward product call in {MAX_SEMANTIC_STAGE_ATTEMPTS} bounded attempts"
+            )
+        require(
+            not semantic_trace.bypassed,
+            "semantic capability bypassed Ownward: "
+            + ", ".join(getattr(semantic_trace, "bypass_operations", ())),
         )
-    except CodexStageTimeout as error:
-        semantic = None
-        semantic_trace = error.trace
-        elapsed = error.elapsed_seconds
-        recovered_timeout = True
-    if semantic is not None:
-        require(int(semantic.get("processed", -1)) == 1, "semantic capability did not process exactly one asset")
-    require(not semantic_trace.bypassed and semantic_trace.calls, "semantic capability bypassed Ownward")
-    identity = _semantic_trace_identity(semantic_trace, asset_id, revision)
-    status = runtime.client.call_tool("ownward_status", {"id": asset_id})
-    terminal = status.get("organization", {}).get("status")
-    require(terminal in {"ready", "uncertain"}, "semantic work did not reach a terminal state")
-    identity["terminal_status"] = terminal
-    if recovered_timeout:
-        identity["completion"] = "terminal-submit-recovered-after-stage-timeout"
-        write_json(stage / "terminal.json", {
-            "schema": "ownward.semantic-terminal-recovery/v1",
-            "reason": "stage-timeout-after-successful-terminal-submit",
-            "asset_id": asset_id,
-            "asset_revision": revision,
-            "work_id": identity["work_id"],
-            "submission_sha256": identity["submission_sha256"],
-            "terminal_status": terminal,
-            "elapsed_seconds": elapsed,
-        })
-    return elapsed, identity, _relative_evidence(scenario_root, stage)
+        identity = _semantic_trace_identity(semantic_trace, asset_id, revision)
+        status = runtime.client.call_tool("ownward_status", {"id": asset_id})
+        terminal = status.get("organization", {}).get("status")
+        require(terminal in {"ready", "uncertain"}, "semantic work did not reach a terminal state")
+        identity["terminal_status"] = terminal
+        identity["agent_attempts"] = len(attempts)
+        identity["protocol_operations"] = protocol_operations
+        if recovered_timeout:
+            identity["completion"] = "terminal-submit-recovered-after-stage-timeout"
+            write_json(stage / "terminal.json", {
+                "schema": "ownward.semantic-terminal-recovery/v1",
+                "reason": "stage-timeout-after-successful-terminal-submit",
+                "asset_id": asset_id,
+                "asset_revision": revision,
+                "work_id": identity["work_id"],
+                "submission_sha256": identity["submission_sha256"],
+                "terminal_status": terminal,
+                "elapsed_seconds": elapsed,
+            })
+        evidence.update(_relative_evidence(scenario_root, stage))
+        return total_elapsed, identity, evidence
+
+    raise RuntimeError(f"semantic capability exhausted {MAX_SEMANTIC_STAGE_ATTEMPTS} bounded attempts")
 
 
 def _commit_progress(
