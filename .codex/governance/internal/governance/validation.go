@@ -101,6 +101,22 @@ func validateState(state *State) error {
 			return err
 		}
 	}
+	if state.ReviewBaseline != nil {
+		if err := validateReviewBaseline(state.ReviewBaseline); err != nil {
+			return err
+		}
+	}
+	for _, invalidation := range state.InvalidatedEvidence {
+		if err := nonempty("invalidated evidence_id", invalidation.EvidenceID); err != nil {
+			return err
+		}
+		if err := validHash("invalidated previous_hash", invalidation.PreviousHash); err != nil {
+			return err
+		}
+		if _, err := time.Parse(time.RFC3339Nano, invalidation.InvalidatedAt); err != nil {
+			return errors.New("invalidated evidence timestamp is invalid")
+		}
+	}
 	if state.LastDiagnostic != nil {
 		if err := nonempty("last_diagnostic source", state.LastDiagnostic.Source); err != nil {
 			return err
@@ -140,7 +156,7 @@ func validateState(state *State) error {
 }
 
 func validateReviewState(review *ReviewState) error {
-	if review == nil || !oneOf(review.Status, "idle", "requested", "feedback_ready", "responded", "missed") {
+	if review == nil || !oneOf(review.Status, "idle", "requested", "feedback_ready", "superseded", "responded", "missed") {
 		return errors.New("review status is invalid")
 	}
 	if review.FixedReviewGeneration < 0 {
@@ -158,7 +174,7 @@ func validateReviewState(review *ReviewState) error {
 	if review.Status == "requested" && review.Response != nil {
 		return errors.New("requested review cannot contain feedback or a response")
 	}
-	if review.Status == "feedback_ready" && review.Response != nil {
+	if oneOf(review.Status, "feedback_ready", "superseded") && review.Response != nil {
 		return errors.New("feedback_ready review requires feedback and no response")
 	}
 	if review.Status == "responded" && review.Response == nil {
@@ -167,6 +183,69 @@ func validateReviewState(review *ReviewState) error {
 	if review.Status == "missed" && review.Response != nil {
 		return errors.New("missed review cannot contain a response")
 	}
+	if review.Pending != nil {
+		if len(review.Pending.TriggerTypes) == 0 || len(review.Pending.TriggerTypes) > pendingReviewLimit || len(review.Pending.SourceIDs) == 0 || len(review.Pending.SourceIDs) > pendingReviewLimit {
+			return errors.New("pending review facts must be nonempty and bounded")
+		}
+		if err := uniqueNonempty("pending trigger_types", review.Pending.TriggerTypes, true); err != nil {
+			return err
+		}
+		if err := uniqueNonempty("pending source_ids", review.Pending.SourceIDs, true); err != nil {
+			return err
+		}
+		if err := validHash("pending facts_hash", review.Pending.FactsHash); err != nil {
+			return err
+		}
+		if err := nonempty("pending reason", review.Pending.Reason); err != nil {
+			return err
+		}
+	}
+	if review.GovernorAgentID != nil {
+		if err := nonempty("governor_agent_id", *review.GovernorAgentID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateReviewBaseline(baseline *ReviewBaseline) error {
+	if baseline == nil {
+		return nil
+	}
+	for name, value := range map[string]string{"baseline_id": baseline.BaselineID, "review_id": baseline.ReviewID, "authority_hash": baseline.AuthorityHash, "checkpoint_outcome": baseline.CheckpointOutcome, "established_at": baseline.EstablishedAt} {
+		if err := nonempty(name, value); err != nil {
+			return err
+		}
+	}
+	if err := validHash("baseline authority_hash", baseline.AuthorityHash); err != nil {
+		return err
+	}
+	focusFields := 0
+	for _, value := range []*string{baseline.FocusID, baseline.FocusSnapshotHash, baseline.FocusExecutionID} {
+		if value != nil {
+			focusFields++
+		}
+	}
+	if focusFields != 0 && focusFields != 3 {
+		return errors.New("baseline focus identity must be entirely present or absent")
+	}
+	if focusFields == 3 {
+		if err := nonempty("baseline focus_id", *baseline.FocusID); err != nil {
+			return err
+		}
+		if err := validHash("baseline focus_snapshot_hash", *baseline.FocusSnapshotHash); err != nil {
+			return err
+		}
+		if err := nonempty("baseline focus_execution_id", *baseline.FocusExecutionID); err != nil {
+			return err
+		}
+	}
+	if !oneOf(baseline.CheckpointOutcome, "not_applicable", "pending", "passed", "failed") {
+		return errors.New("baseline checkpoint_outcome is invalid")
+	}
+	if _, err := time.Parse(time.RFC3339Nano, baseline.EstablishedAt); err != nil {
+		return errors.New("baseline established_at is invalid")
+	}
 	return nil
 }
 
@@ -174,7 +253,7 @@ func validateExecutionSnapshot(snapshot *ExecutionSnapshot) error {
 	if snapshot == nil {
 		return errors.New("execution snapshot is required")
 	}
-	for name, value := range map[string]string{"focus_id": snapshot.FocusID, "condition_id": snapshot.ConditionID, "objective": snapshot.Objective, "value": snapshot.Value, "checkpoint_id": snapshot.EvidenceCheckpoint.CheckpointID, "checkpoint_description": snapshot.EvidenceCheckpoint.Description, "started_at": snapshot.StartedAt} {
+	for name, value := range map[string]string{"focus_id": snapshot.FocusID, "condition_id": snapshot.ConditionID, "objective": snapshot.Objective, "value": snapshot.Value, "checkpoint_id": snapshot.EvidenceCheckpoint.CheckpointID, "checkpoint_description": snapshot.EvidenceCheckpoint.Description, "execution_id": snapshot.ExecutionID, "started_at": snapshot.StartedAt} {
 		if err := nonempty(name, value); err != nil {
 			return err
 		}
@@ -224,9 +303,6 @@ func validateReviewRequest(request *ReviewRequest) error {
 	if err := validHash("review_snapshot_hash", request.ReviewSnapshotHash); err != nil {
 		return err
 	}
-	if err := validHash("repository.working_tree_hash", request.RepositorySnapshot.WorkingTreeHash); err != nil {
-		return err
-	}
 	if err := validateReviewTrigger(request.Trigger); err != nil {
 		return err
 	}
@@ -236,6 +312,17 @@ func validateReviewRequest(request *ReviewRequest) error {
 	if err := uniqueNonempty("completion_definition_paths", request.CompletionDefinitionPaths, true); err != nil {
 		return err
 	}
+	if len(request.AuthorityRefs) == 0 {
+		return errors.New("authority_refs must not be empty")
+	}
+	for _, ref := range request.AuthorityRefs {
+		if err := nonempty("authority_ref.path", ref.Path); err != nil {
+			return err
+		}
+		if err := validHash("authority_ref.hash", ref.Hash); err != nil {
+			return err
+		}
+	}
 	if request.CurrentFocus != nil {
 		input := &ExecutionSnapshotInput{FocusID: request.CurrentFocus.FocusID, ConditionID: request.CurrentFocus.ConditionID, Objective: request.CurrentFocus.Objective, Value: request.CurrentFocus.Value, InvolvedScope: request.CurrentFocus.InvolvedScope, ExpectedEvidence: request.CurrentFocus.ExpectedEvidence, CheckpointID: request.CurrentFocus.CheckpointID, CheckpointDescription: request.CurrentFocus.CheckpointDescription}
 		if err := validateExecutionSnapshotInput(input); err != nil {
@@ -244,6 +331,12 @@ func validateReviewRequest(request *ReviewRequest) error {
 		if err := validHash("current_focus.snapshot_hash", request.CurrentFocus.SnapshotHash); err != nil {
 			return err
 		}
+		if err := nonempty("current_focus.execution_id", request.CurrentFocus.ExecutionID); err != nil {
+			return err
+		}
+	}
+	if err := validateProgressDelta(request.ProgressDelta); err != nil {
+		return err
 	}
 	if request.PendingIntervention != nil {
 		if err := validatePendingIntervention(request.PendingIntervention); err != nil {
@@ -263,9 +356,9 @@ func validateReviewTrigger(trigger ReviewTrigger) error {
 		}
 	}
 	allowed := map[string][]string{
-		"fixed":    {"activation", "session-start", "post-compact", "legacy-state-migration"},
-		"event":    {"focus-change", "evidence-checkpoint", "evidence-checkpoint-missed", "evidence-identity-change", "repeated-failure", "authority-change", "intervention-resolution", "failure-recording-integrity", "completion-candidate"},
-		"advisory": {"explicit-advisory"},
+		"fixed":  {"activation", "session-start", "post-compact", "legacy-state-migration"},
+		"event":  {"focus-change", "evidence-checkpoint", "evidence-checkpoint-missed", "evidence-identity-change", "repeated-failure", "authority-change", "intervention-resolution", "failure-recording-integrity", "completion-candidate", "high-cost-expansion", "stage-boundary", "scope-drift", "pending-events"},
+		"legacy": {"migrated-advisory"},
 	}
 	types, exists := allowed[trigger.Kind]
 	if !exists || !oneOf(trigger.Type, types...) {
@@ -294,6 +387,24 @@ func validateReviewResult(result *ReviewResult) error {
 	}
 	if err := uniqueNonempty("validated_evidence_ids", result.ValidatedEvidenceIDs, false); err != nil {
 		return err
+	}
+	for _, claim := range result.AuthorityClaims {
+		for name, value := range map[string]string{"authority_claim.claim": claim.Claim, "authority_claim.source_path": claim.SourcePath, "authority_claim.stable_locator": claim.StableLocator} {
+			if err := nonempty(name, value); err != nil {
+				return err
+			}
+		}
+		if err := validHash("authority_claim.source_hash", claim.SourceHash); err != nil {
+			return err
+		}
+	}
+	for _, assumption := range result.Assumptions {
+		if err := nonempty("assumption.statement", assumption.Statement); err != nil {
+			return err
+		}
+		if err := nonempty("assumption.impact", assumption.Impact); err != nil {
+			return err
+		}
 	}
 	switch result.Recommendation {
 	case "continue":
@@ -326,6 +437,23 @@ func validateReviewResult(result *ReviewResult) error {
 		}
 		if result.Recommendation == "external_input_needed" && result.ExternalInput.Kind == "product_decision" {
 			return errors.New("external_input_needed cannot request a product decision")
+		}
+	}
+	return nil
+}
+
+func validateProgressDelta(delta ProgressDelta) error {
+	for name, value := range map[string]string{"critical_condition_id": delta.CriticalConditionID, "critical_condition_status": delta.CriticalConditionStatus, "checkpoint_outcome": delta.CheckpointOutcome, "next_investment": delta.NextInvestment, "net_progress": delta.NetProgress} {
+		if err := nonempty(name, value); err != nil {
+			return err
+		}
+	}
+	if !oneOf(delta.CheckpointOutcome, "not_applicable", "pending", "passed", "failed") || !oneOf(delta.NetProgress, "initial", "advanced", "zero", "regressed") {
+		return errors.New("progress delta outcome is invalid")
+	}
+	for name, values := range map[string][]string{"new_evidence_ids": delta.NewEvidenceIDs, "reused_evidence_ids": delta.ReusedEvidenceIDs, "invalidated_evidence_ids": delta.InvalidatedEvidenceIDs} {
+		if err := uniqueNonempty(name, values, false); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -444,6 +572,41 @@ func validateExecutionSnapshotInput(input *ExecutionSnapshotInput) error {
 		return err
 	}
 	return uniqueNonempty("expected_evidence", input.ExpectedEvidence, true)
+}
+
+func validateCheckpointResultInput(input *CheckpointResultInput) error {
+	if input == nil {
+		return errors.New("checkpoint result is required")
+	}
+	for name, value := range map[string]string{"focus_id": input.FocusID, "checkpoint_id": input.CheckpointID, "outcome": input.Outcome, "source_execution": input.SourceExecution, "result_hash": input.ResultHash} {
+		if err := nonempty(name, value); err != nil {
+			return err
+		}
+	}
+	if !oneOf(input.Outcome, "passed", "failed") {
+		return errors.New("checkpoint outcome must be passed or failed")
+	}
+	if input.Outcome == "failed" {
+		if err := nonempty("failure_category", input.FailureCategory); err != nil {
+			return err
+		}
+	}
+	if err := validHash("result_hash", input.ResultHash); err != nil {
+		return err
+	}
+	return uniqueNonempty("checkpoint evidence_ids", input.EvidenceIDs, input.Outcome == "passed")
+}
+
+func validateExpansionReviewInput(input *ExpansionReviewInput) error {
+	if input == nil {
+		return errors.New("expansion review input is required")
+	}
+	for name, value := range map[string]string{"focus_id": input.FocusID, "checkpoint_id": input.CheckpointID, "investment": input.Investment} {
+		if err := nonempty(name, value); err != nil {
+			return err
+		}
+	}
+	return uniqueNonempty("expansion evidence_ids", input.EvidenceIDs, true)
 }
 
 func ensureKnownEvidence(state *State, ids []string) error {

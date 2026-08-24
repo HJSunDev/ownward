@@ -34,7 +34,8 @@ func (runtime *Runtime) Init() (*State, error) {
 			SchemaVersion: schemaVersion, RunID: newID("run"), Status: "active", AuthorityHash: authorityHash,
 			CompletionConditions: conditions, CurrentFocus: nil, PendingIntervention: nil,
 			ExplicitResourceConstraints: runtime.Config.ExplicitResourceConstraints, ReusableResults: []ReusableResult{},
-			NextAction: &next, Review: ReviewState{Status: "idle"}, Owner: nil, Handoff: nil,
+			NextAction: &next, ReviewBaseline: nil, InvalidatedEvidence: []EvidenceInvalidation{},
+			Review: ReviewState{Status: "idle"}, Owner: nil, Handoff: nil,
 		}
 		if err := runtime.saveState(state); err != nil {
 			return err
@@ -132,6 +133,15 @@ func (runtime *Runtime) RequestLifecycleReview(triggerType, sourceID string) (*R
 		if state.Status == "complete" {
 			return nil
 		}
+		if oneOf(state.Review.Status, "requested", "feedback_ready", "superseded") {
+			existing, loadErr := runtime.loadRequest()
+			if loadErr == nil && runtime.verifyReviewIntegrity(existing, state) == nil {
+				request = existing
+				return nil
+			}
+			state.Review.Status = "missed"
+			state.Review.Response = nil
+		}
 		currentAuthority, err := runtime.authorityHash()
 		if err != nil {
 			return err
@@ -205,10 +215,10 @@ func (runtime *Runtime) UpdateExecutionSnapshot(input ExecutionSnapshotInput) (*
 		if err := runtime.saveState(state); err != nil {
 			return err
 		}
-		trigger, err := newReviewTrigger("event", "focus-change", snapshot.FocusID+":"+snapshot.SnapshotHash, "execution focus changed")
-		if len(invalidEvidence) > 0 {
-			trigger, err = evidenceIdentityChangeTrigger(invalidEvidence)
+		if len(invalidEvidence) == 0 {
+			return nil
 		}
+		trigger, err := evidenceIdentityChangeTrigger(invalidEvidence)
 		if err != nil {
 			return err
 		}
@@ -226,11 +236,16 @@ func snapshotFromInput(input *ExecutionSnapshotInput) (*ExecutionSnapshot, error
 	if err != nil {
 		return nil, err
 	}
+	executionHash, err := hashJSON(map[string]string{"focus_id": input.FocusID, "snapshot_hash": hash})
+	if err != nil {
+		return nil, err
+	}
 	return &ExecutionSnapshot{
 		FocusID: input.FocusID, ConditionID: input.ConditionID, Objective: input.Objective, Value: input.Value,
 		InvolvedScope: copy.InvolvedScope, ExpectedEvidence: copy.ExpectedEvidence,
 		EvidenceCheckpoint: EvidenceCheckpoint{CheckpointID: input.CheckpointID, Description: input.CheckpointDescription},
-		SnapshotHash:       hash, StartedAt: time.Now().UTC().Format(time.RFC3339Nano), FailureEvents: []FailureEvent{}, FailureRepairs: []FailureRepair{},
+		SnapshotHash:       hash, ExecutionID: "execution_" + strings.TrimPrefix(executionHash, "sha256:")[:32],
+		StartedAt: time.Now().UTC().Format(time.RFC3339Nano), FailureEvents: []FailureEvent{}, FailureRepairs: []FailureRepair{},
 	}, nil
 }
 
@@ -297,15 +312,125 @@ func (runtime *Runtime) RecordEvidence(record EvidenceRecord) (*ReviewRequest, e
 			request, err = runtime.requestReviewLocked(state, trigger)
 			return err
 		}
-		if reached {
-			trigger, err := newReviewTrigger("event", "evidence-checkpoint", state.CurrentFocus.FocusID+":"+state.CurrentFocus.SnapshotHash+":"+state.CurrentFocus.EvidenceCheckpoint.CheckpointID, "evidence checkpoint reached")
-			if err != nil {
-				return err
-			}
-			request, err = runtime.requestReviewLocked(state, trigger)
+		return nil
+	})
+	return request, err
+}
+
+// RecordCheckpointResult is the trusted fallback when Codex PostToolUse does
+// not expose a reliable process result. It records one already-existing
+// evidence boundary, not every command executed by the main Agent.
+func (runtime *Runtime) RecordCheckpointResult(input CheckpointResultInput) (*ReviewRequest, error) {
+	input.FailureCategory = normalizeFailureSignature(input.FailureCategory)
+	if err := validateCheckpointResultInput(&input); err != nil {
+		return nil, err
+	}
+	var request *ReviewRequest
+	err := runtime.withLock(func() error {
+		state, err := runtime.LoadState()
+		if err != nil {
 			return err
 		}
-		return nil
+		focus := state.CurrentFocus
+		if focus == nil || focus.FocusID != input.FocusID || focus.EvidenceCheckpoint.CheckpointID != input.CheckpointID {
+			return errors.New("checkpoint result is not bound to the current execution")
+		}
+		if err := ensureKnownEvidence(state, input.EvidenceIDs); err != nil {
+			return err
+		}
+		if input.Outcome == "passed" {
+			if !expectedEvidenceReached(focus, state.ReusableResults) {
+				return errors.New("passed checkpoint does not have all expected evidence")
+			}
+			focus.EvidenceCheckpoint.Reached = true
+			focus.Checkpoint = stringPointer(input.CheckpointID)
+			if err := runtime.saveState(state); err != nil {
+				return err
+			}
+			return nil
+		}
+
+		identities, err := runtime.currentFailureIdentities()
+		if err != nil {
+			return err
+		}
+		generation := 0
+		for _, repair := range focus.FailureRepairs {
+			if repair.Signature == input.FailureCategory && repair.RepairGeneration > generation {
+				generation = repair.RepairGeneration
+			}
+		}
+		identity, err := hashJSON(map[string]any{"execution_id": focus.ExecutionID, "checkpoint_id": input.CheckpointID, "failure_category": input.FailureCategory, "repair_generation": generation})
+		if err != nil {
+			return err
+		}
+		eventID := "failure_" + strings.TrimPrefix(identity, "sha256:")[:24]
+		for _, existing := range focus.FailureEvents {
+			if existing.EventID == eventID {
+				return nil
+			}
+		}
+		focus.FailureEvents = append(focus.FailureEvents, FailureEvent{
+			EventID: eventID, Signature: input.FailureCategory, FocusID: focus.FocusID,
+			SourceKind: "checkpoint_result", SourceExecution: input.SourceExecution, ToolUseID: input.CheckpointID,
+			RepairGeneration: generation, EvidenceHash: input.ResultHash, KnownEvidenceIDs: normalizeStrings(input.EvidenceIDs),
+			RepositoryIdentity: identities["repository"], CandidateIdentity: identities["candidate"], ConfigIdentity: identities["config"], RuntimeIdentity: identities["runtime"],
+			Trust: "verified", OccurredAt: time.Now().UTC().Format(time.RFC3339Nano),
+		})
+		focus.EvidenceCheckpoint.Reached = false
+		focus.Checkpoint = nil
+		if err := runtime.saveState(state); err != nil {
+			return err
+		}
+		triggerType := "evidence-checkpoint-missed"
+		reason := "verified checkpoint did not produce expected evidence"
+		if generation > 0 {
+			triggerType = "repeated-failure"
+			reason = "verified failure repeated after a recorded repair"
+		}
+		trigger, err := newReviewTrigger("event", triggerType, eventID, reason)
+		if err != nil {
+			return err
+		}
+		request, err = runtime.requestReviewLocked(state, trigger)
+		return err
+	})
+	return request, err
+}
+
+// PrepareExpansionReview creates a single advisory boundary before the main
+// Agent expands a representative probe into a batch or other high-cost action.
+// It never authorizes or blocks that action.
+func (runtime *Runtime) PrepareExpansionReview(input ExpansionReviewInput) (*ReviewRequest, error) {
+	if err := validateExpansionReviewInput(&input); err != nil {
+		return nil, err
+	}
+	var request *ReviewRequest
+	err := runtime.withLock(func() error {
+		state, err := runtime.LoadState()
+		if err != nil {
+			return err
+		}
+		focus := state.CurrentFocus
+		if focus == nil || focus.FocusID != input.FocusID || focus.EvidenceCheckpoint.CheckpointID != input.CheckpointID {
+			return errors.New("expansion boundary is not bound to the current execution")
+		}
+		if !focus.EvidenceCheckpoint.Reached {
+			return errors.New("high-cost expansion requires a reached representative checkpoint")
+		}
+		if err := ensureKnownEvidence(state, input.EvidenceIDs); err != nil {
+			return err
+		}
+		sourceHash, err := hashJSON(map[string]any{"execution_id": focus.ExecutionID, "checkpoint_id": input.CheckpointID, "evidence_ids": normalizeStrings(input.EvidenceIDs), "investment": strings.TrimSpace(input.Investment)})
+		if err != nil {
+			return err
+		}
+		trigger, err := newReviewTrigger("event", "high-cost-expansion", focus.ExecutionID+":"+sourceHash, "representative evidence is ready before a higher-cost expansion")
+		if err != nil {
+			return err
+		}
+		request, err = runtime.requestReviewLocked(state, trigger)
+		return err
 	})
 	return request, err
 }
@@ -486,15 +611,15 @@ func (runtime *Runtime) currentFailureIdentities() (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return map[string]string{"repository": snapshot.WorkingTreeHash, "candidate": candidateIdentity, "config": configIdentity, "runtime": runtimeIdentity}, nil
-}
-
-func (runtime *Runtime) RequestAdvisoryReview(requestID, reason string) (*ReviewRequest, error) {
-	trigger, err := newReviewTrigger("advisory", "explicit-advisory", requestID, reason)
+	repositoryIdentity, err := hashJSON(map[string]string{"root": snapshot.Root, "head_commit": snapshot.HeadCommit})
 	if err != nil {
 		return nil, err
 	}
-	return runtime.requestReview(trigger)
+	return map[string]string{"repository": repositoryIdentity, "candidate": candidateIdentity, "config": configIdentity, "runtime": runtimeIdentity}, nil
+}
+
+func (runtime *Runtime) RequestAdvisoryReview(requestID, reason string) (*ReviewRequest, error) {
+	return nil, errors.New("free-form advisory reviews are disabled; record a verified governance boundary instead")
 }
 
 func (runtime *Runtime) RequestCompletionReview(sourceID string) (*ReviewRequest, error) {
@@ -620,11 +745,19 @@ func (runtime *Runtime) requestReviewLocked(state *State, trigger ReviewTrigger)
 		}
 	}
 	identity := reviewTriggerIdentity(trigger)
-	if state.Review.Status == "requested" || state.Review.Status == "feedback_ready" {
+	if oneOf(state.Review.Status, "requested", "feedback_ready", "superseded") {
 		existing, loadErr := runtime.loadRequest()
-		if loadErr == nil && runtime.verifyReviewSnapshot(existing, state) == nil {
+		if loadErr == nil && runtime.verifyReviewIntegrity(existing, state) == nil {
 			if state.Review.Status == "requested" {
 				if err := removeFileIfExists(runtime.reviewPath()); err != nil {
+					return nil, err
+				}
+			}
+			if identity != valueOr(state.Review.Trigger, "") {
+				if err := mergePendingReview(state, trigger); err != nil {
+					return nil, err
+				}
+				if err := runtime.saveState(state); err != nil {
 					return nil, err
 				}
 			}
@@ -632,6 +765,7 @@ func (runtime *Runtime) requestReviewLocked(state *State, trigger ReviewTrigger)
 		}
 		state.Review.Status = "missed"
 		state.Review.Response = nil
+		state.Review.GovernorAgentID = nil
 	}
 	if state.Review.Trigger != nil && *state.Review.Trigger == identity {
 		return nil, nil
@@ -647,15 +781,21 @@ func (runtime *Runtime) requestReviewLocked(state *State, trigger ReviewTrigger)
 	if err != nil {
 		return nil, err
 	}
+	authorityRefs, err := runtime.authorityReferences()
+	if err != nil {
+		return nil, err
+	}
 	request := &ReviewRequest{
 		SchemaVersion: schemaVersion, ReviewID: newID("review"), TriggerInstanceID: instanceID, Trigger: trigger,
-		AuthorityPaths: normalizeStrings(runtime.Config.AuthorityPaths), CompletionDefinitionPaths: normalizeStrings(runtime.Config.CompletionDefinitionPaths),
-		RepositorySnapshot: snapshot, StatePath: filepath.ToSlash(mustRelative(runtime.Root, runtime.statePath())), PendingIntervention: state.PendingIntervention,
-		ResourceFacts: []ResourceFact{}, EvidenceRefs: runtime.evidenceReferences(state), CreatedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		AuthorityPaths: normalizeStrings(runtime.Config.AuthorityPaths), AuthorityRefs: authorityRefs,
+		CompletionDefinitionPaths: normalizeStrings(runtime.Config.CompletionDefinitionPaths),
+		RepositorySnapshot:        snapshot, StatePath: filepath.ToSlash(mustRelative(runtime.Root, runtime.statePath())), PendingIntervention: state.PendingIntervention,
+		ResourceFacts: []ResourceFact{}, EvidenceRefs: runtime.evidenceReferences(state),
+		ProgressDelta: runtime.progressDelta(state), CreatedAt: time.Now().UTC().Format(time.RFC3339Nano),
 	}
 	if state.CurrentFocus != nil {
 		request.CurrentConditionID = stringPointer(state.CurrentFocus.ConditionID)
-		request.CurrentFocus = &RequestFocus{FocusID: state.CurrentFocus.FocusID, ConditionID: state.CurrentFocus.ConditionID, Objective: state.CurrentFocus.Objective, Value: state.CurrentFocus.Value, InvolvedScope: state.CurrentFocus.InvolvedScope, ExpectedEvidence: state.CurrentFocus.ExpectedEvidence, CheckpointID: state.CurrentFocus.EvidenceCheckpoint.CheckpointID, CheckpointDescription: state.CurrentFocus.EvidenceCheckpoint.Description, SnapshotHash: state.CurrentFocus.SnapshotHash}
+		request.CurrentFocus = &RequestFocus{FocusID: state.CurrentFocus.FocusID, ConditionID: state.CurrentFocus.ConditionID, Objective: state.CurrentFocus.Objective, Value: state.CurrentFocus.Value, InvolvedScope: state.CurrentFocus.InvolvedScope, ExpectedEvidence: state.CurrentFocus.ExpectedEvidence, CheckpointID: state.CurrentFocus.EvidenceCheckpoint.CheckpointID, CheckpointDescription: state.CurrentFocus.EvidenceCheckpoint.Description, SnapshotHash: state.CurrentFocus.SnapshotHash, ExecutionID: state.CurrentFocus.ExecutionID}
 		if state.CurrentFocus.EvidenceCheckpoint.Reached {
 			request.RecentCheckpoint = &RecentCheckpoint{CheckpointID: state.CurrentFocus.EvidenceCheckpoint.CheckpointID, Description: state.CurrentFocus.EvidenceCheckpoint.Description, EvidenceIDs: conditionEvidence(state, state.CurrentFocus.ConditionID)}
 		}
@@ -678,6 +818,7 @@ func (runtime *Runtime) requestReviewLocked(state *State, trigger ReviewTrigger)
 	state.Review.ReviewSnapshotHash = stringPointer(request.ReviewSnapshotHash)
 	state.Review.Trigger = stringPointer(identity)
 	state.Review.Response = nil
+	state.Review.Pending = nil
 	if err := atomicWriteJSON(runtime.requestPath(), request); err != nil {
 		return nil, err
 	}
@@ -711,20 +852,6 @@ func (runtime *Runtime) AcceptReview(result ReviewResult) (string, error) {
 		if err != nil {
 			return err
 		}
-		invalidEvidence, err := runtime.reconcileEvidenceIdentitiesLocked(state)
-		if err != nil {
-			return err
-		}
-		if len(invalidEvidence) > 0 {
-			trigger, triggerErr := evidenceIdentityChangeTrigger(invalidEvidence)
-			if triggerErr != nil {
-				return triggerErr
-			}
-			if _, requestErr := runtime.requestReviewLocked(state, trigger); requestErr != nil {
-				return requestErr
-			}
-			return errors.New("evidence identity changed; stale Governor feedback was rejected and a fresh advisory review was requested")
-		}
 		request, err := runtime.loadRequest()
 		if err != nil {
 			return err
@@ -735,17 +862,21 @@ func (runtime *Runtime) AcceptReview(result ReviewResult) (string, error) {
 		if result.ReviewID != request.ReviewID || result.TriggerInstanceID != request.TriggerInstanceID || result.ReviewSnapshotHash != request.ReviewSnapshotHash || *state.Review.ReviewID != result.ReviewID || *state.Review.TriggerInstanceID != result.TriggerInstanceID || *state.Review.ReviewSnapshotHash != result.ReviewSnapshotHash {
 			return errors.New("Governor feedback identity does not match the current request")
 		}
-		if err := runtime.verifyReviewSnapshot(request, state); err != nil {
+		if err := runtime.verifyReviewIntegrity(request, state); err != nil {
 			return err
 		}
-		if err := validateReviewResultForState(&result, request, state); err != nil {
+		if err := runtime.validateReviewResultForRequest(&result, request); err != nil {
 			return err
 		}
 		path = runtime.reviewPath()
 		if err := atomicWriteJSON(path, &result); err != nil {
 			return err
 		}
-		state.Review.Status = "feedback_ready"
+		if runtime.reviewStillApplicable(request, state) {
+			state.Review.Status = "feedback_ready"
+		} else {
+			state.Review.Status = "superseded"
+		}
 		if err := runtime.saveState(state); err != nil {
 			return err
 		}
@@ -767,80 +898,41 @@ func (runtime *Runtime) MarkReviewMissed(reason string) error {
 		if err != nil {
 			return err
 		}
-		if state.Review.Status == "feedback_ready" {
+		if oneOf(state.Review.Status, "feedback_ready", "superseded") {
 			var feedback ReviewResult
 			if err := decodeStrictFile(runtime.reviewPath(), &feedback); err == nil && reviewMatchesState(&feedback, state) {
 				return nil
 			}
 		}
-		if state.Review.Status != "requested" && state.Review.Status != "feedback_ready" {
+		if !oneOf(state.Review.Status, "requested", "feedback_ready", "superseded") {
 			return nil
 		}
 		state.Review.Status = "missed"
 		state.Review.Response = nil
+		state.Review.GovernorAgentID = nil
 		state.LastDiagnostic = &RuntimeDiagnostic{Source: "governor-review", Summary: reason, OccurredAt: time.Now().UTC().Format(time.RFC3339Nano)}
+		pending := state.Review.Pending
+		state.Review.Pending = nil
 		if err := runtime.saveState(state); err != nil {
 			return err
 		}
-		return removeFileIfExists(runtime.reviewPath())
+		if err := removeFileIfExists(runtime.reviewPath()); err != nil {
+			return err
+		}
+		if pending != nil {
+			trigger, err := pendingReviewTrigger(*pending)
+			if err != nil {
+				return err
+			}
+			_, err = runtime.requestReviewLocked(state, trigger)
+			return err
+		}
+		return nil
 	})
 }
 
 func (runtime *Runtime) verifyReviewSnapshot(request *ReviewRequest, state *State) error {
-	authority, err := runtime.authorityHash()
-	if err != nil {
-		return err
-	}
-	if authority != state.AuthorityHash {
-		return errors.New("authority changed while Governor feedback was pending")
-	}
-	snapshot, err := runtime.repositorySnapshot()
-	if err != nil {
-		return err
-	}
-	if snapshot.HeadCommit != request.RepositorySnapshot.HeadCommit || snapshot.WorkingTreeHash != request.RepositorySnapshot.WorkingTreeHash {
-		return errors.New("repository snapshot changed while Governor feedback was pending")
-	}
-	if (request.CurrentFocus == nil) != (state.CurrentFocus == nil) {
-		return errors.New("execution focus changed while Governor feedback was pending")
-	}
-	if request.CurrentFocus != nil && (request.CurrentFocus.FocusID != state.CurrentFocus.FocusID || request.CurrentFocus.SnapshotHash != state.CurrentFocus.SnapshotHash) {
-		return errors.New("execution focus identity changed while Governor feedback was pending")
-	}
-	requestEvidenceHash, err := hashJSON(request.EvidenceRefs)
-	if err != nil {
-		return err
-	}
-	currentEvidenceHash, err := hashJSON(runtime.evidenceReferences(state))
-	if err != nil {
-		return err
-	}
-	if requestEvidenceHash != currentEvidenceHash {
-		return errors.New("evidence references changed while Governor feedback was pending")
-	}
-	requestCheckpointHash, err := hashJSON(request.RecentCheckpoint)
-	if err != nil {
-		return err
-	}
-	currentCheckpointHash, err := hashJSON(recentCheckpointForState(state))
-	if err != nil {
-		return err
-	}
-	if requestCheckpointHash != currentCheckpointHash {
-		return errors.New("evidence checkpoint changed while Governor feedback was pending")
-	}
-	requestHash, err := hashJSON(request.PendingIntervention)
-	if err != nil {
-		return err
-	}
-	stateHash, err := hashJSON(state.PendingIntervention)
-	if err != nil {
-		return err
-	}
-	if requestHash != stateHash {
-		return errors.New("pending intervention changed while Governor feedback was pending")
-	}
-	return nil
+	return runtime.verifyReviewIntegrity(request, state)
 }
 
 func (runtime *Runtime) RecordReviewResponse(input ReviewResponseInput) (*State, error) {
@@ -853,21 +945,7 @@ func (runtime *Runtime) RecordReviewResponse(input ReviewResponseInput) (*State,
 		if err != nil {
 			return err
 		}
-		invalidEvidence, err := runtime.reconcileEvidenceIdentitiesLocked(state)
-		if err != nil {
-			return err
-		}
-		if len(invalidEvidence) > 0 {
-			trigger, triggerErr := evidenceIdentityChangeTrigger(invalidEvidence)
-			if triggerErr != nil {
-				return triggerErr
-			}
-			if _, requestErr := runtime.requestReviewLocked(state, trigger); requestErr != nil {
-				return requestErr
-			}
-			return errors.New("evidence identity changed; stale Governor feedback response was rejected and a fresh advisory review was requested")
-		}
-		if state.Review.Status != "feedback_ready" || state.Review.ReviewID == nil || *state.Review.ReviewID != input.ReviewID {
+		if !oneOf(state.Review.Status, "feedback_ready", "superseded") || state.Review.ReviewID == nil || *state.Review.ReviewID != input.ReviewID {
 			return errors.New("no matching Governor feedback is awaiting the main Agent response")
 		}
 		var result ReviewResult
@@ -877,11 +955,12 @@ func (runtime *Runtime) RecordReviewResponse(input ReviewResponseInput) (*State,
 		if !reviewMatchesState(&result, state) {
 			return errors.New("current Governor feedback identity does not match governance state")
 		}
+		wasSuperseded := state.Review.Status == "superseded"
 		response := &ReviewResponse{ReviewID: input.ReviewID, Disposition: input.Disposition, Reason: strings.TrimSpace(input.Reason), NextValidationPoint: strings.TrimSpace(input.NextValidationPoint), RespondedAt: time.Now().UTC().Format(time.RFC3339Nano)}
 		state.Review.Response = response
 		state.Review.Status = "responded"
 		state.NextAction = stringPointer(response.NextValidationPoint)
-		if input.Disposition == "adopt" && oneOf(result.Recommendation, "product_decision_needed", "external_input_needed") {
+		if !wasSuperseded && input.Disposition == "adopt" && oneOf(result.Recommendation, "product_decision_needed", "external_input_needed") {
 			state.PendingIntervention = pendingInterventionFromResult(result)
 			state.Status = "awaiting_user"
 			state.NextAction = stringPointer(result.ExternalInput.MinimumUserInput)
@@ -889,8 +968,20 @@ func (runtime *Runtime) RecordReviewResponse(input ReviewResponseInput) (*State,
 			state.PendingIntervention = nil
 			state.Status = "active"
 		}
+		state.ReviewBaseline = runtime.baselineFromState(state, input.ReviewID)
+		pending := state.Review.Pending
+		state.Review.Pending = nil
 		if err := runtime.saveState(state); err != nil {
 			return err
+		}
+		if pending != nil {
+			trigger, triggerErr := pendingReviewTrigger(*pending)
+			if triggerErr != nil {
+				return triggerErr
+			}
+			if _, requestErr := runtime.requestReviewLocked(state, trigger); requestErr != nil {
+				return requestErr
+			}
 		}
 		updated = state
 		return nil
@@ -949,8 +1040,16 @@ func (runtime *Runtime) CompleteExecutionSnapshot() error {
 			}
 			return fmt.Errorf("execution checkpoint is missing expected evidence %v; an advisory review was requested", missing)
 		}
-		if err := runtime.verifyCheckpointReviewHandled(state); err != nil {
-			return err
+		if oneOf(state.Review.Status, "feedback_ready", "superseded") {
+			return errors.New("Governor feedback is available and must be explicitly answered before crossing this stage boundary")
+		}
+		focus := state.CurrentFocus
+		trigger, triggerErr := newReviewTrigger("event", "stage-boundary", focus.ExecutionID+":"+focus.EvidenceCheckpoint.CheckpointID, "execution stage reached its natural boundary")
+		if triggerErr != nil {
+			return triggerErr
+		}
+		if _, requestErr := runtime.requestReviewLocked(state, trigger); requestErr != nil {
+			return requestErr
 		}
 		conditionID := state.CurrentFocus.ConditionID
 		setConditionStatus(state, conditionID, "met", conditionEvidence(state, conditionID))
@@ -986,20 +1085,27 @@ func (runtime *Runtime) Finish() error {
 		if state.Review.Trigger == nil || !strings.Contains(*state.Review.Trigger, ":completion-candidate:") {
 			return errors.New("finish requires a completion-candidate advisory review")
 		}
+		if state.Review.Status == "requested" {
+			markReviewMissedLocked(state, "Governor feedback was unavailable at the completion boundary")
+			_ = removeFileIfExists(runtime.reviewPath())
+		}
+		if oneOf(state.Review.Status, "feedback_ready", "superseded") {
+			return errors.New("completion feedback is available and must be explicitly answered before the completion claim")
+		}
 		if state.Review.Status != "responded" && state.Review.Status != "missed" {
-			return errors.New("finish requires the completion-candidate feedback to be answered or recorded as unavailable")
+			return errors.New("finish requires one completion-candidate advisory boundary")
 		}
 		if state.Review.Status == "responded" && state.Review.Response == nil {
 			return errors.New("responded completion review is missing its feedback or main Agent response")
 		}
-		request, err := runtime.loadRequest()
-		if err != nil {
-			return err
-		}
-		if err := runtime.verifyReviewSnapshot(request, state); err != nil {
-			return fmt.Errorf("completion candidate is no longer current: %w", err)
-		}
 		if state.Review.Status == "responded" {
+			request, err := runtime.loadRequest()
+			if err != nil {
+				return err
+			}
+			if err := runtime.verifyReviewSnapshot(request, state); err != nil {
+				return fmt.Errorf("completion candidate is no longer current: %w", err)
+			}
 			var feedback ReviewResult
 			if err := decodeStrictFile(runtime.reviewPath(), &feedback); err != nil {
 				return err
@@ -1019,6 +1125,7 @@ func (runtime *Runtime) Finish() error {
 		state.Status = "complete"
 		state.CurrentFocus = nil
 		state.NextAction = nil
+		state.Review.Pending = nil
 		if err := runtime.saveState(state); err != nil {
 			return err
 		}
@@ -1110,36 +1217,11 @@ func recentCheckpointForState(state *State) *RecentCheckpoint {
 	return &RecentCheckpoint{CheckpointID: state.CurrentFocus.EvidenceCheckpoint.CheckpointID, Description: state.CurrentFocus.EvidenceCheckpoint.Description, EvidenceIDs: conditionEvidence(state, state.CurrentFocus.ConditionID)}
 }
 
-func (runtime *Runtime) verifyCheckpointReviewHandled(state *State) error {
-	if state == nil || state.CurrentFocus == nil {
-		return errors.New("execution snapshot is unavailable")
-	}
-	if state.Review.Status != "responded" && state.Review.Status != "missed" {
-		return errors.New("the current evidence checkpoint advisory review has not been answered or recorded as unavailable")
-	}
-	request, err := runtime.loadRequest()
-	if err != nil {
-		return err
-	}
-	if state.Review.ReviewID == nil || *state.Review.ReviewID != request.ReviewID || request.CurrentFocus == nil || request.CurrentFocus.FocusID != state.CurrentFocus.FocusID || request.CurrentFocus.SnapshotHash != state.CurrentFocus.SnapshotHash {
-		return errors.New("the handled advisory review is not bound to the current execution snapshot")
-	}
-	checkpoint := recentCheckpointForState(state)
-	if request.RecentCheckpoint == nil || checkpoint == nil || request.RecentCheckpoint.CheckpointID != checkpoint.CheckpointID {
-		return errors.New("the handled advisory review is not bound to the current evidence checkpoint")
-	}
-	requestHash, err := hashJSON(request.RecentCheckpoint)
-	if err != nil {
-		return err
-	}
-	checkpointHash, err := hashJSON(checkpoint)
-	if err != nil {
-		return err
-	}
-	if requestHash != checkpointHash {
-		return errors.New("the handled advisory review references different checkpoint evidence")
-	}
-	return nil
+func markReviewMissedLocked(state *State, reason string) {
+	state.Review.Status = "missed"
+	state.Review.Response = nil
+	state.Review.GovernorAgentID = nil
+	state.LastDiagnostic = &RuntimeDiagnostic{Source: "governor-review", Summary: normalizeFailureSignature(reason), OccurredAt: time.Now().UTC().Format(time.RFC3339Nano)}
 }
 
 func missingEvidenceForFocus(focus *ExecutionSnapshot, results []ReusableResult) []string {
@@ -1165,7 +1247,11 @@ func stringSet(values []string) map[string]struct{} {
 }
 
 func evidenceIdentityChangeTrigger(invalidEvidence []string) (ReviewTrigger, error) {
-	return newReviewTrigger("event", "evidence-identity-change", strings.Join(normalizeStrings(invalidEvidence), ",")+":"+newID("change"), "registered evidence content or availability changed")
+	identity, err := hashJSON(normalizeStrings(invalidEvidence))
+	if err != nil {
+		return ReviewTrigger{}, err
+	}
+	return newReviewTrigger("event", "evidence-identity-change", identity, "registered evidence content or availability changed")
 }
 
 func (runtime *Runtime) reconcileEvidenceIdentitiesLocked(state *State) ([]string, error) {
@@ -1181,6 +1267,7 @@ func (runtime *Runtime) reconcileEvidenceIdentitiesLocked(state *State) ([]strin
 		if !runtime.allowedEvidencePath(path) || err != nil || hash != result.InputHash {
 			invalid = append(invalid, result.ResultID)
 			invalidSet[result.ResultID] = struct{}{}
+			state.InvalidatedEvidence = upsertEvidenceInvalidation(state.InvalidatedEvidence, EvidenceInvalidation{EvidenceID: result.ResultID, PreviousHash: result.InputHash, InvalidatedAt: time.Now().UTC().Format(time.RFC3339Nano)})
 			continue
 		}
 		valid = append(valid, result)
@@ -1215,17 +1302,23 @@ func (runtime *Runtime) reconcileEvidenceIdentitiesLocked(state *State) ([]strin
 		state.Status = "active"
 	}
 	state.NextAction = stringPointer("replace or revalidate invalid evidence: " + strings.Join(invalid, ", "))
-	if state.Review.Status == "requested" || state.Review.Status == "feedback_ready" || state.Review.Status == "responded" {
-		state.Review.Status = "missed"
-		state.Review.Response = nil
+	if state.Review.Status == "feedback_ready" {
+		state.Review.Status = "superseded"
 	}
 	if err := runtime.saveState(state); err != nil {
 		return nil, err
 	}
-	if err := removeFileIfExists(runtime.reviewPath()); err != nil {
-		return nil, err
-	}
 	return invalid, nil
+}
+
+func upsertEvidenceInvalidation(values []EvidenceInvalidation, next EvidenceInvalidation) []EvidenceInvalidation {
+	for index := range values {
+		if values[index].EvidenceID == next.EvidenceID {
+			values[index] = next
+			return values
+		}
+	}
+	return append(values, next)
 }
 
 func normalizeFailureSignature(value string) string {

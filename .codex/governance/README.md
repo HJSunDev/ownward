@@ -16,9 +16,9 @@
 - 普通消息、普通回复和同一对话中的其他工作不创建复核、不注入治理指令、不改变治理状态。
 - 目标模式重复投递相同提示时复用既有触发；同一主任务始终使用一份状态和一个 Governor 支线。
 - 首次激活以及真实 `startup`、`resume`、`clear`、`compact` 边界由 `SessionStart` 创建复核并把操作说明交给恢复后的主 Agent；同一待处理边界重放复用当前请求，前次复核结束后的下一次生命周期事件创建新代次。
-- `PostToolUse` 只以必要身份、原始证据哈希和去除易变元数据后的失败类别哈希记录真实失败，并在符合结构化事件条件时创建复核；`PreCompact` 只做尽力而为的状态检查。
-- 未变化的可复用证据会自动绑定到后续执行快照；证据新增会替换无法覆盖它的待处理旧请求，证据文件缺失或哈希变化时，旧绑定和完成结论立即失效并生成顾问复核。执行快照在反馈已回应或记为缺失后关闭，`finish` 重新机械核验全部证据身份，但不把 Governor 的建议当成完成许可。
-- 治理不注册 `PreToolUse`、`Stop` 或子 Agent 生命周期 Hook。已加载旧配置产生的兼容调用严格返回空结果。
+- 正式 Hook 只保留 `UserPromptSubmit`、`SessionStart` 以及只匹配 Governor 的 `SubagentStart`、异步 `SubagentStop`；主 Agent 启动 Governor 后继续工作，子 Agent 结束时运行时自动校验并保存 JSON。
+- 当前 Codex 工具 Hook 载荷不能稳定证明调用属于主目标并同时提供可信结果合同，因此通用 `PostToolUse` 不参与治理；检查点和高成本扩展由结构化入口自动绑定当前执行身份。已加载旧配置产生的工具、压缩前和 Stop 兼容调用严格返回空结果。
+- 未变化的相关可复用证据会自动绑定到后续执行快照；证据新增、缺失或哈希变化只精准影响相关焦点和完成判断。执行快照在反馈已回应或到边界仍无反馈而记为缺失后关闭，`finish` 重新机械核验全部证据身份，但不把 Governor 的建议当成完成许可。
 - 所有权只决定哪个主任务的生命周期事件可以创建复核，不赋予工作许可，也不限制其他任务。交接只转移该复核归属。
 
 旧版状态首次加载时自动迁移：有效目标、价值、进展、证据、检查点、失败事实和所有权被保留；活动批准、许可、冻结、基础设施闩锁和旧请求退出活动链路并归档到 `runtime/migrations/advisory-v2/`。历史 Review 与追加事件流升级时只提取仍然有效的当前请求、反馈和触发身份，写入三个当前态文件后清理；迁移幂等只由 `runtime/migrations/current-state-v1/` 的明确标记保证。
@@ -46,8 +46,10 @@ sh .codex/governance/governance-hook.sh status
 | `init` | 创建唯一治理状态，不覆盖现有状态 |
 | `update-execution-snapshot` | 更新主 Agent 的描述性执行快照 |
 | `record-evidence` | 校验并登记可复用证据 |
+| `record-checkpoint-result` | 自动绑定当前执行身份；成功只登记结果，未取得预期证据或修复后同类失败才形成复核 |
+| `prepare-expansion-review` | 自动绑定当前执行身份，在高成本扩展前形成事实复核 |
 | `record-repair` | 将真实失败、针对性修复和新证据绑定为修复代次 |
-| `request-advisory-review` | 以稳定 `request-id` 请求一次宏观复核 |
+| `request-advisory-review` | 已禁用；自由命名不能制造治理事件 |
 | `request-completion-review` | 为完成候选创建复核 |
 | `accept-review` | 校验并原样保存 Governor 反馈，不改变执行状态 |
 | `record-review-response` | 保存主 Agent 的采纳、拒绝或确认及下一验证点 |
@@ -57,7 +59,7 @@ sh .codex/governance/governance-hook.sh status
 | `finish` | 机械核对完成证据并结束治理状态 |
 | `doctor` | 在隔离目录完成确定性自检 |
 
-结构化输入默认从标准输入读取，也可使用 `--file <path>` 或 `--json-base64 <base64>`。Governor 通过原生父子通道返回一个 JSON 后，主 Agent 用 `accept-review` 持久化，再用 `record-review-response` 记录自己的判断；不需要中间通知文件，也不存在“应用 Governor 决定”的步骤。`apply-review` 仅为已加载旧指令保留，行为等价于不改变执行状态的明确确认。
+结构化输入默认从标准输入读取，也可使用 `--file <path>` 或 `--json-base64 <base64>`。主 Agent 启动 Governor 后继续当前有界工作；只匹配 Governor 的异步 `SubagentStop` 自动接收、校验并持久化其单个 JSON，主 Agent 在下一相关边界用 `record-review-response` 记录自己的判断。不需要中间通知文件、手写编码或“应用 Governor 决定”。`accept-review` 只保留为确定性接收入口，`apply-review` 只兼容已加载旧指令。
 
 任务迁移采用两阶段一次性交接：源任务执行 `prepare-handoff`，在新任务身份已知后执行 `bind-handoff`，再由新任务消费交接标识。准备、绑定、取消和消费都不会冻结源任务或目标任务。
 
@@ -67,6 +69,7 @@ sh .codex/governance/governance-hook.sh status
 - 日常持久化只有 `state.json`、`review-request.json` 和 `review.json` 三个固定当前态文件：状态和请求更新时覆盖旧内容，新请求使旧反馈失效，反馈校验通过后覆盖 `review.json`。
 - 运行时不创建历史 Review 目录或追加事件日志，也不增加轮转、摘要、归档或第二套记忆；恢复所需事实直接存在于 `state.json` 和有效证据，长期重要结论仍进入项目关键工作留痕体系。
 - `.codex/governance/bin/` 是不提交的本地编译产物。
+- `install-runtime.ps1` 在隔离副本完成测试、构建、`doctor` 和状态迁移校验后才原子替换二进制；构建失败保留旧入口，Hook 配置哈希未变化时不改写配置。
 - 配置、Schema、CLI 源码、Governor 和 Hooks 随项目维护。
 - 项目级 Hook 定义变化后，Codex 会要求用户重新审阅并信任新哈希；不得通过绕过 Hook 信任来替代正常审阅。
 

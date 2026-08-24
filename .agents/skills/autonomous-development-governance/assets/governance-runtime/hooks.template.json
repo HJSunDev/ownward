@@ -1,5 +1,5 @@
 {
-  "description": "Deterministic hooks for autonomous development governance. Replace command placeholders during installation.",
+  "description": "Deterministic advisory governance hooks. Replace command placeholders during installation.",
   "hooks": {
     "SessionStart": [
       {
@@ -9,7 +9,8 @@
             "type": "command",
             "command": "{{governance_hook_command}} hook session-start",
             "commandWindows": "{{governance_hook_command_windows}} hook session-start",
-            "statusMessage": "Restoring governance state"
+            "timeout": 10,
+            "additionalContextLimit": 1800
           }
         ]
       }
@@ -20,32 +21,36 @@
           {
             "type": "command",
             "command": "{{governance_hook_command}} hook user-prompt-submit",
-            "commandWindows": "{{governance_hook_command_windows}} hook user-prompt-submit"
+            "commandWindows": "{{governance_hook_command_windows}} hook user-prompt-submit",
+            "timeout": 10,
+            "additionalContextLimit": 1800
           }
         ]
       }
     ],
-    "PreCompact": [
+    "SubagentStart": [
       {
-        "matcher": "manual|auto",
+        "matcher": "^{{governor_agent_name}}$",
         "hooks": [
           {
             "type": "command",
-            "command": "{{governance_hook_command}} hook pre-compact",
-            "commandWindows": "{{governance_hook_command_windows}} hook pre-compact",
-            "statusMessage": "Persisting governance checkpoint"
+            "command": "{{governance_hook_command}} hook subagent-start",
+            "commandWindows": "{{governance_hook_command_windows}} hook subagent-start",
+            "timeout": 10
           }
         ]
       }
     ],
-    "PostToolUse": [
+    "SubagentStop": [
       {
-        "matcher": "{{observed_tool_matcher}}",
+        "matcher": "^{{governor_agent_name}}$",
         "hooks": [
           {
             "type": "command",
-            "command": "{{governance_hook_command}} hook post-tool-use",
-            "commandWindows": "{{governance_hook_command_windows}} hook post-tool-use"
+            "command": "{{governance_hook_command}} hook subagent-stop",
+            "commandWindows": "{{governance_hook_command_windows}} hook subagent-stop",
+            "timeout": 10,
+            "async": true
           }
         ]
       }

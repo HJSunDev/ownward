@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://ownward.local/schemas/governance-state-v2.json",
+  "$id": "https://ownward.local/schemas/governance-state-v3.json",
   "title": "Ownward Advisory Governance State",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "run_id", "status", "authority_hash", "completion_conditions", "current_focus", "pending_intervention", "explicit_resource_constraints", "reusable_results", "next_action", "activation_source_id", "last_diagnostic", "review", "owner", "handoff"],
+  "required": ["schema_version", "run_id", "status", "authority_hash", "completion_conditions", "current_focus", "pending_intervention", "explicit_resource_constraints", "reusable_results", "next_action", "activation_source_id", "review_baseline", "invalidated_evidence", "last_diagnostic", "review", "owner", "handoff"],
   "properties": {
-    "schema_version": { "const": 2 },
+    "schema_version": { "const": 3 },
     "run_id": { "$ref": "#/$defs/nonEmpty" },
     "status": { "enum": ["active", "awaiting_user", "complete"] },
     "authority_hash": { "$ref": "#/$defs/hash" },
@@ -17,6 +17,8 @@
     "reusable_results": { "type": "array", "items": { "$ref": "#/$defs/reusableResult" } },
     "next_action": { "type": ["string", "null"] },
     "activation_source_id": { "type": ["string", "null"] },
+    "review_baseline": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/reviewBaseline" }] },
+    "invalidated_evidence": { "type": "array", "items": { "$ref": "#/$defs/evidenceInvalidation" } },
     "last_diagnostic": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/runtimeDiagnostic" }] },
     "review": { "$ref": "#/$defs/reviewState" },
     "owner": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/owner" }] },
@@ -58,11 +60,11 @@
     },
     "executionSnapshot": {
       "type": "object", "additionalProperties": false,
-      "required": ["focus_id", "condition_id", "objective", "value", "involved_scope", "expected_evidence", "evidence_checkpoint", "snapshot_hash", "started_at", "last_evidence_at", "checkpoint", "failure_events", "failure_repairs"],
+      "required": ["focus_id", "condition_id", "objective", "value", "involved_scope", "expected_evidence", "evidence_checkpoint", "snapshot_hash", "execution_id", "started_at", "last_evidence_at", "checkpoint", "failure_events", "failure_repairs"],
       "properties": {
         "focus_id": { "$ref": "#/$defs/nonEmpty" }, "condition_id": { "$ref": "#/$defs/nonEmpty" }, "objective": { "$ref": "#/$defs/nonEmpty" }, "value": { "$ref": "#/$defs/nonEmpty" },
         "involved_scope": { "$ref": "#/$defs/stringList" }, "expected_evidence": { "$ref": "#/$defs/stringList" }, "evidence_checkpoint": { "$ref": "#/$defs/checkpoint" },
-        "snapshot_hash": { "$ref": "#/$defs/hash" }, "started_at": { "$ref": "#/$defs/nonEmpty" }, "last_evidence_at": { "type": ["string", "null"] }, "checkpoint": { "type": ["string", "null"] },
+        "snapshot_hash": { "$ref": "#/$defs/hash" }, "execution_id": { "$ref": "#/$defs/nonEmpty" }, "started_at": { "$ref": "#/$defs/nonEmpty" }, "last_evidence_at": { "type": ["string", "null"] }, "checkpoint": { "type": ["string", "null"] },
         "failure_events": { "type": "array", "items": { "$ref": "#/$defs/failureEvent" } }, "failure_repairs": { "type": "array", "items": { "$ref": "#/$defs/failureRepair" } }
       }
     },
@@ -73,12 +75,39 @@
     },
     "reviewState": {
       "type": "object", "additionalProperties": false,
-      "required": ["status", "review_id", "trigger_instance_id", "fixed_review_generation", "review_snapshot_hash", "trigger", "response"],
+      "required": ["status", "review_id", "trigger_instance_id", "fixed_review_generation", "review_snapshot_hash", "trigger", "response", "pending", "governor_agent_id"],
       "properties": {
-        "status": { "enum": ["idle", "requested", "feedback_ready", "responded", "missed"] }, "review_id": { "type": ["string", "null"] }, "trigger_instance_id": { "type": ["string", "null"] },
+        "status": { "enum": ["idle", "requested", "feedback_ready", "superseded", "responded", "missed"] }, "review_id": { "type": ["string", "null"] }, "trigger_instance_id": { "type": ["string", "null"] },
         "fixed_review_generation": { "type": "integer", "minimum": 0 }, "review_snapshot_hash": { "type": ["string", "null"] }, "trigger": { "type": ["string", "null"] },
-        "response": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/reviewResponse" }] }
+        "response": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/reviewResponse" }] },
+        "pending": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/pendingReview" }] },
+        "governor_agent_id": { "type": ["string", "null"] }
       }
+    },
+    "evidenceRef": {
+      "type": "object", "additionalProperties": false,
+      "required": ["evidence_id", "path", "hash"],
+      "properties": { "evidence_id": { "$ref": "#/$defs/nonEmpty" }, "path": { "$ref": "#/$defs/nonEmpty" }, "hash": { "$ref": "#/$defs/hash" } }
+    },
+    "reviewBaseline": {
+      "type": "object", "additionalProperties": false,
+      "required": ["baseline_id", "review_id", "authority_hash", "focus_id", "focus_snapshot_hash", "focus_execution_id", "conditions", "evidence_refs", "checkpoint_id", "checkpoint_outcome", "established_at"],
+      "properties": {
+        "baseline_id": { "$ref": "#/$defs/nonEmpty" }, "review_id": { "$ref": "#/$defs/nonEmpty" }, "authority_hash": { "$ref": "#/$defs/hash" },
+        "focus_id": { "type": ["string", "null"] }, "focus_snapshot_hash": { "type": ["string", "null"] }, "focus_execution_id": { "type": ["string", "null"] },
+        "conditions": { "type": "array", "items": { "$ref": "#/$defs/completionCondition" } }, "evidence_refs": { "type": "array", "items": { "$ref": "#/$defs/evidenceRef" } },
+        "checkpoint_id": { "type": ["string", "null"] }, "checkpoint_outcome": { "enum": ["not_applicable", "pending", "passed", "failed"] }, "established_at": { "$ref": "#/$defs/nonEmpty" }
+      }
+    },
+    "evidenceInvalidation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["evidence_id", "previous_hash", "invalidated_at"],
+      "properties": { "evidence_id": { "$ref": "#/$defs/nonEmpty" }, "previous_hash": { "$ref": "#/$defs/hash" }, "invalidated_at": { "$ref": "#/$defs/nonEmpty" } }
+    },
+    "pendingReview": {
+      "type": "object", "additionalProperties": false,
+      "required": ["trigger_types", "source_ids", "facts_hash", "reason"],
+      "properties": { "trigger_types": { "$ref": "#/$defs/stringList" }, "source_ids": { "$ref": "#/$defs/stringList" }, "facts_hash": { "$ref": "#/$defs/hash" }, "reason": { "$ref": "#/$defs/nonEmpty" } }
     },
     "runtimeDiagnostic": {
       "type": "object", "additionalProperties": false,

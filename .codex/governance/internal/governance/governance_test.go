@@ -45,7 +45,7 @@ func validContinueFeedback(request *ReviewRequest) ReviewResult {
 		Recommendation: "continue", HighestPriorityGap: &gap,
 		MacroAssessment:    MacroAssessment{OverallProgress: "evidence-backed", EvidenceSupport: "repository and cited evidence", Completed: []string{}, Unmet: []string{gap}},
 		PathAssessment:     PathAssessment{Necessary: true, Efficient: true, Optimal: true, Problems: []string{}, BetterPlan: []string{}},
-		PreservedResultIDs: []string{}, SuggestedInvalidations: []string{}, ValidatedEvidenceIDs: []string{}, Reason: "current path is the best evidenced route",
+		PreservedResultIDs: []string{}, SuggestedInvalidations: []string{}, ValidatedEvidenceIDs: []string{}, AuthorityClaims: []AuthorityClaim{}, Assumptions: []ReviewAssumption{}, Reason: "current path is the best evidenced route",
 	}
 }
 
@@ -102,7 +102,7 @@ func TestGoalModeReplayRemainsIdempotentAfterOtherReviews(t *testing.T) {
 	prompt := runtime.Config.ActivationMarker + "\ncontinue the product goal"
 	_ = hookJSON(t, runtime, "user-prompt-submit", map[string]any{"session_id": "main", "turn_id": "activation-1", "prompt": prompt})
 	respondToCurrentReview(t, runtime)
-	request, err := runtime.RequestAdvisoryReview("explicit-check", "check another natural boundary")
+	request, err := runtime.RequestFixedReview("session-start", "explicit-check")
 	if err != nil || request == nil {
 		t.Fatalf("explicit review: %v", err)
 	}
@@ -155,8 +155,12 @@ func TestGovernorFeedbackIsAdvisoryAndMainResponseIsExplicit(t *testing.T) {
 	condition := mustCondition(t, runtime)
 	input := ExecutionSnapshotInput{FocusID: "focus-1", ConditionID: condition, Objective: "verify one root cause", Value: "closes the current gap", InvolvedScope: []string{"internal/component"}, ExpectedEvidence: []string{"evidence-1"}, CheckpointID: "checkpoint-1", CheckpointDescription: "targeted verification passes"}
 	request, err := runtime.UpdateExecutionSnapshot(input)
-	if err != nil || request == nil {
+	if err != nil || request != nil {
 		t.Fatalf("update snapshot: %v", err)
+	}
+	request, err = runtime.RequestFixedReview("activation", "advisory-control-test")
+	if err != nil || request == nil {
+		t.Fatalf("request review: %v", err)
 	}
 	suggested := input
 	suggested.FocusID = "suggested-focus"
@@ -201,16 +205,16 @@ func TestNaturalBoundaryIsIdempotentAndGovernorFailureDoesNotBlock(t *testing.T)
 	}
 	input := map[string]any{"session_id": "main", "source": "compact", "hook_event_name": "SessionStart"}
 	first := hookJSON(t, runtime, "session-start", input)
-	if !strings.Contains(first, "additionalContext") || !strings.Contains(first, "advisory governance review") {
+	if !strings.Contains(first, "additionalContext") || !strings.Contains(first, "advisory governance review") || !strings.Contains(first, `agent_type=\"governor\"`) || !strings.Contains(first, `fork_turns=\"none\"`) {
 		t.Fatalf("compact recovery did not deliver model-visible advisory context: %s", first)
 	}
 	state, _ := runtime.LoadState()
 	reviewID := valueOr(state.Review.ReviewID, "")
 	generation := state.Review.FixedReviewGeneration
-	_ = hookJSON(t, runtime, "session-start", input)
+	replayed := hookJSON(t, runtime, "session-start", input)
 	state, _ = runtime.LoadState()
-	if valueOr(state.Review.ReviewID, "") != reviewID || state.Review.FixedReviewGeneration != generation {
-		t.Fatal("same compact boundary created a duplicate review")
+	if !strings.Contains(replayed, "additionalContext") || valueOr(state.Review.ReviewID, "") != reviewID || state.Review.FixedReviewGeneration != generation {
+		t.Fatal("same compact boundary did not restore the existing review idempotently")
 	}
 	respondToCurrentReview(t, runtime)
 	second := hookJSON(t, runtime, "session-start", input)
@@ -287,7 +291,7 @@ func TestReviewLifecycleUsesOnlyFixedCurrentFiles(t *testing.T) {
 	if _, err := runtime.Init(); err != nil {
 		t.Fatal(err)
 	}
-	first, err := runtime.RequestAdvisoryReview("current-file-1", "first current review")
+	first, err := runtime.RequestFixedReview("activation", "current-file-1")
 	if err != nil || first == nil {
 		t.Fatalf("first review: %v", err)
 	}
@@ -301,7 +305,7 @@ func TestReviewLifecycleUsesOnlyFixedCurrentFiles(t *testing.T) {
 	if _, err := runtime.RecordReviewResponse(ReviewResponseInput{ReviewID: first.ReviewID, Disposition: "acknowledge", Reason: "first review considered", NextValidationPoint: "next boundary"}); err != nil {
 		t.Fatal(err)
 	}
-	second, err := runtime.RequestAdvisoryReview("current-file-2", "second current review")
+	second, err := runtime.RequestFixedReview("session-start", "current-file-2")
 	if err != nil || second == nil {
 		t.Fatalf("second review: %v", err)
 	}
@@ -340,7 +344,7 @@ func TestLaterResumeCreatesANewReviewAfterThePreviousOneIsAnswered(t *testing.T)
 	}
 }
 
-func TestPostToolFailureStoresOnlyAHashedSignature(t *testing.T) {
+func TestGenericPostToolPayloadIsIgnoredBecauseFailureIsAmbiguous(t *testing.T) {
 	runtime := testRuntime(t)
 	if _, err := runtime.Init(); err != nil {
 		t.Fatal(err)
@@ -352,17 +356,17 @@ func TestPostToolFailureStoresOnlyAHashedSignature(t *testing.T) {
 	if _, err := runtime.UpdateExecutionSnapshot(ExecutionSnapshotInput{FocusID: "focus-safe-failure", ConditionID: condition, Objective: "verify failure handling", Value: "protects audit safety", InvolvedScope: []string{"internal/component"}, ExpectedEvidence: []string{"evidence-1"}, CheckpointID: "checkpoint-1", CheckpointDescription: "failure handling passes"}); err != nil {
 		t.Fatal(err)
 	}
-	secret := "super-secret-token"
-	_ = hookJSON(t, runtime, "post-tool-use", map[string]any{
-		"session_id": "main", "turn_id": "turn-failure", "tool_name": "exec_command", "tool_use_id": "tool-failure",
-		"tool_response": map[string]any{"isError": true, "error": secret},
-	})
+	before, _ := os.ReadFile(runtime.statePath())
+	if got := hookJSON(t, runtime, "post-tool-use", map[string]any{"session_id": "main", "turn_id": "turn-failure", "tool_name": "Bash", "tool_use_id": "tool-failure", "tool_response": ""}); got != "{}" {
+		t.Fatalf("ambiguous generic PostToolUse payload produced governance output: %s", got)
+	}
+	after, _ := os.ReadFile(runtime.statePath())
 	state, err := runtime.LoadState()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(state.CurrentFocus.FailureEvents) != 1 || strings.Contains(state.CurrentFocus.FailureEvents[0].Signature, secret) || !strings.Contains(state.CurrentFocus.FailureEvents[0].Signature, "sha256:") {
-		t.Fatal("failed tool output was not reduced to a safe hash signature")
+	if !bytes.Equal(before, after) || len(state.CurrentFocus.FailureEvents) != 0 {
+		t.Fatal("ambiguous generic PostToolUse payload changed governance state")
 	}
 	if _, err := os.Stat(filepath.Join(runtime.RuntimeDir, "events.jsonl")); !os.IsNotExist(err) {
 		t.Fatal("failure handling created a legacy governance event log")
@@ -385,7 +389,7 @@ func TestHookDiagnosticStoresOnlyASafeHash(t *testing.T) {
 	}
 }
 
-func TestPostToolFailureClassificationIgnoresVolatileMetadata(t *testing.T) {
+func TestStructuredCheckpointFailureClassifiesRepeatedFailure(t *testing.T) {
 	runtime := testRuntime(t)
 	if _, err := runtime.Init(); err != nil {
 		t.Fatal(err)
@@ -397,26 +401,27 @@ func TestPostToolFailureClassificationIgnoresVolatileMetadata(t *testing.T) {
 	if _, err := runtime.UpdateExecutionSnapshot(ExecutionSnapshotInput{FocusID: "focus-repeat", ConditionID: condition, Objective: "verify repeated failure classification", Value: "triggers macro review after a failed repair", InvolvedScope: []string{"internal/component"}, ExpectedEvidence: []string{"evidence-1"}, CheckpointID: "checkpoint-1", CheckpointDescription: "repeated failure is recognized"}); err != nil {
 		t.Fatal(err)
 	}
-	respondToCurrentReview(t, runtime)
-	firstResponse := json.RawMessage(`{"isError":true,"call_id":"call-11111111-1111-1111-1111-111111111111","timestamp":"2026-08-23T10:11:12Z","wall_time_seconds":1.25,"error":"connection reset after 1250 ms"}`)
-	secondResponse := json.RawMessage(`{"isError":true,"call_id":"call-22222222-2222-2222-2222-222222222222","timestamp":"2026-08-23T10:12:55Z","wall_time_seconds":4.75,"error":"connection reset after 4750 ms"}`)
-	signature := failureFromResponse("exec_command", firstResponse)
-	if signature != failureFromResponse("exec_command", secondResponse) {
-		t.Fatal("volatile failure metadata changed the stable failure class")
-	}
-	_ = hookJSON(t, runtime, "post-tool-use", HookInput{SessionID: "main", TurnID: "turn-1", ToolName: "exec_command", ToolUseID: "tool-1", ToolResponse: firstResponse})
 	state, err := runtime.LoadState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstRequest, err := runtime.RecordCheckpointResult(CheckpointResultInput{FocusID: state.CurrentFocus.FocusID, CheckpointID: "checkpoint-1", Outcome: "failed", FailureCategory: "connection-reset", SourceExecution: "probe-1", ResultHash: "sha256:" + strings.Repeat("a", 64), EvidenceIDs: []string{}})
+	if err != nil || firstRequest == nil {
+		t.Fatalf("first checkpoint failure: %v", err)
+	}
+	respondToCurrentReview(t, runtime)
+	state, err = runtime.LoadState()
 	if err != nil || len(state.CurrentFocus.FailureEvents) != 1 {
 		t.Fatalf("first failure was not recorded: %v", err)
 	}
 	previous := state.CurrentFocus.FailureEvents[0]
-	state.CurrentFocus.FailureRepairs = append(state.CurrentFocus.FailureRepairs, FailureRepair{RepairID: "repair-stable-class", Signature: signature, PreviousEventID: previous.EventID, FocusID: state.CurrentFocus.FocusID, RepairGeneration: 1, RepositoryIdentity: previous.RepositoryIdentity, CandidateIdentity: previous.CandidateIdentity, ConfigIdentity: previous.ConfigIdentity, RuntimeIdentity: previous.RuntimeIdentity, EvidenceIDs: []string{"evidence-1"}, RecordedAt: time.Now().UTC().Format(time.RFC3339Nano)})
+	state.CurrentFocus.FailureRepairs = append(state.CurrentFocus.FailureRepairs, FailureRepair{RepairID: "repair-stable-class", Signature: "connection-reset", PreviousEventID: previous.EventID, FocusID: state.CurrentFocus.FocusID, RepairGeneration: 1, RepositoryIdentity: previous.RepositoryIdentity, CandidateIdentity: previous.CandidateIdentity, ConfigIdentity: previous.ConfigIdentity, RuntimeIdentity: previous.RuntimeIdentity, EvidenceIDs: []string{}, RecordedAt: time.Now().UTC().Format(time.RFC3339Nano)})
 	if err := runtime.saveState(state); err != nil {
 		t.Fatal(err)
 	}
-	output := hookJSON(t, runtime, "post-tool-use", HookInput{SessionID: "main", TurnID: "turn-2", ToolName: "exec_command", ToolUseID: "tool-2", ToolResponse: secondResponse})
+	secondRequest, err := runtime.RecordCheckpointResult(CheckpointResultInput{FocusID: state.CurrentFocus.FocusID, CheckpointID: "checkpoint-1", Outcome: "failed", FailureCategory: "connection-reset", SourceExecution: "probe-2", ResultHash: "sha256:" + strings.Repeat("b", 64), EvidenceIDs: []string{}})
 	state, err = runtime.LoadState()
-	if err != nil || state.Review.Status != "requested" || !strings.Contains(output, "additionalContext") {
+	if err != nil || secondRequest == nil || state.Review.Status != "requested" || state.Review.Trigger == nil || !strings.Contains(*state.Review.Trigger, "repeated-failure") {
 		t.Fatalf("same failure class after repair did not trigger advisory review: %v", err)
 	}
 }
@@ -432,7 +437,6 @@ func TestReusableEvidenceBindsToANewExecutionSnapshot(t *testing.T) {
 	if _, err := runtime.UpdateExecutionSnapshot(first); err != nil {
 		t.Fatal(err)
 	}
-	respondToCurrentReview(t, runtime)
 	evidencePath := filepath.Join(runtime.RuntimeDir, "reusable.json")
 	if err := os.WriteFile(evidencePath, []byte(`{"status":"passed"}`), 0o600); err != nil {
 		t.Fatal(err)
@@ -440,7 +444,6 @@ func TestReusableEvidenceBindsToANewExecutionSnapshot(t *testing.T) {
 	if _, err := runtime.RecordEvidence(EvidenceRecord{EvidenceID: "evidence-reusable", Scope: []string{"condition"}, Path: evidencePath, ValidatorStatus: "passed", ValidatorSource: "unit-test"}); err != nil {
 		t.Fatal(err)
 	}
-	respondToCurrentReview(t, runtime)
 	if err := runtime.CompleteExecutionSnapshot(); err != nil {
 		t.Fatal(err)
 	}
@@ -466,7 +469,10 @@ func TestNewEvidenceSupersedesAStaleReviewAndCheckpointWaitsForAResponse(t *test
 		t.Fatal(err)
 	}
 	condition := mustCondition(t, runtime)
-	firstRequest, err := runtime.UpdateExecutionSnapshot(ExecutionSnapshotInput{FocusID: "focus-evidence-snapshot", ConditionID: condition, Objective: "bind evidence to the review that can see it", Value: "prevents stale Governor claims", InvolvedScope: []string{"internal/component"}, ExpectedEvidence: []string{"evidence-snapshot"}, CheckpointID: "checkpoint-evidence-snapshot", CheckpointDescription: "evidence is visible to the review"})
+	if request, err := runtime.UpdateExecutionSnapshot(ExecutionSnapshotInput{FocusID: "focus-evidence-snapshot", ConditionID: condition, Objective: "bind evidence to the review that can see it", Value: "prevents stale Governor claims", InvolvedScope: []string{"internal/component"}, ExpectedEvidence: []string{"evidence-snapshot"}, CheckpointID: "checkpoint-evidence-snapshot", CheckpointDescription: "evidence is visible to the review"}); err != nil || request != nil {
+		t.Fatalf("execution focus incorrectly created a review: %v", err)
+	}
+	firstRequest, err := runtime.RequestFixedReview("activation", "stale-feedback")
 	if err != nil || firstRequest == nil {
 		t.Fatalf("create first review: %v", err)
 	}
@@ -475,30 +481,33 @@ func TestNewEvidenceSupersedesAStaleReviewAndCheckpointWaitsForAResponse(t *test
 		t.Fatal(err)
 	}
 	checkpointRequest, err := runtime.RecordEvidence(EvidenceRecord{EvidenceID: "evidence-snapshot", Scope: []string{"condition"}, Path: evidencePath, ValidatorStatus: "passed", ValidatorSource: "unit-test"})
-	if err != nil || checkpointRequest == nil || checkpointRequest.ReviewID == firstRequest.ReviewID {
-		t.Fatalf("new evidence did not replace the stale review: %v", err)
+	if err != nil || checkpointRequest != nil {
+		t.Fatalf("successful evidence incorrectly created a review: %v", err)
 	}
-	if len(checkpointRequest.EvidenceRefs) != 1 || checkpointRequest.EvidenceRefs[0].EvidenceID != "evidence-snapshot" || checkpointRequest.RecentCheckpoint == nil {
-		t.Fatal("replacement review was not bound to the new evidence checkpoint")
+	state, err := runtime.LoadState()
+	if err != nil || state.Review.Pending != nil {
+		t.Fatal("successful evidence incorrectly created a pending review")
 	}
 	staleFeedback := validContinueFeedback(firstRequest)
-	staleFeedback.ValidatedEvidenceIDs = []string{"evidence-snapshot"}
-	if _, err := runtime.AcceptReview(staleFeedback); err == nil {
-		t.Fatal("stale feedback validated evidence that was absent from its request")
-	}
-	feedback := validContinueFeedback(checkpointRequest)
-	feedback.ValidatedEvidenceIDs = []string{"evidence-snapshot"}
-	if _, err := runtime.AcceptReview(feedback); err != nil {
+	if _, err := runtime.AcceptReview(staleFeedback); err != nil {
 		t.Fatal(err)
+	}
+	state, _ = runtime.LoadState()
+	if state.Review.Status != "superseded" {
+		t.Fatal("complete but stale feedback was not preserved as superseded")
 	}
 	if err := runtime.CompleteExecutionSnapshot(); err == nil {
 		t.Fatal("execution snapshot closed before the main Agent answered available feedback")
 	}
-	if _, err := runtime.RecordReviewResponse(ReviewResponseInput{ReviewID: checkpointRequest.ReviewID, Disposition: "acknowledge", Reason: "the evidence is current", NextValidationPoint: "close the checkpoint"}); err != nil {
+	if _, err := runtime.RecordReviewResponse(ReviewResponseInput{ReviewID: firstRequest.ReviewID, Disposition: "acknowledge", Reason: "the feedback used the previous evidence boundary", NextValidationPoint: "review the merged checkpoint event"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := runtime.CompleteExecutionSnapshot(); err != nil {
 		t.Fatal(err)
+	}
+	state, _ = runtime.LoadState()
+	if state.Review.Status != "requested" || state.Review.Trigger == nil || !strings.Contains(*state.Review.Trigger, "stage-boundary") {
+		t.Fatal("stage completion did not create its natural-boundary review")
 	}
 }
 
@@ -511,7 +520,6 @@ func TestMissingEvidenceAtCheckpointCreatesAdvisoryReview(t *testing.T) {
 	if _, err := runtime.UpdateExecutionSnapshot(ExecutionSnapshotInput{FocusID: "focus-missing", ConditionID: condition, Objective: "reach the validation point", Value: "tests missing evidence handling", InvolvedScope: []string{"internal/component"}, ExpectedEvidence: []string{"evidence-missing"}, CheckpointID: "checkpoint-missing", CheckpointDescription: "expected evidence should exist"}); err != nil {
 		t.Fatal(err)
 	}
-	respondToCurrentReview(t, runtime)
 	if err := runtime.CompleteExecutionSnapshot(); err == nil {
 		t.Fatal("missing evidence incorrectly completed the execution snapshot")
 	}
@@ -531,7 +539,6 @@ func TestChangedEvidenceInvalidatesCompletionAndRejectsStaleFinish(t *testing.T)
 	if _, err := runtime.UpdateExecutionSnapshot(ExecutionSnapshotInput{FocusID: "focus-completion", ConditionID: condition, Objective: "establish completion evidence", Value: "binds completion to immutable evidence", InvolvedScope: []string{"internal/component"}, ExpectedEvidence: []string{"evidence-completion"}, CheckpointID: "checkpoint-completion", CheckpointDescription: "completion evidence passes"}); err != nil {
 		t.Fatal(err)
 	}
-	respondToCurrentReview(t, runtime)
 	evidencePath := filepath.Join(runtime.RuntimeDir, "completion.json")
 	if err := os.WriteFile(evidencePath, []byte(`{"status":"passed"}`), 0o600); err != nil {
 		t.Fatal(err)
@@ -539,10 +546,10 @@ func TestChangedEvidenceInvalidatesCompletionAndRejectsStaleFinish(t *testing.T)
 	if _, err := runtime.RecordEvidence(EvidenceRecord{EvidenceID: "evidence-completion", Scope: []string{"completion"}, Path: evidencePath, ValidatorStatus: "passed", ValidatorSource: "unit-test"}); err != nil {
 		t.Fatal(err)
 	}
-	respondToCurrentReview(t, runtime)
 	if err := runtime.CompleteExecutionSnapshot(); err != nil {
 		t.Fatal(err)
 	}
+	respondToCurrentReview(t, runtime)
 	state, err := runtime.LoadState()
 	if err != nil {
 		t.Fatal(err)
@@ -597,7 +604,6 @@ func TestGovernorRecommendationCannotGateMechanicallyValidFinish(t *testing.T) {
 	if _, err := runtime.UpdateExecutionSnapshot(ExecutionSnapshotInput{FocusID: "focus-advisory-finish", ConditionID: condition, Objective: "establish completion facts", Value: "proves the main Agent retains completion control", InvolvedScope: []string{"internal/component"}, ExpectedEvidence: []string{"evidence-advisory-finish"}, CheckpointID: "checkpoint-advisory-finish", CheckpointDescription: "completion facts pass"}); err != nil {
 		t.Fatal(err)
 	}
-	respondToCurrentReview(t, runtime)
 	evidencePath := filepath.Join(runtime.RuntimeDir, "advisory-finish.json")
 	if err := os.WriteFile(evidencePath, []byte(`{"status":"passed"}`), 0o600); err != nil {
 		t.Fatal(err)
@@ -605,10 +611,10 @@ func TestGovernorRecommendationCannotGateMechanicallyValidFinish(t *testing.T) {
 	if _, err := runtime.RecordEvidence(EvidenceRecord{EvidenceID: "evidence-advisory-finish", Scope: []string{"completion"}, Path: evidencePath, ValidatorStatus: "passed", ValidatorSource: "unit-test"}); err != nil {
 		t.Fatal(err)
 	}
-	respondToCurrentReview(t, runtime)
 	if err := runtime.CompleteExecutionSnapshot(); err != nil {
 		t.Fatal(err)
 	}
+	respondToCurrentReview(t, runtime)
 	state, err := runtime.LoadState()
 	if err != nil {
 		t.Fatal(err)
@@ -731,7 +737,7 @@ func TestSessionStartIgnoresNonGovernanceSources(t *testing.T) {
 	}
 }
 
-func TestExecCommandGovernanceFailureIsRecognized(t *testing.T) {
+func TestInvalidNativeGovernorResultFailsOpen(t *testing.T) {
 	runtime := testRuntime(t)
 	if _, err := runtime.Init(); err != nil {
 		t.Fatal(err)
@@ -742,21 +748,15 @@ func TestExecCommandGovernanceFailureIsRecognized(t *testing.T) {
 	if _, err := runtime.RequestFixedReview("activation", "exec-command-failure"); err != nil {
 		t.Fatal(err)
 	}
-	input := HookInput{
-		SessionID: "main", ToolName: "exec_command", ToolUseID: "failed-accept-review",
-		ToolInput:    json.RawMessage(`{"cmd":".codex/governance/governance-hook.ps1 accept-review --json-base64 bad"}`),
-		ToolResponse: json.RawMessage(`{"isError":true,"error":"failed to persist feedback"}`),
-	}
-	if !isGovernorReviewChainAttempt(runtime, input) {
-		t.Fatal("exec_command governance persistence failure was not recognized")
-	}
-	_ = hookJSON(t, runtime, "post-tool-use", input)
+	_ = hookJSON(t, runtime, "subagent-start", HookInput{SessionID: "main", AgentID: "governor-1", AgentType: runtime.Config.GovernorAgentName})
+	invalid := "not-json"
+	_ = hookJSON(t, runtime, "subagent-stop", HookInput{SessionID: "main", AgentID: "governor-1", AgentType: runtime.Config.GovernorAgentName, LastAssistantMessage: &invalid})
 	state, err := runtime.LoadState()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if state.Review.Status != "missed" || state.Status != "active" {
-		t.Fatal("exec_command governance persistence failure did not fail open")
+		t.Fatal("invalid native Governor result did not fail open")
 	}
 }
 
@@ -958,6 +958,324 @@ func TestDelegatedTaskOwnerIsPreservedWithoutLosingState(t *testing.T) {
 	}
 	if state.Owner == nil || state.Owner.SessionID != "delegated-main" || state.RunID == "" || len(state.CompletionConditions) == 0 {
 		t.Fatal("a delegated main task owner or valid governance state was lost")
+	}
+}
+
+func TestFastHookClassificationKeepsOrdinaryWorkOffTheRuntime(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, ".codex", "governance")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	config := []byte(`{"runtime_directory":".codex/governance/runtime","activation_marker":"[fixture-governance:enable]"}`)
+	if err := os.WriteFile(filepath.Join(configDir, "config.json"), config, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ordinary, _ := json.Marshal(HookInput{Prompt: "ordinary task"})
+	if FastHookRelevantAt("user-prompt-submit", ordinary, root) {
+		t.Fatal("ordinary prompt entered the governance runtime")
+	}
+	misplaced, _ := json.Marshal(HookInput{Prompt: "intro\n[fixture-governance:enable]"})
+	if FastHookRelevantAt("user-prompt-submit", misplaced, root) {
+		t.Fatal("a marker outside the first nonempty line entered the runtime")
+	}
+	activation, _ := json.Marshal(HookInput{Prompt: "[fixture-governance:enable]\nrun goal"})
+	if !FastHookRelevantAt("user-prompt-submit", activation, root) {
+		t.Fatal("the exact activation marker did not enter the runtime")
+	}
+	session, _ := json.Marshal(HookInput{SessionID: "fixture-owner", Source: "startup"})
+	if FastHookRelevantAt("session-start", session, root) {
+		t.Fatal("unactivated SessionStart entered the runtime")
+	}
+	if err := os.MkdirAll(filepath.Join(configDir, "runtime"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "runtime", "state.json"), []byte(`{"status":"active","owner":{"session_id":"fixture-owner"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !FastHookRelevantAt("session-start", session, root) {
+		t.Fatal("an activated SessionStart was not routed to the runtime")
+	}
+	foreignSession, _ := json.Marshal(HookInput{SessionID: "other-task", Source: "resume"})
+	if FastHookRelevantAt("session-start", foreignSession, root) {
+		t.Fatal("another task's SessionStart entered the runtime")
+	}
+	otherAgent, _ := json.Marshal(HookInput{AgentType: "worker", AgentID: "worker-1"})
+	if FastHookRelevantAt("subagent-stop", otherAgent, root) {
+		t.Fatal("an unrelated subagent entered the governance runtime")
+	}
+	ownedGovernor, _ := json.Marshal(HookInput{SessionID: "fixture-owner", AgentType: "governor", AgentID: "governor-1"})
+	if !FastHookRelevantAt("subagent-start", ownedGovernor, root) {
+		t.Fatal("the owning task's Governor did not enter the runtime")
+	}
+	foreignGovernor, _ := json.Marshal(HookInput{SessionID: "other-task", AgentType: "governor", AgentID: "governor-2"})
+	if FastHookRelevantAt("subagent-start", foreignGovernor, root) {
+		t.Fatal("another task's Governor entered the runtime")
+	}
+}
+
+func TestLifecycleAndGovernorHooksAreIsolatedToTheOwningTask(t *testing.T) {
+	runtime := testRuntime(t)
+	if _, err := runtime.Init(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.ensureHookOwner(HookInput{SessionID: "main-owner"}); err != nil {
+		t.Fatal(err)
+	}
+	request, err := runtime.RequestFixedReview("activation", "owner-isolation")
+	if err != nil || request == nil {
+		t.Fatalf("owner review: %v", err)
+	}
+
+	sessionPayload, _ := json.Marshal(HookInput{SessionID: "other-task", Source: "resume"})
+	if FastHookRelevantAt("session-start", sessionPayload, runtime.Root) {
+		t.Fatal("another task's lifecycle event entered the governance runtime")
+	}
+	_ = hookJSON(t, runtime, "subagent-start", HookInput{SessionID: "other-task", AgentID: "foreign-governor", AgentType: runtime.Config.GovernorAgentName})
+	state, err := runtime.LoadState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Review.GovernorAgentID != nil {
+		t.Fatal("another task's Governor was bound to the current review")
+	}
+	_ = hookJSON(t, runtime, "subagent-start", HookInput{SessionID: "main-owner", AgentID: "owned-governor", AgentType: runtime.Config.GovernorAgentName})
+	state, _ = runtime.LoadState()
+	if state.Review.GovernorAgentID == nil || *state.Review.GovernorAgentID != "owned-governor" {
+		t.Fatal("the owning task's Governor was not bound")
+	}
+}
+
+func TestAuthorityClaimsRequireARealStableLocator(t *testing.T) {
+	runtime := testRuntime(t)
+	if _, err := runtime.Init(); err != nil {
+		t.Fatal(err)
+	}
+	request, err := runtime.RequestFixedReview("activation", "authority-locator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := "docs/delivery/goal.md"
+	var sourceHash string
+	for _, ref := range request.AuthorityRefs {
+		if filepath.ToSlash(ref.Path) == path {
+			sourceHash = ref.Hash
+			break
+		}
+	}
+	data, err := os.ReadFile(resolvePath(runtime.Root, path))
+	if err != nil || sourceHash == "" {
+		t.Fatalf("authority source unavailable: %v", err)
+	}
+	heading := ""
+	for _, line := range strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "#") {
+			heading = strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(line), "#"))
+			break
+		}
+	}
+	result := validContinueFeedback(request)
+	result.AuthorityClaims = []AuthorityClaim{{Claim: "the cited section is authoritative", SourcePath: path, StableLocator: "heading:" + heading, SourceHash: sourceHash}}
+	if _, err := runtime.AcceptReview(result); err != nil {
+		t.Fatalf("valid stable authority locator was rejected: %v", err)
+	}
+
+	invalidRuntime := testRuntime(t)
+	if _, err := invalidRuntime.Init(); err != nil {
+		t.Fatal(err)
+	}
+	invalidRequest, err := invalidRuntime.RequestFixedReview("activation", "invalid-authority-locator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	invalid := validContinueFeedback(invalidRequest)
+	invalid.AuthorityClaims = []AuthorityClaim{{Claim: "unsupported hard claim", SourcePath: path, StableLocator: "heading:missing section", SourceHash: sourceHash}}
+	if _, err := invalidRuntime.AcceptReview(invalid); err == nil {
+		t.Fatal("a nonexistent authority locator was accepted")
+	}
+}
+
+func TestProgressDeltaTracksCompletionMovementAndIgnoresUnrelatedEvidence(t *testing.T) {
+	runtime := testRuntime(t)
+	runtime.Config.EvidenceRoots = []string{runtime.RuntimeDir}
+	if _, err := runtime.Init(); err != nil {
+		t.Fatal(err)
+	}
+	baselineRequest, err := runtime.RequestFixedReview("activation", "progress-baseline")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.AcceptReview(validContinueFeedback(baselineRequest)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.RecordReviewResponse(ReviewResponseInput{ReviewID: baselineRequest.ReviewID, Disposition: "acknowledge", Reason: "baseline established", NextValidationPoint: "next condition"}); err != nil {
+		t.Fatal(err)
+	}
+	state, err := runtime.LoadState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.CompletionConditions[0].Status = "met"
+	if err := runtime.saveState(state); err != nil {
+		t.Fatal(err)
+	}
+	stageTrigger, _ := newReviewTrigger("event", "stage-boundary", "condition-advanced", "stage boundary")
+	request, err := runtime.requestReview(stageTrigger)
+	if err != nil || request.ProgressDelta.NetProgress != "advanced" {
+		t.Fatalf("completion movement was not reported as progress: %#v %v", request.ProgressDelta, err)
+	}
+
+	unrelatedPath := filepath.Join(runtime.RuntimeDir, "unrelated.json")
+	if err := os.WriteFile(unrelatedPath, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	unrelatedHash, _ := fileHash(unrelatedPath)
+	state, _ = runtime.LoadState()
+	state.ReusableResults = append(state.ReusableResults, ReusableResult{ResultID: "unrelated", Scope: []string{"condition:unrelated"}, EvidencePath: unrelatedPath, InputHash: unrelatedHash})
+	if err := runtime.saveState(state); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.AcceptReview(validContinueFeedback(request)); err != nil {
+		t.Fatal(err)
+	}
+	state, _ = runtime.LoadState()
+	if state.Review.Status != "feedback_ready" {
+		t.Fatalf("unrelated evidence made feedback stale: %s", state.Review.Status)
+	}
+}
+
+func TestPendingReviewEventsAreMergedAndGovernorAbsenceFailsOpenAtBoundary(t *testing.T) {
+	runtime := testRuntime(t)
+	runtime.Config.EvidenceRoots = []string{runtime.RuntimeDir}
+	if _, err := runtime.Init(); err != nil {
+		t.Fatal(err)
+	}
+	condition := mustCondition(t, runtime)
+	if _, err := runtime.UpdateExecutionSnapshot(ExecutionSnapshotInput{FocusID: "focus-boundary", ConditionID: condition, Objective: "reach one evidence checkpoint", Value: "prove fail-open advisory semantics", InvolvedScope: []string{"governance"}, ExpectedEvidence: []string{"checkpoint-evidence"}, CheckpointID: "checkpoint-boundary", CheckpointDescription: "checkpoint evidence exists"}); err != nil {
+		t.Fatal(err)
+	}
+	evidencePath := filepath.Join(runtime.RuntimeDir, "checkpoint.json")
+	if err := os.WriteFile(evidencePath, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	request, err := runtime.RequestFixedReview("activation", "active-review")
+	if err != nil || request == nil {
+		t.Fatalf("fixed review was not created: %v", err)
+	}
+	if recorded, err := runtime.RecordEvidence(EvidenceRecord{EvidenceID: "checkpoint-evidence", Path: evidencePath, Scope: []string{condition}, ValidatorStatus: "passed", ValidatorSource: "fixture"}); err != nil || recorded != nil {
+		t.Fatalf("successful evidence incorrectly created a review: %v", err)
+	}
+	if err := runtime.CompleteExecutionSnapshot(); err != nil {
+		t.Fatalf("unavailable Governor blocked a mechanically valid boundary: %v", err)
+	}
+	state, _ := runtime.LoadState()
+	if state.CurrentFocus != nil || state.CompletionConditions[0].Status != "met" || state.Review.Status != "requested" || state.Review.Pending == nil || len(state.Review.Pending.TriggerTypes) != 1 || state.Review.Pending.TriggerTypes[0] != "stage-boundary" {
+		t.Fatalf("boundary did not fail open cleanly: %#v", state.Review)
+	}
+}
+
+func TestIncidentReplayExposesZeroNetProgressBeforeAnotherCostlyAttempt(t *testing.T) {
+	runtime := testRuntime(t)
+	if _, err := runtime.Init(); err != nil {
+		t.Fatal(err)
+	}
+	condition := mustCondition(t, runtime)
+	if _, err := runtime.UpdateExecutionSnapshot(ExecutionSnapshotInput{
+		FocusID: "qualification-loop", ConditionID: condition,
+		Objective: "establish the first valid core baseline", Value: "cross the current formal completion point",
+		InvolvedScope: []string{"acceptance-adapter"}, ExpectedEvidence: []string{"formal-qualification"},
+		CheckpointID: "qualification", CheckpointDescription: "the current candidate passes qualification",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	baseline, err := runtime.RequestFixedReview("activation", "incident-baseline")
+	if err != nil || baseline == nil {
+		t.Fatalf("baseline review: %v", err)
+	}
+	if _, err := runtime.AcceptReview(validContinueFeedback(baseline)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.RecordReviewResponse(ReviewResponseInput{ReviewID: baseline.ReviewID, Disposition: "acknowledge", Reason: "baseline facts recorded", NextValidationPoint: "qualification"}); err != nil {
+		t.Fatal(err)
+	}
+
+	request, err := runtime.RecordCheckpointResult(CheckpointResultInput{
+		FocusID: "qualification-loop", CheckpointID: "qualification", Outcome: "failed",
+		FailureCategory: "formal-qualification-still-fails", SourceExecution: "candidate-after-local-fixes",
+		ResultHash: "sha256:" + strings.Repeat("d", 64), EvidenceIDs: []string{},
+	})
+	if err != nil || request == nil {
+		t.Fatalf("failed formal checkpoint did not create a review: %v", err)
+	}
+	if request.ProgressDelta.NetProgress != "zero" || request.ProgressDelta.CheckpointOutcome != "failed" || request.ProgressDelta.CriticalConditionID != condition {
+		t.Fatalf("incident facts did not expose zero conversion at the completion condition: %#v", request.ProgressDelta)
+	}
+	if request.CurrentFocus == nil || request.CurrentFocus.ExecutionID == "" || request.Trigger.Type != "evidence-checkpoint-missed" {
+		t.Fatalf("incident request lost its execution identity or factual boundary: %#v", request)
+	}
+}
+
+func TestIncidentReplayKeepsShortUnrelatedWorkAtZeroGovernanceCost(t *testing.T) {
+	runtime := testRuntime(t)
+	prompt := runtime.Config.ActivationMarker + "\ncontinue the product goal"
+	_ = hookJSON(t, runtime, "user-prompt-submit", map[string]any{"session_id": "main", "turn_id": "activation", "prompt": prompt})
+	paths := []string{runtime.statePath(), runtime.requestPath(), runtime.reviewPath()}
+	before := map[string][]byte{}
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err == nil {
+			before[path] = data
+		} else if !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+	}
+
+	if got := hookJSON(t, runtime, "user-prompt-submit", map[string]any{"session_id": "main", "turn_id": "side-doc", "prompt": "write a short unrelated note"}); got != "{}" {
+		t.Fatalf("short unrelated work received governance protocol: %s", got)
+	}
+	for _, event := range []string{"post-tool-use", "pre-compact", "stop"} {
+		if got := hookJSON(t, runtime, event, map[string]any{"session_id": "main", "turn_id": "side-doc", "tool_name": "exec", "tool_response": map[string]any{"exit_code": 0}}); got != "{}" {
+			t.Fatalf("unrelated short work produced governance output through %s: %s", event, got)
+		}
+	}
+	for _, path := range paths {
+		after, err := os.ReadFile(path)
+		if original, existed := before[path]; existed {
+			if err != nil || !bytes.Equal(original, after) {
+				t.Fatalf("short unrelated work changed governance file %s", filepath.Base(path))
+			}
+		} else if !os.IsNotExist(err) {
+			t.Fatalf("short unrelated work created governance file %s", filepath.Base(path))
+		}
+	}
+}
+
+func TestMigrationValidationUsesACopyAndIsIdempotent(t *testing.T) {
+	runtime := testRuntime(t)
+	if _, err := runtime.Init(); err != nil {
+		t.Fatal(err)
+	}
+	state, err := runtime.LoadState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.SchemaVersion = 2
+	source, err := os.MkdirTemp(filepath.Join(runtime.Root, ".codex", "governance"), ".migration-source-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(source)
+	if err := atomicWriteJSON(filepath.Join(source, "state.json"), state); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(filepath.Join(source, "state.json"))
+	report, err := runtime.ValidateStateMigrationCopy(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadFile(filepath.Join(source, "state.json"))
+	if report.Status != "passed" || !report.RepeatIsIdempotent || !report.SourceUnchanged || !bytes.Equal(before, after) {
+		t.Fatalf("migration copy validation was not lossless: %#v", report)
 	}
 }
 

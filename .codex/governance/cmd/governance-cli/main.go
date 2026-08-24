@@ -25,25 +25,42 @@ func run(args []string) error {
 	if len(args) == 0 {
 		return errors.New("missing command")
 	}
-	runtime, err := governance.Open("")
-	if err != nil {
-		// Governance is advisory. A broken or temporarily unavailable runtime
-		// must never make a Codex Hook block the main task.
-		if args[0] == "hook" {
+	if args[0] == "hook" {
+		if len(args) != 2 {
+			return errors.New("hook requires exactly one event name")
+		}
+		data, err := io.ReadAll(os.Stdin)
+		if err != nil {
 			_, _ = fmt.Fprintln(os.Stdout, "{}")
 			return nil
 		}
+		if !governance.FastHookRelevantAt(args[1], data, "") {
+			_, _ = fmt.Fprintln(os.Stdout, "{}")
+			return nil
+		}
+		runtime, err := governance.Open("")
+		if err != nil {
+			_, _ = fmt.Fprintln(os.Stdout, "{}")
+			return nil
+		}
+		return runtime.HandleHook(args[1], bytes.NewReader(data), os.Stdout)
+	}
+	var runtime *governance.Runtime
+	var err error
+	if args[0] == "doctor" || args[0] == "validate-state-migration" {
+		runtime, err = governance.OpenWithoutMigration("")
+	} else {
+		runtime, err = governance.Open("")
+	}
+	if err != nil {
+		// Governance is advisory. A broken or temporarily unavailable runtime
+		// must never make a Codex Hook block the main task.
 		return err
 	}
 	switch args[0] {
 	case "init":
 		state, err := runtime.Init()
 		return output(state, err)
-	case "hook":
-		if len(args) != 2 {
-			return errors.New("hook requires exactly one event name")
-		}
-		return runtime.HandleHook(args[1], os.Stdin, os.Stdout)
 	case "status":
 		state, err := runtime.LoadState()
 		return output(state, err)
@@ -60,6 +77,20 @@ func run(args []string) error {
 			return err
 		}
 		request, err := runtime.RecordEvidence(record)
+		return output(request, err)
+	case "record-checkpoint-result":
+		var result governance.CheckpointResultInput
+		if err := decodeInput(args[1:], &result); err != nil {
+			return err
+		}
+		request, err := runtime.RecordCheckpointResult(result)
+		return output(request, err)
+	case "prepare-expansion-review":
+		var expansion governance.ExpansionReviewInput
+		if err := decodeInput(args[1:], &expansion); err != nil {
+			return err
+		}
+		request, err := runtime.PrepareExpansionReview(expansion)
 		return output(request, err)
 	case "record-failure":
 		return errors.New("manual failure counters are disabled; governed hooks and governed-run record verified events automatically")
@@ -142,6 +173,14 @@ func run(args []string) error {
 		return output(map[string]string{"status": "complete"}, err)
 	case "doctor":
 		report, err := runtime.Doctor()
+		return output(report, err)
+	case "validate-state-migration":
+		parser := flag.NewFlagSet("validate-state-migration", flag.ContinueOnError)
+		sourceDir := parser.String("source-dir", "", "existing governance current-state directory")
+		if err := parser.Parse(args[1:]); err != nil {
+			return err
+		}
+		report, err := runtime.ValidateStateMigrationCopy(*sourceDir)
 		return output(report, err)
 	case "governed-run":
 		return governedRun(args[1:])

@@ -54,7 +54,7 @@
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "run_id": "...",
   "status": "active",
   "authority_hash": "sha256:...",
@@ -71,7 +71,8 @@
       "description": "...",
       "reached": false
     },
-    "snapshot_hash": "sha256:..."
+    "snapshot_hash": "sha256:...",
+    "execution_id": "..."
   },
   "pending_intervention": null,
   "reusable_results": [],
@@ -115,7 +116,9 @@ Governor 反馈是当前决策输入，不是长期记忆。新请求产生后�
 
 主任务首次激活，以及来源为 `startup`、`resume`、`clear`、`compact` 的真实 `SessionStart`，在动作之间的自然边界创建复核；其中 `compact` 通过 Codex 正式支持的 `additionalContext` 在压缩后的下一次模型请求前交付操作说明。生命周期事件没有独立事件 ID，因此当前请求仍待处理时的重放复用该请求；前次复核结束后的下一次真实生命周期事件创建新代次。
 
-`PreCompact` 只做尽力而为的状态完整性检查，不得阻止压缩。`Stop`、`PreToolUse`、`PostCompact`、`SubagentStart` 和 `SubagentStop` 不得注册为治理 Hook：回复结束不是任务结束，工具调用也不是治理许可边界，而 `PostCompact` 的 `systemMessage` 只用于界面提示，不能替代模型可见的复核指令。失败工具事件只保存必要身份、原始证据哈希、排除调用 ID、时间和耗时等易变元数据后的失败类别哈希及验证事实，不复制终端流水或敏感原文。
+正式 Hook 只包含 `UserPromptSubmit`、`SessionStart` 以及仅匹配 Governor 的 `SubagentStart`、`SubagentStop`。前两者只生成或交付复核请求；后两者分别绑定唯一 Governor 身份，并通过异步 `SubagentStop` 接收、校验和保存原生 JSON 结果。它们不等待 Governor，也不阻断主线。
+
+不得注册 `PreToolUse`、`PostToolUse`、`Stop`、`PreCompact` 或 `PostCompact` 作为正式治理 Hook。当前 Codex 工具 Hook 载荷不能稳定证明调用属于主目标并同时提供可信结果合同，因此通用工具事件严格忽略；已经加载旧定义产生的兼容调用返回空结果。检查点和高成本扩展由既有结构化执行入口自动绑定当前 `execution_id` 并登记结果，不要求主 Agent 为普通工具逐次申报，也不复制终端流水或敏感原文。
 
 ### 事件复核
 
@@ -129,7 +132,7 @@ Governor 反馈是当前决策输入，不是长期记忆。新请求产生后�
 6. 用户待处理事项得到绑定身份的解决；
 7. 阶段结束或准备宣称完成。
 
-开放语义由 Governor 判断；确定性程序只识别已登记事实。主 Agent 也可用稳定 `request-id` 主动请求 advisory。不得用经过时间、工时预测或自由文本理由伪造固定或事实事件。
+开放语义由 Governor 判断；确定性程序只识别已登记事实。自由命名的主动 advisory 已禁用；复核必须来自固定边界或已验证事实事件。不得用经过时间、工时预测或自由文本理由伪造固定或事实事件。
 
 ## 反馈与回应
 
@@ -137,10 +140,11 @@ Hook 不能启动子 Agent。合法触发只生成或复用 `review-request.json
 
 ```text
 自然边界产生请求
-→ 主 Agent 复用单一 Governor
+→ 主 Agent 启动或复用单一 Governor 后继续当前有界工作
+→ SubagentStart 绑定唯一 Governor 身份
 → Governor 只读独立复核并返回一个 JSON
-→ accept-review 校验 Schema、请求身份和快照哈希后原子覆盖 review.json
-→ 主 Agent 阅读反馈并用 record-review-response 明确采纳、拒绝或确认
+→ 异步 SubagentStop 校验并原子覆盖 review.json
+→ 主 Agent 在下一相关自然边界阅读反馈，并用 record-review-response 明确采纳、拒绝或确认
 → 主 Agent 按自己的判断继续
 ```
 
@@ -148,7 +152,7 @@ Governor 返回 `continue`、`adjust`、`stage_complete`、`goal_complete`、`pr
 
 主 Agent 的回应必须记录处置、事实理由和下一验证点。只有主 Agent 明确采纳真实产品决策或无法自行取得的外部输入建议时，才建立持久 `pending_intervention`；普通技术问题和可自主换路的效率问题不得交给用户。
 
-Governor 启动、执行、返回或校验失败且尚未形成可用反馈时，将当前 Review 标记为 `missed` 并保留执行快照与证据；已经进入 `feedback_ready` 的有效反馈必须保留到主 Agent 明确回应，不能被后续链路失败降级为缺失。主线始终可继续，下一次新的自然边界可以重新取得反馈；同一失败不能由普通消息无限重试。
+Governor 启动、执行、返回或校验失败且尚未形成可用反馈时，在下一个相关检查点、高成本扩展、阶段结束或完成边界把当前 Review 标记为 `missed` 并继续；已经进入 `feedback_ready` 的有效反馈必须保留到主 Agent 明确回应，不能被后续链路失败降级为缺失。Review 在途时的新合法事件只合并成一份有界待复核事实；当前 Review 结束后至多生成一次后续请求。迟到结果不得反向打断主线，同一失败不能由普通消息无限重试。
 
 ## 命令契约
 
@@ -158,8 +162,10 @@ Governor 启动、执行、返回或校验失败且尚未形成可用反馈时�
 | `hook <event>` | 处理自然边界；任何治理内部错误都以空结果失败开放 |
 | `update-execution-snapshot` | 由主 Agent 更新描述性执行快照并形成焦点变化事件 |
 | `record-evidence` | 校验文件、哈希和显式验证器结果，登记可复用证据 |
+| `record-checkpoint-result` | 自动绑定当前执行身份；成功只登记结果，未取得预期证据或修复后同类失败才形成复核 |
+| `prepare-expansion-review` | 自动绑定当前执行身份，在代表性证据成立后形成一次高成本扩展复核 |
 | `record-repair` | 绑定真实失败、修复后新证据和新的执行身份，推进修复代次 |
-| `request-advisory-review` | 用稳定 `request-id` 创建主动宏观复核 |
+| `request-advisory-review` | 禁用自由命名复核；调用会明确拒绝并要求登记真实边界 |
 | `request-completion-review` | 绑定当前权威和完整证据创建完成候选复核 |
 | `resolve-intervention` | 只保存准确、安全的解决摘要和来源身份，生成新复核 |
 | `accept-review` | 校验并原子覆盖当前 `review.json`，不应用为控制 |
@@ -198,10 +204,10 @@ Governor 启动、执行、返回或校验失败且尚未形成可用反馈时�
 实现至少验证：
 
 - 普通消息不激活、不注入、不改状态；稳定标识只激活一次，目标模式重放幂等；
-- 激活、恢复、压缩和各真实事件只在自然边界创建一次请求；
+- 激活、恢复、压缩和各真实事件只在自然边界创建一次请求；在途新事件有界合并；
 - Governor 反馈不能修改执行快照，主 Agent 回应可持久恢复；
 - Governor 失败、错误 JSON、旧哈希和治理 Hook 异常不会阻止主线；
-- Hooks 不含 `PreToolUse`、`Stop` 和子 Agent 生命周期事件，兼容旧调用严格空操作；
+- Hooks 只含 `UserPromptSubmit`、`SessionStart` 及只匹配 Governor 的异步父子生命周期接收；不含工具、压缩前或 Stop 门禁，兼容旧调用严格空操作；
 - 旧状态迁移保留有效进度与证据，活动控制语义全部失效；
 - Governor 配置只读，项目状态型 MCP 在 Governor 中以完整 transport 明确禁用；
 - 配置、项目 Schema 与可复用资产一致，运行目录只有三个覆盖更新的当前态文件，不生成历史 Review 或事件流水；

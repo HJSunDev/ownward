@@ -2,7 +2,7 @@ package governance
 
 import "encoding/json"
 
-const schemaVersion = 2
+const schemaVersion = 3
 
 type Config struct {
 	SchemaVersion               int                  `json:"schema_version"`
@@ -19,21 +19,23 @@ type Config struct {
 }
 
 type State struct {
-	SchemaVersion               int                   `json:"schema_version"`
-	RunID                       string                `json:"run_id"`
-	Status                      string                `json:"status"`
-	AuthorityHash               string                `json:"authority_hash"`
-	CompletionConditions        []CompletionCondition `json:"completion_conditions"`
-	CurrentFocus                *ExecutionSnapshot    `json:"current_focus"`
-	PendingIntervention         *PendingIntervention  `json:"pending_intervention"`
-	ExplicitResourceConstraints []ResourceConstraint  `json:"explicit_resource_constraints"`
-	ReusableResults             []ReusableResult      `json:"reusable_results"`
-	NextAction                  *string               `json:"next_action"`
-	ActivationSourceID          *string               `json:"activation_source_id"`
-	LastDiagnostic              *RuntimeDiagnostic    `json:"last_diagnostic"`
-	Review                      ReviewState           `json:"review"`
-	Owner                       *OwnerState           `json:"owner"`
-	Handoff                     *HandoffState         `json:"handoff"`
+	SchemaVersion               int                    `json:"schema_version"`
+	RunID                       string                 `json:"run_id"`
+	Status                      string                 `json:"status"`
+	AuthorityHash               string                 `json:"authority_hash"`
+	CompletionConditions        []CompletionCondition  `json:"completion_conditions"`
+	CurrentFocus                *ExecutionSnapshot     `json:"current_focus"`
+	PendingIntervention         *PendingIntervention   `json:"pending_intervention"`
+	ExplicitResourceConstraints []ResourceConstraint   `json:"explicit_resource_constraints"`
+	ReusableResults             []ReusableResult       `json:"reusable_results"`
+	NextAction                  *string                `json:"next_action"`
+	ActivationSourceID          *string                `json:"activation_source_id"`
+	ReviewBaseline              *ReviewBaseline        `json:"review_baseline"`
+	InvalidatedEvidence         []EvidenceInvalidation `json:"invalidated_evidence"`
+	LastDiagnostic              *RuntimeDiagnostic     `json:"last_diagnostic"`
+	Review                      ReviewState            `json:"review"`
+	Owner                       *OwnerState            `json:"owner"`
+	Handoff                     *HandoffState          `json:"handoff"`
 }
 
 type OwnerState struct {
@@ -86,6 +88,28 @@ type RuntimeDiagnostic struct {
 	OccurredAt string `json:"occurred_at"`
 }
 
+// ReviewBaseline is the last Governor input that the main Agent explicitly
+// answered. It is a bounded comparison point, not a history or event log.
+type ReviewBaseline struct {
+	BaselineID        string                `json:"baseline_id"`
+	ReviewID          string                `json:"review_id"`
+	AuthorityHash     string                `json:"authority_hash"`
+	FocusID           *string               `json:"focus_id"`
+	FocusSnapshotHash *string               `json:"focus_snapshot_hash"`
+	FocusExecutionID  *string               `json:"focus_execution_id"`
+	Conditions        []CompletionCondition `json:"conditions"`
+	EvidenceRefs      []EvidenceReference   `json:"evidence_refs"`
+	CheckpointID      *string               `json:"checkpoint_id"`
+	CheckpointOutcome string                `json:"checkpoint_outcome"`
+	EstablishedAt     string                `json:"established_at"`
+}
+
+type EvidenceInvalidation struct {
+	EvidenceID    string `json:"evidence_id"`
+	PreviousHash  string `json:"previous_hash"`
+	InvalidatedAt string `json:"invalidated_at"`
+}
+
 // ExecutionSnapshot describes the main Agent's current work. It is never a
 // permission grant or a Governor-controlled scope.
 type ExecutionSnapshot struct {
@@ -97,6 +121,7 @@ type ExecutionSnapshot struct {
 	ExpectedEvidence   []string           `json:"expected_evidence"`
 	EvidenceCheckpoint EvidenceCheckpoint `json:"evidence_checkpoint"`
 	SnapshotHash       string             `json:"snapshot_hash"`
+	ExecutionID        string             `json:"execution_id"`
 	StartedAt          string             `json:"started_at"`
 	LastEvidenceAt     *string            `json:"last_evidence_at"`
 	Checkpoint         *string            `json:"checkpoint"`
@@ -164,6 +189,17 @@ type ReviewState struct {
 	ReviewSnapshotHash    *string         `json:"review_snapshot_hash"`
 	Trigger               *string         `json:"trigger"`
 	Response              *ReviewResponse `json:"response"`
+	Pending               *PendingReview  `json:"pending"`
+	GovernorAgentID       *string         `json:"governor_agent_id"`
+}
+
+// PendingReview bounds all valid events that arrive while one Review is in
+// flight. It deliberately preserves only current event identities.
+type PendingReview struct {
+	TriggerTypes []string `json:"trigger_types"`
+	SourceIDs    []string `json:"source_ids"`
+	FactsHash    string   `json:"facts_hash"`
+	Reason       string   `json:"reason"`
 }
 
 type ExecutionSnapshotInput struct {
@@ -193,6 +229,7 @@ type ReviewRequest struct {
 	ReviewSnapshotHash        string               `json:"review_snapshot_hash"`
 	Trigger                   ReviewTrigger        `json:"trigger"`
 	AuthorityPaths            []string             `json:"authority_paths"`
+	AuthorityRefs             []AuthorityReference `json:"authority_refs"`
 	CompletionDefinitionPaths []string             `json:"completion_definition_paths"`
 	RepositorySnapshot        RepositorySnapshot   `json:"repository_snapshot"`
 	StatePath                 string               `json:"state_path"`
@@ -202,7 +239,13 @@ type ReviewRequest struct {
 	ResourceFacts             []ResourceFact       `json:"resource_facts"`
 	RecentCheckpoint          *RecentCheckpoint    `json:"recent_checkpoint"`
 	EvidenceRefs              []EvidenceReference  `json:"evidence_refs"`
+	ProgressDelta             ProgressDelta        `json:"progress_delta"`
 	CreatedAt                 string               `json:"created_at"`
+}
+
+type AuthorityReference struct {
+	Path string `json:"path"`
+	Hash string `json:"hash"`
 }
 
 type ReviewTrigger struct {
@@ -213,9 +256,8 @@ type ReviewTrigger struct {
 }
 
 type RepositorySnapshot struct {
-	Root            string `json:"root"`
-	HeadCommit      string `json:"head_commit"`
-	WorkingTreeHash string `json:"working_tree_hash"`
+	Root       string `json:"root"`
+	HeadCommit string `json:"head_commit"`
 }
 
 type RequestFocus struct {
@@ -228,6 +270,21 @@ type RequestFocus struct {
 	CheckpointID          string   `json:"checkpoint_id"`
 	CheckpointDescription string   `json:"checkpoint_description"`
 	SnapshotHash          string   `json:"snapshot_hash"`
+	ExecutionID           string   `json:"execution_id"`
+}
+
+type ProgressDelta struct {
+	BaselineID               *string  `json:"baseline_id"`
+	CriticalConditionID      string   `json:"critical_condition_id"`
+	CriticalConditionStatus  string   `json:"critical_condition_status"`
+	ExpectedCheckpointID     *string  `json:"expected_checkpoint_id"`
+	NewEvidenceIDs           []string `json:"new_evidence_ids"`
+	ReusedEvidenceIDs        []string `json:"reused_evidence_ids"`
+	InvalidatedEvidenceIDs   []string `json:"invalidated_evidence_ids"`
+	ExecutionIdentityChanged bool     `json:"execution_identity_changed"`
+	CheckpointOutcome        string   `json:"checkpoint_outcome"`
+	NextInvestment           string   `json:"next_investment"`
+	NetProgress              string   `json:"net_progress"`
 }
 
 type ResourceFact struct {
@@ -264,7 +321,21 @@ type ReviewResult struct {
 	ValidatedEvidenceIDs   []string                `json:"validated_evidence_ids"`
 	SuggestedFocus         *ExecutionSnapshotInput `json:"suggested_focus"`
 	ExternalInput          *ExternalInput          `json:"external_input"`
+	AuthorityClaims        []AuthorityClaim        `json:"authority_claims"`
+	Assumptions            []ReviewAssumption      `json:"assumptions"`
 	Reason                 string                  `json:"reason"`
+}
+
+type AuthorityClaim struct {
+	Claim         string `json:"claim"`
+	SourcePath    string `json:"source_path"`
+	StableLocator string `json:"stable_locator"`
+	SourceHash    string `json:"source_hash"`
+}
+
+type ReviewAssumption struct {
+	Statement string `json:"statement"`
+	Impact    string `json:"impact"`
 }
 
 type ReviewResponse struct {
@@ -344,4 +415,23 @@ type HookInput struct {
 	Prompt               string          `json:"prompt"`
 	StopHookActive       bool            `json:"stop_hook_active"`
 	LastAssistantMessage *string         `json:"last_assistant_message"`
+	AgentID              string          `json:"agent_id"`
+	AgentType            string          `json:"agent_type"`
+}
+
+type CheckpointResultInput struct {
+	FocusID         string   `json:"focus_id"`
+	CheckpointID    string   `json:"checkpoint_id"`
+	Outcome         string   `json:"outcome"`
+	EvidenceIDs     []string `json:"evidence_ids"`
+	FailureCategory string   `json:"failure_category"`
+	SourceExecution string   `json:"source_execution"`
+	ResultHash      string   `json:"result_hash"`
+}
+
+type ExpansionReviewInput struct {
+	FocusID      string   `json:"focus_id"`
+	CheckpointID string   `json:"checkpoint_id"`
+	EvidenceIDs  []string `json:"evidence_ids"`
+	Investment   string   `json:"investment"`
 }

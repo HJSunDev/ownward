@@ -2,7 +2,6 @@ package governance
 
 import (
 	"bufio"
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -24,7 +23,88 @@ type Runtime struct {
 	RuntimeDir string
 }
 
+type fastHookConfig struct {
+	RuntimeDirectory string `json:"runtime_directory"`
+	ActivationMarker string `json:"activation_marker"`
+}
+
+func loadFastHookConfig(start string) (fastHookConfig, bool) {
+	root, err := findRoot(start)
+	if err != nil {
+		return fastHookConfig{}, false
+	}
+	data, err := os.ReadFile(filepath.Join(root, ".codex", "governance", "config.json"))
+	if err != nil {
+		return fastHookConfig{}, false
+	}
+	var config fastHookConfig
+	if json.Unmarshal(data, &config) != nil || strings.TrimSpace(config.RuntimeDirectory) == "" || strings.TrimSpace(config.ActivationMarker) == "" {
+		return fastHookConfig{}, false
+	}
+	resolved := resolvePath(root, config.RuntimeDirectory)
+	if !within(root, resolved) {
+		return fastHookConfig{}, false
+	}
+	return config, true
+}
+
+// FastStateExists checks only the configured current-state path. It is used
+// before Open so an unactivated SessionStart or unrelated subagent never pays
+// for config validation, authority reads, or migrations.
+func FastStateExists(start string) bool {
+	config, ok := loadFastHookConfig(start)
+	if !ok {
+		return false
+	}
+	root, err := findRoot(start)
+	if err != nil {
+		return false
+	}
+	info, err := os.Stat(filepath.Join(resolvePath(root, config.RuntimeDirectory), "state.json"))
+	return err == nil && !info.IsDir()
+}
+
+// FastStateOwnerMatches reads only the current state's ownership envelope. It
+// prevents lifecycle events from another Codex task in the same project from
+// opening the full runtime, validating authorities, or touching migrations.
+func FastStateOwnerMatches(start, sessionID string) bool {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return false
+	}
+	config, ok := loadFastHookConfig(start)
+	if !ok {
+		return false
+	}
+	root, err := findRoot(start)
+	if err != nil {
+		return false
+	}
+	data, err := os.ReadFile(filepath.Join(resolvePath(root, config.RuntimeDirectory), "state.json"))
+	if err != nil {
+		return false
+	}
+	var envelope struct {
+		Status string `json:"status"`
+		Owner  *struct {
+			SessionID string `json:"session_id"`
+		} `json:"owner"`
+	}
+	return json.Unmarshal(data, &envelope) == nil && envelope.Status != "complete" && envelope.Owner != nil && envelope.Owner.SessionID == sessionID
+}
+
 func Open(start string) (*Runtime, error) {
+	return openRuntime(start, true)
+}
+
+// OpenWithoutMigration loads only the static runtime contract. It is used by
+// installation diagnostics so a candidate binary can be proved before it is
+// allowed to touch the live current-state files.
+func OpenWithoutMigration(start string) (*Runtime, error) {
+	return openRuntime(start, false)
+}
+
+func openRuntime(start string, migrate bool) (*Runtime, error) {
 	root, err := findRoot(start)
 	if err != nil {
 		return nil, err
@@ -38,7 +118,7 @@ func Open(start string) (*Runtime, error) {
 		return nil, err
 	}
 	runtime := &Runtime{Root: root, ConfigPath: configPath, Config: config, RuntimeDir: resolvePath(root, config.RuntimeDirectory)}
-	if runtime.StateExists() {
+	if migrate && runtime.StateExists() {
 		if err := runtime.migrateLegacyStateIfNeeded(); err != nil {
 			return nil, fmt.Errorf("migrate governance state: %w", err)
 		}
@@ -266,7 +346,13 @@ func (runtime *Runtime) migrateLegacyStateIfNeeded() error {
 			if err := runtime.finalizeAdvisoryV2Migration(); err != nil {
 				return err
 			}
-			return runtime.migrateCurrentStateStorage(&state, legacyFeedbackPath)
+			if err := runtime.migrateCurrentStateStorage(&state, legacyFeedbackPath); err != nil {
+				return err
+			}
+			return runtime.finalizeEfficiencyV3Migration()
+		}
+		if header.SchemaVersion == 2 {
+			return runtime.migrateEfficiencyV3(raw)
 		}
 		if header.SchemaVersion != 1 {
 			return fmt.Errorf("unsupported governance state schema_version %d", header.SchemaVersion)
@@ -309,6 +395,8 @@ func (runtime *Runtime) migrateLegacyStateIfNeeded() error {
 			ExplicitResourceConstraints: legacy.ExplicitResourceConstraints,
 			ReusableResults:             legacy.ReusableResults,
 			NextAction:                  &next,
+			ReviewBaseline:              nil,
+			InvalidatedEvidence:         []EvidenceInvalidation{},
 			Review: ReviewState{
 				Status:                "idle",
 				FixedReviewGeneration: legacy.Review.FixedReviewGeneration,
@@ -517,6 +605,7 @@ func migrateLegacyWorkPacket(packet *legacyWorkPacketV1) *ExecutionSnapshot {
 		CheckpointDescription: focus.EvidenceCheckpoint.Description,
 	}
 	focus.SnapshotHash, _ = hashJSON(payload)
+	focus.ExecutionID, _ = executionIdentity(focus.FocusID, focus.SnapshotHash)
 	return focus
 }
 
@@ -679,39 +768,7 @@ func (runtime *Runtime) repositorySnapshot() (RepositorySnapshot, error) {
 	if err != nil {
 		return RepositorySnapshot{}, err
 	}
-	status, err := runGitBytes(runtime.Root, "status", "--porcelain=v1", "-z", "--untracked-files=all")
-	if err != nil {
-		return RepositorySnapshot{}, err
-	}
-	diff, err := runGitBytes(runtime.Root, "diff", "--binary", "HEAD", "--")
-	if err != nil {
-		return RepositorySnapshot{}, err
-	}
-	untracked, err := runGitBytes(runtime.Root, "ls-files", "--others", "--exclude-standard", "-z")
-	if err != nil {
-		return RepositorySnapshot{}, err
-	}
-	hash := sha256.New()
-	_, _ = hash.Write([]byte(strings.TrimSpace(head)))
-	_, _ = hash.Write([]byte{0})
-	_, _ = hash.Write(status)
-	_, _ = hash.Write([]byte{0})
-	_, _ = hash.Write(diff)
-	for _, relative := range bytes.Split(untracked, []byte{0}) {
-		if len(relative) == 0 {
-			continue
-		}
-		path := resolvePath(runtime.Root, filepath.FromSlash(string(relative)))
-		content, readErr := os.ReadFile(path)
-		if readErr != nil {
-			return RepositorySnapshot{}, readErr
-		}
-		_, _ = hash.Write([]byte{0})
-		_, _ = hash.Write(relative)
-		_, _ = hash.Write([]byte{0})
-		_, _ = hash.Write(content)
-	}
-	return RepositorySnapshot{Root: filepath.Clean(runtime.Root), HeadCommit: strings.TrimSpace(head), WorkingTreeHash: "sha256:" + hex.EncodeToString(hash.Sum(nil))}, nil
+	return RepositorySnapshot{Root: filepath.Clean(runtime.Root), HeadCommit: strings.TrimSpace(head)}, nil
 }
 
 func runGit(root string, args ...string) (string, error) {

@@ -1,10 +1,10 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://ownward.local/schemas/governance-review-v2.json",
+  "$id": "https://ownward.local/schemas/governance-review-v3.json",
   "title": "Ownward Advisory Governor Feedback",
   "type": "object",
   "additionalProperties": false,
-  "required": ["review_id", "trigger_instance_id", "review_snapshot_hash", "recommendation", "macro_assessment", "highest_priority_gap", "path_assessment", "preserved_result_ids", "suggested_invalidations", "validated_evidence_ids", "suggested_focus", "external_input", "reason"],
+  "required": ["review_id", "trigger_instance_id", "review_snapshot_hash", "recommendation", "macro_assessment", "highest_priority_gap", "path_assessment", "preserved_result_ids", "suggested_invalidations", "validated_evidence_ids", "suggested_focus", "external_input", "authority_claims", "assumptions", "reason"],
   "properties": {
     "review_id": { "$ref": "#/$defs/nonEmpty" },
     "trigger_instance_id": { "$ref": "#/$defs/nonEmpty" },
@@ -18,6 +18,8 @@
     "validated_evidence_ids": { "$ref": "#/$defs/stringList" },
     "suggested_focus": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/suggestedFocus" }] },
     "external_input": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/externalInput" }] },
+    "authority_claims": { "type": "array", "items": { "$ref": "#/$defs/authorityClaim" } },
+    "assumptions": { "type": "array", "items": { "$ref": "#/$defs/assumption" } },
     "reason": { "$ref": "#/$defs/nonEmpty" }
   },
   "$defs": {
@@ -46,6 +48,16 @@
       "type": "object", "additionalProperties": false,
       "required": ["kind", "fact", "exhausted_paths", "minimum_user_input"],
       "properties": { "kind": { "enum": ["product_decision", "permission", "credential", "external_state"] }, "fact": { "$ref": "#/$defs/nonEmpty" }, "exhausted_paths": { "$ref": "#/$defs/stringList" }, "minimum_user_input": { "$ref": "#/$defs/nonEmpty" } }
+    },
+    "authorityClaim": {
+      "type": "object", "additionalProperties": false,
+      "required": ["claim", "source_path", "stable_locator", "source_hash"],
+      "properties": { "claim": { "$ref": "#/$defs/nonEmpty" }, "source_path": { "$ref": "#/$defs/nonEmpty" }, "stable_locator": { "type": "string", "pattern": "^(heading|anchor|json-pointer):.+$" }, "source_hash": { "$ref": "#/$defs/hash" } }
+    },
+    "assumption": {
+      "type": "object", "additionalProperties": false,
+      "required": ["statement", "impact"],
+      "properties": { "statement": { "$ref": "#/$defs/nonEmpty" }, "impact": { "$ref": "#/$defs/nonEmpty" } }
     }
   }
 }
