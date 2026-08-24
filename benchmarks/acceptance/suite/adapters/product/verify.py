@@ -695,7 +695,16 @@ def _run_scenario(
                 if agent_path.is_file():
                     agent = load_json(agent_path)
                     if _agent_checkpoint_valid(agent, scenario_root, expected_binding):
-                        return dict(agent["result"])
+                        return _complete_direct_measurement(
+                            args,
+                            task,
+                            binding,
+                            dict(agent["result"]),
+                            query_limit_ms,
+                            resource_sha,
+                            deadline,
+                            cleanup_data=cleanup_data,
+                        )
                     _archive_incomplete(scenario_root, args.evidence_dir, "scenario agent checkpoint changed")
                     progress = None
     scenario_root.mkdir(parents=True, exist_ok=True)
@@ -802,30 +811,44 @@ def _run_scenario(
             if value in reverse
         ]
         sampled_peak = max((int(sample.get("rss_bytes", 0)) for sample in sampler.samples), default=0) / (1024 * 1024)
-    end_to_end_ms = (time.perf_counter() - scenario_started) * 1000
-    result = {
-        "scenario_id": task["scenario_id"],
-        "returned_ids": list(dict.fromkeys(returned_ids)), "answer_facts": list(dict.fromkeys(facts)),
-        "navigation_ids": list(dict.fromkeys(navigation_ids)),
-        "grounded": grounded,
-        "semantic_ms": semantic_seconds * 1000,
-        "rollback_ms": sum(float(value.get("rollback_seconds", 0)) for value in completed_units.values()) * 1000,
-        "agent_query_ms": agent_query_seconds * 1000,
-        "end_to_end_ms": end_to_end_ms,
-        "peak_mib": max(peak_mib, sampled_peak),
-        "used_navigation": any(call.name == "ownward_navigate" and not call.error for call in query_trace.calls),
-        "within_resource_budget": resource_passed,
-    }
-    query_evidence = _relative_evidence(scenario_root, query_stage)
-    evidence = dict(progress["evidence"])
-    evidence.update(query_evidence)
-    write_json(agent_path, {
-        "schema": "ownward.product-scenario-agent-checkpoint/v1",
-        "binding": expected_binding,
-        "progress_sha256": sha256(progress_path),
-        "evidence": evidence,
-        "result": result,
-    })
+        end_to_end_ms = (time.perf_counter() - scenario_started) * 1000
+        agent_result = {
+            "scenario_id": task["scenario_id"],
+            "returned_ids": list(dict.fromkeys(returned_ids)), "answer_facts": list(dict.fromkeys(facts)),
+            "navigation_ids": list(dict.fromkeys(navigation_ids)),
+            "grounded": grounded,
+            "semantic_ms": semantic_seconds * 1000,
+            "rollback_ms": sum(float(value.get("rollback_seconds", 0)) for value in completed_units.values()) * 1000,
+            "agent_query_ms": agent_query_seconds * 1000,
+            "end_to_end_ms": end_to_end_ms,
+            "peak_mib": max(peak_mib, sampled_peak),
+            "used_navigation": any(call.name == "ownward_navigate" and not call.error for call in query_trace.calls),
+            "within_resource_budget": resource_passed,
+        }
+        query_evidence = _relative_evidence(scenario_root, query_stage)
+        evidence = dict(progress["evidence"])
+        evidence.update(query_evidence)
+        write_json(agent_path, {
+            "schema": "ownward.product-scenario-agent-checkpoint/v1",
+            "binding": expected_binding,
+            "progress_sha256": sha256(progress_path),
+            "evidence": evidence,
+            "result": agent_result,
+        })
+        result = _complete_direct_measurement(
+            args,
+            task,
+            binding,
+            agent_result,
+            query_limit_ms,
+            resource_sha,
+            deadline,
+            cleanup_data=False,
+            active_runtime=runtime,
+        )
+    if cleanup_data:
+        _safe_reset(data_dir, scenario_root)
+        _safe_reset(scenario_root / "rollback", scenario_root)
     for work in scenario_root.rglob("work"):
         if work.is_dir():
             _safe_reset(work, work.parent)
@@ -842,6 +865,7 @@ def _complete_direct_measurement(
     deadline: float,
     *,
     cleanup_data: bool,
+    active_runtime: Any | None = None,
 ) -> dict[str, Any]:
     scenario_root = args.evidence_dir / str(task["scenario_id"])
     result_path = scenario_root / "result.json"
@@ -885,8 +909,7 @@ def _complete_direct_measurement(
         attempt = _next_attempt(direct_root)
         attempt.mkdir(parents=True)
         started = time.perf_counter()
-        environment = os.environ.copy()
-        with support.OwnwardRuntime(args.binary, data_dir, environment) as runtime:
+        def measure(runtime: Any) -> tuple[float, dict[str, Any], float, float]:
             require(runtime.client is not None and runtime.process is not None, "Ownward runtime did not start for direct measurement")
             with resource.TreeSampler(runtime.process.pid) as sampler:
                 warm_started = time.perf_counter()
@@ -897,6 +920,14 @@ def _complete_direct_measurement(
                 direct = runtime.client.call_tool("ownward_search", {"query": task["query"]["question"], "limit": 10})
                 direct_ms = (time.perf_counter() - query_started) * 1000
             sampled_peak = max((int(sample.get("rss_bytes", 0)) for sample in sampler.samples), default=0) / (1024 * 1024)
+            return warmup_ms, direct, direct_ms, sampled_peak
+
+        if active_runtime is None:
+            environment = os.environ.copy()
+            with support.OwnwardRuntime(args.binary, data_dir, environment) as runtime:
+                warmup_ms, direct, direct_ms, sampled_peak = measure(runtime)
+        else:
+            warmup_ms, direct, direct_ms, sampled_peak = measure(active_runtime)
         require(_tree_sha256(data_dir) == progress.get("data_tree_sha256"), "direct measurement changed scenario data")
         values = direct.get("results") if isinstance(direct, dict) else None
         require(isinstance(values, list), "direct search returned invalid results")

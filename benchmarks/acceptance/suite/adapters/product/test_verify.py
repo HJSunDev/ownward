@@ -483,6 +483,87 @@ class ProductAdapterTests(unittest.TestCase):
             verify.write_json(direct, measurement)
             self.assertFalse(verify._sealed_scenario_valid(sealed, root, binding, False))
 
+    def test_direct_measurement_reuses_the_active_scenario_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            scenario = root / "scenario"
+            data = scenario / "data"
+            data.mkdir(parents=True)
+            (data / "state.json").write_text("state", encoding="utf-8")
+            codex = root / "codex.exe"
+            codex.write_text("codex", encoding="utf-8")
+            args = SimpleNamespace(
+                evidence_dir=root,
+                binary=root / "missing-ownward.exe",
+                codex_binary=codex,
+                codex_model="model",
+                codex_reasoning_effort="effort",
+            )
+            task = {"scenario_id": "scenario", "query": {"question": "question"}, "updates": []}
+            binding = {
+                "suite_version": "1.0.0",
+                "candidate": "candidate",
+                "binary_sha256": "b" * 64,
+                "environment_sha256": "e" * 64,
+                "input_manifest_sha256": "i" * 64,
+                "tool_sha256": "t" * 64,
+            }
+            expected = verify._scenario_binding(args, task, binding, "r" * 64)
+            semantic = scenario / "semantic-initial" / "unit" / "attempt-001"
+            query = scenario / "query" / "attempt-001"
+            evidence: dict[str, str] = {}
+            for stage in (semantic, query):
+                stage.mkdir(parents=True)
+                for name in ("output.json", "events.jsonl", "stderr.txt"):
+                    path = stage / name
+                    path.write_text(f"{stage.name}-{name}", encoding="utf-8")
+                    evidence[path.relative_to(scenario).as_posix()] = verify.sha256(path)
+            progress = {
+                "schema": "ownward.product-scenario-progress/v1",
+                "binding": expected,
+                "stable_by_node": {"node": "stable"},
+                "completed_units": {"initial:node": {"done": True}},
+                "evidence": {path: digest for path, digest in evidence.items() if path.startswith("semantic-initial/")},
+                "data_tree_sha256": verify._tree_sha256(data),
+            }
+            verify.write_json(scenario / "progress.json", progress)
+            agent_result = {
+                "scenario_id": "scenario",
+                "end_to_end_ms": 1000.0,
+                "peak_mib": 10.0,
+                "returned_ids": ["node"],
+                "within_resource_budget": True,
+            }
+            verify.write_json(scenario / "agent-result.json", {
+                "schema": "ownward.product-scenario-agent-checkpoint/v1",
+                "binding": expected,
+                "progress_sha256": verify.sha256(scenario / "progress.json"),
+                "evidence": evidence,
+                "result": agent_result,
+            })
+            client = mock.Mock()
+            client.call_tool.side_effect = [
+                {"results": []},
+                {"results": [{"id": "stable"}]},
+            ]
+            active = SimpleNamespace(client=client, process=SimpleNamespace(pid=os.getpid()))
+            with mock.patch.object(verify.support, "OwnwardRuntime", side_effect=AssertionError("unexpected restart")):
+                result = verify._complete_direct_measurement(
+                    args,
+                    task,
+                    binding,
+                    agent_result,
+                    600.0,
+                    "r" * 64,
+                    time.monotonic() + 30,
+                    cleanup_data=False,
+                    active_runtime=active,
+                )
+            self.assertEqual(["node"], result["direct_ids"])
+            self.assertTrue(result["within_latency_budget"])
+            self.assertEqual(2, client.call_tool.call_count)
+            self.assertTrue((scenario / "result.json").is_file())
+
     def test_valid_qualification_scenario_is_reused_by_full_without_resume_flag(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
