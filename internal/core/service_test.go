@@ -270,6 +270,70 @@ func TestSearchPreservesRelationEvidenceBetweenDirectSeeds(t *testing.T) {
 	}
 }
 
+func TestSearchOnlyMarksRelationsThatContributeToTheQuery(t *testing.T) {
+	root := t.TempDir()
+	store, err := assetlog.Open(filepath.Join(root, "assets"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := derived.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewOrganized(store, state, queryRelationProvider{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer service.Close()
+
+	chain, err := service.Create(context.Background(), CreateInput{Content: "chain needle supporting answer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	branch, err := service.Create(context.Background(), CreateInput{Content: "branch needle unrelated sidebar"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expanded, err := service.Create(context.Background(), CreateInput{Content: "expanded off-query graph detail"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	main, err := service.Create(context.Background(), CreateInput{
+		Content: "main needle needle needle answer",
+		Relations: []domain.ExplicitRelation{
+			{Type: "supports", TargetID: chain.Information.ID},
+			{Type: "related_to", TargetID: branch.Information.ID},
+			{Type: "related_to", TargetID: expanded.Information.ID},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	results, err := service.Search(context.Background(), SearchInput{Query: "needle", Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := make(map[string]SearchResult, len(results))
+	for _, result := range results {
+		byID[result.ID] = result
+	}
+	for _, id := range []string{main.Information.ID, chain.Information.ID, branch.Information.ID, expanded.Information.ID} {
+		if _, exists := byID[id]; !exists {
+			t.Fatalf("expected result %q is missing: %#v", id, results)
+		}
+	}
+	if !contains(byID[main.Information.ID].Signals, "relation") || !contains(byID[chain.Information.ID].Signals, "relation") {
+		t.Fatalf("the strongest related answer chain lost relation evidence: %#v", results)
+	}
+	if contains(byID[branch.Information.ID].Signals, "relation") {
+		t.Fatalf("an unrelated direct branch was presented as query relation evidence: %#v", results)
+	}
+	if !contains(byID[expanded.Information.ID].Signals, "relation") {
+		t.Fatalf("a graph-expanded result lost its relation evidence: %#v", results)
+	}
+}
+
 func TestSearchRelationsDoNotReorderDirectEvidence(t *testing.T) {
 	root := t.TempDir()
 	store, err := assetlog.Open(filepath.Join(root, "assets"))
@@ -758,6 +822,8 @@ type relationProvider struct {
 
 type fusionProvider struct{}
 
+type queryRelationProvider struct{}
+
 type incomingRelationProvider struct{}
 
 type staleContextProvider struct{}
@@ -772,6 +838,33 @@ type concurrentOrganizationProvider struct {
 }
 
 func (fusionProvider) Name() string { return "test-fusion-provider" }
+
+func (queryRelationProvider) Name() string { return "test-query-relation-provider" }
+
+func (queryRelationProvider) Embed(_ context.Context, values []string) ([][]float32, error) {
+	result := make([][]float32, len(values))
+	for index, value := range values {
+		switch {
+		case value == "needle" || strings.HasPrefix(value, "main "):
+			result[index] = []float32{1, 0}
+		case strings.HasPrefix(value, "chain "):
+			result[index] = []float32{0.98, 0.2}
+		case strings.HasPrefix(value, "branch "):
+			result[index] = []float32{0.8, 0.6}
+		default:
+			result[index] = []float32{0, 1}
+		}
+	}
+	return result, nil
+}
+
+func (queryRelationProvider) Analyze(_ context.Context, value domain.Information, _ []semantics.Candidate) (semantics.Analysis, error) {
+	relations := make([]semantics.Relation, 0, len(value.Relations))
+	for _, relation := range value.Relations {
+		relations = append(relations, semantics.Relation{Type: relation.Type, TargetID: relation.TargetID, Confidence: 1})
+	}
+	return semantics.Analysis{Summary: value.Content, Relations: relations}, nil
+}
 
 func (incomingRelationProvider) Name() string { return "test-incoming-relation-provider" }
 

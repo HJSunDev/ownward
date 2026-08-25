@@ -488,15 +488,12 @@ func (s *Service) Search(ctx context.Context, input SearchInput) ([]SearchResult
 					if contribution > item.score {
 						item.score = contribution
 					}
-					continue
 				}
-				if len(seeds) == 0 || direction[0] != seeds[0] {
-					continue
-				}
-				item.signals["relation"] = struct{}{}
-			} else {
-				fusedByID[neighbor] = &fused{score: contribution, signals: map[string]struct{}{"relation": {}}}
+				// A direct hit did not enter through graph expansion. Only the final
+				// strongest related evidence pair may gain a relation signal below.
+				continue
 			}
+			fusedByID[neighbor] = &fused{score: contribution, signals: map[string]struct{}{"relation": {}}}
 			if len(seeds) > 0 && direction[0] == seeds[0] {
 				fusedByID[direction[0]].signals["relation"] = struct{}{}
 			}
