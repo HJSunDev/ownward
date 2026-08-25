@@ -11,6 +11,13 @@
 - 官方代码：[`xiaowu0162/LongMemEval`](https://github.com/xiaowu0162/LongMemEval) 提交 `9e0b455f4ef0e2ab8f2e582289761153549043fc`。
 - 官方清洗数据：[`xiaowu0162/longmemeval-cleaned`](https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned) 提交 `98d7416c24c778c2fee6e6f3006e7a073259d48f` 的 `longmemeval_s_cleaned.json`。
 
+## 持久运行环境
+
+- 当前机器的正式环境根固定为 `E:\Ownward\acceptance\longmemeval-s`；[`benchmarks/longmemeval_s/environment.py`](../../benchmarks/longmemeval_s/environment.py) 是唯一安装与离线完整性检查入口。
+- `assets/v1`、`runtime/v1` 和 `manifests/v1.json` 是可跨候选复用的固定只读环境；`runs/<candidate>/` 才能承载候选绑定、报告、日志和临时产物。正式 community 配置必须引用环境清单并把全部输出放在对应候选运行目录。
+- 安装动作显式联网一次；清单存在后的重复安装以及 `check` 均只能离线验证并复用，不得隐式克隆、下载或安装。正式验收前必须通过带最小官方入口夹具的 `check --smoke`。
+- 当前 Suite 的 community 机器实现仍在迁移，环境成立不等于可以启用 community；只有下面全部迁移条件完成后才可绑定或执行正式层。
+
 ## 必须完成
 
 1. 以 LongMemEval‑S 的时间化用户—助手会话、500 道完整问题和官方评测器重建 community 适配；只经 Ownward 正式创建、组织、检索和读取路径工作，不接触答案、证据标签、题型捷径或评测函数。
