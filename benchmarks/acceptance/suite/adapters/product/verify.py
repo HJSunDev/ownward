@@ -300,7 +300,9 @@ def _query_prompt(question: str) -> str:
 Answer this question by actively searching Ownward, following useful relations when needed, and reading every item used as evidence:
 {question}
 
-Return `information_ids` containing only the stable IDs that jointly support the answer, and `answer_facts` containing the exact complete fact sentences from those items. Do not include irrelevant or merely related facts.
+Return `information_ids` containing only the stable IDs that jointly support the answer, and `answer_facts` containing the exact complete `content` copied from the corresponding successful reads. The arrays must have the same length and matching order: `answer_facts[i]` must be the unedited read content of `information_ids[i]`. Never answer from or paraphrase a search or navigation summary. Do not include irrelevant or merely related facts.
+
+Before answering, identify every distinct fact requested by the question and ensure each one has a successfully read evidence item. Treat intermediate or modifying clauses as required parts of the answer; a response that covers only the beginning and end of a multi-part question is incomplete.
 
 Use this ID-safe sequence: search first; copy only the exact top-level `id` field of a returned result; pass that copied value unchanged to `ownward_read.id` or `ownward_navigate.start_ids`; then answer once every supporting item has been read. Never construct, infer, transform, autocomplete, or copy an ID from the question, content, source metadata, or relation text. Use only `ownward_search`, `ownward_read`, and `ownward_navigate`.
 
@@ -323,10 +325,11 @@ ANSWER_SCHEMA = {
 def _validated_answer(answer: dict[str, Any]) -> tuple[list[str], list[str]]:
     information_ids = answer.get("information_ids")
     facts = answer.get("answer_facts")
-    query_require(isinstance(information_ids, list) and all(isinstance(value, str) for value in information_ids), "query agent returned invalid information IDs")
-    query_require(isinstance(facts, list) and all(isinstance(value, str) for value in facts), "query agent returned invalid answer facts")
+    query_require(isinstance(information_ids, list) and information_ids and all(isinstance(value, str) and value for value in information_ids), "query agent returned invalid information IDs")
+    query_require(isinstance(facts, list) and facts and all(isinstance(value, str) and value for value in facts), "query agent returned invalid answer facts")
     query_require(len(information_ids) == len(set(information_ids)), "query agent returned duplicate information IDs")
     query_require(len(facts) == len(set(facts)), "query agent returned duplicate answer facts")
+    query_require(len(information_ids) == len(facts), "query agent evidence IDs and answer facts are not one-to-one")
     return information_ids, facts
 
 
@@ -408,10 +411,20 @@ def _grounded_query_answer(trace: Any, returned_stable: list[str], facts: list[s
         set(returned_stable) <= _successfully_read_ids(trace),
         "query agent returned evidence that was not successfully read",
     )
-    observed = _observed(trace)
-    return set(returned_stable) <= set(observed) and all(
-        any(fact in text for stable_id in returned_stable for text in observed.get(stable_id, []))
-        for fact in facts
+    read_contents: dict[str, set[str]] = {}
+    for call in trace.calls:
+        if call.name != "ownward_read" or call.error or not isinstance(call.result, dict):
+            continue
+        information = call.result.get("information")
+        if not isinstance(information, dict):
+            continue
+        identifier = information.get("id")
+        content = information.get("content")
+        if isinstance(identifier, str) and identifier and isinstance(content, str) and content:
+            read_contents.setdefault(identifier, set()).add(content)
+    return len(returned_stable) == len(facts) and all(
+        fact in read_contents.get(stable_id, set())
+        for stable_id, fact in zip(returned_stable, facts)
     )
 
 

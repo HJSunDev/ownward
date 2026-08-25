@@ -316,10 +316,14 @@ class ProductAdapterTests(unittest.TestCase):
         for value in verify.ANSWER_SCHEMA["properties"].values():
             self.assertNotIn("uniqueItems", value)
         self.assertEqual((["one"], ["fact"]), verify._validated_answer({"information_ids": ["one"], "answer_facts": ["fact"]}))
+        with self.assertRaisesRegex(RuntimeError, "invalid information IDs"):
+            verify._validated_answer({"information_ids": [], "answer_facts": []})
         with self.assertRaisesRegex(RuntimeError, "duplicate information IDs"):
             verify._validated_answer({"information_ids": ["one", "one"], "answer_facts": ["fact"]})
         with self.assertRaisesRegex(RuntimeError, "duplicate answer facts"):
             verify._validated_answer({"information_ids": ["one"], "answer_facts": ["fact", "fact"]})
+        with self.assertRaisesRegex(RuntimeError, "not one-to-one"):
+            verify._validated_answer({"information_ids": ["one", "two"], "answer_facts": ["fact"]})
 
     def test_codex_command_excludes_repository_project_instructions(self) -> None:
         args = SimpleNamespace(
@@ -353,11 +357,15 @@ class ProductAdapterTests(unittest.TestCase):
         self.assertIn("exactly one top-level argument named `submission`", semantic)
         self.assertIn('"analysis":{"summary":"<summary>","topics":[],"cues":[],"inferred_contexts":[],"relations":[]}', semantic)
         self.assertIn("Never move those fields to the tool-call root", semantic)
+        self.assertIn("identify every distinct fact requested by the question", query)
+        self.assertIn("intermediate or modifying clauses as required parts", query)
         self.assertEqual(3, verify.MAX_SEMANTIC_STAGE_ATTEMPTS)
         self.assertIn("copy only the exact top-level `id` field", query)
         self.assertIn("Never construct, infer, transform, autocomplete, or copy an ID", query)
         self.assertIn("read each candidate once and answer immediately", query)
         self.assertIn("Search again or navigate only when", query)
+        self.assertIn("answer_facts[i]", query)
+        self.assertIn("Never answer from or paraphrase a search or navigation summary", query)
         self.assertEqual(3, verify.MAX_QUERY_ATTEMPTS)
         self.assertEqual(3, verify.WARM_READINESS_REQUIRED_CONSECUTIVE)
         self.assertTrue(all(len(stem) >= 70 for stem in verify.WARM_READINESS_PROBE_STEMS))
@@ -380,6 +388,18 @@ class ProductAdapterTests(unittest.TestCase):
         )
         self.assertEqual({"observed"}, verify._successfully_read_ids(trace))
         self.assertTrue(verify._grounded_query_answer(trace, ["observed"], ["fact"]))
+        summarized = verify.codex_session.ToolCall(
+            "ownward_search", {"query": "x"}, {"results": [{"id": "observed", "summary": "A paraphrased fact"}]}, False,
+        )
+        self.assertFalse(verify._grounded_query_answer(
+            SimpleNamespace(calls=[summarized, recovered]), ["observed"], ["A paraphrased fact"],
+        ))
+        second_read = verify.codex_session.ToolCall(
+            "ownward_read", {"id": "second"}, {"information": {"id": "second", "content": "second fact"}}, False,
+        )
+        self.assertFalse(verify._grounded_query_answer(
+            SimpleNamespace(calls=[recovered, second_read]), ["observed", "second"], ["second fact", "fact"],
+        ))
         with self.assertRaisesRegex(RuntimeError, "was not successfully read"):
             verify._grounded_query_answer(SimpleNamespace(calls=[search]), ["observed"], ["fact"])
         mutation = verify.codex_session.ToolCall("ownward_update", {}, {}, False)
