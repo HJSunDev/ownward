@@ -82,6 +82,22 @@ class PreflightTests(unittest.TestCase):
             with self.assertRaisesRegex(preflight.PreflightError, "摘要不一致"):
                 preflight.run(self.suite_root, config, root / "isolation")
 
+    def test_community_calibration_uses_complete_three_batch_official_questions(self) -> None:
+        protocol = {
+            "memory": {"semantic_batch_size": 20},
+            "execution": {"calibration_questions": 4, "calibration_semantic_batches_per_question": 3},
+        }
+        questions = [
+            {"question_id": f"{question_type}-short", "question_type": question_type, "haystack_sessions": [None] * 20}
+            for question_type in preflight.COMMUNITY_CALIBRATION_TYPES
+        ] + [
+            {"question_id": question_type, "question_type": question_type, "haystack_sessions": [None] * (41 + index)}
+            for index, question_type in enumerate(preflight.COMMUNITY_CALIBRATION_TYPES)
+        ]
+        selected = preflight._community_calibration_fixture(questions, protocol)
+        self.assertEqual(list(preflight.COMMUNITY_CALIBRATION_TYPES), [item["question_id"] for item in selected])
+        self.assertTrue(all((len(item["haystack_sessions"]) + 19) // 20 == 3 for item in selected))
+
     def _candidate(self, root: Path) -> tuple[Path, Path]:
         binary = root / "ownward.exe"
         binary.write_bytes(b"binary")

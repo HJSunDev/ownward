@@ -328,16 +328,20 @@ class EvidenceLifecycleTests(unittest.TestCase):
         active = candidate_binding.for_mode(self.binding, "longmemeval")
         return {
             "schema": "ownward.longmemeval-report/v1", "suite_version": "1.0.0",
-            "official_version": "longmemeval-v2/2cc8c540bdb87fe6761629b585e727e1c4704520",
+            "official_version": "longmemeval-s/9e0b455f4ef0e2ab8f2e582289761153549043fc+d6f21ea9",
             "candidate": self.binding["candidate"], "binary_sha256": active["binary_sha256"],
             "environment": {"sha256": active["environment_sha256"]},
             "inputs": {"sha256": active["input_manifest_sha256"]},
-            "domains": {name: {"passed": True} for name in ("web", "enterprise")},
+            "capabilities": self.contract["evidence_layers"]["community"]["capabilities"],
+            "benchmark": {"questions": 500, "complete": True, "question_types": list(self.contract["evidence_layers"]["community"]["question_types"])},
+            "quality": {"accuracy": 0.83, "minimum_accuracy": 0.822, "passed": True},
+            "retrieval": {"mean_ms": 10.0, "p95_ms": 20.0, "max_ms": 30.0},
+            "cost": {"wall_seconds": 14400.0, "within_budget": True},
             "submission": {
-                "package_sha256": "f" * 64, "lafs": 1.0, "accuracy": 0.75,
-                "latency_seconds": 10.0, "frontier_eligible": True,
-                "reference_frontier": [{"accuracy": 74.9, "latency_seconds": 108.3}],
-            }, "passed": True,
+                "package_sha256": "f" * 64, "official_evaluation_sha256": "e" * 64,
+                "hypotheses_sha256": "d" * 64, "checkpoint_manifest_sha256": "c" * 64,
+            },
+            "passed": True,
             "started_at": "x", "finished_at": "y",
         }
 

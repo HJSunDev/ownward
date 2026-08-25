@@ -44,9 +44,18 @@ def validate_contract(value: dict[str, Any]) -> None:
     _require(_mapping(_mapping(product, "modes"), "qualification").get("max_wall_seconds") == 1800, "资格集预算必须为三十分钟")
     _require(_mapping(_mapping(product, "modes"), "full").get("max_wall_seconds") == 5400, "完整专项预算必须为九十分钟")
     community = _mapping(layers, "community")
-    _require(community.get("version") == "longmemeval-v2/2cc8c540bdb87fe6761629b585e727e1c4704520", "LongMemEval-V2 官方版本无效")
-    _require(community.get("domains") == ["web", "enterprise"], "LongMemEval-V2 领域无效")
-    _require(_mapping(community, "expected_wall_seconds") == {"min": 14400, "max": 28800}, "LongMemEval-V2 时间边界无效")
+    _require(community.get("version") == "longmemeval-s/9e0b455f4ef0e2ab8f2e582289761153549043fc+d6f21ea9", "LongMemEval-S 官方版本无效")
+    _require(community.get("benchmark") == "LongMemEval-S cleaned" and community.get("questions") == 500, "LongMemEval-S 数据范围无效")
+    _require(set(community.get("question_types", [])) == {"single-session-user", "single-session-assistant", "single-session-preference", "multi-session", "temporal-reasoning", "knowledge-update"}, "LongMemEval-S 问题类型无效")
+    _require(community.get("minimum_accuracy") == 0.822, "LongMemEval-S 质量门槛无效")
+    _require(community.get("capabilities") == {
+        "semantic": {"source": "codex", "model": "gpt-5.4-mini", "reasoning_effort": "low"},
+        "reader": {"source": "codex", "model": "gpt-5.4", "reasoning_effort": "medium"},
+        "judge": {"source": "official-openai", "model": "gpt-4o-2024-08-06"},
+    }, "LongMemEval-S 能力来源无效")
+    _require(_mapping(community, "expected_wall_seconds") == {"calibrated_projection": 18913, "max": 28800}, "LongMemEval-S 时间边界无效")
+    _require(_mapping(community, "concurrency") == {"question_workers": 4, "codex_max_active": 8, "semantic_batch_size": 20, "semantic_analysis_max_input_chars": 300000}, "LongMemEval-S 并发边界无效")
+    _require(_mapping(community, "cost_calibration") == {"questions": 4, "semantic_batches_per_question": 3, "maximum_retry_ratio": 0.1, "requires_zero_rate_limits": True}, "LongMemEval-S 成本校准边界无效")
 
     execution = _mapping(value, "execution")
     _require(set(execution.get("modes", [])) == MODE_NAMES, "统一入口模式不完整或包含额外模式")

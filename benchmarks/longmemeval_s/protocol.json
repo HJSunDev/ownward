@@ -1,0 +1,67 @@
+{
+  "schema": "ownward.longmemeval-s-protocol/v1",
+  "version": "longmemeval-s/9e0b455f4ef0e2ab8f2e582289761153549043fc+d6f21ea9",
+  "official": {
+    "code_revision": "9e0b455f4ef0e2ab8f2e582289761153549043fc",
+    "data_revision": "98d7416c24c778c2fee6e6f3006e7a073259d48f",
+    "data_sha256": "d6f21ea9d60a0d56f34a05b609c79c88a451d2ae03597821ea3d5a9678c3a442",
+    "question_count": 500,
+    "judge_model": "gpt-4o-2024-08-06"
+  },
+  "memory": {
+    "unit": "session",
+    "capability_source": "codex",
+    "create_batch_size": 20,
+    "semantic_batch_size": 20,
+    "semantic_analysis_max_input_chars": 300000,
+    "semantic_model": "gpt-5.4-mini",
+    "semantic_reasoning_effort": "low",
+    "semantic_max_output_tokens": 8192,
+    "semantic_timeout_seconds": 180,
+    "semantic_attempts": 3
+  },
+  "retrieval": {
+    "search_limit": 24,
+    "read_limit": 8,
+    "context_max_chars": 24000,
+    "query_timeout_seconds": 60
+  },
+  "reader": {
+    "capability_source": "codex",
+    "model": "gpt-5.4",
+    "reasoning_effort": "medium",
+    "max_output_tokens": 1024,
+    "timeout_seconds": 240,
+    "attempts": 3
+  },
+  "judge": {
+    "capability_source": "official-openai",
+    "model": "gpt-4o-2024-08-06",
+    "temperature": 0,
+    "max_tokens": 10,
+    "budget_seconds_per_question": 5,
+    "attempts": 3
+  },
+  "execution": {
+    "max_workers": 4,
+    "codex_max_active": 8,
+    "calibration_questions": 4,
+    "calibration_semantic_batches_per_question": 3,
+    "question_wall_seconds": 900,
+    "full_wall_seconds": 28800,
+    "total_sessions": 23867,
+    "semantic_batches": 1498,
+    "reader_requests": 500,
+    "judge_requests": 500,
+    "semantic_work_requests": 1498,
+    "max_semantic_output_tokens": 12271616,
+    "max_reader_input_chars": 12000000,
+    "max_reader_output_tokens": 512000,
+    "max_judge_output_tokens": 5000
+  },
+  "acceptance": {
+    "minimum_accuracy": 0.822,
+    "reference": "https://github.com/xiaowu0162/LongMemEval/issues/53",
+    "reference_note": "Public LongMemEval-S result using the same cleaned data identity, gpt-5.4 answer model, official gpt-4o-2024-08-06 judge, and at most eight answer-facing evidence items."
+  }
+}

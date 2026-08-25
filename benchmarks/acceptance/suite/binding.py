@@ -23,18 +23,10 @@ SCOPE_NAMES = set(relationships.SCOPE_CONFIG)
 MODE_SCOPES = relationships.MODE_SCOPES
 ACTIVE_CODEX_MODEL = "gpt-5.4-mini"
 ACTIVE_CODEX_REASONING_EFFORT = "xhigh"
-OFFICIAL_LONGMEM_ARGUMENTS = {
-    "--model": "Qwen/Qwen3.5-9B",
-    "--temperature": "0.6",
-    "--top-p": "0.95",
-    "--top-k": "20",
-    "--max-completion-tokens": "20000",
-    "--memory-context-max-tokens": "200000",
-    "--reader-max-concurrent-requests": "16",
-    "--evaluator-model": "gpt-5.2",
-    "--evaluator-reasoning-effort": "medium",
-    "--evaluator-max-completion-tokens": "4096",
-}
+LONGMEMEVAL_S_ENVIRONMENT_SCHEMA = "ownward.longmemeval-s-environment/v1"
+LONGMEMEVAL_S_CODE_REVISION = "9e0b455f4ef0e2ab8f2e582289761153549043fc"
+LONGMEMEVAL_S_DATA_REVISION = "98d7416c24c778c2fee6e6f3006e7a073259d48f"
+LONGMEMEVAL_S_DATA_SHA256 = "d6f21ea9d60a0d56f34a05b609c79c88a451d2ae03597821ea3d5a9678c3a442"
 
 
 def sha256(path: Path) -> str:
@@ -88,9 +80,6 @@ def create(suite_root: Path, config_path: Path, output_dir: Path) -> dict[str, A
         _require(auth.is_file(), "Codex 认证文件不存在")
     if "community" in scopes_to_bind:
         _validate_community_workspace(config, workspace)
-        community = _mapping(config, "community")
-        _require(Path(community["codex_binary"]).resolve().is_file(), "社区验收 Codex 不存在")
-        _require(Path(community["codex_auth_file"]).resolve().is_file(), "社区验收 Codex 认证文件不存在")
     output_dir.mkdir(parents=True, exist_ok=True)
     hash_workspace = output_dir / ".binding-hash"
     if hash_workspace.exists():
@@ -401,23 +390,26 @@ def _input_manifest(suite_root: Path, config: dict[str, Any], scope: str) -> dic
         result["protocol"] = {"codex_model": product["codex_model"], "codex_reasoning_effort": product["codex_reasoning_effort"]}
     elif scope == "community":
         community = _mapping(config, "community")
-        external: list[dict[str, str]] = []
-        protocol: dict[str, Any] = {"official_revision": "2cc8c540bdb87fe6761629b585e727e1c4704520", "domains": {}}
-        for domain in ("web", "enterprise"):
-            arguments = list(community[f"{domain}_arguments"])
-            normalized: list[Any] = []
-            for index in range(0, len(arguments), 2):
-                name, value = arguments[index:index + 2]
-                if name in {"--questions-path", "--haystack-path", "--trajectories-path", "--memory-config-path"}:
-                    path = Path(value).resolve()
-                    digest = sha256(path)
-                    external.append({"id": f"{domain}.{name[2:-5]}", "name": path.name, "sha256": digest})
-                    normalized.extend([name, {"path": path.name, "sha256": digest}])
-                elif name != "--output-dir":
-                    normalized.extend([name, value])
-            protocol["domains"][domain] = normalized
-        result["external_files"] = sorted(external, key=lambda item: item["id"])
-        result["protocol"] = protocol
+        environment_path = Path(community["environment_manifest"]).resolve()
+        environment = load_json(environment_path)
+        layout = _mapping(environment, "layout")
+        data = Path(layout["data"]).resolve()
+        protocol_path = Path(community["protocol"]).resolve()
+        result["external_files"] = [
+            {"id": "longmemeval_s.environment", "name": environment_path.name, "sha256": sha256(environment_path)},
+            {"id": "longmemeval_s.data", "name": data.name, "sha256": sha256(data)},
+            {"id": "longmemeval_s.protocol", "name": protocol_path.name, "sha256": sha256(protocol_path)},
+        ]
+        result["protocol"] = {
+            "official_code_revision": LONGMEMEVAL_S_CODE_REVISION,
+            "official_data_revision": LONGMEMEVAL_S_DATA_REVISION,
+            "official_data_sha256": LONGMEMEVAL_S_DATA_SHA256,
+            "codex_semantic_model": community["codex_semantic_model"],
+            "codex_semantic_reasoning_effort": community["codex_semantic_reasoning_effort"],
+            "codex_reader_model": community["codex_reader_model"],
+            "codex_reader_reasoning_effort": community["codex_reader_reasoning_effort"],
+            "judge_api_key_env": community["judge_api_key_env"],
+        }
     return result
 
 
@@ -445,7 +437,7 @@ def _tool_manifest(suite_root: Path, scope: str) -> dict[str, Any]:
         "frontier": [suite_root / "execution_frontier.py", suite_root / "frontier.py", repository / "cmd" / "ownward-frontier" / "main.go"],
         "core": [suite_root / "execution_core.py", suite_root / "adapters" / "core" / "verify.py", repository / "benchmarks" / "support" / "ownward_mcp.py"],
         "product": [suite_root / "execution_core.py", suite_root / "execution_product.py", suite_root / "product.py", suite_root / "resource_environment.py", *sorted(path for path in (suite_root / "adapters" / "product").glob("*.py") if not path.name.startswith("test_")), *sorted(path for path in (suite_root / "adapters" / "product_resource").glob("*.py") if not path.name.startswith("test_")), repository / "benchmarks" / "support" / "ownward_mcp.py"],
-        "community": [suite_root / "execution_community.py", suite_root / "community.py", repository / "benchmarks" / "longmemeval_v2" / "run.py", repository / "benchmarks" / "longmemeval_v2" / "ownward_memory.py", repository / "benchmarks" / "longmemeval_v2" / "ownward_trajectory.py", repository / "benchmarks" / "longmemeval_v2" / "memory_config.active.json", repository / "benchmarks" / "longmemeval_v2" / "memory_config.direct.json", repository / "benchmarks" / "longmemeval_v2" / "SYSTEM_DESCRIPTION.md", repository / "benchmarks" / "support" / "ownward_mcp.py"],
+        "community": [suite_root / "execution_community.py", suite_root / "community.py", suite_root / "process_control.py", suite_root / "adapters" / "product" / "codex_session.py", repository / "benchmarks" / "longmemeval_s" / "run.py", repository / "benchmarks" / "longmemeval_s" / "environment.py", repository / "benchmarks" / "longmemeval_s" / "protocol.json", repository / "benchmarks" / "longmemeval_s" / "constraints.txt", repository / "benchmarks" / "support" / "ownward_mcp.py"],
     }[scope]
     return {
         "schema": "ownward.acceptance-tool-manifest/v4",
@@ -474,6 +466,15 @@ def _environment_manifest(config: dict[str, Any], scope: str) -> dict[str, Any]:
         completed = subprocess.run([*_executable_command(codex), "--version"], capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
         _require(completed.returncode == 0 and completed.stdout.strip(), "无法读取外部智能体版本")
         result["codex"] = {"version": completed.stdout.strip(), "entry_sha256": sha256(codex)}
+    if scope == "community":
+        community = _mapping(config, "community")
+        manifest_path = Path(community["environment_manifest"]).resolve()
+        manifest = load_json(manifest_path)
+        python_root = Path(_mapping(manifest, "layout")["python"]).resolve()
+        python = python_root / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+        completed = subprocess.run([str(python), "--version"], capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
+        _require(completed.returncode == 0 and completed.stdout.strip(), "无法读取 LongMemEval-S 固定 Python")
+        result["longmemeval_s"] = {"manifest_sha256": sha256(manifest_path), "python_version": completed.stdout.strip(), "python_sha256": sha256(python)}
     return result
 
 
@@ -509,30 +510,40 @@ def _candidate_paths(config: dict[str, Any]) -> tuple[Path, Path]:
 
 
 def _validate_community_config(community: dict[str, Any]) -> None:
-    for name in ("official_repo", "codex_binary", "codex_auth_file", "submission_root", "submission_name"):
+    for name in (
+        "environment_manifest", "protocol", "output_dir", "codex_binary", "codex_auth_file",
+        "codex_semantic_model", "codex_semantic_reasoning_effort", "codex_reader_model",
+        "codex_reader_reasoning_effort", "judge_api_key_env",
+    ):
         _require(isinstance(community.get(name), str) and community[name].strip(), f"执行配置缺少 community.{name}")
-    for domain in ("web", "enterprise"):
-        arguments = community.get(f"{domain}_arguments")
-        _require(isinstance(arguments, list) and all(isinstance(item, str) for item in arguments) and len(arguments) % 2 == 0, f"{domain} 参数必须由名称和值组成")
-        for required in ("--domain", "--questions-path", "--haystack-path", "--trajectories-path", "--memory-config-path", "--output-dir", "--base-url", "--evaluator-api-key-env", "--prompt-build-max-workers"):
-            _argument_value(arguments, required)
-        _require(_argument_value(arguments, "--domain") == domain, f"{domain} 参数选择了另一领域")
-        for name, expected in OFFICIAL_LONGMEM_ARGUMENTS.items():
-            _require(_argument_value(arguments, name) == expected, f"{domain} 参数 {name} 偏离固定官方口径")
-        try:
-            workers = int(_argument_value(arguments, "--prompt-build-max-workers"))
-        except ValueError as error:
-            raise BindingError(f"{domain} 并发数无效") from error
-        _require(workers > 0, f"{domain} 并发数必须为正数")
+    manifest_path = Path(community["environment_manifest"]).resolve()
+    protocol_path = Path(community["protocol"]).resolve()
+    _require(manifest_path.is_file() and protocol_path.is_file(), "LongMemEval-S 固定环境或协议不存在")
+    manifest = load_json(manifest_path)
+    _require(manifest.get("schema") == LONGMEMEVAL_S_ENVIRONMENT_SCHEMA, "LongMemEval-S 环境清单无效")
+    _require(manifest.get("official", {}).get("code_revision") == LONGMEMEVAL_S_CODE_REVISION, "LongMemEval-S 官方代码版本漂移")
+    _require(manifest.get("official", {}).get("data_revision") == LONGMEMEVAL_S_DATA_REVISION, "LongMemEval-S 官方数据版本漂移")
+    _require(manifest.get("integrity", {}).get("data_sha256") == LONGMEMEVAL_S_DATA_SHA256, "LongMemEval-S 官方数据摘要漂移")
+    protocol = load_json(protocol_path)
+    _require(protocol.get("schema") == "ownward.longmemeval-s-protocol/v1", "LongMemEval-S 固定协议无效")
+    _require(protocol.get("official", {}).get("data_sha256") == LONGMEMEVAL_S_DATA_SHA256, "LongMemEval-S 协议与数据身份不一致")
+    _require(Path(community["codex_binary"]).resolve().is_file(), "LongMemEval-S Codex 执行程序不存在")
+    _require(Path(community["codex_auth_file"]).resolve().is_file(), "LongMemEval-S Codex 认证文件不存在")
+    _require(community["codex_semantic_model"] == protocol["memory"]["semantic_model"], "LongMemEval-S Codex 语义模型偏离固定口径")
+    _require(community["codex_semantic_reasoning_effort"] == protocol["memory"]["semantic_reasoning_effort"], "LongMemEval-S Codex 语义推理强度偏离固定口径")
+    _require(community["codex_reader_model"] == protocol["reader"]["model"], "LongMemEval-S Codex Reader 模型偏离固定口径")
+    _require(community["codex_reader_reasoning_effort"] == protocol["reader"]["reasoning_effort"], "LongMemEval-S Codex Reader 推理强度偏离固定口径")
+    _require(community["judge_api_key_env"] == "OPENAI_API_KEY", "LongMemEval-S 官方裁判凭证入口偏离固定口径")
 
 
 def _validate_community_workspace(config: dict[str, Any], workspace: Path) -> None:
     community = _mapping(config, "community")
-    for domain in ("web", "enterprise"):
-        output = Path(_argument_value(list(community[f"{domain}_arguments"]), "--output-dir")).resolve()
-        _require(output.is_relative_to(workspace) and output != workspace, f"{domain} 输出必须位于验收工作区内")
-    submission = Path(community["submission_root"]).resolve()
-    _require(submission.is_relative_to(workspace) and submission != workspace, "LongMemEval-V2 submission 必须位于验收工作区内")
+    manifest = load_json(Path(community["environment_manifest"]).resolve())
+    runs = Path(_mapping(manifest, "layout")["runs"]).resolve()
+    output = Path(community["output_dir"]).resolve()
+    _require(output.is_relative_to(runs) and output != runs, "LongMemEval-S 运行输出必须位于持久环境 runs 内")
+    evidence = (workspace / "evidence" / "community").resolve()
+    _require(evidence.is_relative_to(workspace) and evidence != workspace, "LongMemEval-S Suite 证据必须位于验收工作区内")
 
 
 def _executable_command(path: Path) -> list[str]:

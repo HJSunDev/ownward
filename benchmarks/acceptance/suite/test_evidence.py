@@ -51,12 +51,15 @@ class EvidenceLayerTests(unittest.TestCase):
     def community_report(self) -> dict:
         report = self.common("ownward.longmemeval-report/v1")
         report.update({
-            "official_version": "longmemeval-v2/2cc8c540bdb87fe6761629b585e727e1c4704520",
-            "domains": {"web": {"passed": True}, "enterprise": {"passed": True}},
+            "official_version": "longmemeval-s/9e0b455f4ef0e2ab8f2e582289761153549043fc+d6f21ea9",
+            "capabilities": self.contract["evidence_layers"]["community"]["capabilities"],
+            "benchmark": {"questions": 500, "complete": True, "question_types": list(self.contract["evidence_layers"]["community"]["question_types"])},
+            "quality": {"accuracy": 0.83, "minimum_accuracy": 0.822, "passed": True},
+            "retrieval": {"mean_ms": 10.0, "p95_ms": 20.0, "max_ms": 30.0},
+            "cost": {"wall_seconds": 14400.0, "within_budget": True},
             "submission": {
-                "package_sha256": "d" * 64, "lafs": 0.5, "accuracy": 0.75,
-                "latency_seconds": 10.0, "frontier_eligible": True,
-                "reference_frontier": [{"accuracy": 74.9, "latency_seconds": 108.3}],
+                "package_sha256": "d" * 64, "official_evaluation_sha256": "e" * 64,
+                "hypotheses_sha256": "f" * 64, "checkpoint_manifest_sha256": "1" * 64,
             },
         })
         return report
@@ -99,14 +102,14 @@ class EvidenceLayerTests(unittest.TestCase):
 
     def test_valid_failure_report_is_preserved_as_evidence(self):
         report = self.community_report()
-        report["submission"]["lafs"] = 0.0
-        report["submission"]["frontier_eligible"] = False
+        report["quality"]["accuracy"] = 0.8
+        report["quality"]["passed"] = False
         report["passed"] = False
         evidence.validate_layer_report(self.contract, "community", report)
 
     def test_rejects_wrong_official_revision_or_incomplete_domains(self):
         report = self.community_report()
-        report["official_version"] = "longmemeval-v2/latest"
+        report["official_version"] = "longmemeval-s/latest"
         with self.assertRaisesRegex(evidence.EvidenceError, "官方版本"):
             evidence.validate_layer_report(self.contract, "community", report)
 
@@ -158,8 +161,8 @@ class EvidenceLayerTests(unittest.TestCase):
         )
         self.assertFalse(failed["organization_gain"]["passed"])
         report = self.community_report()
-        report["domains"].pop("enterprise")
-        with self.assertRaisesRegex(evidence.EvidenceError, "领域"):
+        report["benchmark"]["questions"] = 499
+        with self.assertRaisesRegex(evidence.EvidenceError, "范围"):
             evidence.validate_layer_report(self.contract, "community", report)
 
 

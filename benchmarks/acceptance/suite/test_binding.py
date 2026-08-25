@@ -38,8 +38,10 @@ class BindingManifestTests(unittest.TestCase):
         self.assertIn("cmd/ownward-frontier/main.go", frontier)
         self.assertIn("benchmarks/acceptance/suite/execution.py", community & frontier & product)
         self.assertIn("benchmarks/acceptance/suite/adapters/product/verify.py", product)
-        self.assertIn("benchmarks/longmemeval_v2/ownward_trajectory.py", community)
-        self.assertIn("benchmarks/longmemeval_v2/memory_config.active.json", community)
+        self.assertIn("benchmarks/longmemeval_s/run.py", community)
+        self.assertIn("benchmarks/longmemeval_s/protocol.json", community)
+        self.assertIn("benchmarks/acceptance/suite/adapters/product/codex_session.py", community)
+        self.assertFalse(any("longmemeval_v2" in path for path in community))
         self.assertIn("benchmarks/support/ownward_mcp.py", core)
         self.assertNotIn("cmd/ownward-frontier/main.go", community)
         self.assertNotIn("benchmarks/acceptance/suite/community.py", frontier | core)
@@ -262,27 +264,50 @@ class BindingManifestTests(unittest.TestCase):
             "frontier": {"tool": "tool", "targeted_stages": ["unknown"]},
             "product": {name: name for name in ("package", "production_storage_report", "codex_binary", "codex_auth_file", "codex_model", "codex_reasoning_effort")},
             "community": {name: name for name in (
-                "official_repo", "binary", "embedding_bundle_dir", "codex_binary", "codex_auth_file", "submission_root", "submission_name",
+                "environment_manifest", "protocol", "output_dir", "codex_binary", "codex_auth_file",
+                "codex_semantic_model", "codex_semantic_reasoning_effort", "codex_reader_model",
+                "codex_reader_reasoning_effort", "judge_api_key_env",
             )},
         }
-        arguments = [
-            "--domain", "web", "--questions-path", "q", "--haystack-path", "h",
-            "--trajectories-path", "t", "--memory-config-path", "m", "--output-dir", "o",
-        ]
-        config["community"]["web_arguments"] = arguments
-        config["community"]["enterprise_arguments"] = [
-            "enterprise" if item == "web" else item for item in arguments
-        ]
         with self.assertRaisesRegex(binding.BindingError, "未知阶段"):
             binding.validate_config(config)
 
     def test_public_example_freezes_official_longmem_protocol(self) -> None:
         config = binding.load_json(self.root / "execution.example.json")
-        binding.validate_config(config)
-        for domain in ("web", "enterprise"):
-            arguments = config["community"][f"{domain}_arguments"]
-            for name, expected in binding.OFFICIAL_LONGMEM_ARGUMENTS.items():
-                self.assertEqual(expected, binding._argument_value(arguments, name))
+        community = config["community"]
+        self.assertEqual("E:\\Ownward\\acceptance\\longmemeval-s\\manifests\\v1.json", community["environment_manifest"])
+        self.assertEqual("gpt-5.4-mini", community["codex_semantic_model"])
+        self.assertEqual("gpt-5.4", community["codex_reader_model"])
+        self.assertEqual("OPENAI_API_KEY", community["judge_api_key_env"])
+        protocol = binding.load_json(self.root.parents[1] / "longmemeval_s" / "protocol.json")
+        self.assertEqual(binding.LONGMEMEVAL_S_CODE_REVISION, protocol["official"]["code_revision"])
+        self.assertEqual(binding.LONGMEMEVAL_S_DATA_SHA256, protocol["official"]["data_sha256"])
+
+    def test_community_config_binds_codex_capabilities_without_reading_judge_credentials(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            codex = root / "codex.exe"
+            auth = root / "auth.json"
+            codex.write_bytes(b"codex")
+            auth.write_text("{}\n", encoding="utf-8")
+            manifest = root / "manifest.json"
+            manifest.write_text(json.dumps({
+                "schema": binding.LONGMEMEVAL_S_ENVIRONMENT_SCHEMA,
+                "official": {"code_revision": binding.LONGMEMEVAL_S_CODE_REVISION, "data_revision": binding.LONGMEMEVAL_S_DATA_REVISION},
+                "integrity": {"data_sha256": binding.LONGMEMEVAL_S_DATA_SHA256},
+            }), encoding="utf-8")
+            protocol = self.root.parents[1] / "longmemeval_s" / "protocol.json"
+            community = {
+                "environment_manifest": str(manifest), "protocol": str(protocol), "output_dir": str(root / "runs"),
+                "codex_binary": str(codex), "codex_auth_file": str(auth),
+                "codex_semantic_model": "gpt-5.4-mini", "codex_semantic_reasoning_effort": "low",
+                "codex_reader_model": "gpt-5.4", "codex_reader_reasoning_effort": "medium",
+                "judge_api_key_env": "OPENAI_API_KEY",
+            }
+            binding._validate_community_config(community)
+            community["codex_reader_model"] = "different"
+            with self.assertRaisesRegex(binding.BindingError, "Reader"):
+                binding._validate_community_config(community)
 
     def test_scope_rebind_preserves_candidate_and_other_scope_generations(self) -> None:
         temporary_root = self.root.parents[2] / ".tmp"

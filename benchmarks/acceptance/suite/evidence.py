@@ -99,12 +99,16 @@ def validate_adapters(suite_root: Path) -> dict[str, Any]:
     ):
         _require(isinstance(relative, str) and (suite_root / relative).is_file(), f"验收适配实现不存在: {relative}")
     community = _mapping(layers, "community")
-    _require(community.get("official_revision") == "2cc8c540bdb87fe6761629b585e727e1c4704520", "LongMemEval-V2 官方版本未固定")
-    _require(community.get("domains") == ["web", "enterprise"], "LongMemEval-V2 领域无效")
+    _require(community.get("official_revision") == "9e0b455f4ef0e2ab8f2e582289761153549043fc", "LongMemEval-S 官方版本未固定")
+    _require(community.get("data_revision") == "98d7416c24c778c2fee6e6f3006e7a073259d48f", "LongMemEval-S 数据版本未固定")
+    _require(community.get("data_sha256") == "d6f21ea9d60a0d56f34a05b609c79c88a451d2ae03597821ea3d5a9678c3a442", "LongMemEval-S 数据摘要未固定")
+    _require(community.get("questions") == 500, "LongMemEval-S 题量无效")
+    _require(community.get("capability_sources") == {"semantic": "codex", "reader": "codex", "judge": "official-openai"}, "LongMemEval-S 能力来源未固定")
     adapter_path = (suite_root / str(community.get("adapter"))).resolve()
-    _require(adapter_path.is_file(), "LongMemEval-V2 适配器不存在")
+    protocol_path = (suite_root / str(community.get("protocol"))).resolve()
+    _require(adapter_path.is_file() and protocol_path.is_file(), "LongMemEval-S 适配器或协议不存在")
     source = adapter_path.read_text(encoding="utf-8")
-    _require(f'OFFICIAL_REVISION = "{community["official_revision"]}"' in source, "LongMemEval-V2 适配器未绑定官方版本")
+    _require(f'OFFICIAL_CODE_REVISION = "{community["official_revision"]}"' in source, "LongMemEval-S 适配器未绑定官方版本")
     return adapters
 
 
@@ -313,27 +317,26 @@ def _validate_product(contract: dict[str, Any], report: dict[str, Any]) -> None:
 def _validate_community(contract: dict[str, Any], report: dict[str, Any]) -> None:
     definition = contract["evidence_layers"]["community"]
     _require(report.get("official_version") == definition["version"], "社区报告官方版本无效")
-    domains = report.get("domains")
-    _require(isinstance(domains, dict) and set(domains) == set(definition["domains"]), "社区报告领域无效")
-    _require(all(value.get("passed") is True for value in domains.values()), "社区报告存在未通过领域")
+    _require(report.get("capabilities") == definition["capabilities"], "社区报告能力来源无效")
+    benchmark = report.get("benchmark")
+    _require(isinstance(benchmark, dict) and benchmark.get("questions") == definition["questions"] and benchmark.get("complete") is True, "社区报告基准范围不完整")
+    _require(set(benchmark.get("question_types", [])) == set(definition["question_types"]), "社区报告问题类型不完整")
+    quality = report.get("quality")
+    _require(isinstance(quality, dict) and isinstance(quality.get("accuracy"), (int, float)) and 0 <= quality["accuracy"] <= 1, "社区报告准确率无效")
+    _require(quality.get("minimum_accuracy") == definition["minimum_accuracy"], "社区报告质量门槛漂移")
+    _require(quality.get("passed") is (quality["accuracy"] >= definition["minimum_accuracy"]), "社区报告质量判定无效")
+    retrieval = report.get("retrieval")
+    _require(isinstance(retrieval, dict) and all(isinstance(retrieval.get(name), (int, float)) and retrieval[name] > 0 for name in ("mean_ms", "p95_ms", "max_ms")), "社区报告检索时延无效")
+    cost = report.get("cost")
+    _require(isinstance(cost, dict) and cost.get("within_budget") is True and isinstance(cost.get("wall_seconds"), (int, float)), "社区报告成本边界无效")
     submission = report.get("submission")
-    _require(isinstance(submission, dict), "社区报告缺少官方 submission")
+    _require(isinstance(submission, dict), "社区报告缺少固定 submission")
     _require(_is_sha256(str(submission.get("package_sha256", ""))), "社区报告归档摘要无效")
-    _require(isinstance(submission.get("lafs"), (int, float)) and submission["lafs"] >= 0, "社区报告 LAFS 无效")
-    _require(isinstance(submission.get("accuracy"), (int, float)) and 0 <= submission["accuracy"] <= 1, "社区报告准确率无效")
-    _require(isinstance(submission.get("latency_seconds"), (int, float)) and submission["latency_seconds"] > 0, "社区报告时延无效")
-    _require(isinstance(submission.get("frontier_eligible"), bool), "社区报告缺少官方前沿判定")
-    reference = submission.get("reference_frontier")
-    _require(isinstance(reference, list) and reference, "社区报告缺少官方参考前沿")
-    exact_reference = any(
-        isinstance(point, dict)
-        and math.isclose(float(point.get("accuracy", -1)), float(submission["accuracy"]) * 100, abs_tol=1e-9)
-        and math.isclose(float(point.get("latency_seconds", -1)), float(submission["latency_seconds"]), abs_tol=1e-9)
-        for point in reference
-    )
-    expected = submission["lafs"] > 0 or exact_reference
-    _require(submission["frontier_eligible"] is expected, "社区报告官方前沿判定无法由公开数值复核")
-    _require(report.get("passed") is expected, "社区报告总判定与官方前沿结果不一致")
+    _require(_is_sha256(str(submission.get("official_evaluation_sha256", ""))), "社区报告官方评测摘要无效")
+    _require(_is_sha256(str(submission.get("hypotheses_sha256", ""))), "社区报告回答摘要无效")
+    _require(_is_sha256(str(submission.get("checkpoint_manifest_sha256", ""))), "社区报告检查点清单摘要无效")
+    expected = benchmark["complete"] and quality["passed"] and cost["within_budget"]
+    _require(report.get("passed") is expected, "社区报告总判定与分轨结果不一致")
 
 
 def _recall(returned: list[str], expected: list[str]) -> float:
