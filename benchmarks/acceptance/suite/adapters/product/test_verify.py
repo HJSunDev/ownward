@@ -118,6 +118,32 @@ class ProductAdapterTests(unittest.TestCase):
         self.assertEqual(4, verify.SCENARIO_WORKERS)
         self.assertAlmostEqual(23.625, projection["wall_seconds"], places=3)
 
+    def test_preflight_projection_reuses_the_observed_serial_direct_wave_profile(self) -> None:
+        preflight_tasks = [
+            {"information": [{}, {}], "updates": []}
+            for _ in range(4)
+        ]
+        results = [
+            {
+                "semantic_ms": 2000.0,
+                "rollback_ms": 0.0,
+                "agent_query_ms": 1000.0,
+                "direct_stage_ms": direct_ms,
+                "end_to_end_ms": 3000.0 + direct_ms,
+            }
+            for direct_ms in (3000.0, 1000.0, 1000.0, 1000.0)
+        ]
+        formal_tasks = [
+            {"information": [{}], "updates": []}
+            for _ in range(8)
+        ]
+        projection = verify._project_qualification_wall(
+            formal_tasks, preflight_tasks, results, workers=4, batch_wall_seconds=9.0,
+        )
+        self.assertEqual(12.0, projection["projected_direct_stage_seconds"])
+        self.assertEqual(16.0, projection["scheduled_wall_seconds"])
+        self.assertEqual(20.0, projection["wall_seconds"])
+
     def test_answer_schema_uses_the_codex_subset_and_runtime_enforces_uniqueness(self) -> None:
         for value in verify.ANSWER_SCHEMA["properties"].values():
             self.assertNotIn("uniqueItems", value)

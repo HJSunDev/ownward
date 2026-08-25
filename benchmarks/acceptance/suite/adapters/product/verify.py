@@ -1471,14 +1471,19 @@ def _project_qualification_wall(
     observed_direct_wall = sum(direct_stage_times)
     batch_overhead = max(0.0, batch_wall_seconds - observed_parallel_wall - observed_direct_wall)
     waves = (len(predicted_scenarios) + len(worker_loads) - 1) // len(worker_loads)
-    scheduled_wall = max(worker_loads) + len(formal_tasks) * per_direct_stage + waves * batch_overhead
+    complete_direct_waves, remaining_direct_scenarios = divmod(len(formal_tasks), len(direct_stage_times))
+    projected_direct_wall = complete_direct_waves * observed_direct_wall + sum(
+        sorted(direct_stage_times, reverse=True)[:remaining_direct_scenarios]
+    )
+    scheduled_wall = max(worker_loads) + projected_direct_wall + waves * batch_overhead
     return {
         "per_semantic_seconds": per_semantic,
         "per_rollback_seconds": per_rollback,
         "per_query_seconds": per_query,
         "per_direct_stage_seconds": per_direct_stage,
+        "projected_direct_stage_seconds": projected_direct_wall,
         "per_scenario_overhead_seconds": per_scenario_overhead,
-        "independent_work_seconds": sum(predicted_scenarios) + len(formal_tasks) * per_direct_stage,
+        "independent_work_seconds": sum(predicted_scenarios) + projected_direct_wall,
         "scheduled_wall_seconds": scheduled_wall,
         "wall_seconds": PREFLIGHT_SAFETY_FACTOR * scheduled_wall,
     }
