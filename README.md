@@ -95,6 +95,6 @@ python benchmarks/acceptance/suite/run.py self-check
 go run ./cmd/ownward-production-storage --binary bin/ownward.exe --candidate COMMIT_SHA --workspace .tmp/production-storage --output production-storage-report.json
 ```
 
-The [Ownward Acceptance Suite v1](benchmarks/acceptance/suite/README.md) binds one core-frontier optimization loop and exactly three evidence layers to the same release candidate: a deterministic core baseline, the fixed Ownward product dataset, and the pinned official LongMemEval-V2 benchmark. Historical harnesses are not independent completion gates.
+The [Ownward Acceptance Suite v1](benchmarks/acceptance/suite/README.md) binds one core-frontier optimization loop and exactly three evidence layers to the same release candidate: a deterministic core baseline, the fixed Ownward product dataset, and the pinned official cleaned LongMemEval-S benchmark. Historical harnesses are not independent completion gates.
 
 See [Contributing](CONTRIBUTING.md), [Security](SECURITY.md), and the [Apache 2.0 license](LICENSE).

@@ -126,7 +126,7 @@ Ownward 以最低必要复杂度长期承载用户的信息资产，借助可替
    - Ownward 内核负责将语义理解转化为可靠、可演进的组织与检索能力，并对最终质量负责；
    - 确定性逻辑负责资产、身份、版本、来源、证据、明确语义、冲突、派生状态和结构完整性，不替代语义能力判断开放内容真伪；
    - 通用语义能力不能靠不断增加领域、词语、句式或验收样本规则实现；
-   - 固定内核基线证明长期不变量，固定 Ownward 专项数据验证产品能力，LongMemEval‑V2 证明公开质量与时效前沿。
+   - 固定内核基线证明长期不变量，固定 Ownward 专项数据验证产品能力，官方清洗 LongMemEval‑S 提供同行可比的长期记忆质量、检索时效与成本证据。
 2. 以“首席产品官 + 乔布斯式产品直觉 + 顶级架构师”的标准审查：
    - 是否在不牺牲功能完整性、信息质量和资产耐久性的前提下，同时支撑信息组织、检索质量、检索时效与资源效率达到同类前沿；
    - 是否把稳定基础设施与持续进步的智能能力放在正确边界；
@@ -188,7 +188,7 @@ Ownward 以最低必要复杂度长期承载用户的信息资产，借助可替
 - 整体与模块架构：`docs/architecture/overview.md`、`docs/modules/storage/architecture.md`、`docs/modules/embedding/README.md`、`docs/modules/semantics/README.md`、`docs/modules/retrieval/README.md`
 - 已确定方案：`docs/research/vector-model-selection.md`
 - 工程规则：`docs/engineering/development-collaboration-guidelines.md`、`docs/engineering/commit-guidelines.md`
-- 完成与验收：`docs/delivery/first-version-delivery-definition.md`、`docs/delivery/acceptance-system.md`、`docs/research/first-version-benchmark-basis.md`、`benchmarks/acceptance/suite/README.md`、`benchmarks/acceptance/suite/contract.json`、`benchmarks/longmemeval_v2/README.md`
+- 完成与验收：`docs/delivery/first-version-delivery-definition.md`、`docs/delivery/acceptance-system.md`、`docs/research/first-version-benchmark-basis.md`、`docs/tasks/longmemeval-s-community-benchmark.md`、`benchmarks/acceptance/suite/README.md`、`benchmarks/acceptance/suite/contract.json`
 - 关键留痕：`docs/records/README.md` 及其要求读取的当前分卷和直接引用记录
 
 首次启动、暂停后恢复、重新创建或上下文压缩后：

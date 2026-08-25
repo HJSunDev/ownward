@@ -16,7 +16,7 @@
     "docs/research/first-version-benchmark-basis.md",
     "benchmarks/acceptance/suite/README.md",
     "benchmarks/acceptance/suite/contract.json",
-    "benchmarks/longmemeval_v2/README.md",
+    "docs/tasks/longmemeval-s-community-benchmark.md",
     "docs/records/README.md"
   ],
   "completion_definition_paths": [
