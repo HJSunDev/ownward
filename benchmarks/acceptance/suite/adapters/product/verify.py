@@ -50,6 +50,13 @@ SEMANTIC_TOOLS = ("ownward_semantic_work", "ownward_semantic_submit")
 QUERY_TOOLS = ("ownward_search", "ownward_read", "ownward_navigate")
 MAX_SEMANTIC_STAGE_ATTEMPTS = 3
 MAX_QUERY_ATTEMPTS = 3
+MAX_PREFLIGHT_INFRASTRUCTURE_RECOVERIES = 1
+CODEX_INFRASTRUCTURE_FAILURE_SIGNATURES = {
+    "models-manager-child-exit-timeout": (
+        "codex_models_manager",
+        "timeout waiting for child process to exit",
+    ),
+}
 WARM_READINESS_REQUIRED_CONSECUTIVE = 3
 WARM_READINESS_MAX_SAMPLES = 12
 WARM_READINESS_PROBE_STEMS = (
@@ -131,6 +138,24 @@ def _cleanup_temporary(path: Path) -> None:
             time.sleep(0.1)
     assert last_error is not None
     raise last_error
+
+
+def _scrub_ephemeral_codex_roots(root: Path) -> None:
+    if not root.exists():
+        return
+    resolved_root = root.resolve()
+    temporary_roots = [
+        path
+        for path in root.rglob("codex-*")
+        if path.is_dir() and path.parent.name.startswith("attempt-")
+    ]
+    for path in sorted(temporary_roots, key=lambda value: len(value.parts), reverse=True):
+        resolved = path.resolve()
+        require(
+            not path.is_symlink() and resolved != resolved_root and resolved_root in resolved.parents,
+            f"refusing to scrub unexpected Codex temporary root: {resolved}",
+        )
+        _cleanup_temporary(resolved)
 
 
 def _codex_command(
@@ -487,7 +512,21 @@ def _progress_evidence_complete(progress: dict[str, Any]) -> bool:
         {"output.json", "events.jsonl", "stderr.txt"},
         {"terminal.json", "events.jsonl", "stderr.txt"},
     )
-    return len(groups) == len(completed) and all(names in complete_attempts for names in groups.values())
+    rejected_attempts = (
+        {"events.jsonl", "stderr.txt", "attempt.json"},
+        {"output.json", "events.jsonl", "stderr.txt", "attempt.json"},
+    )
+    units: dict[str, list[set[str]]] = {}
+    for parent, names in groups.items():
+        units.setdefault(Path(parent).parent.as_posix(), []).append(names)
+    return (
+        len(units) == len(completed)
+        and all(
+            sum(names in complete_attempts for names in attempts) == 1
+            and all(names in complete_attempts or names in rejected_attempts for names in attempts)
+            for attempts in units.values()
+        )
+    )
 
 
 def _scenario_evidence_files(has_updates: bool) -> tuple[str, ...]:
@@ -741,6 +780,7 @@ def _sealed_scenario_valid(
 
 
 def _archive_incomplete(scenario_root: Path, evidence_root: Path, reason: str) -> None:
+    _scrub_ephemeral_codex_roots(scenario_root)
     audit = evidence_root / "_audit"
     audit.mkdir(parents=True, exist_ok=True)
     destination = audit / f"{scenario_root.name}-{time.time_ns()}"
@@ -849,6 +889,187 @@ def _semantic_trace_identity(trace: Any, asset_id: str, revision: int) -> dict[s
     }
 
 
+def _recoverable_semantic_rejection(trace: Any) -> bool:
+    if trace.bypassed or not trace.calls:
+        return False
+    if any(call.name not in SEMANTIC_TOOLS for call in trace.calls):
+        return False
+    work_calls = [call for call in trace.calls if call.name == "ownward_semantic_work"]
+    submit_calls = [call for call in trace.calls if call.name == "ownward_semantic_submit"]
+    return (
+        len(work_calls) == 1
+        and not work_calls[0].error
+        and len(submit_calls) <= 2
+        and all(call.error for call in submit_calls)
+    )
+
+
+def _codex_infrastructure_failure_signature(
+    stage: Path,
+    trace: Any,
+    elapsed_seconds: float,
+    stage_timeout: float,
+) -> str | None:
+    if elapsed_seconds < stage_timeout * 0.95 or trace.bypassed:
+        return None
+    work_calls = [call for call in trace.calls if call.name == "ownward_semantic_work"]
+    submit_calls = [call for call in trace.calls if call.name == "ownward_semantic_submit"]
+    if (
+        len(work_calls) != 1
+        or work_calls[0].error
+        or submit_calls
+        or any(call.name not in SEMANTIC_TOOLS for call in trace.calls)
+    ):
+        return None
+    stderr_path = stage / "stderr.txt"
+    if not stderr_path.is_file():
+        return None
+    stderr = stderr_path.read_text(encoding="utf-8", errors="replace")
+    for signature, markers in CODEX_INFRASTRUCTURE_FAILURE_SIGNATURES.items():
+        if all(marker in stderr for marker in markers):
+            return signature
+    return None
+
+
+def _preflight_infrastructure_failures(scenario_root: Path, stage_timeout: float) -> list[dict[str, Any]]:
+    progress_path = scenario_root / "progress.json"
+    if not progress_path.is_file():
+        return []
+    progress = load_json(progress_path)
+    evidence = progress.get("evidence")
+    require(isinstance(evidence, dict) and _evidence_valid(scenario_root, evidence), "preflight scenario evidence changed")
+    failures: list[dict[str, Any]] = []
+    for relative in sorted(evidence):
+        attempt_path = scenario_root / relative
+        if attempt_path.name != "attempt.json":
+            continue
+        record = load_json(attempt_path)
+        if (
+            record.get("schema") != "ownward.semantic-attempt/v1"
+            or record.get("status") != "rejected"
+            or record.get("reason") != "no-successful-semantic-submit"
+            or int(record.get("tool_calls", -1)) != 1
+            or int(record.get("failed_tool_calls", -1)) != 0
+        ):
+            continue
+        stage = attempt_path.parent
+        events_path = stage / "events.jsonl"
+        stderr_path = stage / "stderr.txt"
+        if not events_path.is_file() or not stderr_path.is_file():
+            continue
+        trace = codex_session.load_exec_events(events_path.read_text(encoding="utf-8"))
+        signature = _codex_infrastructure_failure_signature(
+            stage,
+            trace,
+            float(record.get("elapsed_seconds", 0)),
+            stage_timeout,
+        )
+        if signature is None:
+            continue
+        recorded_signature = record.get("infrastructure_signature")
+        require(recorded_signature in {None, signature}, "semantic infrastructure failure classification changed")
+        failures.append({
+            "attempt": stage.relative_to(scenario_root).as_posix(),
+            "attempt_sha256": sha256(attempt_path),
+            "events_sha256": sha256(events_path),
+            "stderr_sha256": sha256(stderr_path),
+            "elapsed_seconds": float(record["elapsed_seconds"]),
+            "signature": signature,
+        })
+    return failures
+
+
+def _preflight_archive_payload_sha256(root: Path) -> str:
+    return json_sha256([item for item in _tree_manifest(root) if item["path"] != "archive.json"])
+
+
+def _preflight_infrastructure_recovery_archives(
+    evidence_root: Path,
+    scenario_id: str,
+    binding: dict[str, Any],
+) -> list[dict[str, Any]]:
+    audit = evidence_root / "_audit"
+    records: list[dict[str, Any]] = []
+    if not audit.exists():
+        return records
+    for archive_path in sorted(audit.glob(f"{scenario_id}-*/archive.json")):
+        record = load_json(archive_path)
+        if record.get("schema") != "ownward.product-preflight-infrastructure-recovery/v1":
+            continue
+        require(record.get("scenario_id") == scenario_id, "preflight infrastructure recovery scenario changed")
+        require(
+            record.get("evidence_sha256") == _preflight_archive_payload_sha256(archive_path.parent),
+            "preflight infrastructure recovery evidence changed",
+        )
+        failures = record.get("failures")
+        require(isinstance(failures, list) and failures, "preflight infrastructure recovery lacks failure evidence")
+        if record.get("binding") == binding:
+            records.append(record)
+    return records
+
+
+def _archive_preflight_infrastructure_failure(
+    scenario_root: Path,
+    evidence_root: Path,
+    binding: dict[str, Any],
+    failures: list[dict[str, Any]],
+) -> Path:
+    _scrub_ephemeral_codex_roots(scenario_root)
+    audit = evidence_root / "_audit"
+    audit.mkdir(parents=True, exist_ok=True)
+    destination = audit / f"{scenario_root.name}-{time.time_ns()}"
+    write_json(scenario_root / "archive.json", {
+        "schema": "ownward.product-preflight-infrastructure-recovery/v1",
+        "reason": "bounded recovery of a Codex infrastructure timeout before semantic submit",
+        "scenario_id": scenario_root.name,
+        "binding": binding,
+        "failures": failures,
+        "evidence_sha256": _preflight_archive_payload_sha256(scenario_root),
+    })
+    shutil.move(str(scenario_root), destination)
+    return destination
+
+
+def _recover_preflight_infrastructure_samples(
+    args: argparse.Namespace,
+    tasks: list[dict[str, Any]],
+    binding: dict[str, Any],
+    resource_sha: str,
+) -> list[dict[str, Any]]:
+    recovered: list[dict[str, Any]] = []
+    for task in tasks:
+        scenario_id = str(task["scenario_id"])
+        scenario_root = args.evidence_dir / scenario_id
+        expected_binding = _scenario_binding(args, task, binding, resource_sha)
+        archives = _preflight_infrastructure_recovery_archives(args.evidence_dir, scenario_id, expected_binding)
+        result_path = scenario_root / "result.json"
+        if not result_path.is_file():
+            continue
+        sealed = load_json(result_path)
+        if not _sealed_scenario_valid(sealed, scenario_root, expected_binding, bool(task["updates"])):
+            continue
+        failures = _preflight_infrastructure_failures(scenario_root, float(args.stage_timeout))
+        if not failures:
+            continue
+        require(args.resume, "product preflight contains a Codex infrastructure timeout; use --resume for bounded recovery")
+        require(
+            len(archives) < MAX_PREFLIGHT_INFRASTRUCTURE_RECOVERIES,
+            f"product preflight infrastructure recovery exhausted for {scenario_id}; preserved evidence requires investigation",
+        )
+        destination = _archive_preflight_infrastructure_failure(
+            scenario_root,
+            args.evidence_dir,
+            expected_binding,
+            failures,
+        )
+        recovered.append({
+            "scenario_id": scenario_id,
+            "archive": destination.relative_to(args.evidence_dir).as_posix(),
+            "failures": failures,
+        })
+    return recovered
+
+
 def _complete_semantic_unit(
     args: argparse.Namespace,
     runtime: Any,
@@ -862,13 +1083,69 @@ def _complete_semantic_unit(
     evidence: dict[str, str] = {}
     total_elapsed = 0.0
     protocol_operations: list[str] = []
-    for attempt in attempts:
-        evidence.update(_relative_evidence(scenario_root, attempt))
+    for index, attempt in enumerate(attempts):
         attempt_path = attempt / "attempt.json"
         if attempt_path.is_file():
             record = load_json(attempt_path)
             total_elapsed += float(record.get("elapsed_seconds", 0))
             protocol_operations.extend(str(value) for value in record.get("protocol_operations", []))
+            evidence.update(_relative_evidence(scenario_root, attempt))
+            continue
+
+        events_path = attempt / "events.jsonl"
+        stderr_path = attempt / "stderr.txt"
+        require(events_path.is_file() and stderr_path.is_file(), "interrupted semantic attempt lacks raw process evidence")
+        trace = codex_session.load_exec_events(events_path.read_text(encoding="utf-8"))
+        current_protocol = list(getattr(trace, "protocol_operations", ()))
+        protocol_operations.extend(current_protocol)
+        if (not trace.bypassed and not trace.calls) or _recoverable_semantic_rejection(trace):
+            write_json(attempt_path, {
+                "schema": "ownward.semantic-attempt/v1",
+                "status": "rejected",
+                "reason": (
+                    "interrupted-no-ownward-product-tool-calls"
+                    if not trace.calls
+                    else "interrupted-no-successful-semantic-submit"
+                ),
+                "elapsed_seconds": 0.0,
+                "elapsed_unavailable": True,
+                "tool_calls": len(trace.calls),
+                "failed_tool_calls": sum(1 for call in trace.calls if call.error),
+                "protocol_operations": current_protocol,
+            })
+            evidence.update(_relative_evidence(scenario_root, attempt))
+            continue
+
+        require(
+            not trace.bypassed,
+            "interrupted semantic attempt bypassed Ownward: "
+            + ", ".join(getattr(trace, "bypass_operations", ())),
+        )
+        require(index + 1 == len(attempts), "semantic attempts continued after an uncommitted successful submission")
+        identity = _semantic_trace_identity(trace, asset_id, revision)
+        status = runtime.client.call_tool("ownward_status", {"id": asset_id})
+        terminal = status.get("organization", {}).get("status")
+        require(terminal in {"ready", "uncertain"}, "interrupted semantic submit did not reach a terminal state")
+        identity.update({
+            "terminal_status": terminal,
+            "agent_attempts": len(attempts),
+            "protocol_operations": protocol_operations,
+            "completion": "terminal-submit-recovered-after-suite-interruption",
+            "elapsed_unavailable": True,
+        })
+        if not (attempt / "output.json").is_file():
+            write_json(attempt / "terminal.json", {
+                "schema": "ownward.semantic-terminal-recovery/v1",
+                "reason": "suite-interruption-after-successful-terminal-submit",
+                "asset_id": asset_id,
+                "asset_revision": revision,
+                "work_id": identity["work_id"],
+                "submission_sha256": identity["submission_sha256"],
+                "terminal_status": terminal,
+                "elapsed_unavailable": True,
+            })
+        evidence.update(_relative_evidence(scenario_root, attempt))
+        return total_elapsed, identity, evidence
 
     while len(attempts) < MAX_SEMANTIC_STAGE_ATTEMPTS:
         remaining = deadline - time.monotonic()
@@ -916,6 +1193,36 @@ def _complete_semantic_unit(
             "semantic capability bypassed Ownward: "
             + ", ".join(getattr(semantic_trace, "bypass_operations", ())),
         )
+        if _recoverable_semantic_rejection(semantic_trace):
+            attempt_record = {
+                "schema": "ownward.semantic-attempt/v1",
+                "status": "rejected",
+                "reason": "no-successful-semantic-submit",
+                "elapsed_seconds": elapsed,
+                "tool_calls": len(semantic_trace.calls),
+                "failed_tool_calls": sum(1 for call in semantic_trace.calls if call.error),
+                "protocol_operations": current_protocol,
+            }
+            if recovered_timeout:
+                signature = _codex_infrastructure_failure_signature(
+                    stage,
+                    semantic_trace,
+                    elapsed,
+                    float(args.stage_timeout),
+                )
+                if signature is not None:
+                    attempt_record.update({
+                        "failure_class": "codex-infrastructure",
+                        "infrastructure_signature": signature,
+                    })
+            write_json(stage / "attempt.json", attempt_record)
+            evidence.update(_relative_evidence(scenario_root, stage))
+            if len(attempts) < MAX_SEMANTIC_STAGE_ATTEMPTS:
+                continue
+            raise RuntimeError(
+                f"semantic capability ended without a successful submit in "
+                f"{MAX_SEMANTIC_STAGE_ATTEMPTS} bounded attempts"
+            )
         identity = _semantic_trace_identity(semantic_trace, asset_id, revision)
         status = runtime.client.call_tool("ownward_status", {"id": asset_id})
         terminal = status.get("organization", {}).get("status")
@@ -1422,6 +1729,36 @@ def _preflight_tasks(tasks: dict[str, Any]) -> list[dict[str, Any]]:
     return selected_tasks
 
 
+def _run_clean_preflight_scenarios(
+    args: argparse.Namespace,
+    tasks: list[dict[str, Any]],
+    binding: dict[str, Any],
+    peak_mib: float,
+    resource_passed: bool,
+    query_limit_ms: float,
+    resource_sha: str,
+    deadline: float,
+) -> tuple[list[dict[str, Any]], float]:
+    while True:
+        _recover_preflight_infrastructure_samples(args, tasks, binding, resource_sha)
+        started = time.perf_counter()
+        results = _run_scenarios(
+            args,
+            tasks,
+            binding,
+            peak_mib,
+            resource_passed,
+            query_limit_ms,
+            resource_sha,
+            deadline,
+            workers=SCENARIO_WORKERS,
+            cleanup_data=False,
+        )
+        batch_wall_seconds = time.perf_counter() - started
+        if not _recover_preflight_infrastructure_samples(args, tasks, binding, resource_sha):
+            return results, batch_wall_seconds
+
+
 def _project_qualification_wall(
     formal_tasks: list[dict[str, Any]],
     preflight_tasks: list[dict[str, Any]],
@@ -1614,7 +1951,7 @@ def _run_product_preflight(
     preflight_args = copy.copy(args)
     preflight_args.evidence_dir = preflight_root
     started = time.perf_counter()
-    results = _run_scenarios(
+    results, batch_wall_seconds = _run_clean_preflight_scenarios(
         preflight_args,
         selected_tasks,
         binding,
@@ -1623,10 +1960,7 @@ def _run_product_preflight(
         query_limit_ms,
         resource_sha,
         time.monotonic() + min(420, args.max_wall_seconds),
-        workers=SCENARIO_WORKERS,
-        cleanup_data=False,
     )
-    batch_wall_seconds = time.perf_counter() - started
     for task, result in zip(selected_tasks, results):
         selected_ids = {str(item["node_id"]) for item in task["information"]}
         require(
@@ -1715,6 +2049,7 @@ def main() -> None:
     for path, label in ((args.binary, "binary"), (args.codex_binary, "Codex"), (args.codex_auth_file, "Codex auth")):
         require(path.is_file(), f"{label} file does not exist: {path}")
     args.evidence_dir.mkdir(parents=True, exist_ok=True)
+    _scrub_ephemeral_codex_roots(args.evidence_dir)
     tasks = load_json(args.tasks)
     binding = load_json(args.binding)
     require(tasks.get("schema") == "ownward.product-tasks/v1", "product tasks schema is invalid")

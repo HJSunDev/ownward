@@ -14,6 +14,53 @@ import verify
 
 
 class ProductAdapterTests(unittest.TestCase):
+    def _write_semantic_infrastructure_attempt(
+        self,
+        scenario_root: Path,
+        *,
+        infrastructure_marker: bool = True,
+    ) -> None:
+        stage = scenario_root / "semantic-initial" / "unit" / "attempt-001"
+        stage.mkdir(parents=True)
+        events = [
+            {"type": "thread.started", "thread_id": "session"},
+            {"type": "turn.started"},
+            {"type": "item.completed", "item": {
+                "type": "mcp_tool_call",
+                "server": "ownward",
+                "tool": "ownward_semantic_work",
+                "status": "completed",
+                "error": None,
+                "arguments": {"asset_ids": ["asset"]},
+                "result": {"structured_content": {"work": [{
+                    "id": "work",
+                    "asset": {"id": "asset", "revision": 1},
+                }]}},
+            }},
+        ]
+        (stage / "events.jsonl").write_text("\n".join(json.dumps(item) for item in events), encoding="utf-8")
+        stderr = (
+            "codex_models_manager::manager: timeout waiting for child process to exit"
+            if infrastructure_marker
+            else ""
+        )
+        (stage / "stderr.txt").write_text(stderr, encoding="utf-8")
+        verify.write_json(stage / "attempt.json", {
+            "schema": "ownward.semantic-attempt/v1",
+            "status": "rejected",
+            "reason": "no-successful-semantic-submit",
+            "elapsed_seconds": 240.1,
+            "tool_calls": 1,
+            "failed_tool_calls": 0,
+            "protocol_operations": [],
+        })
+        evidence = verify._relative_evidence(scenario_root, stage)
+        verify.write_json(scenario_root / "progress.json", {
+            "schema": "ownward.product-scenario-progress/v1",
+            "completed_units": {},
+            "evidence": evidence,
+        })
+
     def test_scenarios_run_concurrently_and_return_in_frozen_order(self) -> None:
         tasks = [{"scenario_id": f"scenario-{index}"} for index in range(4)]
         barrier = threading.Barrier(4)
@@ -170,6 +217,100 @@ class ProductAdapterTests(unittest.TestCase):
         self.assertEqual(8.0, projection["per_semantic_outlier_seconds"])
         self.assertEqual(32.0, projection["scheduled_wall_seconds"])
         self.assertEqual(40.0, projection["wall_seconds"])
+
+    def test_normal_semantic_timeout_cannot_use_infrastructure_recovery(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            scenario_root = Path(directory) / "scenario"
+            self._write_semantic_infrastructure_attempt(scenario_root, infrastructure_marker=False)
+            self.assertEqual([], verify._preflight_infrastructure_failures(scenario_root, 240.0))
+
+    def test_preflight_infrastructure_recovery_is_audited_once_and_then_stops(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            evidence_root = root / "scenarios"
+            scenario_root = evidence_root / "scenario"
+            self._write_semantic_infrastructure_attempt(scenario_root)
+            verify.write_json(scenario_root / "result.json", {"schema": "checkpoint"})
+            codex = root / "codex.exe"
+            codex.write_bytes(b"codex")
+            args = SimpleNamespace(
+                evidence_dir=evidence_root,
+                codex_binary=codex,
+                codex_model="model",
+                codex_reasoning_effort="effort",
+                stage_timeout=240.0,
+                resume=True,
+            )
+            task = {
+                "scenario_id": "scenario",
+                "information": [],
+                "updates": [],
+                "query": {"question": "question"},
+            }
+            binding = {
+                "suite_version": "1.0.0",
+                "candidate": "candidate",
+                "binary_sha256": "a" * 64,
+                "environment_sha256": "b" * 64,
+                "input_manifest_sha256": "c" * 64,
+                "tool_sha256": "d" * 64,
+            }
+            args.resume = False
+            with mock.patch.object(verify, "_sealed_scenario_valid", return_value=True):
+                with self.assertRaisesRegex(RuntimeError, "use --resume"):
+                    verify._recover_preflight_infrastructure_samples(
+                        args, [task], binding, "e" * 64,
+                    )
+            self.assertTrue(scenario_root.is_dir())
+
+            args.resume = True
+            with mock.patch.object(verify, "_sealed_scenario_valid", return_value=True):
+                recovered = verify._recover_preflight_infrastructure_samples(
+                    args, [task], binding, "e" * 64,
+                )
+            self.assertEqual(["scenario"], [item["scenario_id"] for item in recovered])
+            self.assertFalse(scenario_root.exists())
+            archives = list((evidence_root / "_audit").glob("scenario-*/archive.json"))
+            self.assertEqual(1, len(archives))
+            archived = verify.load_json(archives[0])
+            self.assertEqual(
+                "models-manager-child-exit-timeout",
+                archived["failures"][0]["signature"],
+            )
+            self.assertEqual(
+                archived["evidence_sha256"],
+                verify._preflight_archive_payload_sha256(archives[0].parent),
+            )
+
+            self._write_semantic_infrastructure_attempt(scenario_root)
+            verify.write_json(scenario_root / "result.json", {"schema": "checkpoint"})
+            with mock.patch.object(verify, "_sealed_scenario_valid", return_value=True):
+                with self.assertRaisesRegex(RuntimeError, "recovery exhausted"):
+                    verify._recover_preflight_infrastructure_samples(
+                        args, [task], binding, "e" * 64,
+                    )
+            self.assertTrue(scenario_root.is_dir())
+            self.assertEqual(1, len(list((evidence_root / "_audit").glob("scenario-*/archive.json"))))
+
+    def test_clean_preflight_runner_never_returns_polluted_sample(self) -> None:
+        args = SimpleNamespace()
+        tasks = [{"scenario_id": "scenario"}]
+        polluted = [{"semantic_ms": 240000.0}]
+        clean = [{"semantic_ms": 1000.0}]
+        with (
+            mock.patch.object(
+                verify,
+                "_recover_preflight_infrastructure_samples",
+                side_effect=[[], [{"scenario_id": "scenario"}], [], []],
+            ) as recover,
+            mock.patch.object(verify, "_run_scenarios", side_effect=[polluted, clean]) as run,
+        ):
+            results, _wall = verify._run_clean_preflight_scenarios(
+                args, tasks, {}, 0.0, True, 1.0, "a" * 64, time.monotonic() + 5,
+            )
+        self.assertEqual(clean, results)
+        self.assertEqual(2, run.call_count)
+        self.assertEqual(4, recover.call_count)
 
     def test_answer_schema_uses_the_codex_subset_and_runtime_enforces_uniqueness(self) -> None:
         for value in verify.ANSWER_SCHEMA["properties"].values():
@@ -360,6 +501,160 @@ class ProductAdapterTests(unittest.TestCase):
             self.assertIn("semantic-initial/unit/attempt-001/attempt.json", evidence)
             self.assertIn("semantic-initial/unit/attempt-002/events.jsonl", evidence)
 
+    def test_semantic_unit_retries_work_without_submit_and_commits_complete_evidence(self) -> None:
+        asset_id = "asset"
+        work_id = "work"
+        work = verify.codex_session.ToolCall(
+            "ownward_semantic_work",
+            {"asset_ids": [asset_id]},
+            {"work": [{"id": work_id, "asset": {"id": asset_id, "revision": 1}}]},
+            False,
+        )
+        partial = SimpleNamespace(
+            calls=[work], bypassed=False, bypass_operations=(), protocol_operations=("list_mcp_resources:empty",),
+        )
+        submit = verify.codex_session.ToolCall(
+            "ownward_semantic_submit",
+            {"submission": {"work_id": work_id, "asset_id": asset_id, "asset_revision": 1}},
+            {"organization": {"status": "ready"}},
+            False,
+        )
+        valid = SimpleNamespace(calls=[work, submit], bypassed=False, bypass_operations=(), protocol_operations=())
+
+        def run(*_positional: object, **keyword: object) -> tuple[dict[str, int], object, float]:
+            stage = keyword["stage"]
+            assert isinstance(stage, Path)
+            stage.mkdir(parents=True)
+            (stage / "output.json").write_text('{"processed":1,"uncertain":0}', encoding="utf-8")
+            (stage / "events.jsonl").write_text("events", encoding="utf-8")
+            (stage / "stderr.txt").write_text("", encoding="utf-8")
+            return {"processed": 1, "uncertain": 0}, partial if stage.name == "attempt-001" else valid, 2.0
+
+        runtime = SimpleNamespace(
+            binding=SimpleNamespace(endpoint="http://127.0.0.1:1", bearer_token="token"),
+            client=SimpleNamespace(call_tool=mock.Mock(return_value={"organization": {"status": "ready"}})),
+        )
+        args = SimpleNamespace(stage_timeout=240, codex_model="model")
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(verify, "_run_codex", side_effect=run):
+            root = Path(directory)
+            elapsed, identity, evidence = verify._complete_semantic_unit(
+                args, runtime, root, root / "semantic-initial" / "unit", asset_id, 1, time.monotonic() + 300,
+            )
+            progress = {"completed_units": {"initial:asset": identity}, "evidence": evidence}
+            self.assertEqual(4.0, elapsed)
+            self.assertEqual(2, identity["agent_attempts"])
+            self.assertTrue(verify._progress_evidence_complete(progress))
+            rejected = verify.load_json(root / "semantic-initial" / "unit" / "attempt-001" / "attempt.json")
+            self.assertEqual("no-successful-semantic-submit", rejected["reason"])
+
+            evidence.pop("semantic-initial/unit/attempt-001/attempt.json")
+            self.assertFalse(verify._progress_evidence_complete(progress))
+
+    def test_semantic_unit_classifies_an_interrupted_partial_attempt_before_retrying(self) -> None:
+        asset_id = "asset"
+        work_id = "work"
+        work = verify.codex_session.ToolCall(
+            "ownward_semantic_work",
+            {"asset_ids": [asset_id]},
+            {"work": [{"id": work_id, "asset": {"id": asset_id, "revision": 1}}]},
+            False,
+        )
+        submit = verify.codex_session.ToolCall(
+            "ownward_semantic_submit",
+            {"submission": {"work_id": work_id, "asset_id": asset_id, "asset_revision": 1}},
+            {"organization": {"status": "ready"}},
+            False,
+        )
+        valid = SimpleNamespace(calls=[work, submit], bypassed=False, bypass_operations=(), protocol_operations=())
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = root / "semantic-initial" / "unit" / "attempt-001"
+            first.mkdir(parents=True)
+            events = [
+                {"type": "thread.started", "thread_id": "session"},
+                {"type": "item.completed", "item": {
+                    "type": "mcp_tool_call", "server": "ownward", "tool": "ownward_semantic_work",
+                    "status": "completed", "error": None, "arguments": {"asset_ids": [asset_id]},
+                    "result": {"structured_content": {"work": [{
+                        "id": work_id, "asset": {"id": asset_id, "revision": 1},
+                    }]}},
+                }},
+            ]
+            (first / "events.jsonl").write_text("\n".join(json.dumps(item) for item in events), encoding="utf-8")
+            (first / "stderr.txt").write_text("", encoding="utf-8")
+
+            def run(*_positional: object, **keyword: object) -> tuple[dict[str, int], object, float]:
+                stage = keyword["stage"]
+                assert isinstance(stage, Path)
+                stage.mkdir(parents=True)
+                (stage / "output.json").write_text('{"processed":1,"uncertain":0}', encoding="utf-8")
+                (stage / "events.jsonl").write_text("events", encoding="utf-8")
+                (stage / "stderr.txt").write_text("", encoding="utf-8")
+                return {"processed": 1, "uncertain": 0}, valid, 2.0
+
+            runtime = SimpleNamespace(
+                binding=SimpleNamespace(endpoint="http://127.0.0.1:1", bearer_token="token"),
+                client=SimpleNamespace(call_tool=mock.Mock(return_value={"organization": {"status": "ready"}})),
+            )
+            args = SimpleNamespace(stage_timeout=240, codex_model="model")
+            with mock.patch.object(verify, "_run_codex", side_effect=run):
+                elapsed, identity, evidence = verify._complete_semantic_unit(
+                    args, runtime, root, root / "semantic-initial" / "unit",
+                    asset_id, 1, time.monotonic() + 300,
+                )
+            record = verify.load_json(first / "attempt.json")
+            self.assertEqual("interrupted-no-successful-semantic-submit", record["reason"])
+            self.assertTrue(record["elapsed_unavailable"])
+            self.assertEqual(2, identity["agent_attempts"])
+            self.assertEqual(2.0, elapsed)
+            self.assertTrue(verify._progress_evidence_complete({
+                "completed_units": {"initial:asset": identity}, "evidence": evidence,
+            }))
+
+    def test_semantic_unit_recovers_an_interrupted_successful_submit_without_retrying(self) -> None:
+        asset_id = "asset"
+        work_id = "work"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = root / "semantic-initial" / "unit" / "attempt-001"
+            first.mkdir(parents=True)
+            events = [
+                {"type": "thread.started", "thread_id": "session"},
+                {"type": "item.completed", "item": {
+                    "type": "mcp_tool_call", "server": "ownward", "tool": "ownward_semantic_work",
+                    "status": "completed", "error": None, "arguments": {"asset_ids": [asset_id]},
+                    "result": {"structured_content": {"work": [{
+                        "id": work_id, "asset": {"id": asset_id, "revision": 1},
+                    }]}},
+                }},
+                {"type": "item.completed", "item": {
+                    "type": "mcp_tool_call", "server": "ownward", "tool": "ownward_semantic_submit",
+                    "status": "completed", "error": None,
+                    "arguments": {"submission": {
+                        "work_id": work_id, "asset_id": asset_id, "asset_revision": 1,
+                    }},
+                    "result": {"structured_content": {"organization": {"status": "ready"}}},
+                }},
+            ]
+            (first / "events.jsonl").write_text("\n".join(json.dumps(item) for item in events), encoding="utf-8")
+            (first / "stderr.txt").write_text("", encoding="utf-8")
+            runtime = SimpleNamespace(
+                binding=SimpleNamespace(endpoint="http://127.0.0.1:1", bearer_token="token"),
+                client=SimpleNamespace(call_tool=mock.Mock(return_value={"organization": {"status": "ready"}})),
+            )
+            args = SimpleNamespace(stage_timeout=240, codex_model="model")
+            with mock.patch.object(verify, "_run_codex") as run:
+                elapsed, identity, evidence = verify._complete_semantic_unit(
+                    args, runtime, root, root / "semantic-initial" / "unit",
+                    asset_id, 1, time.monotonic() + 300,
+                )
+            run.assert_not_called()
+            self.assertEqual(0.0, elapsed)
+            self.assertEqual("terminal-submit-recovered-after-suite-interruption", identity["completion"])
+            self.assertTrue(identity["elapsed_unavailable"])
+            self.assertIn("semantic-initial/unit/attempt-001/terminal.json", evidence)
+
     def test_codex_timeout_accepts_already_persisted_structured_output(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -470,7 +765,7 @@ class ProductAdapterTests(unittest.TestCase):
             progress = {"completed_units": {"initial:asset": identity}, "evidence": evidence}
             self.assertTrue(verify._progress_evidence_complete(progress))
 
-    def test_semantic_timeout_without_successful_submit_remains_a_failure(self) -> None:
+    def test_semantic_timeout_without_successful_submit_exhausts_bounded_recovery(self) -> None:
         asset_id = "asset"
         work = verify.codex_session.ToolCall(
             "ownward_semantic_work",
@@ -487,7 +782,7 @@ class ProductAdapterTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, mock.patch.object(
             verify, "_run_codex", side_effect=verify.CodexStageTimeout("timeout", trace, 240.0),
         ):
-            with self.assertRaisesRegex(RuntimeError, "one successful submit"):
+            with self.assertRaisesRegex(RuntimeError, "without a successful submit in 3 bounded attempts"):
                 verify._complete_semantic_unit(
                     args, runtime, Path(directory), Path(directory) / "semantic-initial" / "unit",
                     asset_id, 1, time.monotonic() + 300,
@@ -568,6 +863,25 @@ class ProductAdapterTests(unittest.TestCase):
         ) as remove, mock.patch.object(verify.time, "sleep"):
             verify._cleanup_temporary(Path("temporary-codex-home"))
         self.assertEqual(2, remove.call_count)
+
+    def test_interrupted_codex_temporary_roots_are_scrubbed_without_removing_raw_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            attempt = root / "scenarios" / "_audit" / "scenario" / "query" / "attempt-001"
+            temporary = attempt / "codex-interrupted"
+            auth = temporary / "codex-home" / "auth.json"
+            auth.parent.mkdir(parents=True)
+            auth.write_text("secret", encoding="utf-8")
+            events = attempt / "events.jsonl"
+            events.write_text("events", encoding="utf-8")
+            unrelated = root / "codex-preserved"
+            unrelated.mkdir()
+
+            verify._scrub_ephemeral_codex_roots(root)
+
+            self.assertFalse(temporary.exists())
+            self.assertTrue(events.is_file())
+            self.assertTrue(unrelated.is_dir())
 
     def test_navigation_evidence_only_uses_successful_navigation_calls(self) -> None:
         events = [
