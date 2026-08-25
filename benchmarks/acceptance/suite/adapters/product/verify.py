@@ -1449,13 +1449,24 @@ def _project_qualification_wall(
         direct_stage_times.append(direct_stage_seconds)
         overhead_times.append(max(0.0, end_to_end_seconds - semantic_seconds - rollback_seconds - query_seconds - direct_stage_seconds))
 
-    per_semantic = max(semantic_rates)
+    ordered_semantic_rates = sorted(semantic_rates, reverse=True)
+    per_semantic = ordered_semantic_rates[1] if len(ordered_semantic_rates) > 1 else ordered_semantic_rates[0]
+    per_semantic_outlier = max(
+        semantic_seconds - semantic_units * per_semantic
+        for task, result in zip(preflight_tasks, results)
+        for semantic_units, semantic_seconds in [(
+            len(task["information"]) + len(task["updates"]),
+            float(result["semantic_ms"]) / 1000.0,
+        )]
+    )
+    per_semantic_outlier = max(0.0, per_semantic_outlier)
     per_rollback = max(rollback_rates)
     per_query = max(query_times)
     per_direct_stage = max(direct_stage_times)
     per_scenario_overhead = max(overhead_times)
     predicted_scenarios = [
         (len(task["information"]) + len(task["updates"])) * (per_semantic + per_rollback)
+        + per_semantic_outlier
         + per_query
         + per_scenario_overhead
         for task in formal_tasks
@@ -1478,6 +1489,7 @@ def _project_qualification_wall(
     scheduled_wall = max(worker_loads) + projected_direct_wall + waves * batch_overhead
     return {
         "per_semantic_seconds": per_semantic,
+        "per_semantic_outlier_seconds": per_semantic_outlier,
         "per_rollback_seconds": per_rollback,
         "per_query_seconds": per_query,
         "per_direct_stage_seconds": per_direct_stage,

@@ -144,6 +144,33 @@ class ProductAdapterTests(unittest.TestCase):
         self.assertEqual(16.0, projection["scheduled_wall_seconds"])
         self.assertEqual(20.0, projection["wall_seconds"])
 
+    def test_preflight_projection_reserves_one_observed_semantic_tail_per_formal_scenario(self) -> None:
+        preflight_tasks = [
+            {"information": [{}, {}], "updates": []}
+            for _ in range(4)
+        ]
+        results = [
+            {
+                "semantic_ms": semantic_ms,
+                "rollback_ms": 0.0,
+                "agent_query_ms": 1000.0,
+                "direct_stage_ms": 500.0,
+                "end_to_end_ms": semantic_ms + 1500.0,
+            }
+            for semantic_ms in (2000.0, 2000.0, 2000.0, 10000.0)
+        ]
+        formal_tasks = [
+            {"information": [{}] * 5, "updates": []}
+            for _ in range(8)
+        ]
+        projection = verify._project_qualification_wall(
+            formal_tasks, preflight_tasks, results, workers=4, batch_wall_seconds=13.0,
+        )
+        self.assertEqual(1.0, projection["per_semantic_seconds"])
+        self.assertEqual(8.0, projection["per_semantic_outlier_seconds"])
+        self.assertEqual(32.0, projection["scheduled_wall_seconds"])
+        self.assertEqual(40.0, projection["wall_seconds"])
+
     def test_answer_schema_uses_the_codex_subset_and_runtime_enforces_uniqueness(self) -> None:
         for value in verify.ANSWER_SCHEMA["properties"].values():
             self.assertNotIn("uniqueItems", value)
