@@ -9,6 +9,7 @@ from unittest import mock
 
 import execution
 import execution_product
+import evidence
 import lifecycle
 import binding as candidate_binding
 from contract import load_contract
@@ -196,6 +197,38 @@ class UnifiedExecutionTests(unittest.TestCase):
         with self.assertRaisesRegex(execution.ExecutionError, "剩余预算"):
             execution_product._require_product_preflight_budget(report, time.perf_counter() + 100.0)
         execution_product._require_product_preflight_budget(report, time.perf_counter() + 181.0)
+
+    def test_product_report_artifacts_exclude_other_modes_and_scenarios(self) -> None:
+        workspace = Path(self.config["workspace"])
+        product = workspace / "evidence" / "product"
+        selected = product / "scenarios" / "selected"
+        unrelated = product / "scenarios" / "unrelated"
+        resource = workspace / "evidence" / "product-resource"
+        qualification_result = product / "results" / "qualification.json"
+        full_result = product / "results" / "full.json"
+        for path in (selected / "trace.json", unrelated / "trace.json", qualification_result, full_result, resource / "report.json"):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("{}\n", encoding="utf-8")
+        report = {"quality": {"scenarios": [{"scenario_id": "selected"}]}}
+        report_path = workspace / "reports" / "qualification.json"
+
+        evidence.attach_artifacts(
+            report,
+            report_path,
+            execution_product.product_artifact_paths(workspace, "qualification", report),
+        )
+        paths = {item["path"] for item in report["artifacts"]["files"]}
+        self.assertIn("evidence/product/results/qualification.json", paths)
+        self.assertIn("evidence/product/scenarios/selected/trace.json", paths)
+        self.assertNotIn("evidence/product/results/full.json", paths)
+        self.assertNotIn("evidence/product/scenarios/unrelated/trace.json", paths)
+
+        full_result.write_text('{"changed": true}\n', encoding="utf-8")
+        (unrelated / "trace.json").write_text('{"changed": true}\n', encoding="utf-8")
+        evidence.validate_report_artifacts(report_path, report)
+        (selected / "trace.json").write_text('{"changed": true}\n', encoding="utf-8")
+        with self.assertRaisesRegex(evidence.EvidenceError, "原始证据.*变化"):
+            evidence.validate_report_artifacts(report_path, report)
 
     def test_incomplete_product_preflight_resumes_its_scenario_recovery(self) -> None:
         workspace = Path(self.config["workspace"])

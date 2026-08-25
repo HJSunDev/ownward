@@ -98,10 +98,10 @@ def execute(
         report = execute_core(suite_root, contract, active_state, config, workspace, resume)
         artifact_paths = [workspace / "evidence" / "core"]
     elif mode in {"qualification", "full"}:
-        from execution_product import execute_product
+        from execution_product import execute_product, product_artifact_paths
         budget = float(contract["evidence_layers"]["product"]["modes"][mode]["max_wall_seconds"])
         report = execute_product(suite_root, contract, active_state, mode, config, workspace, resume, deadline=started + budget)
-        artifact_paths = [workspace / "evidence" / "product", workspace / "evidence" / "product-resource"]
+        artifact_paths = product_artifact_paths(workspace, mode, report)
     else:
         from execution_community import execute_community
         report, artifact_paths = execute_community(suite_root, contract, active_state["binding"], config, workspace, resume=resume)

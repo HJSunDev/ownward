@@ -359,3 +359,25 @@ def execute_product(
     report = product.score_results(contract, dataset, qualification, tasks, results, score_binding)
     validate_layer_report(contract, "product", report, expected_binding=state["binding"])
     return report
+
+
+def product_artifact_paths(workspace: Path, mode: str, report: dict[str, Any]) -> list[Path]:
+    """Return only the immutable raw evidence that supports one product report."""
+    require(mode in {"qualification", "full"}, "专项证据模式无效")
+    quality = report.get("quality")
+    require(isinstance(quality, dict), "专项报告缺少质量证据")
+    scenarios = quality.get("scenarios")
+    require(isinstance(scenarios, list) and scenarios, "专项报告缺少场景证据")
+    identifiers = [str(item.get("scenario_id", "")) for item in scenarios if isinstance(item, dict)]
+    require(
+        len(identifiers) == len(scenarios)
+        and len(identifiers) == len(set(identifiers))
+        and all(identifier and Path(identifier).name == identifier for identifier in identifiers),
+        "专项报告场景身份无效",
+    )
+    product_root = workspace / "evidence" / "product"
+    return [
+        product_root / "results" / f"{mode}.json",
+        *(product_root / "scenarios" / identifier for identifier in sorted(identifiers)),
+        workspace / "evidence" / "product-resource",
+    ]
