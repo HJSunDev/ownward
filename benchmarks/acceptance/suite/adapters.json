@@ -21,9 +21,9 @@
       "report_schema": "ownward.core-baseline-report/v1"
     },
     "product": {
-      "version": "ownward-product-dataset/v1",
-      "dataset": "materials/product/v1/dataset.json",
-      "qualification": "materials/product/v1/qualification.json",
+      "version": "ownward-product-dataset/v2",
+      "dataset": "materials/product/v2/dataset.json",
+      "qualification": "materials/product/v2/qualification.json",
       "implementation": "adapters/product/verify.py",
       "scorer": "product.py",
       "resource_adapter": "adapters/product_resource/verify.py",

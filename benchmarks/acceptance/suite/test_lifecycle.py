@@ -314,7 +314,7 @@ class EvidenceLifecycleTests(unittest.TestCase):
         count = 2 if mode == "qualification" else 6
         return {
             "schema": "ownward.product-report/v1", "suite_version": "1.0.0",
-            "dataset_version": "ownward-product-dataset/v1", "mode": mode,
+            "dataset_version": "ownward-product-dataset/v2", "mode": mode,
             "candidate": self.binding["candidate"], "binary_sha256": active["binary_sha256"],
             "environment": {"sha256": active["environment_sha256"]},
             "inputs": {"sha256": active["input_manifest_sha256"]},

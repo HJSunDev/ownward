@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import math
@@ -10,6 +11,20 @@ from typing import Any
 
 class MaterialsError(ValueError):
     pass
+
+
+ACTIVE_PRODUCT_VERSION = "ownward-product-dataset/v2"
+ACTIVE_PRODUCT_DIRECTORY = "v2"
+PRODUCT_V1_DIGESTS = {
+    "dataset_sha256": "818da669d9f168347dea9ac40c7cc8b8432e2c0f648353aae78e345d4628268a",
+    "qualification_sha256": "4292aff3235da76adae55ccda055d7fdf22c05ab6cb3bdd18a5ce19cb9f4a47b",
+    "review_sha256": "a6652bb79c1b3b3fefca42d853bc0d0a5e63f54df4f086db634db592a86b3547",
+}
+S27_V2_QUESTION = (
+    "What earlier incident occurred, including its specific circumstance and the realization I formed then; "
+    "what distinct practice did I adopt afterward for tense group situations; and what later result supports "
+    "that adopted practice?"
+)
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -24,7 +39,21 @@ def validate_materials(root: Path) -> dict[str, Any]:
     _require(manifest.get("schema") == "ownward.acceptance-materials-manifest/v1", "材料清单 schema 无效")
     _require(manifest.get("suite_version") == "1.0.0", "材料清单体系版本无效")
     files = manifest.get("files")
-    _require(isinstance(files, list) and len(files) == 5, "材料清单必须固定五份材料")
+    expected_manifest_paths = {
+        "benchmarks/acceptance/suite/materials/core/v1/dataset.json",
+        "benchmarks/acceptance/suite/materials/product/v1/dataset.json",
+        "benchmarks/acceptance/suite/materials/product/v1/qualification.json",
+        "benchmarks/acceptance/suite/materials/product/v1/review.json",
+        "benchmarks/acceptance/suite/materials/product/v2/dataset.json",
+        "benchmarks/acceptance/suite/materials/product/v2/qualification.json",
+        "benchmarks/acceptance/suite/materials/product/v2/review.json",
+        "benchmarks/acceptance/suite/materials/frontier/v1/calibration.json",
+    }
+    _require(isinstance(files, list) and len(files) == len(expected_manifest_paths), "材料清单规模无效")
+    _require(
+        {str(item.get("path")) for item in files if isinstance(item, dict)} == expected_manifest_paths,
+        "材料清单没有同时且仅封存历史 v1 与活动 v2",
+    )
     for item in files:
         _require(isinstance(item, dict), "材料清单项必须是对象")
         path = Path(str(item.get("path", "")))
@@ -34,6 +63,11 @@ def validate_materials(root: Path) -> dict[str, Any]:
         _require(path.is_file(), f"材料不存在: {item.get('path')}")
         actual = hashlib.sha256(path.read_bytes()).hexdigest()
         _require(actual == item.get("sha256"), f"材料摘要不匹配: {item.get('path')}")
+
+    historical_root = root / "product" / "v1"
+    for name, filename in (("dataset_sha256", "dataset.json"), ("qualification_sha256", "qualification.json"), ("review_sha256", "review.json")):
+        actual = hashlib.sha256((historical_root / filename).read_bytes()).hexdigest()
+        _require(actual == PRODUCT_V1_DIGESTS[name], f"历史 product v1 材料发生漂移: {filename}")
 
     core = load_json(root / "core" / "v1" / "dataset.json")
     _require(core.get("schema") == "ownward.core-frontier-materials/v1", "内核材料 schema 无效")
@@ -106,7 +140,23 @@ def validate_materials(root: Path) -> dict[str, Any]:
         "确定性变体操作无效",
     )
 
-    product = load_json(root / "product" / "v1" / "dataset.json")
+    historical_product = load_json(historical_root / "dataset.json")
+    product_root = root / "product" / ACTIVE_PRODUCT_DIRECTORY
+    product = load_json(product_root / "dataset.json")
+    _require(historical_product.get("version") == "ownward-product-dataset/v1", "历史专项数据集版本无效")
+    _require(product.get("schema") == historical_product.get("schema") == "ownward.product-dataset/v1", "专项数据集 schema 无效")
+    _require(product.get("version") == ACTIVE_PRODUCT_VERSION, "活动专项数据集版本无效")
+    historical_comparable = copy.deepcopy(historical_product)
+    active_comparable = copy.deepcopy(product)
+    historical_comparable["version"] = ACTIVE_PRODUCT_VERSION
+    historical_s27 = _scenario(historical_comparable["scenarios"], "s27-68857f46")
+    active_s27 = _scenario(active_comparable["scenarios"], "s27-68857f46")
+    active_question = _mapping(_mapping(active_s27, "expression"), "query").get("question")
+    _require(active_question == S27_V2_QUESTION, "product v2 的 s27 问题未按冷审文本冻结")
+    _mapping(_mapping(active_s27, "expression"), "query")["question"] = _mapping(
+        _mapping(historical_s27, "expression"), "query",
+    )["question"]
+    _require(active_comparable == historical_comparable, "product v2 包含版本身份与 s27 问题之外的语义变化")
     scenarios = product.get("scenarios")
     _require(product.get("frozen") is True and isinstance(scenarios, list), "专项数据集未冻结")
     _require(len(scenarios) == 24, "专项数据集必须包含 24 个场景")
@@ -174,7 +224,13 @@ def validate_materials(root: Path) -> dict[str, Any]:
     _require(dict(counts) == expected_counts, "专项数据集能力分布无效")
     _require(information_total == 120, "专项数据集必须包含 120 条信息")
 
-    qualification = load_json(root / "product" / "v1" / "qualification.json")
+    historical_qualification = load_json(historical_root / "qualification.json")
+    qualification = load_json(product_root / "qualification.json")
+    _require(qualification.get("schema") == historical_qualification.get("schema") == "ownward.product-qualification/v1", "专项资格集 schema 无效")
+    _require(qualification.get("dataset_version") == ACTIVE_PRODUCT_VERSION, "活动专项资格集版本无效")
+    comparable_qualification = copy.deepcopy(qualification)
+    comparable_qualification["dataset_version"] = historical_qualification.get("dataset_version")
+    _require(comparable_qualification == historical_qualification, "product v2 资格集选择发生变化")
     qualification_ids = qualification.get("scenario_ids")
     _require(isinstance(qualification_ids, list) and len(qualification_ids) == len(set(qualification_ids)) == 8, "资格集必须包含八个不同场景")
     _require(set(qualification_ids) <= scenario_ids, "资格集引用未知场景")
@@ -183,11 +239,34 @@ def validate_materials(root: Path) -> dict[str, Any]:
     )
     _require(all(qualification_counts[name] == 2 for name in expected_counts), "资格集必须每类选择两个场景")
 
-    review = load_json(root / "product" / "v1" / "review.json")
+    historical_review = load_json(historical_root / "review.json")
+    review = load_json(product_root / "review.json")
+    _require(review.get("schema") == historical_review.get("schema") == "ownward.product-dataset-review/v1", "专项冷审 schema 无效")
+    _require(review.get("dataset_version") == ACTIVE_PRODUCT_VERSION, "活动专项冷审版本无效")
     reviewed = review.get("reviewed_scenarios")
     _require(isinstance(reviewed, list) and len(reviewed) == 24, "冷审结果必须覆盖全部场景")
     _require({item.get("id") for item in reviewed if isinstance(item, dict)} == scenario_ids, "冷审结果身份不完整")
     _require(all(item.get("valid") is True and not item.get("issues") for item in reviewed), "固定数据包含未通过冷审的场景")
+    _require(reviewed == historical_review.get("reviewed_scenarios"), "product v2 未原样继承 24 个场景的有效性结论")
+    review_source = _mapping(review, "source")
+    _require(review_source.get("kind") == "minimal-version-correction", "product v2 冷审来源无效")
+    _require(review_source.get("base_dataset_version") == "ownward-product-dataset/v1", "product v2 冷审基线版本无效")
+    _require(review_source.get("base_files") == PRODUCT_V1_DIGESTS, "product v2 冷审未绑定原始 v1 摘要")
+    inherited = _mapping(review_source, "inherited_review")
+    fresh = _mapping(review_source, "fresh_review")
+    _require(inherited.get("scenario_count") == 23 and inherited.get("rule"), "product v2 未记录 23 个继承冷审场景")
+    _require(fresh.get("scenario_id") == "s27-68857f46" and fresh.get("changed_field") == "expression.query.question" and fresh.get("method"), "product v2 未记录 s27 新冷审来源")
+    adversarial = _mapping(review, "adversarial_review")
+    checks = adversarial.get("checks")
+    _require(
+        adversarial.get("scenario_id") == "s27-68857f46"
+        and adversarial.get("valid") is True
+        and isinstance(checks, list)
+        and len(checks) == 3
+        and all(isinstance(item, dict) and item.get("passed") is True and item.get("challenge") and item.get("finding") for item in checks)
+        and bool(adversarial.get("conclusion")),
+        "product v2 的 s27 最强反方冷审不完整",
+    )
 
     calibration = load_json(root / "frontier" / "v1" / "calibration.json")
     _require(calibration.get("status") in {"comparable", "incomparable"}, "外部前沿校准状态无效")
@@ -202,6 +281,14 @@ def _scenario_category(scenarios: list[dict[str, Any]], identifier: str) -> str:
         if truth.get("id") == identifier:
             return str(truth.get("task_class"))
     raise MaterialsError(f"资格集引用未知场景: {identifier}")
+
+
+def _scenario(scenarios: Any, identifier: str) -> dict[str, Any]:
+    _require(isinstance(scenarios, list), "专项场景集合无效")
+    for scenario in scenarios:
+        if isinstance(scenario, dict) and _mapping(scenario, "truth").get("id") == identifier:
+            return scenario
+    raise MaterialsError(f"专项数据集缺少场景: {identifier}")
 
 
 def _mapping(value: dict[str, Any], name: str) -> dict[str, Any]:

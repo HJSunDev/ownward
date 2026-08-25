@@ -1,0 +1,167 @@
+{
+  "schema": "ownward.product-dataset-review/v1",
+  "dataset_version": "ownward-product-dataset/v2",
+  "reviewed_scenarios": [
+    {
+      "id": "s01-522febb1",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s02-b199f5b9",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s03-744e6835",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s04-59bba82f",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s05-6eb10c2b",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s06-814b9756",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s07-c459d0cc",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s08-17f29c06",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s09-1a8fdc2b",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s10-920f770e",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s11-1a6ba287",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s12-93c940e2",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s13-3b780c39",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s14-bbcc47dc",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s15-52f974f6",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s16-640eeb18",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s18-d128422e",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s19-f6fd0efd",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s20-0946a250",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s21-7ecbef3c",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s23-e9694e7b",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s24-2f127adb",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s25-f8573453",
+      "valid": true,
+      "issues": []
+    },
+    {
+      "id": "s27-68857f46",
+      "valid": true,
+      "issues": []
+    }
+  ],
+  "source": {
+    "kind": "minimal-version-correction",
+    "base_dataset_version": "ownward-product-dataset/v1",
+    "base_files": {
+      "dataset_sha256": "818da669d9f168347dea9ac40c7cc8b8432e2c0f648353aae78e345d4628268a",
+      "qualification_sha256": "4292aff3235da76adae55ccda055d7fdf22c05ab6cb3bdd18a5ce19cb9f4a47b",
+      "review_sha256": "a6652bb79c1b3b3fefca42d853bc0d0a5e63f54df4f086db634db592a86b3547"
+    },
+    "inherited_review": {
+      "scenario_count": 23,
+      "rule": "All scenarios except s27-68857f46 inherit the valid v1 cold-review result because their truth and expression are byte-equivalent after removing version identity."
+    },
+    "fresh_review": {
+      "scenario_id": "s27-68857f46",
+      "changed_field": "expression.query.question",
+      "method": "strongest-opposition semantic review before any v2 formal execution"
+    }
+  },
+  "adversarial_review": {
+    "scenario_id": "s27-68857f46",
+    "valid": true,
+    "checks": [
+      {
+        "challenge": "Can n1 and n3 alone answer the revised question without n2?",
+        "passed": true,
+        "finding": "No. The second clause separately asks for the practice adopted afterward in tense group situations; n1 states the incident and realization but not that adopted practice."
+      },
+      {
+        "challenge": "Does the revised question reveal the expected identity or answer text?",
+        "passed": true,
+        "finding": "No. It names only temporal and business roles, not fixture IDs, stored wording, forbidden items, or the required practice itself."
+      },
+      {
+        "challenge": "Does the revision introduce another plausible two-item interpretation?",
+        "passed": true,
+        "finding": "No. Three semicolon-separated clauses require the earlier incident and realization, a distinct afterward practice, and later result evidence."
+      }
+    ],
+    "conclusion": "The revised natural-language question maps one-to-one to n1, n2, and n3 while preserving the original three-item truth and business meaning."
+  },
+  "limits": "v2 inherits the 23 unchanged v1 reviews and freshly reviews only the corrected s27 question; this remains a fixed-suite validity review, not an open-world statistical claim."
+}

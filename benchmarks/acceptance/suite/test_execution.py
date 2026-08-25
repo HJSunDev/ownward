@@ -89,13 +89,18 @@ class UnifiedExecutionTests(unittest.TestCase):
 
     @mock.patch("execution.binding.verify_current")
     def test_explicit_invalidation_does_not_recover_the_old_final_report(self, _verify_current) -> None:
-        execution.execute(self.root, self.contract, self.state_path, "targeted", self.config, resume=False)
+        first = execution.execute(self.root, self.contract, self.state_path, "targeted", self.config, resume=False)
+        old_report = Path(first["report"])
+        old_bytes = old_report.read_bytes()
+        old_digest = lifecycle.file_sha256(old_report)
         state = lifecycle.load_state(self.state_path)
         lifecycle.invalidate(self.contract, state, "targeted")
         lifecycle.save_state(self.state_path, state)
         rerun = execution.execute(self.root, self.contract, self.state_path, "targeted", self.config, resume=True)
         self.assertEqual("recorded", rerun["outcome"])
         self.assertNotIn("recovered", rerun)
+        archived = old_report.parent / "_audit" / "targeted" / f"{old_digest}.json"
+        self.assertEqual(old_bytes, archived.read_bytes())
 
     @mock.patch("execution.binding.verify_current")
     def test_reuse_still_revalidates_current_candidate_and_environment(self, verify_current) -> None:
@@ -290,6 +295,25 @@ class UnifiedExecutionTests(unittest.TestCase):
             with self.assertRaisesRegex(execution.ExecutionError, "另一候选或二进制"):
                 execution_product._activate_workspace_binding(workspace, changed, resume=True)
             self.assertEqual(previous, json.loads((workspace / "binding.json").read_text(encoding="utf-8")))
+
+    def test_product_frozen_tasks_migrate_with_resume_and_archive_previous(self) -> None:
+        workspace = Path(self.config["workspace"])
+        previous = {"schema": "ownward.product-tasks/v1", "dataset_version": "v1", "tasks": [{"scenario_id": "old"}]}
+        current = {"schema": "ownward.product-tasks/v1", "dataset_version": "v2", "tasks": [{"scenario_id": "current"}]}
+        tasks_path = workspace / "tasks" / "qualification.json"
+        execution_product._write_json(tasks_path, previous)
+
+        with self.assertRaisesRegex(execution.ExecutionError, "--resume"):
+            execution_product._activate_frozen_tasks(workspace, "qualification", current, resume=False)
+        self.assertEqual(previous, json.loads(tasks_path.read_text(encoding="utf-8")))
+
+        self.assertEqual(
+            tasks_path,
+            execution_product._activate_frozen_tasks(workspace, "qualification", current, resume=True),
+        )
+        archive = workspace / "tasks" / "_audit" / "qualification" / f"{execution_product._json_sha256(previous)}.json"
+        self.assertEqual(previous, json.loads(archive.read_text(encoding="utf-8")))
+        self.assertEqual(current, json.loads(tasks_path.read_text(encoding="utf-8")))
 
     def test_interrupted_resource_report_is_bound_after_exact_dependency_check(self) -> None:
         report_path = self.workspace / "resource" / "report.json"

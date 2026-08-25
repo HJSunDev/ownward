@@ -121,7 +121,7 @@ def score_results(
 
 
 def load_default_materials(suite_root: Path) -> tuple[dict[str, Any], dict[str, Any]]:
-    root = suite_root / "materials" / "product" / "v1"
+    root = suite_root / "materials" / "product" / "v2"
     return load_json(root / "dataset.json"), load_json(root / "qualification.json")
 
 

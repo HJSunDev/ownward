@@ -38,7 +38,7 @@ class EvidenceLayerTests(unittest.TestCase):
     def product_report(self) -> dict:
         report = self.common("ownward.product-report/v1")
         report.update({
-            "dataset_version": "ownward-product-dataset/v1",
+            "dataset_version": "ownward-product-dataset/v2",
             "mode": "qualification",
             "categories": {name: {"scenarios": 2, "passed": True} for name in self.contract["evidence_layers"]["product"]["categories"]},
             "organization_gain": {"passed": True},
@@ -111,8 +111,8 @@ class EvidenceLayerTests(unittest.TestCase):
             evidence.validate_layer_report(self.contract, "community", report)
 
     def test_product_scorer_accepts_complete_evidence_and_rejects_relation_regression(self):
-        dataset = load_json(self.root / "materials" / "product" / "v1" / "dataset.json")
-        qualification = load_json(self.root / "materials" / "product" / "v1" / "qualification.json")
+        dataset = load_json(self.root / "materials" / "product" / "v2" / "dataset.json")
+        qualification = load_json(self.root / "materials" / "product" / "v2" / "qualification.json")
         scenarios = {item["truth"]["id"]: item for item in dataset["scenarios"]}
         results = []
         for identifier in qualification["scenario_ids"]:

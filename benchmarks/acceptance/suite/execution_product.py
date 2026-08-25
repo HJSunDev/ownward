@@ -33,6 +33,24 @@ def _json_sha256(value: Any) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _activate_frozen_tasks(workspace: Path, mode: str, tasks: dict[str, Any], *, resume: bool) -> Path:
+    tasks_path = workspace / "tasks" / f"{mode}.json"
+    if not tasks_path.is_file():
+        _write_json(tasks_path, tasks)
+        return tasks_path
+    previous = load_json(tasks_path)
+    if previous == tasks:
+        return tasks_path
+    require(resume, "冻结专项任务发生变化；使用 --resume 归档旧版本并激活当前绑定任务")
+    archive = workspace / "tasks" / "_audit" / mode / f"{_json_sha256(previous)}.json"
+    if archive.is_file():
+        require(load_json(archive) == previous, "冻结专项任务旧版本归档发生变化")
+    else:
+        _write_json(archive, previous)
+    _write_json(tasks_path, tasks)
+    return tasks_path
+
+
 def _activate_workspace_binding(workspace: Path, current: dict[str, Any], *, resume: bool) -> Path:
     binding_path = workspace / "binding.json"
     if not binding_path.is_file():
@@ -321,12 +339,7 @@ def execute_product(
     require(deadline - time.perf_counter() > 0, f"{mode} 的资源准入已经耗尽该层总成本预算")
     dataset, qualification = product.load_default_materials(suite_root)
     tasks = product.prepare_tasks(dataset, qualification, mode)
-    tasks_path = workspace / "tasks" / f"{mode}.json"
-    tasks_path.parent.mkdir(parents=True, exist_ok=True)
-    if tasks_path.is_file():
-        require(load_json(tasks_path) == tasks, "冻结专项任务发生变化")
-    else:
-        tasks_path.write_text(json.dumps(tasks, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tasks_path = _activate_frozen_tasks(workspace, mode, tasks, resume=resume)
     binding_path = _activate_workspace_binding(workspace, state["binding"], resume=resume)
     if mode == "qualification":
         _ensure_product_preflight(

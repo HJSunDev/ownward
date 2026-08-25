@@ -63,6 +63,13 @@ class BindingManifestTests(unittest.TestCase):
             "community": {"web_arguments": arguments, "enterprise_arguments": arguments},
         }
         first = binding._input_manifest(self.root, config, "product")
+        product_paths = {item["path"] for item in first["files"]}
+        self.assertTrue({
+            "benchmarks/acceptance/suite/materials/product/v2/dataset.json",
+            "benchmarks/acceptance/suite/materials/product/v2/qualification.json",
+            "benchmarks/acceptance/suite/materials/product/v2/review.json",
+        } <= product_paths)
+        self.assertFalse(any("/materials/product/v1/" in f"/{path}" for path in product_paths))
         config["frontier"]["targeted_stages"] = ["relations", "fusion"]
         self.assertEqual(first, binding._input_manifest(self.root, config, "product"))
 

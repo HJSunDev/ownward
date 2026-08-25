@@ -31,7 +31,7 @@ class ProductExecutionTests(unittest.TestCase):
                 })
                 if index < 2:
                     qualification_ids.append(identifier)
-        self.dataset = {"version": "ownward-product-dataset/v1", "scenarios": scenarios}
+        self.dataset = {"version": "ownward-product-dataset/v2", "scenarios": scenarios}
         self.qualification = {"scenario_ids": qualification_ids}
         self.binding = {
             "candidate": "candidate",

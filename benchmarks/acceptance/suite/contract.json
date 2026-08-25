@@ -48,7 +48,7 @@
       "output_schema": "ownward.core-baseline-report/v1"
     },
     "product": {
-      "version": "ownward-product-dataset/v1",
+      "version": "ownward-product-dataset/v2",
       "categories": ["cross_time", "multi_hop", "context_applicability", "information_update"],
       "relation_organization_gain_required": true,
       "full_scenarios": 24,

@@ -1,0 +1,14 @@
+{
+  "schema": "ownward.product-qualification/v1",
+  "dataset_version": "ownward-product-dataset/v2",
+  "scenario_ids": [
+    "s10-920f770e",
+    "s11-1a6ba287",
+    "s02-b199f5b9",
+    "s06-814b9756",
+    "s04-59bba82f",
+    "s05-6eb10c2b",
+    "s01-522febb1",
+    "s03-744e6835"
+  ]
+}

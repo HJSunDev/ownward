@@ -19,6 +19,18 @@
       "sha256": "a6652bb79c1b3b3fefca42d853bc0d0a5e63f54df4f086db634db592a86b3547"
     },
     {
+      "path": "benchmarks/acceptance/suite/materials/product/v2/dataset.json",
+      "sha256": "58f59cc33b2df5a5b041de1aecc701825cda199ee99817333c42bd2e4d0f3490"
+    },
+    {
+      "path": "benchmarks/acceptance/suite/materials/product/v2/qualification.json",
+      "sha256": "d7e7ad48c6c524ad0ddd1eeb3408d65858b9bf8fd5d7e456620b0fe12bb1063f"
+    },
+    {
+      "path": "benchmarks/acceptance/suite/materials/product/v2/review.json",
+      "sha256": "1930bdb54185c60ce780ce1c3fab4a0f69bdca02210d040990dad0d0cb6ddf94"
+    },
+    {
       "path": "benchmarks/acceptance/suite/materials/frontier/v1/calibration.json",
       "sha256": "35eb219d7778b862fb913816b769979bcc19fdb7590f35a357530f9467b3b2b3"
     }

@@ -91,9 +91,9 @@ SCOPE_MATERIALS = {
     ),
     "core": ("benchmarks/acceptance/suite/materials/core/v1/dataset.json",),
     "product": (
-        "benchmarks/acceptance/suite/materials/product/v1/dataset.json",
-        "benchmarks/acceptance/suite/materials/product/v1/qualification.json",
-        "benchmarks/acceptance/suite/materials/product/v1/review.json",
+        "benchmarks/acceptance/suite/materials/product/v2/dataset.json",
+        "benchmarks/acceptance/suite/materials/product/v2/qualification.json",
+        "benchmarks/acceptance/suite/materials/product/v2/review.json",
         "benchmarks/acceptance/suite/adapters/product_resource/thresholds.json",
     ),
     "community": (),

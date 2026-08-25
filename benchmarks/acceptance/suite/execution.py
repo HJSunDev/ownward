@@ -16,6 +16,24 @@ from evidence import validate_layer_report
 from execution_support import ExecutionError, load_json, require
 
 
+def _archive_invalidated_report(state: dict[str, Any], mode: str, report_path: Path) -> None:
+    if not lifecycle.report_was_invalidated(state, mode, report_path):
+        return
+    digest = lifecycle.file_sha256(report_path)
+    archive = report_path.parent / "_audit" / mode / f"{digest}.json"
+    if archive.is_file():
+        require(lifecycle.file_sha256(archive) == digest, "失效报告归档发生变化")
+    else:
+        archive.parent.mkdir(parents=True, exist_ok=True)
+        temporary = archive.with_name(f".{archive.name}.{os.getpid()}.{time.time_ns()}.tmp")
+        with temporary.open("wb") as stream:
+            stream.write(report_path.read_bytes())
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, archive)
+    report_path.unlink()
+
+
 def load_config(path: Path) -> dict[str, Any]:
     value = load_json(path)
     binding.validate_config(value)
@@ -54,8 +72,7 @@ def execute(
     active_state["binding"] = binding.for_mode(state["binding"], mode)
     workspace.mkdir(parents=True, exist_ok=True)
     report_path = workspace / "reports" / f"{mode}.json"
-    if lifecycle.report_was_invalidated(state, mode, report_path):
-        report_path.unlink()
+    _archive_invalidated_report(state, mode, report_path)
     if report_path.exists():
         require(resume, f"{mode} 报告已存在；使用 --resume")
         try:
