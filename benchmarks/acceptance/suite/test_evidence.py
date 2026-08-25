@@ -120,11 +120,12 @@ class EvidenceLayerTests(unittest.TestCase):
             results.append({
                 "scenario_id": identifier,
                 "returned_ids": list(truth["expected_ids"]),
-                "direct_ids": list(truth["expected_ids"][:-1]),
-                "navigation_ids": list(truth["expected_ids"][-1:]),
+                "direct_ids": list(truth["expected_ids"]),
+                "relation_ids": list(truth["expected_ids"][:1]),
+                "navigation_ids": [],
                 "answer_facts": list(truth.get("answer_facts", [])),
                 "grounded": True,
-                "used_navigation": True,
+                "used_navigation": False,
                 "latency_ms": 1.0,
                 "semantic_ms": 2.0,
                 "agent_query_ms": 3.0,
@@ -140,14 +141,21 @@ class EvidenceLayerTests(unittest.TestCase):
         self.assertEqual(3.0, report["latency"]["agent_query_max_ms"])
         self.assertEqual(6.0, report["latency"]["scenario_end_to_end_max_ms"])
         broken = copy.deepcopy(results)
-        broken[0]["returned_ids"] = list(broken[0]["direct_ids"])
+        broken[0]["returned_ids"] = list(broken[0]["returned_ids"][:-1])
         failed = evidence.score_product(self.contract, dataset, qualification, "qualification", broken, self.binding)
         self.assertFalse(failed["passed"])
-        no_navigation = copy.deepcopy(results)
-        for item in no_navigation:
-            item["used_navigation"] = False
-            item["navigation_ids"] = []
-        failed = evidence.score_product(self.contract, dataset, qualification, "qualification", no_navigation, self.binding)
+        no_relation_evidence = copy.deepcopy(results)
+        for item in no_relation_evidence:
+            item["relation_ids"] = []
+        failed = evidence.score_product(
+            self.contract, dataset, qualification, "qualification", no_relation_evidence, self.binding,
+        )
+        self.assertFalse(failed["organization_gain"]["passed"])
+        wrong_relation_evidence = copy.deepcopy(results)
+        wrong_relation_evidence[0]["relation_ids"].append("not-expected")
+        failed = evidence.score_product(
+            self.contract, dataset, qualification, "qualification", wrong_relation_evidence, self.binding,
+        )
         self.assertFalse(failed["organization_gain"]["passed"])
         report = self.community_report()
         report["domains"].pop("enterprise")

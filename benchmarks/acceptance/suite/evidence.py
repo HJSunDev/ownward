@@ -183,7 +183,7 @@ def score_product(
         for name in definition["categories"]
     }
     gains: list[float] = []
-    navigation_supported_gains: list[float] = []
+    relation_evidence_precisions: list[float] = []
     latencies: list[float] = []
     semantic_latencies: list[float] = []
     agent_query_latencies: list[float] = []
@@ -196,14 +196,16 @@ def score_product(
         expected = list(query["expected_ids"])
         forbidden = set(query.get("forbidden_ids", []))
         returned = list(result.get("returned_ids", []))
-        direct = list(result.get("direct_ids", []))
+        relation = list(result.get("relation_ids", []))
         navigation = set(result.get("navigation_ids", []))
         recall = _recall(returned, expected)
         precision = _precision(returned, expected, forbidden)
         ndcg = _ndcg(returned, expected)
         expected_facts = set(query.get("answer_facts", []))
         actual_facts = set(result.get("answer_facts", []))
-        gain = recall - _recall(direct, expected)
+        gain = _recall(relation, expected)
+        relation_set = set(relation)
+        relation_precision = len(relation_set.intersection(expected)) / len(relation_set) if relation_set else 1.0
         category = scenario["truth"]["task_class"]
         facts_passed = actual_facts == expected_facts and result.get("grounded") is True
         passed = recall == 1.0 and not forbidden.intersection(returned) and facts_passed
@@ -214,10 +216,8 @@ def score_product(
         aggregate["precision"] += precision
         aggregate["ndcg"] += ndcg
         gains.append(gain)
-        gained_expected = (set(returned) - set(direct)).intersection(expected)
-        navigation_supported_gain = bool(gained_expected.intersection(navigation))
-        if navigation_supported_gain:
-            navigation_supported_gains.append(gain)
+        relation_evidence_precisions.append(relation_precision)
+        navigation_supported_gain = bool(set(relation).intersection(expected).intersection(navigation))
         latencies.append(float(result.get("latency_ms", math.inf)))
         semantic_latencies.append(float(result.get("semantic_ms", math.inf)))
         agent_query_latencies.append(float(result.get("agent_query_ms", math.inf)))
@@ -230,6 +230,7 @@ def score_product(
             "precision": precision,
             "ndcg": ndcg,
             "relation_gain": gain,
+            "relation_evidence_precision": relation_precision,
             "used_navigation": result.get("used_navigation") is True,
             "navigation_supported_gain": navigation_supported_gain,
             "answer_facts_exact": facts_passed,
@@ -243,7 +244,7 @@ def score_product(
     organization_gain_passed = (
         max(gains, default=0.0) > 0
         and min(gains, default=0.0) >= 0
-        and max(navigation_supported_gains, default=0.0) > 0
+        and min(relation_evidence_precisions, default=1.0) == 1.0
     )
     execution_passed = all(item.get("within_latency_budget") is True and item.get("within_resource_budget") is True for item in results)
     now = datetime.now(timezone.utc).isoformat()
@@ -257,7 +258,12 @@ def score_product(
         "environment": binding["environment"],
         "inputs": binding["inputs"],
         "categories": categories,
-        "organization_gain": {"passed": organization_gain_passed, "minimum": min(gains), "maximum": max(gains)},
+        "organization_gain": {
+            "passed": organization_gain_passed,
+            "minimum": min(gains),
+            "maximum": max(gains),
+            "evidence_precision_minimum": min(relation_evidence_precisions),
+        },
         "quality": {"passed": all(value["passed"] for value in categories.values()), "scenarios": scenario_details},
         "latency": {
             "passed": execution_passed,

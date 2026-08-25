@@ -610,7 +610,7 @@ def _direct_measurement_valid(
     scenario_root: Path,
 ) -> bool:
     try:
-        require(measurement.get("schema") == "ownward.product-direct-measurement/v3", "direct measurement schema is invalid")
+        require(measurement.get("schema") == "ownward.product-direct-measurement/v4", "direct measurement schema is invalid")
         require(measurement.get("binding") == binding, "direct measurement binding is invalid")
         require(measurement.get("progress_sha256") == json_sha256(progress), "direct measurement progress binding changed")
         require(measurement.get("agent_checkpoint_sha256") == agent_sha, "direct measurement agent binding changed")
@@ -651,8 +651,18 @@ def _direct_measurement_valid(
         require(isinstance(stable_by_node, dict), "scenario progress has no stable identity map")
         reverse = {str(stable): str(node) for node, stable in stable_by_node.items()}
         direct_ids = [reverse[str(item.get("id", ""))] for item in values if isinstance(item, dict) and str(item.get("id", "")) in reverse]
-        expected = list(dict.fromkeys(direct_ids))
-        require(measurement.get("direct_ids") == expected, "direct measurement IDs do not match its raw result")
+        relation_ids = [
+            reverse[str(item.get("id", ""))]
+            for item in values
+            if isinstance(item, dict)
+            and str(item.get("id", "")) in reverse
+            and "relation" in item.get("signals", [])
+        ]
+        require(measurement.get("direct_ids") == list(dict.fromkeys(direct_ids)), "direct measurement IDs do not match its raw result")
+        require(
+            measurement.get("relation_ids") == list(dict.fromkeys(relation_ids)),
+            "direct measurement relation evidence does not match its raw result",
+        )
     except RuntimeError:
         return False
     return True
@@ -662,6 +672,7 @@ def _merge_direct_result(agent_result: dict[str, Any], measurement: dict[str, An
     result = dict(agent_result)
     result.update({
         "direct_ids": list(measurement["direct_ids"]),
+        "relation_ids": list(measurement["relation_ids"]),
         "latency_ms": float(measurement["latency_ms"]),
         "direct_stage_ms": float(measurement["stage_ms"]),
         "peak_mib": max(float(result.get("peak_mib", 0)), float(measurement["sampled_peak_mib"])),
@@ -1595,8 +1606,15 @@ def _complete_direct_measurement(
         require(isinstance(values, list), "direct search returned invalid results")
         reverse = {str(stable): str(node) for node, stable in progress["stable_by_node"].items()}
         direct_ids = [reverse[str(item.get("id", ""))] for item in values if isinstance(item, dict) and str(item.get("id", "")) in reverse]
+        relation_ids = [
+            reverse[str(item.get("id", ""))]
+            for item in values
+            if isinstance(item, dict)
+            and str(item.get("id", "")) in reverse
+            and "relation" in item.get("signals", [])
+        ]
         measurement = {
-            "schema": "ownward.product-direct-measurement/v3",
+            "schema": "ownward.product-direct-measurement/v4",
             "binding": expected_binding,
             "progress_sha256": json_sha256(progress),
             "agent_checkpoint_sha256": agent_sha,
@@ -1612,6 +1630,7 @@ def _complete_direct_measurement(
             "sampled_peak_mib": sampled_peak,
             "direct_result": direct,
             "direct_ids": list(dict.fromkeys(direct_ids)),
+            "relation_ids": list(dict.fromkeys(relation_ids)),
             "within_latency_budget": direct_ms <= query_limit_ms,
         }
         measurement_path = attempt / "measurement.json"

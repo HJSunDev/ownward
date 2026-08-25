@@ -100,10 +100,11 @@ def score_results(
     _require({item.get("scenario_id") for item in result_items} == set(allowed), "专项结果没有且只覆盖执行任务")
     for item in result_items:
         identifier = item["scenario_id"]
-        for field in ("direct_ids", "returned_ids", "navigation_ids"):
+        for field in ("direct_ids", "relation_ids", "returned_ids", "navigation_ids"):
             identifiers = item.get(field)
             _require(isinstance(identifiers, list) and len(identifiers) == len(set(identifiers)), f"{identifier} 的 {field} 无效")
             _require(set(identifiers) <= allowed[identifier], f"{identifier} 的 {field} 未映射回冻结信息身份")
+        _require(set(item["relation_ids"]) <= set(item["direct_ids"]), f"{identifier} 的关系证据不属于直接检索结果")
         facts = item.get("answer_facts")
         _require(isinstance(facts, list) and all(isinstance(value, str) and value for value in facts), f"{identifier} 的 answer_facts 无效")
         _require(item.get("grounded") is True, f"{identifier} 的回答没有被 Ownward 工具证据支持")

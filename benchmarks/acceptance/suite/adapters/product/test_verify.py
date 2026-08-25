@@ -1008,7 +1008,7 @@ class ProductAdapterTests(unittest.TestCase):
             verify.write_json(root / "agent-result.json", agent)
             direct = root / "direct" / "attempt-001" / "measurement.json"
             measurement = {
-                "schema": "ownward.product-direct-measurement/v3",
+                "schema": "ownward.product-direct-measurement/v4",
                 "binding": binding,
                 "progress_sha256": verify.json_sha256(progress),
                 "agent_checkpoint_sha256": verify.sha256(root / "agent-result.json"),
@@ -1022,8 +1022,9 @@ class ProductAdapterTests(unittest.TestCase):
                 "latency_ms": 300.0,
                 "stage_ms": 2500.0,
                 "sampled_peak_mib": 12.0,
-                "direct_result": {"results": [{"id": "stable"}]},
+                "direct_result": {"results": [{"id": "stable", "signals": ["relation"]}]},
                 "direct_ids": ["node"],
+                "relation_ids": ["node"],
                 "within_latency_budget": True,
             }
             verify.write_json(direct, measurement)
@@ -1151,6 +1152,7 @@ class ProductAdapterTests(unittest.TestCase):
                     active_runtime=active,
                 )
             self.assertEqual(["node"], result["direct_ids"])
+            self.assertEqual([], result["relation_ids"])
             self.assertTrue(result["within_latency_budget"])
             self.assertEqual(4, client.call_tool.call_count)
             self.assertTrue((scenario / "result.json").is_file())

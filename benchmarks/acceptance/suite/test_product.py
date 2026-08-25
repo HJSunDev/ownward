@@ -45,6 +45,7 @@ class ProductExecutionTests(unittest.TestCase):
         self.assertEqual(len(tasks["tasks"]), 8)
         self.assertTrue(all("truth" not in task for task in tasks["tasks"]))
         self.assertIn("test-only product path", tasks["execution"]["prohibited"])
+        self.assertNotIn("relation_ids", tasks["execution"]["result_fields"])
 
     def test_score_accepts_complete_results_and_rejects_unmapped_identity(self) -> None:
         tasks = product.prepare_tasks(self.dataset, self.qualification, "qualification")
@@ -54,6 +55,7 @@ class ProductExecutionTests(unittest.TestCase):
             results.append({
                 "scenario_id": task["scenario_id"],
                 "direct_ids": node_ids[:2],
+                "relation_ids": node_ids[:1],
                 "returned_ids": node_ids[:3],
                 "navigation_ids": node_ids[2:3],
                 "answer_facts": [],
@@ -83,6 +85,12 @@ class ProductExecutionTests(unittest.TestCase):
         broken["results"][0]["returned_ids"].append("unknown")
         with self.assertRaisesRegex(product.ProductExecutionError, "未映射"):
             product.score_results(self.contract, self.dataset, self.qualification, tasks, broken, self.binding)
+        broken_relation = copy.deepcopy(envelope)
+        broken_relation["results"][0]["relation_ids"] = [tasks["tasks"][0]["information"][-1]["node_id"]]
+        with self.assertRaisesRegex(product.ProductExecutionError, "不属于直接检索"):
+            product.score_results(
+                self.contract, self.dataset, self.qualification, tasks, broken_relation, self.binding,
+            )
 
 
 if __name__ == "__main__":
