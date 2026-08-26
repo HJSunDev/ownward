@@ -33,6 +33,10 @@
     {
       "path": "benchmarks/acceptance/suite/materials/frontier/v1/calibration.json",
       "sha256": "35eb219d7778b862fb913816b769979bcc19fdb7590f35a357530f9467b3b2b3"
+    },
+    {
+      "path": "benchmarks/acceptance/suite/materials/optimization/v1/direction-organization-granularity.json",
+      "sha256": "6bf5ae45481c072848e04b08bb032abbb09e6a0920c0fdcd0b5d6f487bdb4bba"
     }
   ]
 }

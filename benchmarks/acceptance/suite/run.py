@@ -20,7 +20,7 @@ for stream in (sys.stdout, sys.stderr):
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Ownward Acceptance Suite v1 唯一执行入口")
-    parser.add_argument("mode", choices=["check", "plan", "self-check", "preflight", "bind", "init", "rebind", "execute", "invalidate", "promote", "summarize"])
+    parser.add_argument("mode", choices=["check", "plan", "self-check", "kernel-iteration", "preflight", "bind", "init", "rebind", "execute", "invalidate", "promote", "summarize"])
     parser.add_argument("--state", type=Path)
     parser.add_argument("--binding", type=Path)
     parser.add_argument("--impact", action="append", default=[])
@@ -31,6 +31,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--config", type=Path)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--scope")
+    parser.add_argument("--formal-run", type=Path)
+    parser.add_argument("--candidate")
     return parser.parse_args()
 
 
@@ -54,6 +56,12 @@ def main() -> None:
     if args.mode == "self-check":
         import frontier
         print(json.dumps(frontier.run_self_check(HERE, args.output), ensure_ascii=False))
+        return
+    if args.mode == "kernel-iteration":
+        if args.formal_run is None or args.output is None or args.candidate is None:
+            raise ValueError("kernel-iteration 需要 --formal-run、--output 与 --candidate")
+        import kernel_iteration
+        print(json.dumps(kernel_iteration.run(HERE, args.formal_run, args.output, args.candidate, args.resume), ensure_ascii=False))
         return
     if args.mode == "preflight":
         if args.config is None or args.isolation_dir is None:

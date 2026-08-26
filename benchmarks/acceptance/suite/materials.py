@@ -48,6 +48,7 @@ def validate_materials(root: Path) -> dict[str, Any]:
         "benchmarks/acceptance/suite/materials/product/v2/qualification.json",
         "benchmarks/acceptance/suite/materials/product/v2/review.json",
         "benchmarks/acceptance/suite/materials/frontier/v1/calibration.json",
+        "benchmarks/acceptance/suite/materials/optimization/v1/direction-organization-granularity.json",
     }
     _require(isinstance(files, list) and len(files) == len(expected_manifest_paths), "材料清单规模无效")
     _require(
@@ -139,6 +140,8 @@ def validate_materials(root: Path) -> dict[str, Any]:
         ],
         "确定性变体操作无效",
     )
+
+    _validate_optimization_view(root / "optimization" / "v1" / "direction-organization-granularity.json")
 
     historical_product = load_json(historical_root / "dataset.json")
     product_root = root / "product" / ACTIVE_PRODUCT_DIRECTORY
@@ -281,6 +284,54 @@ def _scenario_category(scenarios: list[dict[str, Any]], identifier: str) -> str:
         if truth.get("id") == identifier:
             return str(truth.get("task_class"))
     raise MaterialsError(f"资格集引用未知场景: {identifier}")
+
+
+def _validate_optimization_view(path: Path) -> None:
+    view = load_json(path)
+    _require(view.get("schema") == "ownward.core-frontier-materials/v1", "内核优化视图 schema 无效")
+    _require(view.get("version") == "ownward-kernel-optimization-view/v1", "内核优化视图版本无效")
+    contract = _mapping(view, "optimization_view")
+    _require(contract.get("id") == "organization-granularity-v1", "内核优化视图身份无效")
+    _require(contract.get("direction") == "information_representation_and_organization", "内核优化视图方向无效")
+    source = _mapping(contract, "formal_source")
+    _require(source.get("candidate") == "99f519018df99bd5202b0c571b8e43481cd1b80e", "优化视图未绑定 V0")
+    _require(source.get("formal_errors") == 258 and source.get("mapped_cluster_errors") == 119, "优化视图正式失败规模无效")
+    _require(all(isinstance(source.get(name), str) and len(source[name]) == 64 for name in ("diagnostics_sha256", "report_sha256")), "优化视图正式证据摘要无效")
+    scoring = _mapping(contract, "scoring")
+    _require(scoring.get("context_budget_chars") == 24000 and scoring.get("read_limit") == 8, "优化视图预算口径漂移")
+    baseline = _mapping(contract, "v0_baseline")
+    gate = _mapping(contract, "frozen_gate")
+    _require(math.isclose(float(baseline.get("required_evidence_budget_recall", -1)), 7 / 18), "优化视图 V0 召回基线漂移")
+    _require(math.isclose(float(baseline.get("required_evidence_budget_error_rate", -1)), 11 / 18), "优化视图 V0 错误基线漂移")
+    _require(math.isclose(float(gate.get("required_evidence_budget_recall_min", -1)), 7 / 9), "优化视图召回门槛漂移")
+    _require(math.isclose(float(gate.get("required_evidence_budget_error_rate_max", -1)), 11 / 36), "优化视图错误门槛漂移")
+    _require(gate.get("protected_regression_allowed") is False, "优化视图不得允许保护指标退化")
+    leakage = _mapping(contract, "leakage_policy")
+    _require(all(leakage.get(name) is False for name in ("formal_question_text", "formal_answer", "formal_gold_identity", "formal_session_content")), "优化视图泄漏边界无效")
+    assets = view.get("assets")
+    _require(isinstance(assets, list) and len(assets) == 15 and all(isinstance(item, dict) for item in assets), "优化视图资产规模无效")
+    asset_ids = [item.get("fixture_id") for item in assets]
+    _require(len(asset_ids) == len(set(asset_ids)) and all(isinstance(item, str) and item for item in asset_ids), "优化视图资产身份无效")
+    for asset in assets:
+        _require(isinstance(asset.get("content"), str) and asset["content"].strip(), "优化视图资产内容无效")
+        repeat = asset.get("padding_repeat", 0)
+        _require(isinstance(repeat, int) and repeat >= 0, "优化视图固定填充次数无效")
+        _require(repeat == 0 or isinstance(asset.get("padding"), str) and asset["padding"], "优化视图固定填充无效")
+    queries = view.get("queries")
+    _require(isinstance(queries, list) and len(queries) == 5, "优化视图查询规模无效")
+    roles = Counter(item.get("view_role") for item in queries if isinstance(item, dict))
+    _require(roles == {"primary": 3, "protection": 2}, "优化视图主样本与保护样本分布无效")
+    for query in queries:
+        _require(query.get("context_budget_chars") == 24000 and query.get("read_limit") == 8, "优化视图查询预算漂移")
+        expected = query.get("expected_ids")
+        forbidden = query.get("forbidden_ids", [])
+        _require(isinstance(expected, list) and expected and set(expected) <= set(asset_ids), "优化视图期望身份无效")
+        _require(isinstance(forbidden, list) and set(forbidden) <= set(asset_ids) and not set(expected) & set(forbidden), "优化视图排除身份无效")
+    embeddings = view.get("frozen_embeddings")
+    query_embeddings = view.get("frozen_query_embeddings")
+    _require(isinstance(embeddings, dict) and set(embeddings) == set(asset_ids) and all(_valid_vector(item) for item in embeddings.values()), "优化视图资产向量无效")
+    query_ids = {item["query_id"] for item in queries}
+    _require(isinstance(query_embeddings, dict) and set(query_embeddings) == query_ids and all(_valid_vector(item) for item in query_embeddings.values()), "优化视图查询向量无效")
 
 
 def _scenario(scenarios: Any, identifier: str) -> dict[str, Any]:

@@ -19,6 +19,18 @@ python benchmarks/acceptance/suite/run.py self-check --output <self-check-report
 python benchmarks/acceptance/suite/run.py preflight --config <execution.json> --isolation-dir <new-empty-directory-on-non-system-drive>
 ```
 
+V1 大版本的正式失败归因与首方向快速视图仍由本 Suite 的非正式入口承载，不写唯一正式 state，也不产生验收结论。它绑定冻结 V0 的正式诊断摘要，机械生成 258 项问题池，只把证据足以证明的通用机制归入方向；快速视图及共用保护检查按精确输入身份分别复用，失效时只重跑对应部分：
+
+```powershell
+python benchmarks/acceptance/suite/run.py kernel-iteration `
+  --formal-run E:\Ownward\acceptance\longmemeval-s\runs\99f5190\formal `
+  --output .tmp\kernel-v1-major-iteration `
+  --candidate 99f519018df99bd5202b0c571b8e43481cd1b80e `
+  --resume
+```
+
+版本化视图位于 `materials/optimization/v1/`。它只含与正式题目事实、答案和表达不重合的合成机制样本；正式问题池、观察报告和 V0 基线留在输出目录，任务文档只引用证据，不复制机器结果。
+
 内核前沿观察器由同一候选源码构建；正式运行会拒绝提交身份不一致或由脏工作树构建的观察器：
 
 ```powershell

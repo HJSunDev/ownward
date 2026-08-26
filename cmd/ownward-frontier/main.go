@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/HJSunDev/ownward/internal/assetlog"
 	"github.com/HJSunDev/ownward/internal/core"
@@ -39,9 +40,11 @@ type contextValue struct {
 }
 
 type assetValue struct {
-	FixtureID string         `json:"fixture_id"`
-	Content   string         `json:"content"`
-	Contexts  []contextValue `json:"contexts"`
+	FixtureID     string         `json:"fixture_id"`
+	Content       string         `json:"content"`
+	Padding       string         `json:"padding,omitempty"`
+	PaddingRepeat int            `json:"padding_repeat,omitempty"`
+	Contexts      []contextValue `json:"contexts"`
 }
 
 type relationValue struct {
@@ -58,6 +61,9 @@ type queryValue struct {
 	ExpectedIDs          []string       `json:"expected_ids"`
 	ForbiddenIDs         []string       `json:"forbidden_ids"`
 	RequiredRelationPath []string       `json:"required_relation_path"`
+	ViewRole             string         `json:"view_role,omitempty"`
+	ContextBudgetChars   int            `json:"context_budget_chars,omitempty"`
+	ReadLimit            int            `json:"read_limit,omitempty"`
 }
 
 type dataset struct {
@@ -119,7 +125,7 @@ type sampleSpec struct {
 type collector map[string]*sampleSpec
 
 func main() {
-	var materials, candidate, mode, environmentSHA, inputSHA, output, repository, stagesCSV string
+	var materials, candidate, mode, environmentSHA, inputSHA, output, repository, stagesCSV, sourceEquivalent string
 	var selfCheck bool
 	flag.StringVar(&materials, "materials", "", "固定内核基准材料")
 	flag.StringVar(&candidate, "candidate", "", "候选提交")
@@ -129,25 +135,24 @@ func main() {
 	flag.StringVar(&output, "output", "", "观察报告")
 	flag.StringVar(&repository, "repository", ".", "候选仓库")
 	flag.StringVar(&stagesCSV, "stages", "", "定向阶段，逗号分隔")
+	flag.StringVar(&sourceEquivalent, "source-equivalent-candidate", "", "非正式定向观察绑定的产品源码等价候选")
 	flag.BoolVar(&selfCheck, "self-check", false, "允许在未提交工作树上执行非正式体系自检")
 	flag.Parse()
-	if err := run(materials, candidate, mode, environmentSHA, inputSHA, output, repository, stagesCSV, selfCheck); err != nil {
+	if err := run(materials, candidate, mode, environmentSHA, inputSHA, output, repository, stagesCSV, selfCheck, sourceEquivalent); err != nil {
 		fmt.Fprintln(os.Stderr, "ownward-frontier:", err)
 		os.Exit(2)
 	}
 }
 
-func run(materialsPath, candidate, mode, environmentSHA, inputSHA, outputPath, repository, stagesCSV string, selfCheck bool) error {
+func run(materialsPath, candidate, mode, environmentSHA, inputSHA, outputPath, repository, stagesCSV string, selfCheck bool, sourceEquivalent string) error {
 	if mode != "targeted" && mode != "full" {
 		return errors.New("mode 必须是 targeted 或 full")
 	}
 	if strings.TrimSpace(candidate) == "" || !validSHA(environmentSHA) || !validSHA(inputSHA) || outputPath == "" {
 		return errors.New("候选、环境、输入和输出绑定不完整")
 	}
-	if err := verifyCandidate(repository, candidate); err != nil {
-		return err
-	}
-	if err := verifySelf(candidate, selfCheck); err != nil {
+	sourceProof, err := verifySourceIdentity(repository, candidate, sourceEquivalent, mode, selfCheck)
+	if err != nil {
 		return err
 	}
 	encoded, err := os.ReadFile(materialsPath)
@@ -212,7 +217,7 @@ func run(materialsPath, candidate, mode, environmentSHA, inputSHA, outputPath, r
 		Schema: "ownward.core-frontier-observation/v1", SuiteVersion: suiteVersion, Candidate: candidate,
 		MaterialsSHA256: digest(encoded), InputManifestSHA256: inputSHA, Mode: mode,
 		RequestedStages: sortedStageNames(requested),
-		Environment:     map[string]any{"sha256": environmentSHA, "go": runtime.Version(), "os": runtime.GOOS, "arch": runtime.GOARCH, "cpus": runtime.NumCPU()},
+		Environment:     map[string]any{"sha256": environmentSHA, "go": runtime.Version(), "os": runtime.GOOS, "arch": runtime.GOARCH, "cpus": runtime.NumCPU(), "product_source": sourceProof},
 		ToolSHA256:      toolSHA, Metrics: metrics, StartedAt: started, FinishedAt: time.Now().UTC(),
 	}
 	if len(report.Metrics) == 0 {
@@ -264,7 +269,7 @@ func buildFixture(data dataset, scale, variant int) (fixture, error) {
 			reverseContexts(contexts)
 		}
 		id := ids[value.FixtureID]
-		asset := domain.Information{Schema: domain.AssetSchema, ID: id, Revision: 1, CreatedAt: created, UpdatedAt: created, Kind: domain.KindGeneral, Content: value.Content, Contexts: contexts}
+		asset := domain.Information{Schema: domain.AssetSchema, ID: id, Revision: 1, CreatedAt: created, UpdatedAt: created, Kind: domain.KindGeneral, Content: expandedContent(value), Contexts: contexts}
 		assets = append(assets, asset)
 		analysis := semantics.Analysis{Contexts: inferredContexts(data.FrozenSemantics.Contexts[value.FixtureID])}
 		for _, relation := range relations {
@@ -457,6 +462,8 @@ func measureFixture(ctx context.Context, value fixture, stages map[string]bool, 
 			return err
 		}
 		contextScores := make([]float64, 0)
+		budgetRecall := make([]float64, 0)
+		budgetProtection := make([]float64, 0)
 		fusionScores := make([]float64, 0, len(value.Queries))
 		fusionNDCG := make([]float64, 0, len(value.Queries))
 		for _, query := range value.Queries {
@@ -472,9 +479,25 @@ func measureFixture(ctx context.Context, value fixture, stages map[string]bool, 
 			if len(query.Contexts) > 0 {
 				contextScores = append(contextScores, contextScore(ids, query.ExpectedIDs, query.ForbiddenIDs))
 			}
+			if query.ContextBudgetChars > 0 {
+				budgeted := budgetedReadIDs(results, value.Assets, query.ContextBudgetChars, query.ReadLimit)
+				score := recall(budgeted, query.ExpectedIDs)
+				if query.ViewRole == "primary" {
+					budgetRecall = append(budgetRecall, score)
+				} else if query.ViewRole == "protection" {
+					budgetProtection = append(budgetProtection, score)
+				}
+			}
 		}
 		if stages["context"] {
 			out.add("context_precision", "quality", "context", mean(contextScores), "higher")
+			if len(budgetRecall) > 0 {
+				out.add("required_evidence_budget_recall", "quality", "context", mean(budgetRecall), "higher")
+				out.add("required_evidence_budget_error_rate", "quality", "context", 1-mean(budgetRecall), "lower")
+			}
+			if len(budgetProtection) > 0 {
+				out.add("budget_fit_protection", "quality", "context", mean(budgetProtection), "higher")
+			}
 		}
 		if stages["fusion"] {
 			out.add("fusion_recall", "quality", "fusion", mean(fusionScores), "higher")
@@ -577,17 +600,52 @@ func validateDataset(value dataset) error {
 		return errors.New("固定材料无效")
 	}
 	for _, asset := range value.Assets {
+		if asset.PaddingRepeat < 0 || (asset.PaddingRepeat > 0 && strings.TrimSpace(asset.Padding) == "") {
+			return fmt.Errorf("%s 固定填充无效", asset.FixtureID)
+		}
 		frozen := value.FrozenEmbeddings[asset.FixtureID]
 		if len(frozen) != 16 || !finite(frozen) {
 			return fmt.Errorf("%s 冻结向量维度无效", asset.FixtureID)
 		}
 	}
 	for _, query := range value.Queries {
+		if query.ContextBudgetChars < 0 || query.ReadLimit < 0 || (query.ContextBudgetChars > 0 && (query.ReadLimit == 0 || (query.ViewRole != "primary" && query.ViewRole != "protection"))) {
+			return fmt.Errorf("%s 预算视图定义无效", query.QueryID)
+		}
 		if vector := value.FrozenQueryEmbeddings[query.QueryID]; len(vector) != 16 || !finite(vector) {
 			return fmt.Errorf("%s 冻结查询向量无效", query.QueryID)
 		}
 	}
 	return nil
+}
+
+func expandedContent(value assetValue) string {
+	return value.Content + strings.Repeat(value.Padding, value.PaddingRepeat)
+}
+
+func budgetedReadIDs(results []core.SearchResult, assets []domain.Information, budget, limit int) []string {
+	contents := make(map[string]string, len(assets))
+	for _, asset := range assets {
+		contents[asset.ID] = asset.Content
+	}
+	ids := make([]string, 0)
+	used := 0
+	for _, result := range results {
+		content, ok := contents[result.ID]
+		if !ok {
+			continue
+		}
+		contentChars := utf8.RuneCountInString(content)
+		if len(ids) > 0 && used+contentChars > budget {
+			break
+		}
+		ids = append(ids, result.ID)
+		used += contentChars
+		if len(ids) >= limit {
+			break
+		}
+	}
+	return ids
 }
 
 type frozenProvider struct{ queries map[string][]float32 }
@@ -615,6 +673,54 @@ func finite(values []float32) bool {
 		}
 	}
 	return true
+}
+
+func verifySourceIdentity(repository, expected, equivalent, mode string, selfCheck bool) (map[string]any, error) {
+	if strings.TrimSpace(equivalent) == "" {
+		if err := verifyCandidate(repository, expected); err != nil {
+			return nil, err
+		}
+		if err := verifySelf(expected, selfCheck); err != nil {
+			return nil, err
+		}
+		return map[string]any{"kind": "candidate-commit", "candidate": expected}, nil
+	}
+	if !selfCheck || mode != "targeted" || equivalent != expected {
+		return nil, errors.New("源码等价候选只允许用于非正式定向观察")
+	}
+	for _, arguments := range [][]string{
+		{"diff", "--quiet", equivalent + "..HEAD", "--", "internal", "cmd/ownward", "go.mod", "go.sum"},
+		{"diff", "--quiet", "--", "internal", "cmd/ownward", "go.mod", "go.sum"},
+		{"diff", "--cached", "--quiet", "--", "internal", "cmd/ownward", "go.mod", "go.sum"},
+	} {
+		command := exec.Command("git", arguments...)
+		command.Dir = repository
+		if err := command.Run(); err != nil {
+			return nil, errors.New("当前产品源码与 V0 候选并非逐字等价")
+		}
+	}
+	headCommand := exec.Command("git", "rev-parse", "HEAD")
+	headCommand.Dir = repository
+	headEncoded, err := headCommand.Output()
+	if err != nil {
+		return nil, fmt.Errorf("读取当前提交: %w", err)
+	}
+	head := strings.TrimSpace(string(headEncoded))
+	if err := verifySelf(head, true); err != nil {
+		return nil, err
+	}
+	treeCommand := exec.Command("git", "ls-tree", "-r", equivalent, "--", "internal", "cmd/ownward", "go.mod", "go.sum")
+	treeCommand.Dir = repository
+	treeEncoded, err := treeCommand.Output()
+	if err != nil {
+		return nil, fmt.Errorf("读取 V0 产品源码身份: %w", err)
+	}
+	return map[string]any{
+		"kind":                "byte-equivalent-product-source",
+		"candidate":           equivalent,
+		"observer_revision":   head,
+		"product_tree_sha256": digest(treeEncoded),
+	}, nil
 }
 
 func verifyCandidate(repository, expected string) error {
