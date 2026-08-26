@@ -71,3 +71,52 @@ func TestBudgetedReadIDsCountsUnicodeCharactersNotBytes(t *testing.T) {
 		t.Fatalf("budgeted unicode ids = %v", got)
 	}
 }
+
+func TestRequestedStagesFullUsesOnlyFrozenCoreStages(t *testing.T) {
+	stages, err := requestedStages("full", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"identity", "relations", "merge_split", "incremental_consistency", "organization", "indexing", "lexical", "vector", "graph", "context", "fusion"}
+	if len(stages) != len(want) {
+		t.Fatalf("full stages = %v, want %v", stages, want)
+	}
+	for _, stage := range want {
+		if !stages[stage] {
+			t.Fatalf("full stages omit %q: %v", stage, stages)
+		}
+	}
+	for _, stage := range []string{"efficiency", "semantic_representation", "storage_architecture", "execution_state"} {
+		if stages[stage] {
+			t.Fatalf("full stages unexpectedly include targeted-only stage %q", stage)
+		}
+	}
+}
+
+func TestRequestedStagesTargetedAcceptsDirectionOnlyStages(t *testing.T) {
+	want := []string{"efficiency", "semantic_representation", "storage_architecture", "execution_state"}
+	stages, err := requestedStages("targeted", "efficiency,semantic_representation,storage_architecture,execution_state")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stages) != len(want) {
+		t.Fatalf("targeted stages = %v, want %v", stages, want)
+	}
+	for _, stage := range want {
+		if !stages[stage] {
+			t.Fatalf("targeted stages omit %q: %v", stage, stages)
+		}
+	}
+}
+
+func TestObservationEnvironmentKeepsFormalComparisonStable(t *testing.T) {
+	formal := observationEnvironment("environment", map[string]any{"kind": "candidate-commit", "candidate": "candidate"})
+	if _, exists := formal["product_source"]; exists {
+		t.Fatal("formal candidate provenance must not change the comparable environment identity")
+	}
+	worktreeProof := map[string]any{"kind": "worktree-product-source", "product_source_sha256": "source"}
+	worktree := observationEnvironment("environment", worktreeProof)
+	if worktree["product_source"] == nil {
+		t.Fatal("non-formal worktree evidence must retain its source provenance")
+	}
+}

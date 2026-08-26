@@ -225,13 +225,27 @@ func run(materialsPath, candidate, mode, environmentSHA, inputSHA, outputPath, r
 		Schema: "ownward.core-frontier-observation/v1", SuiteVersion: suiteVersion, Candidate: candidate,
 		MaterialsSHA256: digest(encoded), InputManifestSHA256: inputSHA, Mode: mode,
 		RequestedStages: sortedStageNames(requested),
-		Environment:     map[string]any{"sha256": environmentSHA, "go": runtime.Version(), "os": runtime.GOOS, "arch": runtime.GOARCH, "cpus": runtime.NumCPU(), "product_source": sourceProof},
+		Environment:     observationEnvironment(environmentSHA, sourceProof),
 		ToolSHA256:      toolSHA, Metrics: metrics, StartedAt: started, FinishedAt: time.Now().UTC(),
 	}
 	if len(report.Metrics) == 0 {
 		return errors.New("观察报告没有指标")
 	}
 	return writeJSON(outputPath, report)
+}
+
+func observationEnvironment(environmentSHA string, sourceProof map[string]any) map[string]any {
+	environment := map[string]any{
+		"sha256": environmentSHA,
+		"go":     runtime.Version(),
+		"os":     runtime.GOOS,
+		"arch":   runtime.GOARCH,
+		"cpus":   runtime.NumCPU(),
+	}
+	if sourceProof["kind"] != "candidate-commit" {
+		environment["product_source"] = sourceProof
+	}
+	return environment
 }
 
 func sortedStageNames(values map[string]bool) []string {
@@ -677,10 +691,11 @@ func aggregate(item *sampleSpec) float64 {
 }
 
 func requestedStages(mode, csv string) (map[string]bool, error) {
-	known := []string{"identity", "relations", "merge_split", "incremental_consistency", "organization", "indexing", "lexical", "vector", "graph", "context", "fusion", "efficiency", "semantic_representation", "storage_architecture", "execution_state"}
+	full := []string{"identity", "relations", "merge_split", "incremental_consistency", "organization", "indexing", "lexical", "vector", "graph", "context", "fusion"}
+	known := append(append([]string(nil), full...), "efficiency", "semantic_representation", "storage_architecture", "execution_state")
 	result := make(map[string]bool)
 	if mode == "full" {
-		for _, stage := range known {
+		for _, stage := range full {
 			result[stage] = true
 		}
 		if strings.TrimSpace(csv) != "" {
