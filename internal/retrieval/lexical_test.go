@@ -2,6 +2,7 @@ package retrieval
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/HJSunDev/ownward/internal/domain"
@@ -69,6 +70,15 @@ func TestLegacyInformationKindDoesNotActAsOrganizationMetadata(t *testing.T) {
 	}})
 	if results := index.Search("knowledge", nil, 10); len(results) != 0 {
 		t.Fatalf("legacy information kind influenced retrieval: %#v", results)
+	}
+}
+
+func TestQueryTextScorePrefersSpecificFactOverRepeatedBoilerplate(t *testing.T) {
+	query := "星砂档案的霜叶校验码是什么"
+	fact := "星砂档案的中位记录指出霜叶校验码是七三一。"
+	boilerplate := strings.Repeat("星砂档案常规背景。", 30)
+	if QueryTextScore(query, fact) <= QueryTextScore(query, boilerplate) {
+		t.Fatal("specific query evidence did not outrank repeated boilerplate")
 	}
 }
 

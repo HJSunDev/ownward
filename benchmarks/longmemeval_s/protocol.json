@@ -27,6 +27,7 @@
   "retrieval": {
     "search_limit": 24,
     "read_limit": 8,
+    "evidence_search_limit_per_source": 3,
     "context_max_chars": 24000,
     "query_timeout_seconds": 60
   },

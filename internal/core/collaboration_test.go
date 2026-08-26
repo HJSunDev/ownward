@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/HJSunDev/ownward/internal/assetlog"
@@ -11,6 +12,86 @@ import (
 	"github.com/HJSunDev/ownward/internal/embedding"
 	"github.com/HJSunDev/ownward/internal/semantics"
 )
+
+func TestCollaborativeLongAssetUsesTraceableEvidenceUnits(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	assets, err := assetlog.Open(filepath.Join(root, "assets"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := derived.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	embedder := &countingEmbedding{HashForTesting: embedding.HashForTesting{Dimensions: 64}}
+	service, err := NewCollaborative(assets, state, embedder)
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := service.Create(ctx, CreateInput{Content: "astral compass identifies the safe route. " + strings.Repeat("unrelated archive padding. ", 80)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	results, err := service.Search(ctx, SearchInput{Query: "astral compass", Limit: 5})
+	if err != nil || len(results) == 0 || results[0].ID != created.Information.ID {
+		t.Fatalf("long asset did not return source-bound evidence: results=%#v err=%v", results, err)
+	}
+	references, err := service.SearchEvidence(ctx, EvidenceSearchInput{SourceID: results[0].ID, Query: "astral compass", Limit: 3})
+	if err != nil || len(references) == 0 {
+		t.Fatalf("long asset evidence search failed: evidence=%#v err=%v", references, err)
+	}
+	reference := references[0]
+	evidence, err := service.ReadEvidence(ctx, reference.ID)
+	if err != nil || evidence.Reference() != reference || evidence.SourceID != created.Information.ID || !strings.Contains(evidence.Content, "astral compass") {
+		t.Fatalf("evidence did not resolve to the authoritative source: evidence=%#v err=%v", evidence, err)
+	}
+	if _, err := service.Read(ctx, reference.ID); err == nil {
+		t.Fatal("derived evidence identity must not masquerade as an authoritative asset")
+	}
+	updatedContent := "updated beacon identifies the safe route. " + strings.Repeat("new archive padding. ", 80)
+	updated, err := service.Update(ctx, UpdateInput{ID: created.Information.ID, ExpectedRevision: 1, Content: &updatedContent})
+	if err != nil || updated.Information.Revision != 2 {
+		t.Fatalf("update failed: result=%#v err=%v", updated, err)
+	}
+	if _, err := service.ReadEvidence(ctx, reference.ID); err == nil {
+		t.Fatal("old evidence reference survived a source revision change")
+	}
+	updatedResults, err := service.Search(ctx, SearchInput{Query: "updated beacon", Limit: 5})
+	if err != nil || len(updatedResults) == 0 {
+		t.Fatalf("updated source search failed: results=%#v err=%v", updatedResults, err)
+	}
+	updatedEvidence, err := service.SearchEvidence(ctx, EvidenceSearchInput{SourceID: updatedResults[0].ID, Query: "updated beacon", Limit: 3})
+	if err != nil || len(updatedEvidence) == 0 || updatedEvidence[0].SourceRevision != 2 {
+		t.Fatalf("updated source did not expose new evidence: evidence=%#v err=%v", updatedEvidence, err)
+	}
+	for _, count := range embedder.calls {
+		if count != 1 {
+			t.Fatalf("fine-grained evidence multiplied organization embeddings: calls=%v", embedder.calls)
+		}
+	}
+	if err := service.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	assets, err = assetlog.Open(filepath.Join(root, "assets"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err = derived.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := NewCollaborative(assets, state, embedding.HashForTesting{Dimensions: 64})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	restored, err := reopened.ReadEvidence(ctx, updatedEvidence[0].ID)
+	if err != nil || restored.SourceRevision != 2 || !strings.Contains(restored.Content, "updated beacon") {
+		t.Fatalf("self-contained evidence reference did not restore after reopen: evidence=%#v err=%v", restored, err)
+	}
+}
 
 type countingEmbedding struct {
 	embedding.HashForTesting

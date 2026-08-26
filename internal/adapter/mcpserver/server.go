@@ -50,6 +50,24 @@ type ReadOutput struct {
 	Information domain.Information `json:"information"`
 }
 
+type EvidenceReadInput struct {
+	ID string `json:"id" jsonschema:"从检索结果取得的细粒度证据引用标识"`
+}
+
+type EvidenceReadOutput struct {
+	Evidence domain.Evidence `json:"evidence"`
+}
+
+type EvidenceSearchInput struct {
+	SourceID string `json:"source_id" jsonschema:"从信息检索结果取得的稳定来源标识"`
+	Query    string `json:"query" jsonschema:"需要在该长信息内定位的当前证据目标"`
+	Limit    int    `json:"limit,omitempty" jsonschema:"返回数量，一到八；默认三"`
+}
+
+type EvidenceSearchOutput struct {
+	Evidence []domain.EvidenceReference `json:"evidence"`
+}
+
 type StatusInput struct {
 	ID string `json:"id" jsonschema:"稳定的信息标识"`
 }
@@ -143,6 +161,16 @@ func New(service *core.Service, version string) *Server {
 		Description: "按稳定标识读取一项个人信息及其当前版本。",
 		Annotations: closedWorldAnnotations(true, false, true),
 	}, value.read)
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "ownward_evidence_search",
+		Description: "在已经命中的一项长信息内按当前问题即时定位可追溯原文区间；不创建子资产或持久化分段。返回引用须用 ownward_evidence_read 读取。",
+		Annotations: closedWorldAnnotations(true, false, true),
+	}, value.evidenceSearch)
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "ownward_evidence_read",
+		Description: "按证据检索给出的引用读取可追溯原文区间；来源资产、版本、区间和内容均由内核校验。需要完整信息时仍使用 ownward_read。",
+		Annotations: closedWorldAnnotations(true, false, true),
+	}, value.evidenceRead)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ownward_status",
 		Description: "读取一项信息当前的组织状态，判断语义或向量处理是否仍待完成、已完成或明确不确定。",
@@ -297,6 +325,26 @@ func (s *Server) read(ctx context.Context, _ *mcp.CallToolRequest, input ReadInp
 		return nil, ReadOutput{}, err
 	}
 	return nil, ReadOutput{Information: value}, nil
+}
+
+func (s *Server) evidenceRead(ctx context.Context, _ *mcp.CallToolRequest, input EvidenceReadInput) (*mcp.CallToolResult, EvidenceReadOutput, error) {
+	value, err := s.service.ReadEvidence(ctx, input.ID)
+	if err != nil {
+		return nil, EvidenceReadOutput{}, err
+	}
+	return nil, EvidenceReadOutput{Evidence: value}, nil
+}
+
+func (s *Server) evidenceSearch(ctx context.Context, _ *mcp.CallToolRequest, input EvidenceSearchInput) (*mcp.CallToolResult, EvidenceSearchOutput, error) {
+	limit := input.Limit
+	if limit == 0 {
+		limit = 3
+	}
+	values, err := s.service.SearchEvidence(ctx, core.EvidenceSearchInput{SourceID: input.SourceID, Query: input.Query, Limit: limit})
+	if err != nil {
+		return nil, EvidenceSearchOutput{}, err
+	}
+	return nil, EvidenceSearchOutput{Evidence: values}, nil
 }
 
 func (s *Server) status(ctx context.Context, _ *mcp.CallToolRequest, input StatusInput) (*mcp.CallToolResult, StatusOutput, error) {

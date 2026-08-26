@@ -305,11 +305,27 @@ def _validate_optimization_view(path: Path) -> None:
     _require(math.isclose(float(baseline.get("required_evidence_budget_error_rate", -1)), 11 / 18), "优化视图 V0 错误基线漂移")
     _require(math.isclose(float(gate.get("required_evidence_budget_recall_min", -1)), 7 / 9), "优化视图召回门槛漂移")
     _require(math.isclose(float(gate.get("required_evidence_budget_error_rate_max", -1)), 11 / 36), "优化视图错误门槛漂移")
+    _require(float(gate.get("scale_evidence_recall_min", -1)) == 1.0, "优化视图长资产召回门槛漂移")
+    _require(gate.get("query_workflow_relative_gate") == "candidate_not_above_paired_v0_plus_combined_repeatability_error", "优化视图查询相对成本门槛漂移")
+    _require(float(gate.get("query_workflow_p95_ms_max", -1)) == 600.0, "优化视图查询成本门槛漂移")
+    _require(gate.get("query_workflow_absolute_gate") == "existing_warm_query_p95_ms_max", "优化视图查询绝对成本门槛漂移")
+    _require(gate.get("query_workflow_limit_source_sha256") == "18887027da298676b955d687571712beea571ead0a4995cf514a4bf432f60026", "优化视图查询成本权威摘要漂移")
     _require(gate.get("protected_regression_allowed") is False, "优化视图不得允许保护指标退化")
+    efficiency = _mapping(contract, "v0_efficiency_baseline")
+    efficiency_names = {
+        "organization_input_overhead_ratio", "organization_vector_overhead_ratio",
+        "derived_record_overhead_ratio", "derived_vector_overhead_ratio",
+        "rebuild_input_overhead_ratio", "rebuild_vector_overhead_ratio",
+        "rebuilt_record_overhead_ratio", "rebuilt_vector_overhead_ratio",
+    }
+    _require(all(float(efficiency.get(name, -1)) == 0.0 for name in efficiency_names), "优化视图 V0 结构效率基线漂移")
+    profile = _mapping(contract, "formal_length_profile")
+    _require(profile.get("asset_count") == 23867 and profile.get("total_content_chars") == 248978442, "优化视图正式长度总体漂移")
+    _require([profile.get(name) for name in ("p50_chars", "p90_chars", "p99_chars", "max_chars")] == [10595, 17092, 20803, 78215], "优化视图正式长度分位漂移")
     leakage = _mapping(contract, "leakage_policy")
     _require(all(leakage.get(name) is False for name in ("formal_question_text", "formal_answer", "formal_gold_identity", "formal_session_content")), "优化视图泄漏边界无效")
     assets = view.get("assets")
-    _require(isinstance(assets, list) and len(assets) == 15 and all(isinstance(item, dict) for item in assets), "优化视图资产规模无效")
+    _require(isinstance(assets, list) and len(assets) == 20 and all(isinstance(item, dict) for item in assets), "优化视图资产规模无效")
     asset_ids = [item.get("fixture_id") for item in assets]
     _require(len(asset_ids) == len(set(asset_ids)) and all(isinstance(item, str) and item for item in asset_ids), "优化视图资产身份无效")
     for asset in assets:
@@ -317,12 +333,20 @@ def _validate_optimization_view(path: Path) -> None:
         repeat = asset.get("padding_repeat", 0)
         _require(isinstance(repeat, int) and repeat >= 0, "优化视图固定填充次数无效")
         _require(repeat == 0 or isinstance(asset.get("padding"), str) and asset["padding"], "优化视图固定填充无效")
+        target = asset.get("target_runes", 0)
+        _require(isinstance(target, int) and target >= 0, "优化视图固定长度无效")
+        if target:
+            _require(target >= len(asset["content"]) and isinstance(asset.get("padding"), str) and asset["padding"], "优化视图固定长度填充无效")
+            _require(asset.get("fact_position") == "middle", "优化视图长资产事实位置无效")
+    scale_targets = {item["fixture_id"]: item.get("target_runes") for item in assets if item.get("target_runes")}
+    _require(scale_targets == {"S50": 10595, "S90": 17092, "S99": 20803, "SMAX": 78215, "SNOISE": 20803}, "优化视图长资产分位样本漂移")
     queries = view.get("queries")
-    _require(isinstance(queries, list) and len(queries) == 5, "优化视图查询规模无效")
+    _require(isinstance(queries, list) and len(queries) == 10, "优化视图查询规模无效")
     roles = Counter(item.get("view_role") for item in queries if isinstance(item, dict))
-    _require(roles == {"primary": 3, "protection": 2}, "优化视图主样本与保护样本分布无效")
+    _require(roles == {"primary": 3, "protection": 2, "scale": 5}, "优化视图主样本、保护样本与规模样本分布无效")
     for query in queries:
-        _require(query.get("context_budget_chars") == 24000 and query.get("read_limit") == 8, "优化视图查询预算漂移")
+        read_limit = 3 if query.get("view_role") == "scale" else 8
+        _require(query.get("context_budget_chars") == 24000 and query.get("read_limit") == read_limit, "优化视图查询预算漂移")
         expected = query.get("expected_ids")
         forbidden = query.get("forbidden_ids", [])
         _require(isinstance(expected, list) and expected and set(expected) <= set(asset_ids), "优化视图期望身份无效")

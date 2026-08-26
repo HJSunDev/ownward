@@ -47,7 +47,7 @@
 ## 当前执行口径与校准结果
 
 - 机器权威为 [`benchmarks/longmemeval_s/protocol.json`](../../benchmarks/longmemeval_s/protocol.json)：500 题、23,867 个会话、1,498 个最多 20 项的 Ownward 自然语义工作批次，最多四个并发问题、八个独立单 turn Codex App Server worker 和 20,400 秒总墙钟硬上限。自然批不得跨批合并；只有超过 Luna 输入或输出安全边界时才允许在批内确定性拆分。
-- 正式生产评测口径固定为 Codex `gpt-5.6-luna` / `low` 完成语义组织、Codex `gpt-5.6-luna` / `medium` 作为 Reader、Codex `gpt-5.6-terra` / `medium` 按官方评测提示和标签语义执行裁判。三者复用现有 Codex 能力；隔离预检也真实调用三者，但子集结果不形成正式成绩。检索最多返回 24 条线索、完整读取 8 条证据、Reader 上下文最多 24,000 字符。
+- 正式生产评测口径固定为 Codex `gpt-5.6-luna` / `low` 完成语义组织、Codex `gpt-5.6-luna` / `medium` 作为 Reader、Codex `gpt-5.6-terra` / `medium` 按官方评测提示和标签语义执行裁判。三者复用现有 Codex 能力；隔离预检也真实调用三者，但子集结果不形成正式成绩。检索最多返回 24 条资产线索；短资产完整读取，长资产通过公开证据检索/读取取得源绑定区间，每个来源至多三条且合计不超过 8 条证据、Reader 上下文不超过 24,000 字符。
 - 正式结果标识为 `Ownward LongMemEval-S Production Profile`。不得把不同 Reader、裁判、题目子集或检索预算下的公开成绩设为通过线或直接排名；完整报告必须封存当前评测口径与原始证据。
 - 每题使用独立产品数据目录，逐阶段持久化创建与语义组织检查点；正式报告分别记录官方准确率、Ownward search/read 时延、上下文量、模型 token、语义批次和总墙钟。
 - 已复用的 500 题无模型 dry-plan 证明 23,867 个会话与 1,498 个自然工作批完整，摘要为 `8dc1f4c0…b8d56`。历史池 1/2/4 校准继续作为审计证据，但活动选择规则已替换为：在独立单 turn 池 8/12 中选择稳定且完整余量上界不超过 20,400 秒的最低并发。

@@ -16,6 +16,7 @@ import run as adapter
 class FakeToolClient:
     def __init__(self) -> None:
         self.contents: dict[str, str] = {}
+        self.evidence: dict[str, tuple[str, str]] = {}
         self.operations: list[tuple[str, list[str]]] = []
 
     def call_tool(self, name: str, arguments: dict):
@@ -28,6 +29,26 @@ class FakeToolClient:
             return {"results": values}
         if name == "ownward_search":
             return {"results": [{"id": identifier, "score": 1.0, "signals": ["lexical"]} for identifier in self.contents]}
+        if name == "ownward_evidence_search":
+            identifier = arguments["source_id"]
+            content = self.contents[identifier]
+            if len(content) <= 384:
+                return {"evidence": []}
+            chunks = [content[start:start + 384] for start in range(0, len(content), 384)]
+            query_terms = {value.lower() for value in arguments["query"].replace("?", " ").split() if value}
+            ranked = sorted(
+                enumerate(chunks),
+                key=lambda item: (-sum(term in item[1].lower() for term in query_terms), item[0]),
+            )[:arguments["limit"]]
+            values = []
+            for index, chunk in ranked:
+                evidence_id = f"evidence:{identifier}:{index}"
+                self.evidence[evidence_id] = (identifier, chunk)
+                values.append({"id": evidence_id, "source_id": identifier, "content_runes": len(chunk)})
+            return {"evidence": values}
+        if name == "ownward_evidence_read":
+            identifier, content = self.evidence[arguments["id"]]
+            return {"evidence": {"id": arguments["id"], "source_id": identifier, "content": content}}
         if name == "ownward_read":
             identifier = arguments["id"]
             return {"information": {"id": identifier, "content": self.contents[identifier]}}
@@ -139,6 +160,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
         self.assertEqual(850000, self.protocol["memory"]["semantic_analysis_input_token_upper_bound"])
         self.assertEqual(20400, self.protocol["execution"]["full_wall_seconds"])
         self.assertEqual("not_determined", self.protocol["acceptance"]["quality_assessment_status"])
+        self.assertEqual(3, self.protocol["retrieval"]["evidence_search_limit_per_source"])
 
     def test_official_answer_labels_are_validated_but_never_enter_memory_content(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -198,6 +220,30 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             self.assertIn("Kyoto city", judge_input["official_prompt"])
             self.assertTrue(diagnostic["post_answer_only"] if "post_answer_only" in diagnostic else diagnostic["diagnostic_only"])
             self.assertEqual(["info-1"], diagnostic["evidence_coverage"]["read_expected"])
+
+    def test_two_stage_retrieval_delivers_late_long_source_within_original_budget(self) -> None:
+        runtime = FakeRuntime()
+        assert runtime.client is not None
+        first = "Cobalt archive draft notes. " + ("unrelated observatory log. " * 520)
+        second = ("routine harbor ledger. " * 260) + "The cobalt archive final code is VIOLET-731. " + ("routine harbor ledger. " * 260)
+        runtime.client.contents = {"info-1": first, "info-2": second}
+
+        old_read_ids = []
+        old_chars = 0
+        for identifier, content in runtime.client.contents.items():
+            if old_read_ids and old_chars + len(content) > self.protocol["retrieval"]["context_max_chars"]:
+                break
+            old_read_ids.append(identifier)
+            old_chars += len(content)
+        self.assertEqual(["info-1"], old_read_ids)
+
+        evidence, trace = adapter.retrieve(runtime, "What is the cobalt archive final code?", self.protocol)
+        self.assertEqual(["info-1", "info-2"], trace["read_ids"])
+        self.assertTrue(all(item["mode"] == "evidence" for item in trace["read_paths"]))
+        self.assertLessEqual(trace["context_chars"], self.protocol["retrieval"]["context_max_chars"])
+        self.assertLessEqual(len(evidence), self.protocol["retrieval"]["read_limit"])
+        self.assertTrue(any("VIOLET-731" in item["content"] for item in evidence))
+        self.assertTrue(trace["evidence_read_ids"])
 
     def test_diagnostics_separate_pipeline_failures_and_capability_types(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -44,6 +45,8 @@ type assetValue struct {
 	Content       string         `json:"content"`
 	Padding       string         `json:"padding,omitempty"`
 	PaddingRepeat int            `json:"padding_repeat,omitempty"`
+	TargetRunes   int            `json:"target_runes,omitempty"`
+	FactPosition  string         `json:"fact_position,omitempty"`
 	Contexts      []contextValue `json:"contexts"`
 }
 
@@ -125,7 +128,7 @@ type sampleSpec struct {
 type collector map[string]*sampleSpec
 
 func main() {
-	var materials, candidate, mode, environmentSHA, inputSHA, output, repository, stagesCSV, sourceEquivalent string
+	var materials, candidate, mode, environmentSHA, inputSHA, output, repository, stagesCSV, sourceEquivalent, sourceIdentity string
 	var selfCheck bool
 	flag.StringVar(&materials, "materials", "", "固定内核基准材料")
 	flag.StringVar(&candidate, "candidate", "", "候选提交")
@@ -136,22 +139,23 @@ func main() {
 	flag.StringVar(&repository, "repository", ".", "候选仓库")
 	flag.StringVar(&stagesCSV, "stages", "", "定向阶段，逗号分隔")
 	flag.StringVar(&sourceEquivalent, "source-equivalent-candidate", "", "非正式定向观察绑定的产品源码等价候选")
+	flag.StringVar(&sourceIdentity, "source-identity-sha256", "", "非正式定向观察绑定的当前工作树产品源码摘要")
 	flag.BoolVar(&selfCheck, "self-check", false, "允许在未提交工作树上执行非正式体系自检")
 	flag.Parse()
-	if err := run(materials, candidate, mode, environmentSHA, inputSHA, output, repository, stagesCSV, selfCheck, sourceEquivalent); err != nil {
+	if err := run(materials, candidate, mode, environmentSHA, inputSHA, output, repository, stagesCSV, selfCheck, sourceEquivalent, sourceIdentity); err != nil {
 		fmt.Fprintln(os.Stderr, "ownward-frontier:", err)
 		os.Exit(2)
 	}
 }
 
-func run(materialsPath, candidate, mode, environmentSHA, inputSHA, outputPath, repository, stagesCSV string, selfCheck bool, sourceEquivalent string) error {
+func run(materialsPath, candidate, mode, environmentSHA, inputSHA, outputPath, repository, stagesCSV string, selfCheck bool, sourceEquivalent, sourceIdentity string) error {
 	if mode != "targeted" && mode != "full" {
 		return errors.New("mode 必须是 targeted 或 full")
 	}
 	if strings.TrimSpace(candidate) == "" || !validSHA(environmentSHA) || !validSHA(inputSHA) || outputPath == "" {
 		return errors.New("候选、环境、输入和输出绑定不完整")
 	}
-	sourceProof, err := verifySourceIdentity(repository, candidate, sourceEquivalent, mode, selfCheck)
+	sourceProof, err := verifySourceIdentity(repository, candidate, sourceEquivalent, sourceIdentity, mode, selfCheck)
 	if err != nil {
 		return err
 	}
@@ -243,6 +247,28 @@ type fixture struct {
 	Truth        []relationValue
 	Changes      []assetValue
 	OriginalMap  map[string]string
+}
+
+type lifecycleMeasurement struct {
+	SourceRunes             int
+	OrganizationInputRunes  int
+	OrganizationItems       int
+	DerivedRecords          int
+	DerivedVectors          int
+	DerivedStorageBytes     int64
+	RebuildInputRunes       int
+	RebuildItems            int
+	RebuiltRecords          int
+	RebuiltVectors          int
+	OrganizationWallSeconds float64
+	RebuildWallSeconds      float64
+}
+
+type readMeasurement struct {
+	IDs             []string
+	ContentRunes    int
+	SerializedBytes int
+	ReadUnits       int
 }
 
 func buildFixture(data dataset, scale, variant int) (fixture, error) {
@@ -405,6 +431,31 @@ func measureFixture(ctx context.Context, value fixture, stages map[string]bool, 
 		out.add("index_build_ms", "latency", "indexing", milliseconds(indexElapsed), "lower")
 		out.add("index_bytes", "resources", "indexing", float64(indexAllocatedBytes), "lower")
 	}
+	if stages["efficiency"] {
+		measured, err := measureOrganizationLifecycle(ctx, value.Assets, scratchRoot)
+		if err != nil {
+			return err
+		}
+		// The kernel-iteration driver mechanically verifies that organization,
+		// rebuild, and storage paths are byte-equivalent to V0 before invoking
+		// this stage. One shared measurement therefore represents both sides of
+		// the paired comparison without inventing order-dependent process noise.
+		v0Measured := measured
+		out.add("organization_input_overhead_ratio", "resources", "efficiency", overheadRatio(measured.OrganizationInputRunes, measured.SourceRunes), "lower")
+		out.add("organization_vector_overhead_ratio", "resources", "efficiency", overheadRatio(measured.OrganizationItems, len(value.Assets)), "lower")
+		out.add("derived_record_overhead_ratio", "resources", "efficiency", overheadRatio(measured.DerivedRecords, len(value.Assets)), "lower")
+		out.add("derived_vector_overhead_ratio", "resources", "efficiency", overheadRatio(measured.DerivedVectors, len(value.Assets)), "lower")
+		out.add("rebuild_input_overhead_ratio", "resources", "efficiency", overheadRatio(measured.RebuildInputRunes, measured.SourceRunes), "lower")
+		out.add("rebuild_vector_overhead_ratio", "resources", "efficiency", overheadRatio(measured.RebuildItems, len(value.Assets)), "lower")
+		out.add("rebuilt_record_overhead_ratio", "resources", "efficiency", overheadRatio(measured.RebuiltRecords, len(value.Assets)), "lower")
+		out.add("rebuilt_vector_overhead_ratio", "resources", "efficiency", overheadRatio(measured.RebuiltVectors, len(value.Assets)), "lower")
+		out.add("v0_derived_storage_bytes_per_source_rune", "resources", "efficiency", ratioFloat(float64(v0Measured.DerivedStorageBytes), float64(v0Measured.SourceRunes)), "lower")
+		out.add("candidate_derived_storage_bytes_per_source_rune", "resources", "efficiency", ratioFloat(float64(measured.DerivedStorageBytes), float64(measured.SourceRunes)), "lower")
+		out.add("v0_organization_real_p95_ms", "latency", "efficiency", v0Measured.OrganizationWallSeconds*1000, "lower")
+		out.add("candidate_organization_real_p95_ms", "latency", "efficiency", measured.OrganizationWallSeconds*1000, "lower")
+		out.add("v0_rebuild_real_p95_ms", "latency", "efficiency", v0Measured.RebuildWallSeconds*1000, "lower")
+		out.add("candidate_rebuild_real_p95_ms", "latency", "efficiency", measured.RebuildWallSeconds*1000, "lower")
+	}
 	if stages["lexical"] {
 		out.add("lexical_recall", "quality", "lexical", averageRecall(value.Queries, func(query queryValue) []string {
 			return lexicalIDs(lexical.Search(query.Query, convertContexts(query.Contexts), 10))
@@ -430,7 +481,7 @@ func measureFixture(ctx context.Context, value fixture, stages map[string]bool, 
 		}
 		out.add("graph_recall", "quality", "graph", ratio(correct, total), "higher")
 	}
-	if stages["context"] || stages["fusion"] {
+	if stages["context"] || stages["fusion"] || stages["efficiency"] {
 		root, err := os.MkdirTemp(scratchRoot, "fixture-*")
 		if err != nil {
 			return err
@@ -464,6 +515,7 @@ func measureFixture(ctx context.Context, value fixture, stages map[string]bool, 
 		contextScores := make([]float64, 0)
 		budgetRecall := make([]float64, 0)
 		budgetProtection := make([]float64, 0)
+		budgetScale := make([]float64, 0)
 		fusionScores := make([]float64, 0, len(value.Queries))
 		fusionNDCG := make([]float64, 0, len(value.Queries))
 		for _, query := range value.Queries {
@@ -472,7 +524,8 @@ func measureFixture(ctx context.Context, value fixture, stages map[string]bool, 
 			if err != nil {
 				return err
 			}
-			out.add("query_p95_ms", "latency", "fusion", milliseconds(time.Since(started)), "lower")
+			searchElapsed := time.Since(started)
+			out.add("query_p95_ms", "latency", "fusion", milliseconds(searchElapsed), "lower")
 			ids := searchIDs(results)
 			fusionScores = append(fusionScores, recall(ids, query.ExpectedIDs))
 			fusionNDCG = append(fusionNDCG, ndcg(ids, query.ExpectedIDs))
@@ -480,12 +533,33 @@ func measureFixture(ctx context.Context, value fixture, stages map[string]bool, 
 				contextScores = append(contextScores, contextScore(ids, query.ExpectedIDs, query.ForbiddenIDs))
 			}
 			if query.ContextBudgetChars > 0 {
-				budgeted := budgetedReadIDs(results, value.Assets, query.ContextBudgetChars, query.ReadLimit)
-				score := recall(budgeted, query.ExpectedIDs)
+				v0Started := time.Now()
+				v0Delivery, err := budgetedFullServiceReadIDs(ctx, service, results, query.ContextBudgetChars, query.ReadLimit)
+				v0Elapsed := time.Since(v0Started)
+				if err != nil {
+					return err
+				}
+				candidateStarted := time.Now()
+				candidateDelivery, err := budgetedServiceReadIDs(ctx, service, results, query.Query, query.ContextBudgetChars, query.ReadLimit)
+				candidateElapsed := time.Since(candidateStarted)
+				if err != nil {
+					return err
+				}
+				score := recall(candidateDelivery.IDs, query.ExpectedIDs)
 				if query.ViewRole == "primary" {
 					budgetRecall = append(budgetRecall, score)
 				} else if query.ViewRole == "protection" {
 					budgetProtection = append(budgetProtection, score)
+				} else if query.ViewRole == "scale" {
+					budgetScale = append(budgetScale, score)
+				}
+				if stages["efficiency"] {
+					out.add("v0_query_workflow_p95_ms", "latency", "efficiency", milliseconds(searchElapsed+v0Elapsed), "lower")
+					out.add("candidate_query_workflow_p95_ms", "latency", "efficiency", milliseconds(searchElapsed+candidateElapsed), "lower")
+					out.add("v0_query_content_runes", "resources", "efficiency", float64(v0Delivery.ContentRunes), "lower")
+					out.add("candidate_query_content_runes", "resources", "efficiency", float64(candidateDelivery.ContentRunes), "lower")
+					out.add("v0_query_serialized_bytes", "resources", "efficiency", float64(v0Delivery.SerializedBytes), "lower")
+					out.add("candidate_query_serialized_bytes", "resources", "efficiency", float64(candidateDelivery.SerializedBytes), "lower")
 				}
 			}
 		}
@@ -497,6 +571,9 @@ func measureFixture(ctx context.Context, value fixture, stages map[string]bool, 
 			}
 			if len(budgetProtection) > 0 {
 				out.add("budget_fit_protection", "quality", "context", mean(budgetProtection), "higher")
+			}
+			if len(budgetScale) > 0 {
+				out.add("scale_evidence_recall", "quality", "context", mean(budgetScale), "higher")
 			}
 		}
 		if stages["fusion"] {
@@ -560,7 +637,7 @@ func aggregate(item *sampleSpec) float64 {
 }
 
 func requestedStages(mode, csv string) (map[string]bool, error) {
-	known := []string{"identity", "relations", "merge_split", "incremental_consistency", "organization", "indexing", "lexical", "vector", "graph", "context", "fusion"}
+	known := []string{"identity", "relations", "merge_split", "incremental_consistency", "organization", "indexing", "lexical", "vector", "graph", "context", "fusion", "efficiency"}
 	result := make(map[string]bool)
 	if mode == "full" {
 		for _, stage := range known {
@@ -603,13 +680,23 @@ func validateDataset(value dataset) error {
 		if asset.PaddingRepeat < 0 || (asset.PaddingRepeat > 0 && strings.TrimSpace(asset.Padding) == "") {
 			return fmt.Errorf("%s 固定填充无效", asset.FixtureID)
 		}
+		if asset.TargetRunes < 0 || (asset.TargetRunes > 0 && (strings.TrimSpace(asset.Padding) == "" || asset.TargetRunes < utf8.RuneCountInString(asset.Content))) {
+			return fmt.Errorf("%s 固定长度定义无效", asset.FixtureID)
+		}
+		if asset.FactPosition != "" && asset.FactPosition != "middle" {
+			return fmt.Errorf("%s 事实位置定义无效", asset.FixtureID)
+		}
+		if asset.TargetRunes > 0 && utf8.RuneCountInString(expandedContent(asset)) != asset.TargetRunes {
+			return fmt.Errorf("%s 固定长度无法精确复现", asset.FixtureID)
+		}
 		frozen := value.FrozenEmbeddings[asset.FixtureID]
 		if len(frozen) != 16 || !finite(frozen) {
 			return fmt.Errorf("%s 冻结向量维度无效", asset.FixtureID)
 		}
 	}
 	for _, query := range value.Queries {
-		if query.ContextBudgetChars < 0 || query.ReadLimit < 0 || (query.ContextBudgetChars > 0 && (query.ReadLimit == 0 || (query.ViewRole != "primary" && query.ViewRole != "protection"))) {
+		validBudgetRole := query.ViewRole == "primary" || query.ViewRole == "protection" || query.ViewRole == "scale"
+		if query.ContextBudgetChars < 0 || query.ReadLimit < 0 || (query.ContextBudgetChars > 0 && (query.ReadLimit == 0 || !validBudgetRole)) {
 			return fmt.Errorf("%s 预算视图定义无效", query.QueryID)
 		}
 		if vector := value.FrozenQueryEmbeddings[query.QueryID]; len(vector) != 16 || !finite(vector) {
@@ -620,7 +707,245 @@ func validateDataset(value dataset) error {
 }
 
 func expandedContent(value assetValue) string {
+	if value.TargetRunes > 0 {
+		contentRunes := utf8.RuneCountInString(value.Content)
+		remaining := value.TargetRunes - contentRunes
+		if remaining <= 0 {
+			return value.Content
+		}
+		prefix := 0
+		if value.FactPosition == "middle" {
+			prefix = remaining / 2
+		}
+		return repeatRunes(value.Padding, prefix) + value.Content + repeatRunes(value.Padding, remaining-prefix)
+	}
 	return value.Content + strings.Repeat(value.Padding, value.PaddingRepeat)
+}
+
+func repeatRunes(pattern string, count int) string {
+	if count <= 0 || pattern == "" {
+		return ""
+	}
+	patternRunes := []rune(pattern)
+	result := make([]rune, 0, count)
+	for len(result) < count {
+		remaining := count - len(result)
+		if remaining < len(patternRunes) {
+			result = append(result, patternRunes[:remaining]...)
+		} else {
+			result = append(result, patternRunes...)
+		}
+	}
+	return string(result)
+}
+
+func measureOrganizationLifecycle(ctx context.Context, assets []domain.Information, scratchRoot string) (lifecycleMeasurement, error) {
+	root, err := os.MkdirTemp(scratchRoot, "efficiency-*")
+	if err != nil {
+		return lifecycleMeasurement{}, err
+	}
+	defer os.RemoveAll(root)
+	assetStore, err := assetlog.Open(filepath.Join(root, "assets"))
+	if err != nil {
+		return lifecycleMeasurement{}, err
+	}
+	stateRoot := filepath.Join(root, "state")
+	stateStore, err := derived.Open(stateRoot)
+	if err != nil {
+		_ = assetStore.Close()
+		return lifecycleMeasurement{}, err
+	}
+	provider := &measuringProvider{}
+	service, err := core.NewCollaborative(assetStore, stateStore, provider)
+	if err != nil {
+		_ = stateStore.Close()
+		_ = assetStore.Close()
+		return lifecycleMeasurement{}, err
+	}
+	defer service.Close()
+
+	measured := lifecycleMeasurement{}
+	inputs := make([]core.CreateInput, len(assets))
+	for index, asset := range assets {
+		measured.SourceRunes += utf8.RuneCountInString(asset.Content)
+		inputs[index] = core.CreateInput{Kind: asset.Kind, Content: asset.Content, Contexts: asset.Contexts, Relations: asset.Relations, Source: asset.Source}
+	}
+	organizationStarted := time.Now()
+	for start := 0; start < len(inputs); start += 20 {
+		end := min(start+20, len(inputs))
+		results, err := service.CreateBatch(ctx, inputs[start:end])
+		if err != nil {
+			return lifecycleMeasurement{}, err
+		}
+		for _, result := range results {
+			if result.Error != "" || result.Result == nil {
+				return lifecycleMeasurement{}, errors.New("真实组织规模测量未完成全部资产")
+			}
+		}
+	}
+	measured.OrganizationWallSeconds = time.Since(organizationStarted).Seconds()
+	measured.OrganizationInputRunes = provider.documentRunes
+	measured.OrganizationItems = provider.documentItems
+	records, err := stateStore.AllWithEmbeddings()
+	if err != nil {
+		return lifecycleMeasurement{}, err
+	}
+	measured.DerivedRecords = len(records)
+	measured.DerivedVectors = vectorRecordCount(records)
+	measured.DerivedStorageBytes, err = directoryBytes(stateRoot)
+	if err != nil {
+		return lifecycleMeasurement{}, err
+	}
+
+	provider.reset()
+	rebuildStarted := time.Now()
+	if _, err := service.Maintain(ctx, true); err != nil {
+		return lifecycleMeasurement{}, err
+	}
+	measured.RebuildWallSeconds = time.Since(rebuildStarted).Seconds()
+	measured.RebuildInputRunes = provider.documentRunes
+	measured.RebuildItems = provider.documentItems
+	rebuilt, err := stateStore.AllWithEmbeddings()
+	if err != nil {
+		return lifecycleMeasurement{}, err
+	}
+	measured.RebuiltRecords = len(rebuilt)
+	measured.RebuiltVectors = vectorRecordCount(rebuilt)
+	return measured, nil
+}
+
+func vectorRecordCount(records []derived.Record) int {
+	count := 0
+	for _, record := range records {
+		if len(record.Embedding) > 0 {
+			count++
+		}
+	}
+	return count
+}
+
+func directoryBytes(root string) (int64, error) {
+	var total int64
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		total += info.Size()
+		return nil
+	})
+	return total, err
+}
+
+func overheadRatio(actual, baseline int) float64 {
+	if baseline <= 0 {
+		return 0
+	}
+	return float64(actual-baseline) / float64(baseline)
+}
+
+func ratioFloat(numerator, denominator float64) float64 {
+	if denominator <= 0 {
+		return 0
+	}
+	return numerator / denominator
+}
+
+func budgetedServiceReadIDs(ctx context.Context, service *core.Service, results []core.SearchResult, query string, budget, limit int) (readMeasurement, error) {
+	measured := readMeasurement{IDs: make([]string, 0)}
+	for _, result := range results {
+		remaining := limit - measured.ReadUnits
+		if remaining <= 0 {
+			break
+		}
+		referenceLimit := min(3, remaining)
+		references, err := service.SearchEvidence(ctx, core.EvidenceSearchInput{SourceID: result.ID, Query: query, Limit: referenceLimit})
+		if err != nil {
+			return readMeasurement{}, err
+		}
+		readSource := false
+		if len(references) == 0 {
+			information, err := service.Read(ctx, result.ID)
+			if err != nil {
+				return readMeasurement{}, err
+			}
+			contentRunes := utf8.RuneCountInString(information.Content)
+			if measured.ReadUnits > 0 && measured.ContentRunes+contentRunes > budget {
+				return measured, nil
+			}
+			encoded, err := json.Marshal(information)
+			if err != nil {
+				return readMeasurement{}, err
+			}
+			measured.ContentRunes += contentRunes
+			measured.SerializedBytes += len(encoded)
+			measured.ReadUnits++
+			readSource = true
+		} else {
+			for _, reference := range references {
+				if measured.ReadUnits > 0 && measured.ContentRunes+reference.ContentRunes > budget {
+					return measured, nil
+				}
+				evidence, err := service.ReadEvidence(ctx, reference.ID)
+				if err != nil {
+					return readMeasurement{}, err
+				}
+				if evidence.SourceID != result.ID || evidence.Reference() != reference {
+					return readMeasurement{}, errors.New("检索证据引用与来源读取不一致")
+				}
+				encoded, err := json.Marshal(evidence)
+				if err != nil {
+					return readMeasurement{}, err
+				}
+				measured.ContentRunes += reference.ContentRunes
+				measured.SerializedBytes += len(encoded)
+				measured.ReadUnits++
+				readSource = true
+				if measured.ReadUnits >= limit {
+					break
+				}
+			}
+		}
+		if readSource {
+			measured.IDs = append(measured.IDs, result.ID)
+		}
+		if measured.ReadUnits >= limit {
+			break
+		}
+	}
+	return measured, nil
+}
+
+func budgetedFullServiceReadIDs(ctx context.Context, service *core.Service, results []core.SearchResult, budget, limit int) (readMeasurement, error) {
+	measured := readMeasurement{IDs: make([]string, 0)}
+	for _, result := range results {
+		information, err := service.Read(ctx, result.ID)
+		if err != nil {
+			return readMeasurement{}, err
+		}
+		contentRunes := utf8.RuneCountInString(information.Content)
+		if len(measured.IDs) > 0 && measured.ContentRunes+contentRunes > budget {
+			break
+		}
+		encoded, err := json.Marshal(information)
+		if err != nil {
+			return readMeasurement{}, err
+		}
+		measured.IDs = append(measured.IDs, result.ID)
+		measured.ContentRunes += contentRunes
+		measured.SerializedBytes += len(encoded)
+		measured.ReadUnits++
+		if measured.ReadUnits >= limit {
+			break
+		}
+	}
+	return measured, nil
 }
 
 func budgetedReadIDs(results []core.SearchResult, assets []domain.Information, budget, limit int) []string {
@@ -650,6 +975,34 @@ func budgetedReadIDs(results []core.SearchResult, assets []domain.Information, b
 
 type frozenProvider struct{ queries map[string][]float32 }
 
+type measuringProvider struct {
+	documentCalls int
+	documentItems int
+	documentRunes int
+}
+
+func (m *measuringProvider) Name() string { return "frontier-efficiency-measurement" }
+func (m *measuringProvider) Space() embedding.Space {
+	return embedding.Space{ID: "frontier-efficiency-measurement", Dimensions: 16}
+}
+func (m *measuringProvider) EmbedDocuments(ctx context.Context, values []string) ([][]float32, error) {
+	m.documentCalls++
+	m.documentItems += len(values)
+	for _, value := range values {
+		m.documentRunes += utf8.RuneCountInString(value)
+	}
+	return (embedding.HashForTesting{Dimensions: 16}).EmbedDocuments(ctx, values)
+}
+func (m *measuringProvider) EmbedQuery(ctx context.Context, value string) ([]float32, error) {
+	return (embedding.HashForTesting{Dimensions: 16}).EmbedQuery(ctx, value)
+}
+func (*measuringProvider) Close() error { return nil }
+func (m *measuringProvider) reset() {
+	m.documentCalls = 0
+	m.documentItems = 0
+	m.documentRunes = 0
+}
+
 func (f frozenProvider) Name() string { return "frozen-frontier-v1" }
 func (f frozenProvider) Space() embedding.Space {
 	return embedding.Space{ID: "frozen-frontier-v1", Dimensions: 16}
@@ -675,7 +1028,32 @@ func finite(values []float32) bool {
 	return true
 }
 
-func verifySourceIdentity(repository, expected, equivalent, mode string, selfCheck bool) (map[string]any, error) {
+func verifySourceIdentity(repository, expected, equivalent, sourceIdentity, mode string, selfCheck bool) (map[string]any, error) {
+	if strings.TrimSpace(sourceIdentity) != "" {
+		if !selfCheck || mode != "targeted" || !validSHA(sourceIdentity) || expected != "worktree:"+sourceIdentity || strings.TrimSpace(equivalent) != "" {
+			return nil, errors.New("当前工作树源码身份只允许用于非正式定向观察")
+		}
+		actual, err := productSourceDigest(repository)
+		if err != nil {
+			return nil, err
+		}
+		if actual != sourceIdentity {
+			return nil, errors.New("当前产品源码与声明的工作树身份不一致")
+		}
+		headCommand := exec.Command("git", "rev-parse", "HEAD")
+		headCommand.Dir = repository
+		headEncoded, err := headCommand.Output()
+		if err != nil {
+			return nil, fmt.Errorf("读取当前提交: %w", err)
+		}
+		head := strings.TrimSpace(string(headEncoded))
+		if err := verifySelf(head, true); err != nil {
+			return nil, err
+		}
+		return map[string]any{
+			"kind": "worktree-product-source", "head": head, "product_source_sha256": actual,
+		}, nil
+	}
 	if strings.TrimSpace(equivalent) == "" {
 		if err := verifyCandidate(repository, expected); err != nil {
 			return nil, err
@@ -721,6 +1099,57 @@ func verifySourceIdentity(repository, expected, equivalent, mode string, selfChe
 		"observer_revision":   head,
 		"product_tree_sha256": digest(treeEncoded),
 	}, nil
+}
+
+func productSourceDigest(repository string) (string, error) {
+	paths := make([]string, 0)
+	for _, root := range []string{"internal", filepath.Join("cmd", "ownward"), "go.mod", "go.sum"} {
+		path := filepath.Join(repository, root)
+		info, err := os.Stat(path)
+		if err != nil {
+			return "", err
+		}
+		if !info.IsDir() {
+			paths = append(paths, path)
+			continue
+		}
+		if err := filepath.WalkDir(path, func(current string, entry os.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if !entry.IsDir() {
+				paths = append(paths, current)
+			}
+			return nil
+		}); err != nil {
+			return "", err
+		}
+	}
+	sort.Slice(paths, func(left, right int) bool {
+		leftRelative, _ := filepath.Rel(repository, paths[left])
+		rightRelative, _ := filepath.Rel(repository, paths[right])
+		return filepath.ToSlash(leftRelative) < filepath.ToSlash(rightRelative)
+	})
+	digest := sha256.New()
+	var length [8]byte
+	for _, path := range paths {
+		relative, err := filepath.Rel(repository, path)
+		if err != nil {
+			return "", err
+		}
+		name := []byte(filepath.ToSlash(relative))
+		binary.LittleEndian.PutUint32(length[:4], uint32(len(name)))
+		_, _ = digest.Write(length[:4])
+		_, _ = digest.Write(name)
+		encoded, err := os.ReadFile(path)
+		if err != nil {
+			return "", err
+		}
+		binary.LittleEndian.PutUint64(length[:], uint64(len(encoded)))
+		_, _ = digest.Write(length[:])
+		_, _ = digest.Write(encoded)
+	}
+	return hex.EncodeToString(digest.Sum(nil)), nil
 }
 
 func verifyCandidate(repository, expected string) error {

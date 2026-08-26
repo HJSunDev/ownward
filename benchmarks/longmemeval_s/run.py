@@ -44,7 +44,7 @@ OFFICIAL_DATA_SHA256 = "d6f21ea9d60a0d56f34a05b609c79c88a451d2ae03597821ea3d5a96
 OFFICIAL_QUESTION_COUNT = 500
 PRODUCTION_PROFILE = "Ownward LongMemEval-S Production Profile"
 SEMANTIC_TRANSPORT_VERSION = "ownward.longmemeval-s-semantic-transport/v2"
-RETRIEVAL_STAGE_VERSION = "ownward.longmemeval-s-retrieval/v1"
+RETRIEVAL_STAGE_VERSION = "ownward.longmemeval-s-retrieval/v2"
 READER_STAGE_VERSION = "ownward.longmemeval-s-reader/v1"
 JUDGE_STAGE_VERSION = "ownward.longmemeval-s-judge/v1"
 DIAGNOSTIC_STAGE_VERSION = "ownward.longmemeval-s-diagnostic/v2"
@@ -124,7 +124,12 @@ def validate_protocol(value: dict[str, Any]) -> None:
         <= memory["semantic_context_window_tokens"],
         "memory protocol is invalid",
     )
-    require(retrieval["search_limit"] >= retrieval["read_limit"] > 0 and retrieval["context_max_chars"] > 0, "retrieval protocol is invalid")
+    require(
+        retrieval["search_limit"] >= retrieval["read_limit"] > 0
+        and 0 < retrieval.get("evidence_search_limit_per_source", 0) <= retrieval["read_limit"]
+        and retrieval["context_max_chars"] > 0,
+        "retrieval protocol is invalid",
+    )
     require(memory.get("semantic_model") == "gpt-5.6-luna" and memory.get("semantic_reasoning_effort") == "low", "semantic capability identity changed")
     require(reader.get("capability_source") == "codex" and reader["model"] == "gpt-5.6-luna" and reader["reasoning_effort"] == "medium", "Reader identity changed")
     require(judge.get("capability_source") == "codex" and judge["model"] == "gpt-5.6-terra" and judge["reasoning_effort"] == "medium", "judge identity changed")
@@ -998,28 +1003,91 @@ def retrieve(runtime: OwnwardRuntime, question: str, protocol: dict[str, Any]) -
     results = search.get("results") if isinstance(search, dict) else None
     require(isinstance(results, list), "Ownward search returned no result list")
     evidence: list[dict[str, Any]] = []
+    evidence_search_ms = 0.0
     read_ms = 0.0
     used_chars = 0
     observed: list[dict[str, Any]] = []
+    read_ids: list[str] = []
+    evidence_read_ids: list[str] = []
+    read_paths: list[dict[str, Any]] = []
+    budget_exhausted = False
     for result in results:
         if not isinstance(result, dict) or not isinstance(result.get("id"), str):
             continue
-        observed.append({"id": result["id"], "score": result.get("score"), "signals": result.get("signals", [])})
+        source_id = result["id"]
+        observed.append({"id": source_id, "score": result.get("score"), "signals": result.get("signals", [])})
+        remaining_reads = settings["read_limit"] - len(evidence)
+        if remaining_reads <= 0:
+            break
         before = time.monotonic()
-        read = runtime.client.call_tool("ownward_read", {"id": result["id"]})
+        narrowed = runtime.client.call_tool("ownward_evidence_search", {
+            "source_id": source_id,
+            "query": question,
+            "limit": min(settings["evidence_search_limit_per_source"], remaining_reads),
+        })
+        evidence_search_ms += (time.monotonic() - before) * 1000
+        references = narrowed.get("evidence") if isinstance(narrowed, dict) else None
+        require(isinstance(references, list), "Ownward evidence search returned no evidence list")
+        if references:
+            source_evidence_ids: list[str] = []
+            for reference in references:
+                require(
+                    isinstance(reference, dict)
+                    and isinstance(reference.get("id"), str)
+                    and reference.get("source_id") == source_id
+                    and isinstance(reference.get("content_runes"), int)
+                    and reference["content_runes"] > 0,
+                    "Ownward evidence search returned an invalid source-bound reference",
+                )
+                if used_chars + reference["content_runes"] > settings["context_max_chars"]:
+                    budget_exhausted = True
+                    break
+                before = time.monotonic()
+                read = runtime.client.call_tool("ownward_evidence_read", {"id": reference["id"]})
+                read_ms += (time.monotonic() - before) * 1000
+                narrowed_evidence = read.get("evidence") if isinstance(read, dict) else None
+                require(
+                    isinstance(narrowed_evidence, dict)
+                    and narrowed_evidence.get("id") == reference["id"]
+                    and narrowed_evidence.get("source_id") == source_id
+                    and isinstance(narrowed_evidence.get("content"), str)
+                    and len(narrowed_evidence["content"]) == reference["content_runes"],
+                    "Ownward evidence read did not resolve the source-bound reference",
+                )
+                evidence.append({"id": source_id, "evidence_id": reference["id"], "content": narrowed_evidence["content"]})
+                evidence_read_ids.append(reference["id"])
+                source_evidence_ids.append(reference["id"])
+                used_chars += len(narrowed_evidence["content"])
+                if len(evidence) >= settings["read_limit"]:
+                    break
+            if source_evidence_ids:
+                read_ids.append(source_id)
+                read_paths.append({"source_id": source_id, "mode": "evidence", "evidence_ids": source_evidence_ids})
+            if budget_exhausted or len(evidence) >= settings["read_limit"]:
+                break
+            continue
+        before = time.monotonic()
+        read = runtime.client.call_tool("ownward_read", {"id": source_id})
         read_ms += (time.monotonic() - before) * 1000
         information = read.get("information") if isinstance(read, dict) else None
         if not isinstance(information, dict) or not isinstance(information.get("content"), str):
             continue
         content = information["content"]
-        if evidence and used_chars + len(content) > settings["context_max_chars"]:
+        if used_chars + len(content) > settings["context_max_chars"]:
             break
         evidence.append({"id": information["id"], "content": content})
+        read_ids.append(source_id)
+        read_paths.append({"source_id": source_id, "mode": "full", "evidence_ids": []})
         used_chars += len(content)
         if len(evidence) >= settings["read_limit"]:
             break
     require(evidence, "Ownward retrieval produced no readable evidence")
-    return evidence, {"search_ms": search_ms, "read_ms": read_ms, "total_ms": search_ms + read_ms, "returned": observed, "read_ids": [item["id"] for item in evidence], "context_chars": used_chars}
+    return evidence, {
+        "search_ms": search_ms, "evidence_search_ms": evidence_search_ms, "read_ms": read_ms,
+        "total_ms": search_ms + evidence_search_ms + read_ms, "returned": observed,
+        "read_ids": read_ids, "evidence_read_ids": evidence_read_ids, "read_paths": read_paths,
+        "context_chars": used_chars,
+    }
 
 
 def _question_identity(question: dict[str, Any], run_identity: str) -> str:
@@ -2156,6 +2224,7 @@ def execute(
         bucket["accuracy"] = bucket["correct"] / bucket["questions"]
     query_values = sorted(float(item["retrieval"]["total_ms"]) for item in ordered)
     search_values = sorted(float(item["retrieval"]["search_ms"]) for item in ordered)
+    evidence_search_values = sorted(float(item["retrieval"].get("evidence_search_ms", 0)) for item in ordered)
     read_values = sorted(float(item["retrieval"]["read_ms"]) for item in ordered)
     context_values = sorted(int(item["retrieval"]["context_chars"]) for item in ordered)
     percentile95 = lambda values: values[min(len(values) - 1, math.ceil(len(values) * 0.95) - 1)]
@@ -2185,7 +2254,9 @@ def execute(
         "questions": len(ordered), "correct": correct, "accuracy": accuracy, "categories": by_type,
         "retrieval": {
             "mean_ms": sum(query_values) / len(query_values), "p95_ms": percentile95(query_values), "max_ms": max(query_values),
-            "search_mean_ms": sum(search_values) / len(search_values), "read_mean_ms": sum(read_values) / len(read_values),
+            "search_mean_ms": sum(search_values) / len(search_values),
+            "evidence_search_mean_ms": sum(evidence_search_values) / len(evidence_search_values),
+            "read_mean_ms": sum(read_values) / len(read_values),
             "context_mean_chars": sum(context_values) / len(context_values), "context_p95_chars": percentile95(context_values), "context_max_chars": max(context_values),
         },
         "cost": {

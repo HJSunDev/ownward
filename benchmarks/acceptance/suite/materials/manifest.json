@@ -36,7 +36,7 @@
     },
     {
       "path": "benchmarks/acceptance/suite/materials/optimization/v1/direction-organization-granularity.json",
-      "sha256": "6bf5ae45481c072848e04b08bb032abbb09e6a0920c0fdcd0b5d6f487bdb4bba"
+      "sha256": "78f1a911c606bd575ab72f00dec8d65d38ee88aa5e6643e7ee6756b20eda4ea2"
     }
   ]
 }

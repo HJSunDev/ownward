@@ -50,7 +50,7 @@ func TestServerExposesUnifiedCoreOperations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(tools.Tools) != 11 {
+	if len(tools.Tools) != 13 {
 		t.Fatalf("unexpected tool count: %d", len(tools.Tools))
 	}
 	toolsByName := make(map[string]*mcp.Tool, len(tools.Tools))
@@ -60,7 +60,7 @@ func TestServerExposesUnifiedCoreOperations(t *testing.T) {
 			t.Fatalf("tool %s must declare its closed-world boundary: %#v", tool.Name, tool.Annotations)
 		}
 	}
-	for _, name := range []string{"ownward_rules", "ownward_read", "ownward_status", "ownward_search", "ownward_navigate", "ownward_semantic_work"} {
+	for _, name := range []string{"ownward_rules", "ownward_read", "ownward_evidence_search", "ownward_evidence_read", "ownward_status", "ownward_search", "ownward_navigate", "ownward_semantic_work"} {
 		if tool := toolsByName[name]; tool == nil || !tool.Annotations.ReadOnlyHint || !tool.Annotations.IdempotentHint {
 			t.Fatalf("tool %s must be declared read-only and idempotent: %#v", name, tool)
 		}

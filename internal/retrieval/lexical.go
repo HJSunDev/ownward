@@ -177,6 +177,106 @@ func queryTermWeight(term string) float64 {
 	return 1.5
 }
 
+// QueryTextScorer compiles a query once for late passage selection. It keeps
+// no source text or corpus index.
+type QueryTextScorer struct {
+	singleCJK map[rune]int
+	pairCJK   map[[2]rune]int
+	words     map[string]int
+	weights   []float64
+}
+
+func NewQueryTextScorer(query string) QueryTextScorer {
+	unique := make(map[string]struct{})
+	scorer := QueryTextScorer{
+		singleCJK: make(map[rune]int), pairCJK: make(map[[2]rune]int), words: make(map[string]int),
+	}
+	for _, term := range tokenize(query) {
+		if _, exists := unique[term]; exists {
+			continue
+		}
+		unique[term] = struct{}{}
+		index := len(scorer.weights)
+		scorer.weights = append(scorer.weights, queryTermWeight(term))
+		runes := []rune(term)
+		switch {
+		case len(runes) == 1 && isCJK(runes[0]):
+			scorer.singleCJK[runes[0]] = index
+		case len(runes) == 2 && isCJK(runes[0]) && isCJK(runes[1]):
+			scorer.pairCJK[[2]rune{runes[0], runes[1]}] = index
+		default:
+			scorer.words[term] = index
+		}
+	}
+	return scorer
+}
+
+// Score scores real passage text; each query term contributes at most once so
+// a concise, specific match outranks boilerplate frequency.
+func (s QueryTextScorer) Score(text string) float64 {
+	score := 0.0
+	var seen uint64
+	var seenLarge []uint64
+	if len(s.weights) > 64 {
+		seenLarge = make([]uint64, (len(s.weights)+63)/64)
+	}
+	mark := func(index int) {
+		if len(seenLarge) == 0 {
+			bit := uint64(1) << index
+			if seen&bit == 0 {
+				seen |= bit
+				score += s.weights[index]
+			}
+			return
+		}
+		word, bit := index/64, uint64(1)<<uint(index%64)
+		if seenLarge[word]&bit == 0 {
+			seenLarge[word] |= bit
+			score += s.weights[index]
+		}
+	}
+	word := make([]rune, 0, 16)
+	flushWord := func() {
+		if len(word) == 0 {
+			return
+		}
+		if index, exists := s.words[string(word)]; exists {
+			mark(index)
+		}
+		word = word[:0]
+	}
+	var previousCJK rune
+	previousWasCJK := false
+	for _, current := range text {
+		switch {
+		case isCJK(current):
+			flushWord()
+			if index, exists := s.singleCJK[current]; exists {
+				mark(index)
+			}
+			if previousWasCJK {
+				if index, exists := s.pairCJK[[2]rune{previousCJK, current}]; exists {
+					mark(index)
+				}
+			}
+			previousCJK, previousWasCJK = current, true
+		case unicode.IsLetter(current) || unicode.IsDigit(current):
+			previousWasCJK = false
+			word = append(word, unicode.ToLower(current))
+		default:
+			flushWord()
+			previousWasCJK = false
+		}
+	}
+	flushWord()
+	return score
+}
+
+// QueryTextScore is the convenience form for one-off callers.
+func QueryTextScore(query, text string) float64 {
+	return NewQueryTextScorer(query).Score(text)
+}
+
 type resultHeap []Result
 
 func (h resultHeap) Len() int { return len(h) }
@@ -317,7 +417,7 @@ func tokenize(value string) []string {
 	}
 	for _, current := range value {
 		switch {
-		case unicode.Is(unicode.Han, current), unicode.Is(unicode.Hiragana, current), unicode.Is(unicode.Katakana, current), unicode.Is(unicode.Hangul, current):
+		case isCJK(current):
 			flushWord()
 			cjk = append(cjk, current)
 		case unicode.IsLetter(current) || unicode.IsDigit(current):
@@ -331,6 +431,10 @@ func tokenize(value string) []string {
 	flushWord()
 	flushCJK()
 	return tokens
+}
+
+func isCJK(current rune) bool {
+	return unicode.Is(unicode.Han, current) || unicode.Is(unicode.Hiragana, current) || unicode.Is(unicode.Katakana, current) || unicode.Is(unicode.Hangul, current)
 }
 
 func matchesContexts(actual, required []domain.Context) bool {

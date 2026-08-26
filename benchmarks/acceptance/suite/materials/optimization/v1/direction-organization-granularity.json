@@ -18,7 +18,22 @@
       "budget_fit_protection",
       "identity_stability",
       "fusion_recall",
-      "fusion_ndcg"
+      "fusion_ndcg",
+      "scale_evidence_recall",
+      "organization_input_overhead_ratio",
+      "organization_vector_overhead_ratio",
+      "derived_record_overhead_ratio",
+      "derived_vector_overhead_ratio",
+      "rebuild_input_overhead_ratio",
+      "rebuild_vector_overhead_ratio",
+      "rebuilt_record_overhead_ratio",
+      "rebuilt_vector_overhead_ratio",
+      "candidate_query_workflow_p95_ms",
+      "candidate_query_content_runes",
+      "candidate_query_serialized_bytes",
+      "candidate_organization_real_p95_ms",
+      "candidate_rebuild_real_p95_ms",
+      "candidate_derived_storage_bytes_per_source_rune"
     ],
     "scoring": {
       "context_budget_chars": 24000,
@@ -39,7 +54,34 @@
     "frozen_gate": {
       "required_evidence_budget_recall_min": 0.7777777777777777,
       "required_evidence_budget_error_rate_max": 0.3055555555555556,
+      "scale_evidence_recall_min": 1.0,
+      "query_workflow_relative_gate": "candidate_not_above_paired_v0_plus_combined_repeatability_error",
+      "query_workflow_p95_ms_max": 600.0,
+      "query_workflow_absolute_gate": "existing_warm_query_p95_ms_max",
+      "query_workflow_limit_source": "benchmarks/acceptance/suite/adapters/product_resource/thresholds.json#limits.warm_query_p95_ms_max",
+      "query_workflow_limit_source_sha256": "18887027da298676b955d687571712beea571ead0a4995cf514a4bf432f60026",
       "protected_regression_allowed": false
+    },
+    "v0_efficiency_baseline": {
+      "organization_input_overhead_ratio": 0.0,
+      "organization_vector_overhead_ratio": 0.0,
+      "derived_record_overhead_ratio": 0.0,
+      "derived_vector_overhead_ratio": 0.0,
+      "rebuild_input_overhead_ratio": 0.0,
+      "rebuild_vector_overhead_ratio": 0.0,
+      "rebuilt_record_overhead_ratio": 0.0,
+      "rebuilt_vector_overhead_ratio": 0.0,
+      "derivation": "V0 one authoritative asset equals one organization input, one derived record and one embedding; candidate uses the byte-equivalent organization and rebuild paths"
+    },
+    "formal_length_profile": {
+      "source": "V0 formal current assets read-only statistics",
+      "asset_count": 23867,
+      "total_content_chars": 248978442,
+      "p50_chars": 10595,
+      "p90_chars": 17092,
+      "p99_chars": 20803,
+      "max_chars": 78215,
+      "sample_policy": "synthetic-disjoint-assets-at-p50-p90-p99-max"
     },
     "leakage_policy": {
       "formal_question_text": false,
@@ -50,7 +92,7 @@
     }
   },
   "scales": [
-    15
+    19
   ],
   "assets": [
     {
@@ -128,6 +170,41 @@
     {
       "fixture_id": "X04",
       "content": "雾桥码头的备用电源仅供仓库照明。"
+    },
+    {
+      "fixture_id": "S50",
+      "content": "星砂档案的中位长度记录指出霜叶校验码是七三一。",
+      "padding": "中位规模的隔离背景条目。",
+      "target_runes": 10595,
+      "fact_position": "middle"
+    },
+    {
+      "fixture_id": "S90",
+      "content": "云帆档案的九十分位记录指出雾蓝校验码是四六八。",
+      "padding": "九十分位规模的隔离背景条目。",
+      "target_runes": 17092,
+      "fact_position": "middle"
+    },
+    {
+      "fixture_id": "S99",
+      "content": "月涌档案的九十九分位记录指出松针校验码是二九五。",
+      "padding": "九十九分位规模的隔离背景条目。",
+      "target_runes": 20803,
+      "fact_position": "middle"
+    },
+    {
+      "fixture_id": "SMAX",
+      "content": "风铃档案的最大长度记录指出赤陶校验码是八一四。",
+      "padding": "最大规模的隔离背景条目。",
+      "target_runes": 78215,
+      "fact_position": "middle"
+    },
+    {
+      "fixture_id": "SNOISE",
+      "content": "极光谱库的松果批次最终核准码是玄青五二。",
+      "padding": "极光谱库的松果批次初检码是浅灰一四，复检码是赭石三九，均不是最终核准码。",
+      "target_runes": 20803,
+      "fact_position": "middle"
     }
   ],
   "change_sequences": [
@@ -191,6 +268,61 @@
       "view_role": "protection",
       "context_budget_chars": 24000,
       "read_limit": 8
+    },
+    {
+      "query_id": "QS50",
+      "type": "explicit_object",
+      "query": "星砂档案的霜叶校验码是什么？",
+      "expected_ids": ["S50"],
+      "forbidden_ids": [],
+      "required_relation_path": [],
+      "view_role": "scale",
+      "context_budget_chars": 24000,
+      "read_limit": 3
+    },
+    {
+      "query_id": "QS90",
+      "type": "explicit_object",
+      "query": "云帆档案的雾蓝校验码是什么？",
+      "expected_ids": ["S90"],
+      "forbidden_ids": [],
+      "required_relation_path": [],
+      "view_role": "scale",
+      "context_budget_chars": 24000,
+      "read_limit": 3
+    },
+    {
+      "query_id": "QS99",
+      "type": "explicit_object",
+      "query": "月涌档案的松针校验码是什么？",
+      "expected_ids": ["S99"],
+      "forbidden_ids": [],
+      "required_relation_path": [],
+      "view_role": "scale",
+      "context_budget_chars": 24000,
+      "read_limit": 3
+    },
+    {
+      "query_id": "QSMAX",
+      "type": "explicit_object",
+      "query": "风铃档案的赤陶校验码是什么？",
+      "expected_ids": ["SMAX"],
+      "forbidden_ids": [],
+      "required_relation_path": [],
+      "view_role": "scale",
+      "context_budget_chars": 24000,
+      "read_limit": 3
+    },
+    {
+      "query_id": "QSNOISE",
+      "type": "explicit_object",
+      "query": "极光谱库的松果批次最终核准码是什么？",
+      "expected_ids": ["SNOISE"],
+      "forbidden_ids": [],
+      "required_relation_path": [],
+      "view_role": "scale",
+      "context_budget_chars": 24000,
+      "read_limit": 3
     }
   ],
   "truth": {
@@ -215,14 +347,24 @@
     "X01": [0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0],
     "X02": [0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0],
     "X03": [0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0],
-    "X04": [0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0]
+    "X04": [0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0],
+    "S50": [0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0],
+    "S90": [0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0],
+    "S99": [0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0],
+    "SMAX": [0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0],
+    "SNOISE": [0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0]
   },
   "frozen_query_embeddings": {
     "QG01": [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
     "QG02": [0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
     "QG03": [0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0],
     "QP01": [0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0],
-    "QP02": [0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0]
+    "QP02": [0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0],
+    "QS50": [0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0],
+    "QS90": [0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0],
+    "QS99": [0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0],
+    "QSMAX": [0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0],
+    "QSNOISE": [0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0]
   },
   "frozen_semantics": {
     "relations": [
@@ -233,7 +375,8 @@
     "contexts": {
       "G01A": [], "G01B": [], "G01C": [], "G02A": [], "G02B": [],
       "G03A": [], "G03B": [], "G03C": [], "P01": [], "P02A": [],
-      "P02B": [], "X01": [], "X02": [], "X03": [], "X04": []
+      "P02B": [], "X01": [], "X02": [], "X03": [], "X04": [],
+      "S50": [], "S90": [], "S99": [], "SMAX": [], "SNOISE": []
     }
   },
   "deterministic_variants": {

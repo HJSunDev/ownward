@@ -23,7 +23,7 @@ const CollaborationRules = `# Ownward 协作规则
 
 Ownward 只保存属于用户且可长期复用的信息。创建信息时保留完整原意；只有信息的含义或适用性依赖场景时才附加场景。不要把某个智能体的临时工作状态写入 Ownward。
 
-开始任务时，先检索可能影响当前判断的个人信息。检索先取得低成本线索与关联，再按需读取完整内容；简单问题可以一次检索，复杂问题应依据累计证据继续检索、沿关系扩展或调整方向，直到证据足以支持当前目的。真实工作中形成的错误教训、解决经验和可复用路径应在确认后补充，并标明适用场景。
+开始任务时，先检索可能影响当前判断的个人信息。检索先取得低成本线索与关联；长信息只需要局部原文时，按检索得到的稳定信息标识执行证据检索，再读取返回的可追溯证据引用，需要完整信息时使用信息读取。简单问题可以一次检索，复杂问题应依据累计证据继续检索、沿关系扩展或调整方向，直到证据足以支持当前目的。真实工作中形成的错误教训、解决经验和可复用路径应在确认后补充，并标明适用场景。
 
 创建或更新返回待理解状态时，通过独立的语义工作工具取得有界工作，并只依据其中的资产和候选上下文提交带来源、证据与不确定性的候选判断。语义工作不代表当前用户任务，不得把临时任务意图写入长期组织状态；无法可靠判断时明确保留不确定性。
 `
@@ -107,6 +107,12 @@ type SearchResult struct {
 	Contexts []domain.Context       `json:"contexts,omitempty"`
 	Score    float64                `json:"score"`
 	Signals  []string               `json:"signals"`
+}
+
+type EvidenceSearchInput struct {
+	SourceID string
+	Query    string
+	Limit    int
 }
 
 type NavigationNode struct {
@@ -366,6 +372,28 @@ func (s *Service) Read(_ context.Context, id string) (domain.Information, error)
 		return domain.Information{}, errors.New("信息不存在")
 	}
 	return value, nil
+}
+
+func (s *Service) ReadEvidence(_ context.Context, id string) (domain.Evidence, error) {
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
+	return readEvidence(s.store, strings.TrimSpace(id))
+}
+
+func (s *Service) SearchEvidence(_ context.Context, input EvidenceSearchInput) ([]domain.EvidenceReference, error) {
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
+	if strings.TrimSpace(input.SourceID) == "" || strings.TrimSpace(input.Query) == "" {
+		return nil, errors.New("证据来源和检索内容不能为空")
+	}
+	if input.Limit <= 0 || input.Limit > 8 {
+		return nil, errors.New("证据检索数量必须介于一和八之间")
+	}
+	value, exists := s.store.Get(strings.TrimSpace(input.SourceID))
+	if !exists {
+		return nil, errors.New("证据来源不存在")
+	}
+	return rankEvidence(value, input.Query, input.Limit), nil
 }
 
 func (s *Service) Search(ctx context.Context, input SearchInput) ([]SearchResult, error) {
