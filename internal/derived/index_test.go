@@ -62,7 +62,11 @@ func TestIndexTracksOnlyUnresolvedSemanticWorkAsPendingDependencies(t *testing.T
 		Candidates: []semantics.Candidate{{ID: "target", Revision: 1, Content: "target"}},
 		CreatedAt:  now,
 	}
-	pending := Record{AssetID: "source", AssetRevision: 1, Status: "pending", SemanticWork: &work}
+	reference, err := semantics.ReferenceWork(work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending := Record{AssetID: "source", AssetRevision: 1, Status: "pending", SemanticWorkReference: &reference}
 	index := NewIndex([]Record{pending})
 	if actual := index.PendingDependents("target"); len(actual) != 1 || actual[0] != "source" {
 		t.Fatalf("pending dependency was not indexed: %#v", actual)
@@ -72,7 +76,11 @@ func TestIndexTracksOnlyUnresolvedSemanticWorkAsPendingDependencies(t *testing.T
 		Schema: semantics.SubmissionSchema, WorkID: work.ID, AssetID: work.Asset.ID, Revision: work.Asset.Revision,
 		Capability: semantics.Capability{ID: "test", Version: "1"}, Status: semantics.SubmissionComplete, AcceptedAt: now,
 	}
-	pending.SemanticResult = &accepted
+	receipt, err := semantics.NewSubmissionReceipt(accepted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending.SemanticReceipt = &receipt
 	pending.Status = "ready"
 	index.Upsert(pending)
 	if actual := index.PendingDependents("target"); len(actual) != 0 {

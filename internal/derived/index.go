@@ -78,11 +78,7 @@ func NewIndex(records []Record) *Index {
 		searchCache:    make(map[string]*searchCacheEntry),
 	}
 	counts := make(map[int]int)
-	for index, record := range records {
-		if compact, err := canonicalRecord(record); err == nil {
-			record = compact
-			records[index] = compact
-		}
+	for _, record := range records {
 		if len(record.Embedding) > 0 {
 			counts[len(record.Embedding)]++
 		}
@@ -109,9 +105,6 @@ func NewIndex(records []Record) *Index {
 func (i *Index) Upsert(record Record) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	if compact, err := canonicalRecord(record); err == nil {
-		record = compact
-	}
 	location, exists := i.locations[record.AssetID]
 	if exists && i.records[location].record.AssetRevision > record.AssetRevision {
 		return

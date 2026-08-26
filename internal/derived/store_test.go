@@ -61,7 +61,7 @@ func TestStoreMigratesPreviousFullPayloadToCompactCurrentState(t *testing.T) {
 	}
 	record, ok := store.Get(asset.ID)
 	if !ok || record.SemanticWorkReference == nil || record.SemanticReceipt == nil ||
-		record.SemanticWork != nil || record.SemanticResult != nil || !record.SemanticReceipt.Matches(submission) {
+		!record.SemanticReceipt.Matches(submission) {
 		t.Fatalf("previous state was not migrated losslessly: %#v", record)
 	}
 	compacted, err := os.ReadFile(path)

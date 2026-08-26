@@ -47,12 +47,8 @@ type Record struct {
 	Analysis              semantics.Analysis           `json:"analysis"`
 	SemanticWorkReference *semantics.WorkReference     `json:"semantic_work_reference,omitempty"`
 	SemanticReceipt       *semantics.SubmissionReceipt `json:"semantic_receipt,omitempty"`
-	// SemanticWork and SemanticResult are accepted only as in-memory/legacy
-	// inputs. Store canonicalization replaces them with compact durable forms.
-	SemanticWork   *semantics.Work       `json:"semantic_work,omitempty"`
-	SemanticResult *semantics.Submission `json:"semantic_result,omitempty"`
-	EmbeddingSpace string                `json:"embedding_space,omitempty"`
-	Embedding      []float32             `json:"embedding,omitempty"`
+	EmbeddingSpace        string                       `json:"embedding_space,omitempty"`
+	Embedding             []float32                    `json:"embedding,omitempty"`
 }
 
 type persistedRecord struct {
@@ -324,11 +320,7 @@ func (s *Store) Close() error {
 func (s *Store) Put(record Record) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var err error
-	record, err = canonicalRecord(record)
-	if err != nil {
-		return err
-	}
+	record = canonicalRecord(record)
 	if err := validateRecord(record); err != nil {
 		return err
 	}
@@ -389,11 +381,7 @@ func (s *Store) putRecords(records []Record, durable, requireEmptyGeneration boo
 	canonical := make([]Record, len(records))
 	seen := make(map[string]uint64, len(records))
 	for index, record := range records {
-		var err error
-		record, err = canonicalRecord(record)
-		if err != nil {
-			return err
-		}
+		record = canonicalRecord(record)
 		if err := validateRecord(record); err != nil {
 			return err
 		}
@@ -707,21 +695,17 @@ func fromPersisted(value persistedRecord) (Record, error) {
 			return Record{}, errors.New("派生向量包含非有限数值")
 		}
 	}
-	return canonicalRecord(Record{
+	record := Record{
 		Schema: value.Schema, AssetID: value.AssetID, AssetRevision: value.AssetRevision,
 		GeneratedAt: value.GeneratedAt, Provider: value.Provider, Status: value.Status,
-		Error: value.Error, Analysis: value.Analysis, SemanticWork: value.SemanticWork,
-		SemanticResult: value.SemanticResult, EmbeddingSpace: value.EmbeddingSpace, Embedding: embedding,
-	})
+		Error: value.Error, Analysis: value.Analysis, EmbeddingSpace: value.EmbeddingSpace, Embedding: embedding,
+	}
+	return migrateLegacySemanticPayload(record, value.SemanticWork, value.SemanticResult)
 }
 
 // EncodeRecord 生成 Store 使用的正式持久化表示，仅供性能夹具验证发布格式。
 func EncodeRecord(record Record) ([]byte, error) {
-	canonical, err := canonicalRecord(record)
-	if err != nil {
-		return nil, err
-	}
-	return encodeRecord(canonical)
+	return encodeRecord(canonicalRecord(record))
 }
 
 func encodeRecord(record Record) ([]byte, error) {
@@ -763,9 +747,6 @@ func validateRecord(record Record) error {
 	}
 	if record.Status != "ready" && record.Status != "degraded" && record.Status != "pending" && record.Status != "uncertain" {
 		return errors.New("派生状态值无效")
-	}
-	if record.SemanticWork != nil || record.SemanticResult != nil {
-		return errors.New("派生状态尚未转换为紧凑语义引用")
 	}
 	if record.SemanticWorkReference != nil {
 		if err := record.SemanticWorkReference.Validate(); err != nil || record.SemanticWorkReference.AssetID != record.AssetID || record.SemanticWorkReference.Revision != record.AssetRevision {
@@ -871,10 +852,8 @@ func decodeRecordWithVersion(encoded []byte, withEmbedding bool) (Record, bool, 
 		SemanticReceipt: metadata.SemanticReceipt, EmbeddingSpace: metadata.EmbeddingSpace, Embedding: embedding,
 	}
 	if previous {
-		record.SemanticWork = legacy.SemanticWork
-		record.SemanticResult = legacy.SemanticResult
 		var err error
-		record, err = canonicalRecord(record)
+		record, err = migrateLegacySemanticPayload(record, legacy.SemanticWork, legacy.SemanticResult)
 		if err != nil {
 			return Record{}, false, err
 		}
@@ -895,25 +874,27 @@ func (s *Store) rollbackLocked(offset int64) error {
 	return s.file.Sync()
 }
 
-func canonicalRecord(record Record) (Record, error) {
-	if record.SemanticWorkReference == nil && record.SemanticWork != nil {
-		reference, err := semantics.ReferenceWork(*record.SemanticWork)
+func canonicalRecord(record Record) Record {
+	record.Schema = recordSchema
+	return record
+}
+
+func migrateLegacySemanticPayload(record Record, work *semantics.Work, result *semantics.Submission) (Record, error) {
+	if record.SemanticWorkReference == nil && work != nil {
+		reference, err := semantics.ReferenceWork(*work)
 		if err != nil {
 			return Record{}, err
 		}
 		record.SemanticWorkReference = &reference
 	}
-	if record.SemanticReceipt == nil && record.SemanticResult != nil {
-		receipt, err := semantics.NewSubmissionReceipt(*record.SemanticResult)
+	if record.SemanticReceipt == nil && result != nil {
+		receipt, err := semantics.NewSubmissionReceipt(*result)
 		if err != nil {
 			return Record{}, err
 		}
 		record.SemanticReceipt = &receipt
 	}
-	record.SemanticWork = nil
-	record.SemanticResult = nil
-	record.Schema = recordSchema
-	return record, nil
+	return canonicalRecord(record), nil
 }
 
 func (r Record) HasPendingSemanticWork() bool {

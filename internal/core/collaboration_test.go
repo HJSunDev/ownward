@@ -261,7 +261,7 @@ func TestCollaborativeCompactReceiptPreservesIdempotencyAfterRestart(t *testing.
 		t.Fatalf("identical semantic retry failed after restart: organization=%#v err=%v", organization, err)
 	}
 	stored, exists := state.Get(created.Information.ID)
-	if !exists || stored.SemanticReceipt == nil || stored.SemanticWorkReference == nil || stored.SemanticResult != nil || stored.SemanticWork != nil {
+	if !exists || stored.SemanticReceipt == nil || stored.SemanticWorkReference == nil {
 		t.Fatalf("restarted state did not retain only compact semantic identity: %#v", stored)
 	}
 }
