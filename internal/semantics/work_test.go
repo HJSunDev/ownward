@@ -1,11 +1,72 @@
 package semantics
 
 import (
+	"encoding/json"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/HJSunDev/ownward/internal/domain"
 )
+
+func TestWorkReferenceRestoresExactPublicPayloadAndReceiptIdentity(t *testing.T) {
+	now := time.Date(2026, 8, 27, 9, 30, 0, 0, time.UTC)
+	asset := domain.Information{
+		Schema: domain.AssetSchema, ID: "asset-current", Revision: 3,
+		CreatedAt: now.Add(-time.Hour), UpdatedAt: now, Kind: domain.KindKnowledge,
+		Content: "authoritative current content " + strings.Repeat("x", 4096),
+	}
+	candidateAsset := domain.Information{
+		Schema: domain.AssetSchema, ID: "asset-candidate", Revision: 7,
+		CreatedAt: now.Add(-2 * time.Hour), UpdatedAt: now.Add(-time.Minute), Kind: domain.KindKnowledge,
+		Content: "authoritative candidate content " + strings.Repeat("y", 4096),
+	}
+	work, err := NewWork("generation-compact", asset, []Candidate{{
+		ID: candidateAsset.ID, Revision: candidateAsset.Revision, Content: candidateAsset.Content, Similarity: 0.875,
+	}}, nil, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reference, err := ReferenceWork(work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encodedReference, err := json.Marshal(reference)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encodedReference), asset.Content) || strings.Contains(string(encodedReference), candidateAsset.Content) {
+		t.Fatal("compact work reference duplicated authoritative content")
+	}
+	restored, err := ResolveWork(reference, asset, []domain.Information{candidateAsset})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(restored, work) {
+		t.Fatalf("restored public work changed: got=%#v want=%#v", restored, work)
+	}
+	submission, err := NormalizeSubmissionReference(reference, asset, Submission{
+		Schema: SubmissionSchema, WorkID: work.ID, AssetID: asset.ID, Revision: asset.Revision,
+		Capability: Capability{ID: "codex", Version: "gpt-5.6-luna", Execution: "isolated"},
+		Status:     SubmissionComplete, Analysis: Analysis{Summary: "compact semantic result"},
+	}, now.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := NewSubmissionReceipt(submission)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !receipt.Matches(submission) {
+		t.Fatal("compact receipt did not recognize the accepted submission")
+	}
+	changed := submission
+	changed.Analysis.Summary = "different result"
+	if receipt.Matches(changed) {
+		t.Fatal("compact receipt accepted a semantically different submission")
+	}
+}
 
 func TestSemanticSubmissionIsBoundToWorkAndEvidence(t *testing.T) {
 	now := time.Date(2026, 8, 20, 10, 0, 0, 0, time.UTC)

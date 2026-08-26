@@ -1,14 +1,108 @@
 package derived
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"hash/crc32"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/HJSunDev/ownward/internal/domain"
 	"github.com/HJSunDev/ownward/internal/semantics"
 )
+
+func TestStoreMigratesPreviousFullPayloadToCompactCurrentState(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Date(2026, 8, 27, 11, 0, 0, 0, time.UTC)
+	asset := domain.Information{
+		Schema: domain.AssetSchema, ID: "asset", Revision: 1, CreatedAt: now, UpdatedAt: now,
+		Kind: domain.KindKnowledge, Content: "current " + strings.Repeat("a", 256*1024),
+	}
+	candidate := domain.Information{
+		Schema: domain.AssetSchema, ID: "candidate", Revision: 2, CreatedAt: now, UpdatedAt: now,
+		Kind: domain.KindKnowledge, Content: "candidate " + strings.Repeat("b", 256*1024),
+	}
+	work, err := semantics.NewWork("generation-v3", asset, []semantics.Candidate{{
+		ID: candidate.ID, Revision: candidate.Revision, Content: candidate.Content, Similarity: 0.9,
+	}}, nil, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	submission, err := semantics.NormalizeSubmission(work, semantics.Submission{
+		Schema: semantics.SubmissionSchema, WorkID: work.ID, AssetID: asset.ID, Revision: asset.Revision,
+		Capability: semantics.Capability{ID: "codex", Version: "gpt-5.6-luna"},
+		Status:     semantics.SubmissionComplete, Analysis: semantics.Analysis{Summary: "accepted summary"},
+	}, now.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending := encodePreviousRecordForTest(t, previousRecordMetadata{
+		Schema: previousRecordSchema, AssetID: asset.ID, AssetRevision: asset.Revision,
+		GeneratedAt: now, Provider: "semantic", Status: "pending", SemanticWork: &work,
+	})
+	accepted := encodePreviousRecordForTest(t, previousRecordMetadata{
+		Schema: previousRecordSchema, AssetID: asset.ID, AssetRevision: asset.Revision,
+		GeneratedAt: now.Add(time.Minute), Provider: "semantic", Status: "ready",
+		Analysis: submission.Analysis, SemanticWork: &work, SemanticResult: &submission,
+	})
+	path := filepath.Join(dir, LogFileName)
+	legacyBytes := append(pending, accepted...)
+	if err := os.WriteFile(path, legacyBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, ok := store.Get(asset.ID)
+	if !ok || record.SemanticWorkReference == nil || record.SemanticReceipt == nil ||
+		record.SemanticWork != nil || record.SemanticResult != nil || !record.SemanticReceipt.Matches(submission) {
+		t.Fatalf("previous state was not migrated losslessly: %#v", record)
+	}
+	compacted, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(compacted)*2 >= len(legacyBytes) {
+		t.Fatalf("full semantic payload was not substantially reclaimed: before=%d after=%d", len(legacyBytes), len(compacted))
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reopened.Close(); err != nil {
+		t.Fatal(err)
+	}
+	afterReopen, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(afterReopen) != string(compacted) {
+		t.Fatal("reopening compact state changed its durable bytes")
+	}
+}
+
+func encodePreviousRecordForTest(t *testing.T, metadata previousRecordMetadata) []byte {
+	t.Helper()
+	encodedMetadata, err := json.Marshal(metadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded := make([]byte, headerSize+len(encodedMetadata)+footerSize)
+	copy(encoded[:4], recordMagic[:])
+	binary.LittleEndian.PutUint32(encoded[4:8], uint32(len(encodedMetadata)))
+	binary.LittleEndian.PutUint32(encoded[12:16], crc32.ChecksumIEEE(encodedMetadata))
+	copy(encoded[headerSize:], encodedMetadata)
+	copy(encoded[len(encoded)-footerSize:], commitMagic[:])
+	return encoded
+}
 
 func TestStoreRejectsAnOlderDerivedRevision(t *testing.T) {
 	store, err := Open(t.TempDir())

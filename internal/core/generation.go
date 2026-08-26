@@ -101,7 +101,7 @@ func (s *Service) buildCollaborativeGeneration(ctx context.Context, generation s
 			continue
 		}
 		var inputs []string
-		if exists && previous.AssetRevision == asset.Revision && previous.SemanticResult != nil {
+		if exists && previous.AssetRevision == asset.Revision && previous.HasSemanticResult() {
 			inputs = semanticEmbeddingChunks(previous.Analysis)
 		} else if len([]byte(asset.Content)) <= semanticEmbeddingChunkBytes {
 			inputs = []string{asset.Content}
@@ -154,9 +154,9 @@ func (s *Service) buildCollaborativeGeneration(ctx context.Context, generation s
 		}
 		if previous, exists := currentByID[asset.ID]; exists && previous.AssetRevision == asset.Revision {
 			record.Analysis = previous.Analysis
-			record.SemanticWork = previous.SemanticWork
-			record.SemanticResult = previous.SemanticResult
-			if previous.SemanticResult != nil {
+			record.SemanticWorkReference = previous.SemanticWorkReference
+			record.SemanticReceipt = previous.SemanticReceipt
+			if previous.HasSemanticResult() {
 				record.Provider = previous.Provider
 				record.Status = "ready"
 				record.Error = ""
@@ -164,9 +164,9 @@ func (s *Service) buildCollaborativeGeneration(ctx context.Context, generation s
 					record.Status = "pending"
 					record.Error = "语义检索表示重建失败"
 				}
-				if previous.SemanticResult.Status == semantics.SubmissionUncertain {
+				if previous.SemanticReceipt.Status == semantics.SubmissionUncertain {
 					record.Status = "uncertain"
-					record.Error = previous.SemanticResult.Uncertainty
+					record.Error = previous.SemanticReceipt.Uncertainty
 				}
 			}
 		}
@@ -179,7 +179,7 @@ func (s *Service) buildCollaborativeGeneration(ctx context.Context, generation s
 		assetsByID[asset.ID] = asset
 	}
 	for index, asset := range assets {
-		if records[index].SemanticResult == nil {
+		if !records[index].HasSemanticResult() {
 			candidates := generationCandidates(asset, records[index].Embedding, lexical, stagedIndex, assetsByID)
 			var previous *semantics.Analysis
 			if currentRecord, exists := currentByID[asset.ID]; exists && currentRecord.AssetRevision == asset.Revision {
@@ -190,8 +190,12 @@ func (s *Service) buildCollaborativeGeneration(ctx context.Context, generation s
 			if workErr != nil {
 				return fail(workErr)
 			}
-			records[index].SemanticWork = &work
-			records[index].SemanticResult = nil
+			workReference, referenceErr := semantics.ReferenceWork(work)
+			if referenceErr != nil {
+				return fail(referenceErr)
+			}
+			records[index].SemanticWorkReference = &workReference
+			records[index].SemanticReceipt = nil
 			records[index].Status = "pending"
 			records[index].Provider = s.embedder.Name()
 			records[index].Error = ""

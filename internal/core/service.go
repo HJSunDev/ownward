@@ -695,9 +695,9 @@ func (s *Service) Maintain(ctx context.Context, rebuild bool) (map[string]int, e
 		return s.rebuildCollaborative(ctx)
 	}
 	s.stateMu.RLock()
-	defer s.stateMu.RUnlock()
 	if rebuild {
 		if err := s.derivedStore.Reset(); err != nil {
+			s.stateMu.RUnlock()
 			return nil, err
 		}
 		s.semantic = derived.NewIndex(nil)
@@ -725,6 +725,20 @@ func (s *Service) Maintain(ctx context.Context, rebuild bool) (map[string]int, e
 		}
 		counts[state.Status]++
 		unlock()
+	}
+	s.stateMu.RUnlock()
+	needsDerivedCompaction := s.derivedStore.NeedsCompaction()
+	if err := s.store.Compact(); err != nil {
+		return nil, err
+	}
+	if needsDerivedCompaction {
+		if s.collaborative && s.derivedStore.Sealed() {
+			if _, err := s.rebuildCollaborative(ctx); err != nil {
+				return nil, err
+			}
+		} else if err := s.derivedStore.Compact(); err != nil {
+			return nil, err
+		}
 	}
 	return counts, nil
 }

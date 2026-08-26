@@ -45,6 +45,10 @@
     {
       "path": "benchmarks/acceptance/suite/materials/optimization/v1/direction-budget-selection.json",
       "sha256": "1b00ede752ea5a40d615a4de15edaca7b342530534f516c53b25223e9b760420"
+    },
+    {
+      "path": "benchmarks/acceptance/suite/materials/optimization/v1/direction-storage-deposition.json",
+      "sha256": "a6bd58a54914f89acb60b2cbe16c9abc108f1b85368676aa1f0bc9449bae8609"
     }
   ]
 }

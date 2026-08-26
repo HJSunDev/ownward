@@ -215,6 +215,57 @@ func TestCollaborativeSemanticWorkIsVersionedAndAppliedByTheKernel(t *testing.T)
 	}
 }
 
+func TestCollaborativeCompactReceiptPreservesIdempotencyAfterRestart(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	assets, err := assetlog.Open(filepath.Join(root, "assets"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := derived.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewCollaborative(assets, state, embedding.HashForTesting{Dimensions: 64})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := service.Create(ctx, CreateInput{Content: "A durable compact receipt keeps semantic submission retries idempotent."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	work := nextSemanticWork(t, ctx, service)
+	submission := semanticSubmission(work, semantics.Analysis{Summary: "durable compact receipt"})
+	if _, err := service.SubmitSemantic(ctx, submission); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	assets, err = assetlog.Open(filepath.Join(root, "assets"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err = derived.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := NewCollaborative(assets, state, embedding.HashForTesting{Dimensions: 64})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	organization, err := reopened.SubmitSemantic(ctx, submission)
+	if err != nil || organization.Status != "ready" {
+		t.Fatalf("identical semantic retry failed after restart: organization=%#v err=%v", organization, err)
+	}
+	stored, exists := state.Get(created.Information.ID)
+	if !exists || stored.SemanticReceipt == nil || stored.SemanticWorkReference == nil || stored.SemanticResult != nil || stored.SemanticWork != nil {
+		t.Fatalf("restarted state did not retain only compact semantic identity: %#v", stored)
+	}
+}
+
 func TestUpdateRefreshesPendingSemanticWorkThatReferencesTheOldRevision(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
@@ -422,7 +473,7 @@ func TestChangedVectorSpaceIsPersistentlyIsolatedUntilRebuild(t *testing.T) {
 	if err != nil || organization.Status != "pending" {
 		t.Fatalf("changed vector space remained visible: state=%#v err=%v", organization, err)
 	}
-	if record, exists := state.GetWithEmbedding(created.Information.ID); !exists || len(record.Embedding) != 0 || record.SemanticResult == nil {
+	if record, exists := state.GetWithEmbedding(created.Information.ID); !exists || len(record.Embedding) != 0 || !record.HasSemanticResult() {
 		t.Fatalf("space isolation was not durable or discarded independent semantics: %#v", record)
 	}
 	if err := service.Close(); err != nil {

@@ -1,14 +1,78 @@
 package assetlog
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/HJSunDev/ownward/internal/domain"
 )
+
+func TestCompactReclaimsAuthorityHistoryAndIsByteStable(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "assets")
+	store, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 8, 27, 10, 0, 0, 0, time.UTC)
+	value := domain.Information{
+		Schema: domain.AssetSchema, ID: "long-lived", Revision: 1,
+		CreatedAt: now, UpdatedAt: now, Kind: domain.KindKnowledge,
+		Content: "revision-1 " + strings.Repeat("authority ", 32768),
+	}
+	if err := store.Create(value); err != nil {
+		t.Fatal(err)
+	}
+	for revision := uint64(2); revision <= 4; revision++ {
+		value.Revision = revision
+		value.UpdatedAt = now.Add(time.Duration(revision) * time.Minute)
+		value.Content = string(rune('0'+revision)) + strings.Repeat("authority ", 32768)
+		if err := store.Update(value, revision-1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	path := filepath.Join(dir, logName)
+	before, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Compact(); err != nil {
+		t.Fatal(err)
+	}
+	first, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if int64(len(first))*2 >= before.Size() {
+		t.Fatalf("authority history was not substantially reclaimed: before=%d after=%d", before.Size(), len(first))
+	}
+	if err := store.Compact(); err != nil {
+		t.Fatal(err)
+	}
+	second, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(first, second) {
+		t.Fatal("repeated authority maintenance was not byte stable")
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	actual, ok := reopened.Get(value.ID)
+	if !ok || !reflect.DeepEqual(actual, value) {
+		t.Fatalf("compaction changed the current authoritative revision: %#v", actual)
+	}
+}
 
 func TestStorePersistsAndReplaysRevisions(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "assets")

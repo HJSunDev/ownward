@@ -51,6 +51,7 @@ def validate_materials(root: Path) -> dict[str, Any]:
         "benchmarks/acceptance/suite/materials/optimization/v1/direction-organization-granularity.json",
         "benchmarks/acceptance/suite/materials/optimization/v1/direction-semantic-representation.json",
         "benchmarks/acceptance/suite/materials/optimization/v1/direction-budget-selection.json",
+        "benchmarks/acceptance/suite/materials/optimization/v1/direction-storage-deposition.json",
     }
     _require(isinstance(files, list) and len(files) == len(expected_manifest_paths), "材料清单规模无效")
     _require(
@@ -146,6 +147,7 @@ def validate_materials(root: Path) -> dict[str, Any]:
     _validate_optimization_view(root / "optimization" / "v1" / "direction-organization-granularity.json")
     _validate_semantic_representation_view(root / "optimization" / "v1" / "direction-semantic-representation.json")
     _validate_budget_selection_view(root / "optimization" / "v1" / "direction-budget-selection.json")
+    _validate_storage_deposition_view(root / "optimization" / "v1" / "direction-storage-deposition.json")
 
     historical_product = load_json(historical_root / "dataset.json")
     product_root = root / "product" / ACTIVE_PRODUCT_DIRECTORY
@@ -412,6 +414,48 @@ def _validate_semantic_representation_view(path: Path) -> None:
     query_embeddings = view.get("frozen_query_embeddings")
     query_ids = {item["query_id"] for item in queries}
     _require(isinstance(query_embeddings, dict) and set(query_embeddings) == query_ids and all(_valid_vector(item) for item in query_embeddings.values()), "优化视图查询向量无效")
+
+
+def _validate_storage_deposition_view(path: Path) -> None:
+    view = load_json(path)
+    _require(view.get("schema") == "ownward.core-frontier-materials/v1", "存储沉淀视图 schema 无效")
+    _require(view.get("version") == "ownward-kernel-optimization-view/v1", "存储沉淀视图版本无效")
+    contract = _mapping(view, "optimization_view")
+    _require(contract.get("id") == "storage-deposition-v1", "存储沉淀视图身份无效")
+    _require(contract.get("direction") == "data_structure_and_storage_architecture", "存储沉淀视图方向无效")
+    observed = _mapping(contract, "formal_scale_observation")
+    _require(observed.get("candidate") == "99f519018df99bd5202b0c571b8e43481cd1b80e", "存储沉淀视图未绑定 V0")
+    _require(
+        observed.get("derived_log_bytes") == 8390585705
+        and observed.get("derived_record_count") == 47734
+        and observed.get("current_asset_count") == 23867
+        and observed.get("semantic_work_bytes") == 8330782630,
+        "存储沉淀视图正式规模观察漂移",
+    )
+    _require(float(observed.get("semantic_work_share", 0)) > 0.99, "存储沉淀视图未证明主要放大来源")
+    profile = _mapping(contract, "formal_length_profile")
+    _require(profile.get("asset_count") == 23867 and profile.get("total_content_chars") == 248978442, "存储沉淀视图正式长度总体漂移")
+    _require(
+        [profile.get(name) for name in ("min_chars", "p25_chars", "p50_chars", "p75_chars", "p90_chars", "p95_chars", "p99_chars", "max_chars")]
+        == [103, 6075, 10595, 14643, 17092, 18416, 20803, 78215],
+        "存储沉淀视图正式长度分布漂移",
+    )
+    gate = _mapping(contract, "frozen_gate")
+    _require(float(gate.get("storage_amplification_ratio_max", -1)) == 0.5, "存储沉淀降幅门槛漂移")
+    _require(float(gate.get("derived_storage_amplification_ratio_max", -1)) == 0.5, "派生存储降幅门槛漂移")
+    _require(float(gate.get("authority_history_reclaim_ratio_max", -1)) == 0.5, "权威历史压实门槛漂移")
+    _require(float(gate.get("storage_view_query_p95_ms_max", -1)) == 600.0, "存储视图查询成本门槛漂移")
+    _require(gate.get("protected_regression_allowed") is False, "存储沉淀视图不得允许保护退化")
+    leakage = _mapping(contract, "leakage_policy")
+    _require(all(leakage.get(name) is False for name in ("formal_question_text", "formal_answer", "formal_gold_identity", "formal_session_content")), "存储沉淀视图泄漏边界无效")
+    assets = view.get("assets")
+    _require(isinstance(assets, list) and len(assets) == 8, "存储沉淀视图资产规模无效")
+    targets = [item.get("target_runes") for item in assets]
+    _require(targets == [103, 6075, 10595, 14643, 17092, 18416, 20803, 78215], "存储沉淀视图长度样本漂移")
+    _require(all(isinstance(item.get("content"), str) and item["content"].startswith("marker-d") for item in assets), "存储沉淀视图事实身份无效")
+    queries = view.get("queries")
+    _require(isinstance(queries, list) and len(queries) == len(assets), "存储沉淀视图查询规模无效")
+    _require(all(item.get("view_role") == "protection" for item in queries), "存储沉淀视图查询角色无效")
 
 
 def _validate_budget_selection_view(path: Path) -> None:

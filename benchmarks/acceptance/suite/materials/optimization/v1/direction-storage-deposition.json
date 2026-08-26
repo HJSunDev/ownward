@@ -1,0 +1,116 @@
+{
+  "schema": "ownward.core-frontier-materials/v1",
+  "version": "ownward-kernel-optimization-view/v1",
+  "optimization_view": {
+    "id": "storage-deposition-v1",
+    "direction": "data_structure_and_storage_architecture",
+    "formal_scale_observation": {
+      "candidate": "99f519018df99bd5202b0c571b8e43481cd1b80e",
+      "question_isolated_product_bytes": 8652582167,
+      "authoritative_asset_bytes": 261996462,
+      "derived_log_bytes": 8390585705,
+      "derived_record_count": 47734,
+      "current_asset_count": 23867,
+      "semantic_work_bytes": 8330782630,
+      "semantic_work_share": 0.9928725982782867,
+      "benchmark_audit_trace_bytes_excluded": 4724195023,
+      "mechanism": "rebuildable authoritative and candidate content is duplicated in both pending and accepted derived records"
+    },
+    "formal_length_profile": {
+      "asset_count": 23867,
+      "total_content_chars": 248978442,
+      "min_chars": 103,
+      "p25_chars": 6075,
+      "p50_chars": 10595,
+      "p75_chars": 14643,
+      "p90_chars": 17092,
+      "p95_chars": 18416,
+      "p99_chars": 20803,
+      "max_chars": 78215
+    },
+    "primary_metric": "storage_amplification_ratio",
+    "frozen_gate": {
+      "storage_amplification_ratio_max": 0.5,
+      "derived_storage_amplification_ratio_max": 0.5,
+      "authority_history_reclaim_ratio_max": 0.5,
+      "semantic_work_payload_recovery_min": 1.0,
+      "semantic_receipt_idempotency_min": 1.0,
+      "maintenance_byte_repeatability_min": 1.0,
+      "backup_restore_integrity_min": 1.0,
+      "storage_view_search_recall_min": 1.0,
+      "derived_records_per_asset_max": 1.0,
+      "storage_view_query_p95_ms_max": 600.0,
+      "protected_regression_allowed": false
+    },
+    "cost": {
+      "direction_view_max_seconds": 180,
+      "direction_validation_target_seconds": 420,
+      "direction_validation_max_seconds": 600
+    },
+    "leakage_policy": {
+      "formal_question_text": false,
+      "formal_answer": false,
+      "formal_gold_identity": false,
+      "formal_session_content": false,
+      "facts_and_expressions_are_synthetic_and_disjoint": true
+    }
+  },
+  "scales": [8],
+  "assets": [
+    {"fixture_id":"D00","content":"marker-d00 records the amber calibration latch.","padding":"Neutral synthetic storage filler. ","target_runes":103,"fact_position":"middle","contexts":[]},
+    {"fixture_id":"D25","content":"marker-d25 records the birch telemetry hinge.","padding":"Neutral synthetic storage filler. ","target_runes":6075,"fact_position":"middle","contexts":[]},
+    {"fixture_id":"D50","content":"marker-d50 records the cobalt archive clasp.","padding":"Neutral synthetic storage filler. ","target_runes":10595,"fact_position":"middle","contexts":[]},
+    {"fixture_id":"D75","content":"marker-d75 records the dahlia routing sleeve.","padding":"Neutral synthetic storage filler. ","target_runes":14643,"fact_position":"middle","contexts":[]},
+    {"fixture_id":"D90","content":"marker-d90 records the elm observatory seal.","padding":"Neutral synthetic storage filler. ","target_runes":17092,"fact_position":"middle","contexts":[]},
+    {"fixture_id":"D95","content":"marker-d95 records the flax workshop brace.","padding":"Neutral synthetic storage filler. ","target_runes":18416,"fact_position":"middle","contexts":[]},
+    {"fixture_id":"D99","content":"marker-d99 records the granite harbor pin.","padding":"Neutral synthetic storage filler. ","target_runes":20803,"fact_position":"middle","contexts":[]},
+    {"fixture_id":"DMAX","content":"marker-dmax records the hazel expedition lock.","padding":"Neutral synthetic storage filler. ","target_runes":78215,"fact_position":"middle","contexts":[]}
+  ],
+  "change_sequences": [],
+  "queries": [
+    {"query_id":"QD00","type":"explicit_object","query":"marker-d00","expected_ids":["D00"],"forbidden_ids":[],"required_relation_path":[],"view_role":"protection"},
+    {"query_id":"QD25","type":"explicit_object","query":"marker-d25","expected_ids":["D25"],"forbidden_ids":[],"required_relation_path":[],"view_role":"protection"},
+    {"query_id":"QD50","type":"explicit_object","query":"marker-d50","expected_ids":["D50"],"forbidden_ids":[],"required_relation_path":[],"view_role":"protection"},
+    {"query_id":"QD75","type":"explicit_object","query":"marker-d75","expected_ids":["D75"],"forbidden_ids":[],"required_relation_path":[],"view_role":"protection"},
+    {"query_id":"QD90","type":"explicit_object","query":"marker-d90","expected_ids":["D90"],"forbidden_ids":[],"required_relation_path":[],"view_role":"protection"},
+    {"query_id":"QD95","type":"explicit_object","query":"marker-d95","expected_ids":["D95"],"forbidden_ids":[],"required_relation_path":[],"view_role":"protection"},
+    {"query_id":"QD99","type":"explicit_object","query":"marker-d99","expected_ids":["D99"],"forbidden_ids":[],"required_relation_path":[],"view_role":"protection"},
+    {"query_id":"QDMAX","type":"explicit_object","query":"marker-dmax","expected_ids":["DMAX"],"forbidden_ids":[],"required_relation_path":[],"view_role":"protection"}
+  ],
+  "truth": {"relations": []},
+  "frozen_embeddings": {
+    "D00":[1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    "D25":[0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    "D50":[0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    "D75":[0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0],
+    "D90":[0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0],
+    "D95":[0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0],
+    "D99":[0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0],
+    "DMAX":[0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0]
+  },
+  "frozen_query_embeddings": {
+    "QD00":[1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    "QD25":[0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    "QD50":[0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    "QD75":[0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0],
+    "QD90":[0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0],
+    "QD95":[0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0],
+    "QD99":[0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0],
+    "QDMAX":[0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0]
+  },
+  "frozen_semantics": {
+    "relations": [],
+    "contexts": {"D00":[],"D25":[],"D50":[],"D75":[],"D90":[],"D95":[],"D99":[],"DMAX":[]},
+    "analyses": {
+      "D00":{"summary":"marker-d00 amber calibration latch","cues":[{"text":"marker-d00","kind":"identifier"}],"topics":["synthetic storage"],"relations":[]},
+      "D25":{"summary":"marker-d25 birch telemetry hinge","cues":[{"text":"marker-d25","kind":"identifier"}],"topics":["synthetic storage"],"relations":[]},
+      "D50":{"summary":"marker-d50 cobalt archive clasp","cues":[{"text":"marker-d50","kind":"identifier"}],"topics":["synthetic storage"],"relations":[]},
+      "D75":{"summary":"marker-d75 dahlia routing sleeve","cues":[{"text":"marker-d75","kind":"identifier"}],"topics":["synthetic storage"],"relations":[]},
+      "D90":{"summary":"marker-d90 elm observatory seal","cues":[{"text":"marker-d90","kind":"identifier"}],"topics":["synthetic storage"],"relations":[]},
+      "D95":{"summary":"marker-d95 flax workshop brace","cues":[{"text":"marker-d95","kind":"identifier"}],"topics":["synthetic storage"],"relations":[]},
+      "D99":{"summary":"marker-d99 granite harbor pin","cues":[{"text":"marker-d99","kind":"identifier"}],"topics":["synthetic storage"],"relations":[]},
+      "DMAX":{"summary":"marker-dmax hazel expedition lock","cues":[{"text":"marker-dmax","kind":"identifier"}],"topics":["synthetic storage"],"relations":[]}
+    }
+  },
+  "deterministic_variants": {"seed":78131,"count":2,"operations":["stable_identity_remap","ingestion_order_permutation","timestamp_translation","context_order_permutation","irrelevant_item_injection"]}
+}

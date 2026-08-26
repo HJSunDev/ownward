@@ -159,6 +159,73 @@ func (s *Store) Sync() error {
 	return s.logFile.Sync()
 }
 
+// Compact replaces the append history with one durable snapshot event per
+// current authoritative asset. Revision identity is preserved; obsolete full
+// text versions remain recoverable through explicit backups rather than being
+// retained forever in the active store.
+func (s *Store) Compact() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.logFile == nil {
+		return errors.New("信息资产日志已关闭")
+	}
+	values := make([]domain.Information, 0, len(s.items))
+	for _, value := range s.items {
+		values = append(values, clone(value))
+	}
+	sort.Slice(values, func(left, right int) bool { return values[left].ID < values[right].ID })
+	temporary, err := os.CreateTemp(s.dir, ".information-compacting-*")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	committed := false
+	defer func() {
+		_ = temporary.Close()
+		if !committed {
+			_ = os.Remove(temporaryPath)
+		}
+	}()
+	if err := temporary.Chmod(0o600); err != nil {
+		return err
+	}
+	writer := bufio.NewWriterSize(temporary, 1024*1024)
+	for _, value := range values {
+		encoded, encodeErr := json.Marshal(event{Operation: "snapshot", Recorded: value.UpdatedAt.UTC(), Value: value})
+		if encodeErr != nil {
+			return encodeErr
+		}
+		if _, err := writer.Write(append(encoded, '\n')); err != nil {
+			return err
+		}
+	}
+	if err := writer.Flush(); err != nil {
+		return err
+	}
+	if err := temporary.Sync(); err != nil {
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	path := filepath.Join(s.dir, logName)
+	if err := s.logFile.Close(); err != nil {
+		return err
+	}
+	s.logFile = nil
+	if err := replaceLogFile(temporaryPath, path); err != nil {
+		s.logFile, _ = os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+		return err
+	}
+	committed = true
+	s.logFile, err = os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return err
+	}
+	_, err = s.logFile.Seek(0, io.SeekEnd)
+	return err
+}
+
 func (s *Store) Dir() string {
 	return s.dir
 }
@@ -415,6 +482,10 @@ func (s *Store) replay() error {
 		case "update":
 			if !exists || entry.Value.Revision != current.Revision+1 || entry.Value.CreatedAt != current.CreatedAt {
 				return fmt.Errorf("信息资产日志第 %d 行更新事件无效", line)
+			}
+		case "snapshot":
+			if exists {
+				return fmt.Errorf("信息资产日志第 %d 行快照事件重复", line)
 			}
 		default:
 			return fmt.Errorf("信息资产日志第 %d 行操作未知", line)

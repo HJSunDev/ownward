@@ -30,6 +30,7 @@ CONTEXT_BUDGET_CHARS = 24_000
 VIEW_RELATIVE = Path("materials/optimization/v1/direction-budget-selection.json")
 SEMANTIC_VIEW_RELATIVE = Path("materials/optimization/v1/direction-semantic-representation.json")
 GRANULARITY_VIEW_RELATIVE = Path("materials/optimization/v1/direction-organization-granularity.json")
+STORAGE_VIEW_RELATIVE = Path("materials/optimization/v1/direction-storage-deposition.json")
 CORE_RELATIVE = Path("materials/core/v1/dataset.json")
 PRODUCT_SOURCE_PATHS = ("internal", "cmd/ownward", "go.mod", "go.sum")
 ITERATION_IMPLEMENTATION_PATHS = (
@@ -37,6 +38,267 @@ ITERATION_IMPLEMENTATION_PATHS = (
     "benchmarks/longmemeval_s/run.py",
     "benchmarks/longmemeval_s/protocol.json",
 )
+
+
+def run_storage(
+    suite_root: Path,
+    formal_run: Path,
+    output_root: Path,
+    candidate: str,
+    resume: bool,
+) -> dict[str, Any]:
+    repository = suite_root.parents[2]
+    formal_run = formal_run.resolve()
+    output_root = output_root.resolve()
+    _require(formal_run.is_dir(), "正式 LongMemEval-S 运行目录不存在")
+    _require(candidate == "worktree", "存储方向候选必须绑定当前未提交工作树")
+    product_sha = _worktree_product_sha256(repository)
+    implementation_sha = _worktree_source_sha256(repository, ITERATION_IMPLEMENTATION_PATHS)
+    candidate_identity = f"worktree:{implementation_sha}"
+    observer_candidate = f"worktree:{product_sha}"
+    paths = {
+        "storage": suite_root / STORAGE_VIEW_RELATIVE,
+        "semantic": suite_root / SEMANTIC_VIEW_RELATIVE,
+        "granularity": suite_root / GRANULARITY_VIEW_RELATIVE,
+        "budget": suite_root / VIEW_RELATIVE,
+        "core": suite_root / CORE_RELATIVE,
+    }
+    for path in paths.values():
+        _require(path.is_file(), f"迭代输入不存在: {path}")
+    report_path = formal_run / "report.json"
+    diagnostics_path = formal_run / "diagnostics.jsonl"
+    input_identity = {
+        "formal_candidate": V0_CANDIDATE,
+        "formal_report_sha256": file_sha256(report_path),
+        "formal_diagnostics_sha256": file_sha256(diagnostics_path),
+        "evaluation_candidate": candidate_identity,
+        "evaluation_product_source_sha256": product_sha,
+        "evaluation_implementation_source_sha256": implementation_sha,
+        **{f"{name}_view_sha256": file_sha256(path) for name, path in paths.items()},
+        "analyzer_sha256": file_sha256(Path(__file__)),
+        "algorithm": "kernel-v1-storage-deposition/v1",
+    }
+    input_sha = canonical_sha256(input_identity)
+    output_root.mkdir(parents=True, exist_ok=True)
+    formal_path = output_root / "formal-storage-observation.json"
+    formal = _reuse_json(formal_path, input_sha, resume)
+    if formal is None:
+        formal = _audit_formal_storage(formal_run, input_sha)
+        atomic_json(formal_path, formal)
+    _validate_formal_storage_observation(formal, load_json(paths["storage"]))
+
+    tool = _build_observer(repository, output_root, resume)
+    tool_sha = file_sha256(tool)
+    environment_sha = canonical_sha256({
+        "os": platform.system().lower(), "arch": platform.machine().lower(),
+        "python": platform.python_version(), "go": _command_output(["go", "env", "GOVERSION"], repository),
+    })
+    observer_input_sha = canonical_sha256({**input_identity, "observer_sha256": tool_sha})
+    specifications = {
+        "storage": (paths["storage"], ("storage_architecture",)),
+        "semantic": (paths["semantic"], ("semantic_representation",)),
+        "granularity": (paths["granularity"], ("organization", "indexing", "lexical", "vector", "graph", "context", "fusion", "efficiency")),
+        "core": (paths["core"], ("identity", "relations", "merge_split", "incremental_consistency", "context", "fusion")),
+    }
+    observations: dict[str, dict[str, Any]] = {}
+    reused: dict[str, bool] = {}
+    durations: dict[str, float] = {}
+    for name, (materials, stages) in specifications.items():
+        observation_path = output_root / f"{name}-observation.json"
+        existing = _reuse_observation(
+            observation_path, observer_candidate, file_sha256(materials), observer_input_sha,
+            tool_sha, stages, resume,
+        )
+        if existing is not None:
+            observations[name] = existing
+            reused[name] = True
+            durations[name] = 0.0
+            continue
+        started = time.perf_counter()
+        command = [
+            str(tool), "--materials", str(materials), "--candidate", observer_candidate,
+            "--mode", "targeted", "--environment-sha256", environment_sha,
+            "--input-manifest-sha256", observer_input_sha, "--repository", str(repository),
+            "--output", str(observation_path), "--stages", ",".join(stages), "--self-check",
+            "--source-identity-sha256", product_sha,
+        ]
+        completed = subprocess.run(command, cwd=repository, text=True, encoding="utf-8", errors="replace", capture_output=True, timeout=180, check=False)
+        if completed.returncode != 0:
+            raise KernelIterationError(f"{name} 快速视图失败: {(completed.stderr or completed.stdout).strip()}")
+        observations[name] = load_json(observation_path)
+        reused[name] = False
+        durations[name] = time.perf_counter() - started
+
+    budget_path = output_root / "budget-observation.json"
+    budget_tool_sha = file_sha256(repository / "benchmarks" / "longmemeval_s" / "run.py")
+    existing_budget = _reuse_observation(
+        budget_path, candidate_identity, file_sha256(paths["budget"]), observer_input_sha,
+        budget_tool_sha, ("budget_selection",), resume,
+    )
+    if existing_budget is None:
+        started = time.perf_counter()
+        observations["budget"] = _observe_budget_selection(repository, paths["budget"], candidate_identity, observer_input_sha, budget_tool_sha)
+        atomic_json(budget_path, observations["budget"])
+        reused["budget"] = False
+        durations["budget"] = time.perf_counter() - started
+    else:
+        observations["budget"] = existing_budget
+        reused["budget"] = True
+        durations["budget"] = 0.0
+    _require(max((_observation_elapsed(value) for value in observations.values()), default=0) <= 180, "单个方向视图超过 3 分钟")
+    _require(sum(_observation_elapsed(value) for value in observations.values()) <= 600, "方向与全部保护检查超过 10 分钟")
+
+    pool = {"selection": {"mechanism": "rebuildable_semantic_work_content_persisted_twice"}}
+    granularity_result = build_candidate_result(
+        input_identity, pool, {"direction": observations["granularity"], "protection": observations["core"]},
+        {"direction": _observation_elapsed(observations["granularity"]), "protection": _observation_elapsed(observations["core"])},
+        load_json(paths["granularity"]), candidate_identity,
+    )
+    semantic_result = build_semantic_candidate_result(
+        input_identity, pool,
+        {"direction": observations["semantic"], "granularity_protection": observations["granularity"], "protection": observations["core"]},
+        {"direction": _observation_elapsed(observations["semantic"]), "granularity_protection": _observation_elapsed(observations["granularity"]), "protection": _observation_elapsed(observations["core"])},
+        load_json(paths["semantic"]), candidate_identity,
+    )
+    budget_result = build_budget_candidate_result(
+        input_identity, pool,
+        {"direction": observations["budget"], "semantic_protection": observations["semantic"], "granularity_protection": observations["granularity"], "protection": observations["core"]},
+        {"direction": _observation_elapsed(observations["budget"]), "semantic_protection": _observation_elapsed(observations["semantic"]), "granularity_protection": _observation_elapsed(observations["granularity"]), "protection": _observation_elapsed(observations["core"])},
+        load_json(paths["budget"]), candidate_identity,
+    )
+    storage_view = load_json(paths["storage"])
+    storage_gate = _mapping(_mapping(storage_view, "optimization_view"), "frozen_gate")
+    storage_metrics = {item["name"]: item for item in observations["storage"]["metrics"]}
+    checks: dict[str, Any] = {}
+    failures: list[str] = []
+    for name, gate_name in (
+        ("storage_amplification_ratio", "storage_amplification_ratio_max"),
+        ("derived_storage_amplification_ratio", "derived_storage_amplification_ratio_max"),
+        ("authority_history_reclaim_ratio", "authority_history_reclaim_ratio_max"),
+        ("derived_records_per_asset", "derived_records_per_asset_max"),
+        ("storage_view_query_p95_ms", "storage_view_query_p95_ms_max"),
+    ):
+        value = float(_mapping(storage_metrics, name)["value"])
+        maximum = float(storage_gate[gate_name])
+        passed = _within_upper_bound(value, maximum)
+        checks[name] = {"value": value, "maximum": maximum, "passed": passed}
+        if not passed:
+            failures.append(name)
+    for name, gate_name in (
+        ("semantic_work_payload_recovery", "semantic_work_payload_recovery_min"),
+        ("semantic_receipt_idempotency", "semantic_receipt_idempotency_min"),
+        ("maintenance_byte_repeatability", "maintenance_byte_repeatability_min"),
+        ("backup_restore_integrity", "backup_restore_integrity_min"),
+        ("storage_view_search_recall", "storage_view_search_recall_min"),
+    ):
+        value = float(_mapping(storage_metrics, name)["value"])
+        minimum = float(storage_gate[gate_name])
+        passed = value >= minimum
+        checks[name] = {"value": value, "minimum": minimum, "passed": passed}
+        if not passed:
+            failures.append(name)
+    protections = {
+        "information_representation_and_organization": granularity_result["passed"],
+        "semantic_capability_and_representation_model": semantic_result["passed"],
+        "retrieval_architecture_and_algorithm": budget_result["passed"],
+    }
+    failures.extend(name for name, passed in protections.items() if not passed)
+    result = {
+        "schema": "ownward.kernel-storage-candidate/v1", "candidate": candidate_identity,
+        "input_identity": input_identity, "formal_storage_observation": formal,
+        "metrics": checks, "protected_directions": protections,
+        "gate": {**storage_gate, "failures": sorted(failures)},
+        "cost": {"direction_wall_seconds": _observation_elapsed(observations["storage"]), "all_views_wall_seconds": sum(_observation_elapsed(value) for value in observations.values()), "direction_view_max_seconds": 180, "direction_validation_max_seconds": 600},
+        "resume": {"identity_exact": True, "reused": reused, "policy": "reuse_exact_identity_and_rerun_only_invalid_parts"},
+        "passed": not failures, "formal_evidence": False, "formal_acceptance_state_modified": False, "may_promote_baseline": False,
+    }
+    result["identity_sha256"] = canonical_sha256({
+        "input": input_identity, "formal": file_sha256(formal_path),
+        **{name: file_sha256(output_root / f"{name}-observation.json") for name in specifications},
+        "budget": file_sha256(budget_path),
+    })
+    result_path = output_root / "candidate-result.json"
+    existing_result = _reuse_json(result_path, result["identity_sha256"], resume)
+    if existing_result is None:
+        atomic_json(result_path, result)
+    else:
+        result = existing_result
+    _require(result.get("passed") is True, f"存储方向候选未通过: {result.get('gate', {}).get('failures')}")
+    return {"passed": True, "candidate": candidate_identity, "result": str(result_path), "identity_sha256": result["identity_sha256"], "reused": reused}
+
+
+def _audit_formal_storage(formal_run: Path, identity_sha256: str) -> dict[str, Any]:
+    totals = Counter()
+    question_roots = sorted((formal_run / "questions").glob("*/ownward-data"))
+    for question_root in question_roots:
+        asset_path = question_root / "assets" / "information.jsonl"
+        state_path = question_root / "state" / "organization.binlog"
+        _require(asset_path.is_file() and state_path.is_file(), "正式产品存储证据不完整")
+        totals["asset_log_bytes"] += asset_path.stat().st_size
+        current_assets: dict[str, dict[str, Any]] = {}
+        with asset_path.open("r", encoding="utf-8") as stream:
+            for line_number, line in enumerate(stream, 1):
+                try:
+                    event = json.loads(line)
+                    value = _mapping(event, "value")
+                    asset_id = value.get("id")
+                    revision = value.get("revision")
+                    content = value.get("content")
+                    _require(isinstance(asset_id, str) and asset_id and isinstance(revision, int) and revision > 0 and isinstance(content, str), f"正式权威资产第 {line_number} 行无效")
+                    previous = current_assets.get(asset_id)
+                    _require(previous is None or revision == int(previous["revision"]) + 1, f"正式权威资产 {asset_id} 版本不连续")
+                    current_assets[asset_id] = {"revision": revision, "content_chars": len(content)}
+                except (json.JSONDecodeError, KernelIterationError, KeyError, TypeError, ValueError) as exc:
+                    raise KernelIterationError(f"正式权威资产日志损坏: {asset_path}:{line_number}: {exc}") from exc
+        totals["current_asset_count"] += len(current_assets)
+        totals["current_content_chars"] += sum(int(item["content_chars"]) for item in current_assets.values())
+        totals["files"] += 1
+        with state_path.open("rb") as stream:
+            while True:
+                header = stream.read(16)
+                if not header:
+                    break
+                _require(len(header) == 16 and header[:4] == b"OWD3", "正式派生日志记录头无效")
+                metadata_length, vector_length, expected_crc = struct.unpack("<III", header[4:])
+                metadata = stream.read(metadata_length)
+                vector = stream.read(vector_length)
+                footer = stream.read(4)
+                _require(len(metadata) == metadata_length and len(vector) == vector_length and footer == b"DONE", "正式派生日志记录被截断")
+                _require(zlib.crc32(metadata + vector) & 0xFFFFFFFF == expected_crc, "正式派生日志记录校验失败")
+                work_at = metadata.find(b',"semantic_work":')
+                result_at = metadata.find(b',"semantic_result":')
+                embedding_at = metadata.find(b',"embedding_space":')
+                end = embedding_at if embedding_at >= 0 else len(metadata)
+                work_bytes = ((result_at if result_at >= 0 else end) - work_at) if work_at >= 0 else 0
+                result_bytes = (end - result_at) if result_at >= 0 else 0
+                totals["records"] += 1
+                totals["metadata_bytes"] += metadata_length
+                totals["vector_bytes"] += vector_length
+                totals["semantic_work_bytes"] += work_bytes
+                totals["semantic_result_bytes"] += result_bytes
+                totals["completed_records"] += int(result_at >= 0)
+    derived_bytes = totals["metadata_bytes"] + totals["vector_bytes"] + totals["records"] * 20
+    return {
+        "schema": "ownward.kernel-formal-storage-observation/v1", "identity_sha256": identity_sha256,
+        **dict(totals), "derived_bytes": derived_bytes,
+        "question_isolated_product_bytes": totals["asset_log_bytes"] + derived_bytes,
+        "semantic_work_share": totals["semantic_work_bytes"] / derived_bytes,
+        "classification": {"benchmark_question_isolation_is_product_defect": False, "semantic_trace_audit_is_product_defect": False, "derived_semantic_work_duplication_is_product_defect": True},
+    }
+
+
+def _validate_formal_storage_observation(observation: dict[str, Any], view: dict[str, Any]) -> None:
+    expected = _mapping(_mapping(view, "optimization_view"), "formal_scale_observation")
+    _require(observation.get("files") == 500, "正式存储观察未覆盖 500 个隔离问题目录")
+    _require(observation.get("asset_log_bytes") == expected["authoritative_asset_bytes"], "正式权威资产存储规模漂移")
+    _require(observation.get("current_asset_count") == expected["current_asset_count"], "正式当前资产数量漂移")
+    length_profile = _mapping(_mapping(view, "optimization_view"), "formal_length_profile")
+    _require(observation.get("current_content_chars") == length_profile["total_content_chars"], "正式当前资产正文规模漂移")
+    _require(observation.get("records") == expected["derived_record_count"], "正式派生记录规模漂移")
+    _require(observation.get("derived_bytes") == expected["derived_log_bytes"], "正式派生日志规模漂移")
+    _require(observation.get("question_isolated_product_bytes") == expected["question_isolated_product_bytes"], "正式问题隔离产品存储规模漂移")
+    _require(observation.get("semantic_work_bytes") == expected["semantic_work_bytes"], "正式语义工作放大规模漂移")
+    _require(math.isclose(float(observation.get("semantic_work_share", 0)), float(expected["semantic_work_share"]), rel_tol=1e-12), "正式语义工作放大比例漂移")
 
 
 def _within_upper_bound(value: float, maximum: float) -> bool:

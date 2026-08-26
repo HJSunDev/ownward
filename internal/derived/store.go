@@ -20,12 +20,13 @@ import (
 )
 
 const (
-	recordSchema       = "ownward.derived/v3"
-	legacyRecordSchema = "ownward.derived/v2"
-	LogFileName        = "organization.binlog"
-	legacyLogFileName  = "organization.jsonl"
-	headerSize         = 16
-	footerSize         = 4
+	recordSchema         = "ownward.derived/v4"
+	previousRecordSchema = "ownward.derived/v3"
+	legacyRecordSchema   = "ownward.derived/v2"
+	LogFileName          = "organization.binlog"
+	legacyLogFileName    = "organization.jsonl"
+	headerSize           = 16
+	footerSize           = 4
 )
 
 var (
@@ -36,14 +37,18 @@ var (
 var ErrStaleRecord = errors.New("派生状态版本早于当前版本")
 
 type Record struct {
-	Schema         string                `json:"schema"`
-	AssetID        string                `json:"asset_id"`
-	AssetRevision  uint64                `json:"asset_revision"`
-	GeneratedAt    time.Time             `json:"generated_at"`
-	Provider       string                `json:"provider"`
-	Status         string                `json:"status"`
-	Error          string                `json:"error,omitempty"`
-	Analysis       semantics.Analysis    `json:"analysis"`
+	Schema                string                       `json:"schema"`
+	AssetID               string                       `json:"asset_id"`
+	AssetRevision         uint64                       `json:"asset_revision"`
+	GeneratedAt           time.Time                    `json:"generated_at"`
+	Provider              string                       `json:"provider"`
+	Status                string                       `json:"status"`
+	Error                 string                       `json:"error,omitempty"`
+	Analysis              semantics.Analysis           `json:"analysis"`
+	SemanticWorkReference *semantics.WorkReference     `json:"semantic_work_reference,omitempty"`
+	SemanticReceipt       *semantics.SubmissionReceipt `json:"semantic_receipt,omitempty"`
+	// SemanticWork and SemanticResult are accepted only as in-memory/legacy
+	// inputs. Store canonicalization replaces them with compact durable forms.
 	SemanticWork   *semantics.Work       `json:"semantic_work,omitempty"`
 	SemanticResult *semantics.Submission `json:"semantic_result,omitempty"`
 	EmbeddingSpace string                `json:"embedding_space,omitempty"`
@@ -66,6 +71,20 @@ type persistedRecord struct {
 }
 
 type recordMetadata struct {
+	Schema                string                       `json:"schema"`
+	AssetID               string                       `json:"asset_id"`
+	AssetRevision         uint64                       `json:"asset_revision"`
+	GeneratedAt           time.Time                    `json:"generated_at"`
+	Provider              string                       `json:"provider"`
+	Status                string                       `json:"status"`
+	Error                 string                       `json:"error,omitempty"`
+	Analysis              semantics.Analysis           `json:"analysis"`
+	SemanticWorkReference *semantics.WorkReference     `json:"semantic_work_reference,omitempty"`
+	SemanticReceipt       *semantics.SubmissionReceipt `json:"semantic_receipt,omitempty"`
+	EmbeddingSpace        string                       `json:"embedding_space,omitempty"`
+}
+
+type previousRecordMetadata struct {
 	Schema         string                `json:"schema"`
 	AssetID        string                `json:"asset_id"`
 	AssetRevision  uint64                `json:"asset_revision"`
@@ -89,6 +108,7 @@ type Store struct {
 	directory           string
 	generation          string
 	sealed              bool
+	needsCompaction     bool
 }
 
 type recordReference struct {
@@ -124,6 +144,12 @@ func Open(dir string) (*Store, error) {
 		if err := store.verifyGeneration(); err != nil {
 			_ = store.Close()
 			return nil, err
+		}
+	}
+	if store.needsCompaction && !sealed {
+		if err := store.Compact(); err != nil {
+			_ = store.Close()
+			return nil, fmt.Errorf("迁移并压实派生状态: %w", err)
 		}
 	}
 	return store, nil
@@ -260,7 +286,7 @@ func migrateLegacy(dir string) error {
 			return &legacyCorruptionError{err: fmt.Errorf("旧派生状态第 %d 行损坏: %w", line, err)}
 		}
 		record, err := fromPersisted(persisted)
-		if err != nil || record.Schema != legacyRecordSchema || record.AssetID == "" || record.AssetRevision == 0 {
+		if err != nil || persisted.Schema != legacyRecordSchema || record.AssetID == "" || record.AssetRevision == 0 {
 			return &legacyCorruptionError{err: fmt.Errorf("旧派生状态第 %d 行无效", line)}
 		}
 		encoded, err = EncodeRecord(record)
@@ -298,6 +324,11 @@ func (s *Store) Close() error {
 func (s *Store) Put(record Record) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	var err error
+	record, err = canonicalRecord(record)
+	if err != nil {
+		return err
+	}
 	if err := validateRecord(record); err != nil {
 		return err
 	}
@@ -305,7 +336,7 @@ func (s *Store) Put(record Record) error {
 		return ErrStaleRecord
 	}
 	record.Schema = recordSchema
-	encoded, err := EncodeRecord(record)
+	encoded, err := encodeRecord(record)
 	if err != nil {
 		return err
 	}
@@ -335,10 +366,100 @@ func (s *Store) Put(record Record) error {
 	return nil
 }
 
+// Compact rewrites a mutable derived log to one current, compact record per
+// asset. Sealed generations are compacted by the existing atomic generation
+// rebuild path and are therefore left unchanged here.
+func (s *Store) Compact() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.file == nil {
+		return errors.New("派生状态已关闭")
+	}
+	if s.sealed {
+		return nil
+	}
+	records, err := s.allLocked(true)
+	if err != nil {
+		return err
+	}
+	temporary, err := os.CreateTemp(s.directory, ".organization-compacting-*")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	committed := false
+	defer func() {
+		_ = temporary.Close()
+		if !committed {
+			_ = os.Remove(temporaryPath)
+		}
+	}()
+	if err := temporary.Chmod(0o600); err != nil {
+		return err
+	}
+	for _, record := range records {
+		encoded, encodeErr := encodeRecord(record)
+		if encodeErr != nil {
+			return encodeErr
+		}
+		if _, err := temporary.Write(encoded); err != nil {
+			return err
+		}
+	}
+	if err := temporary.Sync(); err != nil {
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	path := filepath.Join(s.directory, LogFileName)
+	if err := s.file.Close(); err != nil {
+		return err
+	}
+	s.file = nil
+	if err := replaceFile(temporaryPath, path); err != nil {
+		s.file, _ = os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+		return err
+	}
+	committed = true
+	s.file, err = os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return err
+	}
+	s.records = make(map[string]recordReference, len(records))
+	s.startupRecords = make(map[string]Record, len(records))
+	s.needsCompaction = false
+	return s.replay()
+}
+
 func (s *Store) RecoveredCorruption() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.recoveredCorruption
+}
+
+func (s *Store) NeedsCompaction() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.file == nil || s.needsCompaction {
+		return s.needsCompaction
+	}
+	info, err := s.file.Stat()
+	if err != nil {
+		return false
+	}
+	live := int64(0)
+	for _, reference := range s.records {
+		live += int64(reference.length)
+	}
+	obsolete := info.Size() - live
+	return obsolete > 1024*1024 && (live == 0 || obsolete*4 > live)
+}
+
+func (s *Store) Sealed() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.sealed
 }
 
 func (s *Store) Get(id string) (Record, bool) {
@@ -443,9 +564,12 @@ func (s *Store) replay() error {
 		if _, err := io.ReadFull(reader, encoded[headerSize:]); err != nil {
 			return err
 		}
-		record, err := decodeRecord(encoded, true)
+		record, previous, err := decodeRecordWithVersion(encoded, true)
 		if err != nil {
 			return fmt.Errorf("派生状态第 %d 条记录损坏: %w", recordNumber, err)
+		}
+		if previous {
+			s.needsCompaction = true
 		}
 		s.records[record.AssetID] = recordReference{offset: offset, length: uint32(total), revision: record.AssetRevision}
 		s.startupRecords[record.AssetID] = record
@@ -505,16 +629,24 @@ func fromPersisted(value persistedRecord) (Record, error) {
 			return Record{}, errors.New("派生向量包含非有限数值")
 		}
 	}
-	return Record{
+	return canonicalRecord(Record{
 		Schema: value.Schema, AssetID: value.AssetID, AssetRevision: value.AssetRevision,
 		GeneratedAt: value.GeneratedAt, Provider: value.Provider, Status: value.Status,
 		Error: value.Error, Analysis: value.Analysis, SemanticWork: value.SemanticWork,
 		SemanticResult: value.SemanticResult, EmbeddingSpace: value.EmbeddingSpace, Embedding: embedding,
-	}, nil
+	})
 }
 
 // EncodeRecord 生成 Store 使用的正式持久化表示，仅供性能夹具验证发布格式。
 func EncodeRecord(record Record) ([]byte, error) {
+	canonical, err := canonicalRecord(record)
+	if err != nil {
+		return nil, err
+	}
+	return encodeRecord(canonical)
+}
+
+func encodeRecord(record Record) ([]byte, error) {
 	record.Schema = recordSchema
 	if err := validateRecord(record); err != nil {
 		return nil, err
@@ -522,8 +654,8 @@ func EncodeRecord(record Record) ([]byte, error) {
 	metadata, err := json.Marshal(recordMetadata{
 		Schema: record.Schema, AssetID: record.AssetID, AssetRevision: record.AssetRevision,
 		GeneratedAt: record.GeneratedAt, Provider: record.Provider, Status: record.Status,
-		Error: record.Error, Analysis: record.Analysis, SemanticWork: record.SemanticWork,
-		SemanticResult: record.SemanticResult, EmbeddingSpace: record.EmbeddingSpace,
+		Error: record.Error, Analysis: record.Analysis, SemanticWorkReference: record.SemanticWorkReference,
+		SemanticReceipt: record.SemanticReceipt, EmbeddingSpace: record.EmbeddingSpace,
 	})
 	if err != nil {
 		return nil, err
@@ -554,14 +686,17 @@ func validateRecord(record Record) error {
 	if record.Status != "ready" && record.Status != "degraded" && record.Status != "pending" && record.Status != "uncertain" {
 		return errors.New("派生状态值无效")
 	}
-	if record.SemanticWork != nil {
-		if err := record.SemanticWork.Validate(); err != nil || record.SemanticWork.Asset.ID != record.AssetID || record.SemanticWork.Asset.Revision != record.AssetRevision {
+	if record.SemanticWork != nil || record.SemanticResult != nil {
+		return errors.New("派生状态尚未转换为紧凑语义引用")
+	}
+	if record.SemanticWorkReference != nil {
+		if err := record.SemanticWorkReference.Validate(); err != nil || record.SemanticWorkReference.AssetID != record.AssetID || record.SemanticWorkReference.Revision != record.AssetRevision {
 			return errors.New("派生状态包含无效语义工作")
 		}
 	}
-	if record.SemanticResult != nil {
-		if record.SemanticWork == nil || record.SemanticResult.WorkID != record.SemanticWork.ID || record.SemanticResult.AssetID != record.AssetID ||
-			record.SemanticResult.Revision != record.AssetRevision || record.SemanticResult.AcceptedAt.IsZero() {
+	if record.SemanticReceipt != nil {
+		if record.SemanticWorkReference == nil || record.SemanticReceipt.Validate() != nil || record.SemanticReceipt.WorkID != record.SemanticWorkReference.ID ||
+			record.SemanticReceipt.AssetID != record.AssetID || record.SemanticReceipt.Revision != record.AssetRevision {
 			return errors.New("派生状态包含无效语义结果")
 		}
 	}
@@ -592,28 +727,53 @@ func validateRecord(record Record) error {
 }
 
 func decodeRecord(encoded []byte, withEmbedding bool) (Record, error) {
+	record, _, err := decodeRecordWithVersion(encoded, withEmbedding)
+	return record, err
+}
+
+func decodeRecordWithVersion(encoded []byte, withEmbedding bool) (Record, bool, error) {
 	if len(encoded) < headerSize+footerSize || string(encoded[:4]) != string(recordMagic[:]) {
-		return Record{}, errors.New("派生状态记录头无效")
+		return Record{}, false, errors.New("派生状态记录头无效")
 	}
 	metadataLength := int(binary.LittleEndian.Uint32(encoded[4:8]))
 	vectorLength := int(binary.LittleEndian.Uint32(encoded[8:12]))
 	if metadataLength <= 0 || vectorLength%4 != 0 || vectorLength/4 > 8192 || headerSize+metadataLength+vectorLength+footerSize != len(encoded) {
-		return Record{}, errors.New("派生状态记录长度无效")
+		return Record{}, false, errors.New("派生状态记录长度无效")
 	}
 	if string(encoded[len(encoded)-footerSize:]) != string(commitMagic[:]) {
-		return Record{}, errors.New("派生状态记录未提交")
+		return Record{}, false, errors.New("派生状态记录未提交")
 	}
 	payload := encoded[headerSize : len(encoded)-footerSize]
 	if crc32.ChecksumIEEE(payload) != binary.LittleEndian.Uint32(encoded[12:16]) {
-		return Record{}, errors.New("派生状态记录校验失败")
+		return Record{}, false, errors.New("派生状态记录校验失败")
+	}
+	var identity struct {
+		Schema string `json:"schema"`
+	}
+	if err := json.Unmarshal(payload[:metadataLength], &identity); err != nil {
+		return Record{}, false, err
+	}
+	previous := identity.Schema == previousRecordSchema
+	if identity.Schema != recordSchema && !previous {
+		return Record{}, false, errors.New("派生状态记录格式无效")
 	}
 	var metadata recordMetadata
-	if err := json.Unmarshal(payload[:metadataLength], &metadata); err != nil {
-		return Record{}, err
+	var legacy previousRecordMetadata
+	if previous {
+		if err := json.Unmarshal(payload[:metadataLength], &legacy); err != nil {
+			return Record{}, false, err
+		}
+		metadata = recordMetadata{
+			Schema: legacy.Schema, AssetID: legacy.AssetID, AssetRevision: legacy.AssetRevision,
+			GeneratedAt: legacy.GeneratedAt, Provider: legacy.Provider, Status: legacy.Status,
+			Error: legacy.Error, Analysis: legacy.Analysis, EmbeddingSpace: legacy.EmbeddingSpace,
+		}
+	} else if err := json.Unmarshal(payload[:metadataLength], &metadata); err != nil {
+		return Record{}, false, err
 	}
-	if metadata.Schema != recordSchema || strings.TrimSpace(metadata.AssetID) == "" || metadata.AssetRevision == 0 ||
+	if strings.TrimSpace(metadata.AssetID) == "" || metadata.AssetRevision == 0 ||
 		(metadata.Status != "ready" && metadata.Status != "degraded" && metadata.Status != "pending" && metadata.Status != "uncertain") {
-		return Record{}, errors.New("派生状态记录元数据无效")
+		return Record{}, false, errors.New("派生状态记录元数据无效")
 	}
 	var embedding []float32
 	if withEmbedding {
@@ -622,16 +782,29 @@ func decodeRecord(encoded []byte, withEmbedding bool) (Record, error) {
 		for index := range embedding {
 			embedding[index] = math.Float32frombits(binary.LittleEndian.Uint32(vector[index*4:]))
 			if math.IsNaN(float64(embedding[index])) || math.IsInf(float64(embedding[index]), 0) {
-				return Record{}, errors.New("派生向量包含非有限数值")
+				return Record{}, false, errors.New("派生向量包含非有限数值")
 			}
 		}
 	}
-	return Record{
-		Schema: metadata.Schema, AssetID: metadata.AssetID, AssetRevision: metadata.AssetRevision,
+	record := Record{
+		Schema: recordSchema, AssetID: metadata.AssetID, AssetRevision: metadata.AssetRevision,
 		GeneratedAt: metadata.GeneratedAt, Provider: metadata.Provider, Status: metadata.Status,
-		Error: metadata.Error, Analysis: metadata.Analysis, SemanticWork: metadata.SemanticWork,
-		SemanticResult: metadata.SemanticResult, EmbeddingSpace: metadata.EmbeddingSpace, Embedding: embedding,
-	}, nil
+		Error: metadata.Error, Analysis: metadata.Analysis, SemanticWorkReference: metadata.SemanticWorkReference,
+		SemanticReceipt: metadata.SemanticReceipt, EmbeddingSpace: metadata.EmbeddingSpace, Embedding: embedding,
+	}
+	if previous {
+		record.SemanticWork = legacy.SemanticWork
+		record.SemanticResult = legacy.SemanticResult
+		var err error
+		record, err = canonicalRecord(record)
+		if err != nil {
+			return Record{}, false, err
+		}
+	}
+	if err := validateRecord(record); err != nil {
+		return Record{}, false, err
+	}
+	return record, previous, nil
 }
 
 func (s *Store) rollbackLocked(offset int64) error {
@@ -644,28 +817,53 @@ func (s *Store) rollbackLocked(offset int64) error {
 	return s.file.Sync()
 }
 
+func canonicalRecord(record Record) (Record, error) {
+	if record.SemanticWorkReference == nil && record.SemanticWork != nil {
+		reference, err := semantics.ReferenceWork(*record.SemanticWork)
+		if err != nil {
+			return Record{}, err
+		}
+		record.SemanticWorkReference = &reference
+	}
+	if record.SemanticReceipt == nil && record.SemanticResult != nil {
+		receipt, err := semantics.NewSubmissionReceipt(*record.SemanticResult)
+		if err != nil {
+			return Record{}, err
+		}
+		record.SemanticReceipt = &receipt
+	}
+	record.SemanticWork = nil
+	record.SemanticResult = nil
+	record.Schema = recordSchema
+	return record, nil
+}
+
+func (r Record) HasPendingSemanticWork() bool {
+	return r.SemanticWorkReference != nil && r.SemanticReceipt == nil
+}
+
+func (r Record) HasSemanticResult() bool {
+	return r.SemanticReceipt != nil
+}
+
 func clone(record Record) Record {
 	record.Embedding = append([]float32(nil), record.Embedding...)
 	record.Analysis.Cues = append([]semantics.Cue(nil), record.Analysis.Cues...)
 	record.Analysis.Topics = append([]string(nil), record.Analysis.Topics...)
 	record.Analysis.Contexts = append([]semantics.InferredContext(nil), record.Analysis.Contexts...)
 	record.Analysis.Relations = append([]semantics.Relation(nil), record.Analysis.Relations...)
-	if record.SemanticWork != nil {
-		work := *record.SemanticWork
-		work.Candidates = append([]semantics.Candidate(nil), work.Candidates...)
+	if record.SemanticWorkReference != nil {
+		work := *record.SemanticWorkReference
+		work.Candidates = append([]semantics.CandidateReference(nil), work.Candidates...)
 		if work.Previous != nil {
 			previous := *work.Previous
 			work.Previous = &previous
 		}
-		record.SemanticWork = &work
+		record.SemanticWorkReference = &work
 	}
-	if record.SemanticResult != nil {
-		result := *record.SemanticResult
-		result.Analysis.Cues = append([]semantics.Cue(nil), result.Analysis.Cues...)
-		result.Analysis.Topics = append([]string(nil), result.Analysis.Topics...)
-		result.Analysis.Contexts = append([]semantics.InferredContext(nil), result.Analysis.Contexts...)
-		result.Analysis.Relations = append([]semantics.Relation(nil), result.Analysis.Relations...)
-		record.SemanticResult = &result
+	if record.SemanticReceipt != nil {
+		receipt := *record.SemanticReceipt
+		record.SemanticReceipt = &receipt
 	}
 	return record
 }

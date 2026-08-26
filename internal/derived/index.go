@@ -78,7 +78,11 @@ func NewIndex(records []Record) *Index {
 		searchCache:    make(map[string]*searchCacheEntry),
 	}
 	counts := make(map[int]int)
-	for _, record := range records {
+	for index, record := range records {
+		if compact, err := canonicalRecord(record); err == nil {
+			record = compact
+			records[index] = compact
+		}
 		if len(record.Embedding) > 0 {
 			counts[len(record.Embedding)]++
 		}
@@ -105,6 +109,9 @@ func NewIndex(records []Record) *Index {
 func (i *Index) Upsert(record Record) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
+	if compact, err := canonicalRecord(record); err == nil {
+		record = compact
+	}
 	location, exists := i.locations[record.AssetID]
 	if exists && i.records[location].record.AssetRevision > record.AssetRevision {
 		return
@@ -178,10 +185,10 @@ func (i *Index) PendingDependents(targetID string) []string {
 }
 
 func (i *Index) addPendingLocked(record Record) {
-	if record.SemanticWork == nil || record.SemanticResult != nil {
+	if !record.HasPendingSemanticWork() {
 		return
 	}
-	for _, candidate := range record.SemanticWork.Candidates {
+	for _, candidate := range record.SemanticWorkReference.Candidates {
 		if candidate.ID == "" || candidate.ID == record.AssetID {
 			continue
 		}
@@ -200,10 +207,10 @@ func (i *Index) removePendingLocked(assetID string) {
 		return
 	}
 	record := i.records[location].record
-	if record.SemanticWork == nil || record.SemanticResult != nil {
+	if !record.HasPendingSemanticWork() {
 		return
 	}
-	for _, candidate := range record.SemanticWork.Candidates {
+	for _, candidate := range record.SemanticWorkReference.Candidates {
 		sources := i.pendingReverse[candidate.ID]
 		delete(sources, assetID)
 		if len(sources) == 0 {

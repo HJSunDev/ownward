@@ -3,6 +3,7 @@ package derived
 import (
 	"math"
 	"testing"
+	"time"
 
 	"github.com/HJSunDev/ownward/internal/domain"
 	"github.com/HJSunDev/ownward/internal/semantics"
@@ -52,12 +53,14 @@ func TestIndexReportsOnlyInferredDependents(t *testing.T) {
 }
 
 func TestIndexTracksOnlyUnresolvedSemanticWorkAsPendingDependencies(t *testing.T) {
+	now := time.Unix(1, 0).UTC()
 	work := semantics.Work{
 		Schema:     semantics.WorkSchema,
 		ID:         "work-source",
 		Generation: "generation",
-		Asset:      domain.Information{Schema: domain.AssetSchema, ID: "source", Revision: 1, Kind: domain.KindGeneral, Content: "source"},
+		Asset:      domain.Information{Schema: domain.AssetSchema, ID: "source", Revision: 1, Kind: domain.KindGeneral, Content: "source", CreatedAt: now, UpdatedAt: now},
 		Candidates: []semantics.Candidate{{ID: "target", Revision: 1, Content: "target"}},
+		CreatedAt:  now,
 	}
 	pending := Record{AssetID: "source", AssetRevision: 1, Status: "pending", SemanticWork: &work}
 	index := NewIndex([]Record{pending})
@@ -65,7 +68,10 @@ func TestIndexTracksOnlyUnresolvedSemanticWorkAsPendingDependencies(t *testing.T
 		t.Fatalf("pending dependency was not indexed: %#v", actual)
 	}
 
-	accepted := semantics.Submission{Schema: semantics.SubmissionSchema}
+	accepted := semantics.Submission{
+		Schema: semantics.SubmissionSchema, WorkID: work.ID, AssetID: work.Asset.ID, Revision: work.Asset.Revision,
+		Capability: semantics.Capability{ID: "test", Version: "1"}, Status: semantics.SubmissionComplete, AcceptedAt: now,
+	}
 	pending.SemanticResult = &accepted
 	pending.Status = "ready"
 	index.Upsert(pending)

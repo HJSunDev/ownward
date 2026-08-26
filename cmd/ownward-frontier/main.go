@@ -388,6 +388,11 @@ func measureFixture(ctx context.Context, value fixture, stages map[string]bool, 
 			return err
 		}
 	}
+	if stages["storage_architecture"] {
+		if err := measureStorageArchitecture(ctx, value, out, scratchRoot); err != nil {
+			return err
+		}
+	}
 
 	if stages["identity"] {
 		correct := 0
@@ -665,7 +670,7 @@ func aggregate(item *sampleSpec) float64 {
 }
 
 func requestedStages(mode, csv string) (map[string]bool, error) {
-	known := []string{"identity", "relations", "merge_split", "incremental_consistency", "organization", "indexing", "lexical", "vector", "graph", "context", "fusion", "efficiency", "semantic_representation"}
+	known := []string{"identity", "relations", "merge_split", "incremental_consistency", "organization", "indexing", "lexical", "vector", "graph", "context", "fusion", "efficiency", "semantic_representation", "storage_architecture"}
 	result := make(map[string]bool)
 	if mode == "full" {
 		for _, stage := range known {
@@ -840,6 +845,299 @@ func measureOrganizationLifecycle(ctx context.Context, assets []domain.Informati
 	measured.RebuiltRecords = len(rebuilt)
 	measured.RebuiltVectors = vectorRecordCount(rebuilt)
 	return measured, nil
+}
+
+func measureStorageArchitecture(ctx context.Context, value fixture, out collector, scratchRoot string) error {
+	root, err := os.MkdirTemp(scratchRoot, "storage-architecture-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(root)
+	assetsPath := filepath.Join(root, "assets")
+	statePath := filepath.Join(root, "state")
+	assetStore, err := assetlog.Open(assetsPath)
+	if err != nil {
+		return err
+	}
+	stateStore, err := derived.Open(statePath)
+	if err != nil {
+		_ = assetStore.Close()
+		return err
+	}
+	service, err := core.NewCollaborative(assetStore, stateStore, embedding.HashForTesting{Dimensions: 64})
+	if err != nil {
+		_ = stateStore.Close()
+		_ = assetStore.Close()
+		return err
+	}
+	defer service.Close()
+
+	createdByFixture := make(map[string]string, len(value.Assets))
+	works := make(map[string]semantics.Work, len(value.Assets))
+	submissions := make(map[string]semantics.Submission, len(value.Assets))
+	legacyDerivedBytes := int64(0)
+	for index, source := range value.Assets {
+		created, createErr := service.Create(ctx, core.CreateInput{
+			Kind: source.Kind, Content: source.Content, Contexts: source.Contexts, Relations: source.Relations, Source: source.Source,
+		})
+		if createErr != nil {
+			return createErr
+		}
+		createdByFixture[source.ID] = created.Information.ID
+		workItems, workErr := service.SemanticWorkFor(ctx, []string{created.Information.ID})
+		if workErr != nil || len(workItems) != 1 {
+			return fmt.Errorf("storage view semantic work missing: %w", workErr)
+		}
+		work := workItems[0]
+		works[source.ID] = work
+		pending, exists := stateStore.GetWithEmbedding(work.Asset.ID)
+		if !exists {
+			return errors.New("storage view pending record missing")
+		}
+		legacyDerivedBytes += legacyDerivedRecordSize(pending, &work, nil)
+		analysis := value.Analyses[source.ID]
+		if strings.TrimSpace(analysis.Summary) == "" {
+			analysis.Summary = fmt.Sprintf("isolated storage fixture %d", index+1)
+		}
+		submission := semantics.Submission{
+			Schema: semantics.SubmissionSchema, WorkID: work.ID, AssetID: work.Asset.ID, Revision: work.Asset.Revision,
+			Capability: semantics.Capability{ID: "frozen-storage-view", Version: "v1", Execution: "deterministic"},
+			Status:     semantics.SubmissionComplete, Analysis: analysis,
+		}
+		normalized, normalizeErr := semantics.NormalizeSubmission(work, submission, work.CreatedAt.Add(time.Second))
+		if normalizeErr != nil {
+			return normalizeErr
+		}
+		submissions[source.ID] = submission
+		if index == len(value.Assets)-1 {
+			continue
+		}
+		if _, submitErr := service.SubmitSemantic(ctx, submission); submitErr != nil {
+			return submitErr
+		}
+		complete, exists := stateStore.GetWithEmbedding(work.Asset.ID)
+		if !exists {
+			return errors.New("storage view completed record missing")
+		}
+		legacyDerivedBytes += legacyDerivedRecordSize(complete, &work, &normalized)
+	}
+
+	lastSource := value.Assets[len(value.Assets)-1].ID
+	pendingBefore, err := json.Marshal(works[lastSource])
+	if err != nil {
+		return err
+	}
+	if err := service.Close(); err != nil {
+		return err
+	}
+	assetStore, err = assetlog.Open(assetsPath)
+	if err != nil {
+		return err
+	}
+	stateStore, err = derived.Open(statePath)
+	if err != nil {
+		_ = assetStore.Close()
+		return err
+	}
+	service, err = core.NewCollaborative(assetStore, stateStore, embedding.HashForTesting{Dimensions: 64})
+	if err != nil {
+		_ = stateStore.Close()
+		_ = assetStore.Close()
+		return err
+	}
+	defer service.Close()
+	lastID := createdByFixture[lastSource]
+	restoredWork, err := service.SemanticWorkFor(ctx, []string{lastID})
+	if err != nil || len(restoredWork) != 1 {
+		return fmt.Errorf("storage view pending work did not recover: %w", err)
+	}
+	pendingAfter, _ := json.Marshal(restoredWork[0])
+	if !equalBytes(pendingBefore, pendingAfter) {
+		return errors.New("storage view changed semantic work while resolving compact references")
+	}
+	lastSubmission := submissions[lastSource]
+	normalizedLast, err := semantics.NormalizeSubmission(restoredWork[0], lastSubmission, restoredWork[0].CreatedAt.Add(time.Second))
+	if err != nil {
+		return err
+	}
+	if _, err := service.SubmitSemantic(ctx, lastSubmission); err != nil {
+		return err
+	}
+	if _, err := service.SubmitSemantic(ctx, lastSubmission); err != nil {
+		return fmt.Errorf("compact semantic receipt is not idempotent: %w", err)
+	}
+	lastComplete, exists := stateStore.GetWithEmbedding(lastID)
+	if !exists {
+		return errors.New("storage view final record missing")
+	}
+	legacyDerivedBytes += legacyDerivedRecordSize(lastComplete, &restoredWork[0], &normalizedLast)
+
+	largest := 0
+	for index := range value.Assets {
+		if len(value.Assets[index].Content) > len(value.Assets[largest].Content) {
+			largest = index
+		}
+	}
+	largestFixture := value.Assets[largest].ID
+	largestID := createdByFixture[largestFixture]
+	for revision := uint64(2); revision <= 4; revision++ {
+		current, readErr := service.Read(ctx, largestID)
+		if readErr != nil {
+			return readErr
+		}
+		content := current.Content + fmt.Sprintf("\nDurable revision marker %d.", revision)
+		if _, updateErr := service.Update(ctx, core.UpdateInput{ID: largestID, ExpectedRevision: current.Revision, Content: &content}); updateErr != nil {
+			return updateErr
+		}
+		workItems, workErr := service.SemanticWorkFor(ctx, []string{largestID})
+		if workErr != nil || len(workItems) != 1 {
+			return fmt.Errorf("storage view update work missing: %w", workErr)
+		}
+		work := workItems[0]
+		pending, _ := stateStore.GetWithEmbedding(largestID)
+		legacyDerivedBytes += legacyDerivedRecordSize(pending, &work, nil)
+		analysis := value.Analyses[largestFixture]
+		if strings.TrimSpace(analysis.Summary) == "" {
+			analysis.Summary = "isolated storage update"
+		}
+		submission := semantics.Submission{
+			Schema: semantics.SubmissionSchema, WorkID: work.ID, AssetID: work.Asset.ID, Revision: work.Asset.Revision,
+			Capability: semantics.Capability{ID: "frozen-storage-view", Version: "v1", Execution: "deterministic"},
+			Status:     semantics.SubmissionComplete, Analysis: analysis,
+		}
+		normalized, normalizeErr := semantics.NormalizeSubmission(work, submission, work.CreatedAt.Add(time.Second))
+		if normalizeErr != nil {
+			return normalizeErr
+		}
+		if _, submitErr := service.SubmitSemantic(ctx, submission); submitErr != nil {
+			return submitErr
+		}
+		complete, _ := stateStore.GetWithEmbedding(largestID)
+		legacyDerivedBytes += legacyDerivedRecordSize(complete, &work, &normalized)
+	}
+
+	assetLog := filepath.Join(assetsPath, "information.jsonl")
+	stateLog := filepath.Join(statePath, derived.LogFileName)
+	preAsset, err := os.Stat(assetLog)
+	if err != nil {
+		return err
+	}
+	if _, err := service.Maintain(ctx, false); err != nil {
+		return err
+	}
+	postAsset, err := os.Stat(assetLog)
+	if err != nil {
+		return err
+	}
+	postState, err := os.Stat(stateLog)
+	if err != nil {
+		return err
+	}
+	assetDigest, err := fileSHA(assetLog)
+	if err != nil {
+		return err
+	}
+	stateDigest, err := fileSHA(stateLog)
+	if err != nil {
+		return err
+	}
+	if _, err := service.Maintain(ctx, false); err != nil {
+		return err
+	}
+	secondAssetDigest, _ := fileSHA(assetLog)
+	secondStateDigest, _ := fileSHA(stateLog)
+
+	backup := filepath.Join(root, "assets.zip")
+	if err := assetStore.Backup(backup); err != nil {
+		return err
+	}
+	restoredPath := filepath.Join(root, "restored-assets")
+	if err := assetlog.Restore(backup, restoredPath); err != nil {
+		return err
+	}
+	restoredAssets, err := assetlog.Open(restoredPath)
+	if err != nil {
+		return err
+	}
+	restoredLargest, restoredExists := restoredAssets.Get(largestID)
+	_ = restoredAssets.Close()
+	currentLargest, _ := service.Read(ctx, largestID)
+	restoredEncoded, _ := json.Marshal(restoredLargest)
+	currentEncoded, _ := json.Marshal(currentLargest)
+
+	queryHits := 0
+	queryTotal := 0
+	queryStarted := time.Now()
+	for _, query := range value.Queries {
+		results, searchErr := service.Search(ctx, core.SearchInput{Query: query.Query, Limit: 10})
+		if searchErr != nil {
+			return searchErr
+		}
+		for _, expected := range query.ExpectedIDs {
+			queryTotal++
+			createdID := createdByFixture[expected]
+			for _, result := range results {
+				if result.ID == createdID {
+					queryHits++
+					break
+				}
+			}
+		}
+	}
+	queryElapsed := time.Since(queryStarted)
+	sourceRunes := 0
+	for _, asset := range assetStore.All() {
+		sourceRunes += utf8.RuneCountInString(asset.Content)
+	}
+	v0Total := int64(preAsset.Size()) + legacyDerivedBytes
+	candidateTotal := int64(postAsset.Size()) + postState.Size()
+	out.add("v0_product_storage_bytes_per_source_rune", "resources", "storage_architecture", ratioFloat(float64(v0Total), float64(sourceRunes)), "lower")
+	out.add("candidate_product_storage_bytes_per_source_rune", "resources", "storage_architecture", ratioFloat(float64(candidateTotal), float64(sourceRunes)), "lower")
+	out.add("storage_amplification_ratio", "resources", "storage_architecture", ratioFloat(float64(candidateTotal), float64(v0Total)), "lower")
+	out.add("derived_storage_amplification_ratio", "resources", "storage_architecture", ratioFloat(float64(postState.Size()), float64(legacyDerivedBytes)), "lower")
+	out.add("authority_history_reclaim_ratio", "resources", "storage_architecture", ratioFloat(float64(postAsset.Size()), float64(preAsset.Size())), "lower")
+	out.add("semantic_work_payload_recovery", "quality", "storage_architecture", 1, "higher")
+	out.add("semantic_receipt_idempotency", "quality", "storage_architecture", 1, "higher")
+	out.add("maintenance_byte_repeatability", "quality", "storage_architecture", boolScore(assetDigest == secondAssetDigest && stateDigest == secondStateDigest), "higher")
+	out.add("backup_restore_integrity", "quality", "storage_architecture", boolScore(restoredExists && equalBytes(restoredEncoded, currentEncoded)), "higher")
+	out.add("storage_view_search_recall", "quality", "storage_architecture", ratio(queryHits, queryTotal), "higher")
+	out.add("storage_view_query_p95_ms", "latency", "storage_architecture", queryElapsed.Seconds()*1000, "lower")
+	out.add("derived_records_per_asset", "resources", "storage_architecture", ratioFloat(float64(len(stateStore.All())), float64(len(assetStore.All()))), "lower")
+	return nil
+}
+
+func legacyDerivedRecordSize(record derived.Record, work *semantics.Work, result *semantics.Submission) int64 {
+	metadata := struct {
+		Schema         string                `json:"schema"`
+		AssetID        string                `json:"asset_id"`
+		AssetRevision  uint64                `json:"asset_revision"`
+		GeneratedAt    time.Time             `json:"generated_at"`
+		Provider       string                `json:"provider"`
+		Status         string                `json:"status"`
+		Error          string                `json:"error,omitempty"`
+		Analysis       semantics.Analysis    `json:"analysis"`
+		SemanticWork   *semantics.Work       `json:"semantic_work,omitempty"`
+		SemanticResult *semantics.Submission `json:"semantic_result,omitempty"`
+		EmbeddingSpace string                `json:"embedding_space,omitempty"`
+	}{
+		Schema: "ownward.derived/v3", AssetID: record.AssetID, AssetRevision: record.AssetRevision,
+		GeneratedAt: record.GeneratedAt, Provider: record.Provider, Status: record.Status, Error: record.Error,
+		Analysis: record.Analysis, SemanticWork: work, SemanticResult: result, EmbeddingSpace: record.EmbeddingSpace,
+	}
+	encoded, _ := json.Marshal(metadata)
+	return int64(16 + len(encoded) + len(record.Embedding)*4 + 4)
+}
+
+func equalBytes(left, right []byte) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func vectorRecordCount(records []derived.Record) int {

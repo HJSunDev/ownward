@@ -111,7 +111,7 @@ func MaterializeEvidenceUnit(value domain.Information, unit EvidenceUnit) (Evide
 	if err != nil {
 		return EvidenceUnit{}, err
 	}
-	unit.ID = evidenceUnitID(unit, []rune(content))
+	unit.ID = evidenceUnitID(unit, content)
 	return unit, nil
 }
 
@@ -145,8 +145,11 @@ func naturalBoundary(value rune) bool {
 	}
 }
 
-func evidenceUnitID(unit EvidenceUnit, content []rune) string {
-	digest := sha256.Sum256([]byte(string(content)))
+func evidenceUnitID(unit EvidenceUnit, content string) string {
+	// EvidenceUnitText has already proved that content is valid UTF-8. Hash its
+	// authoritative bytes directly; converting a long passage to []rune and
+	// immediately back to the same bytes only adds allocation and query latency.
+	digest := sha256.Sum256([]byte(content))
 	payload, _ := json.Marshal(evidenceIdentity{
 		SourceID: unit.SourceID, SourceRevision: unit.SourceRevision,
 		StartRune: unit.StartRune, EndRune: unit.EndRune, StartByte: unit.StartByte, EndByte: unit.EndByte,
@@ -185,7 +188,7 @@ func ResolveEvidence(value domain.Information, unit EvidenceUnit) (domain.Eviden
 	if err != nil {
 		return domain.Evidence{}, err
 	}
-	if evidenceUnitID(unit, []rune(content)) != unit.ID {
+	if evidenceUnitID(unit, content) != unit.ID {
 		return domain.Evidence{}, errors.New("证据单元身份与来源内容不一致")
 	}
 	evidence := domain.Evidence{

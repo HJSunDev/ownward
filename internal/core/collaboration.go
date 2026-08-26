@@ -52,10 +52,14 @@ func (s *Service) SemanticWork(_ context.Context, limit int) ([]semantics.Work, 
 	result := make([]semantics.Work, 0, limit)
 	for _, asset := range assets {
 		record, exists := s.derivedStore.Get(asset.ID)
-		if !exists || record.AssetRevision != asset.Revision || record.SemanticWork == nil || record.SemanticResult != nil {
+		if !exists || record.AssetRevision != asset.Revision || !record.HasPendingSemanticWork() {
 			continue
 		}
-		result = append(result, *record.SemanticWork)
+		work, err := s.resolveSemanticWork(record)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, work)
 		if len(result) == limit {
 			break
 		}
@@ -88,12 +92,35 @@ func (s *Service) SemanticWorkFor(_ context.Context, assetIDs []string) ([]seman
 			return nil, errors.New("定向语义工作的资产不存在")
 		}
 		record, exists := s.derivedStore.Get(id)
-		if !exists || record.AssetRevision != asset.Revision || record.SemanticWork == nil || record.SemanticResult != nil {
+		if !exists || record.AssetRevision != asset.Revision || !record.HasPendingSemanticWork() {
 			continue
 		}
-		result = append(result, *record.SemanticWork)
+		work, err := s.resolveSemanticWork(record)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, work)
 	}
 	return result, nil
+}
+
+func (s *Service) resolveSemanticWork(record derived.Record) (semantics.Work, error) {
+	if record.SemanticWorkReference == nil {
+		return semantics.Work{}, errors.New("语义工作引用不存在")
+	}
+	asset, exists := s.store.Get(record.SemanticWorkReference.AssetID)
+	if !exists {
+		return semantics.Work{}, errors.New("语义工作的权威资产不存在")
+	}
+	candidates := make([]domain.Information, 0, len(record.SemanticWorkReference.Candidates))
+	for _, reference := range record.SemanticWorkReference.Candidates {
+		candidate, exists := s.store.Get(reference.ID)
+		if !exists {
+			return semantics.Work{}, errors.New("语义工作的候选资产不存在")
+		}
+		candidates = append(candidates, candidate)
+	}
+	return semantics.ResolveWork(*record.SemanticWorkReference, asset, candidates)
 }
 
 func (s *Service) SubmitSemantic(ctx context.Context, input semantics.Submission) (OrganizationState, error) {
@@ -119,15 +146,15 @@ func (s *Service) submitSemanticWithRecovery(input semantics.Submission, recover
 		return OrganizationState{}, errors.New("语义工作的资产不存在")
 	}
 	record, exists := s.derivedStore.GetWithEmbedding(asset.ID)
-	if !exists || record.AssetRevision != asset.Revision || record.SemanticWork == nil {
+	if !exists || record.AssetRevision != asset.Revision || record.SemanticWorkReference == nil {
 		return OrganizationState{}, errors.New("语义工作不存在或已经过期")
 	}
-	normalized, err := semantics.NormalizeSubmission(*record.SemanticWork, input, s.now())
+	normalized, err := semantics.NormalizeSubmissionReference(*record.SemanticWorkReference, asset, input, s.now())
 	if err != nil {
 		return OrganizationState{}, err
 	}
-	if record.SemanticResult != nil {
-		if !semantics.SameSubmission(*record.SemanticResult, normalized) {
+	if record.SemanticReceipt != nil {
+		if !record.SemanticReceipt.Matches(normalized) {
 			return OrganizationState{}, ErrSemanticConflict
 		}
 		if len(record.Embedding) > 0 || len(recovery.vector) == 0 {
@@ -137,9 +164,9 @@ func (s *Service) submitSemanticWithRecovery(input semantics.Submission, recover
 		record.EmbeddingSpace = s.embedder.Space().ID
 		record.Status = "ready"
 		record.Error = ""
-		if record.SemanticResult.Status == semantics.SubmissionUncertain {
+		if record.SemanticReceipt.Status == semantics.SubmissionUncertain {
 			record.Status = "uncertain"
-			record.Error = record.SemanticResult.Uncertainty
+			record.Error = record.SemanticReceipt.Uncertainty
 		}
 		s.graphMu.Lock()
 		defer s.graphMu.Unlock()
@@ -150,6 +177,10 @@ func (s *Service) submitSemanticWithRecovery(input semantics.Submission, recover
 		return organizationState(record), nil
 	}
 	accepted := normalized
+	receipt, err := semantics.NewSubmissionReceipt(accepted)
+	if err != nil {
+		return OrganizationState{}, err
+	}
 	incoming := make([]semantics.Relation, 0, len(normalized.Analysis.Relations))
 	outgoing := make([]semantics.Relation, 0, len(normalized.Analysis.Relations))
 	explicitTargets := make(map[string]struct{}, len(asset.Relations))
@@ -170,7 +201,7 @@ func (s *Service) submitSemanticWithRecovery(input semantics.Submission, recover
 	record.GeneratedAt = s.now().UTC()
 	record.Provider = "semantic:" + normalized.Capability.ID + "/" + normalized.Capability.Version
 	record.Analysis = normalized.Analysis
-	record.SemanticResult = &accepted
+	record.SemanticReceipt = &receipt
 	if len(record.Embedding) == 0 && len(recovery.vector) > 0 {
 		record.Embedding = append([]float32(nil), recovery.vector...)
 		record.EmbeddingSpace = s.embedder.Space().ID
@@ -237,12 +268,16 @@ func (s *Service) prepareSemanticVectorRecoveries(ctx context.Context, inputs []
 			continue
 		}
 		record, exists := s.derivedStore.GetWithEmbedding(asset.ID)
-		if !exists || record.AssetRevision != asset.Revision || record.SemanticWork == nil || len(record.Embedding) > 0 {
+		if !exists || record.AssetRevision != asset.Revision || record.SemanticWorkReference == nil || len(record.Embedding) > 0 {
 			continue
 		}
-		normalized, err := semantics.NormalizeSubmission(*record.SemanticWork, input, s.now())
+		normalized, err := semantics.NormalizeSubmissionReference(*record.SemanticWorkReference, asset, input, s.now())
 		if err != nil {
 			result[index].err = err
+			continue
+		}
+		if record.SemanticReceipt != nil && !record.SemanticReceipt.Matches(normalized) {
+			result[index].err = ErrSemanticConflict
 			continue
 		}
 		parts := semanticEmbeddingChunks(normalized.Analysis)
@@ -489,14 +524,18 @@ func (s *Service) prepareSemanticWorkWithVector(value domain.Information, vector
 	if workErr != nil {
 		return OrganizationState{Status: "pending", Provider: "external-semantic-capability", Error: workErr.Error()}
 	}
+	workReference, referenceErr := semantics.ReferenceWork(work)
+	if referenceErr != nil {
+		return OrganizationState{Status: "pending", Provider: "external-semantic-capability", Error: referenceErr.Error()}
+	}
 	record := derived.Record{
-		AssetID:        value.ID,
-		AssetRevision:  value.Revision,
-		GeneratedAt:    s.now().UTC(),
-		Provider:       s.embedder.Name(),
-		Status:         "pending",
-		SemanticWork:   &work,
-		EmbeddingSpace: s.embedder.Space().ID,
+		AssetID:               value.ID,
+		AssetRevision:         value.Revision,
+		GeneratedAt:           s.now().UTC(),
+		Provider:              s.embedder.Name(),
+		Status:                "pending",
+		SemanticWorkReference: &workReference,
+		EmbeddingSpace:        s.embedder.Space().ID,
 	}
 	if len(vector) > 0 {
 		record.Embedding = vector
@@ -586,7 +625,7 @@ func (s *Service) semanticCandidates(value domain.Information, vectors [][]float
 
 func organizationState(record derived.Record) OrganizationState {
 	state := OrganizationState{Status: record.Status, Provider: record.Provider, Error: record.Error}
-	if record.Status == "pending" && record.SemanticWork != nil && record.SemanticResult == nil {
+	if record.Status == "pending" && record.HasPendingSemanticWork() {
 		state.RequiredAction = semanticWorkRequiredAction
 	}
 	return state

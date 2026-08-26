@@ -1,12 +1,50 @@
 from __future__ import annotations
 
 import copy
+import json
+import struct
+import tempfile
 import unittest
+import zlib
+from pathlib import Path
 
 import kernel_iteration
 
 
 class KernelIterationTests(unittest.TestCase):
+    def test_formal_storage_audit_reads_authority_and_verifies_binary_records(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            data = root / "questions" / "q1" / "ownward-data"
+            (data / "assets").mkdir(parents=True)
+            (data / "state").mkdir()
+            events = [
+                {"operation": "create", "value": {"id": "a", "revision": 1, "content": "first"}},
+                {"operation": "update", "value": {"id": "a", "revision": 2, "content": "second revision"}},
+            ]
+            asset_bytes = "".join(json.dumps(item, separators=(",", ":")) + "\n" for item in events).encode()
+            (data / "assets" / "information.jsonl").write_bytes(asset_bytes)
+            metadata = json.dumps({
+                "schema": "ownward.derived/v3", "asset_id": "a", "asset_revision": 2,
+                "status": "ready", "analysis": {}, "semantic_work": {"asset": {"content": "second revision"}},
+                "semantic_result": {"status": "complete"}, "embedding_space": "test",
+            }, separators=(",", ":")).encode()
+            header = b"OWD3" + struct.pack("<III", len(metadata), 0, zlib.crc32(metadata) & 0xFFFFFFFF)
+            (data / "state" / "organization.binlog").write_bytes(header + metadata + b"DONE")
+
+            result = kernel_iteration._audit_formal_storage(root, "identity")
+            self.assertEqual(1, result["files"])
+            self.assertEqual(len(asset_bytes), result["asset_log_bytes"])
+            self.assertEqual(1, result["current_asset_count"])
+            self.assertEqual(len("second revision"), result["current_content_chars"])
+            self.assertEqual(result["asset_log_bytes"] + result["derived_bytes"], result["question_isolated_product_bytes"])
+
+            corrupted = bytearray((data / "state" / "organization.binlog").read_bytes())
+            corrupted[-5] ^= 0x01
+            (data / "state" / "organization.binlog").write_bytes(corrupted)
+            with self.assertRaises(kernel_iteration.KernelIterationError):
+                kernel_iteration._audit_formal_storage(root, "identity")
+
     def test_observation_elapsed_accepts_go_fractional_precision(self) -> None:
         self.assertAlmostEqual(
             0.705696,
