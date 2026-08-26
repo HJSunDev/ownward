@@ -22,8 +22,11 @@ func (s *Service) rebuildCollaborative(ctx context.Context) (map[string]int, err
 		s.stateMu.RLock()
 		assets := s.store.All()
 		currentGeneration := s.derivedStore.Generation()
-		currentRecords := s.derivedStore.All()
+		currentRecords, currentErr := s.derivedStore.AllWithEmbeddings()
 		s.stateMu.RUnlock()
+		if currentErr != nil {
+			return nil, currentErr
+		}
 		assetDigest, err := informationSnapshotDigest(assets)
 		if err != nil {
 			return nil, err
@@ -45,8 +48,9 @@ func (s *Service) rebuildCollaborative(ctx context.Context) (map[string]int, err
 			s.stateMu.Lock()
 			defer s.stateMu.Unlock()
 			latestAssetDigest, digestErr := informationSnapshotDigest(s.store.All())
-			latestStateDigest, stateErr := recordSnapshotDigest(s.derivedStore.All())
-			if digestErr != nil || stateErr != nil || latestAssetDigest != assetDigest || latestStateDigest != stateDigest || s.derivedStore.Generation() != currentGeneration {
+			latestRecords, readErr := s.derivedStore.AllWithEmbeddings()
+			latestStateDigest, stateErr := recordSnapshotDigest(latestRecords)
+			if digestErr != nil || readErr != nil || stateErr != nil || latestAssetDigest != assetDigest || latestStateDigest != stateDigest || s.derivedStore.Generation() != currentGeneration {
 				return
 			}
 			s.graphMu.Lock()
@@ -85,51 +89,88 @@ func (s *Service) buildCollaborativeGeneration(ctx context.Context, generation s
 	}
 	records := make([]derived.Record, len(assets))
 	allowUnavailable := len(current) == 0
-	for start := 0; start < len(assets); start += 32 {
-		end := min(start+32, len(assets))
-		contents := make([]string, end-start)
-		for index := start; index < end; index++ {
-			contents[index-start] = assets[index].Content
+	vectors := make([][]float32, len(assets))
+	embeddingErrors := make([]error, len(assets))
+	chunks := make([]string, 0, len(assets))
+	owners := make([]int, 0, len(assets))
+	expected := make([]int, len(assets))
+	for index, asset := range assets {
+		previous, exists := currentByID[asset.ID]
+		if exists && previous.AssetRevision == asset.Revision && len(previous.Embedding) > 0 && previous.EmbeddingSpace == s.embedder.Space().ID {
+			vectors[index] = append([]float32(nil), previous.Embedding...)
+			continue
 		}
-		vectors, embedErr := s.embedder.EmbedDocuments(ctx, contents)
-		if embedErr != nil || len(vectors) != len(contents) {
-			if embedErr == nil {
-				embedErr = errors.New("本地向量能力返回数量无效")
-			}
+		var inputs []string
+		if exists && previous.AssetRevision == asset.Revision && previous.SemanticResult != nil {
+			inputs = semanticEmbeddingChunks(previous.Analysis)
+		} else if len([]byte(asset.Content)) <= semanticEmbeddingChunkBytes {
+			inputs = []string{asset.Content}
+		} else {
+			embeddingErrors[index] = errors.New("长信息等待语义结果生成检索表示")
+			continue
+		}
+		expected[index] = len(inputs)
+		for _, input := range inputs {
+			chunks = append(chunks, input)
+			owners = append(owners, index)
+		}
+	}
+	collected, failures := s.embedBoundedDocumentGroups(ctx, chunks, owners, len(assets))
+	for index := range assets {
+		if failures[index] != nil {
+			embeddingErrors[index] = failures[index]
 			if !allowUnavailable {
-				return fail(embedErr)
+				return fail(failures[index])
 			}
-			vectors = make([][]float32, len(contents))
+			continue
 		}
-		for offset, vector := range vectors {
-			asset := assets[start+offset]
-			if len(vector) > 0 && len(vector) != s.embedder.Space().Dimensions {
-				return fail(errors.New("本地向量能力返回维度无效"))
+		if expected[index] == 0 || len(vectors[index]) > 0 {
+			continue
+		}
+		if len(collected[index]) != expected[index] {
+			embeddingErrors[index] = errors.New("重建语义检索表示分块结果不完整")
+			if !allowUnavailable {
+				return fail(embeddingErrors[index])
 			}
-			record := derived.Record{
-				AssetID: asset.ID, AssetRevision: asset.Revision, GeneratedAt: s.now().UTC(),
-				Provider: s.embedder.Name(), Status: "pending", EmbeddingSpace: s.embedder.Space().ID,
-				Embedding: append([]float32(nil), vector...),
-			}
-			if len(vector) == 0 && embedErr != nil {
-				record.Error = embedErr.Error()
-			}
-			if previous, exists := currentByID[asset.ID]; exists && previous.AssetRevision == asset.Revision {
-				record.Analysis = previous.Analysis
-				record.SemanticWork = previous.SemanticWork
-				record.SemanticResult = previous.SemanticResult
-				if previous.SemanticResult != nil {
-					record.Provider = previous.Provider
-					record.Status = "ready"
-					record.Error = ""
-					if previous.SemanticResult.Status == semantics.SubmissionUncertain {
-						record.Status = "uncertain"
-						record.Error = previous.SemanticResult.Uncertainty
-					}
+			continue
+		}
+		vectors[index], embeddingErrors[index] = aggregateSemanticVectors(collected[index])
+		if embeddingErrors[index] != nil && !allowUnavailable {
+			return fail(embeddingErrors[index])
+		}
+	}
+	for index, asset := range assets {
+		vector := vectors[index]
+		if len(vector) > 0 && len(vector) != s.embedder.Space().Dimensions {
+			return fail(errors.New("本地向量能力返回维度无效"))
+		}
+		record := derived.Record{
+			AssetID: asset.ID, AssetRevision: asset.Revision, GeneratedAt: s.now().UTC(),
+			Provider: s.embedder.Name(), Status: "pending", EmbeddingSpace: s.embedder.Space().ID,
+			Embedding: append([]float32(nil), vector...),
+		}
+		if embeddingErrors[index] != nil {
+			record.Error = embeddingErrors[index].Error()
+		}
+		if previous, exists := currentByID[asset.ID]; exists && previous.AssetRevision == asset.Revision {
+			record.Analysis = previous.Analysis
+			record.SemanticWork = previous.SemanticWork
+			record.SemanticResult = previous.SemanticResult
+			if previous.SemanticResult != nil {
+				record.Provider = previous.Provider
+				record.Status = "ready"
+				record.Error = ""
+				if len(vector) == 0 {
+					record.Status = "pending"
+					record.Error = "语义检索表示重建失败"
+				}
+				if previous.SemanticResult.Status == semantics.SubmissionUncertain {
+					record.Status = "uncertain"
+					record.Error = previous.SemanticResult.Uncertainty
 				}
 			}
-			records[start+offset] = record
 		}
+		records[index] = record
 	}
 	stagedIndex := derived.NewIndex(cloneRecordsWithEmbeddings(records))
 	lexical := retrieval.NewLexical(assets)

@@ -21,28 +21,110 @@ class KernelIterationTests(unittest.TestCase):
         )
         self.assertEqual(pending[0], "pending_search_order_or_context_selection")
 
-    def test_search_miss_remains_cross_direction_pending(self) -> None:
+    def test_search_miss_requires_mechanical_representation_evidence(self) -> None:
         result = kernel_iteration.classify_problem(
             "target_evidence_not_search_returned", True, True, False, 12000, "temporal-reasoning",
         )
         self.assertEqual(result[0], "pending_semantic_organization_or_retrieval")
         self.assertEqual(result[1], "pending_cross_direction_evidence")
+        proven = kernel_iteration.classify_problem(
+            "target_evidence_not_search_returned", True, True, False, 12000, "temporal-reasoning",
+            {
+                "all_assets_have_oversized_embedding_failure": True,
+                "latest_vector_count": 0,
+                "expected_asset_vector_count": 0,
+                "all_expected_semantic_results_submitted": True,
+                "search_signal_kinds": ["lexical"],
+            },
+        )
+        self.assertEqual(proven[0], "semantic_vector_representation_missing_after_oversized_input")
+        self.assertEqual(proven[1], "semantic_capability_and_representation_model")
 
     def test_problem_pool_rejects_leaked_answer_field(self) -> None:
         problems = []
         for index in range(258):
             mechanism = "session_unit_context_overflow" if index < 119 else (
                 "pending_search_order_or_context_selection" if index < 133 else (
-                    "pending_semantic_organization_or_retrieval" if index < 249 else "reader_failure_after_complete_evidence"
+                    "semantic_vector_representation_missing_after_oversized_input" if index < 249 else "reader_failure_after_complete_evidence"
                 )
             )
-            problems.append({"formal_question_identity": f"q-{index}", "mechanism": mechanism})
+            problem = {"formal_question_identity": f"q-{index}", "mechanism": mechanism}
+            if mechanism == "semantic_vector_representation_missing_after_oversized_input":
+                problem["observations"] = {"representation": {
+                    "latest_asset_count": 46 if index < 248 else 153,
+                    "latest_vector_count": 0,
+                    "search_signal_kinds": ["lexical"],
+                }}
+            problems.append(problem)
         pool = {"schema": kernel_iteration.POOL_SCHEMA, "problem_count": 258, "problems": problems}
         kernel_iteration.validate_problem_pool(pool, strict=True)
         leaked = copy.deepcopy(pool)
         leaked["problems"][0]["product_answer"] = "forbidden"
         with self.assertRaises(kernel_iteration.KernelIterationError):
             kernel_iteration.validate_problem_pool(leaked, strict=True)
+
+    def test_builds_semantic_candidate_with_closed_chain_protection(self) -> None:
+        direction_values = {
+            "semantic_search_recall": 1.0,
+            "semantic_search_error_rate": 0.0,
+            "long_asset_vector_recovery": 1.0,
+            "short_asset_vector_availability": 1.0,
+            "semantic_input_marker_coverage": 1.0,
+            "restart_semantic_recall": 1.0,
+            "rebuild_semantic_recall": 1.0,
+            "semantic_signal_rate": 1.0,
+            "derived_vectors_per_asset": 1.0,
+            "semantic_input_to_source_bytes": 0.1,
+            "oversized_raw_embedding_attempts": 0.0,
+            "semantic_embedding_calls": 1.0,
+            "rebuild_semantic_embedding_calls": 0.0,
+            "semantic_representation_p95_ms": 25.0,
+            "semantic_rebuild_p95_ms": 20.0,
+            "semantic_search_p95_ms": 2.0,
+        }
+        observations = {
+            "direction": {"metrics": [{"name": name, "value": value} for name, value in direction_values.items()]},
+            "granularity_protection": {"metrics": [
+                {"name": name, "value": 1.0}
+                for name in ("required_evidence_budget_recall", "scale_evidence_recall", "budget_fit_protection", "fusion_recall", "fusion_ndcg")
+            ]},
+            "protection": {"metrics": [{"name": "identity_stability", "value": 1.0}]},
+        }
+        gate = {
+            "semantic_search_recall_min": 1.0,
+            "semantic_search_error_rate_max": 0.0,
+            "long_asset_vector_recovery_min": 1.0,
+            "short_asset_vector_availability_min": 1.0,
+            "semantic_input_marker_coverage_min": 1.0,
+            "restart_semantic_recall_min": 1.0,
+            "rebuild_semantic_recall_min": 1.0,
+            "semantic_signal_rate_min": 1.0,
+            "derived_vectors_per_asset_max": 1.0,
+            "semantic_input_to_source_bytes_max": 1.0,
+            "oversized_raw_embedding_attempts_max": 0.0,
+            "semantic_embedding_calls_max": 2.0,
+            "rebuild_semantic_embedding_calls_max": 0.0,
+            "semantic_representation_p95_ms_max": 180000.0,
+            "semantic_rebuild_p95_ms_max": 180000.0,
+            "semantic_search_p95_ms_max": 78.0,
+            "closed_granularity_recall_min": 1.0,
+            "closed_granularity_scale_recall_min": 1.0,
+        }
+        result = kernel_iteration.build_semantic_candidate_result(
+            {}, {"selection": {"cluster": "semantic-vector"}}, observations,
+            {"direction": 1.0, "granularity_protection": 1.0, "protection": 1.0},
+            {"optimization_view": {"frozen_gate": gate}}, "worktree:test",
+        )
+        self.assertTrue(result["passed"])
+        observations["direction"]["metrics"] = [
+            {**item, "value": 79.0} if item["name"] == "semantic_search_p95_ms" else item
+            for item in observations["direction"]["metrics"]
+        ]
+        self.assertFalse(kernel_iteration.build_semantic_candidate_result(
+            {}, {"selection": {}}, observations,
+            {"direction": 1.0, "granularity_protection": 1.0, "protection": 1.0},
+            {"optimization_view": {"frozen_gate": gate}}, "worktree:slow",
+        )["passed"])
 
     def test_builds_baseline_and_candidate_gate_results(self) -> None:
         protected = [

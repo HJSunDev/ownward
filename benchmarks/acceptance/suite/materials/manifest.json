@@ -37,6 +37,10 @@
     {
       "path": "benchmarks/acceptance/suite/materials/optimization/v1/direction-organization-granularity.json",
       "sha256": "78f1a911c606bd575ab72f00dec8d65d38ee88aa5e6643e7ee6756b20eda4ea2"
+    },
+    {
+      "path": "benchmarks/acceptance/suite/materials/optimization/v1/direction-semantic-representation.json",
+      "sha256": "f98a6adb20a2d470159a2d6b77c136671ab707cb81a9aa58a9dfb0536dd61e7f"
     }
   ]
 }

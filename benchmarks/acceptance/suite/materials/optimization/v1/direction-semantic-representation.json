@@ -1,0 +1,221 @@
+{
+  "schema": "ownward.core-frontier-materials/v1",
+  "version": "ownward-kernel-optimization-view/v1",
+  "optimization_view": {
+    "id": "semantic-representation-v1",
+    "direction": "semantic_capability_and_representation_model",
+    "formal_failure_cluster": "semantic_vector_representation_missing_after_oversized_input",
+    "formal_source": {
+      "candidate": "99f519018df99bd5202b0c571b8e43481cd1b80e",
+      "diagnostics_sha256": "15bb1dfc66c8c77a7cd306ffab03ff61f7a5ad7f26d69e35421a1d1276ff6d72",
+      "report_sha256": "3e7355c61a538e52663e8be5c9c93b83493238fe5bda72640b89504518fe89d9",
+      "formal_errors": 258,
+      "mapped_cluster_errors": 116,
+      "mechanical_observation": {
+        "questions_with_oversized_embedding_failure": 116,
+        "questions_with_any_vector": 0,
+        "questions_with_non_lexical_search_signal": 0,
+        "derived_records_without_vector": 5443
+      }
+    },
+    "primary_metric": "semantic_search_recall",
+    "paired_error_metric": "semantic_search_error_rate",
+    "protected_metrics": [
+      "long_asset_vector_recovery",
+      "short_asset_vector_availability",
+      "semantic_input_marker_coverage",
+      "restart_semantic_recall",
+      "rebuild_semantic_recall",
+      "semantic_signal_rate",
+      "derived_vectors_per_asset",
+      "semantic_input_to_source_bytes",
+      "oversized_raw_embedding_attempts",
+      "semantic_embedding_calls",
+      "rebuild_semantic_embedding_calls",
+      "semantic_representation_p95_ms",
+      "semantic_rebuild_p95_ms",
+      "semantic_search_p95_ms",
+      "required_evidence_budget_recall",
+      "scale_evidence_recall",
+      "budget_fit_protection",
+      "identity_stability",
+      "fusion_recall",
+      "fusion_ndcg"
+    ],
+    "v0_baseline": {
+      "semantic_search_recall": 0.0,
+      "semantic_search_error_rate": 1.0,
+      "long_asset_vector_recovery": 0.0,
+      "short_asset_vector_availability": 1.0,
+      "derived_vectors_per_asset_max": 1.0,
+      "formal_search_p95_ms": 78.0
+    },
+    "frozen_gate": {
+      "semantic_search_recall_min": 1.0,
+      "semantic_search_error_rate_max": 0.0,
+      "long_asset_vector_recovery_min": 1.0,
+      "short_asset_vector_availability_min": 1.0,
+      "semantic_input_marker_coverage_min": 1.0,
+      "restart_semantic_recall_min": 1.0,
+      "rebuild_semantic_recall_min": 1.0,
+      "semantic_signal_rate_min": 1.0,
+      "derived_vectors_per_asset_max": 1.0,
+      "semantic_input_to_source_bytes_max": 1.0,
+      "oversized_raw_embedding_attempts_max": 0.0,
+      "semantic_embedding_calls_max": 2.0,
+      "rebuild_semantic_embedding_calls_max": 0.0,
+      "semantic_representation_p95_ms_max": 180000.0,
+      "semantic_rebuild_p95_ms_max": 180000.0,
+      "semantic_search_p95_ms_max": 78.0,
+      "closed_granularity_recall_min": 1.0,
+      "closed_granularity_scale_recall_min": 1.0,
+      "protected_regression_allowed": false
+    },
+    "cost": {
+      "direction_view_max_seconds": 180,
+      "direction_validation_target_seconds": 420,
+      "direction_validation_max_seconds": 600
+    },
+    "leakage_policy": {
+      "formal_question_text": false,
+      "formal_answer": false,
+      "formal_gold_identity": false,
+      "formal_session_content": false,
+      "facts_and_expressions_are_synthetic_and_disjoint": true
+    }
+  },
+  "scales": [6],
+  "assets": [
+    {
+      "fixture_id": "R01",
+      "content": "Archive AX-41 retained procedure CL-9 after stability trials.",
+      "padding": "Neutral observatory maintenance entry.",
+      "padding_repeat": 80
+    },
+    {
+      "fixture_id": "R02",
+      "content": "Archive BX-72 retained procedure MR-3 after optics trials.",
+      "padding": "Neutral harbor maintenance entry.",
+      "padding_repeat": 80
+    },
+    {
+      "fixture_id": "R03",
+      "content": "Archive CX-15 retained procedure VT-8 after thermal trials.",
+      "padding": "Neutral greenhouse maintenance entry.",
+      "padding_repeat": 80
+    },
+    {
+      "fixture_id": "R04",
+      "content": "Archive DX-90 retained procedure PL-6 after vibration trials.",
+      "padding": "Neutral workshop maintenance entry.",
+      "padding_repeat": 80
+    },
+    {
+      "fixture_id": "P01",
+      "content": "short-key-alpha protects a compact direct fact."
+    },
+    {
+      "fixture_id": "P02",
+      "content": "short-key-beta protects another compact direct fact."
+    }
+  ],
+  "change_sequences": [],
+  "queries": [
+    {
+      "query_id": "QR01",
+      "type": "semantic_intent",
+      "query": "极地成像漂移采用了哪种结构策略？",
+      "expected_ids": ["R01"],
+      "forbidden_ids": ["R02", "R03", "R04"],
+      "required_relation_path": [],
+      "view_role": "primary"
+    },
+    {
+      "query_id": "QR02",
+      "type": "semantic_intent",
+      "query": "港湾音频失真使用了什么中继方法？",
+      "expected_ids": ["R02"],
+      "forbidden_ids": ["R01", "R03", "R04"],
+      "required_relation_path": [],
+      "view_role": "primary"
+    },
+    {
+      "query_id": "QR03",
+      "type": "semantic_intent",
+      "query": "温室热偏移通过哪种通风框架解决？",
+      "expected_ids": ["R03"],
+      "forbidden_ids": ["R01", "R02", "R04"],
+      "required_relation_path": [],
+      "view_role": "primary"
+    },
+    {
+      "query_id": "QR04",
+      "type": "semantic_intent",
+      "query": "工坊振动漂移采用了哪种锁定方案？",
+      "expected_ids": ["R04"],
+      "forbidden_ids": ["R01", "R02", "R03"],
+      "required_relation_path": [],
+      "view_role": "primary"
+    },
+    {
+      "query_id": "QP01",
+      "type": "explicit_object",
+      "query": "short-key-alpha",
+      "expected_ids": ["P01"],
+      "forbidden_ids": ["P02"],
+      "required_relation_path": [],
+      "view_role": "protection"
+    },
+    {
+      "query_id": "QP02",
+      "type": "explicit_object",
+      "query": "short-key-beta",
+      "expected_ids": ["P02"],
+      "forbidden_ids": ["P01"],
+      "required_relation_path": [],
+      "view_role": "protection"
+    }
+  ],
+  "truth": {"relations": []},
+  "frozen_embeddings": {
+    "R01": [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    "R02": [0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    "R03": [0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    "R04": [0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0],
+    "P01": [0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0],
+    "P02": [0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0]
+  },
+  "frozen_query_embeddings": {
+    "QR01": [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    "QR02": [0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    "QR03": [0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    "QR04": [0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0],
+    "QP01": [0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0],
+    "QP02": [0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0]
+  },
+  "semantic_embedding_keys": {
+    "R01": "cobalt-lattice-concept",
+    "R02": "moss-relay-concept",
+    "R03": "violet-vent-concept",
+    "R04": "pearl-lock-concept",
+    "P01": "short-key-alpha",
+    "P02": "short-key-beta"
+  },
+  "frozen_semantics": {
+    "relations": [],
+    "contexts": {"R01": [], "R02": [], "R03": [], "R04": [], "P01": [], "P02": []},
+    "analyses": {
+      "R01": {"summary": "cobalt-lattice-concept resolves polar imaging drift", "cues": [{"text": "cobalt-lattice-concept", "kind": "method"}], "topics": ["polar imaging"], "inferred_contexts": [], "relations": []},
+      "R02": {"summary": "moss-relay-concept resolves harbor audio distortion", "cues": [{"text": "moss-relay-concept", "kind": "method"}], "topics": ["harbor audio"], "inferred_contexts": [], "relations": []},
+      "R03": {"summary": "violet-vent-concept resolves greenhouse thermal drift", "cues": [{"text": "violet-vent-concept", "kind": "method"}], "topics": ["greenhouse thermal control"], "inferred_contexts": [], "relations": []},
+      "R04": {"summary": "pearl-lock-concept resolves workshop vibration drift", "cues": [{"text": "pearl-lock-concept", "kind": "method"}], "topics": ["workshop vibration"], "inferred_contexts": [], "relations": []},
+      "P01": {"summary": "short-key-alpha protects a compact direct fact", "cues": [{"text": "short-key-alpha", "kind": "term"}], "topics": ["compact protection"], "inferred_contexts": [], "relations": []},
+      "P02": {"summary": "short-key-beta protects another compact direct fact", "cues": [{"text": "short-key-beta", "kind": "term"}], "topics": ["compact protection"], "inferred_contexts": [], "relations": []}
+    }
+  },
+  "deterministic_variants": {
+    "seed": 58117,
+    "count": 2,
+    "operations": ["stable_identity_remap", "ingestion_order_permutation", "timestamp_translation", "context_order_permutation", "irrelevant_item_injection"]
+  }
+}

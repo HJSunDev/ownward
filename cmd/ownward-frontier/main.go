@@ -82,9 +82,11 @@ type dataset struct {
 	FrozenEmbeddings      map[string][]float32 `json:"frozen_embeddings"`
 	FrozenQueryEmbeddings map[string][]float32 `json:"frozen_query_embeddings"`
 	FrozenSemantics       struct {
-		Relations []relationValue           `json:"relations"`
-		Contexts  map[string][]contextValue `json:"contexts"`
+		Relations []relationValue               `json:"relations"`
+		Contexts  map[string][]contextValue     `json:"contexts"`
+		Analyses  map[string]semantics.Analysis `json:"analyses,omitempty"`
 	} `json:"frozen_semantics"`
+	SemanticEmbeddingKeys map[string]string `json:"semantic_embedding_keys,omitempty"`
 	DeterministicVariants struct {
 		Seed       int64    `json:"seed"`
 		Count      int      `json:"count"`
@@ -240,13 +242,15 @@ func sortedStageNames(values map[string]bool) []string {
 }
 
 type fixture struct {
-	Assets       []domain.Information
-	Records      []derived.Record
-	Queries      []queryValue
-	QueryVectors map[string][]float32
-	Truth        []relationValue
-	Changes      []assetValue
-	OriginalMap  map[string]string
+	Assets        []domain.Information
+	Records       []derived.Record
+	Queries       []queryValue
+	QueryVectors  map[string][]float32
+	Truth         []relationValue
+	Changes       []assetValue
+	OriginalMap   map[string]string
+	Analyses      map[string]semantics.Analysis
+	EmbeddingKeys map[string][]float32
 }
 
 type lifecycleMeasurement struct {
@@ -334,7 +338,26 @@ func buildFixture(data dataset, scale, variant int) (fixture, error) {
 			changes = append(changes, change)
 		}
 	}
-	return fixture{Assets: assets, Records: records, Queries: queries, QueryVectors: queryVectors, Truth: relations, Changes: changes, OriginalMap: ids}, nil
+	analyses := make(map[string]semantics.Analysis)
+	embeddingKeys := make(map[string][]float32)
+	for fixtureID, analysis := range data.FrozenSemantics.Analyses {
+		mapped := ids[fixtureID]
+		if mapped == "" {
+			continue
+		}
+		for index := range analysis.Relations {
+			analysis.Relations[index].TargetID = ids[analysis.Relations[index].TargetID]
+		}
+		analyses[mapped] = analysis
+		key := data.SemanticEmbeddingKeys[fixtureID]
+		if key != "" {
+			embeddingKeys[key] = append([]float32(nil), data.FrozenEmbeddings[fixtureID]...)
+		}
+	}
+	return fixture{
+		Assets: assets, Records: records, Queries: queries, QueryVectors: queryVectors,
+		Truth: relations, Changes: changes, OriginalMap: ids, Analyses: analyses, EmbeddingKeys: embeddingKeys,
+	}, nil
 }
 
 func measureFixture(ctx context.Context, value fixture, stages map[string]bool, out collector, scratchRoot string) error {
@@ -360,6 +383,11 @@ func measureFixture(ctx context.Context, value fixture, stages map[string]bool, 
 	var allocationAfter runtime.MemStats
 	runtime.ReadMemStats(&allocationAfter)
 	indexAllocatedBytes := allocationAfter.TotalAlloc - allocationBefore.TotalAlloc
+	if stages["semantic_representation"] {
+		if err := measureSemanticRepresentation(ctx, value, out, scratchRoot); err != nil {
+			return err
+		}
+	}
 
 	if stages["identity"] {
 		correct := 0
@@ -637,7 +665,7 @@ func aggregate(item *sampleSpec) float64 {
 }
 
 func requestedStages(mode, csv string) (map[string]bool, error) {
-	known := []string{"identity", "relations", "merge_split", "incremental_consistency", "organization", "indexing", "lexical", "vector", "graph", "context", "fusion", "efficiency"}
+	known := []string{"identity", "relations", "merge_split", "incremental_consistency", "organization", "indexing", "lexical", "vector", "graph", "context", "fusion", "efficiency", "semantic_representation"}
 	result := make(map[string]bool)
 	if mode == "full" {
 		for _, stage := range known {
@@ -975,6 +1003,261 @@ func budgetedReadIDs(results []core.SearchResult, assets []domain.Information, b
 
 type frozenProvider struct{ queries map[string][]float32 }
 
+type boundedSemanticProvider struct {
+	queries            map[string][]float32
+	embeddingKeys      map[string][]float32
+	documentInputs     []string
+	documentCalls      int
+	oversizedRawInputs int
+}
+
+func (*boundedSemanticProvider) Name() string { return "frozen-bounded-semantic-v1" }
+func (b *boundedSemanticProvider) Space() embedding.Space {
+	dimensions := 16
+	for _, vector := range b.embeddingKeys {
+		dimensions = len(vector)
+		break
+	}
+	return embedding.Space{ID: "frozen-bounded-semantic-v1", Dimensions: dimensions}
+}
+func (b *boundedSemanticProvider) EmbedDocuments(_ context.Context, values []string) ([][]float32, error) {
+	b.documentCalls++
+	result := make([][]float32, len(values))
+	for index, value := range values {
+		b.documentInputs = append(b.documentInputs, value)
+		if len([]byte(value)) > 320 {
+			b.oversizedRawInputs++
+			return nil, errors.New("frozen embedding transport rejects oversized input")
+		}
+		for key, vector := range b.embeddingKeys {
+			if strings.Contains(value, key) {
+				result[index] = append([]float32(nil), vector...)
+				break
+			}
+		}
+		if len(result[index]) == 0 {
+			result[index] = make([]float32, b.Space().Dimensions)
+			result[index][len(result[index])-1] = 1
+		}
+	}
+	return result, nil
+}
+func (b *boundedSemanticProvider) EmbedQuery(_ context.Context, value string) ([]float32, error) {
+	vector := b.queries[value]
+	if len(vector) == 0 {
+		return nil, errors.New("query is outside frozen semantic representation view")
+	}
+	return append([]float32(nil), vector...), nil
+}
+func (*boundedSemanticProvider) Close() error { return nil }
+
+func measureSemanticRepresentation(ctx context.Context, value fixture, out collector, scratchRoot string) error {
+	if len(value.Analyses) == 0 || len(value.EmbeddingKeys) == 0 {
+		return errors.New("semantic representation view lacks frozen analyses or embedding keys")
+	}
+	root, err := os.MkdirTemp(scratchRoot, "semantic-representation-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(root)
+	assetStore, err := assetlog.Open(filepath.Join(root, "assets"))
+	if err != nil {
+		return err
+	}
+	stateStore, err := derived.Open(filepath.Join(root, "state"))
+	if err != nil {
+		_ = assetStore.Close()
+		return err
+	}
+	provider := &boundedSemanticProvider{queries: value.QueryVectors, embeddingKeys: value.EmbeddingKeys}
+	service, err := core.NewCollaborative(assetStore, stateStore, provider)
+	if err != nil {
+		return err
+	}
+	inputs := make([]core.CreateInput, len(value.Assets))
+	for index, asset := range value.Assets {
+		inputs[index] = core.CreateInput{Content: asset.Content, Contexts: asset.Contexts}
+	}
+	organizationStarted := time.Now()
+	created, err := service.CreateBatch(ctx, inputs)
+	if err != nil || len(created) != len(inputs) {
+		return fmt.Errorf("semantic representation fixture creation failed: %w", err)
+	}
+	ids := make([]string, len(created))
+	createdByFixture := make(map[string]string, len(created))
+	analysisByCreated := make(map[string]semantics.Analysis, len(created))
+	longIDs := make(map[string]struct{})
+	shortIDs := make(map[string]struct{})
+	for index, result := range created {
+		if result.Error != "" || result.Result == nil {
+			return fmt.Errorf("semantic representation fixture item failed: %s", result.Error)
+		}
+		ids[index] = result.Result.Information.ID
+		createdByFixture[value.Assets[index].ID] = ids[index]
+		analysisByCreated[ids[index]] = value.Analyses[value.Assets[index].ID]
+		if len([]byte(result.Result.Information.Content)) > 320 {
+			longIDs[ids[index]] = struct{}{}
+		} else {
+			shortIDs[ids[index]] = struct{}{}
+		}
+	}
+	initialShortVectors := 0
+	for id := range shortIDs {
+		record, exists := stateStore.GetWithEmbedding(id)
+		if exists && len(record.Embedding) > 0 {
+			initialShortVectors++
+		}
+	}
+	provider.documentInputs = nil
+	provider.documentCalls = 0
+	work, err := service.SemanticWorkFor(ctx, ids)
+	if err != nil || len(work) != len(ids) {
+		return fmt.Errorf("semantic representation work is incomplete: %w", err)
+	}
+	submissions := make([]semantics.Submission, len(work))
+	for index, item := range work {
+		analysis, exists := analysisByCreated[item.Asset.ID]
+		if !exists {
+			return fmt.Errorf("frozen analysis missing for %s", item.Asset.ID)
+		}
+		submissions[index] = semantics.Submission{
+			Schema: semantics.SubmissionSchema, WorkID: item.ID, AssetID: item.Asset.ID, Revision: item.Asset.Revision,
+			Capability: semantics.Capability{ID: "frozen-fast-view", Version: "v1", Execution: "deterministic"},
+			Status:     semantics.SubmissionComplete, Analysis: analysis,
+		}
+	}
+	submitted, err := service.SubmitSemanticBatch(ctx, submissions)
+	organizationElapsed := time.Since(organizationStarted)
+	if err != nil || len(submitted) != len(submissions) {
+		return fmt.Errorf("semantic representation submission failed: %w", err)
+	}
+	readyLong := 0
+	vectorCount := 0
+	for _, id := range ids {
+		record, exists := stateStore.GetWithEmbedding(id)
+		if !exists {
+			continue
+		}
+		if len(record.Embedding) > 0 {
+			vectorCount++
+			if _, long := longIDs[id]; long {
+				readyLong++
+			}
+		}
+	}
+	markerMatches := 0
+	joinedInputs := strings.Join(provider.documentInputs, "\n")
+	for key := range value.EmbeddingKeys {
+		if strings.Contains(joinedInputs, key) {
+			markerMatches++
+		}
+	}
+	searchRecall := make([]float64, 0)
+	searchErrors := make([]float64, 0)
+	semanticSignals := make([]float64, 0)
+	searchDurations := make([]float64, 0)
+	for _, query := range value.Queries {
+		started := time.Now()
+		results, searchErr := service.Search(ctx, core.SearchInput{Query: query.Query, Limit: 10})
+		searchDurations = append(searchDurations, milliseconds(time.Since(started)))
+		if searchErr != nil {
+			return searchErr
+		}
+		ids := searchIDs(results)
+		expected := remap(query.ExpectedIDs, createdByFixture)
+		score := recall(ids, expected)
+		if query.ViewRole == "primary" {
+			searchRecall = append(searchRecall, score)
+			searchErrors = append(searchErrors, 1-score)
+		}
+		if query.ViewRole == "primary" {
+			for _, expectedID := range expected {
+				matched := false
+				for _, result := range results {
+					if result.ID == expectedID && containsString(result.Signals, "semantic") {
+						matched = true
+						break
+					}
+				}
+				semanticSignals = append(semanticSignals, boolScore(matched))
+			}
+		}
+	}
+	callsBeforeRebuild := provider.documentCalls
+	rebuildStarted := time.Now()
+	rebuildCounts, err := service.Maintain(ctx, true)
+	rebuildElapsed := time.Since(rebuildStarted)
+	if err != nil || rebuildCounts["ready"] != len(ids) {
+		return fmt.Errorf("semantic representation rebuild failed: counts=%#v err=%w", rebuildCounts, err)
+	}
+	rebuildScores := make([]float64, 0)
+	for _, query := range value.Queries {
+		if query.ViewRole != "primary" {
+			continue
+		}
+		results, searchErr := service.Search(ctx, core.SearchInput{Query: query.Query, Limit: 10})
+		if searchErr != nil {
+			return searchErr
+		}
+		rebuildScores = append(rebuildScores, recall(searchIDs(results), remap(query.ExpectedIDs, createdByFixture)))
+	}
+	if err := service.Close(); err != nil {
+		return err
+	}
+	assetStore, err = assetlog.Open(filepath.Join(root, "assets"))
+	if err != nil {
+		return err
+	}
+	stateStore, err = derived.Open(filepath.Join(root, "state"))
+	if err != nil {
+		return err
+	}
+	reopened, err := core.NewCollaborative(assetStore, stateStore, &boundedSemanticProvider{queries: value.QueryVectors, embeddingKeys: value.EmbeddingKeys})
+	if err != nil {
+		return err
+	}
+	restartScores := make([]float64, 0)
+	for _, query := range value.Queries {
+		results, searchErr := reopened.Search(ctx, core.SearchInput{Query: query.Query, Limit: 10})
+		if searchErr != nil {
+			return searchErr
+		}
+		if query.ViewRole == "primary" {
+			restartScores = append(restartScores, recall(searchIDs(results), remap(query.ExpectedIDs, createdByFixture)))
+		}
+	}
+	if err := reopened.Close(); err != nil {
+		return err
+	}
+	sourceBytes := 0
+	for _, asset := range value.Assets {
+		sourceBytes += len([]byte(asset.Content))
+	}
+	semanticInputBytes := 0
+	for _, input := range provider.documentInputs {
+		semanticInputBytes += len([]byte(input))
+	}
+	out.add("semantic_search_recall", "quality", "semantic_representation", mean(searchRecall), "higher")
+	out.add("semantic_search_error_rate", "quality", "semantic_representation", mean(searchErrors), "lower")
+	out.add("long_asset_vector_recovery", "quality", "semantic_representation", ratio(readyLong, len(longIDs)), "higher")
+	out.add("short_asset_vector_availability", "quality", "semantic_representation", ratio(initialShortVectors, len(shortIDs)), "higher")
+	out.add("semantic_input_marker_coverage", "quality", "semantic_representation", ratio(markerMatches, len(longIDs)), "higher")
+	out.add("restart_semantic_recall", "quality", "semantic_representation", mean(restartScores), "higher")
+	out.add("rebuild_semantic_recall", "quality", "semantic_representation", mean(rebuildScores), "higher")
+	out.add("semantic_signal_rate", "quality", "semantic_representation", mean(semanticSignals), "higher")
+	out.add("derived_vectors_per_asset", "resources", "semantic_representation", ratioFloat(float64(vectorCount), float64(len(ids))), "lower")
+	out.add("semantic_input_to_source_bytes", "resources", "semantic_representation", ratioFloat(float64(semanticInputBytes), float64(sourceBytes)), "lower")
+	out.add("oversized_raw_embedding_attempts", "resources", "semantic_representation", float64(provider.oversizedRawInputs), "lower")
+	out.add("semantic_embedding_calls", "resources", "semantic_representation", float64(provider.documentCalls), "lower")
+	out.add("rebuild_semantic_embedding_calls", "resources", "semantic_representation", float64(provider.documentCalls-callsBeforeRebuild), "lower")
+	out.add("semantic_representation_p95_ms", "latency", "semantic_representation", organizationElapsed.Seconds()*1000, "lower")
+	out.add("semantic_rebuild_p95_ms", "latency", "semantic_representation", rebuildElapsed.Seconds()*1000, "lower")
+	for _, measured := range searchDurations {
+		out.add("semantic_search_p95_ms", "latency", "semantic_representation", measured, "lower")
+	}
+	return nil
+}
+
 type measuringProvider struct {
 	documentCalls int
 	documentItems int
@@ -1286,6 +1569,15 @@ func milliseconds(value time.Duration) float64 { return float64(value) / float64
 func containsResult(values []retrieval.Result, id string) bool {
 	for _, v := range values {
 		if v.Information.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func containsString(values []string, expected string) bool {
+	for _, value := range values {
+		if value == expected {
 			return true
 		}
 	}

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -521,6 +522,218 @@ func TestCreateBatchSharesOneEmbeddingRequest(t *testing.T) {
 	targeted, err := service.SemanticWorkFor(ctx, []string{results[2].Result.Information.ID, results[0].Result.Information.ID})
 	if err != nil || len(targeted) != 2 || targeted[0].Asset.ID != results[2].Result.Information.ID || targeted[1].Asset.ID != results[0].Result.Information.ID {
 		t.Fatalf("targeted semantic work changed the requested partition: work=%#v err=%v", targeted, err)
+	}
+}
+
+type boundedSemanticEmbedding struct {
+	documentCalls [][]string
+	failNext      bool
+}
+
+func (*boundedSemanticEmbedding) Name() string { return "bounded-semantic-test" }
+func (*boundedSemanticEmbedding) Space() embedding.Space {
+	return embedding.Space{ID: "bounded-semantic-test-v1", Dimensions: 2}
+}
+func (b *boundedSemanticEmbedding) EmbedDocuments(_ context.Context, values []string) ([][]float32, error) {
+	b.documentCalls = append(b.documentCalls, append([]string(nil), values...))
+	if b.failNext {
+		b.failNext = false
+		return nil, errors.New("synthetic bounded failure")
+	}
+	total := 0
+	result := make([][]float32, len(values))
+	for index, value := range values {
+		total += len([]byte(value))
+		if len([]byte(value)) > semanticEmbeddingChunkBytes {
+			return nil, errors.New("input exceeds synthetic embedding window")
+		}
+		if strings.Contains(value, "cobalt lattice") {
+			result[index] = []float32{1, 0}
+		} else {
+			result[index] = []float32{0, 1}
+		}
+	}
+	if total > semanticEmbeddingChunkBytes {
+		return nil, errors.New("batch exceeds synthetic embedding window")
+	}
+	return result, nil
+}
+func (*boundedSemanticEmbedding) EmbedQuery(_ context.Context, value string) ([]float32, error) {
+	if strings.Contains(value, "极地成像") {
+		return []float32{1, 0}, nil
+	}
+	return []float32{0, 1}, nil
+}
+func (*boundedSemanticEmbedding) Close() error { return nil }
+
+func TestSemanticSubmissionCreatesOneRecoverableVectorForLongAssets(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	assets, err := assetlog.Open(filepath.Join(root, "assets"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := derived.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	embedder := &boundedSemanticEmbedding{}
+	service, err := NewCollaborative(assets, state, embedder)
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := service.CreateBatch(ctx, []CreateInput{
+		{Content: strings.Repeat("Record AX-41 retained procedure CL-9 after stability trials. ", 40)},
+		{Content: strings.Repeat("Record BX-72 retained procedure MR-3 after optics trials. ", 40)},
+	})
+	if err != nil || len(created) != 2 {
+		t.Fatalf("long batch creation failed: results=%#v err=%v", created, err)
+	}
+	if len(embedder.documentCalls) != 0 {
+		t.Fatalf("oversized raw assets reached the bounded embedding transport: %#v", embedder.documentCalls)
+	}
+	ids := []string{created[0].Result.Information.ID, created[1].Result.Information.ID}
+	work, err := service.SemanticWorkFor(ctx, ids)
+	if err != nil || len(work) != 2 {
+		t.Fatalf("long assets did not expose semantic work: work=%#v err=%v", work, err)
+	}
+	submissions := []semantics.Submission{
+		semanticSubmission(work[0], semantics.Analysis{
+			Summary: "The polar imaging drift was resolved by adopting a cobalt lattice method.",
+			Cues:    []semantics.Cue{{Text: "cobalt lattice for polar imaging stability", Kind: "method"}},
+			Topics:  []string{"polar imaging"},
+		}),
+		semanticSubmission(work[1], semantics.Analysis{
+			Summary: "The harbor audio distortion was handled with a moss relay method.",
+			Cues:    []semantics.Cue{{Text: "moss relay for harbor audio", Kind: "method"}},
+			Topics:  []string{"harbor audio"},
+		}),
+	}
+	results, err := service.SubmitSemanticBatch(ctx, submissions)
+	if err != nil || len(results) != 2 || results[0].Organization.Status != "ready" || results[1].Organization.Status != "ready" {
+		t.Fatalf("semantic representation recovery failed: results=%#v err=%v", results, err)
+	}
+	if len(embedder.documentCalls) != 1 || len(embedder.documentCalls[0]) != 2 {
+		t.Fatalf("semantic submissions did not share the bounded embedding batch: %#v", embedder.documentCalls)
+	}
+	stored, err := state.AllWithEmbeddings()
+	if err != nil || len(stored) != 2 {
+		t.Fatalf("derived records are incomplete: records=%d err=%v", len(stored), err)
+	}
+	for _, record := range stored {
+		if len(record.Embedding) != 2 {
+			t.Fatalf("long asset did not retain exactly one vector: %#v", record)
+		}
+	}
+	search, err := service.Search(ctx, SearchInput{Query: "极地成像漂移采用了哪种结构策略？", Limit: 2})
+	if err != nil || len(search) == 0 || search[0].ID != ids[0] || !contains(search[0].Signals, "semantic") {
+		t.Fatalf("public search did not consume the recovered semantic representation: results=%#v err=%v", search, err)
+	}
+	callsBeforeRebuild := len(embedder.documentCalls)
+	counts, err := service.Maintain(ctx, true)
+	if err != nil || counts["ready"] != 2 {
+		t.Fatalf("rebuild did not preserve submitted semantic representations: counts=%#v err=%v", counts, err)
+	}
+	if len(embedder.documentCalls) != callsBeforeRebuild {
+		t.Fatalf("rebuild repeated valid semantic embedding work: before=%d after=%d", callsBeforeRebuild, len(embedder.documentCalls))
+	}
+	rebuilt, err := service.Search(ctx, SearchInput{Query: "极地成像漂移采用了哪种结构策略？", Limit: 2})
+	if err != nil || len(rebuilt) == 0 || rebuilt[0].ID != ids[0] || !contains(rebuilt[0].Signals, "semantic") {
+		t.Fatalf("rebuild lost the semantic representation: results=%#v err=%v", rebuilt, err)
+	}
+	if err := service.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	assets, err = assetlog.Open(filepath.Join(root, "assets"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err = derived.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := NewCollaborative(assets, state, &boundedSemanticEmbedding{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	restored, err := reopened.Search(ctx, SearchInput{Query: "极地成像漂移采用了哪种结构策略？", Limit: 2})
+	if err != nil || len(restored) == 0 || restored[0].ID != ids[0] || !contains(restored[0].Signals, "semantic") {
+		t.Fatalf("reopened service lost the semantic representation: results=%#v err=%v", restored, err)
+	}
+}
+
+func TestAcceptedSemanticSubmissionCanRecoverAPreviouslyFailedVector(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	assets, _ := assetlog.Open(filepath.Join(root, "assets"))
+	state, _ := derived.Open(filepath.Join(root, "state"))
+	embedder := &boundedSemanticEmbedding{failNext: true}
+	service, err := NewCollaborative(assets, state, embedder)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer service.Close()
+	created, err := service.Create(ctx, CreateInput{Content: strings.Repeat("Record AX-41 retained procedure CL-9. ", 40)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	work, err := service.SemanticWorkFor(ctx, []string{created.Information.ID})
+	if err != nil || len(work) != 1 {
+		t.Fatalf("semantic work missing: %#v %v", work, err)
+	}
+	submission := semanticSubmission(work[0], semantics.Analysis{Summary: "cobalt lattice method for polar imaging"})
+	first, err := service.SubmitSemantic(ctx, submission)
+	if err != nil || first.Status != "pending" {
+		t.Fatalf("failed recovery did not preserve accepted pending state: %#v %v", first, err)
+	}
+	second, err := service.SubmitSemantic(ctx, submission)
+	if err != nil || second.Status != "ready" {
+		t.Fatalf("identical accepted submission did not recover its vector: %#v %v", second, err)
+	}
+}
+
+func TestSemanticEmbeddingChunksPreserveAllNormalizedFieldsWithinTransportBound(t *testing.T) {
+	analysis := semantics.Analysis{
+		Summary:  strings.Repeat("summary-field ", 40),
+		Topics:   []string{"topic-field"},
+		Cues:     []semantics.Cue{{Text: "cue-field", Kind: "entity"}},
+		Contexts: []semantics.InferredContext{{Key: "context-key", Value: "context-value", Evidence: "context-evidence"}},
+		Relations: []semantics.Relation{{
+			Type: "supports", Direction: "outgoing", TargetID: "target-field", Evidence: "relation-evidence",
+		}},
+	}
+	chunks := semanticEmbeddingChunks(analysis)
+	joined := strings.Join(chunks, "\n")
+	for _, expected := range []string{"summary-field", "topic-field", "cue-field", "context-key", "context-evidence", "target-field", "relation-evidence"} {
+		if !strings.Contains(joined, expected) {
+			t.Fatalf("semantic field %q was omitted from retrieval representation", expected)
+		}
+	}
+	for _, chunk := range chunks {
+		if len([]byte(chunk)) > semanticEmbeddingChunkBytes {
+			t.Fatalf("semantic chunk exceeded transport bound: %d", len([]byte(chunk)))
+		}
+	}
+}
+
+func TestBoundedEmbeddingBatchesPreserveOrderAndTotalTransportBound(t *testing.T) {
+	values := []string{strings.Repeat("a", 170), strings.Repeat("b", 150), strings.Repeat("c", 170)}
+	offset := 0
+	for offset < len(values) {
+		end := boundedEmbeddingBatchEnd(values, offset)
+		if end <= offset {
+			t.Fatal("bounded embedding batch made no progress")
+		}
+		total := 0
+		for _, value := range values[offset:end] {
+			total += len([]byte(value))
+		}
+		if total > semanticEmbeddingChunkBytes {
+			t.Fatalf("embedding batch exceeded total transport bound: %d", total)
+		}
+		offset = end
 	}
 }
 

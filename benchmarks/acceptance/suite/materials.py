@@ -49,6 +49,7 @@ def validate_materials(root: Path) -> dict[str, Any]:
         "benchmarks/acceptance/suite/materials/product/v2/review.json",
         "benchmarks/acceptance/suite/materials/frontier/v1/calibration.json",
         "benchmarks/acceptance/suite/materials/optimization/v1/direction-organization-granularity.json",
+        "benchmarks/acceptance/suite/materials/optimization/v1/direction-semantic-representation.json",
     }
     _require(isinstance(files, list) and len(files) == len(expected_manifest_paths), "材料清单规模无效")
     _require(
@@ -142,6 +143,7 @@ def validate_materials(root: Path) -> dict[str, Any]:
     )
 
     _validate_optimization_view(root / "optimization" / "v1" / "direction-organization-granularity.json")
+    _validate_semantic_representation_view(root / "optimization" / "v1" / "direction-semantic-representation.json")
 
     historical_product = load_json(historical_root / "dataset.json")
     product_root = root / "product" / ACTIVE_PRODUCT_DIRECTORY
@@ -351,9 +353,61 @@ def _validate_optimization_view(path: Path) -> None:
         forbidden = query.get("forbidden_ids", [])
         _require(isinstance(expected, list) and expected and set(expected) <= set(asset_ids), "优化视图期望身份无效")
         _require(isinstance(forbidden, list) and set(forbidden) <= set(asset_ids) and not set(expected) & set(forbidden), "优化视图排除身份无效")
+
+
+def _validate_semantic_representation_view(path: Path) -> None:
+    view = load_json(path)
+    _require(view.get("schema") == "ownward.core-frontier-materials/v1", "语义表示视图 schema 无效")
+    _require(view.get("version") == "ownward-kernel-optimization-view/v1", "语义表示视图版本无效")
+    contract = _mapping(view, "optimization_view")
+    _require(contract.get("id") == "semantic-representation-v1", "语义表示视图身份无效")
+    _require(contract.get("direction") == "semantic_capability_and_representation_model", "语义表示视图方向无效")
+    source = _mapping(contract, "formal_source")
+    observed = _mapping(source, "mechanical_observation")
+    _require(source.get("candidate") == "99f519018df99bd5202b0c571b8e43481cd1b80e", "语义表示视图未绑定 V0")
+    _require(source.get("formal_errors") == 258 and source.get("mapped_cluster_errors") == 116, "语义表示视图正式规模无效")
+    _require(
+        observed == {
+            "questions_with_oversized_embedding_failure": 116,
+            "questions_with_any_vector": 0,
+            "questions_with_non_lexical_search_signal": 0,
+            "derived_records_without_vector": 5443,
+        },
+        "语义表示视图的正式机制观察漂移",
+    )
+    baseline = _mapping(contract, "v0_baseline")
+    gate = _mapping(contract, "frozen_gate")
+    _require(float(baseline.get("semantic_search_recall", -1)) == 0.0, "语义表示 V0 召回基线漂移")
+    _require(float(baseline.get("semantic_search_error_rate", -1)) == 1.0, "语义表示 V0 错误基线漂移")
+    _require(float(gate.get("semantic_search_recall_min", -1)) == 1.0, "语义表示召回门槛漂移")
+    _require(float(gate.get("semantic_search_error_rate_max", -1)) == 0.0, "语义表示错误门槛漂移")
+    _require(float(gate.get("semantic_embedding_calls_max", -1)) == 2.0, "语义表示有界调用门槛漂移")
+    _require(float(gate.get("rebuild_semantic_embedding_calls_max", -1)) == 0.0, "语义表示重建复用门槛漂移")
+    _require(float(gate.get("rebuild_semantic_recall_min", -1)) == 1.0, "语义表示重建召回门槛漂移")
+    _require(float(gate.get("derived_vectors_per_asset_max", -1)) == 1.0, "语义表示单向量门槛漂移")
+    _require(float(gate.get("semantic_input_to_source_bytes_max", -1)) == 1.0, "语义表示输入规模门槛漂移")
+    _require(float(gate.get("semantic_search_p95_ms_max", -1)) == 78.0, "语义查询成本门槛漂移")
+    _require(gate.get("protected_regression_allowed") is False, "语义表示视图不得允许保护退化")
+    leakage = _mapping(contract, "leakage_policy")
+    _require(all(leakage.get(name) is False for name in ("formal_question_text", "formal_answer", "formal_gold_identity", "formal_session_content")), "语义表示视图泄漏边界无效")
+    assets = view.get("assets")
+    _require(isinstance(assets, list) and len(assets) == 6 and all(isinstance(item, dict) for item in assets), "语义表示视图资产规模无效")
+    asset_ids = [item.get("fixture_id") for item in assets]
+    _require(len(asset_ids) == len(set(asset_ids)) and all(isinstance(item, str) and item for item in asset_ids), "语义表示视图资产身份无效")
+    _require(sum(int(item.get("padding_repeat", 0)) > 0 for item in assets) == 4, "语义表示视图必须覆盖四项长资产")
+    queries = view.get("queries")
+    _require(isinstance(queries, list) and len(queries) == 6, "语义表示视图查询规模无效")
+    _require(Counter(item.get("view_role") for item in queries) == {"primary": 4, "protection": 2}, "语义表示视图角色分布无效")
     embeddings = view.get("frozen_embeddings")
+    keys = view.get("semantic_embedding_keys")
+    semantics = _mapping(view, "frozen_semantics")
+    analyses = semantics.get("analyses")
+    _require(isinstance(embeddings, dict) and set(embeddings) == set(asset_ids) and all(_valid_vector(item) for item in embeddings.values()), "语义表示视图资产向量无效")
+    _require(isinstance(keys, dict) and set(keys) == set(asset_ids) and len(set(keys.values())) == len(asset_ids), "语义表示视图嵌入键无效")
+    _require(isinstance(analyses, dict) and set(analyses) == set(asset_ids), "语义表示视图冻结分析无效")
+    for fixture_id, key in keys.items():
+        _require(isinstance(key, str) and key and key in json.dumps(analyses[fixture_id], ensure_ascii=False), f"语义表示视图 {fixture_id} 未把检索键保留在冻结分析中")
     query_embeddings = view.get("frozen_query_embeddings")
-    _require(isinstance(embeddings, dict) and set(embeddings) == set(asset_ids) and all(_valid_vector(item) for item in embeddings.values()), "优化视图资产向量无效")
     query_ids = {item["query_id"] for item in queries}
     _require(isinstance(query_embeddings, dict) and set(query_embeddings) == query_ids and all(_valid_vector(item) for item in query_embeddings.values()), "优化视图查询向量无效")
 

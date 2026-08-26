@@ -6,8 +6,10 @@ import math
 import os
 import platform
 import re
+import struct
 import subprocess
 import time
+import zlib
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
@@ -23,7 +25,8 @@ POOL_SCHEMA = "ownward.kernel-formal-failure-pool/v1"
 BASELINE_SCHEMA = "ownward.kernel-fast-view-baseline/v1"
 V0_CANDIDATE = "99f519018df99bd5202b0c571b8e43481cd1b80e"
 CONTEXT_BUDGET_CHARS = 24_000
-VIEW_RELATIVE = Path("materials/optimization/v1/direction-organization-granularity.json")
+VIEW_RELATIVE = Path("materials/optimization/v1/direction-semantic-representation.json")
+GRANULARITY_VIEW_RELATIVE = Path("materials/optimization/v1/direction-organization-granularity.json")
 CORE_RELATIVE = Path("materials/core/v1/dataset.json")
 PRODUCT_SOURCE_PATHS = ("internal", "cmd/ownward", "go.mod", "go.sum")
 
@@ -52,30 +55,35 @@ def run(
         _require(candidate == "worktree", "首方向候选只能绑定冻结 V0 或当前工作树")
         source_identity = _worktree_product_sha256(repository)
         candidate_identity = f"worktree:{source_identity}"
-    organization_equivalence = _v0_organization_path_equivalence(repository)
-    _require(organization_equivalence["equivalent"] is True, "候选改动了 V0 组织或重建成本路径，不能复用同输入基线")
+    closed_granularity_equivalence = _closed_granularity_path_equivalence(repository)
     output_root.mkdir(parents=True, exist_ok=True)
 
     diagnostics_path = formal_run / "diagnostics.jsonl"
     report_path = formal_run / "report.json"
     view_path = suite_root / VIEW_RELATIVE
+    granularity_view_path = suite_root / GRANULARITY_VIEW_RELATIVE
     core_path = suite_root / CORE_RELATIVE
-    for path in (diagnostics_path, report_path, view_path, core_path):
+    for path in (diagnostics_path, report_path, view_path, granularity_view_path, core_path):
         _require(path.is_file(), f"迭代输入不存在: {path}")
     formal_input_identity = {
         "candidate": V0_CANDIDATE,
         "diagnostics_sha256": file_sha256(diagnostics_path),
         "formal_report_sha256": file_sha256(report_path),
         "view_sha256": file_sha256(view_path),
+        "closed_granularity_view_sha256": file_sha256(granularity_view_path),
         "core_protection_sha256": file_sha256(core_path),
         "analyzer_sha256": file_sha256(Path(__file__)),
-        "algorithm": "kernel-v1-first-direction/v1",
+        "algorithm": "kernel-v1-search-representation/v2",
     }
     input_identity = {
         **formal_input_identity,
         "evaluation_candidate": candidate_identity,
         "evaluation_product_source_sha256": source_identity,
-        "v0_organization_path_equivalence": organization_equivalence,
+        "previous_closed_chain": {
+            "candidate_commit": "e6bfc82c0750ed0db30ff67b9ec6f7a3ca446570",
+            "view_sha256": file_sha256(granularity_view_path),
+            "public_path_equivalence": closed_granularity_equivalence,
+        },
     }
     pool_identity_sha = canonical_sha256(formal_input_identity)
 
@@ -88,7 +96,7 @@ def run(
         atomic_json(pool_path, pool)
     validate_problem_pool(pool, strict=True)
     _validate_view_leakage(view_path, formal_run, pool)
-    _validate_efficiency_authority(view_path, repository)
+    _validate_efficiency_authority(view_path, repository, formal_run)
 
     tool = _build_observer(repository, output_root, resume)
     tool_sha = file_sha256(tool)
@@ -103,7 +111,8 @@ def run(
     observation_reused: dict[str, bool] = {}
     durations: dict[str, float] = {}
     specs = {
-        "direction": (view_path, ("organization", "indexing", "lexical", "vector", "graph", "context", "fusion", "efficiency")),
+        "direction": (view_path, ("semantic_representation",)),
+        "granularity_protection": (granularity_view_path, ("organization", "indexing", "lexical", "vector", "graph", "context", "fusion")),
         "protection": (core_path, ("identity", "relations", "merge_split", "incremental_consistency", "context", "fusion")),
     }
     for name, (materials, stages) in specs.items():
@@ -138,19 +147,21 @@ def run(
         observations[name] = load_json(path)
         observation_reused[name] = False
     _require(durations["direction"] <= 180, "单个确定性方向视图超过 3 分钟")
-    _require(sum(durations.values()) <= 600, "方向视图与保护检查超过 10 分钟")
+    _require(sum(durations.values()) <= 600, "方向视图与全部保护检查超过 10 分钟")
 
     measured_durations = {
         name: durations[name] if not observation_reused[name] else _observation_elapsed(observations[name])
         for name in observations
     }
-    result = build_baseline(input_identity, pool, observations, measured_durations) if is_v0_baseline else build_candidate_result(
+    _require(not is_v0_baseline, "本轮冻结 V0 基线来自正式机械证据，不在改变后的产品源码上重算")
+    result = build_semantic_candidate_result(
         input_identity, pool, observations, measured_durations, load_json(view_path), candidate_identity,
     )
     result["identity_sha256"] = canonical_sha256({
         "input": input_identity,
         "problem_pool": file_sha256(pool_path),
         "direction_observation": file_sha256(output_root / "direction-observation.json"),
+        "granularity_protection_observation": file_sha256(output_root / "granularity_protection-observation.json"),
         "protection_observation": file_sha256(output_root / "protection-observation.json"),
     })
     if is_v0_baseline:
@@ -166,6 +177,7 @@ def run(
         "identity_sha256": result["identity_sha256"],
         "problem_pool_sha256": file_sha256(pool_path),
         "direction_observation_sha256": file_sha256(output_root / "direction-observation.json"),
+        "granularity_protection_observation_sha256": file_sha256(output_root / "granularity_protection-observation.json"),
         "protection_observation_sha256": file_sha256(output_root / "protection-observation.json"),
         "result_sha256": file_sha256(result_path),
         "reused": {"problem_pool": pool_reused, **observation_reused},
@@ -180,6 +192,7 @@ def run(
         "selected_cluster": pool["selection"]["cluster"],
         "selected_direction": pool["selection"]["direction"],
         "direction_observation": str(output_root / "direction-observation.json"),
+        "granularity_protection_observation": str(output_root / "granularity_protection-observation.json"),
         "protection_observation": str(output_root / "protection-observation.json"),
         "result": str(result_path),
         "reused": {"problem_pool": pool_reused, **observation_reused},
@@ -209,11 +222,11 @@ def build_problem_pool(
         "problem_count": len(problems),
         "problems": sorted(problems, key=lambda item: item["formal_question_identity"]),
         "selection": {
-            "cluster": "session_unit_context_overflow",
-            "direction": "information_representation_and_organization",
+            "cluster": "semantic_vector_representation_missing_after_oversized_input",
+            "direction": "semantic_capability_and_representation_model",
             "reason": "highest-proven-impact-earliest-causal-point",
-            "mapped_failures": sum(item["mechanism"] == "session_unit_context_overflow" for item in problems),
-            "next_validation": "organization-granularity-v1",
+            "mapped_failures": sum(item["mechanism"] == "semantic_vector_representation_missing_after_oversized_input" for item in problems),
+            "next_validation": "semantic-representation-v1",
             "other_directions_started": [],
         },
         "privacy": {
@@ -249,6 +262,38 @@ def _map_problem(formal_run: Path, diagnostic: dict[str, Any]) -> dict[str, Any]
     semantic_complete = observations.get("semantic_submission_complete") is True
     organized_expected = set(_strings(coverage.get("organized_expected"), "组织证据身份")) == set(expected_ids)
     all_expected_returned = set(expected_ids) <= set(returned_ids)
+    diagnostic_path = question_root / "diagnostic.json"
+    retrieval_ref = _mapping(artifacts, "retrieval")
+    retrieval_path = Path(str(retrieval_ref.get("path", "")))
+    _require(diagnostic_path.is_file() and retrieval_path.is_file(), "问题诊断证据不完整")
+    _require(file_sha256(retrieval_path) == retrieval_ref.get("sha256"), "检索证据摘要不匹配")
+    representation_evidence: dict[str, Any] | None = None
+    derived_path = question_root / "ownward-data" / "state" / "organization.binlog"
+    if gap == "target_evidence_not_search_returned":
+        _require(derived_path.is_file(), "未检索问题缺少派生状态日志")
+        derived = _derived_state_observation(derived_path, expected_ids)
+        retrieval = load_json(retrieval_path)
+        returned = _mapping(retrieval, "retrieval").get("returned", [])
+        _require(isinstance(returned, list), "检索候选结果无效")
+        signals = sorted({
+            signal
+            for item in returned if isinstance(item, dict)
+            for signal in item.get("signals", []) if isinstance(signal, str)
+        })
+        submission_refs = artifacts.get("semantic_submissions", [])
+        _require(isinstance(submission_refs, list) and submission_refs, "未检索问题缺少语义提交证据")
+        submission_identity: list[dict[str, Any]] = []
+        for ref in submission_refs:
+            _require(isinstance(ref, dict), "语义提交证据引用无效")
+            path = Path(str(ref.get("path", "")))
+            _require(path.is_file() and file_sha256(path) == ref.get("sha256"), "语义提交证据摘要不匹配")
+            submission_identity.append({"sha256": ref["sha256"], "asset_count": len(ref.get("asset_ids", [])), "work_count": len(ref.get("work_ids", []))})
+        representation_evidence = {
+            **derived,
+            "search_signal_kinds": signals,
+            "semantic_submission_count": len(submission_refs),
+            "semantic_submission_identity_sha256": canonical_sha256(submission_identity),
+        }
     mechanism, direction, status, samples = classify_problem(
         gap,
         semantic_complete,
@@ -256,17 +301,10 @@ def _map_problem(formal_run: Path, diagnostic: dict[str, Any]) -> dict[str, Any]
         all_expected_returned,
         expected_chars,
         str(diagnostic.get("capability")),
+        representation_evidence,
     )
-    diagnostic_path = question_root / "diagnostic.json"
-    retrieval_ref = _mapping(artifacts, "retrieval")
-    retrieval_path = Path(str(retrieval_ref.get("path", "")))
-    _require(diagnostic_path.is_file() and retrieval_path.is_file(), "问题诊断证据不完整")
-    _require(file_sha256(retrieval_path) == retrieval_ref.get("sha256"), "检索证据摘要不匹配")
     return {
         "formal_question_identity": str(diagnostic.get("question_identity")),
-        "formal_question_id": str(diagnostic.get("question_id")),
-        "question_type": str(diagnostic.get("question_type")),
-        "capability": str(diagnostic.get("capability")),
         "first_observed_gap": gap,
         "mechanism": mechanism,
         "mechanism_status": status,
@@ -281,11 +319,13 @@ def _map_problem(formal_run: Path, diagnostic: dict[str, Any]) -> dict[str, Any]
             "read_expected_count": len(read_expected),
             "expected_content_chars": expected_chars,
             "context_budget_chars": CONTEXT_BUDGET_CHARS,
+            **({"representation": representation_evidence} if representation_evidence is not None else {}),
         },
         "evidence": {
             "diagnostic": _relative_evidence(diagnostic_path, formal_run),
             "retrieval": _relative_evidence(retrieval_path, formal_run),
             "source_asset_log": _relative_evidence(source_log, formal_run),
+            **({"derived_state_log": _relative_evidence(derived_path, formal_run)} if representation_evidence is not None else {}),
         },
     }
 
@@ -297,6 +337,7 @@ def classify_problem(
     all_expected_returned: bool,
     expected_chars: int,
     capability: str,
+    representation_evidence: dict[str, Any] | None = None,
 ) -> tuple[str, str, str, list[str]]:
     if gap == "target_evidence_not_read" and semantic_complete and organized_expected and all_expected_returned and expected_chars > CONTEXT_BUDGET_CHARS:
         return (
@@ -313,6 +354,22 @@ def classify_problem(
             ["protection-budget-fit-ordering"],
         )
     if gap == "target_evidence_not_search_returned":
+        evidence = representation_evidence or {}
+        if (
+            semantic_complete
+            and organized_expected
+            and evidence.get("all_assets_have_oversized_embedding_failure") is True
+            and evidence.get("latest_vector_count") == 0
+            and evidence.get("expected_asset_vector_count") == 0
+            and evidence.get("all_expected_semantic_results_submitted") is True
+            and evidence.get("search_signal_kinds") == ["lexical"]
+        ):
+            return (
+                "semantic_vector_representation_missing_after_oversized_input",
+                "semantic_capability_and_representation_model",
+                "proven_general_mechanism",
+                ["semantic-representation-long-asset", "semantic-representation-short-batch-protection"],
+            )
         return (
             "pending_semantic_organization_or_retrieval",
             "pending_cross_direction_evidence",
@@ -342,8 +399,15 @@ def validate_problem_pool(pool: dict[str, Any], strict: bool) -> None:
         _require(len(problems) == 258, "V0 正式错误池必须包含 258 项")
         _require(counts["session_unit_context_overflow"] == 119, "首个通用根因簇规模漂移")
         _require(counts["pending_search_order_or_context_selection"] == 14, "预算内未读取问题规模漂移")
-        _require(counts["pending_semantic_organization_or_retrieval"] == 116, "未检索问题规模漂移")
+        _require(counts["semantic_vector_representation_missing_after_oversized_input"] == 116, "语义表示缺失问题规模漂移")
         _require(counts["reader_failure_after_complete_evidence"] == 9, "Reader 边界问题规模漂移")
+        representation = [
+            _mapping(_mapping(item, "observations").get("representation", {}), "representation")
+            for item in problems if item.get("mechanism") == "semantic_vector_representation_missing_after_oversized_input"
+        ]
+        _require(sum(int(item.get("latest_asset_count", 0)) for item in representation) == 5443, "语义表示缺失的派生资产规模漂移")
+        _require(sum(int(item.get("latest_vector_count", -1)) for item in representation) == 0, "V0 未检索问题不应存在向量")
+        _require(all(item.get("search_signal_kinds") == ["lexical"] for item in representation), "V0 未检索问题出现非词法搜索通道")
 
 
 def build_baseline(
@@ -513,6 +577,105 @@ def build_candidate_result(
     }
 
 
+def build_semantic_candidate_result(
+    input_identity: dict[str, Any],
+    pool: dict[str, Any],
+    observations: dict[str, dict[str, Any]],
+    durations: dict[str, float],
+    view: dict[str, Any],
+    candidate: str,
+) -> dict[str, Any]:
+    optimization = _mapping(view, "optimization_view")
+    gate = _mapping(optimization, "frozen_gate")
+    direction = {item["name"]: item for item in observations["direction"]["metrics"]}
+    granularity = {item["name"]: item for item in observations["granularity_protection"]["metrics"]}
+    core = {item["name"]: item for item in observations["protection"]["metrics"]}
+
+    checks: dict[str, dict[str, Any]] = {}
+    failures: list[str] = []
+
+    def minimum(metric_name: str, gate_name: str) -> None:
+        metric = _mapping(direction, metric_name)
+        required = float(gate[gate_name])
+        passed = float(metric["value"]) >= required
+        checks[metric_name] = {"value": metric["value"], "minimum": required, "passed": passed}
+        if not passed:
+            failures.append(metric_name)
+
+    def maximum(metric_name: str, gate_name: str) -> None:
+        metric = _mapping(direction, metric_name)
+        required = float(gate[gate_name])
+        passed = _within_upper_bound(float(metric["value"]), required)
+        checks[metric_name] = {"value": metric["value"], "maximum": required, "passed": passed}
+        if not passed:
+            failures.append(metric_name)
+
+    for metric_name, gate_name in (
+        ("semantic_search_recall", "semantic_search_recall_min"),
+        ("long_asset_vector_recovery", "long_asset_vector_recovery_min"),
+        ("short_asset_vector_availability", "short_asset_vector_availability_min"),
+        ("semantic_input_marker_coverage", "semantic_input_marker_coverage_min"),
+        ("restart_semantic_recall", "restart_semantic_recall_min"),
+        ("rebuild_semantic_recall", "rebuild_semantic_recall_min"),
+        ("semantic_signal_rate", "semantic_signal_rate_min"),
+    ):
+        minimum(metric_name, gate_name)
+    for metric_name, gate_name in (
+        ("semantic_search_error_rate", "semantic_search_error_rate_max"),
+        ("derived_vectors_per_asset", "derived_vectors_per_asset_max"),
+        ("semantic_input_to_source_bytes", "semantic_input_to_source_bytes_max"),
+        ("oversized_raw_embedding_attempts", "oversized_raw_embedding_attempts_max"),
+        ("semantic_embedding_calls", "semantic_embedding_calls_max"),
+        ("rebuild_semantic_embedding_calls", "rebuild_semantic_embedding_calls_max"),
+        ("semantic_representation_p95_ms", "semantic_representation_p95_ms_max"),
+        ("semantic_rebuild_p95_ms", "semantic_rebuild_p95_ms_max"),
+        ("semantic_search_p95_ms", "semantic_search_p95_ms_max"),
+    ):
+        maximum(metric_name, gate_name)
+
+    protected_sources = {
+        "required_evidence_budget_recall": (granularity, float(gate["closed_granularity_recall_min"])),
+        "scale_evidence_recall": (granularity, float(gate["closed_granularity_scale_recall_min"])),
+        "budget_fit_protection": (granularity, 1.0),
+        "identity_stability": (core, 1.0),
+        "fusion_recall": (granularity, 1.0),
+        "fusion_ndcg": (granularity, 1.0),
+    }
+    protected: dict[str, dict[str, Any]] = {}
+    for name, (source, required) in protected_sources.items():
+        metric = _mapping(source, name)
+        passed = float(metric["value"]) >= required
+        protected[name] = {"value": metric["value"], "minimum": required, "passed": passed}
+        if not passed:
+            failures.append(name)
+
+    return {
+        "schema": "ownward.kernel-fast-view-candidate/v1",
+        "candidate": candidate,
+        "input_identity": input_identity,
+        "problem_pool_sha256": canonical_sha256(pool),
+        "selected_cluster": pool["selection"],
+        "metrics": {"direction": checks, "protected": protected},
+        "gate": {**gate, "failures": sorted(failures)},
+        "cost": {
+            "direction_wall_seconds": round(durations["direction"], 6),
+            "granularity_protection_wall_seconds": round(durations["granularity_protection"], 6),
+            "common_protection_wall_seconds": round(durations["protection"], 6),
+            "direction_view_max_seconds": 180,
+            "direction_validation_max_seconds": 600,
+        },
+        "resume": {
+            "identity_exact": True,
+            "checkpoints": ["problem_pool", "direction_observation", "granularity_protection_observation", "protection_observation"],
+            "policy": "reuse_exact_identity_and_rerun_only_invalid_parts",
+        },
+        "passed": not failures,
+        "formal_evidence": False,
+        "formal_acceptance_state_modified": False,
+        "may_promote_baseline": False,
+    }
+
+
 def _validate_frozen_baseline(view_path: Path, baseline: dict[str, Any]) -> None:
     optimization = _mapping(load_json(view_path), "optimization_view")
     frozen = _mapping(optimization, "v0_baseline")
@@ -613,7 +776,11 @@ def _validate_view_leakage(view_path: Path, formal_run: Path, pool: dict[str, An
     optimization = _mapping(view, "optimization_view")
     policy = _mapping(optimization, "leakage_policy")
     _require(all(policy.get(name) is False for name in ("formal_question_text", "formal_answer", "formal_gold_identity", "formal_session_content")), "快速视图泄漏策略无效")
-    terms = ["远岫观测计划", "潮汐温室", "纸鸢工坊", "苔原邮局", "雾桥灯塔"]
+    terms = [
+        "Archive AX-41", "Archive BX-72", "Archive CX-15", "Archive DX-90",
+        "cobalt-lattice-concept", "moss-relay-concept", "violet-vent-concept", "pearl-lock-concept",
+        "极地成像漂移", "港湾音频失真", "温室热偏移", "工坊振动漂移",
+    ]
     corpus = "\n".join(
         json.dumps(load_json(Path(item["evidence"]["diagnostic"]["absolute_path"])), ensure_ascii=False)
         for item in pool["problems"]
@@ -627,8 +794,17 @@ def _validate_view_leakage(view_path: Path, formal_run: Path, pool: dict[str, An
                 _require(all(term not in content for term in terms), "内部快速视图与正式源会话事实发生重合")
 
 
-def _validate_efficiency_authority(view_path: Path, repository: Path) -> None:
+def _validate_efficiency_authority(view_path: Path, repository: Path, formal_run: Path) -> None:
     gate = _mapping(_mapping(load_json(view_path), "optimization_view"), "frozen_gate")
+    if "semantic_search_p95_ms_max" in gate:
+        optimization = _mapping(load_json(view_path), "optimization_view")
+        source = _mapping(optimization, "formal_source")
+        report_path = formal_run / "report.json"
+        _require(file_sha256(report_path) == source.get("report_sha256"), "语义查询成本的正式报告摘要漂移")
+        report = load_json(report_path)
+        measured = float(_mapping(report, "retrieval").get("p95_ms", -1))
+        _require(math.isclose(measured, float(gate["semantic_search_p95_ms_max"]), abs_tol=1e-6), "语义查询成本门槛与 V0 正式实测不一致")
+        return
     source = str(gate.get("query_workflow_limit_source", "")).split("#", 1)[0]
     path = repository / source
     _require(path.is_file(), "查询成本权威阈值来源不存在")
@@ -646,6 +822,25 @@ def _verify_product_source_equivalence(repository: Path, candidate: str) -> None
     for command in commands:
         if subprocess.run(command, cwd=repository, check=False).returncode != 0:
             raise KernelIterationError("当前产品源码与冻结 V0 候选并非逐字等价")
+
+
+def _closed_granularity_path_equivalence(repository: Path) -> dict[str, Any]:
+    paths = (
+        "internal/core/evidence.go",
+        "internal/derived/evidence.go",
+        "internal/domain/evidence.go",
+        "internal/retrieval/lexical.go",
+        "internal/adapter/mcpserver/server.go",
+        "benchmarks/longmemeval_s/run.py",
+        "benchmarks/longmemeval_s/protocol.json",
+    )
+    digests: dict[str, str] = {}
+    for relative in paths:
+        current = (repository / relative).read_bytes()
+        baseline = subprocess.check_output(["git", "show", f"e6bfc82:{relative}"], cwd=repository)
+        _require(current == baseline, f"已关闭的按需证据公共路径发生变化: {relative}")
+        digests[relative] = hashlib.sha256(current).hexdigest()
+    return {"equivalent": True, "files": digests}
 
 
 def _v0_organization_path_equivalence(repository: Path) -> dict[str, Any]:
@@ -713,6 +908,47 @@ def _source_files(repository: Path, roots: Iterable[str]) -> list[Path]:
         elif path.is_dir():
             result.update(candidate for candidate in path.rglob("*") if candidate.is_file())
     return sorted(result, key=lambda path: path.relative_to(repository).as_posix())
+
+
+def _derived_state_observation(path: Path, expected_ids: list[str]) -> dict[str, Any]:
+    latest: dict[str, tuple[dict[str, Any], int]] = {}
+    oversized: set[str] = set()
+    record_count = 0
+    with path.open("rb") as stream:
+        while True:
+            header = stream.read(16)
+            if not header:
+                break
+            _require(len(header) == 16 and header[:4] == b"OWD3", "派生状态记录头无效")
+            metadata_length, vector_length, checksum = struct.unpack("<III", header[4:])
+            _require(metadata_length > 0 and vector_length % 4 == 0, "派生状态记录长度无效")
+            payload = stream.read(metadata_length + vector_length)
+            footer = stream.read(4)
+            _require(len(payload) == metadata_length + vector_length and footer == b"DONE", "派生状态记录被截断")
+            _require(zlib.crc32(payload) & 0xFFFFFFFF == checksum, "派生状态记录校验失败")
+            metadata = json.loads(payload[:metadata_length])
+            _require(isinstance(metadata, dict) and isinstance(metadata.get("asset_id"), str), "派生状态元数据无效")
+            asset_id = metadata["asset_id"]
+            error = str(metadata.get("error", ""))
+            if "embedding_input_exceeds_runtime_batch" in error or (
+                "is too large to process" in error and "physical batch size" in error
+            ):
+                oversized.add(asset_id)
+            latest[asset_id] = (metadata, vector_length // 4)
+            record_count += 1
+    expected = set(expected_ids)
+    _require(expected <= set(latest), "派生状态缺少期望资产")
+    expected_vectors = sum(latest[item][1] > 0 for item in expected)
+    return {
+        "derived_record_count": record_count,
+        "latest_asset_count": len(latest),
+        "latest_vector_count": sum(vector_length > 0 for _, vector_length in latest.values()),
+        "expected_asset_vector_count": expected_vectors,
+        "all_assets_have_oversized_embedding_failure": set(latest) <= oversized,
+        "all_expected_have_oversized_embedding_failure": expected <= oversized,
+        "all_expected_semantic_results_submitted": all(latest[item][0].get("semantic_result") is not None for item in expected),
+        "latest_relation_count": sum(len(_mapping(metadata.get("analysis", {}), "analysis").get("relations", [])) for metadata, _ in latest.values()),
+    }
 
 
 def _asset_content_lengths(path: Path) -> dict[str, int]:
