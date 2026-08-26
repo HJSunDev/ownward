@@ -161,6 +161,10 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
         self.assertEqual(20400, self.protocol["execution"]["full_wall_seconds"])
         self.assertEqual("not_determined", self.protocol["acceptance"]["quality_assessment_status"])
         self.assertEqual(3, self.protocol["retrieval"]["evidence_search_limit_per_source"])
+        self.assertEqual(
+            "rank-depth-diagonal-budget-fit/v1",
+            self.protocol["retrieval"]["evidence_selection_policy"],
+        )
 
     def test_official_answer_labels_are_validated_but_never_enter_memory_content(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -244,6 +248,129 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
         self.assertLessEqual(len(evidence), self.protocol["retrieval"]["read_limit"])
         self.assertTrue(any("VIOLET-731" in item["content"] for item in evidence))
         self.assertTrue(trace["evidence_read_ids"])
+
+    def test_budget_loading_uses_rank_depth_diagonal_order(self) -> None:
+        runtime = FakeRuntime()
+        assert runtime.client is not None
+        runtime.client.contents = {
+            "info-1": "cobalt routing distractor alpha. " * 80,
+            "info-2": "cobalt routing distractor beta. " * 80,
+            "info-3": "cobalt routing distractor gamma. " * 80,
+            "info-4": "The cobalt routing marker is SOLAR-904. " + ("cobalt routing target context. " * 80),
+        }
+
+        evidence, trace = adapter.retrieve(runtime, "What is the cobalt routing marker?", self.protocol)
+
+        self.assertEqual("rank-depth-diagonal-budget-fit/v1", trace["selection_policy"])
+        self.assertEqual(["info-1", "info-2", "info-3", "info-4"], trace["read_ids"][:4])
+        selected = [step for step in trace["selection_steps"] if step["selected"]]
+        self.assertEqual(
+            [("info-1", 0), ("info-2", 0), ("info-1", 1), ("info-3", 0),
+             ("info-2", 1), ("info-1", 2), ("info-4", 0), ("info-3", 1)],
+            [(step["source_id"], step["depth"]) for step in selected],
+        )
+        self.assertTrue(any(item["id"] == "info-4" and "SOLAR-904" in item["content"] for item in evidence))
+        self.assertLessEqual(len(evidence), self.protocol["retrieval"]["read_limit"])
+
+    def test_non_fitting_candidate_does_not_block_later_budget_fit_evidence(self) -> None:
+        runtime = FakeRuntime()
+        assert runtime.client is not None
+        runtime.client.contents = {
+            "info-1": "signal alpha. " * 40,
+            "info-2": "signal beta. " * 40,
+            "info-3": "signal compact result.",
+        }
+        protocol = json.loads(json.dumps(self.protocol))
+        protocol["retrieval"]["context_max_chars"] = 500
+        protocol["retrieval"]["read_limit"] = 3
+        protocol["retrieval"]["evidence_search_limit_per_source"] = 1
+
+        evidence, trace = adapter.retrieve(runtime, "signal result", protocol)
+
+        self.assertEqual(["info-1", "info-3"], trace["read_ids"])
+        self.assertTrue(any(step.get("source_id") == "info-2" and step.get("reason") == "context_budget" for step in trace["selection_steps"]))
+        self.assertTrue(any(item["id"] == "info-3" for item in evidence))
+        self.assertLessEqual(trace["context_chars"], 500)
+
+    def test_unreadable_evidence_does_not_block_later_candidates(self) -> None:
+        class UnreadableClient(FakeToolClient):
+            def call_tool(self, name: str, arguments: dict):
+                if name == "ownward_evidence_read" and ":info-1:" in arguments["id"]:
+                    return {"evidence": None}
+                return super().call_tool(name, arguments)
+
+        class Runtime:
+            def __init__(self) -> None:
+                self.client = UnreadableClient()
+
+        runtime = Runtime()
+        runtime.client.contents = {
+            "info-1": "signal unreadable. " * 80,
+            "info-2": "signal readable beta. " * 80,
+            "info-3": "signal compact result.",
+        }
+        protocol = json.loads(json.dumps(self.protocol))
+        protocol["retrieval"]["read_limit"] = 3
+
+        evidence, trace = adapter.retrieve(runtime, "signal result", protocol)
+
+        self.assertFalse(any(item["id"] == "info-1" for item in evidence))
+        self.assertTrue(any(item["id"] == "info-2" for item in evidence))
+        self.assertTrue(any(item["id"] == "info-3" for item in evidence))
+        self.assertTrue(any(
+            step.get("source_id") == "info-1" and step.get("reason") == "unreadable"
+            for step in trace["selection_steps"]
+        ))
+        self.assertEqual(3, len(evidence))
+
+    def test_selection_respects_read_limit_at_maximum_returned_sources(self) -> None:
+        runtime = FakeRuntime()
+        assert runtime.client is not None
+        runtime.client.contents = {
+            f"info-{index + 1}": f"orchid relay source {index + 1}. " * 80
+            for index in range(self.protocol["retrieval"]["search_limit"])
+        }
+
+        evidence, trace = adapter.retrieve(runtime, "orchid relay", self.protocol)
+
+        self.assertEqual(self.protocol["retrieval"]["search_limit"], len(trace["returned"]))
+        self.assertEqual(self.protocol["retrieval"]["read_limit"], len(evidence))
+        self.assertEqual(4, len(trace["read_ids"]))
+        selected = [step for step in trace["selection_steps"] if step["selected"]]
+        self.assertEqual([0, 1, 2], sorted(step["depth"] for step in selected if step["source_id"] == "info-1"))
+        self.assertEqual([0, 1, 2, 3], sorted({step["source_rank"] for step in selected}))
+        self.assertEqual(sorted(step["priority_layer"] for step in selected), [step["priority_layer"] for step in selected])
+        self.assertLessEqual(trace["context_chars"], self.protocol["retrieval"]["context_max_chars"])
+
+    def test_selection_preserves_three_necessary_passages_from_top_ranked_source(self) -> None:
+        def passage(fact: str) -> str:
+            value = fact + " " + ("neutral itinerary context. " * 40)
+            return value[:384].ljust(384, "~")
+
+        runtime = FakeRuntime()
+        assert runtime.client is not None
+        runtime.client.contents = {
+            "info-1": "".join((
+                passage("Cobalt itinerary departure fact DAWN-31."),
+                passage("Cobalt itinerary transfer fact NOON-52."),
+                passage("Cobalt itinerary arrival fact DUSK-74."),
+            )),
+            **{
+                f"info-{index}": f"cobalt itinerary distractor source {index}. " * 80
+                for index in range(2, self.protocol["retrieval"]["search_limit"] + 1)
+            },
+        }
+
+        evidence, trace = adapter.retrieve(runtime, "Which cobalt itinerary facts are required?", self.protocol)
+
+        delivered = "\n".join(item["content"] for item in evidence)
+        self.assertTrue(all(marker in delivered for marker in ("DAWN-31", "NOON-52", "DUSK-74")))
+        selected = [step for step in trace["selection_steps"] if step["selected"]]
+        self.assertEqual(
+            [("info-1", 0), ("info-2", 0), ("info-1", 1), ("info-3", 0),
+             ("info-2", 1), ("info-1", 2), ("info-4", 0), ("info-3", 1)],
+            [(step["source_id"], step["depth"]) for step in selected],
+        )
 
     def test_diagnostics_separate_pipeline_failures_and_capability_types(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -569,7 +696,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
                 with self.assertRaisesRegex(adapter.AppServerTimeout, "timed out"):
                     server.invoke(
                         prompt="prompt", schema={"type": "object"}, model="model", effort="low",
-                        work_dir=work, timeout_seconds=0.001,
+                        work_dir=work, timeout_seconds=1,
                     )
             self.assertEqual(
                 mock.call("turn/interrupt", {"threadId": "thread-1", "turnId": "turn-1"}, timeout_seconds=10),

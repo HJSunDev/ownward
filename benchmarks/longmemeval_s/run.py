@@ -44,7 +44,7 @@ OFFICIAL_DATA_SHA256 = "d6f21ea9d60a0d56f34a05b609c79c88a451d2ae03597821ea3d5a96
 OFFICIAL_QUESTION_COUNT = 500
 PRODUCTION_PROFILE = "Ownward LongMemEval-S Production Profile"
 SEMANTIC_TRANSPORT_VERSION = "ownward.longmemeval-s-semantic-transport/v2"
-RETRIEVAL_STAGE_VERSION = "ownward.longmemeval-s-retrieval/v2"
+RETRIEVAL_STAGE_VERSION = "ownward.longmemeval-s-retrieval/v4"
 READER_STAGE_VERSION = "ownward.longmemeval-s-reader/v1"
 JUDGE_STAGE_VERSION = "ownward.longmemeval-s-judge/v1"
 DIAGNOSTIC_STAGE_VERSION = "ownward.longmemeval-s-diagnostic/v2"
@@ -127,6 +127,7 @@ def validate_protocol(value: dict[str, Any]) -> None:
     require(
         retrieval["search_limit"] >= retrieval["read_limit"] > 0
         and 0 < retrieval.get("evidence_search_limit_per_source", 0) <= retrieval["read_limit"]
+        and retrieval.get("evidence_selection_policy") == "rank-depth-diagonal-budget-fit/v1"
         and retrieval["context_max_chars"] > 0,
         "retrieval protocol is invalid",
     )
@@ -997,6 +998,7 @@ def official_prompt(evaluator: Path, question: dict[str, Any], hypothesis: str) 
 def retrieve(runtime: OwnwardRuntime, question: str, protocol: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     require(runtime.client is not None, "Ownward client is unavailable")
     settings = protocol["retrieval"]
+    selection_policy = settings["evidence_selection_policy"]
     started = time.monotonic()
     search = runtime.client.call_tool("ownward_search", {"query": question, "limit": settings["search_limit"]})
     search_ms = (time.monotonic() - started) * 1000
@@ -1006,30 +1008,117 @@ def retrieve(runtime: OwnwardRuntime, question: str, protocol: dict[str, Any]) -
     evidence_search_ms = 0.0
     read_ms = 0.0
     used_chars = 0
-    observed: list[dict[str, Any]] = []
+    observed: list[dict[str, Any]] = [
+        {"id": result["id"], "score": result.get("score"), "signals": result.get("signals", [])}
+        for result in results
+        if isinstance(result, dict) and isinstance(result.get("id"), str)
+    ]
     read_ids: list[str] = []
     evidence_read_ids: list[str] = []
     read_paths: list[dict[str, Any]] = []
-    budget_exhausted = False
-    for result in results:
-        if not isinstance(result, dict) or not isinstance(result.get("id"), str):
-            continue
-        source_id = result["id"]
-        observed.append({"id": source_id, "score": result.get("score"), "signals": result.get("signals", [])})
-        remaining_reads = settings["read_limit"] - len(evidence)
-        if remaining_reads <= 0:
-            break
+    lanes: list[dict[str, Any]] = []
+    selection_steps: list[dict[str, Any]] = []
+    path_by_source: dict[str, dict[str, Any]] = {}
+
+    def select_reference(
+        source_id: str,
+        reference: dict[str, Any],
+        depth: int,
+        source_rank: int,
+        priority_layer: int,
+    ) -> None:
+        nonlocal read_ms, used_chars
+        step = {
+            "source_id": source_id, "source_rank": source_rank, "mode": "evidence", "depth": depth,
+            "priority_layer": priority_layer,
+            "evidence_id": reference["id"], "content_runes": reference["content_runes"],
+        }
+        if used_chars + reference["content_runes"] > settings["context_max_chars"]:
+            selection_steps.append({**step, "selected": False, "reason": "context_budget"})
+            return
         before = time.monotonic()
-        narrowed = runtime.client.call_tool("ownward_evidence_search", {
-            "source_id": source_id,
-            "query": question,
-            "limit": min(settings["evidence_search_limit_per_source"], remaining_reads),
-        })
-        evidence_search_ms += (time.monotonic() - before) * 1000
-        references = narrowed.get("evidence") if isinstance(narrowed, dict) else None
-        require(isinstance(references, list), "Ownward evidence search returned no evidence list")
-        if references:
-            source_evidence_ids: list[str] = []
+        try:
+            read = runtime.client.call_tool("ownward_evidence_read", {"id": reference["id"]})
+        except MCPError:
+            read_ms += (time.monotonic() - before) * 1000
+            selection_steps.append({**step, "selected": False, "reason": "unreadable"})
+            return
+        read_ms += (time.monotonic() - before) * 1000
+        narrowed_evidence = read.get("evidence") if isinstance(read, dict) else None
+        if not (
+            isinstance(narrowed_evidence, dict)
+            and narrowed_evidence.get("id") == reference["id"]
+            and narrowed_evidence.get("source_id") == source_id
+            and isinstance(narrowed_evidence.get("content"), str)
+            and len(narrowed_evidence["content"]) == reference["content_runes"]
+        ):
+            selection_steps.append({**step, "selected": False, "reason": "unreadable"})
+            return
+        content = narrowed_evidence["content"]
+        evidence.append({"id": source_id, "evidence_id": reference["id"], "content": content})
+        evidence_read_ids.append(reference["id"])
+        used_chars += len(content)
+        path = path_by_source.get(source_id)
+        if path is None:
+            path = {"source_id": source_id, "mode": "evidence", "evidence_ids": []}
+            path_by_source[source_id] = path
+            read_paths.append(path)
+            read_ids.append(source_id)
+        path["evidence_ids"].append(reference["id"])
+        selection_steps.append({**step, "selected": True})
+
+    def select_full(source_id: str, source_rank: int, priority_layer: int) -> None:
+        nonlocal read_ms, used_chars
+        base_step = {
+            "source_id": source_id, "source_rank": source_rank, "mode": "full", "depth": 0,
+            "priority_layer": priority_layer,
+        }
+        before = time.monotonic()
+        try:
+            read = runtime.client.call_tool("ownward_read", {"id": source_id})
+        except MCPError:
+            read_ms += (time.monotonic() - before) * 1000
+            selection_steps.append({**base_step, "selected": False, "reason": "unreadable"})
+            return
+        read_ms += (time.monotonic() - before) * 1000
+        information = read.get("information") if isinstance(read, dict) else None
+        if not isinstance(information, dict) or not isinstance(information.get("content"), str):
+            selection_steps.append({**base_step, "selected": False, "reason": "unreadable"})
+            return
+        content = information["content"]
+        step = {**base_step, "content_runes": len(content)}
+        if used_chars + len(content) > settings["context_max_chars"]:
+            selection_steps.append({**step, "selected": False, "reason": "context_budget"})
+            return
+        evidence.append({"id": information["id"], "content": content})
+        read_ids.append(source_id)
+        read_paths.append({"source_id": source_id, "mode": "full", "evidence_ids": []})
+        path_by_source[source_id] = read_paths[-1]
+        used_chars += len(content)
+        selection_steps.append({**step, "selected": True})
+
+    # Search fixes source rank; evidence search fixes passage depth.  Traverse
+    # their sum as a diagonal priority layer, breaking ties toward shallower
+    # depth.  This bounded fairness gives high-ranked sources useful depth while
+    # admitting progressively lower-ranked sources without comparing unrelated
+    # channel scores.  Sources are discovered only when their rank first enters
+    # a layer, and a non-fitting item consumes no read slot.
+    maximum_depth = int(settings["evidence_search_limit_per_source"])
+    for priority_layer in range(len(observed) + maximum_depth - 1):
+        if len(evidence) >= settings["read_limit"]:
+            break
+        if priority_layer < len(observed):
+            source_rank = priority_layer
+            source_id = observed[source_rank]["id"]
+            before = time.monotonic()
+            narrowed = runtime.client.call_tool("ownward_evidence_search", {
+                "source_id": source_id,
+                "query": question,
+                "limit": maximum_depth,
+            })
+            evidence_search_ms += (time.monotonic() - before) * 1000
+            references = narrowed.get("evidence") if isinstance(narrowed, dict) else None
+            require(isinstance(references, list), "Ownward evidence search returned no evidence list")
             for reference in references:
                 require(
                     isinstance(reference, dict)
@@ -1039,54 +1128,27 @@ def retrieve(runtime: OwnwardRuntime, question: str, protocol: dict[str, Any]) -
                     and reference["content_runes"] > 0,
                     "Ownward evidence search returned an invalid source-bound reference",
                 )
-                if used_chars + reference["content_runes"] > settings["context_max_chars"]:
-                    budget_exhausted = True
-                    break
-                before = time.monotonic()
-                read = runtime.client.call_tool("ownward_evidence_read", {"id": reference["id"]})
-                read_ms += (time.monotonic() - before) * 1000
-                narrowed_evidence = read.get("evidence") if isinstance(read, dict) else None
-                require(
-                    isinstance(narrowed_evidence, dict)
-                    and narrowed_evidence.get("id") == reference["id"]
-                    and narrowed_evidence.get("source_id") == source_id
-                    and isinstance(narrowed_evidence.get("content"), str)
-                    and len(narrowed_evidence["content"]) == reference["content_runes"],
-                    "Ownward evidence read did not resolve the source-bound reference",
-                )
-                evidence.append({"id": source_id, "evidence_id": reference["id"], "content": narrowed_evidence["content"]})
-                evidence_read_ids.append(reference["id"])
-                source_evidence_ids.append(reference["id"])
-                used_chars += len(narrowed_evidence["content"])
-                if len(evidence) >= settings["read_limit"]:
-                    break
-            if source_evidence_ids:
-                read_ids.append(source_id)
-                read_paths.append({"source_id": source_id, "mode": "evidence", "evidence_ids": source_evidence_ids})
-            if budget_exhausted or len(evidence) >= settings["read_limit"]:
+            lanes.append({"source_id": source_id, "references": references})
+        for depth in range(min(priority_layer, maximum_depth - 1) + 1):
+            if len(evidence) >= settings["read_limit"]:
                 break
-            continue
-        before = time.monotonic()
-        read = runtime.client.call_tool("ownward_read", {"id": source_id})
-        read_ms += (time.monotonic() - before) * 1000
-        information = read.get("information") if isinstance(read, dict) else None
-        if not isinstance(information, dict) or not isinstance(information.get("content"), str):
-            continue
-        content = information["content"]
-        if used_chars + len(content) > settings["context_max_chars"]:
-            break
-        evidence.append({"id": information["id"], "content": content})
-        read_ids.append(source_id)
-        read_paths.append({"source_id": source_id, "mode": "full", "evidence_ids": []})
-        used_chars += len(content)
-        if len(evidence) >= settings["read_limit"]:
-            break
+            source_rank = priority_layer - depth
+            if source_rank >= len(lanes):
+                continue
+            lane = lanes[source_rank]
+            references = lane["references"]
+            if depth < len(references):
+                select_reference(lane["source_id"], references[depth], depth, source_rank, priority_layer)
+            elif depth == 0 and not references:
+                select_full(lane["source_id"], source_rank, priority_layer)
     require(evidence, "Ownward retrieval produced no readable evidence")
     return evidence, {
         "search_ms": search_ms, "evidence_search_ms": evidence_search_ms, "read_ms": read_ms,
         "total_ms": search_ms + evidence_search_ms + read_ms, "returned": observed,
         "read_ids": read_ids, "evidence_read_ids": evidence_read_ids, "read_paths": read_paths,
         "context_chars": used_chars,
+        "selection_policy": selection_policy,
+        "selection_steps": selection_steps,
     }
 
 

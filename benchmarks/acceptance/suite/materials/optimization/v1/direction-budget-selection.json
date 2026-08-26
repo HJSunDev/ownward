@@ -1,0 +1,201 @@
+{
+  "schema": "ownward.kernel-consumer-optimization-view/v1",
+  "version": "ownward-kernel-optimization-view/v1",
+  "optimization_view": {
+    "id": "budget-fit-evidence-selection-v2",
+    "direction": "retrieval_architecture_and_algorithm",
+    "formal_failure_cluster": "prefix_greedy_context_budget_starvation",
+    "formal_source": {
+      "candidate": "99f519018df99bd5202b0c571b8e43481cd1b80e",
+      "diagnostics_sha256": "15bb1dfc66c8c77a7cd306ffab03ff61f7a5ad7f26d69e35421a1d1276ff6d72",
+      "report_sha256": "3e7355c61a538e52663e8be5c9c93b83493238fe5bda72640b89504518fe89d9",
+      "formal_errors": 258,
+      "mapped_cluster_errors": 14,
+      "mechanical_observation": {
+        "all_targets_returned": 14,
+        "all_target_sets_fit_budget": 14,
+        "prefix_budget_stop_on_unread_target": 14,
+        "single_target_questions": 12,
+        "two_target_questions": 2,
+        "target_rank_2": 8,
+        "target_rank_3": 5,
+        "target_rank_4": 1
+      }
+    },
+    "scoring": {
+      "context_budget_chars": 24000,
+      "read_limit": 8,
+      "evidence_search_limit_per_source": 3,
+      "candidate_policy": "rank-depth-diagonal-budget-fit/v1",
+      "score_unit": "required_source_bound_evidence_item",
+      "large_improvement_gate": "all_budget_feasible_required_evidence_delivered",
+      "rejection": "any_required_evidence_omission_or_protected_regression"
+    },
+    "v0_baseline": {
+      "required_evidence_question_recall": 0.0,
+      "required_evidence_question_error_rate": 1.0,
+      "prefix_termination_rate": 1.0
+    },
+    "frozen_gate": {
+      "required_evidence_item_recall_min": 1.0,
+      "required_evidence_question_recall_min": 1.0,
+      "required_evidence_question_error_rate_max": 0.0,
+      "rank_depth_diagonal_order_rate_min": 1.0,
+      "top_rank_three_passage_coverage_min": 1.0,
+      "multi_source_multi_depth_coverage_min": 1.0,
+      "budget_skip_continuation_rate_min": 1.0,
+      "lazy_evidence_search_rate_min": 1.0,
+      "context_budget_compliance_min": 1.0,
+      "read_limit_compliance_min": 1.0,
+      "selection_policy_identity_rate_min": 1.0,
+      "consumer_retrieval_p95_ms_max": 600.0,
+      "consumer_retrieval_limit_source": "benchmarks/acceptance/suite/adapters/product_resource/thresholds.json#limits.warm_query_p95_ms_max",
+      "consumer_retrieval_limit_source_sha256": "18887027da298676b955d687571712beea571ead0a4995cf514a4bf432f60026",
+      "direction_view_max_seconds": 180,
+      "direction_validation_max_seconds": 600,
+      "protected_regression_allowed": false
+    },
+    "protected_chains": {
+      "on_demand_evidence_delivery_commit": "e6bfc82c0750ed0db30ff67b9ec6f7a3ca446570",
+      "semantic_representation_commit": "436e12c3b97ad6c78254fdc8296a5aa6bb8c8665"
+    },
+    "leakage_policy": {
+      "formal_question_text": false,
+      "formal_answer": false,
+      "formal_gold_identity": false,
+      "formal_session_content": false,
+      "facts_and_expressions_are_synthetic_and_disjoint": true
+    }
+  },
+  "cases": [
+    {
+      "case_id": "B01",
+      "query": "Where is the amber relay seal recorded?",
+      "required_evidence": [{"source_id": "B01-T", "marker": "HELIX-214"}],
+      "max_evidence_search_calls": 2,
+      "sources": [
+        {"fixture_id": "B01-D1", "content": "Amber relay preliminary ledger.", "padding": "Amber relay routine draft. ", "padding_repeat": 500},
+        {"fixture_id": "B01-T", "content": "The amber relay seal is HELIX-214.", "padding": "Amber relay verified register. ", "padding_repeat": 500}
+      ]
+    },
+    {
+      "case_id": "B02",
+      "query": "What is the cedar transit marker?",
+      "required_evidence": [{"source_id": "B02-T", "marker": "ORBIT-563"}],
+      "max_evidence_search_calls": 3,
+      "sources": [
+        {"fixture_id": "B02-D1", "content": "Cedar transit provisional note.", "padding": "Cedar transit ordinary log. ", "padding_repeat": 500},
+        {"fixture_id": "B02-D2", "content": "Cedar transit superseded note.", "padding": "Cedar transit ordinary log. ", "padding_repeat": 500},
+        {"fixture_id": "B02-T", "content": "The cedar transit marker is ORBIT-563.", "padding": "Cedar transit verified log. ", "padding_repeat": 500}
+      ]
+    },
+    {
+      "case_id": "B03",
+      "query": "What is the lunar workshop latch?",
+      "required_evidence": [{"source_id": "B03-T", "marker": "QUARTZ-807"}],
+      "max_evidence_search_calls": 4,
+      "sources": [
+        {"fixture_id": "B03-D1", "content": "Lunar workshop draft latch note.", "padding": "Lunar workshop routine entry. ", "padding_repeat": 500},
+        {"fixture_id": "B03-D2", "content": "Lunar workshop trial latch note.", "padding": "Lunar workshop routine entry. ", "padding_repeat": 500},
+        {"fixture_id": "B03-D3", "content": "Lunar workshop rejected latch note.", "padding": "Lunar workshop routine entry. ", "padding_repeat": 500},
+        {"fixture_id": "B03-T", "content": "The lunar workshop latch is QUARTZ-807.", "padding": "Lunar workshop verified entry. ", "padding_repeat": 500}
+      ]
+    },
+    {
+      "case_id": "B04",
+      "query": "Which two steps completed the fern observatory transfer?",
+      "required_evidence": [
+        {"source_id": "B04-T1", "marker": "copper bridge"},
+        {"source_id": "B04-T2", "marker": "silver gate"}
+      ],
+      "max_evidence_search_calls": 3,
+      "sources": [
+        {"fixture_id": "B04-T1", "content": "Fern observatory transfer completed steps: first used the copper bridge. Fern observatory transfer completed steps. ", "padding": "Fern observatory transfer record. ", "padding_repeat": 500},
+        {"fixture_id": "B04-D1", "content": "Fern observatory transfer inventory only.", "padding": "Fern observatory transfer record. ", "padding_repeat": 500},
+        {"fixture_id": "B04-T2", "content": "Fern observatory transfer completed steps: then confirmed the silver gate. Fern observatory transfer completed steps. ", "padding": "Fern observatory transfer record. ", "padding_repeat": 500}
+      ]
+    },
+    {
+      "case_id": "B05",
+      "query": "What is the cobalt harbor release code?",
+      "required_evidence": [{"source_id": "B05-T", "marker": "NOVA-442"}],
+      "max_evidence_search_calls": 4,
+      "sources": [
+        {"fixture_id": "B05-D1", "content": "Cobalt harbor release draft alpha.", "padding": "Cobalt harbor release draft. ", "padding_repeat": 500},
+        {"fixture_id": "B05-D2", "content": "Cobalt harbor release draft beta.", "padding": "Cobalt harbor release draft. ", "padding_repeat": 500},
+        {"fixture_id": "B05-D3", "content": "Cobalt harbor release draft gamma.", "padding": "Cobalt harbor release draft. ", "padding_repeat": 500},
+        {"fixture_id": "B05-T", "content": "The cobalt harbor release code is NOVA-442.", "padding": "Cobalt harbor release verified. ", "padding_repeat": 500}
+      ]
+    },
+    {
+      "case_id": "B06",
+      "query": "What compact signal follows the oversized archive?",
+      "context_budget_chars": 500,
+      "read_limit": 3,
+      "required_evidence": [{"source_id": "B06-T", "marker": "PINE-118"}],
+      "max_evidence_search_calls": 2,
+      "sources": [
+        {"fixture_id": "B06-D1", "content": "Reference volume unavailable.", "padding": "Neutral inventory material. ", "padding_repeat": 30, "signals": ["semantic"]},
+        {"fixture_id": "B06-T", "content": "The compact signal is PINE-118."}
+      ]
+    },
+    {
+      "case_id": "B07",
+      "query": "Which three summit transit facts are required?",
+      "required_evidence": [
+        {"source_id": "B07-T", "marker": "DAWN-31"},
+        {"source_id": "B07-T", "marker": "NOON-52"},
+        {"source_id": "B07-T", "marker": "DUSK-74"}
+      ],
+      "max_evidence_search_calls": 4,
+      "sources": [
+        {"fixture_id": "B07-T", "segments": [
+          {"content": "Summit transit departure fact DAWN-31.", "width": 384, "padding_char": "~"},
+          {"content": "Summit transit transfer fact NOON-52.", "width": 384, "padding_char": "~"},
+          {"content": "Summit transit arrival fact DUSK-74.", "width": 384, "padding_char": "~"}
+        ]},
+        {"fixture_id": "B07-D01", "content": "Summit transit distractor 01.", "padding": "Summit transit neutral ledger. ", "padding_repeat": 20},
+        {"fixture_id": "B07-D02", "content": "Summit transit distractor 02.", "padding": "Summit transit neutral ledger. ", "padding_repeat": 20},
+        {"fixture_id": "B07-D03", "content": "Summit transit distractor 03.", "padding": "Summit transit neutral ledger. ", "padding_repeat": 20},
+        {"fixture_id": "B07-D04", "content": "Summit transit distractor 04.", "padding": "Summit transit neutral ledger. ", "padding_repeat": 20},
+        {"fixture_id": "B07-D05", "content": "Summit transit distractor 05.", "padding": "Summit transit neutral ledger. ", "padding_repeat": 20},
+        {"fixture_id": "B07-D06", "content": "Summit transit distractor 06.", "padding": "Summit transit neutral ledger. ", "padding_repeat": 20},
+        {"fixture_id": "B07-D07", "content": "Summit transit distractor 07.", "padding": "Summit transit neutral ledger. ", "padding_repeat": 20},
+        {"fixture_id": "B07-D08", "content": "Summit transit distractor 08.", "padding": "Summit transit neutral ledger. ", "padding_repeat": 20},
+        {"fixture_id": "B07-D09", "content": "Summit transit distractor 09.", "padding": "Summit transit neutral ledger. ", "padding_repeat": 20},
+        {"fixture_id": "B07-D10", "content": "Summit transit distractor 10.", "padding": "Summit transit neutral ledger. ", "padding_repeat": 20},
+        {"fixture_id": "B07-D11", "content": "Summit transit distractor 11.", "padding": "Summit transit neutral ledger. ", "padding_repeat": 20},
+        {"fixture_id": "B07-D12", "content": "Summit transit distractor 12.", "padding": "Summit transit neutral ledger. ", "padding_repeat": 20},
+        {"fixture_id": "B07-D13", "content": "Summit transit distractor 13.", "padding": "Summit transit neutral ledger. ", "padding_repeat": 20},
+        {"fixture_id": "B07-D14", "content": "Summit transit distractor 14.", "padding": "Summit transit neutral ledger. ", "padding_repeat": 20},
+        {"fixture_id": "B07-D15", "content": "Summit transit distractor 15.", "padding": "Summit transit neutral ledger. ", "padding_repeat": 20},
+        {"fixture_id": "B07-D16", "content": "Summit transit distractor 16.", "padding": "Summit transit neutral ledger. ", "padding_repeat": 20},
+        {"fixture_id": "B07-D17", "content": "Summit transit distractor 17.", "padding": "Summit transit neutral ledger. ", "padding_repeat": 20},
+        {"fixture_id": "B07-D18", "content": "Summit transit distractor 18.", "padding": "Summit transit neutral ledger. ", "padding_repeat": 20},
+        {"fixture_id": "B07-D19", "content": "Summit transit distractor 19.", "padding": "Summit transit neutral ledger. ", "padding_repeat": 20},
+        {"fixture_id": "B07-D20", "content": "Summit transit distractor 20.", "padding": "Summit transit neutral ledger. ", "padding_repeat": 20},
+        {"fixture_id": "B07-D21", "content": "Summit transit distractor 21.", "padding": "Summit transit neutral ledger. ", "padding_repeat": 20},
+        {"fixture_id": "B07-D22", "content": "Summit transit distractor 22.", "padding": "Summit transit neutral ledger. ", "padding_repeat": 20},
+        {"fixture_id": "B07-D23", "content": "Summit transit distractor 23.", "padding": "Summit transit neutral ledger. ", "padding_repeat": 20}
+      ]
+    },
+    {
+      "case_id": "B08",
+      "query": "Which harbor sequence facts completed the transfer?",
+      "required_evidence": [
+        {"source_id": "B08-A", "marker": "EMBER-21"},
+        {"source_id": "B08-A", "marker": "TIDE-68"},
+        {"source_id": "B08-C", "marker": "MINT-95"}
+      ],
+      "max_evidence_search_calls": 3,
+      "sources": [
+        {"fixture_id": "B08-A", "segments": [
+          {"content": "Harbor sequence began with EMBER-21.", "width": 384, "padding_char": "~"},
+          {"content": "Harbor sequence continued with TIDE-68.", "width": 384, "padding_char": "~"}
+        ]},
+        {"fixture_id": "B08-D", "content": "Harbor sequence inventory distractor.", "padding": "Harbor sequence neutral ledger. ", "padding_repeat": 20},
+        {"fixture_id": "B08-C", "content": "Harbor sequence completed with MINT-95.", "padding": "Harbor sequence verified record. ", "padding_repeat": 20}
+      ]
+    }
+  ]
+}

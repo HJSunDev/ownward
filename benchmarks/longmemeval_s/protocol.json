@@ -28,6 +28,7 @@
     "search_limit": 24,
     "read_limit": 8,
     "evidence_search_limit_per_source": 3,
+    "evidence_selection_policy": "rank-depth-diagonal-budget-fit/v1",
     "context_max_chars": 24000,
     "query_timeout_seconds": 60
   },

@@ -50,6 +50,7 @@ def validate_materials(root: Path) -> dict[str, Any]:
         "benchmarks/acceptance/suite/materials/frontier/v1/calibration.json",
         "benchmarks/acceptance/suite/materials/optimization/v1/direction-organization-granularity.json",
         "benchmarks/acceptance/suite/materials/optimization/v1/direction-semantic-representation.json",
+        "benchmarks/acceptance/suite/materials/optimization/v1/direction-budget-selection.json",
     }
     _require(isinstance(files, list) and len(files) == len(expected_manifest_paths), "材料清单规模无效")
     _require(
@@ -144,6 +145,7 @@ def validate_materials(root: Path) -> dict[str, Any]:
 
     _validate_optimization_view(root / "optimization" / "v1" / "direction-organization-granularity.json")
     _validate_semantic_representation_view(root / "optimization" / "v1" / "direction-semantic-representation.json")
+    _validate_budget_selection_view(root / "optimization" / "v1" / "direction-budget-selection.json")
 
     historical_product = load_json(historical_root / "dataset.json")
     product_root = root / "product" / ACTIVE_PRODUCT_DIRECTORY
@@ -410,6 +412,115 @@ def _validate_semantic_representation_view(path: Path) -> None:
     query_embeddings = view.get("frozen_query_embeddings")
     query_ids = {item["query_id"] for item in queries}
     _require(isinstance(query_embeddings, dict) and set(query_embeddings) == query_ids and all(_valid_vector(item) for item in query_embeddings.values()), "优化视图查询向量无效")
+
+
+def _validate_budget_selection_view(path: Path) -> None:
+    view = load_json(path)
+    _require(view.get("schema") == "ownward.kernel-consumer-optimization-view/v1", "预算选择视图 schema 无效")
+    _require(view.get("version") == "ownward-kernel-optimization-view/v1", "预算选择视图版本无效")
+    contract = _mapping(view, "optimization_view")
+    _require(contract.get("id") == "budget-fit-evidence-selection-v2", "预算选择视图身份无效")
+    _require(contract.get("direction") == "retrieval_architecture_and_algorithm", "预算选择视图方向无效")
+    source = _mapping(contract, "formal_source")
+    observed = _mapping(source, "mechanical_observation")
+    _require(source.get("candidate") == "99f519018df99bd5202b0c571b8e43481cd1b80e", "预算选择视图未绑定 V0")
+    _require(source.get("formal_errors") == 258 and source.get("mapped_cluster_errors") == 14, "预算选择视图正式规模无效")
+    _require(
+        observed == {
+            "all_targets_returned": 14,
+            "all_target_sets_fit_budget": 14,
+            "prefix_budget_stop_on_unread_target": 14,
+            "single_target_questions": 12,
+            "two_target_questions": 2,
+            "target_rank_2": 8,
+            "target_rank_3": 5,
+            "target_rank_4": 1,
+        },
+        "预算选择视图的正式机制观察漂移",
+    )
+    scoring = _mapping(contract, "scoring")
+    _require(
+        scoring.get("context_budget_chars") == 24000
+        and scoring.get("read_limit") == 8
+        and scoring.get("evidence_search_limit_per_source") == 3
+        and scoring.get("candidate_policy") == "rank-depth-diagonal-budget-fit/v1"
+        and scoring.get("score_unit") == "required_source_bound_evidence_item",
+        "预算选择视图消费合同漂移",
+    )
+    baseline = _mapping(contract, "v0_baseline")
+    gate = _mapping(contract, "frozen_gate")
+    _require(float(baseline.get("required_evidence_question_recall", -1)) == 0.0, "预算选择 V0 召回基线漂移")
+    _require(float(baseline.get("required_evidence_question_error_rate", -1)) == 1.0, "预算选择 V0 错误基线漂移")
+    _require(float(gate.get("required_evidence_item_recall_min", -1)) == 1.0, "预算选择证据项召回门槛漂移")
+    _require(float(gate.get("required_evidence_question_recall_min", -1)) == 1.0, "预算选择问题召回门槛漂移")
+    _require(float(gate.get("required_evidence_question_error_rate_max", -1)) == 0.0, "预算选择错误门槛漂移")
+    for name in (
+        "rank_depth_diagonal_order_rate_min", "top_rank_three_passage_coverage_min",
+        "multi_source_multi_depth_coverage_min", "budget_skip_continuation_rate_min",
+        "lazy_evidence_search_rate_min", "context_budget_compliance_min",
+        "read_limit_compliance_min", "selection_policy_identity_rate_min",
+    ):
+        _require(float(gate.get(name, -1)) == 1.0, f"预算选择保护门槛漂移: {name}")
+    _require(float(gate.get("consumer_retrieval_p95_ms_max", -1)) == 600.0, "预算选择时延门槛漂移")
+    _require(gate.get("consumer_retrieval_limit_source_sha256") == "18887027da298676b955d687571712beea571ead0a4995cf514a4bf432f60026", "预算选择时延权威摘要漂移")
+    _require(gate.get("protected_regression_allowed") is False, "预算选择视图不得允许保护退化")
+    protected = _mapping(contract, "protected_chains")
+    _require(protected.get("on_demand_evidence_delivery_commit") == "e6bfc82c0750ed0db30ff67b9ec6f7a3ca446570", "按需证据保护身份漂移")
+    _require(protected.get("semantic_representation_commit") == "436e12c3b97ad6c78254fdc8296a5aa6bb8c8665", "语义表示保护身份漂移")
+    leakage = _mapping(contract, "leakage_policy")
+    _require(all(leakage.get(name) is False for name in ("formal_question_text", "formal_answer", "formal_gold_identity", "formal_session_content")), "预算选择视图泄漏边界无效")
+    cases = view.get("cases")
+    _require(isinstance(cases, list) and len(cases) == 8 and all(isinstance(item, dict) for item in cases), "预算选择视图样本规模无效")
+    case_ids = [item.get("case_id") for item in cases]
+    _require(len(case_ids) == len(set(case_ids)) and all(isinstance(item, str) and item for item in case_ids), "预算选择视图样本身份无效")
+    for case in cases:
+        sources = case.get("sources")
+        _require(isinstance(case.get("query"), str) and case["query"].strip(), "预算选择查询无效")
+        _require(isinstance(sources, list) and 2 <= len(sources) <= 24 and all(isinstance(item, dict) for item in sources), "预算选择来源集合无效")
+        source_ids = [item.get("fixture_id") for item in sources]
+        _require(len(source_ids) == len(set(source_ids)) and all(isinstance(item, str) and item for item in source_ids), "预算选择来源身份无效")
+        required = case.get("required_evidence")
+        _require(isinstance(required, list) and required and all(isinstance(item, dict) for item in required), "预算选择必要证据无效")
+        required_pairs = [(item.get("source_id"), item.get("marker")) for item in required]
+        _require(
+            len(required_pairs) == len(set(required_pairs))
+            and all(isinstance(source_id, str) and source_id in source_ids and isinstance(marker, str) and marker for source_id, marker in required_pairs),
+            "预算选择必要证据身份无效",
+        )
+        contents: dict[str, str] = {}
+        for source_item in sources:
+            segments = source_item.get("segments")
+            if segments is not None:
+                _require(isinstance(segments, list) and 1 <= len(segments) <= 3 and all(isinstance(item, dict) for item in segments), "预算选择分段来源无效")
+                built: list[str] = []
+                for segment in segments:
+                    content = segment.get("content")
+                    width = segment.get("width")
+                    padding = segment.get("padding_char")
+                    _require(
+                        isinstance(content, str) and content.strip() and width == 384
+                        and isinstance(padding, str) and len(padding) == 1 and len(content) <= width,
+                        "预算选择分段内容无效",
+                    )
+                    built.append(content.ljust(width, padding))
+                contents[str(source_item["fixture_id"])] = "".join(built)
+            else:
+                _require(isinstance(source_item.get("content"), str) and source_item["content"].strip(), "预算选择来源内容无效")
+                repeat = source_item.get("padding_repeat", 0)
+                _require(isinstance(repeat, int) and repeat >= 0, "预算选择来源填充次数无效")
+                _require(repeat == 0 or isinstance(source_item.get("padding"), str) and source_item["padding"], "预算选择来源填充无效")
+                contents[str(source_item["fixture_id"])] = str(source_item["content"]) + str(source_item.get("padding", "")) * repeat
+        _require(all(marker in contents[source_id] for source_id, marker in required_pairs), "预算选择必要证据标记未绑定来源正文")
+        maximum_calls = case.get("max_evidence_search_calls")
+        _require(isinstance(maximum_calls, int) and 1 <= maximum_calls <= len(sources), "预算选择惰性发现上限无效")
+        _require(int(case.get("context_budget_chars", 24000)) > 0 and 0 < int(case.get("read_limit", 8)) <= 8, "预算选择样本成本边界无效")
+    by_id = {str(item["case_id"]): item for item in cases}
+    _require(len(by_id["B07"]["sources"]) == 24 and len(by_id["B07"]["required_evidence"]) == 3, "预算选择最大来源同源深度保护无效")
+    _require(
+        len({item["source_id"] for item in by_id["B08"]["required_evidence"]}) >= 2
+        and sum(item["source_id"] == "B08-A" for item in by_id["B08"]["required_evidence"]) >= 2,
+        "预算选择多来源多深度保护无效",
+    )
 
 
 def _scenario(scenarios: Any, identifier: str) -> dict[str, Any]:

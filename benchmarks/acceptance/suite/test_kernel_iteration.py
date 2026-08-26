@@ -7,6 +7,16 @@ import kernel_iteration
 
 
 class KernelIterationTests(unittest.TestCase):
+    def test_observation_elapsed_accepts_go_fractional_precision(self) -> None:
+        self.assertAlmostEqual(
+            0.705696,
+            kernel_iteration._observation_elapsed({
+                "started_at": "2026-08-26T15:38:23.41786Z",
+                "finished_at": "2026-08-26T15:38:24.1235562Z",
+            }),
+            places=6,
+        )
+
     def test_classifies_only_proven_overflow_as_first_direction(self) -> None:
         mechanism, direction, status, samples = kernel_iteration.classify_problem(
             "target_evidence_not_read", True, True, True, 24001, "multi-session",
@@ -20,6 +30,18 @@ class KernelIterationTests(unittest.TestCase):
             "target_evidence_not_read", True, True, True, 24000, "multi-session",
         )
         self.assertEqual(pending[0], "pending_search_order_or_context_selection")
+        proven = kernel_iteration.classify_problem(
+            "target_evidence_not_read", True, True, True, 18000, "multi-session", None,
+            {
+                "unread_expected_count": 1,
+                "first_unread_is_expected": True,
+                "first_unread_exceeds_remaining_budget": True,
+                "all_expected_fit_empty_budget": True,
+                "formal_read_is_exact_search_prefix": True,
+            },
+        )
+        self.assertEqual(proven[0], "prefix_greedy_context_budget_starvation")
+        self.assertEqual(proven[1], "retrieval_architecture_and_algorithm")
 
     def test_search_miss_requires_mechanical_representation_evidence(self) -> None:
         result = kernel_iteration.classify_problem(
@@ -44,11 +66,19 @@ class KernelIterationTests(unittest.TestCase):
         problems = []
         for index in range(258):
             mechanism = "session_unit_context_overflow" if index < 119 else (
-                "pending_search_order_or_context_selection" if index < 133 else (
+                "prefix_greedy_context_budget_starvation" if index < 133 else (
                     "semantic_vector_representation_missing_after_oversized_input" if index < 249 else "reader_failure_after_complete_evidence"
                 )
             )
             problem = {"formal_question_identity": f"q-{index}", "mechanism": mechanism}
+            if mechanism == "prefix_greedy_context_budget_starvation":
+                offset = index - 119
+                rank = 2 if offset < 8 else (3 if offset < 13 else 4)
+                problem["observations"] = {"selection": {
+                    "first_unread_is_expected": True,
+                    "first_unread_rank": rank,
+                    "expected_ranks": [rank],
+                }}
             if mechanism == "semantic_vector_representation_missing_after_oversized_input":
                 problem["observations"] = {"representation": {
                     "latest_asset_count": 46 if index < 248 else 153,
@@ -123,6 +153,66 @@ class KernelIterationTests(unittest.TestCase):
         self.assertFalse(kernel_iteration.build_semantic_candidate_result(
             {}, {"selection": {}}, observations,
             {"direction": 1.0, "granularity_protection": 1.0, "protection": 1.0},
+            {"optimization_view": {"frozen_gate": gate}}, "worktree:slow",
+        )["passed"])
+
+    def test_builds_budget_candidate_with_both_closed_chain_protections(self) -> None:
+        observations = {
+            "direction": {"metrics": [
+                {"name": "required_evidence_item_recall", "value": 1.0},
+                {"name": "required_evidence_question_recall", "value": 1.0},
+                {"name": "required_evidence_question_error_rate", "value": 0.0},
+                {"name": "rank_depth_diagonal_order_rate", "value": 1.0},
+                {"name": "top_rank_three_passage_coverage", "value": 1.0},
+                {"name": "multi_source_multi_depth_coverage", "value": 1.0},
+                {"name": "budget_skip_continuation_rate", "value": 1.0},
+                {"name": "lazy_evidence_search_rate", "value": 1.0},
+                {"name": "context_budget_compliance", "value": 1.0},
+                {"name": "read_limit_compliance", "value": 1.0},
+                {"name": "selection_policy_identity_rate", "value": 1.0},
+                {"name": "exact_repeatability_rate", "value": 1.0},
+                {"name": "consumer_retrieval_p95_ms", "value": 5.0},
+            ]},
+            "semantic_protection": {"metrics": [
+                {"name": "semantic_search_recall", "value": 1.0},
+                {"name": "semantic_search_error_rate", "value": 0.0},
+                {"name": "long_asset_vector_recovery", "value": 1.0},
+                {"name": "restart_semantic_recall", "value": 1.0},
+                {"name": "rebuild_semantic_recall", "value": 1.0},
+                {"name": "derived_vectors_per_asset", "value": 1.0},
+            ]},
+            "granularity_protection": {"metrics": [
+                {"name": name, "value": 1.0}
+                for name in ("required_evidence_budget_recall", "scale_evidence_recall", "budget_fit_protection", "fusion_recall", "fusion_ndcg")
+            ]},
+            "protection": {"metrics": [{"name": "identity_stability", "value": 1.0}]},
+        }
+        gate = {
+            "required_evidence_item_recall_min": 1.0,
+            "required_evidence_question_recall_min": 1.0,
+            "required_evidence_question_error_rate_max": 0.0,
+            "rank_depth_diagonal_order_rate_min": 1.0,
+            "top_rank_three_passage_coverage_min": 1.0,
+            "multi_source_multi_depth_coverage_min": 1.0,
+            "budget_skip_continuation_rate_min": 1.0,
+            "lazy_evidence_search_rate_min": 1.0,
+            "context_budget_compliance_min": 1.0,
+            "read_limit_compliance_min": 1.0,
+            "selection_policy_identity_rate_min": 1.0,
+            "consumer_retrieval_p95_ms_max": 600.0,
+        }
+        durations = {"direction": 1.0, "semantic_protection": 1.0, "granularity_protection": 1.0, "protection": 1.0}
+        result = kernel_iteration.build_budget_candidate_result(
+            {}, {"selection": {"cluster": "prefix-greedy"}}, observations, durations,
+            {"optimization_view": {"frozen_gate": gate}}, "worktree:test",
+        )
+        self.assertTrue(result["passed"])
+        observations["direction"]["metrics"] = [
+            {**item, "value": 601.0} if item["name"] == "consumer_retrieval_p95_ms" else item
+            for item in observations["direction"]["metrics"]
+        ]
+        self.assertFalse(kernel_iteration.build_budget_candidate_result(
+            {}, {"selection": {}}, observations, durations,
             {"optimization_view": {"frozen_gate": gate}}, "worktree:slow",
         )["passed"])
 

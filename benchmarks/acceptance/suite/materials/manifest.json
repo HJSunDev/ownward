@@ -41,6 +41,10 @@
     {
       "path": "benchmarks/acceptance/suite/materials/optimization/v1/direction-semantic-representation.json",
       "sha256": "f98a6adb20a2d470159a2d6b77c136671ab707cb81a9aa58a9dfb0536dd61e7f"
+    },
+    {
+      "path": "benchmarks/acceptance/suite/materials/optimization/v1/direction-budget-selection.json",
+      "sha256": "1b00ede752ea5a40d615a4de15edaca7b342530534f516c53b25223e9b760420"
     }
   ]
 }
