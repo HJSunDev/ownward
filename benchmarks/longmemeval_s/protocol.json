@@ -5,18 +5,22 @@
     "code_revision": "9e0b455f4ef0e2ab8f2e582289761153549043fc",
     "data_revision": "98d7416c24c778c2fee6e6f3006e7a073259d48f",
     "data_sha256": "d6f21ea9d60a0d56f34a05b609c79c88a451d2ae03597821ea3d5a9678c3a442",
-    "question_count": 500,
-    "judge_model": "gpt-4o-2024-08-06"
+    "question_count": 500
   },
   "memory": {
     "unit": "session",
     "capability_source": "codex",
     "create_batch_size": 20,
     "semantic_batch_size": 20,
-    "semantic_analysis_max_input_chars": 300000,
-    "semantic_model": "gpt-5.4-mini",
+    "semantic_input_representation": "ownward.semantic-deduplicated-body-table/v1",
+    "semantic_context_window_tokens": 1050000,
+    "semantic_analysis_input_token_upper_bound": 850000,
+    "semantic_analysis_output_token_upper_bound": 120000,
+    "semantic_context_safety_tokens": 80000,
+    "semantic_analysis_max_works": 20,
+    "semantic_model": "gpt-5.6-luna",
     "semantic_reasoning_effort": "low",
-    "semantic_max_output_tokens": 8192,
+    "semantic_max_output_tokens": 128000,
     "semantic_timeout_seconds": 180,
     "semantic_attempts": 3
   },
@@ -28,27 +32,32 @@
   },
   "reader": {
     "capability_source": "codex",
-    "model": "gpt-5.4",
+    "model": "gpt-5.6-luna",
     "reasoning_effort": "medium",
     "max_output_tokens": 1024,
     "timeout_seconds": 240,
     "attempts": 3
   },
   "judge": {
-    "capability_source": "official-openai",
-    "model": "gpt-4o-2024-08-06",
-    "temperature": 0,
-    "max_tokens": 10,
-    "budget_seconds_per_question": 5,
+    "capability_source": "codex",
+    "model": "gpt-5.6-terra",
+    "reasoning_effort": "medium",
+    "max_output_tokens": 64,
+    "timeout_seconds": 240,
     "attempts": 3
   },
   "execution": {
     "max_workers": 4,
     "codex_max_active": 8,
+    "codex_transport": "app-server-pool-stdio",
+    "codex_server_processes": 8,
     "calibration_questions": 4,
     "calibration_semantic_batches_per_question": 3,
     "question_wall_seconds": 900,
-    "full_wall_seconds": 28800,
+    "full_wall_seconds": 20400,
+    "normal_variation_reserve_ratio": 0.2,
+    "bounded_retry_reserve_ratio": 0.1,
+    "checkpoint_recovery_reserve_seconds": 3600,
     "total_sessions": 23867,
     "semantic_batches": 1498,
     "reader_requests": 500,
@@ -57,11 +66,24 @@
     "max_semantic_output_tokens": 12271616,
     "max_reader_input_chars": 12000000,
     "max_reader_output_tokens": 512000,
-    "max_judge_output_tokens": 5000
+    "max_judge_output_tokens": 32000
   },
   "acceptance": {
-    "minimum_accuracy": 0.822,
-    "reference": "https://github.com/xiaowu0162/LongMemEval/issues/53",
-    "reference_note": "Public LongMemEval-S result using the same cleaned data identity, gpt-5.4 answer model, official gpt-4o-2024-08-06 judge, and at most eight answer-facing evidence items."
+    "profile": "Ownward LongMemEval-S Production Profile",
+    "requires_complete_official_questions": true,
+    "direct_comparison_requires_equivalent_profile": true,
+    "quality_assessment_status": "not_determined",
+    "quality_assessment_basis": "no-equivalent-production-profile-reference",
+    "equivalent_profile_fields": [
+      "official_data",
+      "question_subset",
+      "semantic_model",
+      "reader_model",
+      "judge_model",
+      "reasoning_efforts",
+      "official_prompt",
+      "retrieval_budget",
+      "timing_boundary"
+    ]
   }
 }

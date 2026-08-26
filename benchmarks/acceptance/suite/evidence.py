@@ -103,7 +103,7 @@ def validate_adapters(suite_root: Path) -> dict[str, Any]:
     _require(community.get("data_revision") == "98d7416c24c778c2fee6e6f3006e7a073259d48f", "LongMemEval-S 数据版本未固定")
     _require(community.get("data_sha256") == "d6f21ea9d60a0d56f34a05b609c79c88a451d2ae03597821ea3d5a9678c3a442", "LongMemEval-S 数据摘要未固定")
     _require(community.get("questions") == 500, "LongMemEval-S 题量无效")
-    _require(community.get("capability_sources") == {"semantic": "codex", "reader": "codex", "judge": "official-openai"}, "LongMemEval-S 能力来源未固定")
+    _require(community.get("capability_sources") == {"semantic": "codex", "reader": "codex", "judge": "codex"}, "LongMemEval-S 能力来源未固定")
     adapter_path = (suite_root / str(community.get("adapter"))).resolve()
     protocol_path = (suite_root / str(community.get("protocol"))).resolve()
     _require(adapter_path.is_file() and protocol_path.is_file(), "LongMemEval-S 适配器或协议不存在")
@@ -317,26 +317,44 @@ def _validate_product(contract: dict[str, Any], report: dict[str, Any]) -> None:
 def _validate_community(contract: dict[str, Any], report: dict[str, Any]) -> None:
     definition = contract["evidence_layers"]["community"]
     _require(report.get("official_version") == definition["version"], "社区报告官方版本无效")
+    _require(report.get("profile") == definition["profile"], "社区报告生产评测口径无效")
     _require(report.get("capabilities") == definition["capabilities"], "社区报告能力来源无效")
     benchmark = report.get("benchmark")
     _require(isinstance(benchmark, dict) and benchmark.get("questions") == definition["questions"] and benchmark.get("complete") is True, "社区报告基准范围不完整")
     _require(set(benchmark.get("question_types", [])) == set(definition["question_types"]), "社区报告问题类型不完整")
     quality = report.get("quality")
     _require(isinstance(quality, dict) and isinstance(quality.get("accuracy"), (int, float)) and 0 <= quality["accuracy"] <= 1, "社区报告准确率无效")
-    _require(quality.get("minimum_accuracy") == definition["minimum_accuracy"], "社区报告质量门槛漂移")
-    _require(quality.get("passed") is (quality["accuracy"] >= definition["minimum_accuracy"]), "社区报告质量判定无效")
+    _require("minimum_accuracy" not in quality, "社区报告不得保留跨口径质量硬门槛")
+    _require(quality.get("comparison_policy") == definition["comparison_policy"], "社区报告比较口径无效")
+    assessment = definition["quality_assessment"]
+    _require(quality.get("hard_accuracy_threshold") is None and quality.get("score_complete") is True, "社区报告不得使用跨口径质量硬门槛")
+    _require(
+        quality.get("assessment_status") == assessment["status"]
+        and quality.get("assessment_basis") == assessment["basis"]
+        and quality.get("first_version_condition_satisfied") is assessment["first_version_condition_satisfied"]
+        and quality.get("passed") is None,
+        "社区质量判定不得伪造为已通过",
+    )
+    execution = report.get("execution")
+    _require(isinstance(execution, dict) and execution.get("complete") is True and execution.get("protocol_valid") is True and execution.get("evidence_complete") is True and execution.get("passed") is True, "社区正式执行或证据不完整")
     retrieval = report.get("retrieval")
     _require(isinstance(retrieval, dict) and all(isinstance(retrieval.get(name), (int, float)) and retrieval[name] > 0 for name in ("mean_ms", "p95_ms", "max_ms")), "社区报告检索时延无效")
     cost = report.get("cost")
     _require(isinstance(cost, dict) and cost.get("within_budget") is True and isinstance(cost.get("wall_seconds"), (int, float)), "社区报告成本边界无效")
+    diagnostics = report.get("diagnostics")
+    _require(isinstance(diagnostics, dict) and diagnostics.get("questions") == definition["questions"] and diagnostics.get("complete") is True, "社区诊断证据不完整")
+    _require(diagnostics.get("post_answer_only") is True and diagnostics.get("excluded_from_product_execution_and_scoring") is True, "社区诊断证据越过评分隔离边界")
     submission = report.get("submission")
     _require(isinstance(submission, dict), "社区报告缺少固定 submission")
     _require(_is_sha256(str(submission.get("package_sha256", ""))), "社区报告归档摘要无效")
     _require(_is_sha256(str(submission.get("official_evaluation_sha256", ""))), "社区报告官方评测摘要无效")
     _require(_is_sha256(str(submission.get("hypotheses_sha256", ""))), "社区报告回答摘要无效")
+    _require(_is_sha256(str(submission.get("diagnostics_sha256", ""))), "社区逐题诊断摘要无效")
+    _require(_is_sha256(str(submission.get("diagnostic_summary_sha256", ""))), "社区诊断汇总摘要无效")
     _require(_is_sha256(str(submission.get("checkpoint_manifest_sha256", ""))), "社区报告检查点清单摘要无效")
-    expected = benchmark["complete"] and quality["passed"] and cost["within_budget"]
-    _require(report.get("passed") is expected, "社区报告总判定与分轨结果不一致")
+    completion = report.get("completion")
+    _require(isinstance(completion, dict) and completion.get("status") == "not_satisfied" and completion.get("reason") == "community-quality-not-determined", "社区第一版完成状态无效")
+    _require(report.get("passed") is False, "社区质量尚未判定时不得形成通过检查点")
 
 
 def _recall(returned: list[str], expected: list[str]) -> float:

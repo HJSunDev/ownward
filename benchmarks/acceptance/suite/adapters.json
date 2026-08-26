@@ -40,7 +40,7 @@
       "official_track": "LongMemEval-S",
       "questions": 500,
       "public_capabilities": ["serve", "MCP create/search/read", "semantic work/submit"],
-      "capability_sources": {"semantic": "codex", "reader": "codex", "judge": "official-openai"},
+      "capability_sources": {"semantic": "codex", "reader": "codex", "judge": "codex"},
       "adapter": "../../longmemeval_s/run.py",
       "protocol": "../../longmemeval_s/protocol.json",
       "report_schema": "ownward.longmemeval-report/v1"

@@ -52,15 +52,26 @@ class EvidenceLayerTests(unittest.TestCase):
         report = self.common("ownward.longmemeval-report/v1")
         report.update({
             "official_version": "longmemeval-s/9e0b455f4ef0e2ab8f2e582289761153549043fc+d6f21ea9",
+            "profile": "Ownward LongMemEval-S Production Profile",
             "capabilities": self.contract["evidence_layers"]["community"]["capabilities"],
             "benchmark": {"questions": 500, "complete": True, "question_types": list(self.contract["evidence_layers"]["community"]["question_types"])},
-            "quality": {"accuracy": 0.83, "minimum_accuracy": 0.822, "passed": True},
+            "execution": {"complete": True, "protocol_valid": True, "evidence_complete": True, "passed": True},
+            "quality": {
+                "accuracy": 0.83, "comparison_policy": "equivalent-profile-only", "hard_accuracy_threshold": None,
+                "score_complete": True, "assessment_status": "not_determined",
+                "assessment_basis": "no-equivalent-production-profile-reference",
+                "first_version_condition_satisfied": False, "passed": None,
+            },
             "retrieval": {"mean_ms": 10.0, "p95_ms": 20.0, "max_ms": 30.0},
             "cost": {"wall_seconds": 14400.0, "within_budget": True},
+            "diagnostics": {"questions": 500, "complete": True, "post_answer_only": True, "excluded_from_product_execution_and_scoring": True},
             "submission": {
                 "package_sha256": "d" * 64, "official_evaluation_sha256": "e" * 64,
-                "hypotheses_sha256": "f" * 64, "checkpoint_manifest_sha256": "1" * 64,
+                "hypotheses_sha256": "f" * 64, "diagnostics_sha256": "2" * 64,
+                "diagnostic_summary_sha256": "3" * 64, "checkpoint_manifest_sha256": "1" * 64,
             },
+            "completion": {"status": "not_satisfied", "reason": "community-quality-not-determined"},
+            "passed": False,
         })
         return report
 
@@ -100,12 +111,18 @@ class EvidenceLayerTests(unittest.TestCase):
         with self.assertRaisesRegex(evidence.EvidenceError, "总判定"):
             evidence.validate_layer_report(self.contract, "product", report)
 
-    def test_valid_failure_report_is_preserved_as_evidence(self):
+    def test_low_accuracy_remains_valid_evidence_without_cross_profile_threshold(self):
         report = self.community_report()
-        report["quality"]["accuracy"] = 0.8
-        report["quality"]["passed"] = False
-        report["passed"] = False
+        report["quality"]["accuracy"] = 0.1
         evidence.validate_layer_report(self.contract, "community", report)
+
+    def test_high_accuracy_cannot_be_mislabeled_as_quality_pass_without_equivalent_basis(self):
+        report = self.community_report()
+        report["quality"]["accuracy"] = 1.0
+        report["quality"]["passed"] = True
+        report["passed"] = True
+        with self.assertRaisesRegex(evidence.EvidenceError, "不得伪造"):
+            evidence.validate_layer_report(self.contract, "community", report)
 
     def test_rejects_wrong_official_revision_or_incomplete_domains(self):
         report = self.community_report()

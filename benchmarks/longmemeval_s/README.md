@@ -8,7 +8,9 @@
 - 官方清洗数据 `xiaowu0162/longmemeval-cleaned`：`98d7416c24c778c2fee6e6f3006e7a073259d48f` 的 `longmemeval_s_cleaned.json`；
 - 官方轻量评测依赖：上述代码提交的 `requirements-lite.txt`；项目约束固定 `httpx==0.27.2`，兼容官方固定的 `openai==1.35.1`。安装后的完整解析版本写入环境清单并校验摘要。
 
-正式协议固定每个问题使用独立 Ownward 数据目录；只把会话 ID、日期和用户—助手正文经公开 create/semantic/search/read 路径交给产品，不向记忆、组织和检索阶段暴露问题、答案、答案会话、题型或裁判。宿主从公开 `semantic_work` 原序取得并固化最多 20 项结构化工作；保持每项工作、候选、提示模板和输出 Schema 不变，在 300,000 字符输入边界内拆成独立分析单元，由全局最多 8 个 Codex `gpt-5.4-mini` / `low` 调用并发完成，校验齐全后仍按原二十项工作批顺序经公开 `semantic_submit_batch` 提交。检索后的 Reader 只能使用 Codex `gpt-5.4` / `medium`，且与语义分析共用同一全局调用上限。二者复用现有 Codex 认证，不使用额外模型服务或 OpenAI API。官方 `gpt-4o-2024-08-06` 裁判是独立外部评分器；隔离预检只用显式确定性裁判夹具验证官方提示、报告和生命周期，不形成正式成绩。最多读取 8 条证据，完整值与成本上限见 `protocol.json`。
+正式协议固定每个问题使用独立 Ownward 数据目录；只把会话 ID、日期和用户—助手正文经公开 create/semantic/search/read 路径交给产品，不向记忆、组织和检索阶段暴露问题、答案、答案会话、题型或裁判。宿主从公开 `semantic_work` 原序取得并固化最多 20 项结构化工作；每个原始自然工作批独立分析，批内资产与候选正文各列一次，工作项只以稳定 ID、revision、上下文及关系元数据引用正文。真实越界只能在该自然批内确定性拆分，不得跨批合并、截断或丢项。模型输出完成身份、数量、顺序和 Schema 校验后，仍按原工作批顺序经公开 `semantic_submit_batch` 提交。语义、Reader 与裁判请求共用四个彼此独立的 Codex App Server worker；每个 worker 同时最多一个 turn，每次请求使用独立、临时、只读的新 thread，单 worker 故障只重启自身且只能有界重试。检索后的 Reader 固定使用 Codex `gpt-5.6-luna` / `medium`，裁判固定使用 Codex `gpt-5.6-terra` / `medium` 按官方原始评测提示输出原标签；三者复用现有 Codex 原生认证，不使用额外 API Key。最多读取 8 条证据，完整值与成本上限见 `protocol.json`。
+
+正式结果标识为 `Ownward LongMemEval-S Production Profile`。官方数据、500 题、问答协议、提示和计分语义保持不变；由于 Reader、裁判与检索预算不同的公开成绩不具备直接可比性，本口径不设置跨 profile 准确率硬阈值。产品答案先独立冻结，评测层随后才接触官方答案与证据标识；逐题诊断封存语义组织、search/read、Reader、裁判、Token、重试、限流和时延证据，并与产品执行和正式计分单向隔离。
 
 正式机器固定在 E 盘：
 
@@ -26,4 +28,4 @@ python benchmarks/longmemeval_s/environment.py check `
   --smoke
 ```
 
-正式 community 配置必须直接引用 `manifests/v1.json`、仓库内 `protocol.json`、Codex 程序和认证文件位置，并把候选运行目录置于 `runs/<candidate>/`；配置只保存路径和模型身份，不复制认证内容。不得引用 `.install`、系统临时目录或固定资产目录作为输出位置。最终隔离校准使用四种题型的四个完整官方问题，共 187 个会话、12 个三批次语义工作批、31 个语义分析调用和 4 个 Reader 调用；全局并发实际达到 8，墙钟 165.141 秒，发生 2 次有界格式重取、0 限流、0 中断，12 批全部原序提交。全量投影为 18,912.927 秒，原每题串行分析投影为 34,295.760 秒；并发 8 已是最低且稳定并形成显著收益的校准点，因此未扩大到 12。证据位于 `E:\Ownward\acceptance\longmemeval-s\runs\preflight\ffaeb2f5-70f19288788f4196`，再次 `--resume` 后全部证据摘要保持不变。稳定层名 `longmemeval` 执行完整 500 题；中断后 `--resume` 只补未完成问题，绑定变化由 Suite 局部失效 community。
+正式 community 配置必须直接引用 `manifests/v1.json`、仓库内 `protocol.json`、Codex 程序和认证文件位置，并把候选运行目录置于 `runs/<candidate>/`；配置只保存路径和模型身份，不复制认证内容。不得引用 `.install`、系统临时目录或固定资产目录作为输出位置。500 题无模型 dry-plan 已封存并复用：23,867 个会话、1,498 个自然工作批，全部工作与正文完整。历史池 1/2/4 校准证据继续保留，但不再决定正式并发；活动规则是在候选池 8/12 中选择稳定且包含完整余量上界不超过 20,400 秒的最低并发。并发 8 的唯一一次四类完整代表预检处理 187 个会话、12 个自然语义批和各 4 个 Reader/裁判调用：20/20 次调用首次完成，0 重试、0 限流、0 中断、0 transport 超时、0 worker 重启，12 批原序提交，20 个请求使用不同只读临时 thread，精确恢复不改报告或检查点。墙钟为 132.359 秒；修正后的全量投影为 12,775.987 秒，加入 20% 正常波动、10% 有界重试与 3,600 秒恢复余量后为 20,053.902 秒，低于 20,400 秒硬上限，因此冻结并发 8 且不再测试 12。dry-plan 与当前代表预检证据分别位于 `runs/dry-plan/99f5190-appserver-v2` 和 `runs/preflight/77600820-89e959e3ae7c92f1-production-profile`。

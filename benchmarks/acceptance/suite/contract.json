@@ -67,15 +67,17 @@
       "benchmark": "LongMemEval-S cleaned",
       "questions": 500,
       "question_types": ["single-session-user", "single-session-assistant", "single-session-preference", "multi-session", "temporal-reasoning", "knowledge-update"],
-      "minimum_accuracy": 0.822,
+      "profile": "Ownward LongMemEval-S Production Profile",
+      "comparison_policy": "equivalent-profile-only",
       "capabilities": {
-        "semantic": {"source": "codex", "model": "gpt-5.4-mini", "reasoning_effort": "low"},
-        "reader": {"source": "codex", "model": "gpt-5.4", "reasoning_effort": "medium"},
-        "judge": {"source": "official-openai", "model": "gpt-4o-2024-08-06"}
+        "semantic": {"source": "codex", "model": "gpt-5.6-luna", "reasoning_effort": "low"},
+        "reader": {"source": "codex", "model": "gpt-5.6-luna", "reasoning_effort": "medium"},
+        "judge": {"source": "codex", "model": "gpt-5.6-terra", "reasoning_effort": "medium"}
       },
-      "concurrency": {"question_workers": 4, "codex_max_active": 8, "semantic_batch_size": 20, "semantic_analysis_max_input_chars": 300000},
-      "cost_calibration": {"questions": 4, "semantic_batches_per_question": 3, "maximum_retry_ratio": 0.1, "requires_zero_rate_limits": true},
-      "expected_wall_seconds": {"calibrated_projection": 18913, "max": 28800},
+      "concurrency": {"question_workers": 4, "codex_max_active": 8, "semantic_batch_size": 20, "semantic_analysis_max_works": 20, "codex_transport": "app-server-pool-stdio"},
+      "quality_assessment": {"status": "not_determined", "basis": "no-equivalent-production-profile-reference", "first_version_condition_satisfied": false},
+      "cost_calibration": {"questions": 4, "semantic_batches_per_question": 3, "official_dry_plan_questions": 500, "pool_candidates": [8, 12], "selected_pool_size": 8, "selection_rule": "lowest-stable-required-ceiling-at-most-20400", "measurement_status": "passed-pool-8-no-pool-12-required", "representative_wall_seconds": 132.359, "representative_codex_calls": 20, "representative_retries": 0, "representative_transport_timeouts": 0, "representative_interruptions": 0, "representative_worker_restarts": 0, "maximum_retry_ratio": 0.1, "requires_zero_rate_limits": true, "normal_variation_reserve_ratio": 0.2, "bounded_retry_reserve_ratio": 0.1, "checkpoint_recovery_reserve_seconds": 3600},
+      "expected_wall_seconds": {"calibration_status": "passed-pool-8", "projected": 12775.987, "required_ceiling": 20053.902, "target_ceiling": 20400, "max": 20400, "formal_ready": true},
       "inputs": ["candidate_manifest", "binary_manifest", "environment_manifest", "official_dataset_manifest", "adapter_manifest"],
       "output_schema": "ownward.longmemeval-report/v1"
     }
@@ -108,7 +110,7 @@
     },
     "community": {
       "schema": "ownward.longmemeval-report/v1",
-      "required": ["schema", "suite_version", "official_version", "candidate", "binary_sha256", "environment", "inputs", "capabilities", "benchmark", "quality", "retrieval", "cost", "submission", "passed", "started_at", "finished_at"]
+      "required": ["schema", "suite_version", "official_version", "profile", "candidate", "binary_sha256", "environment", "inputs", "capabilities", "benchmark", "execution", "quality", "retrieval", "cost", "diagnostics", "submission", "completion", "passed", "started_at", "finished_at"]
     },
     "suite": {
       "schema": "ownward.acceptance-suite-report/v1",

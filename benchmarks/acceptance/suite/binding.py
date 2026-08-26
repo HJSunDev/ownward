@@ -408,7 +408,8 @@ def _input_manifest(suite_root: Path, config: dict[str, Any], scope: str) -> dic
             "codex_semantic_reasoning_effort": community["codex_semantic_reasoning_effort"],
             "codex_reader_model": community["codex_reader_model"],
             "codex_reader_reasoning_effort": community["codex_reader_reasoning_effort"],
-            "judge_api_key_env": community["judge_api_key_env"],
+            "codex_judge_model": community["codex_judge_model"],
+            "codex_judge_reasoning_effort": community["codex_judge_reasoning_effort"],
         }
     return result
 
@@ -437,7 +438,7 @@ def _tool_manifest(suite_root: Path, scope: str) -> dict[str, Any]:
         "frontier": [suite_root / "execution_frontier.py", suite_root / "frontier.py", repository / "cmd" / "ownward-frontier" / "main.go"],
         "core": [suite_root / "execution_core.py", suite_root / "adapters" / "core" / "verify.py", repository / "benchmarks" / "support" / "ownward_mcp.py"],
         "product": [suite_root / "execution_core.py", suite_root / "execution_product.py", suite_root / "product.py", suite_root / "resource_environment.py", *sorted(path for path in (suite_root / "adapters" / "product").glob("*.py") if not path.name.startswith("test_")), *sorted(path for path in (suite_root / "adapters" / "product_resource").glob("*.py") if not path.name.startswith("test_")), repository / "benchmarks" / "support" / "ownward_mcp.py"],
-        "community": [suite_root / "execution_community.py", suite_root / "community.py", suite_root / "process_control.py", suite_root / "adapters" / "product" / "codex_session.py", repository / "benchmarks" / "longmemeval_s" / "run.py", repository / "benchmarks" / "longmemeval_s" / "environment.py", repository / "benchmarks" / "longmemeval_s" / "protocol.json", repository / "benchmarks" / "longmemeval_s" / "constraints.txt", repository / "benchmarks" / "support" / "ownward_mcp.py"],
+        "community": [suite_root / "execution_community.py", suite_root / "community.py", suite_root / "process_control.py", suite_root / "adapters" / "product" / "codex_session.py", repository / "benchmarks" / "longmemeval_s" / "run.py", repository / "benchmarks" / "longmemeval_s" / "codex_app_server.py", repository / "benchmarks" / "longmemeval_s" / "environment.py", repository / "benchmarks" / "longmemeval_s" / "protocol.json", repository / "benchmarks" / "longmemeval_s" / "constraints.txt", repository / "benchmarks" / "support" / "ownward_mcp.py"],
     }[scope]
     return {
         "schema": "ownward.acceptance-tool-manifest/v4",
@@ -510,10 +511,11 @@ def _candidate_paths(config: dict[str, Any]) -> tuple[Path, Path]:
 
 
 def _validate_community_config(community: dict[str, Any]) -> None:
+    _require("judge_api_key_env" not in community, "LongMemEval-S community 不得要求额外 API Key")
     for name in (
         "environment_manifest", "protocol", "output_dir", "codex_binary", "codex_auth_file",
         "codex_semantic_model", "codex_semantic_reasoning_effort", "codex_reader_model",
-        "codex_reader_reasoning_effort", "judge_api_key_env",
+        "codex_reader_reasoning_effort", "codex_judge_model", "codex_judge_reasoning_effort",
     ):
         _require(isinstance(community.get(name), str) and community[name].strip(), f"执行配置缺少 community.{name}")
     manifest_path = Path(community["environment_manifest"]).resolve()
@@ -533,7 +535,8 @@ def _validate_community_config(community: dict[str, Any]) -> None:
     _require(community["codex_semantic_reasoning_effort"] == protocol["memory"]["semantic_reasoning_effort"], "LongMemEval-S Codex 语义推理强度偏离固定口径")
     _require(community["codex_reader_model"] == protocol["reader"]["model"], "LongMemEval-S Codex Reader 模型偏离固定口径")
     _require(community["codex_reader_reasoning_effort"] == protocol["reader"]["reasoning_effort"], "LongMemEval-S Codex Reader 推理强度偏离固定口径")
-    _require(community["judge_api_key_env"] == "OPENAI_API_KEY", "LongMemEval-S 官方裁判凭证入口偏离固定口径")
+    _require(community["codex_judge_model"] == protocol["judge"]["model"], "LongMemEval-S Codex 裁判模型偏离固定口径")
+    _require(community["codex_judge_reasoning_effort"] == protocol["judge"]["reasoning_effort"], "LongMemEval-S Codex 裁判推理强度偏离固定口径")
 
 
 def _validate_community_workspace(config: dict[str, Any], workspace: Path) -> None:

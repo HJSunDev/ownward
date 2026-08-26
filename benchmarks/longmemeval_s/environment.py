@@ -283,6 +283,10 @@ def _smoke(paths: dict[str, Path]) -> None:
             {"question_id": f"fixture-{index}{'_abs' if index == 0 else ''}", "question_type": kind}
             for index, kind in enumerate(types)
         ]
+        # The pinned official metrics script asserts its historical wire-format model
+        # sentinel before counting labels. This offline fixture exercises that unchanged
+        # script; it does not select or invoke a model. Production execution records the
+        # actual Codex judge identity separately and never uses this compatibility value.
         results = [
             {"question_id": item["question_id"], "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": True}}
             for item in references

@@ -26,10 +26,11 @@
     "output_dir": "E:\\Ownward\\acceptance\\longmemeval-s\\runs\\candidate-commit\\formal",
     "codex_binary": "E:\\path\\to\\codex.exe",
     "codex_auth_file": "C:\\Users\\USERNAME\\.codex\\auth.json",
-    "codex_semantic_model": "gpt-5.4-mini",
+    "codex_semantic_model": "gpt-5.6-luna",
     "codex_semantic_reasoning_effort": "low",
-    "codex_reader_model": "gpt-5.4",
+    "codex_reader_model": "gpt-5.6-luna",
     "codex_reader_reasoning_effort": "medium",
-    "judge_api_key_env": "OPENAI_API_KEY"
+    "codex_judge_model": "gpt-5.6-terra",
+    "codex_judge_reasoning_effort": "medium"
   }
 }

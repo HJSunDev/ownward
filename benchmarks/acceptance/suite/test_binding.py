@@ -39,6 +39,7 @@ class BindingManifestTests(unittest.TestCase):
         self.assertIn("benchmarks/acceptance/suite/execution.py", community & frontier & product)
         self.assertIn("benchmarks/acceptance/suite/adapters/product/verify.py", product)
         self.assertIn("benchmarks/longmemeval_s/run.py", community)
+        self.assertIn("benchmarks/longmemeval_s/codex_app_server.py", community)
         self.assertIn("benchmarks/longmemeval_s/protocol.json", community)
         self.assertIn("benchmarks/acceptance/suite/adapters/product/codex_session.py", community)
         self.assertFalse(any("longmemeval_v2" in path for path in community))
@@ -266,7 +267,7 @@ class BindingManifestTests(unittest.TestCase):
             "community": {name: name for name in (
                 "environment_manifest", "protocol", "output_dir", "codex_binary", "codex_auth_file",
                 "codex_semantic_model", "codex_semantic_reasoning_effort", "codex_reader_model",
-                "codex_reader_reasoning_effort", "judge_api_key_env",
+                "codex_reader_reasoning_effort", "codex_judge_model", "codex_judge_reasoning_effort",
             )},
         }
         with self.assertRaisesRegex(binding.BindingError, "未知阶段"):
@@ -276,9 +277,10 @@ class BindingManifestTests(unittest.TestCase):
         config = binding.load_json(self.root / "execution.example.json")
         community = config["community"]
         self.assertEqual("E:\\Ownward\\acceptance\\longmemeval-s\\manifests\\v1.json", community["environment_manifest"])
-        self.assertEqual("gpt-5.4-mini", community["codex_semantic_model"])
-        self.assertEqual("gpt-5.4", community["codex_reader_model"])
-        self.assertEqual("OPENAI_API_KEY", community["judge_api_key_env"])
+        self.assertEqual("gpt-5.6-luna", community["codex_semantic_model"])
+        self.assertEqual("gpt-5.6-luna", community["codex_reader_model"])
+        self.assertEqual("gpt-5.6-terra", community["codex_judge_model"])
+        self.assertNotIn("judge_api_key_env", community)
         protocol = binding.load_json(self.root.parents[1] / "longmemeval_s" / "protocol.json")
         self.assertEqual(binding.LONGMEMEVAL_S_CODE_REVISION, protocol["official"]["code_revision"])
         self.assertEqual(binding.LONGMEMEVAL_S_DATA_SHA256, protocol["official"]["data_sha256"])
@@ -300,11 +302,15 @@ class BindingManifestTests(unittest.TestCase):
             community = {
                 "environment_manifest": str(manifest), "protocol": str(protocol), "output_dir": str(root / "runs"),
                 "codex_binary": str(codex), "codex_auth_file": str(auth),
-                "codex_semantic_model": "gpt-5.4-mini", "codex_semantic_reasoning_effort": "low",
-                "codex_reader_model": "gpt-5.4", "codex_reader_reasoning_effort": "medium",
-                "judge_api_key_env": "OPENAI_API_KEY",
+                "codex_semantic_model": "gpt-5.6-luna", "codex_semantic_reasoning_effort": "low",
+                "codex_reader_model": "gpt-5.6-luna", "codex_reader_reasoning_effort": "medium",
+                "codex_judge_model": "gpt-5.6-terra", "codex_judge_reasoning_effort": "medium",
             }
             binding._validate_community_config(community)
+            community["judge_api_key_env"] = "OPENAI_API_KEY"
+            with self.assertRaisesRegex(binding.BindingError, "API Key"):
+                binding._validate_community_config(community)
+            community.pop("judge_api_key_env")
             community["codex_reader_model"] = "different"
             with self.assertRaisesRegex(binding.BindingError, "Reader"):
                 binding._validate_community_config(community)

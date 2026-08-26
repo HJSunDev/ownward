@@ -215,15 +215,14 @@ class EvidenceLifecycleTests(unittest.TestCase):
         with self.assertRaisesRegex(lifecycle.LifecycleError, "落盘报告"):
             lifecycle.record(self.contract, state, "targeted", report, "f" * 64, 1)
 
-    def test_summary_requires_and_binds_all_three_layers(self):
+    def test_summary_is_blocked_when_community_quality_is_not_determined(self):
         state = self.state()
         with tempfile.TemporaryDirectory() as directory:
             self.checkpoint(state, "core", report=self.core_report(), directory=directory)
             self.checkpoint(state, "full", report=self.product_report("full"), directory=directory)
-            self.checkpoint(state, "longmemeval", report=self.community_report(), directory=directory)
-            report = lifecycle.summarize(self.contract, state)
-        self.assertTrue(report["passed"])
-        self.assertEqual(self.binding["candidate"], report["candidate"])
+            self.checkpoint(state, "longmemeval", passed=False, report=self.community_report(), directory=directory)
+            with self.assertRaisesRegex(lifecycle.LifecycleError, "未通过"):
+                lifecycle.summarize(self.contract, state)
 
     def test_summary_rejects_missing_or_changed_evidence(self):
         state = self.state()
@@ -232,16 +231,14 @@ class EvidenceLifecycleTests(unittest.TestCase):
         with self.assertRaisesRegex(lifecycle.LifecycleError, "报告缺失"):
             lifecycle.summarize(self.contract, state)
 
-    def test_summary_recovery_cannot_change_layer_evidence(self):
+    def test_summary_cannot_be_recorded_from_undetermined_community_quality(self):
         state = self.state()
         with tempfile.TemporaryDirectory() as directory:
             self.checkpoint(state, "core", report=self.core_report(), directory=directory)
             self.checkpoint(state, "full", report=self.product_report("full"), directory=directory)
-            self.checkpoint(state, "longmemeval", report=self.community_report(), directory=directory)
-            report = lifecycle.summarize(self.contract, state)
-            report["core_report_sha256"] = "0" * 64
-            with self.assertRaisesRegex(lifecycle.LifecycleError, "检查点不一致"):
-                lifecycle.record(self.contract, state, "summarize", report, "f" * 64, 0)
+            self.checkpoint(state, "longmemeval", passed=False, report=self.community_report(), directory=directory)
+            with self.assertRaisesRegex(lifecycle.LifecycleError, "未通过"):
+                lifecycle.summarize(self.contract, state)
 
     def test_promotion_requires_core_frontier_and_qualification(self):
         state = self.state()
@@ -329,19 +326,29 @@ class EvidenceLifecycleTests(unittest.TestCase):
         return {
             "schema": "ownward.longmemeval-report/v1", "suite_version": "1.0.0",
             "official_version": "longmemeval-s/9e0b455f4ef0e2ab8f2e582289761153549043fc+d6f21ea9",
+            "profile": "Ownward LongMemEval-S Production Profile",
             "candidate": self.binding["candidate"], "binary_sha256": active["binary_sha256"],
             "environment": {"sha256": active["environment_sha256"]},
             "inputs": {"sha256": active["input_manifest_sha256"]},
             "capabilities": self.contract["evidence_layers"]["community"]["capabilities"],
             "benchmark": {"questions": 500, "complete": True, "question_types": list(self.contract["evidence_layers"]["community"]["question_types"])},
-            "quality": {"accuracy": 0.83, "minimum_accuracy": 0.822, "passed": True},
+            "execution": {"complete": True, "protocol_valid": True, "evidence_complete": True, "passed": True},
+            "quality": {
+                "accuracy": 0.83, "comparison_policy": "equivalent-profile-only", "hard_accuracy_threshold": None,
+                "score_complete": True, "assessment_status": "not_determined",
+                "assessment_basis": "no-equivalent-production-profile-reference",
+                "first_version_condition_satisfied": False, "passed": None,
+            },
             "retrieval": {"mean_ms": 10.0, "p95_ms": 20.0, "max_ms": 30.0},
             "cost": {"wall_seconds": 14400.0, "within_budget": True},
+            "diagnostics": {"questions": 500, "complete": True, "post_answer_only": True, "excluded_from_product_execution_and_scoring": True},
             "submission": {
                 "package_sha256": "f" * 64, "official_evaluation_sha256": "e" * 64,
-                "hypotheses_sha256": "d" * 64, "checkpoint_manifest_sha256": "c" * 64,
+                "hypotheses_sha256": "d" * 64, "diagnostics_sha256": "b" * 64,
+                "diagnostic_summary_sha256": "a" * 64, "checkpoint_manifest_sha256": "c" * 64,
             },
-            "passed": True,
+            "completion": {"status": "not_satisfied", "reason": "community-quality-not-determined"},
+            "passed": False,
             "started_at": "x", "finished_at": "y",
         }
 

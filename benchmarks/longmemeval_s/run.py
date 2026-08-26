@@ -5,6 +5,7 @@ from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 import hashlib
 import importlib.util
+import inspect
 import json
 import math
 import os
@@ -16,8 +17,6 @@ import tempfile
 import threading
 import time
 from typing import Any, Callable
-from urllib import error as urlerror
-from urllib import request
 import zipfile
 
 
@@ -33,7 +32,7 @@ for dependency_root in (SUITE_ROOT, PRODUCT_ADAPTER_ROOT):
 
 from ownward_mcp import MCPError, OwnwardRuntime  # noqa: E402
 import codex_session  # noqa: E402
-import process_control  # noqa: E402
+from codex_app_server import AppServerError, AppServerTimeout, CodexAppServer, CodexAppServerPool, isolated_runtime_root  # noqa: E402
 
 
 PROTOCOL_SCHEMA = "ownward.longmemeval-s-protocol/v1"
@@ -43,6 +42,12 @@ OFFICIAL_CODE_REVISION = "9e0b455f4ef0e2ab8f2e582289761153549043fc"
 OFFICIAL_DATA_REVISION = "98d7416c24c778c2fee6e6f3006e7a073259d48f"
 OFFICIAL_DATA_SHA256 = "d6f21ea9d60a0d56f34a05b609c79c88a451d2ae03597821ea3d5a9678c3a442"
 OFFICIAL_QUESTION_COUNT = 500
+PRODUCTION_PROFILE = "Ownward LongMemEval-S Production Profile"
+SEMANTIC_TRANSPORT_VERSION = "ownward.longmemeval-s-semantic-transport/v2"
+RETRIEVAL_STAGE_VERSION = "ownward.longmemeval-s-retrieval/v1"
+READER_STAGE_VERSION = "ownward.longmemeval-s-reader/v1"
+JUDGE_STAGE_VERSION = "ownward.longmemeval-s-judge/v1"
+DIAGNOSTIC_STAGE_VERSION = "ownward.longmemeval-s-diagnostic/v2"
 
 
 class AdapterError(RuntimeError):
@@ -94,7 +99,6 @@ def validate_protocol(value: dict[str, Any]) -> None:
     require(official.get("data_revision") == OFFICIAL_DATA_REVISION, "official data revision changed")
     require(official.get("data_sha256") == OFFICIAL_DATA_SHA256, "official data identity changed")
     require(official.get("question_count") == OFFICIAL_QUESTION_COUNT, "official question count changed")
-    require(official.get("judge_model") == "gpt-4o-2024-08-06", "official judge changed")
     memory = value.get("memory")
     retrieval = value.get("retrieval")
     reader = value.get("reader")
@@ -107,18 +111,34 @@ def validate_protocol(value: dict[str, Any]) -> None:
         and memory.get("capability_source") == "codex"
         and 1 <= memory["create_batch_size"] <= 20
         and memory["semantic_batch_size"] == 20
-        and memory["semantic_analysis_max_input_chars"] == 300000,
+        and memory.get("semantic_input_representation") == "ownward.semantic-deduplicated-body-table/v1"
+        and memory.get("semantic_context_window_tokens") == 1050000
+        and memory.get("semantic_analysis_input_token_upper_bound") == 850000
+        and memory.get("semantic_analysis_output_token_upper_bound") == 120000
+        and memory.get("semantic_context_safety_tokens") == 80000
+        and memory.get("semantic_analysis_max_works") == 20
+        and memory.get("semantic_max_output_tokens") == 128000
+        and memory["semantic_analysis_input_token_upper_bound"]
+        + memory["semantic_analysis_output_token_upper_bound"]
+        + memory["semantic_context_safety_tokens"]
+        <= memory["semantic_context_window_tokens"],
         "memory protocol is invalid",
     )
     require(retrieval["search_limit"] >= retrieval["read_limit"] > 0 and retrieval["context_max_chars"] > 0, "retrieval protocol is invalid")
-    require(reader.get("capability_source") == "codex" and reader["model"] == "gpt-5.4" and reader["reasoning_effort"] == "medium", "Reader identity changed")
-    require(judge.get("capability_source") == "official-openai" and judge["model"] == official["judge_model"] and judge["temperature"] == 0 and judge["max_tokens"] == 10 and judge["budget_seconds_per_question"] == 5, "official judge parameters changed")
+    require(memory.get("semantic_model") == "gpt-5.6-luna" and memory.get("semantic_reasoning_effort") == "low", "semantic capability identity changed")
+    require(reader.get("capability_source") == "codex" and reader["model"] == "gpt-5.6-luna" and reader["reasoning_effort"] == "medium", "Reader identity changed")
+    require(judge.get("capability_source") == "codex" and judge["model"] == "gpt-5.6-terra" and judge["reasoning_effort"] == "medium", "judge identity changed")
     require(
         execution["max_workers"] == 4
-        and execution["codex_max_active"] == 8
+        and execution["codex_max_active"] in {8, 12}
+        and execution.get("codex_transport") == "app-server-pool-stdio"
+        and execution.get("codex_server_processes") == execution["codex_max_active"]
         and execution["calibration_questions"] == 4
         and execution["calibration_semantic_batches_per_question"] == 3
-        and execution["full_wall_seconds"] == 28800,
+        and execution["full_wall_seconds"] == 20400
+        and execution["normal_variation_reserve_ratio"] == 0.2
+        and execution["bounded_retry_reserve_ratio"] == 0.1
+        and execution["checkpoint_recovery_reserve_seconds"] == 3600,
         "execution budget is invalid",
     )
     require(
@@ -127,7 +147,15 @@ def validate_protocol(value: dict[str, Any]) -> None:
         and execution["semantic_work_requests"] == 1498,
         "dataset cost inventory changed",
     )
-    require(0 < acceptance["minimum_accuracy"] <= 1 and str(acceptance["reference"]).startswith("https://"), "acceptance threshold is invalid")
+    require(
+        acceptance.get("profile") == PRODUCTION_PROFILE
+        and acceptance.get("requires_complete_official_questions") is True
+        and acceptance.get("direct_comparison_requires_equivalent_profile") is True
+        and acceptance.get("quality_assessment_status") == "not_determined"
+        and acceptance.get("quality_assessment_basis") == "no-equivalent-production-profile-reference",
+        "production profile is invalid",
+    )
+    require("minimum_accuracy" not in acceptance, "production profile cannot use a cross-profile accuracy threshold")
 
 
 def validate_environment(manifest_path: Path, *, smoke: bool = False) -> dict[str, Any]:
@@ -212,7 +240,7 @@ def _add_usage(total: dict[str, float | int], value: dict[str, Any]) -> None:
 
 
 class CodexScheduler:
-    """One global bound for all semantic and Reader Codex processes."""
+    """One global bound for all semantic, Reader, and judge Codex processes."""
 
     def __init__(self, max_active: int) -> None:
         require(max_active > 0, "Codex concurrency limit must be positive")
@@ -295,33 +323,66 @@ def freeze_semantic_batch(
 
 
 def semantic_analysis_units(
-    frozen: dict[str, Any],
+    frozen: dict[str, Any] | list[dict[str, Any]],
     settings: dict[str, Any],
     capability: "CodexCapability",
 ) -> list[dict[str, Any]]:
-    maximum = int(settings["semantic_analysis_max_input_chars"])
+    frozen_batches = [frozen] if isinstance(frozen, dict) else list(frozen)
+    require(frozen_batches, "semantic analysis requires frozen work")
+    question_identity = frozen_batches[0]["question_identity"]
+    require(all(item.get("question_identity") == question_identity for item in frozen_batches), "semantic batches cross question identity")
+    input_maximum = int(settings["semantic_analysis_input_token_upper_bound"])
+    output_maximum = int(settings["semantic_analysis_output_token_upper_bound"])
+    maximum_works = int(settings["semantic_analysis_max_works"])
     groups: list[list[dict[str, Any]]] = []
-    current: list[dict[str, Any]] = []
-    for item in frozen["work"]:
-        trial = [*current, item]
-        prompt, _, _ = capability.semantic_request(trial, settings)
-        if current and len(prompt) > maximum:
+    entries: list[dict[str, Any]] = []
+    for batch in frozen_batches:
+        batch_entries = [
+            {"batch_index": int(batch["batch_index"]), "batch_id": str(batch["batch_id"]), "work": work}
+            for work in batch["work"]
+        ]
+        entries.extend(batch_entries)
+        current: list[dict[str, Any]] = []
+        for entry in batch_entries:
+            trial = [*current, entry]
+            trial_work = [item["work"] for item in trial]
+            prompt, _, work_ids = capability.semantic_request(trial_work, settings)
+            over = (
+                len(prompt.encode("utf-8")) > input_maximum
+                or CodexCapability.semantic_output_upper_bound(work_ids) > output_maximum
+                or len(trial) > maximum_works
+            )
+            if current and over:
+                groups.append(current)
+                current = [entry]
+            else:
+                current = trial
+        if current:
             groups.append(current)
-            current = [item]
-        else:
-            current = trial
-    if current:
-        groups.append(current)
     units = []
     offset = 0
-    for index, work in enumerate(groups):
+    scope_id = canonical_sha256({
+        "question_identity": question_identity,
+        "batches": [{"batch_id": item["batch_id"], "work_sha256": item["work_sha256"]} for item in frozen_batches],
+        "representation": "ownward.semantic-deduplicated-body-table/v1",
+        "model": settings["semantic_model"],
+        "effort": settings["semantic_reasoning_effort"],
+    })[:20]
+    for index, group in enumerate(groups):
+        work = [item["work"] for item in group]
         prompt, schema, work_ids = capability.semantic_request(work, settings)
-        require(len(prompt) <= maximum, f"one semantic work item exceeds the frozen Codex input bound: {frozen['batch_id']}")
+        semantic_input = CodexCapability.semantic_input(work)
+        equivalence = CodexCapability.validate_semantic_input(work, semantic_input)
+        input_bytes = len(prompt.encode("utf-8"))
+        output_upper_bound = CodexCapability.semantic_output_upper_bound(work_ids)
+        require(input_bytes <= input_maximum, f"one semantic work item exceeds the frozen Codex input token upper bound: {work_ids[0]}")
+        require(output_upper_bound <= output_maximum, f"one semantic work item exceeds the frozen Codex output token upper bound: {work_ids[0]}")
         unit = {
-            "schema": "ownward.longmemeval-s-semantic-analysis-unit/v1",
-            "question_identity": frozen["question_identity"],
-            "batch_index": frozen["batch_index"],
-            "batch_id": frozen["batch_id"],
+            "schema": "ownward.longmemeval-s-semantic-analysis-unit/v2",
+            "question_identity": question_identity,
+            "scope_id": scope_id,
+            "batch_indexes": list(dict.fromkeys(item["batch_index"] for item in group)),
+            "batch_ids": list(dict.fromkeys(item["batch_id"] for item in group)),
             "unit_index": index,
             "start": offset,
             "end": offset + len(work),
@@ -331,12 +392,20 @@ def semantic_analysis_units(
             "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
             "schema_sha256": canonical_sha256(schema),
             "input_chars": len(prompt),
+            "input_utf8_bytes": input_bytes,
+            "output_token_upper_bound": output_upper_bound,
+            "body_count": len(semantic_input["bodies"]),
+            "body_chars": sum(len(item["content"]) for item in semantic_input["bodies"]),
+            "equivalence_sha256": canonical_sha256(equivalence),
+            "fact_equivalence_sha256": CodexCapability.semantic_fact_equivalence_sha256(work),
+            "legacy_input_utf8_bytes": CodexCapability.legacy_semantic_input_chars(work),
         }
         unit["identity"] = canonical_sha256(unit)
         units.append(unit)
         offset += len(work)
-    require(offset == len(frozen["work"]), f"semantic analysis units are incomplete: {frozen['batch_id']}")
-    require([work_id for unit in units for work_id in unit["work_ids"]] == [item["id"] for item in frozen["work"]], f"semantic analysis units reordered work: {frozen['batch_id']}")
+    require(offset == len(entries), "semantic analysis units are incomplete")
+    require([work_id for unit in units for work_id in unit["work_ids"]] == [item["work"]["id"] for item in entries], "semantic analysis units reordered work")
+    require(all(len(unit["batch_indexes"]) == 1 for unit in units), "semantic analysis crossed a natural Ownward work batch")
     return units
 
 
@@ -346,8 +415,8 @@ def analyze_semantic_unit(
     settings: dict[str, Any],
     capability: "CodexCapability",
 ) -> dict[str, Any]:
-    batch_id = unit["batch_id"]
-    unit_root = trace_root / batch_id / "analysis-units" / f"unit-{unit['unit_index']:03d}"
+    unit_label = f"{unit['scope_id']}/{unit['unit_index']}"
+    unit_root = trace_root / "_analysis" / unit["scope_id"] / f"unit-{unit['unit_index']:03d}"
     analysis_path = unit_root / "analysis.json"
     if analysis_path.is_file():
         existing = load_json(analysis_path)
@@ -355,15 +424,29 @@ def analyze_semantic_unit(
             isinstance(existing, dict)
             and existing.get("schema") == "ownward.longmemeval-s-semantic-unit-result/v1"
             and existing.get("identity") == unit["identity"],
-            f"semantic analysis unit checkpoint identity changed: {batch_id}/{unit['unit_index']}",
+            f"semantic analysis unit checkpoint identity changed: {unit_label}",
         )
         return existing
+    write_json(unit_root / "input.json", {
+        "schema": "ownward.longmemeval-s-semantic-analysis-input/v2",
+        "identity": unit["identity"],
+        "representation": CodexCapability.semantic_input(unit["work"]),
+        "work_ids": unit["work_ids"],
+        "batch_indexes": unit["batch_indexes"],
+        "prompt_sha256": unit["prompt_sha256"],
+        "schema_sha256": unit["schema_sha256"],
+        "input_chars": unit["input_chars"],
+        "input_utf8_bytes": unit["input_utf8_bytes"],
+        "output_token_upper_bound": unit["output_token_upper_bound"],
+        "fact_equivalence_sha256": unit["fact_equivalence_sha256"],
+    })
     analyses, usage = capability.semantics(unit["work"], settings, unit_root / "codex")
-    require([item.get("work_id") for item in analyses if isinstance(item, dict)] == unit["work_ids"], f"semantic analysis unit reordered work: {batch_id}/{unit['unit_index']}")
+    require([item.get("work_id") for item in analyses if isinstance(item, dict)] == unit["work_ids"], f"semantic analysis unit reordered work: {unit_label}")
     value = {
         "schema": "ownward.longmemeval-s-semantic-unit-result/v1",
         "identity": unit["identity"],
-        "batch_id": batch_id,
+        "scope_id": unit["scope_id"],
+        "batch_indexes": unit["batch_indexes"],
         "unit_index": unit["unit_index"],
         "work_ids": unit["work_ids"],
         "analyses": analyses,
@@ -382,12 +465,13 @@ def combine_semantic_batch(
 ) -> dict[str, Any]:
     batch_id = frozen["batch_id"]
     analysis_path = trace_root / batch_id / "analysis.json"
+    relevant_units = [unit for unit in units if int(frozen["batch_index"]) in unit["batch_indexes"]]
     analysis_identity = canonical_sha256({
         "question_identity": frozen["question_identity"],
         "batch_index": frozen["batch_index"],
         "batch_id": batch_id,
         "work_sha256": frozen["work_sha256"],
-        "unit_identities": [unit["identity"] for unit in units],
+        "unit_identities": [unit["identity"] for unit in relevant_units],
         "semantic_model": settings["semantic_model"],
         "semantic_reasoning_effort": settings["semantic_reasoning_effort"],
     })
@@ -401,16 +485,17 @@ def combine_semantic_batch(
         )
         return existing
     work = frozen["work"]
-    require(set(unit_results) == set(range(len(units))), f"semantic analysis unit results are incomplete: {batch_id}")
+    require(all(unit["unit_index"] in unit_results for unit in relevant_units), f"semantic analysis unit results are incomplete: {batch_id}")
     analyses = []
     usage = _empty_usage()
-    for unit in units:
+    for unit in relevant_units:
         result = unit_results[unit["unit_index"]]
         require(result.get("identity") == unit["identity"] and result.get("work_ids") == unit["work_ids"], f"semantic analysis unit result changed: {batch_id}/{unit['unit_index']}")
         analyses.extend(result["analyses"])
-        _add_usage(usage, result["usage"])
+        if int(frozen["batch_index"]) == min(unit["batch_indexes"]):
+            _add_usage(usage, result["usage"])
     by_work = {item["work_id"]: item for item in analyses}
-    require(len(by_work) == len(work), f"semantic model omitted work items: {batch_id}")
+    require(all(item["id"] in by_work for item in work), f"semantic model omitted work items: {batch_id}")
     submissions = []
     for item in work:
         require(isinstance(item, dict) and isinstance(item.get("asset"), dict), f"semantic work item is invalid: {batch_id}")
@@ -436,8 +521,8 @@ def combine_semantic_batch(
         "batch_index": frozen["batch_index"],
         "batch_id": batch_id,
         "work_sha256": frozen["work_sha256"],
-        "unit_identities": [unit["identity"] for unit in units],
-        "analysis_units": len(units),
+        "unit_identities": [unit["identity"] for unit in relevant_units],
+        "analysis_units": len(relevant_units),
         "work_ids": [item["id"] for item in work],
         "submissions": submissions,
         "usage": usage,
@@ -516,41 +601,8 @@ def _answer_prompt(question: dict[str, Any], evidence: list[dict[str, Any]]) -> 
 
 
 class CodexCapability:
-    def __init__(self, binary: Path, auth_file: Path) -> None:
-        self.binary = binary.resolve()
-        self.auth_file = auth_file.resolve()
-        require(self.binary.is_file(), "Codex binary is unavailable")
-        require(self.auth_file.is_file(), "Codex authentication file is unavailable")
-
-    def _command(self, model: str, effort: str, schema: Path, output: Path, work: Path) -> list[str]:
-        command = codex_session.command_prefix(self.binary) + [
-            "exec", "--ephemeral", "--json", "--color", "never", "--skip-git-repo-check",
-            "-C", str(work), "--sandbox", "read-only", "-m", model,
-            "-c", f"model_reasoning_effort={json.dumps(effort)}", "-c", "project_doc_max_bytes=0",
-        ]
-        for feature in (
-            "apply_patch_freeform", "apps", "image_generation", "js_repl", "memories", "multi_agent",
-            "personality", "plugins", "request_permissions_tool", "search_tool", "shell_snapshot",
-            "shell_tool", "tool_search", "tool_suggest",
-        ):
-            command.extend(["-c", f"features.{feature}=false"])
-        command.extend(["-c", 'web_search="disabled"', "--output-schema", str(schema), "-o", str(output), "-"])
-        return command
-
-    @staticmethod
-    def _usage(events: str) -> dict[str, int]:
-        usage = {"input_tokens": 0, "cached_input_tokens": 0, "output_tokens": 0, "reasoning_output_tokens": 0}
-        for line in events.splitlines():
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if event.get("type") == "item.completed" and isinstance(event.get("item"), dict):
-                require(event["item"].get("type") in {"agent_message", "reasoning", "todo_list"}, "Codex capability attempted to use a tool")
-            if event.get("type") == "turn.completed" and isinstance(event.get("usage"), dict):
-                for name in usage:
-                    usage[name] += int(event["usage"].get(name, 0))
-        return usage
+    def __init__(self, transport: CodexAppServer) -> None:
+        self.transport = transport
 
     @staticmethod
     def _is_rate_limit(value: str) -> bool:
@@ -562,6 +614,19 @@ class CodexCapability:
         timeout_seconds: float, attempts: int, validate: Callable[[dict[str, Any]], None] | None = None,
     ) -> tuple[dict[str, Any], dict[str, int]]:
         identity = canonical_sha256({"prompt": prompt, "schema": schema, "model": model, "effort": effort})
+        request_value = {
+            "schema": "ownward.codex-capability-request/v1",
+            "identity": identity,
+            "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+            "output_schema_sha256": canonical_sha256(schema),
+            "model": model,
+            "reasoning_effort": effort,
+        }
+        request_path = stage / "request.json"
+        if request_path.is_file():
+            require(load_json(request_path) == request_value, "Codex capability request identity changed")
+        else:
+            write_json(request_path, request_value)
         complete_path = stage / "complete.json"
         if complete_path.is_file():
             complete = load_json(complete_path)
@@ -588,34 +653,25 @@ class CodexCapability:
             attempt.mkdir()
             work = attempt / "work"
             work.mkdir()
-            temporary_root = Path(tempfile.mkdtemp(prefix="codex-", dir=attempt))
-            output = attempt / "output.json"
-            events = attempt / "events.jsonl"
             attempt_started = time.perf_counter()
             try:
-                schema_path = temporary_root / "schema.json"
-                schema_path.write_text(json.dumps(schema, ensure_ascii=False), encoding="utf-8")
-                environment = codex_session.isolated_environment(self.auth_file, temporary_root / "codex-home")
                 started = time.perf_counter()
-                completed = process_control.run(
-                    self._command(model, effort, schema_path, output, work), cwd=work, input_text=prompt,
-                    timeout=timeout_seconds, env=environment, stdout_path=events, stderr_path=attempt / "stderr.txt",
+                value, usage, transport = self.transport.invoke(
+                    prompt=prompt, schema=schema, model=model, effort=effort, work_dir=work,
+                    timeout_seconds=timeout_seconds,
                 )
                 elapsed = time.perf_counter() - started
-                require(completed.returncode == 0, f"Codex capability failed: {completed.stderr[-1000:]}")
-                require(output.is_file(), "Codex capability produced no structured output")
-                value = load_json(output)
                 require(isinstance(value, dict), "Codex capability output is not an object")
                 if validate is not None:
                     validate(value)
-                usage = self._usage(completed.stdout)
-                rate_limited = self._is_rate_limit(completed.stdout + "\n" + completed.stderr)
+                rate_limited = bool(self.transport.diagnostics()["rate_limit_observed"])
                 write_json(attempt / "metadata.json", {
                     "schema": "ownward.codex-capability-attempt/v1",
                     "attempt": number,
                     "outcome": "complete",
                     "wall_seconds": elapsed,
                     "rate_limited": rate_limited,
+                    **transport,
                 })
                 usage.update({
                     "calls": 1,
@@ -627,33 +683,158 @@ class CodexCapability:
                 })
                 write_json(complete_path, {"schema": "ownward.codex-capability-checkpoint/v1", "identity": identity, "output": value, "usage": usage, "wall_seconds": usage["wall_seconds"]})
                 return value, usage
-            except (AdapterError, OSError, ValueError, process_control.ProcessTimeout) as error:
+            except (AdapterError, AppServerError, OSError, ValueError) as error:
                 last_error = str(error)
                 elapsed = time.perf_counter() - attempt_started
-                stderr_path = attempt / "stderr.txt"
-                stderr = stderr_path.read_text(encoding="utf-8", errors="replace") if stderr_path.is_file() else ""
-                rate_limited = self._is_rate_limit(last_error + "\n" + stderr)
+                rate_limited = self._is_rate_limit(last_error) or bool(self.transport.diagnostics()["rate_limit_observed"])
                 write_json(attempt / "metadata.json", {
                     "schema": "ownward.codex-capability-attempt/v1",
                     "attempt": number,
                     "outcome": "failed",
                     "error_type": type(error).__name__,
+                    "error_message": last_error[:1000],
                     "wall_seconds": elapsed,
                     "rate_limited": rate_limited,
+                    "transport": self.transport.diagnostics().get("transport", "codex-app-server-pool-stdio"),
                 })
                 prior_wall_seconds += elapsed
                 prior_rate_limits += int(rate_limited)
-            finally:
-                shutil.rmtree(temporary_root, ignore_errors=True)
         raise AdapterError(f"Codex capability failed after {attempts} bounded attempts: {last_error}")
 
-    def semantic_request(self, work: list[dict[str, Any]], settings: dict[str, Any]) -> tuple[str, dict[str, Any], list[str]]:
-        assets = []
-        work_ids = []
+    @staticmethod
+    def semantic_input(work: list[dict[str, Any]]) -> dict[str, Any]:
+        bodies: list[dict[str, Any]] = []
+        body_refs: dict[tuple[str, int, str], str] = {}
+
+        def body_reference(value: dict[str, Any]) -> str:
+            content = value.get("content")
+            identifier = value.get("id")
+            revision = value.get("revision")
+            require(isinstance(content, str) and isinstance(identifier, str) and isinstance(revision, int), "semantic body identity is invalid")
+            digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+            key = (identifier, revision, digest)
+            if key not in body_refs:
+                reference = f"body-{len(bodies):05d}-{digest[:16]}"
+                body_refs[key] = reference
+                bodies.append({"body_ref": reference, "id": identifier, "revision": revision, "content": content})
+            return body_refs[key]
+
+        items = []
         for item in work:
             asset = item.get("asset") if isinstance(item, dict) else None
             require(isinstance(asset, dict), "semantic work asset is invalid")
-            work_ids.append(str(item["id"]))
+            candidates = []
+            for candidate in item.get("candidates", [])[:2]:
+                if not isinstance(candidate, dict):
+                    continue
+                metadata = {key: value for key, value in candidate.items() if key not in {"content", "id", "revision"}}
+                candidates.append({
+                    "body_ref": body_reference(candidate),
+                    "id": candidate["id"],
+                    "revision": candidate["revision"],
+                    **metadata,
+                })
+            items.append({
+                "work_id": item["id"],
+                "asset": {
+                    "body_ref": body_reference(asset),
+                    "id": asset["id"],
+                    "revision": asset["revision"],
+                    "explicit_contexts": asset.get("contexts", []),
+                },
+                "candidates": candidates,
+            })
+        return {"representation": "ownward.semantic-deduplicated-body-table/v1", "bodies": bodies, "work": items}
+
+    @staticmethod
+    def validate_semantic_input(work: list[dict[str, Any]], value: dict[str, Any]) -> dict[str, Any]:
+        require(value.get("representation") == "ownward.semantic-deduplicated-body-table/v1", "semantic input representation changed")
+        bodies = value.get("bodies")
+        items = value.get("work")
+        require(isinstance(bodies, list) and isinstance(items, list) and len(items) == len(work), "semantic input is incomplete")
+        by_ref = {item.get("body_ref"): item for item in bodies if isinstance(item, dict)}
+        require(len(by_ref) == len(bodies) and None not in by_ref, "semantic bodies are duplicated")
+        reconstructed = []
+        for source, encoded in zip(work, items):
+            require(isinstance(encoded, dict) and encoded.get("work_id") == source.get("id"), "semantic work identity changed")
+            asset = source.get("asset") if isinstance(source.get("asset"), dict) else {}
+            encoded_asset = encoded.get("asset") if isinstance(encoded.get("asset"), dict) else {}
+            body = by_ref.get(encoded_asset.get("body_ref"))
+            require(
+                isinstance(body, dict)
+                and body.get("id") == asset.get("id")
+                and body.get("revision") == asset.get("revision")
+                and body.get("content") == asset.get("content")
+                and encoded_asset.get("explicit_contexts") == asset.get("contexts", []),
+                "semantic asset content or context changed",
+            )
+            encoded_candidates = encoded.get("candidates") if isinstance(encoded.get("candidates"), list) else []
+            source_candidates = [item for item in source.get("candidates", [])[:2] if isinstance(item, dict)]
+            require(len(encoded_candidates) == len(source_candidates), "semantic candidate count changed")
+            for source_candidate, encoded_candidate in zip(source_candidates, encoded_candidates):
+                candidate_body = by_ref.get(encoded_candidate.get("body_ref")) if isinstance(encoded_candidate, dict) else None
+                require(
+                    isinstance(candidate_body, dict)
+                    and candidate_body.get("id") == source_candidate.get("id")
+                    and candidate_body.get("revision") == source_candidate.get("revision")
+                    and candidate_body.get("content") == source_candidate.get("content"),
+                    "semantic candidate content changed",
+                )
+                metadata = {key: item for key, item in source_candidate.items() if key not in {"content", "id", "revision"}}
+                require(
+                    {key: item for key, item in encoded_candidate.items() if key not in {"body_ref", "id", "revision"}} == metadata,
+                    "semantic candidate metadata or relations changed",
+                )
+            reconstructed.append(str(source["id"]))
+        return {
+            "equivalent": True,
+            "work_ids": reconstructed,
+            "body_count": len(bodies),
+            "body_identity_sha256": canonical_sha256([
+                {"body_ref": item["body_ref"], "id": item["id"], "revision": item["revision"], "content_sha256": hashlib.sha256(item["content"].encode("utf-8")).hexdigest()}
+                for item in bodies
+            ]),
+        }
+
+    @staticmethod
+    def semantic_fact_equivalence_sha256(work: list[dict[str, Any]]) -> str:
+        """Hash facts and relation topology while treating generated Ownward identities as opaque."""
+        value = CodexCapability.semantic_input(work)
+        bodies = value["bodies"]
+        ref_map = {body["body_ref"]: f"fact-{index:05d}" for index, body in enumerate(bodies)}
+        id_map = {body["id"]: ref_map[body["body_ref"]] for body in bodies}
+
+        def normalize(item: Any) -> Any:
+            if isinstance(item, str):
+                return id_map.get(item, item)
+            if isinstance(item, list):
+                return [normalize(child) for child in item]
+            if isinstance(item, dict):
+                return {
+                    key: normalize(ref_map.get(child, child) if key == "body_ref" else child)
+                    for key, child in sorted(item.items())
+                    if key not in {"id", "work_id"}
+                }
+            return item
+
+        normalized = {
+            "bodies": [
+                {
+                    "body_ref": ref_map[body["body_ref"]],
+                    "revision": body["revision"],
+                    "content_sha256": hashlib.sha256(body["content"].encode("utf-8")).hexdigest(),
+                }
+                for body in bodies
+            ],
+            "work": [normalize(item) for item in value["work"]],
+        }
+        return canonical_sha256(normalized)
+
+    @staticmethod
+    def legacy_semantic_input_chars(work: list[dict[str, Any]]) -> int:
+        assets = []
+        for item in work:
+            asset = item["asset"]
             assets.append({
                 "work_id": item["id"], "content": asset["content"], "explicit_contexts": asset.get("contexts", []),
                 "candidates": [
@@ -661,7 +842,7 @@ class CodexCapability:
                     for candidate in item.get("candidates", [])[:2] if isinstance(candidate, dict)
                 ],
             })
-        prompt = (
+        prefix = (
             "Act only as Ownward's external semantic capability. Analyze every supplied semantic work item exactly once. "
             "The items came from Ownward's public semantic_work path; the host will validate and submit your result through "
             "the public semantic_submit path. No query, expected answer, answer-session label, question type, or evaluator "
@@ -669,13 +850,57 @@ class CodexCapability:
             "relationships. Return one analysis per work_id in the supplied order. Use one short sentence per summary, at "
             "most 4 short topics, and at most 4 cues only for durable answer-bearing facts, entities, preferences, events or "
             "decisions. Do not turn source IDs, conversation dates or acknowledgements into cues.\n\nSemantic work:\n"
-            + json.dumps(assets, ensure_ascii=False, separators=(",", ":"))
         )
+        return len((prefix + json.dumps(assets, ensure_ascii=False, separators=(",", ":"))).encode("utf-8"))
+
+    @staticmethod
+    def legacy_semantic_call_count(work: list[dict[str, Any]], maximum_bytes: int = 300000) -> int:
+        return len(CodexCapability.legacy_semantic_request_sizes(work, maximum_bytes))
+
+    @staticmethod
+    def legacy_semantic_request_sizes(work: list[dict[str, Any]], maximum_bytes: int = 300000) -> list[int]:
+        groups: list[list[dict[str, Any]]] = []
+        current: list[dict[str, Any]] = []
+        for item in work:
+            trial = [*current, item]
+            if current and CodexCapability.legacy_semantic_input_chars(trial) > maximum_bytes:
+                groups.append(current)
+                current = [item]
+            else:
+                current = trial
+        if current:
+            groups.append(current)
+        return [CodexCapability.legacy_semantic_input_chars(group) for group in groups]
+
+    @staticmethod
+    def semantic_instruction() -> str:
+        return (
+            "Act only as Ownward's external semantic capability. Analyze every supplied semantic work item exactly once. "
+            "The items came from Ownward's public semantic_work path; the host will validate and submit your result through "
+            "the public semantic_submit path. No query, expected answer, answer-session label, question type, or evaluator "
+            "signal is available. Preserve meaning, use only explicit content and candidate evidence, and do not invent "
+            "relationships. Bodies are listed once and work items reference them by stable body_ref, id, and revision; "
+            "candidate metadata contains every similarity, context, and relation field exposed by semantic_work. Return one "
+            "analysis per work_id in the supplied order. Use one short sentence per summary, at most 4 short topics, and at "
+            "most 4 cues only for durable answer-bearing facts, entities, preferences, events or decisions. Do not turn "
+            "source IDs, conversation dates or acknowledgements into cues.\n\nSemantic input:\n"
+        )
+
+    @staticmethod
+    def semantic_output_upper_bound(work_ids: list[str]) -> int:
+        # JSON punctuation plus every schema-constrained string at its maximum length.
+        per_item_fixed = 512 + 320 + (4 * 100) + (4 * (200 + 40))
+        return 64 + sum(per_item_fixed + len(work_id.encode("utf-8")) for work_id in work_ids)
+
+    def semantic_request(self, work: list[dict[str, Any]], settings: dict[str, Any]) -> tuple[str, dict[str, Any], list[str]]:
+        semantic_input = self.semantic_input(work)
+        work_ids = [str(item["id"]) for item in work]
+        prompt = self.semantic_instruction() + json.dumps(semantic_input, ensure_ascii=False, separators=(",", ":"))
         schema = {
             "type": "object", "additionalProperties": False, "required": ["analyses"],
             "properties": {
                 "analyses": {
-                    "type": "array", "minItems": len(assets), "maxItems": len(assets),
+                    "type": "array", "minItems": len(work), "maxItems": len(work),
                     "items": {
                         "type": "object", "additionalProperties": False,
                         "required": ["work_id", "summary", "topics", "cues"],
@@ -730,52 +955,25 @@ class CodexCapability:
         require(isinstance(answer, str) and answer.strip(), "Codex Reader returned no answer")
         return answer.strip(), usage
 
-
-class OfficialJudgeClient:
-    def __init__(self, api_key: str, timeout: float = 180) -> None:
-        require(bool(api_key.strip()), "official judge credential is unavailable")
-        self.api_key = api_key.strip()
-        self.timeout = timeout
-
-    def _post(self, endpoint: str, payload: dict[str, Any], attempts: int) -> dict[str, Any]:
-        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        last_error = ""
-        for attempt in range(attempts):
-            message = request.Request(
-                "https://api.openai.com/v1" + endpoint, data=body,
-                headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}, method="POST",
-            )
-            try:
-                with request.urlopen(message, timeout=self.timeout) as response:
-                    value = json.loads(response.read())
-                require(isinstance(value, dict), "official judge response is not an object")
-                return value
-            except (urlerror.URLError, TimeoutError, json.JSONDecodeError, AdapterError) as error:
-                last_error = str(error)
-                if attempt + 1 < attempts:
-                    time.sleep(2**attempt)
-        raise AdapterError(f"official judge request failed after {attempts} bounded attempts: {last_error}")
-
-    def judge(self, prompt: str, settings: dict[str, Any]) -> tuple[bool, str, dict[str, int]]:
-        value = self._post("/chat/completions", {
-            "model": settings["model"], "messages": [{"role": "user", "content": prompt}],
-            "n": 1, "temperature": settings["temperature"], "max_tokens": settings["max_tokens"],
-        }, int(settings["attempts"]))
-        choices = value.get("choices")
-        require(isinstance(choices, list) and choices and isinstance(choices[0], dict), "official judge returned no choice")
-        message = choices[0].get("message")
-        text = message.get("content") if isinstance(message, dict) else None
-        require(isinstance(text, str) and text.strip(), "official judge returned no label")
-        usage = value.get("usage") if isinstance(value.get("usage"), dict) else {}
-        return "yes" in text.lower(), text.strip(), {"input_tokens": int(usage.get("prompt_tokens", 0)), "output_tokens": int(usage.get("completion_tokens", 0))}
-
-
-class DeterministicJudgeFixture:
-    def __init__(self, label: bool) -> None:
-        self.label = label
-
-    def judge(self, _prompt: str, settings: dict[str, Any]) -> tuple[bool, str, dict[str, int]]:
-        return self.label, "yes" if self.label else "no", {"input_tokens": 0, "output_tokens": 0}
+    def judge(self, prompt: str, settings: dict[str, Any], stage: Path) -> tuple[bool, str, dict[str, int]]:
+        schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["label"],
+            "properties": {"label": {"type": "string", "enum": ["yes", "no"]}},
+        }
+        value, usage = self._invoke(
+            prompt=prompt,
+            schema=schema,
+            stage=stage,
+            model=settings["model"],
+            effort=settings["reasoning_effort"],
+            timeout_seconds=float(settings["timeout_seconds"]),
+            attempts=int(settings["attempts"]),
+        )
+        label = value.get("label")
+        require(label in {"yes", "no"}, "Codex judge returned an invalid official label")
+        return label == "yes", label, usage
 
 
 def official_prompt(evaluator: Path, question: dict[str, Any], hypothesis: str) -> str:
@@ -829,17 +1027,260 @@ def _question_identity(question: dict[str, Any], run_identity: str) -> str:
     return canonical_sha256({"run": run_identity, "question": sanitized})
 
 
+def stage_dependency_identities(
+    *, protocol: dict[str, Any], candidate: str, binary_sha256: str, environment_sha256: str,
+    input_manifest_sha256: str, dataset_sha256: str, formal: bool, evaluator_sha256: str,
+) -> dict[str, str]:
+    transport_sha256 = sha256(Path(__file__).with_name("codex_app_server.py"))
+    implementation = {
+        "semantic": canonical_sha256({
+            "transport": transport_sha256,
+            "invoke": inspect.getsource(CodexCapability._invoke),
+            "input": inspect.getsource(CodexCapability.semantic_input),
+            "validation": inspect.getsource(CodexCapability.validate_semantic_input),
+            "request": inspect.getsource(CodexCapability.semantic_request),
+            "units": inspect.getsource(semantic_analysis_units),
+            "analysis": inspect.getsource(analyze_semantic_unit),
+            "combine": inspect.getsource(combine_semantic_batch),
+            "submit": inspect.getsource(submit_semantic_batch),
+        }),
+        "retrieval": canonical_sha256({"retrieve": inspect.getsource(retrieve)}),
+        "reader": canonical_sha256({
+            "transport": transport_sha256,
+            "invoke": inspect.getsource(CodexCapability._invoke),
+            "prompt": inspect.getsource(_answer_prompt),
+            "answer": inspect.getsource(CodexCapability.answer),
+        }),
+        "judge": canonical_sha256({
+            "transport": transport_sha256,
+            "invoke": inspect.getsource(CodexCapability._invoke),
+            "prompt": inspect.getsource(official_prompt),
+            "judge": inspect.getsource(CodexCapability.judge),
+        }),
+        "diagnostic": canonical_sha256({"record": inspect.getsource(_diagnostic_record)}),
+    }
+    common = {
+        "candidate": candidate,
+        "binary_sha256": binary_sha256,
+        "environment_sha256": environment_sha256,
+        "input_manifest_sha256": input_manifest_sha256,
+        "dataset_sha256": dataset_sha256,
+        "formal": formal,
+        "profile": PRODUCTION_PROFILE,
+    }
+    semantic = canonical_sha256({**common, "version": SEMANTIC_TRANSPORT_VERSION, "implementation": implementation["semantic"], "memory": protocol["memory"]})
+    retrieval = canonical_sha256({"semantic": semantic, "version": RETRIEVAL_STAGE_VERSION, "implementation": implementation["retrieval"], "retrieval": protocol["retrieval"]})
+    reader = canonical_sha256({"retrieval": retrieval, "version": READER_STAGE_VERSION, "implementation": implementation["reader"], "reader": protocol["reader"]})
+    judge = canonical_sha256({"reader": reader, "version": JUDGE_STAGE_VERSION, "implementation": implementation["judge"], "judge": protocol["judge"], "evaluator_sha256": evaluator_sha256})
+    diagnostic = canonical_sha256({"judge": judge, "version": DIAGNOSTIC_STAGE_VERSION, "implementation": implementation["diagnostic"]})
+    return {"semantic": semantic, "retrieval": retrieval, "reader": reader, "judge": judge, "diagnostic": diagnostic}
+
+
+def _archive_path(source: Path, destination: Path) -> None:
+    if not source.exists():
+        return
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    require(not destination.exists(), f"run rebind audit collision: {destination}")
+    source.replace(destination)
+
+
+def clean_stale_codex_runtime_roots(output_dir: Path) -> list[str]:
+    parent = (output_dir / ".codex-runtime").resolve()
+    if not parent.exists():
+        return []
+    require(parent.is_dir() and parent.parent == output_dir.resolve(), "Codex runtime root escapes the community output")
+    cleaned = []
+    for child in parent.iterdir():
+        require(child.is_dir() and child.name.startswith("codex-app-server-"), f"unexpected object in Codex runtime root: {child.name}")
+        require(child.resolve().parent == parent, "Codex runtime child escapes its parent")
+        cleaned.append(child.name)
+        shutil.rmtree(child)
+    parent.rmdir()
+    if cleaned:
+        append_jsonl(output_dir / "_audit" / "transport-cleanup.jsonl", {
+            "schema": "ownward.longmemeval-s-transport-cleanup/v1",
+            "removed_runtime_roots": cleaned,
+            "credential_content_read": False,
+            "recorded_at": datetime.now(timezone.utc).isoformat(),
+        })
+    return cleaned
+
+
+def rebind_run_identity(output_dir: Path, previous: dict[str, Any], current: dict[str, Any]) -> None:
+    previous_stages = previous.get("stage_dependencies")
+    current_stages = current.get("stage_dependencies")
+    require(isinstance(previous_stages, dict) and isinstance(current_stages, dict), "community run predates stage-scoped recovery")
+    require(previous_stages.get("semantic") == current_stages.get("semantic"), "semantic dependency changed; use a new community output directory")
+    audit = output_dir / "_audit" / str(previous["sha256"])
+    for name in (
+        "identity.json", "report.json", "hypotheses.jsonl", "official-evaluation.jsonl", "diagnostics.jsonl",
+        "diagnostic-summary.json", "checkpoint-manifest.json", "submission.zip",
+    ):
+        _archive_path(output_dir / name, audit / name)
+    order = ("semantic", "retrieval", "reader", "judge", "diagnostic")
+    first_changed = next((name for name in order if previous_stages.get(name) != current_stages.get(name)), None)
+    ranks = {name: index for index, name in enumerate(order)}
+    for question_root in (output_dir / "questions").glob("*") if (output_dir / "questions").is_dir() else []:
+        if not question_root.is_dir():
+            continue
+        destination = audit / "questions" / question_root.name
+        _archive_path(question_root / "result.json", destination / "result.json")
+        _archive_path(question_root / "failure.json", destination / "failure.json")
+        if first_changed is None:
+            continue
+        if ranks[first_changed] <= ranks["retrieval"]:
+            _archive_path(question_root / "retrieval.json", destination / "retrieval.json")
+        if ranks[first_changed] <= ranks["reader"]:
+            _archive_path(question_root / "reader", destination / "reader")
+            _archive_path(question_root / "answer.json", destination / "answer.json")
+        if ranks[first_changed] <= ranks["judge"]:
+            _archive_path(question_root / "judge", destination / "judge")
+        if ranks[first_changed] <= ranks["diagnostic"]:
+            _archive_path(question_root / "diagnostic.json", destination / "diagnostic.json")
+    write_json(output_dir / "identity.json", current)
+
+
+def _product_question(question: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: question[key]
+        for key in (
+            "question_id", "question_type", "question", "question_date",
+            "haystack_dates", "haystack_session_ids", "haystack_sessions",
+        )
+        if key in question
+    }
+
+
+def _write_immutable(path: Path, value: dict[str, Any], message: str) -> None:
+    if path.is_file():
+        require(load_json(path) == value, message)
+    else:
+        write_json(path, value)
+
+
+def _diagnostic_record(
+    question: dict[str, Any], *, identity: str, answer: str, correct: bool,
+    assets: list[str], asset_sources: list[dict[str, str]], organized_asset_ids: list[str],
+    retrieval: dict[str, Any], semantic_trace_root: Path, reader_input: Path, reader_output: Path,
+    judge_input: Path, judge_output: Path, phase_seconds: dict[str, float], usage: dict[str, Any],
+    checkpoint_path: Path, semantic_plan_path: Path, retrieval_path: Path, answer_path: Path,
+) -> dict[str, Any]:
+    source_to_asset = {str(item["session_id"]): str(item["asset_id"]) for item in asset_sources}
+    expected_sessions = [str(value) for value in question.get("answer_session_ids", [])]
+    expected_assets = [source_to_asset[value] for value in expected_sessions if value in source_to_asset]
+    returned_ids = [str(item.get("id")) for item in retrieval.get("returned", []) if isinstance(item, dict) and item.get("id")]
+    read_ids = [str(value) for value in retrieval.get("read_ids", [])]
+    organized = set(organized_asset_ids)
+    returned = set(returned_ids)
+    read = set(read_ids)
+    expected = set(expected_assets)
+    abstention = "_abs" in str(question["question_id"])
+    if correct:
+        first_gap = "none"
+        possible_contributors: list[str] = []
+    elif expected and not expected.issubset(returned):
+        first_gap = "target_evidence_not_search_returned"
+        possible_contributors = ["semantic_organization_quality", "retrieval_implementation"]
+    elif expected and not expected.issubset(read):
+        first_gap = "target_evidence_not_read"
+        possible_contributors = ["read_selection"]
+    elif expected and expected.issubset(read):
+        first_gap = "evidence_read_answer_incorrect"
+        possible_contributors = ["reader_reasoning"]
+    elif abstention:
+        first_gap = "abstention_response_incorrect"
+        possible_contributors = ["reader_reasoning"]
+    else:
+        first_gap = "answer_incorrect_without_labeled_evidence"
+        possible_contributors = []
+    capability = {
+        "knowledge-update": "knowledge_update",
+        "multi-session": "cross_session",
+        "temporal-reasoning": "temporal_reasoning",
+        "single-session-preference": "preference",
+        "single-session-assistant": "assistant_memory",
+        "single-session-user": "user_memory",
+    }.get(str(question["question_type"]), "unknown")
+    if abstention:
+        capability = "abstention"
+    traces = []
+    for path in sorted(semantic_trace_root.rglob("submission.json")):
+        value = load_json(path)
+        require(isinstance(value, dict), f"semantic submission trace is invalid: {path}")
+        traces.append({
+            "path": path.as_posix(), "sha256": sha256(path),
+            "batch_id": value.get("batch_id"), "asset_ids": value.get("asset_ids"),
+            "work_ids": value.get("work_ids"), "analysis_identity": value.get("analysis_identity"),
+        })
+    return {
+        "schema": "ownward.longmemeval-s-diagnostic/v2",
+        "question_identity": identity,
+        "question_id": question["question_id"],
+        "question_type": question["question_type"],
+        "capability": capability,
+        "correct": correct,
+        "first_observed_gap": first_gap,
+        "causal_interpretation": {
+            "status": "not_determined" if first_gap != "none" else "not_applicable",
+            "possible_contributors": possible_contributors,
+            "statement": (
+                "The first mechanically observed gap is at search return; submitted semantic organization quality and retrieval implementation remain possible contributors."
+                if first_gap == "target_evidence_not_search_returned"
+                else "No automatic root-cause attribution is made beyond the first mechanically observed gap."
+            ),
+        },
+        "product_answer": answer,
+        "evidence_coverage": {
+            "expected_session_ids": expected_sessions,
+            "expected_asset_ids": expected_assets,
+            "organized_expected": sorted(expected.intersection(organized)),
+            "search_returned_expected": sorted(expected.intersection(returned)),
+            "read_expected": sorted(expected.intersection(read)),
+            "search_returned_ids": returned_ids,
+            "read_ids": read_ids,
+        },
+        "execution_observations": {
+            "expected_source_sessions": len(question.get("haystack_session_ids", [])),
+            "created_source_sessions": len(asset_sources),
+            "source_creation_complete": len(asset_sources) == len(question.get("haystack_session_ids", [])),
+            "created_asset_ids": assets,
+            "submitted_asset_ids": organized_asset_ids,
+            "semantic_submission_complete": organized == set(assets),
+        },
+        "artifacts": {
+            "question_checkpoint": {"path": checkpoint_path.as_posix(), "sha256": sha256(checkpoint_path)},
+            "semantic_plan": {"path": semantic_plan_path.as_posix(), "sha256": sha256(semantic_plan_path)},
+            "semantic_submissions": traces,
+            "retrieval": {"path": retrieval_path.as_posix(), "sha256": sha256(retrieval_path)},
+            "reader_input": {"path": reader_input.as_posix(), "sha256": sha256(reader_input)},
+            "reader_output": {"path": reader_output.as_posix(), "sha256": sha256(reader_output)},
+            "frozen_answer": {"path": answer_path.as_posix(), "sha256": sha256(answer_path)},
+            "judge_input": {"path": judge_input.as_posix(), "sha256": sha256(judge_input)},
+            "judge_output": {"path": judge_output.as_posix(), "sha256": sha256(judge_output)},
+        },
+        "phase_seconds": phase_seconds,
+        "usage": usage,
+        "asset_count": len(assets),
+        "diagnostic_only": True,
+    }
+
+
 def process_question(
     question: dict[str, Any], output_root: Path, run_identity: str,
     binary: Path, embedding: Path,
     protocol: dict[str, Any], evaluator: Path,
-    capability_factory: Callable[[], CodexCapability], judge_factory: Callable[[], Any],
+    capability_factory: Callable[[], CodexCapability],
     codex_scheduler: CodexScheduler,
+    stage_run_identities: dict[str, str] | None = None,
 ) -> dict[str, Any]:
+    evaluation_question = question
+    question = _product_question(question)
     identifier = question["question_id"]
     root = output_root / "questions" / identifier
     result_path = root / "result.json"
     identity = _question_identity(question, run_identity)
+    stages = stage_run_identities or {name: run_identity for name in ("semantic", "retrieval", "reader", "judge", "diagnostic")}
+    stage_identities = {name: _question_identity(question, value) for name, value in stages.items()}
     if result_path.is_file():
         existing = load_json(result_path)
         if isinstance(existing, dict) and existing.get("identity") == identity and existing.get("complete") is True:
@@ -850,15 +1291,24 @@ def process_question(
     checkpoint = load_json(checkpoint_path) if checkpoint_path.is_file() else {
         "schema": QUESTION_SCHEMA,
         "identity": identity,
+        "stage_identities": stage_identities,
         "question_id": identifier,
         "assets": [],
+        "asset_sources": [],
         "organized_batches": 0,
         "analysis_completion_order": [],
         "submission_order": [],
         "phase_seconds": {"create": 0.0, "semantic": 0.0},
         "semantic_usage": _empty_usage(),
     }
-    require(isinstance(checkpoint, dict) and checkpoint.get("identity") == identity, f"question checkpoint identity changed: {identifier}")
+    require(isinstance(checkpoint, dict), f"question checkpoint is invalid: {identifier}")
+    if checkpoint.get("identity") != identity:
+        require(checkpoint.get("stage_identities", {}).get("semantic") == stage_identities["semantic"], f"question semantic checkpoint identity changed: {identifier}")
+        checkpoint["identity"] = identity
+        checkpoint["stage_identities"] = stage_identities
+        write_json(checkpoint_path, checkpoint)
+    else:
+        require(checkpoint.get("stage_identities", stage_identities) == stage_identities, f"question stage checkpoint identity changed: {identifier}")
     data_dir = root / "ownward-data"
     environment = os.environ.copy()
     environment["OWNWARD_EMBEDDING_BUNDLE_DIR"] = str(embedding)
@@ -874,6 +1324,8 @@ def process_question(
         require(runtime.client is not None, "Ownward client is unavailable")
         sessions = [session_content(str(sid), str(date), turns) for sid, date, turns in zip(question["haystack_session_ids"], question["haystack_dates"], question["haystack_sessions"])]
         assets = list(checkpoint.get("assets", []))
+        asset_sources = list(checkpoint.get("asset_sources", []))
+        require(len(asset_sources) == len(assets), f"asset source checkpoint is incomplete: {identifier}")
         batch_size = int(protocol["memory"]["create_batch_size"])
         for offset in range(len(assets), len(sessions), batch_size):
             contents = sessions[offset:offset + batch_size]
@@ -884,13 +1336,18 @@ def process_question(
             ]})
             values = created.get("results") if isinstance(created, dict) else None
             require(isinstance(values, list) and len(values) == len(contents), f"Ownward create batch failed: {identifier}")
-            for value in values:
+            for index, value in enumerate(values):
                 mutation = value.get("result") if isinstance(value, dict) and not value.get("error") else None
                 information = mutation.get("information") if isinstance(mutation, dict) else None
                 require(isinstance(information, dict) and isinstance(information.get("id"), str), f"Ownward create item failed: {identifier}")
                 assets.append(information["id"])
+                asset_sources.append({
+                    "asset_id": information["id"],
+                    "session_id": str(question["haystack_session_ids"][offset + index]),
+                })
             create_seconds += time.monotonic() - phase_started
             checkpoint["assets"] = assets
+            checkpoint["asset_sources"] = asset_sources
             checkpoint["phase_seconds"] = {"create": create_seconds, "semantic": semantic_seconds}
             write_json(checkpoint_path, checkpoint)
         semantic_size = int(protocol["memory"]["semantic_batch_size"])
@@ -898,15 +1355,13 @@ def process_question(
         semantic_started = time.monotonic()
         trace_root = root / "semantic-traces"
         frozen_batches = [
-            freeze_semantic_batch(runtime, batch, trace_root, identity, index)
+            freeze_semantic_batch(runtime, batch, trace_root, stage_identities["semantic"], index)
             for index, batch in enumerate(batches)
         ]
-        units_by_batch = {
-            index: semantic_analysis_units(frozen, protocol["memory"], capability)
-            for index, frozen in enumerate(frozen_batches)
-        }
+        units = semantic_analysis_units(frozen_batches, protocol["memory"], capability)
         request_plan = []
         for index, frozen in enumerate(frozen_batches):
+            relevant_units = [unit for unit in units if index in unit["batch_indexes"]]
             request_plan.append({
                 "batch_index": frozen["batch_index"],
                 "batch_id": frozen["batch_id"],
@@ -915,16 +1370,34 @@ def process_question(
                 "work_sha256": frozen["work_sha256"],
                 "analysis_units": [{
                     name: unit[name]
-                    for name in ("unit_index", "start", "end", "work_ids", "work_sha256", "prompt_sha256", "schema_sha256", "input_chars", "identity")
-                } for unit in units_by_batch[index]],
+                    for name in (
+                        "unit_index", "start", "end", "batch_indexes", "work_ids", "work_sha256",
+                        "prompt_sha256", "schema_sha256", "input_chars", "input_utf8_bytes",
+                        "output_token_upper_bound", "body_count", "body_chars", "legacy_input_utf8_bytes", "identity",
+                        "equivalence_sha256", "fact_equivalence_sha256",
+                    )
+                } for unit in relevant_units],
                 "model": protocol["memory"]["semantic_model"],
                 "reasoning_effort": protocol["memory"]["semantic_reasoning_effort"],
             })
         plan = {
-            "schema": "ownward.longmemeval-s-semantic-plan/v1",
-            "question_identity": identity,
+            "schema": "ownward.longmemeval-s-semantic-plan/v2",
+            "question_identity": stage_identities["semantic"],
             "batch_size": semantic_size,
             "batches": request_plan,
+            "transport": {
+                "representation": protocol["memory"]["semantic_input_representation"],
+                "context_window_tokens": protocol["memory"]["semantic_context_window_tokens"],
+                "input_token_upper_bound": protocol["memory"]["semantic_analysis_input_token_upper_bound"],
+                "output_token_upper_bound": protocol["memory"]["semantic_analysis_output_token_upper_bound"],
+                "context_safety_tokens": protocol["memory"]["semantic_context_safety_tokens"],
+                "analysis_calls": len(units),
+                "legacy_analysis_calls": sum(CodexCapability.legacy_semantic_call_count(batch["work"]) for batch in frozen_batches),
+                "new_input_utf8_bytes": sum(unit["input_utf8_bytes"] for unit in units),
+                "legacy_input_utf8_bytes": sum(
+                    sum(CodexCapability.legacy_semantic_request_sizes(batch["work"])) for batch in frozen_batches
+                ),
+            },
             "serial_identity_sha256": canonical_sha256(request_plan),
             "concurrent_identity_sha256": canonical_sha256(request_plan),
             "equivalent": True,
@@ -939,29 +1412,33 @@ def process_question(
         require(0 <= organized <= len(batches), f"semantic checkpoint is invalid: {identifier}")
         require(checkpoint.get("submission_order", []) == list(range(organized)), f"semantic submission order changed: {identifier}")
         analyses: dict[int, dict[str, Any]] = {}
-        unit_results: dict[int, dict[int, dict[str, Any]]] = {index: {} for index in range(organized, len(frozen_batches))}
-        futures: dict[Future[Any], tuple[int, int]] = {}
+        unit_results: dict[int, dict[str, Any]] = {}
+        futures: dict[Future[Any], int] = {}
         completion_order = list(checkpoint.get("analysis_completion_order", []))
         for index in range(organized, len(frozen_batches)):
             frozen = frozen_batches[index]
             analysis_path = trace_root / frozen["batch_id"] / "analysis.json"
             if analysis_path.is_file():
-                analyses[index] = combine_semantic_batch(frozen, units_by_batch[index], {}, trace_root, protocol["memory"])
-                continue
-            for unit in units_by_batch[index]:
-                marker = {"batch_index": index, "unit_index": unit["unit_index"]}
-                unit_path = trace_root / frozen["batch_id"] / "analysis-units" / f"unit-{unit['unit_index']:03d}" / "analysis.json"
-                if unit_path.is_file():
-                    unit_results[index][unit["unit_index"]] = analyze_semantic_unit(unit, trace_root, protocol["memory"], capability)
-                    if marker not in completion_order:
-                        completion_order.append(marker)
-                else:
-                    future = codex_scheduler.submit(analyze_semantic_unit, unit, trace_root, protocol["memory"], capability)
-                    futures[future] = (index, unit["unit_index"])
+                analyses[index] = combine_semantic_batch(frozen, units, {}, trace_root, protocol["memory"])
+        needed_units = {
+            unit["unit_index"]: unit
+            for unit in units
+            if any(index >= organized and index not in analyses for index in unit["batch_indexes"])
+        }
+        for unit_index, unit in needed_units.items():
+            marker = {"unit_index": unit_index, "batch_indexes": unit["batch_indexes"]}
+            unit_path = trace_root / "_analysis" / unit["scope_id"] / f"unit-{unit_index:03d}" / "analysis.json"
+            if unit_path.is_file():
+                unit_results[unit_index] = analyze_semantic_unit(unit, trace_root, protocol["memory"], capability)
+                if marker not in completion_order:
+                    completion_order.append(marker)
+            else:
+                future = codex_scheduler.submit(analyze_semantic_unit, unit, trace_root, protocol["memory"], capability)
+                futures[future] = unit_index
         for future in as_completed(futures):
-            index, unit_index = futures[future]
-            unit_results[index][unit_index] = future.result()
-            completion_order.append({"batch_index": index, "unit_index": unit_index})
+            unit_index = futures[future]
+            unit_results[unit_index] = future.result()
+            completion_order.append({"unit_index": unit_index, "batch_indexes": needed_units[unit_index]["batch_indexes"]})
             checkpoint["analysis_completion_order"] = completion_order
             write_json(checkpoint_path, checkpoint)
         checkpoint["analysis_completion_order"] = completion_order
@@ -969,7 +1446,7 @@ def process_question(
         for index in range(organized, len(frozen_batches)):
             if index not in analyses:
                 analyses[index] = combine_semantic_batch(
-                    frozen_batches[index], units_by_batch[index], unit_results[index], trace_root, protocol["memory"],
+                    frozen_batches[index], units, unit_results, trace_root, protocol["memory"],
                 )
         require(set(analyses) == set(range(organized, len(frozen_batches))), f"semantic analyses are incomplete: {identifier}")
 
@@ -984,45 +1461,407 @@ def process_question(
         checkpoint["phase_seconds"] = {"create": create_seconds, "semantic": semantic_seconds}
         checkpoint["semantic_usage"] = semantic_usage
         write_json(checkpoint_path, checkpoint)
-        evidence, retrieval = retrieve(runtime, question["question"], protocol)
-    reader_started = time.monotonic()
-    answer, reader_usage = codex_scheduler.submit(
-        capability.answer,
-        _answer_prompt(question, evidence),
-        protocol["reader"],
-        root / "reader" / "codex",
-    ).result()
-    reader_seconds = time.monotonic() - reader_started
-    prompt = official_prompt(evaluator, question, answer)
-    judge_started = time.monotonic()
-    correct, judge_output, judge_usage = judge_factory().judge(prompt, protocol["judge"])
-    judge_seconds = time.monotonic() - judge_started
+        retrieval_path = root / "retrieval.json"
+        if retrieval_path.is_file():
+            retrieval_checkpoint = load_json(retrieval_path)
+            require(
+                isinstance(retrieval_checkpoint, dict)
+                and retrieval_checkpoint.get("question_identity") == stage_identities["retrieval"],
+                f"retrieval checkpoint identity changed: {identifier}",
+            )
+            evidence = retrieval_checkpoint["evidence"]
+            retrieval = retrieval_checkpoint["retrieval"]
+        else:
+            evidence, retrieval = retrieve(runtime, question["question"], protocol)
+            _write_immutable(retrieval_path, {
+                "schema": "ownward.longmemeval-s-retrieval/v1",
+                "question_identity": stage_identities["retrieval"],
+                "evidence": evidence,
+                "retrieval": retrieval,
+            }, f"retrieval checkpoint changed: {identifier}")
+    reader_prompt = _answer_prompt(question, evidence)
+    reader_input_path = root / "reader" / "input.json"
+    _write_immutable(reader_input_path, {
+        "schema": "ownward.longmemeval-s-reader-input/v1",
+        "question_identity": stage_identities["reader"],
+        "question": question["question"],
+        "question_date": question.get("question_date", ""),
+        "evidence": evidence,
+        "prompt": reader_prompt,
+        "prompt_sha256": hashlib.sha256(reader_prompt.encode("utf-8")).hexdigest(),
+    }, f"Reader input changed: {identifier}")
+    reader_output_path = root / "reader" / "output.json"
+    if reader_output_path.is_file():
+        reader_output_value = load_json(reader_output_path)
+        require(reader_output_value.get("question_identity") == stage_identities["reader"], f"Reader output identity changed: {identifier}")
+        answer = reader_output_value["answer"]
+        reader_usage = reader_output_value["usage"]
+        reader_seconds = float(reader_output_value["wall_seconds"])
+    else:
+        reader_started = time.monotonic()
+        answer, reader_usage = codex_scheduler.submit(
+            capability.answer,
+            reader_prompt,
+            protocol["reader"],
+            root / "reader" / "codex",
+        ).result()
+        reader_seconds = time.monotonic() - reader_started
+        _write_immutable(reader_output_path, {
+            "schema": "ownward.longmemeval-s-reader-output/v1",
+            "question_identity": stage_identities["reader"],
+            "answer": answer,
+            "usage": reader_usage,
+            "wall_seconds": reader_seconds,
+        }, f"Reader output changed: {identifier}")
+    answer_path = root / "answer.json"
+    _write_immutable(answer_path, {
+        "schema": "ownward.longmemeval-s-frozen-answer/v1",
+        "question_identity": stage_identities["reader"],
+        "answer": answer,
+        "reader_output_sha256": sha256(reader_output_path),
+    }, f"frozen product answer changed: {identifier}")
+    prompt = official_prompt(evaluator, evaluation_question, answer)
+    judge_input_path = root / "judge" / "input.json"
+    _write_immutable(judge_input_path, {
+        "schema": "ownward.longmemeval-s-judge-input/v1",
+        "question_identity": stage_identities["judge"],
+        "answer_frozen_sha256": sha256(answer_path),
+        "official_prompt": prompt,
+        "official_prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+    }, f"official judge input changed: {identifier}")
+    judge_output_path = root / "judge" / "output.json"
+    if judge_output_path.is_file():
+        judge_output_value = load_json(judge_output_path)
+        require(judge_output_value.get("question_identity") == stage_identities["judge"], f"judge output identity changed: {identifier}")
+        correct = bool(judge_output_value["label"])
+        judge_output = str(judge_output_value["output"])
+        judge_usage = judge_output_value["usage"]
+        judge_seconds = float(judge_output_value["wall_seconds"])
+    else:
+        judge_started = time.monotonic()
+        correct, judge_output, judge_usage = codex_scheduler.submit(
+            capability.judge,
+            prompt,
+            protocol["judge"],
+            root / "judge" / "codex",
+        ).result()
+        judge_seconds = time.monotonic() - judge_started
+        _write_immutable(judge_output_path, {
+            "schema": "ownward.longmemeval-s-judge-output/v1",
+            "question_identity": stage_identities["judge"],
+            "model": protocol["judge"]["model"],
+            "reasoning_effort": protocol["judge"]["reasoning_effort"],
+            "label": correct,
+            "output": judge_output,
+            "usage": judge_usage,
+            "wall_seconds": judge_seconds,
+        }, f"judge output changed: {identifier}")
     wall_seconds = time.monotonic() - started
     require(wall_seconds <= float(protocol["execution"]["question_wall_seconds"]), f"question wall budget exceeded: {identifier}")
     data_bytes = sum(path.stat().st_size for path in data_dir.rglob("*") if path.is_file())
+    phase_seconds = {
+        "create": create_seconds,
+        "semantic": semantic_seconds,
+        "retrieval": retrieval["total_ms"] / 1000.0,
+        "reader": reader_seconds,
+        "judge": judge_seconds,
+        "other": max(0.0, wall_seconds - create_seconds - semantic_seconds - retrieval["total_ms"] / 1000.0 - reader_seconds - judge_seconds),
+    }
+    usage = {"semantic": semantic_usage, "reader": reader_usage, "judge": judge_usage}
+    organized_asset_ids: list[str] = []
+    for frozen in frozen_batches:
+        submission = load_json(trace_root / frozen["batch_id"] / "submission.json")
+        organized_asset_ids.extend(str(value) for value in submission["asset_ids"])
+    require(organized_asset_ids == assets, f"organized asset identity changed: {identifier}")
+    diagnostic_path = root / "diagnostic.json"
+    diagnostic = _diagnostic_record(
+        evaluation_question,
+        identity=stage_identities["diagnostic"],
+        answer=answer,
+        correct=correct,
+        assets=assets,
+        asset_sources=asset_sources,
+        organized_asset_ids=organized_asset_ids,
+        retrieval=retrieval,
+        semantic_trace_root=trace_root,
+        reader_input=reader_input_path,
+        reader_output=reader_output_path,
+        judge_input=judge_input_path,
+        judge_output=judge_output_path,
+        phase_seconds=phase_seconds,
+        usage=usage,
+        checkpoint_path=checkpoint_path,
+        semantic_plan_path=plan_path,
+        retrieval_path=retrieval_path,
+        answer_path=answer_path,
+    )
+    _write_immutable(diagnostic_path, diagnostic, f"diagnostic evidence changed: {identifier}")
     result = {
         "schema": QUESTION_SCHEMA, "identity": identity, "question_id": identifier, "question_type": question["question_type"],
         "hypothesis": answer, "autoeval_label": {"model": protocol["judge"]["model"], "label": correct, "output": judge_output},
-        "retrieval": retrieval, "usage": {"semantic": semantic_usage, "reader": reader_usage, "judge": judge_usage},
+        "retrieval": retrieval, "usage": usage,
         "asset_count": len(assets), "semantic_batches": len(batches),
         "semantic_execution": {
             "plan_sha256": plan["serial_identity_sha256"],
             "serial_concurrent_equivalent": plan["equivalent"],
             "analysis_completion_order": checkpoint["analysis_completion_order"],
             "submission_order": checkpoint["submission_order"],
-            "analysis_units": sum(len(units) for units in units_by_batch.values()),
-            "analysis_max_input_chars": protocol["memory"]["semantic_analysis_max_input_chars"],
+            "analysis_units": len(units),
+            "analysis_input_token_upper_bound": protocol["memory"]["semantic_analysis_input_token_upper_bound"],
+            "analysis_output_token_upper_bound": protocol["memory"]["semantic_analysis_output_token_upper_bound"],
+            "input_representation": protocol["memory"]["semantic_input_representation"],
             "all_analyses_complete_before_submission": True,
         },
-        "phase_seconds": {
-            "create": create_seconds, "semantic": semantic_seconds, "retrieval": retrieval["total_ms"] / 1000.0,
-            "reader": reader_seconds, "judge": judge_seconds,
-            "other": max(0.0, time.monotonic() - started - create_seconds - semantic_seconds - retrieval["total_ms"] / 1000.0 - reader_seconds - judge_seconds),
-        },
+        "phase_seconds": phase_seconds,
+        "diagnostic": {"path": diagnostic_path.as_posix(), "sha256": sha256(diagnostic_path), "first_observed_gap": diagnostic["first_observed_gap"]},
         "resources": {"ownward_data_bytes": data_bytes}, "wall_seconds": wall_seconds, "complete": True,
     }
     write_json(result_path, result)
     return result
+
+
+def write_dry_plan_input_manifest(path: Path, units: list[dict[str, Any]]) -> None:
+    manifest_units = []
+    for unit in units:
+        value = CodexCapability.semantic_input(unit["work"])
+        equivalence = CodexCapability.validate_semantic_input(unit["work"], value)
+        bodies = [{
+            "body_ref": item["body_ref"],
+            "id": item["id"],
+            "revision": item["revision"],
+            "content_chars": len(item["content"]),
+            "content_utf8_bytes": len(item["content"].encode("utf-8")),
+            "content_sha256": hashlib.sha256(item["content"].encode("utf-8")).hexdigest(),
+        } for item in value["bodies"]]
+        manifest_units.append({
+            "identity": unit["identity"],
+            "unit_index": unit["unit_index"],
+            "batch_indexes": unit["batch_indexes"],
+            "work_ids": unit["work_ids"],
+            "bodies": bodies,
+            "work_references": value["work"],
+            "equivalence": equivalence,
+            "fact_equivalence_sha256": unit["fact_equivalence_sha256"],
+            "prompt_sha256": unit["prompt_sha256"],
+            "schema_sha256": unit["schema_sha256"],
+            "input_chars": unit["input_chars"],
+            "input_utf8_bytes": unit["input_utf8_bytes"],
+            "output_token_upper_bound": unit["output_token_upper_bound"],
+        })
+    write_json(path, {
+        "schema": "ownward.longmemeval-s-dry-plan-input-manifest/v1",
+        "contains_body_content": False,
+        "units": manifest_units,
+        "identity": canonical_sha256(manifest_units),
+    })
+
+
+def dry_plan_question(
+    question: dict[str, Any], output_root: Path, plan_identity: str,
+    binary: Path, embedding: Path, protocol: dict[str, Any],
+) -> dict[str, Any]:
+    question = _product_question(question)
+    identifier = str(question["question_id"])
+    root = output_root / "questions" / identifier
+    result_path = root / "plan.json"
+    question_identity = canonical_sha256({"plan": plan_identity, "question": question})
+    if result_path.is_file():
+        result = load_json(result_path)
+        require(isinstance(result, dict) and result.get("question_identity") == question_identity, f"dry-plan identity changed: {identifier}")
+        input_manifest_path = root / "input-manifest.json"
+        trace_root = root / "semantic-work"
+        if not input_manifest_path.is_file():
+            frozen_batches = sorted(
+                (load_json(path) for path in trace_root.glob("*/work.json")),
+                key=lambda value: int(value["batch_index"]),
+            )
+            require(frozen_batches, f"dry-plan input evidence is missing: {identifier}")
+            units = semantic_analysis_units(frozen_batches, protocol["memory"], object.__new__(CodexCapability))
+            write_dry_plan_input_manifest(input_manifest_path, units)
+        if result.get("input_manifest_sha256") != sha256(input_manifest_path):
+            result["input_manifest_sha256"] = sha256(input_manifest_path)
+            write_json(result_path, result)
+        shutil.rmtree(trace_root, ignore_errors=True)
+        shutil.rmtree(root / "ownward-data", ignore_errors=True)
+        return result
+    root.mkdir(parents=True, exist_ok=True)
+    checkpoint_path = root / "checkpoint.json"
+    checkpoint = load_json(checkpoint_path) if checkpoint_path.is_file() else {
+        "schema": "ownward.longmemeval-s-dry-plan-question/v1",
+        "question_identity": question_identity,
+        "assets": [],
+        "asset_sources": [],
+    }
+    require(isinstance(checkpoint, dict) and checkpoint.get("question_identity") == question_identity, f"dry-plan checkpoint changed: {identifier}")
+    data_dir = root / "ownward-data"
+    environment = os.environ.copy()
+    environment["OWNWARD_EMBEDDING_BUNDLE_DIR"] = str(embedding)
+    capability = object.__new__(CodexCapability)
+    with OwnwardRuntime(binary, data_dir, environment, startup_seconds=60, operation_seconds=float(protocol["retrieval"]["query_timeout_seconds"])) as runtime:
+        require(runtime.client is not None, "Ownward client is unavailable")
+        sessions = [
+            session_content(str(session_id), str(date), turns)
+            for session_id, date, turns in zip(question["haystack_session_ids"], question["haystack_dates"], question["haystack_sessions"])
+        ]
+        assets = list(checkpoint.get("assets", []))
+        asset_sources = list(checkpoint.get("asset_sources", []))
+        require(len(assets) == len(asset_sources), f"dry-plan asset checkpoint is incomplete: {identifier}")
+        batch_size = int(protocol["memory"]["create_batch_size"])
+        for offset in range(len(assets), len(sessions), batch_size):
+            contents = sessions[offset:offset + batch_size]
+            created = runtime.client.call_tool("ownward_create_batch", {"items": [
+                {
+                    "content": content,
+                    "contexts": [{"key": "source", "value": "LongMemEval-S"}],
+                    "source": {"actor": "longmemeval-s", "ref": str(question["haystack_session_ids"][offset + index])},
+                }
+                for index, content in enumerate(contents)
+            ]})
+            values = created.get("results") if isinstance(created, dict) else None
+            require(isinstance(values, list) and len(values) == len(contents), f"dry-plan create batch failed: {identifier}")
+            for index, value in enumerate(values):
+                mutation = value.get("result") if isinstance(value, dict) and not value.get("error") else None
+                information = mutation.get("information") if isinstance(mutation, dict) else None
+                require(isinstance(information, dict) and isinstance(information.get("id"), str), f"dry-plan create item failed: {identifier}")
+                assets.append(information["id"])
+                asset_sources.append({"asset_id": information["id"], "session_id": str(question["haystack_session_ids"][offset + index])})
+            checkpoint["assets"] = assets
+            checkpoint["asset_sources"] = asset_sources
+            write_json(checkpoint_path, checkpoint)
+        semantic_size = int(protocol["memory"]["semantic_batch_size"])
+        batches = [assets[index:index + semantic_size] for index in range(0, len(assets), semantic_size)]
+        trace_root = root / "semantic-work"
+        frozen_batches = [
+            freeze_semantic_batch(runtime, batch, trace_root, question_identity, index)
+            for index, batch in enumerate(batches)
+        ]
+        units = semantic_analysis_units(frozen_batches, protocol["memory"], capability)
+    input_manifest_path = root / "input-manifest.json"
+    write_dry_plan_input_manifest(input_manifest_path, units)
+    old_sizes = [size for batch in frozen_batches for size in CodexCapability.legacy_semantic_request_sizes(batch["work"])]
+    source_body_chars = sum(len(session) for session in sessions)
+    result = {
+        "schema": "ownward.longmemeval-s-dry-plan-question/v1",
+        "question_identity": question_identity,
+        "question_id": identifier,
+        "sessions": len(sessions),
+        "semantic_work_batches": len(frozen_batches),
+        "semantic_work_items": sum(len(batch["work"]) for batch in frozen_batches),
+        "source_body_chars": source_body_chars,
+        "analysis_calls": len(units),
+        "legacy_analysis_calls": len(old_sizes),
+        "input_utf8_bytes": sum(unit["input_utf8_bytes"] for unit in units),
+        "legacy_input_utf8_bytes": sum(old_sizes),
+        "maximum_input_utf8_bytes": max(unit["input_utf8_bytes"] for unit in units),
+        "maximum_output_token_upper_bound": max(unit["output_token_upper_bound"] for unit in units),
+        "units": [{
+            name: unit[name]
+            for name in (
+                "identity", "unit_index", "batch_indexes", "work_ids", "input_chars", "input_utf8_bytes",
+                "output_token_upper_bound", "body_count", "body_chars", "equivalence_sha256",
+            )
+        } for unit in units],
+        "all_work_preserved": [work_id for unit in units for work_id in unit["work_ids"]]
+        == [item["id"] for batch in frozen_batches for item in batch["work"]],
+        "all_bodies_deduplicated_per_analysis_scope": True,
+        "model_invoked": False,
+        "input_manifest_sha256": sha256(input_manifest_path),
+    }
+    write_json(result_path, result)
+    shutil.rmtree(data_dir, ignore_errors=True)
+    shutil.rmtree(root / "semantic-work", ignore_errors=True)
+    return result
+
+
+def execute_dry_plan(
+    *, environment_manifest: Path, protocol_path: Path, dataset_path: Path, output_dir: Path,
+    binary: Path, embedding: Path, candidate: str, environment_sha256: str,
+    input_manifest_sha256: str, resume: bool,
+) -> dict[str, Any]:
+    environment = validate_environment(environment_manifest, smoke=False)
+    protocol = load_json(protocol_path)
+    require(isinstance(protocol, dict), "protocol is not an object")
+    validate_protocol(protocol)
+    questions = validate_dataset(dataset_path.resolve(), formal=True)
+    require(binary.resolve().is_file() and embedding.resolve().is_dir(), "candidate artifacts are incomplete")
+    output_dir = output_dir.resolve()
+    require(output_dir.is_relative_to(Path(environment["value"]["layout"]["runs"]).resolve()), "dry-plan must stay under persistent runs root")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    binary_digest = sha256(binary)
+    dataset_digest = sha256(dataset_path)
+    semantic_protocol = {
+        "transport_version": SEMANTIC_TRANSPORT_VERSION,
+        "memory": protocol["memory"],
+        "create_context": {"key": "source", "value": "LongMemEval-S"},
+    }
+    identity_value = {
+        "schema": "ownward.longmemeval-s-dry-plan/v1",
+        "candidate": candidate,
+        "binary_sha256": binary_digest,
+        "environment_sha256": environment_sha256,
+        "input_manifest_sha256": input_manifest_sha256,
+        "dataset_sha256": dataset_digest,
+        "semantic_dependency_sha256": canonical_sha256(semantic_protocol),
+    }
+    identity_value["sha256"] = canonical_sha256(identity_value)
+    identity_path = output_dir / "identity.json"
+    if identity_path.is_file():
+        require(resume and load_json(identity_path) == identity_value, "dry-plan identity changed")
+    else:
+        require(not any(output_dir.iterdir()), "dry-plan output is not empty and has no identity")
+        write_json(identity_path, identity_value)
+    report_path = output_dir / "report.json"
+    if report_path.is_file():
+        report = load_json(report_path)
+        require(isinstance(report, dict) and report.get("identity") == identity_value["sha256"], "dry-plan report identity changed")
+        return report
+    results: dict[str, dict[str, Any]] = {}
+    with ThreadPoolExecutor(max_workers=int(protocol["execution"]["max_workers"]), thread_name_prefix="longmemeval-dry-plan") as pool:
+        futures = {
+            pool.submit(
+                dry_plan_question, question, output_dir, identity_value["sha256"],
+                binary.resolve(), embedding.resolve(), protocol,
+            ): question
+            for question in questions
+        }
+        for future in as_completed(futures):
+            result = future.result()
+            results[result["question_id"]] = result
+    ordered = [results[item["question_id"]] for item in questions]
+    report = {
+        "schema": "ownward.longmemeval-s-dry-plan/v1",
+        "identity": identity_value["sha256"],
+        "questions": len(ordered),
+        "sessions": sum(item["sessions"] for item in ordered),
+        "semantic_work_batches": sum(item["semantic_work_batches"] for item in ordered),
+        "semantic_work_items": sum(item["semantic_work_items"] for item in ordered),
+        "semantic_analysis_calls": sum(item["analysis_calls"] for item in ordered),
+        "legacy_semantic_analysis_calls": sum(item["legacy_analysis_calls"] for item in ordered),
+        "input_utf8_bytes": sum(item["input_utf8_bytes"] for item in ordered),
+        "legacy_input_utf8_bytes": sum(item["legacy_input_utf8_bytes"] for item in ordered),
+        "maximum_input_utf8_bytes": max(item["maximum_input_utf8_bytes"] for item in ordered),
+        "maximum_output_token_upper_bound": max(item["maximum_output_token_upper_bound"] for item in ordered),
+        "context": {
+            "window_tokens": protocol["memory"]["semantic_context_window_tokens"],
+            "input_token_upper_bound": protocol["memory"]["semantic_analysis_input_token_upper_bound"],
+            "output_token_upper_bound": protocol["memory"]["semantic_analysis_output_token_upper_bound"],
+            "safety_tokens": protocol["memory"]["semantic_context_safety_tokens"],
+            "input_bound_method": "utf8-bytes-upper-bound-token-count",
+        },
+        "process_projection": {
+            "legacy_codex_processes": sum(item["legacy_analysis_calls"] for item in ordered) + (2 * len(ordered)),
+            "app_server_processes": 1,
+            "fresh_threads": sum(item["analysis_calls"] for item in ordered) + (2 * len(ordered)),
+        },
+        "all_work_preserved": all(item["all_work_preserved"] for item in ordered),
+        "all_bodies_deduplicated_per_analysis_scope": all(item["all_bodies_deduplicated_per_analysis_scope"] for item in ordered),
+        "model_invoked": False,
+        "complete": True,
+    }
+    require(report["maximum_input_utf8_bytes"] <= report["context"]["input_token_upper_bound"], "dry-plan input exceeds the frozen model boundary")
+    require(report["maximum_output_token_upper_bound"] <= report["context"]["output_token_upper_bound"], "dry-plan output exceeds the frozen model boundary")
+    write_json(report_path, report)
+    return report
 
 
 def deterministic_package(output: Path, files: list[Path], root: Path) -> Path:
@@ -1071,21 +1910,124 @@ def checkpoint_manifest(output_dir: Path, run_identity: str) -> Path:
     questions_root = output_dir / "questions"
     for path in sorted(item for item in questions_root.rglob("*") if item.is_file() and "ownward-data" not in item.parts):
         files.append({"path": path.relative_to(output_dir).as_posix(), "bytes": path.stat().st_size, "sha256": sha256(path)})
+    for name in ("hypotheses.jsonl", "official-evaluation.jsonl", "diagnostics.jsonl", "diagnostic-summary.json"):
+        artifact = output_dir / name
+        require(artifact.is_file(), f"checkpoint artifact is missing: {name}")
+        files.append({"path": name, "bytes": artifact.stat().st_size, "sha256": sha256(artifact)})
     path = output_dir / "checkpoint-manifest.json"
     write_json(path, {"schema": "ownward.longmemeval-s-checkpoint-manifest/v1", "run_identity": run_identity, "files": files})
     return path
+
+
+def build_diagnostic_summary(output_dir: Path, ordered: list[dict[str, Any]]) -> tuple[Path, Path, dict[str, Any]]:
+    diagnostics = [load_json(output_dir / "questions" / item["question_id"] / "diagnostic.json") for item in ordered]
+    require(all(isinstance(item, dict) and item.get("diagnostic_only") is True for item in diagnostics), "diagnostic evidence is incomplete")
+    by_gap: dict[str, int] = {}
+    by_capability: dict[str, dict[str, int]] = {}
+    by_type: dict[str, dict[str, int]] = {}
+    for item in diagnostics:
+        gap = str(item["first_observed_gap"])
+        by_gap[gap] = by_gap.get(gap, 0) + 1
+        for name, bucket_name in ((str(item["capability"]), "capability"), (str(item["question_type"]), "type")):
+            target = by_capability if bucket_name == "capability" else by_type
+            bucket = target.setdefault(name, {"questions": 0, "correct": 0})
+            bucket["questions"] += 1
+            bucket["correct"] += int(bool(item["correct"]))
+    summary = {
+        "schema": "ownward.longmemeval-s-diagnostic-summary/v2",
+        "profile": PRODUCTION_PROFILE,
+        "questions": len(diagnostics),
+        "correct": sum(int(bool(item["correct"])) for item in diagnostics),
+        "by_first_observed_gap": by_gap,
+        "automatic_root_cause_attribution": False,
+        "by_capability": by_capability,
+        "by_question_type": by_type,
+        "post_answer_only": True,
+        "excluded_from_product_execution_and_scoring": True,
+    }
+    diagnostics_path = output_dir / "diagnostics.jsonl"
+    diagnostics_path.write_text("".join(json.dumps(item, ensure_ascii=False) + "\n" for item in diagnostics), encoding="utf-8")
+    summary_path = output_dir / "diagnostic-summary.json"
+    write_json(summary_path, summary)
+    return diagnostics_path, summary_path, summary
+
+
+def record_question_failure(output_dir: Path, question: dict[str, Any], error: BaseException) -> None:
+    product_question = _product_question(question)
+    question_id = str(product_question["question_id"])
+    root = output_dir / "questions" / question_id
+    checkpoint_path = root / "checkpoint.json"
+    checkpoint = load_json(checkpoint_path) if checkpoint_path.is_file() else {}
+    checkpoint = checkpoint if isinstance(checkpoint, dict) else {}
+    expected_sources = [str(value) for value in product_question.get("haystack_session_ids", [])]
+    asset_sources = checkpoint.get("asset_sources") if isinstance(checkpoint.get("asset_sources"), list) else []
+    created_sources = [str(item.get("session_id")) for item in asset_sources if isinstance(item, dict) and item.get("session_id")]
+    semantic_plan_path = root / "semantic-plan.json"
+    semantic_plan = load_json(semantic_plan_path) if semantic_plan_path.is_file() else {}
+    semantic_plan = semantic_plan if isinstance(semantic_plan, dict) else {}
+    planned_batches = semantic_plan.get("batches") if isinstance(semantic_plan.get("batches"), list) else []
+    submitted_batches = int(checkpoint.get("organized_batches", 0))
+    stage = "create_or_semantic"
+    if len(created_sources) < len(expected_sources):
+        first_gap = "source_session_not_created"
+    elif submitted_batches < len(planned_batches) or not planned_batches:
+        first_gap = "semantic_work_not_fully_submitted"
+    else:
+        first_gap = "execution_failed_after_semantic_submission"
+    if (root / "retrieval.json").is_file():
+        stage = "reader"
+        first_gap = "reader_execution_failed"
+    if (root / "answer.json").is_file():
+        stage = "judge_or_diagnostic"
+        first_gap = "judge_or_diagnostic_execution_failed"
+    artifacts = {}
+    for name, path in (
+        ("question_checkpoint", checkpoint_path),
+        ("semantic_plan", semantic_plan_path),
+        ("retrieval", root / "retrieval.json"),
+        ("reader_input", root / "reader" / "input.json"),
+        ("reader_output", root / "reader" / "output.json"),
+        ("frozen_answer", root / "answer.json"),
+        ("judge_input", root / "judge" / "input.json"),
+        ("judge_output", root / "judge" / "output.json"),
+    ):
+        if path.is_file():
+            artifacts[name] = {"path": path.as_posix(), "sha256": sha256(path)}
+    write_json(root / "failure.json", {
+        "schema": "ownward.longmemeval-s-question-failure/v2",
+        "question_id": question_id,
+        "stage": stage,
+        "first_observed_gap": first_gap,
+        "causal_interpretation": {"status": "not_determined", "automatic_root_cause_attribution": False},
+        "execution_observations": {
+            "expected_source_session_ids": expected_sources,
+            "created_source_session_ids": created_sources,
+            "source_creation_complete": len(created_sources) == len(expected_sources),
+            "planned_semantic_batches": len(planned_batches),
+            "submitted_semantic_batches": submitted_batches,
+            "semantic_submission_complete": bool(planned_batches) and submitted_batches == len(planned_batches),
+        },
+        "artifacts": artifacts,
+        "diagnostic_gold_used": False,
+        "error_type": type(error).__name__,
+        "message": str(error),
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+    })
 
 
 def complete_report(output_dir: Path, identity: dict[str, Any], question_count: int) -> dict[str, Any] | None:
     report_path = output_dir / "report.json"
     package_path = output_dir / "submission.zip"
     checkpoint_path = output_dir / "checkpoint-manifest.json"
-    if not all(path.is_file() for path in (report_path, package_path, checkpoint_path)):
+    if not all(path.is_file() for path in (
+        report_path, package_path, checkpoint_path,
+        output_dir / "diagnostics.jsonl", output_dir / "diagnostic-summary.json",
+    )):
         return None
     report = load_json(report_path)
     if not isinstance(report, dict) or report.get("questions") != question_count:
         return None
-    for name in ("candidate", "binary_sha256", "environment_sha256", "input_manifest_sha256", "tool_sha256", "formal"):
+    for name in ("candidate", "binary_sha256", "environment_sha256", "input_manifest_sha256", "tool_sha256", "formal", "profile"):
         if report.get(name) != identity.get(name):
             return None
     if report.get("submission_sha256") != sha256(package_path):
@@ -1100,7 +2042,7 @@ def execute(
     *, environment_manifest: Path, protocol_path: Path, dataset_path: Path, output_dir: Path,
     binary: Path, embedding: Path, codex_binary: Path, codex_auth_file: Path,
     candidate: str, environment_sha256: str, input_manifest_sha256: str, tool_sha256: str,
-    judge_api_key_env: str, formal: bool, resume: bool, judge_fixture_label: bool | None = None,
+    formal: bool, resume: bool,
 ) -> dict[str, Any]:
     environment = validate_environment(environment_manifest, smoke=False)
     protocol = load_json(protocol_path)
@@ -1112,59 +2054,98 @@ def execute(
     output_dir = output_dir.resolve()
     require(output_dir.is_relative_to(Path(environment["value"]["layout"]["runs"]).resolve()), "community run must stay under persistent runs root")
     output_dir.mkdir(parents=True, exist_ok=True)
+    binary_digest = sha256(binary)
+    dataset_digest = sha256(dataset_path)
+    stage_dependencies = stage_dependency_identities(
+        protocol=protocol,
+        candidate=candidate,
+        binary_sha256=binary_digest,
+        environment_sha256=environment_sha256,
+        input_manifest_sha256=input_manifest_sha256,
+        dataset_sha256=dataset_digest,
+        formal=formal,
+        evaluator_sha256=sha256(environment["evaluator"]),
+    )
     run_identity_value = {
-        "schema": RUN_SCHEMA, "candidate": candidate, "binary_sha256": sha256(binary), "environment_sha256": environment_sha256,
+        "schema": RUN_SCHEMA, "candidate": candidate, "binary_sha256": binary_digest, "environment_sha256": environment_sha256,
         "input_manifest_sha256": input_manifest_sha256, "tool_sha256": tool_sha256, "protocol_sha256": sha256(protocol_path),
-        "dataset_sha256": sha256(dataset_path), "formal": formal,
+        "dataset_sha256": dataset_digest, "formal": formal, "profile": PRODUCTION_PROFILE,
+        "stage_dependencies": stage_dependencies,
         "capabilities": {
             "semantic": {"source": "codex", "model": protocol["memory"]["semantic_model"], "reasoning_effort": protocol["memory"]["semantic_reasoning_effort"]},
             "reader": {"source": "codex", "model": protocol["reader"]["model"], "reasoning_effort": protocol["reader"]["reasoning_effort"]},
-            "judge": {"source": "official-openai" if formal else "deterministic-fixture", "model": protocol["judge"]["model"]},
+            "judge": {"source": "codex", "model": protocol["judge"]["model"], "reasoning_effort": protocol["judge"]["reasoning_effort"]},
         },
     }
     run_identity = canonical_sha256(run_identity_value)
     identity_path = output_dir / "identity.json"
     if identity_path.is_file():
         require(resume, "community run already exists; use --resume")
-        require(load_json(identity_path) == {**run_identity_value, "sha256": run_identity}, "community run identity changed")
+        existing_identity = load_json(identity_path)
+        require(isinstance(existing_identity, dict), "community run identity is invalid")
+        if existing_identity != {**run_identity_value, "sha256": run_identity}:
+            rebind_run_identity(output_dir, existing_identity, {**run_identity_value, "sha256": run_identity})
     else:
         require(not any(output_dir.iterdir()), "community output is not empty and has no identity")
         write_json(identity_path, {**run_identity_value, "sha256": run_identity})
+    clean_stale_codex_runtime_roots(output_dir)
     existing_report = complete_report(output_dir, {**run_identity_value, "sha256": run_identity}, len(questions))
     if existing_report is not None:
         return existing_report
-    capability_factory = lambda: CodexCapability(codex_binary, codex_auth_file)
-    if formal:
-        require(judge_fixture_label is None, "formal execution cannot use a judge fixture")
-        judge_api_key = os.environ.get(judge_api_key_env, "")
-        require(bool(judge_api_key), f"official judge credential environment variable is unavailable: {judge_api_key_env}")
-        judge_factory: Callable[[], Any] = lambda: OfficialJudgeClient(judge_api_key)
-    else:
-        require(judge_fixture_label is not None, "non-formal execution requires an explicit deterministic judge fixture")
-        judge_factory = lambda: DeterministicJudgeFixture(judge_fixture_label)
     started_at = datetime.now(timezone.utc).isoformat()
     results: dict[str, dict[str, Any]] = {}
-    with CodexScheduler(int(protocol["execution"]["codex_max_active"])) as codex_scheduler:
-        with PersistentWallClock(output_dir / "wall-clock.json") as clock:
-            with ThreadPoolExecutor(max_workers=int(protocol["execution"]["max_workers"]), thread_name_prefix="longmemeval-question") as pool:
-                futures = {
-                    pool.submit(
-                        process_question, question, output_dir, run_identity, binary.resolve(), embedding.resolve(),
-                        protocol, environment["evaluator"], capability_factory, judge_factory, codex_scheduler,
-                    ): question["question_id"]
-                    for question in questions
-                }
-                for future in as_completed(futures):
-                    identifier = futures[future]
-                    results[identifier] = future.result()
-                    require(clock.elapsed() <= protocol["execution"]["full_wall_seconds"], "LongMemEval-S total wall budget exceeded")
-            accumulated_wall_seconds = clock.elapsed()
-        scheduler_metrics = codex_scheduler.snapshot()
+    transport_parent = output_dir / ".codex-runtime"
+    command_prefix = CodexAppServer.direct_command_prefix(
+        codex_binary.resolve(), codex_session.command_prefix(codex_binary.resolve()),
+    )
+
+    def app_server_factory(_worker_index: int, _generation: int) -> CodexAppServer:
+        runtime_root = isolated_runtime_root(transport_parent)
+        environment = codex_session.isolated_environment(codex_auth_file.resolve(), runtime_root / "codex-home")
+        return CodexAppServer(
+            codex_binary.resolve(), codex_auth_file.resolve(), runtime_root, command_prefix, environment,
+        )
+
+    try:
+        pool_size = int(protocol["execution"]["codex_max_active"])
+        with CodexScheduler(pool_size) as codex_scheduler:
+            with CodexAppServerPool(pool_size, app_server_factory) as transport:
+                capability_factory = lambda: CodexCapability(transport)
+                with PersistentWallClock(output_dir / "wall-clock.json") as clock:
+                    pool = ThreadPoolExecutor(max_workers=int(protocol["execution"]["max_workers"]), thread_name_prefix="longmemeval-question")
+                    try:
+                        futures = {
+                            pool.submit(
+                                process_question, question, output_dir, run_identity, binary.resolve(), embedding.resolve(),
+                                protocol, environment["evaluator"], capability_factory, codex_scheduler, stage_dependencies,
+                            ): question
+                            for question in questions
+                        }
+                        for future in as_completed(futures):
+                            question = futures[future]
+                            identifier = question["question_id"]
+                            try:
+                                results[identifier] = future.result()
+                            except BaseException as error:
+                                record_question_failure(output_dir, question, error)
+                                raise
+                            require(clock.elapsed() <= protocol["execution"]["full_wall_seconds"], "LongMemEval-S total wall budget exceeded")
+                    except BaseException:
+                        pool.shutdown(wait=False, cancel_futures=True)
+                        raise
+                    else:
+                        pool.shutdown(wait=True, cancel_futures=False)
+                    accumulated_wall_seconds = clock.elapsed()
+                transport_metrics = transport.diagnostics()
+            scheduler_metrics = codex_scheduler.snapshot()
+    finally:
+        clean_stale_codex_runtime_roots(output_dir)
     ordered = [results[item["question_id"]] for item in questions]
     hypotheses = output_dir / "hypotheses.jsonl"
     evaluation = output_dir / "official-evaluation.jsonl"
     hypotheses.write_text("".join(json.dumps({"question_id": item["question_id"], "hypothesis": item["hypothesis"]}, ensure_ascii=False) + "\n" for item in ordered), encoding="utf-8")
     evaluation.write_text("".join(json.dumps({"question_id": item["question_id"], "hypothesis": item["hypothesis"], "autoeval_label": item["autoeval_label"]}, ensure_ascii=False) + "\n" for item in ordered), encoding="utf-8")
+    diagnostics_path, diagnostic_summary_path, diagnostic_summary = build_diagnostic_summary(output_dir, ordered)
     correct = sum(1 for item in ordered if item["autoeval_label"]["label"])
     by_type: dict[str, dict[str, Any]] = {}
     for item in ordered:
@@ -1190,15 +2171,16 @@ def execute(
         name: sum(
             float(item["usage"][stage].get(name, 0)) if name == "wall_seconds" else int(item["usage"][stage].get(name, 0))
             for item in ordered
-            for stage in ("semantic", "reader")
+            for stage in ("semantic", "reader", "judge")
         )
         for name in ("calls", "attempts", "retries", "rate_limit_events", "interrupted_attempts", "wall_seconds")
     }
     accuracy = correct / len(ordered)
     report = {
-        "schema": RUN_SCHEMA, "official_version": protocol["version"], "formal": formal,
+        "schema": RUN_SCHEMA, "official_version": protocol["version"], "profile": PRODUCTION_PROFILE, "formal": formal,
         "candidate": candidate, "binary_sha256": sha256(binary), "environment_sha256": environment_sha256,
         "input_manifest_sha256": input_manifest_sha256, "tool_sha256": tool_sha256,
+        "stage_dependencies": stage_dependencies,
         "capabilities": run_identity_value["capabilities"],
         "questions": len(ordered), "correct": correct, "accuracy": accuracy, "categories": by_type,
         "retrieval": {
@@ -1210,16 +2192,50 @@ def execute(
             **usage, "wall_seconds": accumulated_wall_seconds, "sessions": sum(item["asset_count"] for item in ordered),
             "semantic_batches": sum(item["semantic_batches"] for item in ordered),
             "semantic_submitted_batches": sum(len(item["semantic_execution"]["submission_order"]) for item in ordered),
-            "codex": {**codex_metrics, "scheduler": scheduler_metrics},
+            "codex": {**codex_metrics, "scheduler": scheduler_metrics, "transport": transport_metrics},
             "ownward_data_bytes": sum(item["resources"]["ownward_data_bytes"] for item in ordered),
         },
-        "threshold": {"minimum_accuracy": protocol["acceptance"]["minimum_accuracy"], "reference": protocol["acceptance"]["reference"]},
-        "passed": accuracy >= protocol["acceptance"]["minimum_accuracy"], "started_at": started_at, "finished_at": datetime.now(timezone.utc).isoformat(),
+        "comparison": {
+            "policy": "equivalent-profile-only",
+            "hard_accuracy_threshold": None,
+            "equivalent_profile_fields": protocol["acceptance"]["equivalent_profile_fields"],
+        },
+        "diagnostics": {
+            "questions": diagnostic_summary["questions"],
+            "summary_sha256": sha256(diagnostic_summary_path),
+            "records_sha256": sha256(diagnostics_path),
+            "post_answer_only": True,
+            "excluded_from_product_execution_and_scoring": True,
+        },
+        "execution": {
+            "complete": all(item.get("complete") is True for item in ordered),
+            "protocol_valid": True,
+            "evidence_complete": diagnostic_summary["questions"] == len(ordered),
+            "within_wall_boundary": accumulated_wall_seconds <= float(protocol["execution"]["full_wall_seconds"]),
+        },
+        "quality": {
+            "accuracy": accuracy,
+            "categories": by_type,
+            "assessment_status": protocol["acceptance"]["quality_assessment_status"],
+            "assessment_basis": protocol["acceptance"]["quality_assessment_basis"],
+            "first_version_condition_satisfied": False,
+        },
+        "completion": {
+            "status": "not_satisfied",
+            "reason": "community-quality-not-determined",
+        },
+        "passed": False,
+        "started_at": started_at,
+        "finished_at": datetime.now(timezone.utc).isoformat(),
     }
     report_path = output_dir / "report.json"
     write_json(report_path, report)
     checkpoints = checkpoint_manifest(output_dir, run_identity)
-    package = deterministic_package(output_dir / "submission.zip", [hypotheses, evaluation, identity_path, checkpoints], output_dir)
+    package = deterministic_package(
+        output_dir / "submission.zip",
+        [hypotheses, evaluation, diagnostics_path, diagnostic_summary_path, identity_path, checkpoints],
+        output_dir,
+    )
     report["submission_sha256"] = sha256(package)
     write_json(report_path, report)
     return report
@@ -1227,7 +2243,7 @@ def execute(
 
 def _arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Ownward LongMemEval-S community adapter")
-    parser.add_argument("action", choices=("check", "run"))
+    parser.add_argument("action", choices=("check", "dry-plan", "run"))
     parser.add_argument("--environment-manifest", type=Path, required=True)
     parser.add_argument("--protocol", type=Path, default=BENCHMARK_ROOT / "protocol.json")
     parser.add_argument("--dataset", type=Path)
@@ -1240,8 +2256,6 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--tool-sha256")
     parser.add_argument("--codex-binary", type=Path)
     parser.add_argument("--codex-auth-file", type=Path)
-    parser.add_argument("--judge-api-key-env", default="OPENAI_API_KEY")
-    parser.add_argument("--judge-fixture", choices=("yes", "no"))
     parser.add_argument("--non-formal", action="store_true")
     parser.add_argument("--resume", action="store_true")
     return parser.parse_args()
@@ -1256,6 +2270,19 @@ def main() -> int:
             require(isinstance(protocol, dict), "protocol is not an object")
             validate_protocol(protocol)
             result = {"schema": "ownward.longmemeval-s-check/v1", "passed": True, "environment": str(environment["manifest"]), "protocol_sha256": sha256(arguments.protocol)}
+        elif arguments.action == "dry-plan":
+            required = (
+                arguments.dataset, arguments.output_dir, arguments.ownward_binary, arguments.embedding_bundle_dir,
+                arguments.candidate, arguments.environment_sha256, arguments.input_manifest_sha256,
+            )
+            require(all(value is not None for value in required), "dry-plan action is missing required arguments")
+            result = execute_dry_plan(
+                environment_manifest=arguments.environment_manifest, protocol_path=arguments.protocol,
+                dataset_path=arguments.dataset, output_dir=arguments.output_dir,
+                binary=arguments.ownward_binary, embedding=arguments.embedding_bundle_dir,
+                candidate=arguments.candidate, environment_sha256=arguments.environment_sha256,
+                input_manifest_sha256=arguments.input_manifest_sha256, resume=arguments.resume,
+            )
         else:
             required = (
                 arguments.dataset, arguments.output_dir, arguments.ownward_binary, arguments.embedding_bundle_dir,
@@ -1269,9 +2296,8 @@ def main() -> int:
                 codex_binary=arguments.codex_binary, codex_auth_file=arguments.codex_auth_file,
                 candidate=arguments.candidate,
                 environment_sha256=arguments.environment_sha256, input_manifest_sha256=arguments.input_manifest_sha256,
-                tool_sha256=arguments.tool_sha256, judge_api_key_env=arguments.judge_api_key_env,
+                tool_sha256=arguments.tool_sha256,
                 formal=not arguments.non_formal, resume=arguments.resume,
-                judge_fixture_label=None if arguments.judge_fixture is None else arguments.judge_fixture == "yes",
             )
     except (AdapterError, MCPError, OSError, ValueError, subprocess.SubprocessError, json.JSONDecodeError) as error:
         print(f"LongMemEval-S adapter error: {error}", file=sys.stderr)

@@ -3,9 +3,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import shutil
+import time
 from typing import Any
 
 import process_control
@@ -38,6 +40,50 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _remaining_wall_seconds(run_dir: Path, maximum: float) -> float:
+    _require(math.isfinite(maximum) and maximum > 0, "LongMemEval-S wall-clock budget is invalid")
+    clock_path = run_dir / "wall-clock.json"
+    if not clock_path.is_file():
+        return maximum
+    try:
+        clock = _load(clock_path)
+    except (OSError, json.JSONDecodeError) as error:
+        raise CommunityExecutionError("LongMemEval-S wall-clock checkpoint is invalid") from error
+    _require(clock.get("schema") == "ownward.longmemeval-s-wall-clock/v1", "LongMemEval-S wall-clock checkpoint is invalid")
+    elapsed_value = clock.get("elapsed_seconds")
+    _require(isinstance(elapsed_value, (int, float)) and not isinstance(elapsed_value, bool), "LongMemEval-S wall-clock checkpoint is invalid")
+    elapsed = float(elapsed_value)
+    _require(math.isfinite(elapsed) and elapsed >= 0, "LongMemEval-S wall-clock checkpoint is invalid")
+    remaining = maximum - elapsed
+    _require(remaining > 0, "LongMemEval-S frozen wall-clock budget is exhausted")
+    return remaining
+
+
+def _write_wall_seconds(run_dir: Path, elapsed: float) -> None:
+    clock_path = run_dir / "wall-clock.json"
+    temporary = run_dir / ".wall-clock.suite.tmp"
+    temporary.write_text(json.dumps({
+        "schema": "ownward.longmemeval-s-wall-clock/v1",
+        "elapsed_seconds": elapsed,
+    }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    temporary.replace(clock_path)
+
+
+def _run_with_wall_budget(command: list[str], *, cwd: Path, run_dir: Path, maximum: float) -> Any:
+    remaining = _remaining_wall_seconds(run_dir, maximum)
+    consumed = maximum - remaining
+    started = time.monotonic()
+    exhausted = False
+    try:
+        return process_control.run(command, cwd=cwd, timeout=remaining)
+    except process_control.ProcessTimeout as error:
+        exhausted = True
+        raise CommunityExecutionError("LongMemEval-S exceeded its frozen wall-clock budget and was stopped") from error
+    finally:
+        elapsed = maximum if exhausted else min(maximum, consumed + max(0.0, time.monotonic() - started))
+        _write_wall_seconds(run_dir, elapsed)
+
+
 def _persistent_layout(manifest_path: Path) -> tuple[dict[str, Any], Path, Path, Path]:
     manifest = _load(manifest_path)
     _require(manifest.get("schema") == "ownward.longmemeval-s-environment/v1", "LongMemEval-S environment manifest is invalid")
@@ -59,7 +105,12 @@ def _run_complete(path: Path, binding: dict[str, str]) -> dict[str, Any] | None:
     package_path = path / "submission.zip"
     evaluation_path = path / "official-evaluation.jsonl"
     checkpoint_path = path / "checkpoint-manifest.json"
-    if not all(item.is_file() for item in (identity_path, report_path, package_path, evaluation_path, checkpoint_path)):
+    diagnostics_path = path / "diagnostics.jsonl"
+    diagnostic_summary_path = path / "diagnostic-summary.json"
+    if not all(item.is_file() for item in (
+        identity_path, report_path, package_path, evaluation_path, checkpoint_path,
+        diagnostics_path, diagnostic_summary_path,
+    )):
         return None
     try:
         identity, report = _load(identity_path), _load(report_path)
@@ -69,12 +120,22 @@ def _run_complete(path: Path, binding: dict[str, str]) -> dict[str, Any] | None:
         "candidate": binding["candidate"], "binary_sha256": binding["binary_sha256"],
         "environment_sha256": binding["environment_sha256"], "input_manifest_sha256": binding["input_manifest_sha256"],
         "tool_sha256": binding["tool_sha256"], "formal": True,
+        "profile": "Ownward LongMemEval-S Production Profile",
     }
     if any(identity.get(name) != value for name, value in expected.items()):
         return None
     if any(report.get(name) != value for name, value in expected.items() if name != "formal") or report.get("formal") is not True:
         return None
-    if report.get("questions") != 500 or report.get("submission_sha256") != _sha256(package_path):
+    if (
+        report.get("profile") != "Ownward LongMemEval-S Production Profile"
+        or report.get("questions") != 500
+        or report.get("submission_sha256") != _sha256(package_path)
+        or report.get("execution", {}).get("complete") is not True
+        or report.get("execution", {}).get("protocol_valid") is not True
+        or report.get("execution", {}).get("evidence_complete") is not True
+        or report.get("quality", {}).get("assessment_status") != "not_determined"
+        or report.get("passed") is not False
+    ):
         return None
     return report
 
@@ -118,15 +179,11 @@ def execute(
             "--codex-binary", str(config["codex_binary"]), "--codex-auth-file", str(config["codex_auth_file"]),
             "--candidate", binding["candidate"], "--environment-sha256", binding["environment_sha256"],
             "--input-manifest-sha256", binding["input_manifest_sha256"], "--tool-sha256", binding["tool_sha256"],
-            "--judge-api-key-env", str(config["judge_api_key_env"]),
         ]
         if resume:
             command.append("--resume")
         maximum = float(contract["evidence_layers"]["community"]["expected_wall_seconds"]["max"])
-        try:
-            completed = process_control.run(command, cwd=suite_root.parents[2], timeout=maximum)
-        except process_control.ProcessTimeout as error:
-            raise CommunityExecutionError("LongMemEval-S exceeded its frozen wall-clock budget and was stopped") from error
+        completed = _run_with_wall_budget(command, cwd=suite_root.parents[2], run_dir=run_dir, maximum=maximum)
         _require(completed.returncode == 0, f"LongMemEval-S adapter failed: {completed.stderr[-3000:]}")
         existing = _run_complete(run_dir, binding)
     else:
@@ -136,7 +193,10 @@ def execute(
     workspace = Path(config["_workspace"]).resolve()
     evidence = workspace / "evidence" / "community"
     evidence.mkdir(parents=True, exist_ok=True)
-    for name in ("identity.json", "report.json", "hypotheses.jsonl", "official-evaluation.jsonl", "checkpoint-manifest.json", "submission.zip"):
+    for name in (
+        "identity.json", "report.json", "hypotheses.jsonl", "official-evaluation.jsonl",
+        "diagnostics.jsonl", "diagnostic-summary.json", "checkpoint-manifest.json", "submission.zip",
+    ):
         source = run_dir / name
         _require(source.is_file(), f"LongMemEval-S evidence is missing: {name}")
         temporary = evidence / f".{name}.tmp"
@@ -145,19 +205,61 @@ def execute(
     adapter_report = existing
     definition = contract["evidence_layers"]["community"]
     wall_seconds = float(adapter_report["cost"]["wall_seconds"])
-    quality_passed = float(adapter_report["accuracy"]) >= float(definition["minimum_accuracy"])
     within_budget = wall_seconds <= float(definition["expected_wall_seconds"]["max"])
+    profile_complete = adapter_report.get("profile") == definition["profile"]
+    diagnostics = adapter_report.get("diagnostics")
+    diagnostics_complete = isinstance(diagnostics, dict) and diagnostics.get("questions") == definition["questions"]
+    adapter_execution = adapter_report.get("execution")
+    execution_complete = (
+        isinstance(adapter_execution, dict)
+        and adapter_execution.get("complete") is True
+        and adapter_execution.get("protocol_valid") is True
+        and adapter_execution.get("evidence_complete") is True
+        and adapter_execution.get("within_wall_boundary") is True
+    )
+    quality_assessment = definition["quality_assessment"]
     report = {
         "schema": definition["output_schema"], "suite_version": contract["suite_version"],
-        "official_version": definition["version"], "candidate": binding["candidate"], "binary_sha256": binding["binary_sha256"],
+        "official_version": definition["version"], "profile": definition["profile"],
+        "candidate": binding["candidate"], "binary_sha256": binding["binary_sha256"],
         "environment": {"sha256": binding["environment_sha256"]}, "inputs": {"sha256": binding["input_manifest_sha256"]},
         "capabilities": adapter_report["capabilities"],
         "benchmark": {"name": definition["benchmark"], "questions": adapter_report["questions"], "question_types": sorted(adapter_report["categories"]), "complete": adapter_report["questions"] == definition["questions"]},
-        "quality": {"accuracy": adapter_report["accuracy"], "minimum_accuracy": definition["minimum_accuracy"], "categories": adapter_report["categories"], "passed": quality_passed},
+        "quality": {
+            "accuracy": adapter_report["accuracy"],
+            "categories": adapter_report["categories"],
+            "comparison_policy": definition["comparison_policy"],
+            "hard_accuracy_threshold": None,
+            "score_complete": True,
+            "assessment_status": quality_assessment["status"],
+            "assessment_basis": quality_assessment["basis"],
+            "first_version_condition_satisfied": quality_assessment["first_version_condition_satisfied"],
+            "passed": None,
+        },
+        "execution": {
+            "complete": execution_complete,
+            "protocol_valid": bool(isinstance(adapter_execution, dict) and adapter_execution.get("protocol_valid") is True),
+            "evidence_complete": bool(isinstance(adapter_execution, dict) and adapter_execution.get("evidence_complete") is True),
+            "passed": bool(execution_complete and profile_complete and diagnostics_complete and within_budget),
+        },
         "retrieval": adapter_report["retrieval"],
         "cost": {**adapter_report["cost"], "max_wall_seconds": definition["expected_wall_seconds"]["max"], "within_budget": within_budget},
-        "submission": {"package_sha256": _sha256(run_dir / "submission.zip"), "official_evaluation_sha256": _sha256(run_dir / "official-evaluation.jsonl"), "hypotheses_sha256": _sha256(run_dir / "hypotheses.jsonl"), "checkpoint_manifest_sha256": _sha256(run_dir / "checkpoint-manifest.json")},
-        "passed": bool(adapter_report["questions"] == definition["questions"] and quality_passed and within_budget),
+        "diagnostics": {
+            **(diagnostics if isinstance(diagnostics, dict) else {}),
+            "records_sha256": _sha256(run_dir / "diagnostics.jsonl"),
+            "summary_sha256": _sha256(run_dir / "diagnostic-summary.json"),
+            "complete": diagnostics_complete,
+        },
+        "submission": {
+            "package_sha256": _sha256(run_dir / "submission.zip"),
+            "official_evaluation_sha256": _sha256(run_dir / "official-evaluation.jsonl"),
+            "hypotheses_sha256": _sha256(run_dir / "hypotheses.jsonl"),
+            "diagnostics_sha256": _sha256(run_dir / "diagnostics.jsonl"),
+            "diagnostic_summary_sha256": _sha256(run_dir / "diagnostic-summary.json"),
+            "checkpoint_manifest_sha256": _sha256(run_dir / "checkpoint-manifest.json"),
+        },
+        "completion": {"status": "not_satisfied", "reason": "community-quality-not-determined"},
+        "passed": False,
         "started_at": started_at, "finished_at": datetime.now(timezone.utc).isoformat(),
     }
     return report

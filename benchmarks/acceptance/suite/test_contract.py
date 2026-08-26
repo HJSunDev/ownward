@@ -48,6 +48,12 @@ class AcceptanceSuiteContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "原始证据"):
             contract.validate_contract(changed)
 
+    def test_community_contract_rejects_cross_profile_accuracy_threshold(self) -> None:
+        changed = copy.deepcopy(self.value)
+        changed["evidence_layers"]["community"]["minimum_accuracy"] = 0.822
+        with self.assertRaisesRegex(ValueError, "硬门槛"):
+            contract.validate_contract(changed)
+
     def test_report_contract_accepts_complete_report_and_rejects_missing_field(self) -> None:
         report_contract = self.value["reports"]["core"]
         report = {name: "value" for name in report_contract["required"]}

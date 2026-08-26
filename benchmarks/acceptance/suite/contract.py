@@ -47,15 +47,39 @@ def validate_contract(value: dict[str, Any]) -> None:
     _require(community.get("version") == "longmemeval-s/9e0b455f4ef0e2ab8f2e582289761153549043fc+d6f21ea9", "LongMemEval-S 官方版本无效")
     _require(community.get("benchmark") == "LongMemEval-S cleaned" and community.get("questions") == 500, "LongMemEval-S 数据范围无效")
     _require(set(community.get("question_types", [])) == {"single-session-user", "single-session-assistant", "single-session-preference", "multi-session", "temporal-reasoning", "knowledge-update"}, "LongMemEval-S 问题类型无效")
-    _require(community.get("minimum_accuracy") == 0.822, "LongMemEval-S 质量门槛无效")
+    _require(community.get("profile") == "Ownward LongMemEval-S Production Profile", "LongMemEval-S 生产评测口径无效")
+    _require(community.get("comparison_policy") == "equivalent-profile-only", "LongMemEval-S 比较口径无效")
+    _require("minimum_accuracy" not in community, "LongMemEval-S 不得保留跨口径质量硬门槛")
+    _require(_mapping(community, "quality_assessment") == {
+        "status": "not_determined", "basis": "no-equivalent-production-profile-reference",
+        "first_version_condition_satisfied": False,
+    }, "LongMemEval-S 质量判定状态无效")
     _require(community.get("capabilities") == {
-        "semantic": {"source": "codex", "model": "gpt-5.4-mini", "reasoning_effort": "low"},
-        "reader": {"source": "codex", "model": "gpt-5.4", "reasoning_effort": "medium"},
-        "judge": {"source": "official-openai", "model": "gpt-4o-2024-08-06"},
+        "semantic": {"source": "codex", "model": "gpt-5.6-luna", "reasoning_effort": "low"},
+        "reader": {"source": "codex", "model": "gpt-5.6-luna", "reasoning_effort": "medium"},
+        "judge": {"source": "codex", "model": "gpt-5.6-terra", "reasoning_effort": "medium"},
     }, "LongMemEval-S 能力来源无效")
-    _require(_mapping(community, "expected_wall_seconds") == {"calibrated_projection": 18913, "max": 28800}, "LongMemEval-S 时间边界无效")
-    _require(_mapping(community, "concurrency") == {"question_workers": 4, "codex_max_active": 8, "semantic_batch_size": 20, "semantic_analysis_max_input_chars": 300000}, "LongMemEval-S 并发边界无效")
-    _require(_mapping(community, "cost_calibration") == {"questions": 4, "semantic_batches_per_question": 3, "maximum_retry_ratio": 0.1, "requires_zero_rate_limits": True}, "LongMemEval-S 成本校准边界无效")
+    _require(_mapping(community, "expected_wall_seconds") == {
+        "calibration_status": "passed-pool-8", "projected": 12775.987,
+        "required_ceiling": 20053.902, "target_ceiling": 20400,
+        "max": 20400, "formal_ready": True,
+    }, "LongMemEval-S 时间边界无效")
+    _require(_mapping(community, "concurrency") == {
+        "question_workers": 4, "codex_max_active": 8, "semantic_batch_size": 20,
+        "semantic_analysis_max_works": 20, "codex_transport": "app-server-pool-stdio",
+    }, "LongMemEval-S 并发边界无效")
+    _require(_mapping(community, "cost_calibration") == {
+        "questions": 4, "semantic_batches_per_question": 3, "official_dry_plan_questions": 500,
+        "pool_candidates": [8, 12], "selected_pool_size": 8,
+        "selection_rule": "lowest-stable-required-ceiling-at-most-20400",
+        "measurement_status": "passed-pool-8-no-pool-12-required",
+        "representative_wall_seconds": 132.359, "representative_codex_calls": 20,
+        "representative_retries": 0, "representative_transport_timeouts": 0,
+        "representative_interruptions": 0, "representative_worker_restarts": 0,
+        "maximum_retry_ratio": 0.1,
+        "requires_zero_rate_limits": True, "normal_variation_reserve_ratio": 0.2,
+        "bounded_retry_reserve_ratio": 0.1, "checkpoint_recovery_reserve_seconds": 3600,
+    }, "LongMemEval-S 成本校准边界无效")
 
     execution = _mapping(value, "execution")
     _require(set(execution.get("modes", [])) == MODE_NAMES, "统一入口模式不完整或包含额外模式")
