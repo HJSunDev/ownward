@@ -144,7 +144,7 @@ func main() {
 	flag.StringVar(&stagesCSV, "stages", "", "定向阶段，逗号分隔")
 	flag.StringVar(&sourceEquivalent, "source-equivalent-candidate", "", "非正式定向观察绑定的产品源码等价候选")
 	flag.StringVar(&sourceIdentity, "source-identity-sha256", "", "非正式定向观察绑定的当前工作树产品源码摘要")
-	flag.BoolVar(&selfCheck, "self-check", false, "允许在未提交工作树上执行非正式体系自检")
+	flag.BoolVar(&selfCheck, "self-check", false, "允许在显式绑定源码身份的未提交工作树上执行非正式定向自检")
 	flag.Parse()
 	if err := run(materials, candidate, mode, environmentSHA, inputSHA, output, repository, stagesCSV, selfCheck, sourceEquivalent, sourceIdentity); err != nil {
 		fmt.Fprintln(os.Stderr, "ownward-frontier:", err)
@@ -2029,7 +2029,7 @@ func verifySourceIdentity(repository, expected, equivalent, sourceIdentity, mode
 			return nil, fmt.Errorf("读取当前提交: %w", err)
 		}
 		head := strings.TrimSpace(string(headEncoded))
-		if err := verifySelf(head, true); err != nil {
+		if err := verifySelf(head, modifiedObserverAllowed(mode, selfCheck, sourceIdentity, equivalent)); err != nil {
 			return nil, err
 		}
 		return map[string]any{
@@ -2040,7 +2040,7 @@ func verifySourceIdentity(repository, expected, equivalent, sourceIdentity, mode
 		if err := verifyCandidate(repository, expected); err != nil {
 			return nil, err
 		}
-		if err := verifySelf(expected, selfCheck); err != nil {
+		if err := verifySelf(expected, modifiedObserverAllowed(mode, selfCheck, sourceIdentity, equivalent)); err != nil {
 			return nil, err
 		}
 		return map[string]any{"kind": "candidate-commit", "candidate": expected}, nil
@@ -2066,7 +2066,7 @@ func verifySourceIdentity(repository, expected, equivalent, sourceIdentity, mode
 		return nil, fmt.Errorf("读取当前提交: %w", err)
 	}
 	head := strings.TrimSpace(string(headEncoded))
-	if err := verifySelf(head, true); err != nil {
+	if err := verifySelf(head, modifiedObserverAllowed(mode, selfCheck, sourceIdentity, equivalent)); err != nil {
 		return nil, err
 	}
 	treeCommand := exec.Command("git", "ls-tree", "-r", equivalent, "--", "internal", "cmd/ownward", "go.mod", "go.sum")
@@ -2147,7 +2147,12 @@ func verifyCandidate(repository, expected string) error {
 	return nil
 }
 
-func verifySelf(expected string, selfCheck bool) error {
+func modifiedObserverAllowed(mode string, selfCheck bool, sourceIdentity, equivalent string) bool {
+	return selfCheck && mode == "targeted" &&
+		(strings.TrimSpace(sourceIdentity) != "" || strings.TrimSpace(equivalent) != "")
+}
+
+func verifySelf(expected string, allowModified bool) error {
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
 		return errors.New("观察器缺少 Go 构建身份")
@@ -2161,10 +2166,14 @@ func verifySelf(expected string, selfCheck bool) error {
 			modified = setting.Value
 		}
 	}
+	return verifyBuildIdentity(expected, revision, modified == "true", allowModified)
+}
+
+func verifyBuildIdentity(expected, revision string, modified, allowModified bool) error {
 	if revision != expected {
 		return errors.New("观察器不是由候选提交构建")
 	}
-	if modified == "true" && !selfCheck {
+	if modified && !allowModified {
 		return errors.New("正式观察器由含未提交变更的源码构建")
 	}
 	return nil

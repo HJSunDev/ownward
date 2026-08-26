@@ -120,3 +120,46 @@ func TestObservationEnvironmentKeepsFormalComparisonStable(t *testing.T) {
 		t.Fatal("non-formal worktree evidence must retain its source provenance")
 	}
 }
+
+func TestFormalCandidateRequiresCleanMatchingBuild(t *testing.T) {
+	const revision = "candidate"
+	if err := verifyBuildIdentity(revision, revision, false, false); err != nil {
+		t.Fatalf("clean formal candidate was rejected: %v", err)
+	}
+	if err := verifyBuildIdentity(revision, revision, true, false); err == nil {
+		t.Fatal("modified build was accepted as a formal candidate")
+	}
+	if err := verifyBuildIdentity(revision, "other", false, false); err == nil {
+		t.Fatal("mismatched build was accepted as a formal candidate")
+	}
+}
+
+func TestModifiedObserverRequiresExplicitTargetedWorktreeBinding(t *testing.T) {
+	const source = "source"
+	if !modifiedObserverAllowed("targeted", true, source, "") {
+		t.Fatal("explicit targeted worktree source must allow a modified observer")
+	}
+	if !modifiedObserverAllowed("targeted", true, "", "candidate") {
+		t.Fatal("explicit targeted equivalent source must allow a modified observer")
+	}
+	for _, test := range []struct {
+		name       string
+		mode       string
+		selfCheck  bool
+		source     string
+		equivalent string
+	}{
+		{name: "full self-check", mode: "full", selfCheck: true, source: source},
+		{name: "unbound targeted self-check", mode: "targeted", selfCheck: true},
+		{name: "targeted without self-check", mode: "targeted", source: source},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if modifiedObserverAllowed(test.mode, test.selfCheck, test.source, test.equivalent) {
+				t.Fatal("modified observer was allowed without an explicit non-formal targeted binding")
+			}
+		})
+	}
+	if err := verifyBuildIdentity("candidate", "candidate", true, true); err != nil {
+		t.Fatalf("bound targeted worktree observer was rejected: %v", err)
+	}
+}
