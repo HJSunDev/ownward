@@ -1,0 +1,102 @@
+{
+  "schema": "ownward.core-frontier-materials/v1",
+  "version": "ownward-kernel-optimization-view/v1",
+  "optimization_view": {
+    "id": "durable-batch-state-transition-v1",
+    "direction": "execution_architecture_and_state_maintenance",
+    "predecessor_commit": "c9c8b48c2229c97a34803a9a2ceaf54def73d5d3",
+    "formal_scale_observation": {
+      "candidate": "99f519018df99bd5202b0c571b8e43481cd1b80e",
+      "questions": 500,
+      "assets": 23867,
+      "semantic_batches": 1498,
+      "product_create_wall_seconds": 2750.038,
+      "semantic_model_and_submission_wall_seconds": 36992.627,
+      "reader_wall_seconds": 5295.681,
+      "judge_wall_seconds": 3562.214
+    },
+    "root_cause": "public_batches_and_generation_rebuilds_degenerate_into_per_record_fsync",
+    "cost_classification": {
+      "product_asset_and_derived_durability": true,
+      "question_isolation": false,
+      "codex_or_model_inference": false,
+      "benchmark_audit_and_diagnostics": false,
+      "test_scheduler": false
+    },
+    "frozen_gate": {
+      "durable_batch_wall_ratio_max": 0.5,
+      "generation_build_wall_ratio_max": 0.5,
+      "public_create_wall_ms_max": 600.0,
+      "authoritative_state_equivalence_min": 1.0,
+      "derived_state_equivalence_min": 1.0,
+      "batch_order_preservation_min": 1.0,
+      "restart_recovery_min": 1.0,
+      "interrupted_tail_recovery_min": 1.0,
+      "uncommitted_generation_isolation_min": 1.0,
+      "concurrent_batch_completion_min": 1.0,
+      "public_search_recall_min": 1.0,
+      "batch_item_limit_max": 20,
+      "batch_allocation_ratio_max": 1.25,
+      "protected_regression_allowed": false
+    },
+    "protected_directions": {
+      "information_representation_and_organization": "organization-granularity-v1",
+      "retrieval_architecture_and_algorithm": "budget-fit-evidence-selection-v2",
+      "semantic_capability_and_representation_model": "semantic-representation-v1",
+      "data_structure_and_storage_architecture": "storage-deposition-v1"
+    },
+    "leakage_policy": {
+      "formal_question_text": false,
+      "formal_answer": false,
+      "formal_gold_identity": false,
+      "formal_session_content": false
+    }
+  },
+  "scales": [18],
+  "assets": [
+    {"fixture_id":"X01","content":"marker-x01 durable lunar ledger entry.","padding":"alpha ","target_runes":103,"contexts":[]},
+    {"fixture_id":"X02","content":"marker-x02 durable cedar ledger entry.","padding":"bravo ","target_runes":6075,"contexts":[]},
+    {"fixture_id":"X03","content":"marker-x03 durable amber ledger entry.","padding":"charlie ","target_runes":10595,"contexts":[]},
+    {"fixture_id":"X04","content":"marker-x04 durable cobalt ledger entry.","padding":"delta ","target_runes":14643,"contexts":[]},
+    {"fixture_id":"X05","content":"marker-x05 durable maple ledger entry.","padding":"echo ","target_runes":17092,"contexts":[]},
+    {"fixture_id":"X06","content":"marker-x06 durable harbor ledger entry.","padding":"foxtrot ","target_runes":18416,"contexts":[]},
+    {"fixture_id":"X07","content":"marker-x07 durable orbit ledger entry.","padding":"golf ","target_runes":20803,"contexts":[]},
+    {"fixture_id":"X08","content":"marker-x08 durable quartz ledger entry.","padding":"hotel ","target_runes":78215,"contexts":[]},
+    {"fixture_id":"X09","content":"marker-x09 durable prism ledger entry.","padding":"india ","target_runes":6075,"contexts":[]},
+    {"fixture_id":"X10","content":"marker-x10 durable willow ledger entry.","padding":"juliet ","target_runes":10595,"contexts":[]},
+    {"fixture_id":"X11","content":"marker-x11 durable copper ledger entry.","padding":"kilo ","target_runes":14643,"contexts":[]},
+    {"fixture_id":"X12","content":"marker-x12 durable alpine ledger entry.","padding":"lima ","target_runes":17092,"contexts":[]},
+    {"fixture_id":"X13","content":"marker-x13 durable ember ledger entry.","padding":"mike ","target_runes":18416,"contexts":[]},
+    {"fixture_id":"X14","content":"marker-x14 durable silver ledger entry.","padding":"november ","target_runes":20803,"contexts":[]},
+    {"fixture_id":"X15","content":"marker-x15 durable meadow ledger entry.","padding":"oscar ","target_runes":6075,"contexts":[]},
+    {"fixture_id":"X16","content":"marker-x16 durable violet ledger entry.","padding":"papa ","target_runes":10595,"contexts":[]},
+    {"fixture_id":"X17","content":"marker-x17 durable granite ledger entry.","padding":"quebec ","target_runes":14643,"contexts":[]},
+    {"fixture_id":"X18","content":"marker-x18 durable aurora ledger entry.","padding":"romeo ","target_runes":17092,"contexts":[]}
+  ],
+  "change_sequences": [],
+  "queries": [
+    {"query_id":"XQ01","type":"semantic_intent","query":"marker-x01 lunar ledger","contexts":[],"expected_ids":["X01"],"forbidden_ids":[],"required_relation_path":[],"view_role":"protection"}
+  ],
+  "truth": {"relations":[]},
+  "frozen_embeddings": {
+    "X01":[1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"X02":[0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    "X03":[0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0],"X04":[0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0],
+    "X05":[0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0],"X06":[0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0],
+    "X07":[0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0],"X08":[0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0],
+    "X09":[0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0],"X10":[0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0],
+    "X11":[0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0],"X12":[0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0],
+    "X13":[0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0],"X14":[0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0],
+    "X15":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0],"X16":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+    "X17":[1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"X18":[0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  },
+  "frozen_query_embeddings": {"XQ01":[1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]},
+  "frozen_semantics": {
+    "relations": [],
+    "contexts": {"X01":[],"X02":[],"X03":[],"X04":[],"X05":[],"X06":[],"X07":[],"X08":[],"X09":[],"X10":[],"X11":[],"X12":[],"X13":[],"X14":[],"X15":[],"X16":[],"X17":[],"X18":[]}
+  },
+  "deterministic_variants": {
+    "seed": 271828,
+    "count": 2,
+    "operations": ["stable_identity_remap","ingestion_order_permutation","timestamp_translation","context_order_permutation","irrelevant_item_injection"]
+  }
+}

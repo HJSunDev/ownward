@@ -14,10 +14,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"runtime/debug"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -393,6 +395,11 @@ func measureFixture(ctx context.Context, value fixture, stages map[string]bool, 
 			return err
 		}
 	}
+	if stages["execution_state"] {
+		if err := measureExecutionState(ctx, value, out, scratchRoot); err != nil {
+			return err
+		}
+	}
 
 	if stages["identity"] {
 		correct := 0
@@ -670,7 +677,7 @@ func aggregate(item *sampleSpec) float64 {
 }
 
 func requestedStages(mode, csv string) (map[string]bool, error) {
-	known := []string{"identity", "relations", "merge_split", "incremental_consistency", "organization", "indexing", "lexical", "vector", "graph", "context", "fusion", "efficiency", "semantic_representation", "storage_architecture"}
+	known := []string{"identity", "relations", "merge_split", "incremental_consistency", "organization", "indexing", "lexical", "vector", "graph", "context", "fusion", "efficiency", "semantic_representation", "storage_architecture", "execution_state"}
 	result := make(map[string]bool)
 	if mode == "full" {
 		for _, stage := range known {
@@ -1104,6 +1111,385 @@ func measureStorageArchitecture(ctx context.Context, value fixture, out collecto
 	out.add("storage_view_query_p95_ms", "latency", "storage_architecture", queryElapsed.Seconds()*1000, "lower")
 	out.add("derived_records_per_asset", "resources", "storage_architecture", ratioFloat(float64(len(stateStore.All())), float64(len(assetStore.All()))), "lower")
 	return nil
+}
+
+type durableBatchMeasurement struct {
+	Wall              time.Duration
+	AllocatedBytes    uint64
+	AuthorityExact    bool
+	DerivedExact      bool
+	OrderExact        bool
+	RestartExact      bool
+	TailRecoveryExact bool
+}
+
+func measureExecutionState(ctx context.Context, value fixture, out collector, scratchRoot string) error {
+	assets, records := executionScale(value, 3)
+	legacy, err := measureDurableBatch(filepath.Join(scratchRoot, fmt.Sprintf("execution-legacy-%d", time.Now().UnixNano())), assets, records, false, false)
+	if err != nil {
+		return err
+	}
+	candidate, err := measureDurableBatch(filepath.Join(scratchRoot, fmt.Sprintf("execution-candidate-%d", time.Now().UnixNano())), assets, records, true, true)
+	if err != nil {
+		return err
+	}
+	legacyGeneration, err := measureGenerationBuild(filepath.Join(scratchRoot, fmt.Sprintf("generation-legacy-%d", time.Now().UnixNano())), records, false)
+	if err != nil {
+		return err
+	}
+	candidateGeneration, err := measureGenerationBuild(filepath.Join(scratchRoot, fmt.Sprintf("generation-candidate-%d", time.Now().UnixNano())), records, true)
+	if err != nil {
+		return err
+	}
+	legacyPublic, _, _, err := measurePublicCreate(ctx, filepath.Join(scratchRoot, fmt.Sprintf("public-legacy-%d", time.Now().UnixNano())), assets, false)
+	if err != nil {
+		return err
+	}
+	candidatePublic, publicSearch, publicRecovery, err := measurePublicCreate(ctx, filepath.Join(scratchRoot, fmt.Sprintf("public-candidate-%d", time.Now().UnixNano())), assets, true)
+	if err != nil {
+		return err
+	}
+	uncommittedIsolation, err := measureUncommittedGenerationIsolation(filepath.Join(scratchRoot, fmt.Sprintf("generation-isolation-%d", time.Now().UnixNano())))
+	if err != nil {
+		return err
+	}
+	concurrentCompletion, err := measureConcurrentBatchCreate(ctx, filepath.Join(scratchRoot, fmt.Sprintf("execution-concurrent-%d", time.Now().UnixNano())))
+	if err != nil {
+		return err
+	}
+	out.add("predecessor_durable_write_wall_ms", "latency", "execution_state", milliseconds(legacy.Wall), "lower")
+	out.add("candidate_durable_write_wall_ms", "latency", "execution_state", milliseconds(candidate.Wall), "lower")
+	out.add("durable_batch_wall_ratio", "latency", "execution_state", ratioFloat(float64(candidate.Wall), float64(legacy.Wall)), "lower")
+	out.add("predecessor_generation_build_wall_ms", "latency", "execution_state", milliseconds(legacyGeneration), "lower")
+	out.add("candidate_generation_build_wall_ms", "latency", "execution_state", milliseconds(candidateGeneration), "lower")
+	out.add("generation_build_wall_ratio", "latency", "execution_state", ratioFloat(float64(candidateGeneration), float64(legacyGeneration)), "lower")
+	out.add("predecessor_public_create_wall_ms", "latency", "execution_state", milliseconds(legacyPublic), "lower")
+	out.add("candidate_public_create_wall_ms", "latency", "execution_state", milliseconds(candidatePublic), "lower")
+	out.add("public_create_wall_ratio", "latency", "execution_state", ratioFloat(float64(candidatePublic), float64(legacyPublic)), "lower")
+	out.add("batch_allocation_ratio", "resources", "execution_state", ratioFloat(float64(candidate.AllocatedBytes), float64(legacy.AllocatedBytes)), "lower")
+	out.add("batch_item_limit", "resources", "execution_state", 20, "lower")
+	out.add("authoritative_state_equivalence", "quality", "execution_state", boolScore(candidate.AuthorityExact), "higher")
+	out.add("derived_state_equivalence", "quality", "execution_state", boolScore(candidate.DerivedExact), "higher")
+	out.add("batch_order_preservation", "quality", "execution_state", boolScore(candidate.OrderExact), "higher")
+	out.add("restart_recovery", "quality", "execution_state", boolScore(candidate.RestartExact && publicRecovery), "higher")
+	out.add("interrupted_tail_recovery", "quality", "execution_state", boolScore(candidate.TailRecoveryExact), "higher")
+	out.add("uncommitted_generation_isolation", "quality", "execution_state", boolScore(uncommittedIsolation), "higher")
+	out.add("concurrent_batch_completion", "quality", "execution_state", boolScore(concurrentCompletion), "higher")
+	out.add("public_search_recall", "quality", "execution_state", boolScore(publicSearch), "higher")
+	return nil
+}
+
+func executionScale(value fixture, repetitions int) ([]domain.Information, []derived.Record) {
+	assets := make([]domain.Information, 0, len(value.Assets)*repetitions)
+	records := make([]derived.Record, 0, len(value.Records)*repetitions)
+	for repetition := 0; repetition < repetitions; repetition++ {
+		for _, source := range value.Assets {
+			asset := source
+			asset.ID = fmt.Sprintf("R%02d-%s", repetition+1, source.ID)
+			asset.CreatedAt = source.CreatedAt.Add(time.Duration(repetition) * time.Hour)
+			asset.UpdatedAt = asset.CreatedAt
+			if len(asset.Contexts) == 0 {
+				asset.Contexts = nil
+			}
+			if len(asset.Relations) == 0 {
+				asset.Relations = nil
+			}
+			assets = append(assets, asset)
+		}
+		for _, source := range value.Records {
+			record := source
+			record.AssetID = fmt.Sprintf("R%02d-%s", repetition+1, source.AssetID)
+			record.GeneratedAt = source.GeneratedAt.Add(time.Duration(repetition) * time.Hour)
+			records = append(records, record)
+		}
+	}
+	sort.Slice(assets, func(left, right int) bool {
+		if assets[left].CreatedAt.Equal(assets[right].CreatedAt) {
+			return assets[left].ID < assets[right].ID
+		}
+		return assets[left].CreatedAt.Before(assets[right].CreatedAt)
+	})
+	return assets, records
+}
+
+func measureDurableBatch(root string, assets []domain.Information, records []derived.Record, batched, corruptTail bool) (durableBatchMeasurement, error) {
+	assetsPath := filepath.Join(root, "assets")
+	statePath := filepath.Join(root, "state")
+	assetStore, err := assetlog.Open(assetsPath)
+	if err != nil {
+		return durableBatchMeasurement{}, err
+	}
+	stateStore, err := derived.Open(statePath)
+	if err != nil {
+		_ = assetStore.Close()
+		return durableBatchMeasurement{}, err
+	}
+	runtime.GC()
+	var before runtime.MemStats
+	runtime.ReadMemStats(&before)
+	started := time.Now()
+	if batched {
+		for offset := 0; offset < len(assets); offset += 20 {
+			end := min(offset+20, len(assets))
+			if err := assetStore.CreateBatch(assets[offset:end]); err != nil {
+				return durableBatchMeasurement{}, err
+			}
+		}
+		for offset := 0; offset < len(records); offset += 20 {
+			end := min(offset+20, len(records))
+			if err := stateStore.PutBatch(records[offset:end]); err != nil {
+				return durableBatchMeasurement{}, err
+			}
+		}
+	} else {
+		for _, asset := range assets {
+			if err := assetStore.Create(asset); err != nil {
+				return durableBatchMeasurement{}, err
+			}
+		}
+		for _, record := range records {
+			if err := stateStore.Put(record); err != nil {
+				return durableBatchMeasurement{}, err
+			}
+		}
+	}
+	elapsed := time.Since(started)
+	var after runtime.MemStats
+	runtime.ReadMemStats(&after)
+	allocated := after.TotalAlloc - before.TotalAlloc
+	authorityExact := reflect.DeepEqual(assetStore.All(), assets)
+	derivedExact := recordsEqual(stateStore, records)
+	if err := stateStore.Close(); err != nil {
+		return durableBatchMeasurement{}, err
+	}
+	if err := assetStore.Close(); err != nil {
+		return durableBatchMeasurement{}, err
+	}
+	if corruptTail {
+		assetTail, openErr := os.OpenFile(filepath.Join(assetsPath, "information.jsonl"), os.O_APPEND|os.O_WRONLY, 0o600)
+		if openErr != nil {
+			return durableBatchMeasurement{}, openErr
+		}
+		_, writeErr := assetTail.WriteString(`{"operation":"create"`)
+		closeErr := assetTail.Close()
+		if writeErr != nil || closeErr != nil {
+			return durableBatchMeasurement{}, errors.Join(writeErr, closeErr)
+		}
+		stateTail, openErr := os.OpenFile(filepath.Join(statePath, derived.LogFileName), os.O_APPEND|os.O_WRONLY, 0o600)
+		if openErr != nil {
+			return durableBatchMeasurement{}, openErr
+		}
+		_, writeErr = stateTail.Write([]byte{'O', 'W', 'D'})
+		closeErr = stateTail.Close()
+		if writeErr != nil || closeErr != nil {
+			return durableBatchMeasurement{}, errors.Join(writeErr, closeErr)
+		}
+	}
+	assetStore, err = assetlog.Open(assetsPath)
+	if err != nil {
+		return durableBatchMeasurement{}, err
+	}
+	stateStore, err = derived.Open(statePath)
+	if err != nil {
+		_ = assetStore.Close()
+		return durableBatchMeasurement{}, err
+	}
+	restartExact := reflect.DeepEqual(assetStore.All(), assets) && recordsEqual(stateStore, records)
+	if err := stateStore.Close(); err != nil {
+		return durableBatchMeasurement{}, err
+	}
+	if err := assetStore.Close(); err != nil {
+		return durableBatchMeasurement{}, err
+	}
+	return durableBatchMeasurement{
+		Wall: elapsed, AllocatedBytes: allocated, AuthorityExact: authorityExact, DerivedExact: derivedExact,
+		OrderExact: authorityExact, RestartExact: restartExact, TailRecoveryExact: !corruptTail || restartExact,
+	}, nil
+}
+
+func recordsEqual(store *derived.Store, expected []derived.Record) bool {
+	if len(store.All()) != len(expected) {
+		return false
+	}
+	for _, record := range expected {
+		actual, exists := store.GetWithEmbedding(record.AssetID)
+		if !exists {
+			return false
+		}
+		left, leftErr := derived.EncodeRecord(actual)
+		right, rightErr := derived.EncodeRecord(record)
+		if leftErr != nil || rightErr != nil || !equalBytes(left, right) {
+			return false
+		}
+	}
+	return true
+}
+
+func measureGenerationBuild(root string, records []derived.Record, staged bool) (time.Duration, error) {
+	current, err := derived.Open(root)
+	if err != nil {
+		return 0, err
+	}
+	defer current.Close()
+	next, err := derived.CreateGeneration(root, fmt.Sprintf("gen-execution-%t", staged))
+	if err != nil {
+		return 0, err
+	}
+	started := time.Now()
+	if staged {
+		err = next.StageGeneration(records)
+	} else {
+		for _, record := range records {
+			if err = next.Put(record); err != nil {
+				break
+			}
+		}
+	}
+	if err == nil {
+		err = current.CommitGeneration(next, derived.GenerationMetadata{AssetCount: len(records), AssetSnapshot: strings.Repeat("a", 64), EmbeddingSpace: "frozen-frontier-v1"})
+	}
+	elapsed := time.Since(started)
+	if err != nil {
+		_ = next.Discard()
+		return 0, err
+	}
+	if !recordsEqual(current, records) {
+		return 0, errors.New("派生世代切换改变了冻结记录")
+	}
+	return elapsed, nil
+}
+
+func measurePublicCreate(ctx context.Context, root string, assets []domain.Information, batched bool) (time.Duration, bool, bool, error) {
+	assetStore, err := assetlog.Open(filepath.Join(root, "assets"))
+	if err != nil {
+		return 0, false, false, err
+	}
+	stateStore, err := derived.Open(filepath.Join(root, "state"))
+	if err != nil {
+		_ = assetStore.Close()
+		return 0, false, false, err
+	}
+	service, err := core.NewCollaborative(assetStore, stateStore, embedding.HashForTesting{Dimensions: 16})
+	if err != nil {
+		return 0, false, false, err
+	}
+	inputs := make([]core.CreateInput, len(assets))
+	for index, asset := range assets {
+		inputs[index] = core.CreateInput{Kind: asset.Kind, Content: asset.Content, Contexts: asset.Contexts, Relations: asset.Relations, Source: asset.Source}
+	}
+	started := time.Now()
+	if batched {
+		for offset := 0; offset < len(inputs); offset += 20 {
+			end := min(offset+20, len(inputs))
+			results, createErr := service.CreateBatch(ctx, inputs[offset:end])
+			if createErr != nil || len(results) != end-offset {
+				return 0, false, false, errors.Join(createErr, errors.New("公开批量创建结果不完整"))
+			}
+			for _, result := range results {
+				if result.Error != "" || result.Result == nil {
+					return 0, false, false, fmt.Errorf("公开批量创建失败: %s", result.Error)
+				}
+			}
+		}
+	} else {
+		for _, input := range inputs {
+			if _, err := service.Create(ctx, input); err != nil {
+				return 0, false, false, err
+			}
+		}
+	}
+	elapsed := time.Since(started)
+	results, searchErr := service.Search(ctx, core.SearchInput{Query: "marker-x01 lunar ledger", Limit: 5})
+	searchOK := searchErr == nil && len(results) > 0 && strings.Contains(results[0].Summary, "marker-x01")
+	status := service.SemanticStatus()
+	if status["pending"] != len(inputs) {
+		return 0, false, false, fmt.Errorf("公开创建没有形成完整待处理状态: %#v", status)
+	}
+	if err := service.Close(); err != nil {
+		return 0, false, false, err
+	}
+	assetStore, err = assetlog.Open(filepath.Join(root, "assets"))
+	if err != nil {
+		return 0, false, false, err
+	}
+	stateStore, err = derived.Open(filepath.Join(root, "state"))
+	if err != nil {
+		_ = assetStore.Close()
+		return 0, false, false, err
+	}
+	reopened, err := core.NewCollaborative(assetStore, stateStore, embedding.HashForTesting{Dimensions: 16})
+	if err != nil {
+		return 0, false, false, err
+	}
+	recovered := reopened.SemanticStatus()["pending"] == len(inputs)
+	if err := reopened.Close(); err != nil {
+		return 0, false, false, err
+	}
+	return elapsed, searchOK, recovered, nil
+}
+
+func measureUncommittedGenerationIsolation(root string) (bool, error) {
+	current, err := derived.Open(root)
+	if err != nil {
+		return false, err
+	}
+	defer current.Close()
+	next, err := derived.CreateGeneration(root, "gen-uncommitted-isolation")
+	if err != nil {
+		return false, err
+	}
+	record := derived.Record{AssetID: "uncommitted-only", AssetRevision: 1, Status: "ready"}
+	if err := next.StageGeneration([]derived.Record{record}); err != nil {
+		return false, err
+	}
+	_, visible := current.Get(record.AssetID)
+	if err := next.Discard(); err != nil {
+		return false, err
+	}
+	return !visible, nil
+}
+
+func measureConcurrentBatchCreate(ctx context.Context, root string) (bool, error) {
+	assetStore, err := assetlog.Open(filepath.Join(root, "assets"))
+	if err != nil {
+		return false, err
+	}
+	stateStore, err := derived.Open(filepath.Join(root, "state"))
+	if err != nil {
+		_ = assetStore.Close()
+		return false, err
+	}
+	service, err := core.NewCollaborative(assetStore, stateStore, embedding.HashForTesting{Dimensions: 16})
+	if err != nil {
+		return false, err
+	}
+	defer service.Close()
+	var wait sync.WaitGroup
+	errorsByWorker := make([]error, 2)
+	for worker := 0; worker < 2; worker++ {
+		worker := worker
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			inputs := make([]core.CreateInput, 20)
+			for index := range inputs {
+				inputs[index] = core.CreateInput{Content: fmt.Sprintf("concurrent worker %d durable item %d", worker, index)}
+			}
+			results, createErr := service.CreateBatch(ctx, inputs)
+			if createErr != nil || len(results) != len(inputs) {
+				errorsByWorker[worker] = errors.Join(createErr, errors.New("并发批量创建结果不完整"))
+				return
+			}
+			for _, result := range results {
+				if result.Error != "" || result.Result == nil {
+					errorsByWorker[worker] = fmt.Errorf("并发批量创建失败: %s", result.Error)
+					return
+				}
+			}
+		}()
+	}
+	wait.Wait()
+	return errorsByWorker[0] == nil && errorsByWorker[1] == nil && len(assetStore.All()) == 40 && len(stateStore.All()) == 40, errors.Join(errorsByWorker...)
 }
 
 func legacyDerivedRecordSize(record derived.Record, work *semantics.Work, result *semantics.Submission) int64 {

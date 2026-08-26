@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"hash/crc32"
 	"os"
 	"path/filepath"
@@ -119,6 +120,52 @@ func TestStoreRejectsAnOlderDerivedRevision(t *testing.T) {
 	current, _ := store.Get("one")
 	if current.AssetRevision != 2 {
 		t.Fatalf("stale write replaced revision 2: %#v", current)
+	}
+}
+
+func TestPutBatchPersistsAllRecordsAndRejectsTheWholeInvalidBatch(t *testing.T) {
+	dir := t.TempDir()
+	store, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := make([]Record, 20)
+	for index := range records {
+		records[index] = Record{
+			AssetID: fmt.Sprintf("batch-%02d", index), AssetRevision: 1, Status: "ready",
+			Analysis:       semantics.Analysis{Summary: fmt.Sprintf("summary-%02d", index)},
+			EmbeddingSpace: "batch-test", Embedding: []float32{float32(index + 1), 1},
+		}
+	}
+	if err := store.PutBatch(records); err != nil {
+		t.Fatal(err)
+	}
+	before := len(store.All())
+	if err := store.PutBatch([]Record{
+		{AssetID: "valid-before-invalid", AssetRevision: 1, Status: "ready"},
+		{AssetID: "invalid", AssetRevision: 0, Status: "ready"},
+	}); err == nil {
+		t.Fatal("invalid derived batch was accepted")
+	}
+	if len(store.All()) != before {
+		t.Fatal("invalid batch partially changed the durable index")
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	actual, err := reopened.AllWithEmbeddings()
+	if err != nil || len(actual) != len(records) {
+		t.Fatalf("batch records did not recover: count=%d err=%v", len(actual), err)
+	}
+	for index := range actual {
+		if actual[index].AssetID != records[index].AssetID || len(actual[index].Embedding) != 2 {
+			t.Fatalf("batch record %d changed after replay: %#v", index, actual[index])
+		}
 	}
 }
 

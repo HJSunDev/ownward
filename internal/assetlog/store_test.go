@@ -2,6 +2,7 @@ package assetlog
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -102,6 +103,41 @@ func TestStorePersistsAndReplaysRevisions(t *testing.T) {
 	actual, ok := reopened.Get(value.ID)
 	if !ok || actual.Revision != 2 || actual.Content != "第二版内容" {
 		t.Fatalf("unexpected replayed value: %#v", actual)
+	}
+}
+
+func TestCreateBatchPersistsAllItemsInOrderAndRejectsInvalidInput(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "assets")
+	store, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	values := make([]domain.Information, 20)
+	for index := range values {
+		values[index] = domain.Information{
+			Schema: domain.AssetSchema, ID: fmt.Sprintf("batch-%02d", index), Revision: 1,
+			CreatedAt: now.Add(time.Duration(index) * time.Second), UpdatedAt: now.Add(time.Duration(index) * time.Second),
+			Kind: domain.KindKnowledge, Content: fmt.Sprintf("durable batch item %02d", index),
+		}
+	}
+	if err := store.CreateBatch(values); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateBatch([]domain.Information{values[0]}); err == nil {
+		t.Fatal("duplicate batch item was accepted")
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	actual := reopened.All()
+	if !reflect.DeepEqual(actual, values) {
+		t.Fatalf("batch replay changed acknowledged assets: %#v", actual)
 	}
 }
 

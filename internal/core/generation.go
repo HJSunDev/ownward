@@ -200,9 +200,9 @@ func (s *Service) buildCollaborativeGeneration(ctx context.Context, generation s
 			records[index].Provider = s.embedder.Name()
 			records[index].Error = ""
 		}
-		if err := next.Put(records[index]); err != nil {
-			return fail(err)
-		}
+	}
+	if err := next.StageGeneration(records); err != nil {
+		return fail(err)
 	}
 	counts := map[string]int{"ready": 0, "uncertain": 0, "pending": 0, "unchanged": 0}
 	for _, record := range records {

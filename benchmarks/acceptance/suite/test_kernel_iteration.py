@@ -12,6 +12,28 @@ import kernel_iteration
 
 
 class KernelIterationTests(unittest.TestCase):
+    def test_formal_execution_audit_separates_product_and_external_costs(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "questions" / "q1").mkdir(parents=True)
+            (root / "questions" / "q2").mkdir(parents=True)
+            (root / "report.json").write_text(json.dumps({"cost": {"sessions": 5}}), encoding="utf-8")
+            for index, values in enumerate(((2, 1, 1.5, 8.0, 2.0, 1.0), (3, 2, 2.5, 9.0, 3.0, 2.0)), 1):
+                assets, batches, create, semantic, reader, judge = values
+                (root / "questions" / f"q{index}" / "result.json").write_text(json.dumps({
+                    "asset_count": assets,
+                    "semantic_batches": batches,
+                    "phase_seconds": {"create": create, "semantic": semantic, "reader": reader, "judge": judge},
+                }), encoding="utf-8")
+            result = kernel_iteration._audit_formal_execution(root, "identity")
+            self.assertEqual(2, result["questions"])
+            self.assertEqual(5, result["assets"])
+            self.assertEqual(3, result["semantic_batches"])
+            self.assertEqual(4.0, result["product_create_wall_seconds"])
+            self.assertEqual(17.0, result["semantic_model_and_submission_wall_seconds"])
+            self.assertTrue(result["classification"]["product_asset_and_derived_durability"])
+            self.assertFalse(result["classification"]["codex_or_model_inference"])
+
     def test_formal_storage_audit_reads_authority_and_verifies_binary_records(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

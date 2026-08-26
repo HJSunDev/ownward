@@ -576,6 +576,62 @@ func TestCreateBatchSharesOneEmbeddingRequest(t *testing.T) {
 	}
 }
 
+type constantEmbedding struct{}
+
+func (constantEmbedding) Name() string { return "constant-batch-test" }
+func (constantEmbedding) Space() embedding.Space {
+	return embedding.Space{ID: "constant-batch-test-v1", Dimensions: 2}
+}
+func (constantEmbedding) EmbedDocuments(_ context.Context, values []string) ([][]float32, error) {
+	result := make([][]float32, len(values))
+	for index := range result {
+		result[index] = []float32{1, 0}
+	}
+	return result, nil
+}
+func (constantEmbedding) EmbedQuery(context.Context, string) ([]float32, error) {
+	return []float32{1, 0}, nil
+}
+func (constantEmbedding) Close() error { return nil }
+
+func TestCreateBatchPreservesEarlierBatchSemanticCandidatesBeforePublishing(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	assets, err := assetlog.Open(filepath.Join(root, "assets"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := derived.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewCollaborative(assets, state, constantEmbedding{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer service.Close()
+	created, err := service.CreateBatch(ctx, []CreateInput{
+		{Content: "orchid-vault-only-token"},
+		{Content: "quartz-harbor-only-token"},
+	})
+	if err != nil || len(created) != 2 || created[0].Result == nil || created[1].Result == nil {
+		t.Fatalf("batch creation failed: %#v %v", created, err)
+	}
+	work, err := service.SemanticWorkFor(ctx, []string{created[1].Result.Information.ID})
+	if err != nil || len(work) != 1 {
+		t.Fatalf("second batch work missing: %#v %v", work, err)
+	}
+	found := false
+	for _, candidate := range work[0].Candidates {
+		if candidate.ID == created[0].Result.Information.ID && candidate.Similarity > 0 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("durable batch changed predecessor semantic candidate visibility: %#v", work[0].Candidates)
+	}
+}
+
 type boundedSemanticEmbedding struct {
 	documentCalls [][]string
 	failNext      bool

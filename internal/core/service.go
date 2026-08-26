@@ -230,13 +230,24 @@ func (s *Service) CreateBatch(ctx context.Context, inputs []CreateInput) ([]Muta
 	values := make([]domain.Information, 0, len(inputs))
 	positions := make([]int, 0, len(inputs))
 	for index, input := range inputs {
-		value, err := s.createAsset(input)
+		value, err := s.newAsset(input)
 		if err != nil {
 			results[index].Error = err.Error()
 			continue
 		}
 		values = append(values, value)
 		positions = append(positions, index)
+	}
+	if len(values) > 0 {
+		if err := s.store.CreateBatch(values); err != nil {
+			for _, position := range positions {
+				results[position].Error = err.Error()
+			}
+			return results, nil
+		}
+		for _, value := range values {
+			s.index.Upsert(value)
+		}
 	}
 	states := make([]OrganizationState, len(values))
 	if s.collaborative {
@@ -254,6 +265,18 @@ func (s *Service) CreateBatch(ctx context.Context, inputs []CreateInput) ([]Muta
 }
 
 func (s *Service) createAsset(input CreateInput) (domain.Information, error) {
+	value, err := s.newAsset(input)
+	if err != nil {
+		return domain.Information{}, err
+	}
+	if err := s.store.Create(value); err != nil {
+		return domain.Information{}, err
+	}
+	s.index.Upsert(value)
+	return value, nil
+}
+
+func (s *Service) newAsset(input CreateInput) (domain.Information, error) {
 	if strings.TrimSpace(input.Content) == "" {
 		return domain.Information{}, errors.New("信息内容不能为空")
 	}
@@ -283,10 +306,6 @@ func (s *Service) createAsset(input CreateInput) (domain.Information, error) {
 		Relations: append([]domain.ExplicitRelation(nil), input.Relations...),
 		Source:    input.Source,
 	}
-	if err := s.store.Create(value); err != nil {
-		return domain.Information{}, err
-	}
-	s.index.Upsert(value)
 	return value, nil
 }
 

@@ -31,6 +31,7 @@ VIEW_RELATIVE = Path("materials/optimization/v1/direction-budget-selection.json"
 SEMANTIC_VIEW_RELATIVE = Path("materials/optimization/v1/direction-semantic-representation.json")
 GRANULARITY_VIEW_RELATIVE = Path("materials/optimization/v1/direction-organization-granularity.json")
 STORAGE_VIEW_RELATIVE = Path("materials/optimization/v1/direction-storage-deposition.json")
+EXECUTION_VIEW_RELATIVE = Path("materials/optimization/v1/direction-execution-state.json")
 CORE_RELATIVE = Path("materials/core/v1/dataset.json")
 PRODUCT_SOURCE_PATHS = ("internal", "cmd/ownward", "go.mod", "go.sum")
 ITERATION_IMPLEMENTATION_PATHS = (
@@ -38,6 +39,218 @@ ITERATION_IMPLEMENTATION_PATHS = (
     "benchmarks/longmemeval_s/run.py",
     "benchmarks/longmemeval_s/protocol.json",
 )
+
+
+def run_execution(
+    suite_root: Path,
+    formal_run: Path,
+    output_root: Path,
+    candidate: str,
+    resume: bool,
+) -> dict[str, Any]:
+    repository = suite_root.parents[2]
+    formal_run = formal_run.resolve()
+    output_root = output_root.resolve()
+    _require(formal_run.is_dir(), "正式 LongMemEval-S 运行目录不存在")
+    _require(candidate == "worktree", "执行状态方向候选必须绑定当前未提交工作树")
+    execution_path = suite_root / EXECUTION_VIEW_RELATIVE
+    _require(execution_path.is_file(), "执行状态方向材料不存在")
+
+    storage_root = output_root / "four-direction-protection"
+    storage_protection = run_storage(suite_root, formal_run, storage_root, candidate, resume)
+    _require(storage_protection.get("passed") is True, "前四方向交叉保护失败")
+    storage_result = load_json(Path(str(storage_protection["result"])))
+
+    product_sha = _worktree_product_sha256(repository)
+    implementation_sha = _worktree_source_sha256(repository, ITERATION_IMPLEMENTATION_PATHS)
+    candidate_identity = f"worktree:{implementation_sha}"
+    observer_candidate = f"worktree:{product_sha}"
+    report_path = formal_run / "report.json"
+    input_identity = {
+        "formal_candidate": V0_CANDIDATE,
+        "formal_report_sha256": file_sha256(report_path),
+        "evaluation_candidate": candidate_identity,
+        "evaluation_product_source_sha256": product_sha,
+        "evaluation_implementation_source_sha256": implementation_sha,
+        "execution_view_sha256": file_sha256(execution_path),
+        "storage_protection_identity_sha256": storage_result["identity_sha256"],
+        "analyzer_sha256": file_sha256(Path(__file__)),
+        "algorithm": "kernel-v1-durable-batch-state-transition/v1",
+    }
+    input_sha = canonical_sha256(input_identity)
+    output_root.mkdir(parents=True, exist_ok=True)
+    formal_path = output_root / "formal-execution-observation.json"
+    formal = _reuse_json(formal_path, input_sha, resume)
+    formal_reused = formal is not None
+    if formal is None:
+        formal = _audit_formal_execution(formal_run, input_sha)
+        atomic_json(formal_path, formal)
+    execution_view = load_json(execution_path)
+    _validate_formal_execution_observation(formal, execution_view)
+
+    tool = _build_observer(repository, output_root, resume)
+    tool_sha = file_sha256(tool)
+    environment_sha = canonical_sha256({
+        "os": platform.system().lower(), "arch": platform.machine().lower(),
+        "python": platform.python_version(), "go": _command_output(["go", "env", "GOVERSION"], repository),
+    })
+    observer_input_sha = canonical_sha256({**input_identity, "observer_sha256": tool_sha})
+    observation_path = output_root / "execution-observation.json"
+    observation = _reuse_observation(
+        observation_path, observer_candidate, file_sha256(execution_path), observer_input_sha,
+        tool_sha, ("execution_state",), resume,
+    )
+    reused = observation is not None
+    if observation is None:
+        command = [
+            str(tool), "--materials", str(execution_path), "--candidate", observer_candidate,
+            "--mode", "targeted", "--environment-sha256", environment_sha,
+            "--input-manifest-sha256", observer_input_sha, "--repository", str(repository),
+            "--output", str(observation_path), "--stages", "execution_state", "--self-check",
+            "--source-identity-sha256", product_sha,
+        ]
+        completed = subprocess.run(command, cwd=repository, text=True, encoding="utf-8", errors="replace", capture_output=True, timeout=180, check=False)
+        if completed.returncode != 0:
+            raise KernelIterationError(f"执行状态快速视图失败: {(completed.stderr or completed.stdout).strip()}")
+        observation = load_json(observation_path)
+
+    elapsed = _observation_elapsed(observation)
+    _require(elapsed <= 180, "执行状态单视图超过 3 分钟")
+    protected_elapsed = float(_mapping(storage_result, "cost")["all_views_wall_seconds"])
+    _require(elapsed + protected_elapsed <= 600, "执行状态方向与四方向保护超过 10 分钟")
+
+    metrics = {item["name"]: item for item in observation["metrics"]}
+    gate = _mapping(_mapping(execution_view, "optimization_view"), "frozen_gate")
+    checks: dict[str, Any] = {}
+    failures: list[str] = []
+    for name, gate_name in (
+        ("durable_batch_wall_ratio", "durable_batch_wall_ratio_max"),
+        ("generation_build_wall_ratio", "generation_build_wall_ratio_max"),
+        ("batch_allocation_ratio", "batch_allocation_ratio_max"),
+        ("batch_item_limit", "batch_item_limit_max"),
+    ):
+        metric = _mapping(metrics, name)
+        value = float(metric["value"])
+        error = float(metric.get("repeatability_error", 0))
+        maximum = float(gate[gate_name])
+        protected_value = value + error
+        passed = _within_upper_bound(protected_value, maximum)
+        checks[name] = {"value": value, "repeatability_error": error, "protected_value": protected_value, "maximum": maximum, "passed": passed}
+        if not passed:
+            failures.append(name)
+    public_metric = _mapping(metrics, "candidate_public_create_wall_ms")
+    public_value = float(public_metric["value"])
+    public_error = float(public_metric.get("repeatability_error", 0))
+    public_maximum = float(gate["public_create_wall_ms_max"])
+    public_passed = _within_upper_bound(public_value + public_error, public_maximum)
+    checks["candidate_public_create_wall_ms"] = {
+        "value": public_value, "repeatability_error": public_error,
+        "protected_value": public_value + public_error, "maximum": public_maximum, "passed": public_passed,
+    }
+    if not public_passed:
+        failures.append("candidate_public_create_wall_ms")
+    for name, gate_name in (
+        ("authoritative_state_equivalence", "authoritative_state_equivalence_min"),
+        ("derived_state_equivalence", "derived_state_equivalence_min"),
+        ("batch_order_preservation", "batch_order_preservation_min"),
+        ("restart_recovery", "restart_recovery_min"),
+        ("interrupted_tail_recovery", "interrupted_tail_recovery_min"),
+        ("uncommitted_generation_isolation", "uncommitted_generation_isolation_min"),
+        ("concurrent_batch_completion", "concurrent_batch_completion_min"),
+        ("public_search_recall", "public_search_recall_min"),
+    ):
+        value = float(_mapping(metrics, name)["value"])
+        minimum = float(gate[gate_name])
+        passed = value >= minimum
+        checks[name] = {"value": value, "minimum": minimum, "passed": passed}
+        if not passed:
+            failures.append(name)
+    protections = {
+        "information_representation_and_organization": bool(_mapping(storage_result, "protected_directions")["information_representation_and_organization"]),
+        "retrieval_architecture_and_algorithm": bool(_mapping(storage_result, "protected_directions")["retrieval_architecture_and_algorithm"]),
+        "semantic_capability_and_representation_model": bool(_mapping(storage_result, "protected_directions")["semantic_capability_and_representation_model"]),
+        "data_structure_and_storage_architecture": storage_result.get("passed") is True,
+    }
+    failures.extend(name for name, passed in protections.items() if not passed)
+    identity_sha = canonical_sha256({
+        "input": input_identity, "formal": file_sha256(formal_path),
+        "execution": file_sha256(observation_path), "storage_protection": storage_result["identity_sha256"],
+    })
+    result = {
+        "schema": "ownward.kernel-execution-state-candidate/v1", "candidate": candidate_identity,
+        "input_identity": input_identity, "formal_execution_observation": formal,
+        "metrics": checks, "protected_directions": protections,
+        "gate": {**gate, "failures": sorted(failures)},
+        "cost": {"direction_wall_seconds": elapsed, "all_views_wall_seconds": elapsed + protected_elapsed, "direction_view_max_seconds": 180, "direction_validation_max_seconds": 600},
+        "resume": {"identity_exact": True, "reused": {"execution": reused, "four_direction_protection": storage_protection.get("reused")}, "policy": "reuse_exact_identity_and_rerun_only_invalid_parts"},
+        "identity_sha256": identity_sha, "passed": not failures, "formal_evidence": False,
+        "formal_acceptance_state_modified": False, "may_promote_baseline": False,
+    }
+    result_path = output_root / "candidate-result.json"
+    existing_result = _reuse_json(result_path, identity_sha, resume)
+    result_reused = existing_result is not None
+    if existing_result is None:
+        atomic_json(result_path, result)
+    else:
+        result = existing_result
+    invocation_reused = {
+        "formal_observation": formal_reused,
+        "execution": reused,
+        "four_direction_protection": storage_protection.get("reused"),
+        "result": result_reused,
+    }
+    atomic_json(output_root / "resume-proof.json", {
+        "schema": "ownward.kernel-execution-state-resume-proof/v1",
+        "identity_sha256": result["identity_sha256"],
+        "formal_observation_sha256": file_sha256(formal_path),
+        "execution_observation_sha256": file_sha256(observation_path),
+        "storage_protection_identity_sha256": storage_result["identity_sha256"],
+        "result_sha256": file_sha256(result_path),
+        "reused": invocation_reused,
+        "invalid_parts_rerun_only": True,
+    })
+    _require(result.get("passed") is True, f"执行状态方向候选未通过: {result.get('gate', {}).get('failures')}")
+    return {"passed": True, "candidate": candidate_identity, "result": str(result_path), "identity_sha256": result["identity_sha256"], "reused": invocation_reused}
+
+
+def _audit_formal_execution(formal_run: Path, identity_sha256: str) -> dict[str, Any]:
+    report = load_json(formal_run / "report.json")
+    totals = Counter()
+    result_paths = sorted((formal_run / "questions").glob("*/result.json"))
+    for path in result_paths:
+        result = load_json(path)
+        phases = _mapping(result, "phase_seconds")
+        totals["questions"] += 1
+        totals["assets"] += int(result.get("asset_count", 0))
+        totals["semantic_batches"] += int(result.get("semantic_batches", 0))
+        for name in ("create", "semantic", "reader", "judge"):
+            totals[f"{name}_milliseconds"] += round(float(phases.get(name, 0)) * 1000)
+    return {
+        "schema": "ownward.kernel-formal-execution-observation/v1", "identity_sha256": identity_sha256,
+        "questions": totals["questions"], "assets": totals["assets"], "semantic_batches": totals["semantic_batches"],
+        "product_create_wall_seconds": sum(float(_mapping(load_json(path), "phase_seconds").get("create", 0)) for path in result_paths),
+        "semantic_model_and_submission_wall_seconds": sum(float(_mapping(load_json(path), "phase_seconds").get("semantic", 0)) for path in result_paths),
+        "reader_wall_seconds": sum(float(_mapping(load_json(path), "phase_seconds").get("reader", 0)) for path in result_paths),
+        "judge_wall_seconds": sum(float(_mapping(load_json(path), "phase_seconds").get("judge", 0)) for path in result_paths),
+        "reported_sessions": int(_mapping(report, "cost").get("sessions", 0)),
+        "classification": {
+            "product_asset_and_derived_durability": True,
+            "question_isolation": False,
+            "codex_or_model_inference": False,
+            "benchmark_audit_and_diagnostics": False,
+            "test_scheduler": False,
+        },
+    }
+
+
+def _validate_formal_execution_observation(observation: dict[str, Any], view: dict[str, Any]) -> None:
+    expected = _mapping(_mapping(view, "optimization_view"), "formal_scale_observation")
+    for name in ("questions", "assets", "semantic_batches"):
+        _require(observation.get(name) == expected[name], f"正式执行观察漂移: {name}")
+    for name in ("product_create_wall_seconds", "semantic_model_and_submission_wall_seconds", "reader_wall_seconds", "judge_wall_seconds"):
+        _require(math.isclose(float(observation.get(name, -1)), float(expected[name]), abs_tol=0.001), f"正式执行成本观察漂移: {name}")
+    _require(observation.get("reported_sessions") == expected["assets"], "正式执行报告资产规模不一致")
+    _require(observation.get("classification") == _mapping(_mapping(view, "optimization_view"), "cost_classification"), "正式执行成本分类漂移")
 
 
 def run_storage(

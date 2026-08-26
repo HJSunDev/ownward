@@ -78,6 +78,14 @@ func CreateGeneration(root, generation string) (*Store, error) {
 	return store, nil
 }
 
+// StageGeneration writes a complete rebuild candidate without imposing a
+// durability barrier per record. The generation is isolated and invisible;
+// CommitGeneration validates it, fsyncs the complete log, seals its manifest,
+// and only then atomically switches the current pointer.
+func (s *Store) StageGeneration(records []Record) error {
+	return s.putRecords(records, false, true)
+}
+
 func (s *Store) Root() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

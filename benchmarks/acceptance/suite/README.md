@@ -29,6 +29,16 @@ python benchmarks/acceptance/suite/run.py kernel-iteration `
   --resume
 ```
 
+第五方向使用同一非正式体系入口核验批量耐久写入、不可见世代构建、原子切换、恢复和前四方向交叉保护；它只读正式聚合成本，不读取正式题面或答案，也不写正式 state：
+
+```powershell
+python benchmarks/acceptance/suite/run.py kernel-execution `
+  --formal-run E:\Ownward\acceptance\longmemeval-s\runs\99f5190\formal `
+  --output .tmp\kernel-v1-major-iteration\execution-state-v1 `
+  --candidate worktree `
+  --resume
+```
+
 版本化视图位于 `materials/optimization/v1/`。它只含与正式题目事实、答案和表达不重合的合成机制样本；正式问题池、观察报告和 V0 基线留在输出目录，任务文档只引用证据，不复制机器结果。
 
 内核前沿观察器由同一候选源码构建；正式运行会拒绝提交身份不一致或由脏工作树构建的观察器：

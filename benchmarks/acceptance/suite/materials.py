@@ -52,6 +52,7 @@ def validate_materials(root: Path) -> dict[str, Any]:
         "benchmarks/acceptance/suite/materials/optimization/v1/direction-semantic-representation.json",
         "benchmarks/acceptance/suite/materials/optimization/v1/direction-budget-selection.json",
         "benchmarks/acceptance/suite/materials/optimization/v1/direction-storage-deposition.json",
+        "benchmarks/acceptance/suite/materials/optimization/v1/direction-execution-state.json",
     }
     _require(isinstance(files, list) and len(files) == len(expected_manifest_paths), "材料清单规模无效")
     _require(
@@ -148,6 +149,7 @@ def validate_materials(root: Path) -> dict[str, Any]:
     _validate_semantic_representation_view(root / "optimization" / "v1" / "direction-semantic-representation.json")
     _validate_budget_selection_view(root / "optimization" / "v1" / "direction-budget-selection.json")
     _validate_storage_deposition_view(root / "optimization" / "v1" / "direction-storage-deposition.json")
+    _validate_execution_state_view(root / "optimization" / "v1" / "direction-execution-state.json")
 
     historical_product = load_json(historical_root / "dataset.json")
     product_root = root / "product" / ACTIVE_PRODUCT_DIRECTORY
@@ -456,6 +458,45 @@ def _validate_storage_deposition_view(path: Path) -> None:
     queries = view.get("queries")
     _require(isinstance(queries, list) and len(queries) == len(assets), "存储沉淀视图查询规模无效")
     _require(all(item.get("view_role") == "protection" for item in queries), "存储沉淀视图查询角色无效")
+
+
+def _validate_execution_state_view(path: Path) -> None:
+    view = load_json(path)
+    _require(view.get("schema") == "ownward.core-frontier-materials/v1", "执行状态视图 schema 无效")
+    _require(view.get("version") == "ownward-kernel-optimization-view/v1", "执行状态视图版本无效")
+    contract = _mapping(view, "optimization_view")
+    _require(contract.get("id") == "durable-batch-state-transition-v1", "执行状态视图身份无效")
+    _require(contract.get("direction") == "execution_architecture_and_state_maintenance", "执行状态视图方向无效")
+    _require(contract.get("predecessor_commit") == "c9c8b48c2229c97a34803a9a2ceaf54def73d5d3", "执行状态视图前驱身份漂移")
+    observed = _mapping(contract, "formal_scale_observation")
+    _require(
+        observed == {
+            "candidate": "99f519018df99bd5202b0c571b8e43481cd1b80e",
+            "questions": 500,
+            "assets": 23867,
+            "semantic_batches": 1498,
+            "product_create_wall_seconds": 2750.038,
+            "semantic_model_and_submission_wall_seconds": 36992.627,
+            "reader_wall_seconds": 5295.681,
+            "judge_wall_seconds": 3562.214,
+        },
+        "执行状态视图正式成本观察漂移",
+    )
+    classification = _mapping(contract, "cost_classification")
+    _require(classification.get("product_asset_and_derived_durability") is True, "执行状态视图未识别产品耐久成本")
+    _require(all(classification.get(name) is False for name in ("question_isolation", "codex_or_model_inference", "benchmark_audit_and_diagnostics", "test_scheduler")), "执行状态视图混入非产品成本")
+    gate = _mapping(contract, "frozen_gate")
+    _require(float(gate.get("durable_batch_wall_ratio_max", -1)) == 0.5, "批量耐久跃升门槛漂移")
+    _require(float(gate.get("generation_build_wall_ratio_max", -1)) == 0.5, "世代构建跃升门槛漂移")
+    _require(float(gate.get("public_create_wall_ms_max", -1)) == 600.0, "公开创建尾延迟门槛漂移")
+    _require(float(gate.get("batch_allocation_ratio_max", -1)) == 1.25, "执行状态内存保护门槛漂移")
+    _require(gate.get("batch_item_limit_max") == 20 and gate.get("protected_regression_allowed") is False, "执行状态批量边界无效")
+    leakage = _mapping(contract, "leakage_policy")
+    _require(all(leakage.get(name) is False for name in ("formal_question_text", "formal_answer", "formal_gold_identity", "formal_session_content")), "执行状态视图泄漏边界无效")
+    assets = view.get("assets")
+    _require(isinstance(assets, list) and len(assets) == 18, "执行状态视图资产规模无效")
+    _require(all(isinstance(item.get("content"), str) and item["content"].startswith("marker-x") for item in assets), "执行状态视图事实身份无效")
+    _require(max(int(item.get("target_runes", 0)) for item in assets) == 78215, "执行状态视图未覆盖正式最大长度")
 
 
 def _validate_budget_selection_view(path: Path) -> None:

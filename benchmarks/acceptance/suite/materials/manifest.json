@@ -49,6 +49,10 @@
     {
       "path": "benchmarks/acceptance/suite/materials/optimization/v1/direction-storage-deposition.json",
       "sha256": "a6bd58a54914f89acb60b2cbe16c9abc108f1b85368676aa1f0bc9449bae8609"
+    },
+    {
+      "path": "benchmarks/acceptance/suite/materials/optimization/v1/direction-execution-state.json",
+      "sha256": "91c57f10dddc18a9010a2a994ec831d7f42924a2bed727363f349e02d9f77228"
     }
   ]
 }

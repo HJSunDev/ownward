@@ -108,6 +108,70 @@ func (s *Store) Create(value domain.Information) error {
 	return s.appendLocked("create", value)
 }
 
+// CreateBatch durably appends one public create batch with a single storage
+// barrier. The batch is bounded by the public service contract; acknowledged
+// records are all durable before the method returns. A failed write is rolled
+// back to the pre-batch log boundary.
+func (s *Store) CreateBatch(values []domain.Information) error {
+	if len(values) == 0 || len(values) > 20 {
+		return errors.New("批量创建数量必须介于一和二十之间")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.logFile == nil {
+		return errors.New("信息资产日志已关闭")
+	}
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		if err := value.Validate(); err != nil {
+			return err
+		}
+		if value.Revision != 1 {
+			return errors.New("新信息必须从版本一开始")
+		}
+		if _, exists := s.items[value.ID]; exists {
+			return errors.New("信息标识已经存在")
+		}
+		if _, duplicate := seen[value.ID]; duplicate {
+			return errors.New("批量创建包含重复信息标识")
+		}
+		seen[value.ID] = struct{}{}
+	}
+	start, err := s.logFile.Seek(0, io.SeekEnd)
+	if err != nil {
+		return fmt.Errorf("定位信息资产日志: %w", err)
+	}
+	for _, value := range values {
+		encoded, encodeErr := json.Marshal(event{Operation: "create", Recorded: time.Now().UTC(), Value: value})
+		if encodeErr != nil {
+			_ = s.rollbackLocked(start)
+			return fmt.Errorf("编码信息资产: %w", encodeErr)
+		}
+		encoded = append(encoded, '\n')
+		written, writeErr := s.logFile.Write(encoded)
+		if writeErr != nil || written != len(encoded) {
+			rollbackErr := s.rollbackLocked(start)
+			if writeErr == nil {
+				writeErr = io.ErrShortWrite
+			}
+			if rollbackErr != nil {
+				return fmt.Errorf("批量写入信息资产失败且回滚失败: %v; %w", rollbackErr, writeErr)
+			}
+			return fmt.Errorf("批量写入信息资产: %w", writeErr)
+		}
+	}
+	if err := s.logFile.Sync(); err != nil {
+		if rollbackErr := s.rollbackLocked(start); rollbackErr != nil {
+			return fmt.Errorf("批量持久化信息资产失败且回滚失败: %v; %w", rollbackErr, err)
+		}
+		return fmt.Errorf("批量持久化信息资产: %w", err)
+	}
+	for _, value := range values {
+		s.items[value.ID] = clone(value)
+	}
+	return nil
+}
+
 func (s *Store) Update(value domain.Information, expectedRevision uint64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

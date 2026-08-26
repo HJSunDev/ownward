@@ -502,48 +502,47 @@ func (s *Service) prepareSemanticWorkBatch(ctx context.Context, values []domain.
 		}
 		offset = end
 	}
+	staged := derived.NewIndex(nil)
+	records := make([]derived.Record, 0, len(values))
+	positionsByRecord := make([]int, 0, len(values))
 	for index, value := range values {
-		states[index] = s.prepareSemanticWorkWithVector(value, vectors[index], embeddingErrors[index])
+		record, recordErr := s.newPendingSemanticRecord(value, vectors[index], embeddingErrors[index], s.semantic, staged)
+		if recordErr != nil {
+			states[index] = OrganizationState{Status: "pending", Provider: "external-semantic-capability", Error: recordErr.Error()}
+			continue
+		}
+		current, exists := s.store.Get(value.ID)
+		if !exists || current.Revision != value.Revision {
+			states[index] = OrganizationState{Status: "pending", Provider: "external-semantic-capability", Error: "信息已被更新版本取代"}
+			continue
+		}
+		records = append(records, record)
+		positionsByRecord = append(positionsByRecord, index)
+		staged.Upsert(record)
+		states[index] = organizationState(record)
+	}
+	if len(records) == 0 {
+		return states
+	}
+	s.graphMu.Lock()
+	defer s.graphMu.Unlock()
+	if err := s.derivedStore.PutBatch(records); err != nil {
+		for _, position := range positionsByRecord {
+			states[position] = OrganizationState{Status: "pending", Provider: "external-semantic-capability", Error: err.Error()}
+		}
+		return states
+	}
+	for _, record := range records {
+		s.semantic.Upsert(record)
 	}
 	return states
 }
 
 func (s *Service) prepareSemanticWorkWithVector(value domain.Information, vector []float32, embeddingErr error) OrganizationState {
 	previousDependents := s.semantic.Dependents(value.ID)
-	var vectors [][]float32
-	if len(vector) > 0 {
-		vectors = [][]float32{vector}
-	}
-	candidates := s.semanticCandidates(value, vectors)
-	var previous *semantics.Analysis
-	if current, exists := s.derivedStore.Get(value.ID); exists {
-		analysis := current.Analysis
-		previous = &analysis
-	}
-	work, workErr := semantics.NewWork(s.derivedStore.Generation(), value, candidates, previous, s.now())
-	if workErr != nil {
-		return OrganizationState{Status: "pending", Provider: "external-semantic-capability", Error: workErr.Error()}
-	}
-	workReference, referenceErr := semantics.ReferenceWork(work)
-	if referenceErr != nil {
-		return OrganizationState{Status: "pending", Provider: "external-semantic-capability", Error: referenceErr.Error()}
-	}
-	record := derived.Record{
-		AssetID:               value.ID,
-		AssetRevision:         value.Revision,
-		GeneratedAt:           s.now().UTC(),
-		Provider:              s.embedder.Name(),
-		Status:                "pending",
-		SemanticWorkReference: &workReference,
-		EmbeddingSpace:        s.embedder.Space().ID,
-	}
-	if len(vector) > 0 {
-		record.Embedding = vector
-	} else if embeddingErr == nil {
-		embeddingErr = errors.New("本地向量能力返回空向量")
-	}
-	if embeddingErr != nil {
-		record.Error = embeddingErr.Error()
+	record, err := s.newPendingSemanticRecord(value, vector, embeddingErr, s.semantic)
+	if err != nil {
+		return OrganizationState{Status: "pending", Provider: "external-semantic-capability", Error: err.Error()}
 	}
 	current, exists := s.store.Get(value.ID)
 	if !exists || current.Revision != value.Revision {
@@ -568,7 +567,41 @@ func (s *Service) prepareSemanticWorkWithVector(value domain.Information, vector
 	}
 }
 
-func (s *Service) semanticCandidates(value domain.Information, vectors [][]float32) []semantics.Candidate {
+func (s *Service) newPendingSemanticRecord(value domain.Information, vector []float32, embeddingErr error, indexes ...*derived.Index) (derived.Record, error) {
+	var vectors [][]float32
+	if len(vector) > 0 {
+		vectors = [][]float32{vector}
+	}
+	candidates := s.semanticCandidates(value, vectors, indexes...)
+	var previous *semantics.Analysis
+	if current, exists := s.derivedStore.Get(value.ID); exists {
+		analysis := current.Analysis
+		previous = &analysis
+	}
+	work, err := semantics.NewWork(s.derivedStore.Generation(), value, candidates, previous, s.now())
+	if err != nil {
+		return derived.Record{}, err
+	}
+	workReference, err := semantics.ReferenceWork(work)
+	if err != nil {
+		return derived.Record{}, err
+	}
+	record := derived.Record{
+		AssetID: value.ID, AssetRevision: value.Revision, GeneratedAt: s.now().UTC(), Provider: s.embedder.Name(),
+		Status: "pending", SemanticWorkReference: &workReference, EmbeddingSpace: s.embedder.Space().ID,
+	}
+	if len(vector) > 0 {
+		record.Embedding = vector
+	} else if embeddingErr == nil {
+		embeddingErr = errors.New("本地向量能力返回空向量")
+	}
+	if embeddingErr != nil {
+		record.Error = embeddingErr.Error()
+	}
+	return record, nil
+}
+
+func (s *Service) semanticCandidates(value domain.Information, vectors [][]float32, indexes ...*derived.Index) []semantics.Candidate {
 	lexical := s.index.Search(value.Content, nil, 24)
 	result := make([]semantics.Candidate, 0, 12)
 	positions := make(map[string]int, 12)
@@ -603,9 +636,9 @@ func (s *Service) semanticCandidates(value domain.Information, vectors [][]float
 		}
 	}
 	if len(vectors) == 1 && len(vectors[0]) > 0 {
-		for _, hit := range s.semantic.Search(vectors[0], nil, 24) {
+		for _, hit := range mergedSemanticHits(vectors[0], indexes, 24) {
 			candidate, exists := s.store.Get(hit.AssetID)
-			record, recordExists := s.semantic.Get(hit.AssetID)
+			record, recordExists := semanticRecordFromIndexes(hit.AssetID, indexes)
 			if exists && recordExists && record.AssetRevision == candidate.Revision {
 				appendCandidate(candidate, hit.Score)
 			}
@@ -619,6 +652,46 @@ func (s *Service) semanticCandidates(value domain.Information, vectors [][]float
 		if len(result) == 12 {
 			break
 		}
+	}
+	return result
+}
+
+func semanticRecordFromIndexes(assetID string, indexes []*derived.Index) (derived.Record, bool) {
+	for _, index := range indexes {
+		if index == nil {
+			continue
+		}
+		if record, exists := index.Get(assetID); exists {
+			return record, true
+		}
+	}
+	return derived.Record{}, false
+}
+
+func mergedSemanticHits(vector []float32, indexes []*derived.Index, limit int) []derived.SemanticHit {
+	byID := make(map[string]derived.SemanticHit)
+	for _, index := range indexes {
+		if index == nil {
+			continue
+		}
+		for _, hit := range index.Search(vector, nil, limit) {
+			if current, exists := byID[hit.AssetID]; !exists || hit.Score > current.Score {
+				byID[hit.AssetID] = hit
+			}
+		}
+	}
+	result := make([]derived.SemanticHit, 0, len(byID))
+	for _, hit := range byID {
+		result = append(result, hit)
+	}
+	sort.Slice(result, func(left, right int) bool {
+		if result[left].Score == result[right].Score {
+			return result[left].AssetID < result[right].AssetID
+		}
+		return result[left].Score > result[right].Score
+	})
+	if len(result) > limit {
+		result = result[:limit]
 	}
 	return result
 }

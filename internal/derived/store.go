@@ -366,6 +366,84 @@ func (s *Store) Put(record Record) error {
 	return nil
 }
 
+// PutBatch appends one bounded state batch with a single durability barrier.
+// Records retain the exact on-disk representation and replay semantics used by
+// Put; only the redundant per-record fsync is removed. A failed batch is
+// rolled back to its original log boundary before any in-memory index changes.
+func (s *Store) PutBatch(records []Record) error {
+	if len(records) == 0 || len(records) > 20 {
+		return errors.New("批量派生状态数量必须介于一和二十之间")
+	}
+	return s.putRecords(records, true, false)
+}
+
+func (s *Store) putRecords(records []Record, durable, requireEmptyGeneration bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.file == nil {
+		return errors.New("派生状态已关闭")
+	}
+	if requireEmptyGeneration && (s.sealed || s.generation == "legacy" || len(s.records) != 0) {
+		return errors.New("派生世代不处于空白构建状态")
+	}
+	canonical := make([]Record, len(records))
+	seen := make(map[string]uint64, len(records))
+	for index, record := range records {
+		var err error
+		record, err = canonicalRecord(record)
+		if err != nil {
+			return err
+		}
+		if err := validateRecord(record); err != nil {
+			return err
+		}
+		if current, exists := s.records[record.AssetID]; exists && current.revision > record.AssetRevision {
+			return ErrStaleRecord
+		}
+		if _, duplicate := seen[record.AssetID]; duplicate {
+			return errors.New("批量派生状态包含重复信息标识")
+		}
+		seen[record.AssetID] = record.AssetRevision
+		canonical[index] = record
+	}
+	start, err := s.file.Seek(0, io.SeekEnd)
+	if err != nil {
+		return fmt.Errorf("定位派生状态: %w", err)
+	}
+	references := make([]recordReference, len(canonical))
+	offset := start
+	for index, record := range canonical {
+		encoded, encodeErr := encodeRecord(record)
+		if encodeErr != nil {
+			_ = s.rollbackLocked(start)
+			return encodeErr
+		}
+		written, writeErr := s.file.Write(encoded)
+		if writeErr != nil || written != len(encoded) {
+			_ = s.rollbackLocked(start)
+			if writeErr == nil {
+				writeErr = io.ErrShortWrite
+			}
+			return fmt.Errorf("批量写入派生状态: %w", writeErr)
+		}
+		references[index] = recordReference{offset: offset, length: uint32(len(encoded)), revision: record.AssetRevision}
+		offset += int64(len(encoded))
+	}
+	if durable {
+		if err := s.file.Sync(); err != nil {
+			_ = s.rollbackLocked(start)
+			return fmt.Errorf("批量持久化派生状态: %w", err)
+		}
+	}
+	for index, record := range canonical {
+		s.records[record.AssetID] = references[index]
+		if s.startupRecords != nil {
+			s.startupRecords[record.AssetID] = record
+		}
+	}
+	return nil
+}
+
 // Compact rewrites a mutable derived log to one current, compact record per
 // asset. Sealed generations are compacted by the existing atomic generation
 // rebuild path and are therefore left unchanged here.

@@ -1,12 +1,53 @@
 package derived
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestStagedGenerationBecomesDurableOnlyAtAtomicCommit(t *testing.T) {
+	root := t.TempDir()
+	current, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := make([]Record, 64)
+	for index := range records {
+		records[index] = Record{AssetID: fmt.Sprintf("staged-%03d", index), AssetRevision: 1, Status: "ready", EmbeddingSpace: "staged-test", Embedding: []float32{1, float32(index + 1)}}
+	}
+	next, err := CreateGeneration(root, "gen-staged-batch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := next.StageGeneration(records); err != nil {
+		t.Fatal(err)
+	}
+	if err := next.StageGeneration(records[:1]); err == nil {
+		t.Fatal("non-empty generation accepted a second staged batch")
+	}
+	if _, exists := current.Get(records[0].AssetID); exists {
+		t.Fatal("uncommitted generation became visible")
+	}
+	if err := current.CommitGeneration(next, GenerationMetadata{AssetCount: len(records), AssetSnapshot: strings.Repeat("e", 64), EmbeddingSpace: "staged-test"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := current.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	actual, err := reopened.AllWithEmbeddings()
+	if err != nil || len(actual) != len(records) {
+		t.Fatalf("staged generation did not recover: count=%d err=%v", len(actual), err)
+	}
+}
 
 func TestGenerationCommitSwitchesCompleteStateAndReloads(t *testing.T) {
 	root := t.TempDir()

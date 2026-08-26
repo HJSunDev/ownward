@@ -20,7 +20,7 @@ for stream in (sys.stdout, sys.stderr):
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Ownward Acceptance Suite v1 唯一执行入口")
-    parser.add_argument("mode", choices=["check", "plan", "self-check", "kernel-iteration", "kernel-storage", "preflight", "bind", "init", "rebind", "execute", "invalidate", "promote", "summarize"])
+    parser.add_argument("mode", choices=["check", "plan", "self-check", "kernel-iteration", "kernel-storage", "kernel-execution", "preflight", "bind", "init", "rebind", "execute", "invalidate", "promote", "summarize"])
     parser.add_argument("--state", type=Path)
     parser.add_argument("--binding", type=Path)
     parser.add_argument("--impact", action="append", default=[])
@@ -68,6 +68,12 @@ def main() -> None:
             raise ValueError("kernel-storage 需要 --formal-run、--output 与 --candidate")
         import kernel_iteration
         print(json.dumps(kernel_iteration.run_storage(HERE, args.formal_run, args.output, args.candidate, args.resume), ensure_ascii=False))
+        return
+    if args.mode == "kernel-execution":
+        if args.formal_run is None or args.output is None or args.candidate is None:
+            raise ValueError("kernel-execution 需要 --formal-run、--output 与 --candidate")
+        import kernel_iteration
+        print(json.dumps(kernel_iteration.run_execution(HERE, args.formal_run, args.output, args.candidate, args.resume), ensure_ascii=False))
         return
     if args.mode == "preflight":
         if args.config is None or args.isolation_dir is None:
