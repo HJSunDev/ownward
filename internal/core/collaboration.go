@@ -39,7 +39,7 @@ func (s *Service) SemanticWork(_ context.Context, limit int) ([]semantics.Work, 
 	if limit > 20 {
 		return nil, errors.New("语义工作数量必须介于一和二十之间")
 	}
-	assets := s.store.All()
+	assets := s.authority.ListCurrent()
 	sort.Slice(assets, func(left, right int) bool {
 		if assets[left].UpdatedAt.Equal(assets[right].UpdatedAt) {
 			return assets[left].ID < assets[right].ID
@@ -84,7 +84,7 @@ func (s *Service) SemanticWorkFor(_ context.Context, assetIDs []string) ([]seman
 			return nil, errors.New("定向语义工作包含重复资产标识")
 		}
 		seen[id] = struct{}{}
-		asset, exists := s.store.Get(id)
+		asset, exists := s.authority.ReadCurrent(id)
 		if !exists {
 			return nil, errors.New("定向语义工作的资产不存在")
 		}
@@ -105,13 +105,13 @@ func (s *Service) resolveSemanticWork(record derived.Record) (semantics.Work, er
 	if record.SemanticWorkReference == nil {
 		return semantics.Work{}, errors.New("语义工作引用不存在")
 	}
-	asset, exists := s.store.Get(record.SemanticWorkReference.AssetID)
+	asset, exists := s.authority.ReadCurrent(record.SemanticWorkReference.AssetID)
 	if !exists {
 		return semantics.Work{}, errors.New("语义工作的权威资产不存在")
 	}
 	candidates := make([]domain.Information, 0, len(record.SemanticWorkReference.Candidates))
 	for _, reference := range record.SemanticWorkReference.Candidates {
-		candidate, exists := s.store.Get(reference.ID)
+		candidate, exists := s.authority.ReadCurrent(reference.ID)
 		if !exists {
 			return semantics.Work{}, errors.New("语义工作的候选资产不存在")
 		}
@@ -138,7 +138,7 @@ func (s *Service) submitSemanticWithRecovery(input semantics.Submission, recover
 	}
 	unlock := s.lockMutation(input.AssetID)
 	defer unlock()
-	asset, exists := s.store.Get(strings.TrimSpace(input.AssetID))
+	asset, exists := s.authority.ReadCurrent(strings.TrimSpace(input.AssetID))
 	if !exists {
 		return OrganizationState{}, errors.New("语义工作的资产不存在")
 	}
@@ -217,7 +217,7 @@ func (s *Service) submitSemanticWithRecovery(input semantics.Submission, recover
 		}
 		record.Error = strings.Trim(strings.Join([]string{record.Error, reason}, "; "), "; ")
 	}
-	current, exists := s.store.Get(asset.ID)
+	current, exists := s.authority.ReadCurrent(asset.ID)
 	if !exists || current.Revision != asset.Revision {
 		return OrganizationState{}, errors.New("语义工作已被新的资产版本取代")
 	}
@@ -260,7 +260,7 @@ func (s *Service) prepareSemanticVectorRecoveries(ctx context.Context, inputs []
 	expected := make([]int, len(inputs))
 	s.stateMu.RLock()
 	for index, input := range inputs {
-		asset, exists := s.store.Get(strings.TrimSpace(input.AssetID))
+		asset, exists := s.authority.ReadCurrent(strings.TrimSpace(input.AssetID))
 		if !exists {
 			continue
 		}
@@ -508,7 +508,7 @@ func (s *Service) prepareSemanticWorkBatch(ctx context.Context, values []domain.
 			states[index] = OrganizationState{Status: "pending", Provider: "external-semantic-capability", Error: recordErr.Error()}
 			continue
 		}
-		current, exists := s.store.Get(value.ID)
+		current, exists := s.authority.ReadCurrent(value.ID)
 		if !exists || current.Revision != value.Revision {
 			states[index] = OrganizationState{Status: "pending", Provider: "external-semantic-capability", Error: "信息已被更新版本取代"}
 			continue
@@ -541,7 +541,7 @@ func (s *Service) prepareSemanticWorkWithVector(value domain.Information, vector
 	if err != nil {
 		return OrganizationState{Status: "pending", Provider: "external-semantic-capability", Error: err.Error()}
 	}
-	current, exists := s.store.Get(value.ID)
+	current, exists := s.authority.ReadCurrent(value.ID)
 	if !exists || current.Revision != value.Revision {
 		return OrganizationState{Status: "pending", Provider: "external-semantic-capability", Error: "信息已被更新版本取代"}
 	}
@@ -622,7 +622,7 @@ func (s *Service) semanticCandidates(value domain.Information, vectors [][]float
 		})
 	}
 	for _, relation := range value.Relations {
-		if candidate, exists := s.store.Get(relation.TargetID); exists {
+		if candidate, exists := s.authority.ReadCurrent(relation.TargetID); exists {
 			appendCandidate(candidate, 0)
 		}
 	}
@@ -634,7 +634,7 @@ func (s *Service) semanticCandidates(value domain.Information, vectors [][]float
 	}
 	if len(vectors) == 1 && len(vectors[0]) > 0 {
 		for _, hit := range mergedSemanticHits(vectors[0], indexes, 24) {
-			candidate, exists := s.store.Get(hit.AssetID)
+			candidate, exists := s.authority.ReadCurrent(hit.AssetID)
 			record, recordExists := semanticRecordFromIndexes(hit.AssetID, indexes)
 			if exists && recordExists && record.AssetRevision == candidate.Revision {
 				appendCandidate(candidate, hit.Score)
@@ -719,7 +719,7 @@ func (s *Service) SemanticStatus() map[string]int {
 func (s *Service) Organization(id string) (OrganizationState, error) {
 	s.stateMu.RLock()
 	defer s.stateMu.RUnlock()
-	asset, exists := s.store.Get(strings.TrimSpace(id))
+	asset, exists := s.authority.ReadCurrent(strings.TrimSpace(id))
 	if !exists {
 		return OrganizationState{}, errors.New("信息不存在")
 	}

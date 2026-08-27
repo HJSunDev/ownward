@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/HJSunDev/ownward/internal/assetlog"
+	"github.com/HJSunDev/ownward/internal/authoritysubstrate"
 	"github.com/HJSunDev/ownward/internal/composition"
 	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/core"
@@ -31,8 +32,8 @@ func TestInvalidCompositionFailsBeforeEveryRuntimeSideEffect(t *testing.T) {
 	writeAbsoluteFile(t, acceptance, "unchanged")
 	calls := []string{}
 	resource := resources{
-		restore: func(_, _ string) error { calls = append(calls, "restore"); return nil },
-		openAssets: func(string) (*assetlog.Store, error) {
+		restore: func(_, _ string, _ contract.ControlState) error { calls = append(calls, "restore"); return nil },
+		openAuthority: func(string, contract.ControlState) (contract.AuthoritySubstrate, error) {
 			calls = append(calls, "assets")
 			return nil, errors.New("must not open")
 		},
@@ -71,8 +72,8 @@ func TestInvalidPackagedVectorFailsBeforeProductResources(t *testing.T) {
 		DataDir: dataDir, ProductSemantics: Collaborative,
 		VectorBundleDir: filepath.Join(t.TempDir(), "embedding"),
 	}, manifest, resources{
-		restore: func(_, _ string) error { calls = append(calls, "restore"); return nil },
-		openAssets: func(string) (*assetlog.Store, error) {
+		restore: func(_, _ string, _ contract.ControlState) error { calls = append(calls, "restore"); return nil },
+		openAuthority: func(string, contract.ControlState) (contract.AuthoritySubstrate, error) {
 			calls = append(calls, "assets")
 			return nil, errors.New("must not open")
 		},
@@ -172,7 +173,7 @@ func TestExplicitAssemblyMatchesAllLegacyProductSemantics(t *testing.T) {
 				request.VectorBundleDir = filepath.Join(t.TempDir(), "embedding")
 			}
 			runtime, err := openWith(request, manifest, resources{
-				restore: assetlog.Restore, openAssets: assetlog.Open, openDerived: derived.Open,
+				restore: authoritysubstrate.Restore, openAuthority: openTestAuthority, openDerived: derived.Open,
 				openVector: func(string, composition.Manifest) (embedding.Provider, error) {
 					return embedding.HashForTesting{Dimensions: 32}, nil
 				},
@@ -224,7 +225,7 @@ func TestExplicitAssemblyPreservesOrganizedAndVectorDegradation(t *testing.T) {
 				request.VectorBundleDir = filepath.Join(t.TempDir(), "embedding")
 			}
 			runtime, err := openWith(request, manifest, resources{
-				restore: assetlog.Restore, openAssets: assetlog.Open, openDerived: derived.Open,
+				restore: authoritysubstrate.Restore, openAuthority: openTestAuthority, openDerived: derived.Open,
 				openVector: func(string, composition.Manifest) (embedding.Provider, error) { return test.vector, nil },
 			})
 			if err != nil {
@@ -237,6 +238,44 @@ func TestExplicitAssemblyPreservesOrganizedAndVectorDegradation(t *testing.T) {
 				t.Fatalf("degradation changed: legacy=%#v/%v new=%#v/%v", legacyResult, legacyErr, newResult, newErr)
 			}
 		})
+	}
+}
+
+func TestAssemblyBackupRestoresAssetsAndControlTogether(t *testing.T) {
+	manifest := testManifest(t, Basic)
+	source := filepath.Join(t.TempDir(), "source")
+	runtime, err := openWith(Request{DataDir: source, ProductSemantics: Basic}, manifest, resources{
+		restore: authoritysubstrate.Restore, openAuthority: openTestAuthority, openDerived: derived.Open,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := runtime.Service().Create(context.Background(), core.CreateInput{Kind: domain.KindGeneral, Content: "组合备份必须覆盖权威资产和控制状态。"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	backup := filepath.Join(t.TempDir(), "authority.ownward")
+	if err := runtime.Backup(backup); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.Close(); err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(t.TempDir(), "restored")
+	restored, err := openWith(Request{DataDir: destination, RestoreBackup: backup, ProductSemantics: Basic}, manifest, resources{
+		restore: authoritysubstrate.Restore, openAuthority: openTestAuthority, openDerived: derived.Open,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restored.Close()
+	actual, err := restored.Service().Read(context.Background(), created.Information.ID)
+	if err != nil || actual.Content != created.Information.Content {
+		t.Fatalf("restored asset mismatch: %#v %v", actual, err)
+	}
+	control, err := os.ReadFile(filepath.Join(destination, "authority", "control.json"))
+	if err != nil || !strings.Contains(string(control), manifest.Identity) {
+		t.Fatalf("restored control state missing composition identity: %v", err)
 	}
 }
 
@@ -260,7 +299,10 @@ func TestExplicitModeRejectsNilAndManifestMismatchBeforeOpen(t *testing.T) {
 		}(),
 	} {
 		_, err := openWith(request, manifest, resources{
-			restore: assetlog.Restore, openAssets: func(string) (*assetlog.Store, error) { t.Fatal("opened assets"); return nil, nil },
+			restore: authoritysubstrate.Restore, openAuthority: func(string, contract.ControlState) (contract.AuthoritySubstrate, error) {
+				t.Fatal("opened assets")
+				return nil, nil
+			},
 			openDerived: derived.Open, openVector: func(string, composition.Manifest) (embedding.Provider, error) {
 				return embedding.Unavailable{}, nil
 			},
@@ -353,6 +395,10 @@ func openLegacy(t *testing.T, mode ProductSemantics, dataDir string, provider se
 		t.Fatal(err)
 	}
 	return service
+}
+
+func openTestAuthority(path string, initial contract.ControlState) (contract.AuthoritySubstrate, error) {
+	return authoritysubstrate.Open(path, initial)
 }
 
 func assertPersistedEquivalent(t *testing.T, oldDir, newDir, expected string) {

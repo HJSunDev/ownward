@@ -1,9 +1,7 @@
 package assetlog
 
 import (
-	"archive/zip"
 	"bufio"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -295,173 +292,11 @@ func (s *Store) Dir() string {
 }
 
 func (s *Store) Backup(destination string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.logFile == nil {
-		return errors.New("信息资产日志已关闭")
-	}
-	if err := s.logFile.Sync(); err != nil {
-		return fmt.Errorf("持久化信息资产: %w", err)
-	}
-	if _, err := os.Stat(destination); err == nil {
-		return errors.New("备份目标已经存在")
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("检查备份目标: %w", err)
-	}
-	files := make(map[string][]byte, 2)
-	for _, name := range []string{manifestName, logName} {
-		content, err := os.ReadFile(filepath.Join(s.dir, name))
-		if err != nil {
-			return fmt.Errorf("读取备份内容 %s: %w", name, err)
-		}
-		files[name] = content
-	}
-	digests := make(map[string]string, len(files))
-	for name, content := range files {
-		digest := sha256.Sum256(content)
-		digests[name] = fmt.Sprintf("%x", digest[:])
-	}
-	metadata, err := json.MarshalIndent(backupManifest{Format: "ownward.backup/v1", CreatedAt: time.Now().UTC(), Files: digests}, "", "  ")
-	if err != nil {
-		return err
-	}
-	metadata = append(metadata, '\n')
-	parent := filepath.Dir(destination)
-	if err := os.MkdirAll(parent, 0o700); err != nil {
-		return fmt.Errorf("创建备份目录: %w", err)
-	}
-	temporary, err := os.CreateTemp(parent, ".ownward-backup-*.tmp")
-	if err != nil {
-		return fmt.Errorf("创建临时备份: %w", err)
-	}
-	temporaryName := temporary.Name()
-	committed := false
-	defer func() {
-		_ = temporary.Close()
-		if !committed {
-			_ = os.Remove(temporaryName)
-		}
-	}()
-	archive := zip.NewWriter(temporary)
-	for _, name := range []string{manifestName, logName} {
-		writer, err := archive.CreateHeader(&zip.FileHeader{Name: name, Method: zip.Deflate})
-		if err != nil {
-			return err
-		}
-		if _, err := writer.Write(files[name]); err != nil {
-			return err
-		}
-	}
-	writer, err := archive.CreateHeader(&zip.FileHeader{Name: "backup.json", Method: zip.Deflate})
-	if err != nil {
-		return err
-	}
-	if _, err := writer.Write(metadata); err != nil {
-		return err
-	}
-	if err := archive.Close(); err != nil {
-		return fmt.Errorf("完成备份归档: %w", err)
-	}
-	if err := temporary.Sync(); err != nil {
-		return fmt.Errorf("持久化备份归档: %w", err)
-	}
-	if err := temporary.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(temporaryName, destination); err != nil {
-		return fmt.Errorf("提交备份归档: %w", err)
-	}
-	committed = true
-	return nil
+	return backupStreaming(s, destination)
 }
 
 func Restore(archivePath, destination string) error {
-	reader, err := zip.OpenReader(archivePath)
-	if err != nil {
-		return fmt.Errorf("打开备份归档: %w", err)
-	}
-	defer reader.Close()
-	files := make(map[string][]byte, 3)
-	for _, entry := range reader.File {
-		if entry.Name != manifestName && entry.Name != logName && entry.Name != "backup.json" {
-			return fmt.Errorf("备份归档包含未知文件 %q", entry.Name)
-		}
-		if entry.UncompressedSize64 > 16*1024*1024*1024 {
-			return fmt.Errorf("备份文件 %q 超过允许大小", entry.Name)
-		}
-		if _, duplicate := files[entry.Name]; duplicate {
-			return fmt.Errorf("备份归档重复包含文件 %q", entry.Name)
-		}
-		opened, err := entry.Open()
-		if err != nil {
-			return err
-		}
-		content, readErr := io.ReadAll(io.LimitReader(opened, int64(entry.UncompressedSize64)+1))
-		closeErr := opened.Close()
-		if readErr != nil {
-			return readErr
-		}
-		if closeErr != nil {
-			return closeErr
-		}
-		if uint64(len(content)) != entry.UncompressedSize64 {
-			return fmt.Errorf("备份文件 %q 长度不匹配", entry.Name)
-		}
-		files[entry.Name] = content
-	}
-	if len(files) != 3 {
-		return errors.New("备份归档不完整")
-	}
-	var metadata backupManifest
-	if err := json.Unmarshal(files["backup.json"], &metadata); err != nil {
-		return fmt.Errorf("解析备份清单: %w", err)
-	}
-	if metadata.Format != "ownward.backup/v1" {
-		return errors.New("不支持的备份格式")
-	}
-	for _, name := range []string{manifestName, logName} {
-		digest := sha256.Sum256(files[name])
-		if !strings.EqualFold(metadata.Files[name], fmt.Sprintf("%x", digest[:])) {
-			return fmt.Errorf("备份文件 %q 校验失败", name)
-		}
-	}
-	if entries, err := os.ReadDir(destination); err == nil {
-		if len(entries) > 0 {
-			return errors.New("恢复目标不是空白目录")
-		}
-		if err := os.Remove(destination); err != nil {
-			return fmt.Errorf("准备恢复目标: %w", err)
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("检查恢复目标: %w", err)
-	}
-	parent := filepath.Dir(destination)
-	if err := os.MkdirAll(parent, 0o700); err != nil {
-		return err
-	}
-	temporary, err := os.MkdirTemp(parent, ".ownward-restore-*")
-	if err != nil {
-		return fmt.Errorf("创建临时恢复目录: %w", err)
-	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = os.RemoveAll(temporary)
-		}
-	}()
-	for _, name := range []string{manifestName, logName} {
-		if err := os.WriteFile(filepath.Join(temporary, name), files[name], 0o600); err != nil {
-			return fmt.Errorf("恢复文件 %s: %w", name, err)
-		}
-	}
-	if err := validateRestored(temporary); err != nil {
-		return err
-	}
-	if err := os.Rename(temporary, destination); err != nil {
-		return fmt.Errorf("提交恢复结果: %w", err)
-	}
-	committed = true
-	return nil
+	return restoreStreaming(archivePath, destination)
 }
 
 func validateRestored(dir string) error {

@@ -54,14 +54,14 @@
       "dependencies": [
         {
           "role": "kernel",
-          "identity": "87d7e7bb0123a7d3cfebfa08e67958a70573f54a9d667f86dda8752d80af17f4"
+          "identity": "b7e7a2a4f6722e51839b72c1c0191feaa3601d67e70794a9db88d280cc78391d"
         },
         {
           "role": "product-rules",
           "identity": "80919d7ce74ea5a443c1c0c0d2b957ae3e2f1e1adb559f7b761e2e38e2e713f9"
         }
       ],
-      "identity": "da6c89e0d12d9fb886db43df6fef3e20a434735dee6b0746f1f6b580820ebebf"
+      "identity": "a909084dc588b63583e39f75c6ca9c7a4a6ee241a94d88463657da970877cd54"
     },
     {
       "role": "assembly",
@@ -69,7 +69,7 @@
         {
           "id": "ownward.assembly",
           "version": 1,
-          "definition_sha256": "edbd6f55d2dec06311e5faf4f55a2a7b6870050bfa18f4fa748df93ad8106079"
+          "definition_sha256": "0600dfcfd0b3559352afe3cf2c233474e384ba36838c3bca2e2474b7048a9e02"
         }
       ],
       "content": [
@@ -81,7 +81,7 @@
         {
           "name": "explicit-assembly",
           "path": "internal/assembly/assembly.go",
-          "sha256": "38a0a10c5de19ec92ebd09b38160a4d12f98cdeed8f57729e63dc447da25bfa5"
+          "sha256": "5574b4abd0dd1f5be1b8f8e6ca98e5e98ea89c8f8b2ddad1ae443554a6f5d27f"
         },
         {
           "name": "release-composition-embed",
@@ -96,7 +96,7 @@
       ],
       "config": {
         "activation": "unique-explicit-entry",
-        "control_state": "not-yet-persisted",
+        "control_state": "ownward.control-state/v1",
         "entry": "internal/assembly.Open",
         "product_semantics": "collaborative",
         "status": "active"
@@ -104,15 +104,15 @@
       "dependencies": [
         {
           "role": "access",
-          "identity": "da6c89e0d12d9fb886db43df6fef3e20a434735dee6b0746f1f6b580820ebebf"
+          "identity": "a909084dc588b63583e39f75c6ca9c7a4a6ee241a94d88463657da970877cd54"
         },
         {
           "role": "authority-substrate",
-          "identity": "38ff26e80d5a5cb229c1a250f4a35b295b03c24167ba49b95c21e255320950dd"
+          "identity": "dc4539c88ad3fdcd99bc686ebbfc9e47df8190a44b65a19867b2a44636276607"
         },
         {
           "role": "kernel",
-          "identity": "87d7e7bb0123a7d3cfebfa08e67958a70573f54a9d667f86dda8752d80af17f4"
+          "identity": "b7e7a2a4f6722e51839b72c1c0191feaa3601d67e70794a9db88d280cc78391d"
         },
         {
           "role": "product-rules",
@@ -127,7 +127,7 @@
           "identity": "391b5aa1f4bb3a25d522a4d59c7af1a9aa1150a06480f64d23cfd73f86c808c5"
         }
       ],
-      "identity": "55b7d1fe801a55957c43afc3476f6d166de7f7c5d981c340ed7faac29ed8a652"
+      "identity": "86cbc30b72e61ef8da74d4eadb1d2fbf4f8590828cdc745062cff785f948ec1e"
     },
     {
       "role": "authority-substrate",
@@ -135,14 +135,24 @@
         {
           "id": "ownward.asset-authority",
           "version": 1,
-          "definition_sha256": "ba7ba4b7c27b6117ef0652d19b75746fc64d57854c0043692e7f8696c9e85bf5"
+          "definition_sha256": "9843d36cb1ef1398cb448b47976cec20b997889fc6535de98d106470ebdf7705"
+        },
+        {
+          "id": "ownward.control-state",
+          "version": 1,
+          "definition_sha256": "e7fbcc97ee33a9801fae435ed395345de331a0f2cdf1cb3c240d14d683218ca2"
         }
       ],
       "content": [
         {
           "name": "asset-authority-port",
           "path": "internal/authorityport/current.go",
-          "sha256": "3a26757dd97630def18076805f047858c10058b66e6aa4dc225c36f22bcd556d"
+          "sha256": "049ffa64ed869624452b46308df9767047dfc9dbd748946b6a0de2c9bbf4f331"
+        },
+        {
+          "name": "asset-backup-stream",
+          "path": "internal/assetlog/backup_stream.go",
+          "sha256": "7479eb4e9e0d9708be086035f0b1f8e9979252fc2cbb0f115ea9ba313c9ca789"
         },
         {
           "name": "asset-domain",
@@ -152,7 +162,17 @@
         {
           "name": "asset-store",
           "path": "internal/assetlog/store.go",
-          "sha256": "a21131e82ee9a0a126acb1660a1c3cb491c959811b4cf9c79993badce4584406"
+          "sha256": "b8bf0ab47a6a078b9cd71ebf2f893580b3d152af66e0ee84200b2a35218302e2"
+        },
+        {
+          "name": "authority-backup",
+          "path": "internal/authoritysubstrate/backup.go",
+          "sha256": "bc47a182e73d107c94be248226b8167395b77647a70c8da8ff5a984aa523b462"
+        },
+        {
+          "name": "authority-control",
+          "path": "internal/authoritysubstrate/substrate.go",
+          "sha256": "f78ff2e4602ba32f087e04e029bb8fad8e2f7683460db7ed2152fe7f956d30cf"
         },
         {
           "name": "directory-lock-unix",
@@ -173,15 +193,26 @@
           "name": "replace-windows",
           "path": "internal/assetlog/replace_windows.go",
           "sha256": "eab8313b69f978263b1c55c39bda28add18c85c7516291f8c506265370cd0bba"
+        },
+        {
+          "name": "substrate-replace-other",
+          "path": "internal/authoritysubstrate/replace_other.go",
+          "sha256": "ccf97e67c219a64acde45a65aedd9ca29ba23f80ef941430d8e32919ea335e0c"
+        },
+        {
+          "name": "substrate-replace-windows",
+          "path": "internal/authoritysubstrate/replace_windows.go",
+          "sha256": "ae4f67ba9b9e2ae3eb2c7a6c344990846a3efc9d82052122b5e0ccae631e3cbf"
         }
       ],
       "config": {
         "asset_schema": "ownward.information/v1",
-        "authority_mode": "single-writer-assetlog",
-        "backup": "assetlog-v1"
+        "authority_mode": "single-owner-substrate",
+        "backup": "authority-backup-v1",
+        "control_schema": "ownward.control-state/v1"
       },
       "dependencies": [],
-      "identity": "38ff26e80d5a5cb229c1a250f4a35b295b03c24167ba49b95c21e255320950dd"
+      "identity": "dc4539c88ad3fdcd99bc686ebbfc9e47df8190a44b65a19867b2a44636276607"
     },
     {
       "role": "kernel",
@@ -201,22 +232,22 @@
         {
           "name": "core-collaboration",
           "path": "internal/core/collaboration.go",
-          "sha256": "718fb510bdf9f23f18a92ff59ca453785e417c53be0cfa23a432ff05f5c4777d"
+          "sha256": "7e3b685601eaf7c7989b9f0cfb5d7ec2f37c49561f5587ad4d32009d4e6db9ad"
         },
         {
           "name": "core-evidence",
           "path": "internal/core/evidence.go",
-          "sha256": "a17560c3b54bba2cc5d88e2629b738ed38057b310ae5469dfe727600db1a0202"
+          "sha256": "7314b2bf703a9e014dbf3d337e77e8e67e73f103ba94ea13392a972ca5b51415"
         },
         {
           "name": "core-generation",
           "path": "internal/core/generation.go",
-          "sha256": "0ef250ea7ee0223148e13c68749e20cc79f74342e83133693981b74bf3dd8dc6"
+          "sha256": "d0576e2519cd1c3ba207e2480e15304247e5720b79056f3daa05e3fc9e15a35c"
         },
         {
           "name": "core-service",
           "path": "internal/core/service.go",
-          "sha256": "4cb9ef3c3662d3eef2ff0eba505e24abf0821a64a21223d1a5cf76f1d9180ac6"
+          "sha256": "4aaad81ec2be364b2eb21cc4e4fb47d2c99582c08bc63ca3a75aafaf220659c6"
         },
         {
           "name": "derived-evidence",
@@ -268,7 +299,7 @@
       "dependencies": [
         {
           "role": "authority-substrate",
-          "identity": "38ff26e80d5a5cb229c1a250f4a35b295b03c24167ba49b95c21e255320950dd"
+          "identity": "dc4539c88ad3fdcd99bc686ebbfc9e47df8190a44b65a19867b2a44636276607"
         },
         {
           "role": "product-rules",
@@ -283,7 +314,7 @@
           "identity": "391b5aa1f4bb3a25d522a4d59c7af1a9aa1150a06480f64d23cfd73f86c808c5"
         }
       ],
-      "identity": "87d7e7bb0123a7d3cfebfa08e67958a70573f54a9d667f86dda8752d80af17f4"
+      "identity": "b7e7a2a4f6722e51839b72c1c0191feaa3601d67e70794a9db88d280cc78391d"
     },
     {
       "role": "product-rules",
@@ -507,7 +538,7 @@
       "identity": "391b5aa1f4bb3a25d522a4d59c7af1a9aa1150a06480f64d23cfd73f86c808c5"
     }
   ],
-  "identity": "ae56a7d6ad4f9c6b9028311725baca1d0a9b5f770303225cb793a46adbe110f4",
+  "identity": "407896d65d644d70753668172f3e980a739ca3f13a9b386c52789adcc2dbb1fe",
   "audit": {
     "described_product_candidate": "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8",
     "migration_source_git": "a2ca363ae3a2a421a7445324788ebad82822ec4b"

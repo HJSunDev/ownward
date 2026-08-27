@@ -68,7 +68,7 @@ type contractKey struct {
 
 var roles = map[string]roleSpec{
 	"authority-substrate": {
-		contracts: []contractKey{{contract.AssetAuthorityContract, 1}},
+		contracts: []contractKey{{contract.AssetAuthorityContract, 1}, {contract.ControlStateContract, 1}},
 	},
 	"semantic": {
 		contracts: []contractKey{{contract.SemanticCapabilityContract, 1}},

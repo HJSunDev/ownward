@@ -49,13 +49,13 @@ func rankEvidence(value domain.Information, query string, limit int) []domain.Ev
 }
 
 func readEvidence(store interface {
-	Get(string) (domain.Information, bool)
+	ReadCurrent(string) (domain.Information, bool)
 }, id string) (domain.Evidence, error) {
 	unit, err := derived.ParseEvidenceUnitID(id)
 	if err != nil {
 		return domain.Evidence{}, errors.New("证据引用不存在或已经过期")
 	}
-	value, exists := store.Get(unit.SourceID)
+	value, exists := store.ReadCurrent(unit.SourceID)
 	if !exists || value.Revision != unit.SourceRevision {
 		return domain.Evidence{}, errors.New("证据来源不存在或已经过期")
 	}

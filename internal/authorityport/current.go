@@ -8,8 +8,8 @@ import (
 	"github.com/HJSunDev/ownward/internal/domain"
 )
 
-// Current maps the existing asset log to the stable authority contract. It is
-// intentionally not installed into the active product in this migration step.
+// Current maps the existing asset log to the stable authority contract. The
+// authority substrate owns this adapter and the concrete store lifecycle.
 type Current struct {
 	store *assetlog.Store
 }
@@ -85,6 +85,14 @@ func (c *Current) Sync() error {
 		return err
 	}
 	return store.Sync()
+}
+
+func (c *Current) Compact() error {
+	store, err := c.requireStore()
+	if err != nil {
+		return err
+	}
+	return store.Compact()
 }
 
 func (c *Current) Backup(destination string) error {

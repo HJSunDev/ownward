@@ -20,7 +20,7 @@ func (s *Service) rebuildCollaborative(ctx context.Context) (map[string]int, err
 	}
 	for attempt := 0; attempt < 3; attempt++ {
 		s.stateMu.RLock()
-		assets := s.store.All()
+		assets := s.authority.ListCurrent()
 		currentGeneration := s.derivedStore.Generation()
 		currentRecords, currentErr := s.derivedStore.AllWithEmbeddings()
 		s.stateMu.RUnlock()
@@ -47,7 +47,7 @@ func (s *Service) rebuildCollaborative(ctx context.Context) (map[string]int, err
 		func() {
 			s.stateMu.Lock()
 			defer s.stateMu.Unlock()
-			latestAssetDigest, digestErr := informationSnapshotDigest(s.store.All())
+			latestAssetDigest, digestErr := informationSnapshotDigest(s.authority.ListCurrent())
 			latestRecords, readErr := s.derivedStore.AllWithEmbeddings()
 			latestStateDigest, stateErr := recordSnapshotDigest(latestRecords)
 			if digestErr != nil || readErr != nil || stateErr != nil || latestAssetDigest != assetDigest || latestStateDigest != stateDigest || s.derivedStore.Generation() != currentGeneration {

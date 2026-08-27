@@ -20,6 +20,7 @@ type AssetAuthority interface {
 	ReadVersion(string, uint64) (domain.Information, bool)
 	ListCurrent() []domain.Information
 	Sync() error
+	Compact() error
 	Backup(string) error
 }
 
@@ -53,3 +54,15 @@ func (s ChangeScope) Validate() error {
 // AssetRestore is a function because restore creates a new authority store and
 // must not mutate an already-open authority.
 type AssetRestore func(archivePath, destination string) error
+
+// AuthoritySubstrate is the stable lifecycle boundary that owns both the
+// asset authority and the minimum non-derivable control decision.
+type AuthoritySubstrate interface {
+	Assets() AssetAuthority
+	Control() ControlAuthority
+	Backup(string) error
+	Close() error
+}
+
+type AuthorityOpen func(dataDir string, initial ControlState) (AuthoritySubstrate, error)
+type AuthorityRestore func(archivePath, dataDir string, initial ControlState) error

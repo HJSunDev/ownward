@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/HJSunDev/ownward/internal/assetlog"
+	"github.com/HJSunDev/ownward/internal/authorityport"
 	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/derived"
 	"github.com/HJSunDev/ownward/internal/domain"
@@ -24,17 +25,18 @@ import (
 const CollaborationRules = productrules.Collaboration
 
 type Service struct {
-	store         *assetlog.Store
-	derivedStore  *derived.Store
-	index         *retrieval.Lexical
-	semantic      *derived.Index
-	provider      semantics.Provider
-	embedder      embedding.Provider
-	collaborative bool
-	now           func() time.Time
-	mutationMu    [256]sync.Mutex
-	graphMu       sync.Mutex
-	stateMu       sync.RWMutex
+	authority      contract.AssetAuthority
+	closeAuthority func() error
+	derivedStore   *derived.Store
+	index          *retrieval.Lexical
+	semantic       *derived.Index
+	provider       semantics.Provider
+	embedder       embedding.Provider
+	collaborative  bool
+	now            func() time.Time
+	mutationMu     [256]sync.Mutex
+	graphMu        sync.Mutex
+	stateMu        sync.RWMutex
 }
 
 func appendUniqueIDs(values []string, extra ...string) []string {
@@ -65,13 +67,41 @@ type NavigationNode = contract.NavigationNode
 type NavigationResult = contract.NavigationResult
 
 func New(store *assetlog.Store) *Service {
-	return &Service{store: store, index: retrieval.NewLexical(store.All()), now: time.Now}
+	authority, _ := authorityport.Bind(store)
+	service, _ := NewWithAuthority(authority)
+	service.closeAuthority = store.Close
+	return service
 }
 
 var _ contract.ProductCapability = (*Service)(nil)
 var _ contract.KernelLifecycle = (*Service)(nil)
 
 func NewOrganized(store *assetlog.Store, derivedStore *derived.Store, provider semantics.Provider) (*Service, error) {
+	authority, err := authorityport.Bind(store)
+	if err != nil {
+		return nil, err
+	}
+	service, err := NewOrganizedWithAuthority(authority, derivedStore, provider)
+	if err == nil {
+		service.closeAuthority = store.Close
+	}
+	return service, err
+}
+
+// NewWithAuthority constructs the basic kernel against the stable authority
+// port. The caller retains authority lifecycle ownership.
+func NewWithAuthority(authority contract.AssetAuthority) (*Service, error) {
+	if authority == nil {
+		return nil, errors.New("资产权威不能为空")
+	}
+	assets := authority.ListCurrent()
+	return &Service{authority: authority, index: retrieval.NewLexical(assets), now: time.Now}, nil
+}
+
+func NewOrganizedWithAuthority(authority contract.AssetAuthority, derivedStore *derived.Store, provider semantics.Provider) (*Service, error) {
+	if authority == nil {
+		return nil, errors.New("资产权威不能为空")
+	}
 	if provider == nil {
 		provider = semantics.Heuristic{}
 	}
@@ -79,7 +109,7 @@ func NewOrganized(store *assetlog.Store, derivedStore *derived.Store, provider s
 	if err != nil {
 		return nil, fmt.Errorf("加载派生检索状态: %w", err)
 	}
-	assets := store.All()
+	assets := authority.ListCurrent()
 	currentRevision := make(map[string]uint64, len(assets))
 	for _, asset := range assets {
 		currentRevision[asset.ID] = asset.Revision
@@ -91,7 +121,7 @@ func NewOrganized(store *assetlog.Store, derivedStore *derived.Store, provider s
 		}
 	}
 	return &Service{
-		store:        store,
+		authority:    authority,
 		derivedStore: derivedStore,
 		index:        retrieval.NewLexical(assets),
 		semantic:     derived.NewIndex(currentRecords),
@@ -102,6 +132,21 @@ func NewOrganized(store *assetlog.Store, derivedStore *derived.Store, provider s
 
 // NewCollaborative 创建本地向量能力与外部语义理解相互独立的正式产品架构。
 func NewCollaborative(store *assetlog.Store, derivedStore *derived.Store, embedder embedding.Provider) (*Service, error) {
+	authority, err := authorityport.Bind(store)
+	if err != nil {
+		return nil, err
+	}
+	service, err := NewCollaborativeWithAuthority(authority, derivedStore, embedder)
+	if err == nil {
+		service.closeAuthority = store.Close
+	}
+	return service, err
+}
+
+func NewCollaborativeWithAuthority(authority contract.AssetAuthority, derivedStore *derived.Store, embedder embedding.Provider) (*Service, error) {
+	if authority == nil {
+		return nil, errors.New("资产权威不能为空")
+	}
 	if embedder == nil {
 		embedder = embedding.Unavailable{}
 	}
@@ -109,7 +154,7 @@ func NewCollaborative(store *assetlog.Store, derivedStore *derived.Store, embedd
 	if err != nil {
 		return nil, fmt.Errorf("加载派生检索状态: %w", err)
 	}
-	assets := store.All()
+	assets := authority.ListCurrent()
 	currentRevision := make(map[string]uint64, len(assets))
 	for _, asset := range assets {
 		currentRevision[asset.ID] = asset.Revision
@@ -135,7 +180,7 @@ func NewCollaborative(store *assetlog.Store, derivedStore *derived.Store, embedd
 		}
 	}
 	return &Service{
-		store:         store,
+		authority:     authority,
 		derivedStore:  derivedStore,
 		index:         retrieval.NewLexical(assets),
 		semantic:      derived.NewIndex(currentRecords),
@@ -177,7 +222,7 @@ func (s *Service) CreateBatch(ctx context.Context, inputs []CreateInput) ([]Muta
 		positions = append(positions, index)
 	}
 	if len(values) > 0 {
-		if err := s.store.CreateBatch(values); err != nil {
+		if _, err := s.authority.CreateAssets(values); err != nil {
 			for _, position := range positions {
 				results[position].Error = err.Error()
 			}
@@ -207,7 +252,7 @@ func (s *Service) createAsset(input CreateInput) (domain.Information, error) {
 	if err != nil {
 		return domain.Information{}, err
 	}
-	if err := s.store.Create(value); err != nil {
+	if _, err := s.authority.CreateAsset(value); err != nil {
 		return domain.Information{}, err
 	}
 	s.index.Upsert(value)
@@ -257,7 +302,7 @@ func (s *Service) Update(ctx context.Context, input UpdateInput) (MutationResult
 			unlock()
 		}
 	}()
-	current, ok := s.store.Get(strings.TrimSpace(input.ID))
+	current, ok := s.authority.ReadCurrent(strings.TrimSpace(input.ID))
 	if !ok {
 		return MutationResult{}, errors.New("信息不存在")
 	}
@@ -296,7 +341,7 @@ func (s *Service) Update(ctx context.Context, input UpdateInput) (MutationResult
 		dependents = s.semantic.Dependents(updated.ID)
 		dependents = appendUniqueIDs(dependents, s.semantic.PendingDependents(updated.ID)...)
 	}
-	if err := s.store.Update(updated, input.ExpectedRevision); err != nil {
+	if _, err := s.authority.UpdateAsset(updated, input.ExpectedRevision); err != nil {
 		return MutationResult{}, err
 	}
 	s.index.Upsert(updated)
@@ -324,7 +369,7 @@ func (s *Service) Update(ctx context.Context, input UpdateInput) (MutationResult
 }
 
 func (s *Service) Read(_ context.Context, id string) (domain.Information, error) {
-	value, ok := s.store.Get(strings.TrimSpace(id))
+	value, ok := s.authority.ReadCurrent(strings.TrimSpace(id))
 	if !ok {
 		return domain.Information{}, errors.New("信息不存在")
 	}
@@ -334,7 +379,7 @@ func (s *Service) Read(_ context.Context, id string) (domain.Information, error)
 func (s *Service) ReadEvidence(_ context.Context, id string) (domain.Evidence, error) {
 	s.stateMu.RLock()
 	defer s.stateMu.RUnlock()
-	return readEvidence(s.store, strings.TrimSpace(id))
+	return readEvidence(s.authority, strings.TrimSpace(id))
 }
 
 func (s *Service) SearchEvidence(_ context.Context, input EvidenceSearchInput) ([]domain.EvidenceReference, error) {
@@ -346,7 +391,7 @@ func (s *Service) SearchEvidence(_ context.Context, input EvidenceSearchInput) (
 	if input.Limit <= 0 || input.Limit > 8 {
 		return nil, errors.New("证据检索数量必须介于一和八之间")
 	}
-	value, exists := s.store.Get(strings.TrimSpace(input.SourceID))
+	value, exists := s.authority.ReadCurrent(strings.TrimSpace(input.SourceID))
 	if !exists {
 		return nil, errors.New("证据来源不存在")
 	}
@@ -419,7 +464,7 @@ func (s *Service) Search(ctx context.Context, input SearchInput) ([]SearchResult
 	}
 	for rank, hit := range semanticHits {
 		record, recordExists := s.semantic.Get(hit.AssetID)
-		asset, assetExists := s.store.Get(hit.AssetID)
+		asset, assetExists := s.authority.ReadCurrent(hit.AssetID)
 		if !recordExists || !assetExists || record.AssetRevision != asset.Revision {
 			continue
 		}
@@ -486,7 +531,7 @@ func (s *Service) Search(ctx context.Context, input SearchInput) ([]SearchResult
 	}
 	results := make([]SearchResult, 0, len(fusedByID))
 	for id, item := range fusedByID {
-		value, ok := s.store.Get(id)
+		value, ok := s.authority.ReadCurrent(id)
 		effectiveContexts := s.effectiveContexts(id, value.Contexts)
 		if !ok || !matchesContexts(effectiveContexts, contexts) {
 			continue
@@ -606,7 +651,7 @@ func (s *Service) Navigate(_ context.Context, start, relationTypes []string, dep
 	}
 	nodes := make([]NavigationNode, 0, len(ids))
 	for id := range ids {
-		value, ok := s.store.Get(id)
+		value, ok := s.authority.ReadCurrent(id)
 		if !ok {
 			continue
 		}
@@ -645,8 +690,10 @@ func (s *Service) Close() error {
 			first = err
 		}
 	}
-	if err := s.store.Close(); first == nil {
-		first = err
+	if s.closeAuthority != nil {
+		if err := s.closeAuthority(); first == nil {
+			first = err
+		}
 	}
 	return first
 }
@@ -667,9 +714,9 @@ func (s *Service) Maintain(ctx context.Context, rebuild bool) (map[string]int, e
 		s.semantic = derived.NewIndex(nil)
 	}
 	counts := map[string]int{"ready": 0, "degraded": 0, "pending": 0, "unchanged": 0}
-	for _, value := range s.store.All() {
+	for _, value := range s.authority.ListCurrent() {
 		unlock := s.lockMutation(value.ID)
-		latest, exists := s.store.Get(value.ID)
+		latest, exists := s.authority.ReadCurrent(value.ID)
 		if !exists {
 			unlock()
 			continue
@@ -692,7 +739,7 @@ func (s *Service) Maintain(ctx context.Context, rebuild bool) (map[string]int, e
 	}
 	s.stateMu.RUnlock()
 	needsDerivedCompaction := s.derivedStore.NeedsCompaction()
-	if err := s.store.Compact(); err != nil {
+	if err := s.authority.Compact(); err != nil {
 		return nil, err
 	}
 	if needsDerivedCompaction {
@@ -735,7 +782,7 @@ func (s *Service) organize(ctx context.Context, value domain.Information) Organi
 		})
 	}
 	for _, relation := range value.Relations {
-		if candidate, ok := s.store.Get(relation.TargetID); ok {
+		if candidate, ok := s.authority.ReadCurrent(relation.TargetID); ok {
 			appendCandidate(candidate, 0)
 		}
 	}
@@ -747,7 +794,7 @@ func (s *Service) organize(ctx context.Context, value domain.Information) Organi
 	if len(vectors) == 1 {
 		semanticHits = s.semantic.Search(vectors[0], nil, 32)
 		for _, hit := range semanticHits {
-			if candidate, ok := s.store.Get(hit.AssetID); ok {
+			if candidate, ok := s.authority.ReadCurrent(hit.AssetID); ok {
 				if record, exists := s.semantic.Get(hit.AssetID); exists && record.AssetRevision == candidate.Revision {
 					appendCandidate(candidate, hit.Score)
 				}
@@ -764,7 +811,7 @@ func (s *Service) organize(ctx context.Context, value domain.Information) Organi
 		}
 	}
 	for _, hit := range semanticHits {
-		if candidate, ok := s.store.Get(hit.AssetID); ok {
+		if candidate, ok := s.authority.ReadCurrent(hit.AssetID); ok {
 			if record, exists := s.semantic.Get(hit.AssetID); exists && record.AssetRevision == candidate.Revision {
 				appendCandidate(candidate, hit.Score)
 			}
@@ -823,7 +870,7 @@ func (s *Service) organize(ctx context.Context, value domain.Information) Organi
 	if len(vectors) == 1 {
 		record.Embedding = vectors[0]
 	}
-	current, exists := s.store.Get(value.ID)
+	current, exists := s.authority.ReadCurrent(value.ID)
 	if !exists || current.Revision != value.Revision {
 		return OrganizationState{Status: "pending", Provider: s.provider.Name(), Error: "信息已被更新版本取代"}
 	}
@@ -869,7 +916,7 @@ func (s *Service) refreshDependents(ctx context.Context, ids []string) int {
 			defer wait.Done()
 			for id := range jobs {
 				unlock := s.lockMutation(id)
-				value, exists := s.store.Get(id)
+				value, exists := s.authority.ReadCurrent(id)
 				if !exists {
 					unlock()
 					results <- false
@@ -931,7 +978,7 @@ func (s *Service) finalizeRelations(value domain.Information, inferred []semanti
 		if _, exists := seen[key]; exists || hasExplicitRelation || relation.TargetID == value.ID {
 			continue
 		}
-		target, exists := s.store.Get(relation.TargetID)
+		target, exists := s.authority.ReadCurrent(relation.TargetID)
 		if !exists {
 			continue
 		}
@@ -988,7 +1035,7 @@ func (s *Service) applyIncomingRelationsLocked(value domain.Information, previou
 		if !exists || record.Status == "pending" {
 			continue
 		}
-		asset, exists := s.store.Get(sourceID)
+		asset, exists := s.authority.ReadCurrent(sourceID)
 		if !exists || asset.Revision != record.AssetRevision {
 			continue
 		}
@@ -1044,7 +1091,7 @@ func (s *Service) hasStaleRelation(record derived.Record) bool {
 		if relation.TargetRevision == 0 {
 			continue
 		}
-		target, exists := s.store.Get(relation.TargetID)
+		target, exists := s.authority.ReadCurrent(relation.TargetID)
 		if !exists || target.Revision != relation.TargetRevision {
 			return true
 		}
@@ -1057,7 +1104,7 @@ func (s *Service) validateRelationTargets(sourceID string, relations []domain.Ex
 		if relation.TargetID == sourceID {
 			return errors.New("信息不能显式关联自身")
 		}
-		if _, exists := s.store.Get(relation.TargetID); !exists {
+		if _, exists := s.authority.ReadCurrent(relation.TargetID); !exists {
 			return fmt.Errorf("关系目标 %q 不存在", relation.TargetID)
 		}
 	}
@@ -1131,7 +1178,7 @@ func (s *Service) effectiveContexts(id string, explicit []domain.Context) []doma
 		return explicit
 	}
 	record, ok := s.semantic.Get(id)
-	asset, exists := s.store.Get(id)
+	asset, exists := s.authority.ReadCurrent(id)
 	if !ok || !exists || record.AssetRevision != asset.Revision {
 		return explicit
 	}

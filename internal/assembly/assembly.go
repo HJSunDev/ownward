@@ -13,8 +13,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/HJSunDev/ownward/internal/assetlog"
+	"github.com/HJSunDev/ownward/internal/authoritysubstrate"
 	"github.com/HJSunDev/ownward/internal/composition"
+	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/core"
 	"github.com/HJSunDev/ownward/internal/derived"
 	"github.com/HJSunDev/ownward/internal/embedding"
@@ -48,6 +49,7 @@ type Request struct {
 
 type Runtime struct {
 	service      *core.Service
+	authority    contract.AuthoritySubstrate
 	backup       func(string) error
 	verification composition.Verification
 	semantics    ProductSemantics
@@ -91,20 +93,27 @@ func (r *Runtime) Close() error {
 		if r.service != nil {
 			r.closeErr = r.service.Close()
 		}
+		if r.authority != nil {
+			if err := r.authority.Close(); r.closeErr == nil {
+				r.closeErr = err
+			}
+		}
 	})
 	return r.closeErr
 }
 
 type resources struct {
-	restore     func(string, string) error
-	openAssets  func(string) (*assetlog.Store, error)
-	openDerived func(string) (*derived.Store, error)
-	openVector  func(string, composition.Manifest) (embedding.Provider, error)
+	restore       contract.AuthorityRestore
+	openAuthority contract.AuthorityOpen
+	openDerived   func(string) (*derived.Store, error)
+	openVector    func(string, composition.Manifest) (embedding.Provider, error)
 }
 
 var productionResources = resources{
-	restore:     assetlog.Restore,
-	openAssets:  assetlog.Open,
+	restore: authoritysubstrate.Restore,
+	openAuthority: func(path string, initial contract.ControlState) (contract.AuthoritySubstrate, error) {
+		return authoritysubstrate.Open(path, initial)
+	},
 	openDerived: derived.Open,
 	openVector:  openProductionVector,
 }
@@ -164,6 +173,10 @@ func openWith(request Request, manifest composition.Manifest, resource resources
 	if err != nil {
 		return nil, err
 	}
+	initial, err := authorityInitial(manifest)
+	if err != nil {
+		return nil, err
+	}
 
 	var vector embedding.Provider
 	vectorOwned := false
@@ -182,27 +195,26 @@ func openWith(request Request, manifest composition.Manifest, resource resources
 		}()
 	}
 
-	assetDir := filepath.Join(normalized.DataDir, "assets")
 	if normalized.RestoreBackup != "" {
-		if err := resource.restore(normalized.RestoreBackup, assetDir); err != nil {
+		if err := resource.restore(normalized.RestoreBackup, normalized.DataDir, initial); err != nil {
 			return nil, err
 		}
 	}
-	store, err := resource.openAssets(assetDir)
+	authority, err := resource.openAuthority(normalized.DataDir, initial)
 	if err != nil {
 		return nil, err
 	}
-	closeStore := true
+	closeAuthority := true
 	defer func() {
-		if closeStore {
-			_ = store.Close()
+		if closeAuthority {
+			_ = authority.Close()
 		}
 	}()
 
 	var service *core.Service
 	switch normalized.ProductSemantics {
 	case Basic:
-		service = core.New(store)
+		service, err = core.NewWithAuthority(authority.Assets())
 	case Organized, Collaborative:
 		derivedStore, openErr := resource.openDerived(filepath.Join(normalized.DataDir, "state"))
 		if openErr != nil {
@@ -215,9 +227,9 @@ func openWith(request Request, manifest composition.Manifest, resource resources
 			}
 		}()
 		if normalized.ProductSemantics == Organized {
-			service, err = core.NewOrganized(store, derivedStore, normalized.OrganizedProvider)
+			service, err = core.NewOrganizedWithAuthority(authority.Assets(), derivedStore, normalized.OrganizedProvider)
 		} else {
-			service, err = core.NewCollaborative(store, derivedStore, vector)
+			service, err = core.NewCollaborativeWithAuthority(authority.Assets(), derivedStore, vector)
 		}
 		if err != nil {
 			return nil, err
@@ -226,9 +238,12 @@ func openWith(request Request, manifest composition.Manifest, resource resources
 	default:
 		panic("validated product semantics became invalid")
 	}
-	closeStore = false
+	if err != nil {
+		return nil, err
+	}
+	closeAuthority = false
 	vectorOwned = normalized.ProductSemantics == Collaborative
-	return &Runtime{service: service, backup: store.Backup, verification: verification, semantics: normalized.ProductSemantics}, nil
+	return &Runtime{service: service, authority: authority, backup: authority.Backup, verification: verification, semantics: normalized.ProductSemantics}, nil
 }
 
 func currentManifest() (composition.Manifest, error) {
@@ -265,7 +280,7 @@ func validateRequest(request Request, resource resources) (Request, error) {
 			return Request{}, err
 		}
 	}
-	if resource.restore == nil || resource.openAssets == nil {
+	if resource.restore == nil || resource.openAuthority == nil {
 		return Request{}, errors.New("装配资源实现不完整")
 	}
 	switch request.ProductSemantics {
@@ -289,6 +304,17 @@ func validateRequest(request Request, resource resources) (Request, error) {
 		return Request{}, fmt.Errorf("产品语义必须显式选择 basic、organized 或 collaborative，实际 %q", request.ProductSemantics)
 	}
 	return request, nil
+}
+
+func authorityInitial(manifest composition.Manifest) (contract.ControlState, error) {
+	kernel, exists := component(manifest, "kernel")
+	if !exists || strings.TrimSpace(kernel.Identity) == "" || strings.TrimSpace(manifest.Identity) == "" {
+		return contract.ControlState{}, errors.New("组合缺少权威控制状态初始化身份")
+	}
+	return contract.ControlState{
+		Schema: contract.ControlStateSchema, Revision: 1,
+		ActiveComposition: manifest.Identity, ActiveKernelGeneration: kernel.Identity,
+	}, nil
 }
 
 func validateManifestSemantics(manifest composition.Manifest, expected ProductSemantics) error {

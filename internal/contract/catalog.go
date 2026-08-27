@@ -36,8 +36,8 @@ type Definition struct {
 }
 
 var definitions = []Definition{
-	{AssetAuthorityContract, 1, "权威资产的耐久提交、版本化读取、变化范围、备份与完整恢复", []string{"create", "create_batch", "update_if_revision", "get_current", "list_current", "sync", "backup", "restore"}, []string{"ownward.information/v1", "ownward.asset-change-scope/v1"}, "internal/contract/asset.go"},
-	{ControlStateContract, 1, "只保存活动组合、活动内核世代及其修订的最小权威决定", []string{"read", "compare_and_swap"}, []string{ControlStateSchema}, "internal/contract/control.go"},
+	{AssetAuthorityContract, 1, "权威资产的耐久提交、版本化读取、变化范围、维护、备份与完整恢复", []string{"create", "create_batch", "update_if_revision", "get_current", "list_current", "sync", "compact", "backup", "restore"}, []string{"ownward.information/v1", "ownward.asset-change-scope/v1"}, "internal/contract/asset.go"},
+	{ControlStateContract, 1, "保存活动组合、活动内核世代及其修订；已经成立的产品授权决定也只能归此权威边界（当前无，不虚构）", []string{"read", "compare_and_swap"}, []string{ControlStateSchema}, "internal/contract/control.go"},
 	{ProductCapabilityContract, 1, "统一表达规则、创建、更新、读取、检索、导航和语义协作的产品语义", []string{"rules", "create", "create_batch", "update", "read", "evidence_search", "evidence_read", "search", "navigate", "semantic_work", "semantic_submit", "semantic_status"}, []string{"ownward.information/v1", "ownward.evidence/v1", "ownward.semantic-work/v1", "ownward.semantic-submission/v1"}, "internal/contract/product.go"},
 	{KernelLifecycleContract, 1, "打开、维护、重建和关闭一个确定内核组合，不拥有活动选择权", []string{"maintain", "rebuild", "close"}, []string{"ownward.derived/v4"}, "internal/contract/kernel.go"},
 	{SemanticCapabilityContract, 1, "对来源绑定的开放内容产生可校验候选判断，不直接写资产或派生状态", []string{"identity", "analyze_work"}, []string{"ownward.semantic-work/v1", "ownward.semantic-submission/v1"}, "internal/contract/semantic.go"},
