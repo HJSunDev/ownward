@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/derived"
 	"github.com/HJSunDev/ownward/internal/domain"
 	"github.com/HJSunDev/ownward/internal/semantics"
@@ -24,11 +25,7 @@ const semanticWorkRequiredAction = "ownward_semantic_work"
 // submission rather than being truncated for the embedding transport.
 const semanticEmbeddingChunkBytes = 320
 
-type SemanticSubmissionResult struct {
-	WorkID       string            `json:"work_id"`
-	Organization OrganizationState `json:"organization,omitempty"`
-	Error        string            `json:"error,omitempty"`
-}
+type SemanticSubmissionResult = contract.SemanticSubmissionResult
 
 func (s *Service) SemanticWork(_ context.Context, limit int) ([]semantics.Work, error) {
 	s.stateMu.RLock()

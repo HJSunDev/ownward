@@ -12,21 +12,16 @@ import (
 	"time"
 
 	"github.com/HJSunDev/ownward/internal/assetlog"
+	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/derived"
 	"github.com/HJSunDev/ownward/internal/domain"
 	"github.com/HJSunDev/ownward/internal/embedding"
+	"github.com/HJSunDev/ownward/internal/productrules"
 	"github.com/HJSunDev/ownward/internal/retrieval"
 	"github.com/HJSunDev/ownward/internal/semantics"
 )
 
-const CollaborationRules = `# Ownward 协作规则
-
-Ownward 只保存属于用户且可长期复用的信息。创建信息时保留完整原意；只有信息的含义或适用性依赖场景时才附加场景。不要把某个智能体的临时工作状态写入 Ownward。
-
-开始任务时，先检索可能影响当前判断的个人信息。检索先取得低成本线索与关联；长信息只需要局部原文时，按检索得到的稳定信息标识执行证据检索，再读取返回的可追溯证据引用，需要完整信息时使用信息读取。简单问题可以一次检索，复杂问题应依据累计证据继续检索、沿关系扩展或调整方向，直到证据足以支持当前目的。真实工作中形成的错误教训、解决经验和可复用路径应在确认后补充，并标明适用场景。
-
-创建或更新返回待理解状态时，通过独立的语义工作工具取得有界工作，并只依据其中的资产和候选上下文提交带来源、证据与不确定性的候选判断。语义工作不代表当前用户任务，不得把临时任务意图写入长期组织状态；无法可靠判断时明确保留不确定性。
-`
+const CollaborationRules = productrules.Collaboration
 
 type Service struct {
 	store         *assetlog.Store
@@ -58,80 +53,23 @@ func appendUniqueIDs(values []string, extra ...string) []string {
 	return result
 }
 
-type OrganizationState struct {
-	Status         string `json:"status"`
-	Provider       string `json:"provider,omitempty"`
-	Error          string `json:"error,omitempty"`
-	RequiredAction string `json:"required_action,omitempty"`
-}
-
-type MutationResult struct {
-	Information  domain.Information `json:"information"`
-	Organization OrganizationState  `json:"organization"`
-}
-
-type MutationBatchResult struct {
-	Result *MutationResult `json:"result,omitempty"`
-	Error  string          `json:"error,omitempty"`
-}
-
-type CreateInput struct {
-	Kind      domain.InformationKind
-	Content   string
-	Contexts  []domain.Context
-	Relations []domain.ExplicitRelation
-	Source    domain.Source
-}
-
-type UpdateInput struct {
-	ID               string
-	ExpectedRevision uint64
-	Kind             *domain.InformationKind
-	Content          *string
-	Contexts         *[]domain.Context
-	Relations        *[]domain.ExplicitRelation
-	Source           *domain.Source
-}
-
-type SearchInput struct {
-	Query                    string
-	Contexts                 []domain.Context
-	Limit                    int
-	DisableRelationExpansion bool
-}
-
-type SearchResult struct {
-	ID       string                 `json:"id"`
-	Kind     domain.InformationKind `json:"kind"`
-	Summary  string                 `json:"summary"`
-	Contexts []domain.Context       `json:"contexts,omitempty"`
-	Score    float64                `json:"score"`
-	Signals  []string               `json:"signals"`
-}
-
-type EvidenceSearchInput struct {
-	SourceID string
-	Query    string
-	Limit    int
-}
-
-type NavigationNode struct {
-	ID        string                 `json:"id"`
-	Kind      domain.InformationKind `json:"kind"`
-	Summary   string                 `json:"summary"`
-	Contexts  []domain.Context       `json:"contexts,omitempty"`
-	Cues      []semantics.Cue        `json:"cues,omitempty"`
-	UpdatedAt time.Time              `json:"updated_at"`
-}
-
-type NavigationResult struct {
-	Nodes []NavigationNode `json:"nodes"`
-	Edges []derived.Edge   `json:"edges"`
-}
+type OrganizationState = contract.OrganizationState
+type MutationResult = contract.MutationResult
+type MutationBatchResult = contract.MutationBatchResult
+type CreateInput = contract.CreateInput
+type UpdateInput = contract.UpdateInput
+type SearchInput = contract.SearchInput
+type SearchResult = contract.SearchResult
+type EvidenceSearchInput = contract.EvidenceSearchInput
+type NavigationNode = contract.NavigationNode
+type NavigationResult = contract.NavigationResult
 
 func New(store *assetlog.Store) *Service {
 	return &Service{store: store, index: retrieval.NewLexical(store.All()), now: time.Now}
 }
+
+var _ contract.ProductCapability = (*Service)(nil)
+var _ contract.KernelLifecycle = (*Service)(nil)
 
 func NewOrganized(store *assetlog.Store, derivedStore *derived.Store, provider semantics.Provider) (*Service, error) {
 	if provider == nil {
@@ -650,7 +588,14 @@ func (s *Service) Navigate(_ context.Context, start, relationTypes []string, dep
 	if len(start) == 0 {
 		return NavigationResult{}, errors.New("关系导航至少需要一个起点")
 	}
-	edges := s.semantic.Navigate(start, relationTypes, depth, limit)
+	derivedEdges := s.semantic.Navigate(start, relationTypes, depth, limit)
+	edges := make([]contract.NavigationEdge, 0, len(derivedEdges))
+	for _, edge := range derivedEdges {
+		edges = append(edges, contract.NavigationEdge{
+			SourceID: edge.SourceID, TargetID: edge.TargetID, Type: edge.Type,
+			Confidence: edge.Confidence, Evidence: edge.Evidence, Depth: edge.Depth,
+		})
+	}
 	ids := make(map[string]struct{}, len(start)+len(edges)*2)
 	for _, id := range start {
 		ids[id] = struct{}{}

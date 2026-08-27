@@ -1,0 +1,504 @@
+{
+  "schema": "ownward.composition/v1",
+  "name": "current-collaborative",
+  "components": [
+    {
+      "role": "access",
+      "contracts": [
+        {
+          "id": "ownward.access-adapter",
+          "version": 1,
+          "definition_sha256": "e96808170911b2d4e2134e50a954b05e8748cda13038694a470ee058039a5613"
+        }
+      ],
+      "content": [
+        {
+          "name": "mcp-adapter",
+          "path": "internal/adapter/mcpserver/server.go",
+          "sha256": "fa9c0ee832cba11754c9bba2bfbe62236c4f22333b8a772ab4452ae2a89baebd"
+        },
+        {
+          "name": "shared-lock-unix",
+          "path": "cmd/ownward/shared_lock_unix.go",
+          "sha256": "8e1b6181ef94615d68cb71c05719d8a7ea56a15c3d65aca2e0951f14c994fcd7"
+        },
+        {
+          "name": "shared-lock-windows",
+          "path": "cmd/ownward/shared_lock_windows.go",
+          "sha256": "1b6db63eee55519410197615f4d8594dd715385ac7d5b99d834d83e46f071075"
+        },
+        {
+          "name": "shared-mcp",
+          "path": "cmd/ownward/shared_mcp.go",
+          "sha256": "a521d655b5d4d9d3ffe4c1f339de07185a4985db7518e9b56a2c64190221af05"
+        },
+        {
+          "name": "shared-process-unix",
+          "path": "cmd/ownward/shared_process_unix.go",
+          "sha256": "7265445b5438282010033ccd6a407c9314c93625be7e2896a65b6b47c96a47ba"
+        },
+        {
+          "name": "shared-process-windows",
+          "path": "cmd/ownward/shared_process_windows.go",
+          "sha256": "35bfc26fd2d52fe561b987a8db53d59a5f59a225834587b570282379cc43ac9a"
+        }
+      ],
+      "config": {
+        "product_semantics": "ownward.product-capability/v1",
+        "protocol": "mcp",
+        "transport": [
+          "stdio-connector",
+          "loopback-streamable-http"
+        ]
+      },
+      "dependencies": [
+        {
+          "role": "kernel",
+          "identity": "87d7e7bb0123a7d3cfebfa08e67958a70573f54a9d667f86dda8752d80af17f4"
+        },
+        {
+          "role": "product-rules",
+          "identity": "80919d7ce74ea5a443c1c0c0d2b957ae3e2f1e1adb559f7b761e2e38e2e713f9"
+        }
+      ],
+      "identity": "cd5dd1e823deaa759b981eaa5b41fe661b828c6b7c513ec03cc80e6d63495f4b"
+    },
+    {
+      "role": "assembly",
+      "contracts": [
+        {
+          "id": "ownward.assembly",
+          "version": 1,
+          "definition_sha256": "8379087131c62b4dcd34fe55fc5eee7e205164d4db4548a2d8f9027778055c37"
+        }
+      ],
+      "content": [
+        {
+          "name": "current-command-assembly",
+          "path": "cmd/ownward/main.go",
+          "sha256": "1ab5ab67574f4f76b3ef7650401ece8e38d9dc7321f35b8b896ffc081b7ba0b1"
+        },
+        {
+          "name": "runtime-config",
+          "path": "internal/config/config.go",
+          "sha256": "4a197d700be2bc905387293367fe166b01bcda8ce70c0f99d6e33cca5dee4f01"
+        }
+      ],
+      "config": {
+        "activation": "existing-command-path",
+        "constructor": "core.NewCollaborative",
+        "control_state": "not-yet-persisted",
+        "status": "descriptive-only"
+      },
+      "dependencies": [
+        {
+          "role": "access",
+          "identity": "cd5dd1e823deaa759b981eaa5b41fe661b828c6b7c513ec03cc80e6d63495f4b"
+        },
+        {
+          "role": "authority-substrate",
+          "identity": "38ff26e80d5a5cb229c1a250f4a35b295b03c24167ba49b95c21e255320950dd"
+        },
+        {
+          "role": "kernel",
+          "identity": "87d7e7bb0123a7d3cfebfa08e67958a70573f54a9d667f86dda8752d80af17f4"
+        },
+        {
+          "role": "product-rules",
+          "identity": "80919d7ce74ea5a443c1c0c0d2b957ae3e2f1e1adb559f7b761e2e38e2e713f9"
+        },
+        {
+          "role": "semantic",
+          "identity": "ed65006fa7f4fa10dc267b19bd9986f3248111b6e139d584f54bc89260008e34"
+        },
+        {
+          "role": "vector",
+          "identity": "391b5aa1f4bb3a25d522a4d59c7af1a9aa1150a06480f64d23cfd73f86c808c5"
+        }
+      ],
+      "identity": "b010fb795606c9541f1c0e7db4ad49ac6ae88e3a490cc64cd53244e9dfd10916"
+    },
+    {
+      "role": "authority-substrate",
+      "contracts": [
+        {
+          "id": "ownward.asset-authority",
+          "version": 1,
+          "definition_sha256": "ba7ba4b7c27b6117ef0652d19b75746fc64d57854c0043692e7f8696c9e85bf5"
+        }
+      ],
+      "content": [
+        {
+          "name": "asset-authority-port",
+          "path": "internal/authorityport/current.go",
+          "sha256": "3a26757dd97630def18076805f047858c10058b66e6aa4dc225c36f22bcd556d"
+        },
+        {
+          "name": "asset-domain",
+          "path": "internal/domain/information.go",
+          "sha256": "48478f2e37043e1c50b38720efef131287f980e572991531d82f54511e3b1059"
+        },
+        {
+          "name": "asset-store",
+          "path": "internal/assetlog/store.go",
+          "sha256": "a21131e82ee9a0a126acb1660a1c3cb491c959811b4cf9c79993badce4584406"
+        },
+        {
+          "name": "directory-lock-unix",
+          "path": "internal/assetlog/directory_lock_unix.go",
+          "sha256": "cd08587eb171c5225fda2103b0bf3939fc4a5715daf5a4ac5e3a400cf7e12824"
+        },
+        {
+          "name": "directory-lock-windows",
+          "path": "internal/assetlog/directory_lock_windows.go",
+          "sha256": "2ed618e808ab9144973f8af00856c9365a1885858862ff75e09a43362c742388"
+        },
+        {
+          "name": "replace-other",
+          "path": "internal/assetlog/replace_other.go",
+          "sha256": "e254edde043d3b2d5234cfd61021e06889779db945ca350078ccbc04100f425e"
+        },
+        {
+          "name": "replace-windows",
+          "path": "internal/assetlog/replace_windows.go",
+          "sha256": "eab8313b69f978263b1c55c39bda28add18c85c7516291f8c506265370cd0bba"
+        }
+      ],
+      "config": {
+        "asset_schema": "ownward.information/v1",
+        "authority_mode": "single-writer-assetlog",
+        "backup": "assetlog-v1"
+      },
+      "dependencies": [],
+      "identity": "38ff26e80d5a5cb229c1a250f4a35b295b03c24167ba49b95c21e255320950dd"
+    },
+    {
+      "role": "kernel",
+      "contracts": [
+        {
+          "id": "ownward.kernel-lifecycle",
+          "version": 1,
+          "definition_sha256": "02a82d4df79d75d19531c13c9b572b7067230f11469f94d24d5bb5af94562336"
+        },
+        {
+          "id": "ownward.product-capability",
+          "version": 1,
+          "definition_sha256": "0dd352caa94263dbcdc6df71f2a452cbf0894bd07ecb832055845fc518f48e98"
+        }
+      ],
+      "content": [
+        {
+          "name": "core-collaboration",
+          "path": "internal/core/collaboration.go",
+          "sha256": "718fb510bdf9f23f18a92ff59ca453785e417c53be0cfa23a432ff05f5c4777d"
+        },
+        {
+          "name": "core-evidence",
+          "path": "internal/core/evidence.go",
+          "sha256": "a17560c3b54bba2cc5d88e2629b738ed38057b310ae5469dfe727600db1a0202"
+        },
+        {
+          "name": "core-generation",
+          "path": "internal/core/generation.go",
+          "sha256": "0ef250ea7ee0223148e13c68749e20cc79f74342e83133693981b74bf3dd8dc6"
+        },
+        {
+          "name": "core-service",
+          "path": "internal/core/service.go",
+          "sha256": "4cb9ef3c3662d3eef2ff0eba505e24abf0821a64a21223d1a5cf76f1d9180ac6"
+        },
+        {
+          "name": "derived-evidence",
+          "path": "internal/derived/evidence.go",
+          "sha256": "053c7a8c3371a32aa06b87c9bbe18764a53f49cd8693ec7caf7e5bb4e5cb6d05"
+        },
+        {
+          "name": "derived-generation",
+          "path": "internal/derived/generation.go",
+          "sha256": "2cbf344403c10627634bb793334ce137d02061e69c106a064a6d6ea7c04891f8"
+        },
+        {
+          "name": "derived-index",
+          "path": "internal/derived/index.go",
+          "sha256": "9cd069cc31b190b7c27070067c18f08201fdcbc37bb38f1e9066b698bb3944ee"
+        },
+        {
+          "name": "derived-replace-other",
+          "path": "internal/derived/replace_other.go",
+          "sha256": "e06c7daffcae31aa9fe5a35755c0a0ef0996e77bcd82e2eb71561a20b4994f3e"
+        },
+        {
+          "name": "derived-replace-windows",
+          "path": "internal/derived/replace_windows.go",
+          "sha256": "26528ac232e27eb74d4ce7ebb0c8105cd562ce7a6bc2c0c9749ecf3c4e44abfc"
+        },
+        {
+          "name": "derived-store",
+          "path": "internal/derived/store.go",
+          "sha256": "90482a26b332eabda6dcc391a60460cff622b044c4d0e6799490ebfe70a2579e"
+        },
+        {
+          "name": "evidence-domain",
+          "path": "internal/domain/evidence.go",
+          "sha256": "39b7f556feeb35005de12a96f4e97b91f8ba2a1b009213dad54ee59d681d7174"
+        },
+        {
+          "name": "lexical-retrieval",
+          "path": "internal/retrieval/lexical.go",
+          "sha256": "33607cb8293df23e00193102cebb4a6a02e65df8e656dfc77d91caebfbadf1c2"
+        }
+      ],
+      "config": {
+        "derived_schema": "ownward.derived/v4",
+        "mode": "collaborative",
+        "semantic_degradation": "explicit-pending",
+        "vector_degradation": "preserve-last-valid"
+      },
+      "dependencies": [
+        {
+          "role": "authority-substrate",
+          "identity": "38ff26e80d5a5cb229c1a250f4a35b295b03c24167ba49b95c21e255320950dd"
+        },
+        {
+          "role": "product-rules",
+          "identity": "80919d7ce74ea5a443c1c0c0d2b957ae3e2f1e1adb559f7b761e2e38e2e713f9"
+        },
+        {
+          "role": "semantic",
+          "identity": "ed65006fa7f4fa10dc267b19bd9986f3248111b6e139d584f54bc89260008e34"
+        },
+        {
+          "role": "vector",
+          "identity": "391b5aa1f4bb3a25d522a4d59c7af1a9aa1150a06480f64d23cfd73f86c808c5"
+        }
+      ],
+      "identity": "87d7e7bb0123a7d3cfebfa08e67958a70573f54a9d667f86dda8752d80af17f4"
+    },
+    {
+      "role": "product-rules",
+      "contracts": [
+        {
+          "id": "ownward.product-rules",
+          "version": 1,
+          "definition_sha256": "f76fd51d7d9ac15f1023ea64e0d542d01c06cae62f3c388e92641bef32ecce37"
+        }
+      ],
+      "content": [
+        {
+          "name": "collaboration-rules",
+          "path": "internal/productrules/rules.go",
+          "sha256": "6f2721c6cbae43dd7221c9109984338841bd86efee718dac6988df701f31aefc"
+        }
+      ],
+      "config": {
+        "version": "ownward.product-rules/v1"
+      },
+      "dependencies": [],
+      "identity": "80919d7ce74ea5a443c1c0c0d2b957ae3e2f1e1adb559f7b761e2e38e2e713f9"
+    },
+    {
+      "role": "semantic",
+      "contracts": [
+        {
+          "id": "ownward.semantic-capability",
+          "version": 1,
+          "definition_sha256": "6bb1bfbcc51fdbba146f2838eb7c29f269c61aaec830047689bb519adde28819"
+        }
+      ],
+      "content": [
+        {
+          "name": "semantic-analysis",
+          "path": "internal/semantics/provider.go",
+          "sha256": "efd87760bd164d9fe3fb6fb0e1b9292285460b2dcaf7d7d5bb6b419ab88151bc"
+        },
+        {
+          "name": "semantic-work",
+          "path": "internal/semantics/work.go",
+          "sha256": "c044faa9d4cee6dec84dab212b4f7d9df44bbe79b3ee0af00b384a217084f70e"
+        }
+      ],
+      "config": {
+        "max_work_batch": 20,
+        "mode": "external-work-submit",
+        "writes_authority": false
+      },
+      "dependencies": [],
+      "identity": "ed65006fa7f4fa10dc267b19bd9986f3248111b6e139d584f54bc89260008e34"
+    },
+    {
+      "role": "vector",
+      "contracts": [
+        {
+          "id": "ownward.vector-capability",
+          "version": 1,
+          "definition_sha256": "89a2e241b5c7861e901e21aea41978258fd8daa9bc6a81740e63d9279acdfa5e"
+        }
+      ],
+      "content": [
+        {
+          "name": "bundle-loader",
+          "path": "internal/embedding/manifest.go",
+          "sha256": "373b9be22ac1841c3027f62870e8f77777cf801c652d232930b411307dceb4d0"
+        },
+        {
+          "name": "managed-runtime",
+          "path": "internal/embedding/llama.go",
+          "sha256": "9f6f16a58c43742769f8c43bdedefdc67583106cab311ece9be1d1ec4a658358"
+        },
+        {
+          "name": "manifest.json",
+          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/manifest.json",
+          "sha256": "fc2e4a1aa7d09fc64789618259a1bbedce2a18d00bd1abd81d13a16dfb78c0da"
+        },
+        {
+          "name": "model-embeddinggemma-300m-qat-Q8_0.gguf",
+          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/model/embeddinggemma-300m-qat-Q8_0.gguf",
+          "sha256": "6fa0c02a9c302be6f977521d399b4de3a46310a4f2621ee0063747881b673f67"
+        },
+        {
+          "name": "process-other",
+          "path": "internal/embedding/process_other.go",
+          "sha256": "2766f4dc5f71dad91818476ba94d785e84058110197d7b0ac35a3cce6c4ade9b"
+        },
+        {
+          "name": "process-windows",
+          "path": "internal/embedding/process_windows.go",
+          "sha256": "db6b039f6ed7e65b7e3567d485df8514a92cf151b4acd2ee9dd5a070e4936b5b"
+        },
+        {
+          "name": "provider",
+          "path": "internal/embedding/provider.go",
+          "sha256": "de39c26650bd90ba6344a12c6aa4171081186c3c4143ac1c725e2e3db9fe40ad"
+        },
+        {
+          "name": "runtime-ggml-base.dll",
+          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/ggml-base.dll",
+          "sha256": "82d02fcaf8c9badda59f3b1ced19dc6c708fe9865662b887d1daede81601545c"
+        },
+        {
+          "name": "runtime-ggml-cpu-alderlake.dll",
+          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/ggml-cpu-alderlake.dll",
+          "sha256": "ec78a8eaee6d65d412d9fd901ff815d8db123ff700bd9b07ca7626820bb2c196"
+        },
+        {
+          "name": "runtime-ggml-cpu-cannonlake.dll",
+          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/ggml-cpu-cannonlake.dll",
+          "sha256": "c4bfd6e32360417d648c6544f1c0d7365b774ae67ddadf8bb14a3508e6c7b6d6"
+        },
+        {
+          "name": "runtime-ggml-cpu-cascadelake.dll",
+          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/ggml-cpu-cascadelake.dll",
+          "sha256": "66bfcacba4b4815281c5252eb019e0b8a29c4aa87dd023eee93036225b0259c9"
+        },
+        {
+          "name": "runtime-ggml-cpu-cooperlake.dll",
+          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/ggml-cpu-cooperlake.dll",
+          "sha256": "f64422f4d9d5428519e5c4fb5674382295d5635bb0690e6ee9e0ae564951ea75"
+        },
+        {
+          "name": "runtime-ggml-cpu-haswell.dll",
+          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/ggml-cpu-haswell.dll",
+          "sha256": "89bbd9625a6e2a90d537418415236aa60c85b658213ce4ddc0f4870ad35a848a"
+        },
+        {
+          "name": "runtime-ggml-cpu-icelake.dll",
+          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/ggml-cpu-icelake.dll",
+          "sha256": "213dec9611d7e73d1df1d822cfb6e5aaf633f401b1d697c4db6b180d81878d84"
+        },
+        {
+          "name": "runtime-ggml-cpu-ivybridge.dll",
+          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/ggml-cpu-ivybridge.dll",
+          "sha256": "bc7cec8d288b0ecd7fe68bf67830cf85c8324aa65f45e76bf97aad2d3bf5372d"
+        },
+        {
+          "name": "runtime-ggml-cpu-piledriver.dll",
+          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/ggml-cpu-piledriver.dll",
+          "sha256": "20848fa6ddd68e0bdbc3b88b40476d90957dfafc51a5e9ba67ded9d73a20005b"
+        },
+        {
+          "name": "runtime-ggml-cpu-sandybridge.dll",
+          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/ggml-cpu-sandybridge.dll",
+          "sha256": "df8c287670ca43b025d5bd3803ca2124ab14296b0b9e98805a553e4d579804be"
+        },
+        {
+          "name": "runtime-ggml-cpu-sapphirerapids.dll",
+          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/ggml-cpu-sapphirerapids.dll",
+          "sha256": "96333e30ad5e197b5bb31df3f380f20e173c85257b173ae7f76cb204aa57adb3"
+        },
+        {
+          "name": "runtime-ggml-cpu-skylakex.dll",
+          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/ggml-cpu-skylakex.dll",
+          "sha256": "245a1ca2ec180c0d9f49f6287a8e1da7e315c5782405fb64720ee90fd97fe386"
+        },
+        {
+          "name": "runtime-ggml-cpu-sse42.dll",
+          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/ggml-cpu-sse42.dll",
+          "sha256": "79e5226b88255f1f0f9fe865980c71991d439530ba136496056007c266c68248"
+        },
+        {
+          "name": "runtime-ggml-cpu-x64.dll",
+          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/ggml-cpu-x64.dll",
+          "sha256": "2625898f96e8cc2bf3d7c19705f11e32a33ff546fcbe7f605b62a649366fb4f1"
+        },
+        {
+          "name": "runtime-ggml-cpu-zen4.dll",
+          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/ggml-cpu-zen4.dll",
+          "sha256": "97bfb6b315bd47dc5b2034b8d348daa3694a37576fd3b2209d5bd6f929aa4f7d"
+        },
+        {
+          "name": "runtime-ggml-rpc.dll",
+          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/ggml-rpc.dll",
+          "sha256": "b392b663cdde7f778c5d355e93a9af346c1dac595d4da57b2a372493e7189f23"
+        },
+        {
+          "name": "runtime-ggml.dll",
+          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/ggml.dll",
+          "sha256": "aaca2878d4f10da490f12be47cf11d6902a8a1502c3ca68045114a2c71d794e9"
+        },
+        {
+          "name": "runtime-libomp140.x86_64.dll",
+          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/libomp140.x86_64.dll",
+          "sha256": "4a20c1e5c115c29771a12324513eb109badac72180f79481527ad79d996ffb33"
+        },
+        {
+          "name": "runtime-llama-common.dll",
+          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/llama-common.dll",
+          "sha256": "a888d3ecc44110d72a6ac8172cfec7e015df1c22e21db8414b19f5efc83cc3ad"
+        },
+        {
+          "name": "runtime-llama-server-impl.dll",
+          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/llama-server-impl.dll",
+          "sha256": "7d100e2d144c549a0aac313267c79d256c77562f78106f3652de1bd54dd90a66"
+        },
+        {
+          "name": "runtime-llama-server.exe",
+          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/llama-server.exe",
+          "sha256": "3e2ac8887fb37fa4312654cf6625e3449a7e87989b0116c4a582fd518d02cf2f"
+        },
+        {
+          "name": "runtime-llama.dll",
+          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/llama.dll",
+          "sha256": "1050f5ddc24e12ce136cb02fda3eee3bb2aa589275b2559b397dea340a3469f6"
+        },
+        {
+          "name": "runtime-mtmd.dll",
+          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/mtmd.dll",
+          "sha256": "349c3b83be8eadb85928f4cc0e87f99fff50cb411115910588d20fb1593de73c"
+        }
+      ],
+      "config": {
+        "bundle_schema": "ownward.embedding-bundle/v3",
+        "capability": "embeddinggemma-300m-qat-q8_0-llamacpp-b10488",
+        "dimensions": 512,
+        "space": "emb_79f072bf21c0c0f5226fa4fe6f1946a5"
+      },
+      "dependencies": [],
+      "identity": "391b5aa1f4bb3a25d522a4d59c7af1a9aa1150a06480f64d23cfd73f86c808c5"
+    }
+  ],
+  "identity": "55840489d57096c3ae9cff853dc84982100a5c517d40d27144cedd695da06a0c",
+  "audit": {
+    "described_product_candidate": "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8",
+    "migration_source_git": "baa726651ca9b227bac4e5b4e8e65ae6b66dfe23"
+  }
+}

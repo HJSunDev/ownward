@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"reflect"
 
+	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/core"
 	"github.com/HJSunDev/ownward/internal/domain"
 	"github.com/HJSunDev/ownward/internal/semantics"
@@ -16,6 +17,8 @@ type Server struct {
 	service *core.Service
 	server  *mcp.Server
 }
+
+var _ contract.AccessAdapter = (*Server)(nil)
 
 type RulesInput struct{}
 
