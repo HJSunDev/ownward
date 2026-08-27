@@ -188,6 +188,28 @@ func TestVerifyRejectsChangedDeclaredContent(t *testing.T) {
 	}
 }
 
+func TestVerifySealedNeedsNoRepositoryAndRejectsIdentityDrift(t *testing.T) {
+	root, draft := testRepository(t)
+	sealed, err := Seal(root, draft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifySealed(sealed); err != nil {
+		t.Fatalf("sealed release composition needed source files: %v", err)
+	}
+	if err := os.RemoveAll(root); err != nil {
+		t.Fatal(err)
+	}
+	if result, err := VerifySealed(sealed); err != nil || !result.Passed || result.Composition != sealed.Identity {
+		t.Fatalf("sealed release composition did not survive source removal: %#v %v", result, err)
+	}
+	tampered := cloneForTest(t, sealed)
+	tampered.Components[0].Content[0].SHA256 = strings.Repeat("f", 64)
+	if _, err := VerifySealed(tampered); err == nil || !strings.Contains(err.Error(), "身份漂移") {
+		t.Fatalf("tampered embedded composition was accepted: %v", err)
+	}
+}
+
 func TestCurrentCollaborativeManifestVerifies(t *testing.T) {
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {

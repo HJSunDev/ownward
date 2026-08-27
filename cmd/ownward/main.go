@@ -19,12 +19,10 @@ import (
 	"time"
 
 	"github.com/HJSunDev/ownward/internal/adapter/mcpserver"
-	"github.com/HJSunDev/ownward/internal/assetlog"
+	"github.com/HJSunDev/ownward/internal/assembly"
 	"github.com/HJSunDev/ownward/internal/config"
 	"github.com/HJSunDev/ownward/internal/core"
-	"github.com/HJSunDev/ownward/internal/derived"
 	"github.com/HJSunDev/ownward/internal/domain"
-	"github.com/HJSunDev/ownward/internal/embedding"
 )
 
 var version = "0.1.0-dev"
@@ -73,45 +71,36 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if command == "mcp" {
-		return runSharedMCPConnector(ctx, loaded.DataDir, version, stdout, stderr)
+	vectorBundleDir, err := currentVectorBundleDirectory()
+	if err != nil {
+		return err
 	}
-	bundle, bundleErr := loadEmbeddingBundle()
+	if command == "mcp" {
+		verification, err := assembly.PreflightSharedConnector(assembly.Collaborative, vectorBundleDir)
+		if err != nil {
+			return err
+		}
+		return runSharedMCPConnector(ctx, loaded.DataDir, version, verification.Composition, stdout, stderr)
+	}
+	restoreBackup := ""
 	if command == "restore" {
 		if strings.TrimSpace(*backup) == "" {
 			return errors.New("restore 必须提供 --backup")
 		}
-		if err := assetlog.Restore(*backup, filepath.Join(loaded.DataDir, "assets")); err != nil {
-			return err
+		restoreBackup, err = filepath.Abs(*backup)
+		if err != nil {
+			return fmt.Errorf("解析备份路径: %w", err)
 		}
 	}
-	store, err := assetlog.Open(filepath.Join(loaded.DataDir, "assets"))
+	runtime, err := assembly.Open(assembly.Request{
+		DataDir: loaded.DataDir, RestoreBackup: restoreBackup,
+		ProductSemantics: assembly.Collaborative, VectorBundleDir: vectorBundleDir,
+	})
 	if err != nil {
 		return err
 	}
-	derivedStore, err := derived.Open(filepath.Join(loaded.DataDir, "state"))
-	if err != nil {
-		_ = store.Close()
-		return err
-	}
-	var vectorCapability embedding.Provider
-	if bundleErr != nil {
-		vectorCapability = embedding.Unavailable{Reason: "无法加载本地向量能力包: " + bundleErr.Error()}
-	} else {
-		managed, openErr := embedding.OpenManagedBundle(bundle)
-		if openErr != nil {
-			vectorCapability = embedding.Unavailable{Reason: "本地向量能力不可用: " + openErr.Error()}
-		} else {
-			vectorCapability = managed
-		}
-	}
-	service, err := core.NewCollaborative(store, derivedStore, vectorCapability)
-	if err != nil {
-		_ = derivedStore.Close()
-		_ = store.Close()
-		return err
-	}
-	defer service.Close()
+	defer runtime.Close()
+	service := runtime.Service()
 	parsedContexts, err := parseContexts(contexts)
 	if err != nil {
 		return err
@@ -182,7 +171,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		if strings.TrimSpace(*output) == "" {
 			return errors.New("backup 必须提供 --output")
 		}
-		if err := store.Backup(*output); err != nil {
+		if err := runtime.Backup(*output); err != nil {
 			return err
 		}
 		return writeJSON(stdout, map[string]string{"backup": *output})
@@ -233,12 +222,12 @@ func writeJSON(writer io.Writer, value any) error {
 	return encoder.Encode(value)
 }
 
-func loadEmbeddingBundle() (embedding.Bundle, error) {
+func currentVectorBundleDirectory() (string, error) {
 	executable, err := os.Executable()
 	if err != nil {
-		return embedding.Bundle{}, fmt.Errorf("定位本地向量能力包: %w", err)
+		return "", fmt.Errorf("定位本地向量能力包: %w", err)
 	}
-	return embedding.LoadBundle(filepath.Join(filepath.Dir(executable), "embedding"))
+	return filepath.Join(filepath.Dir(executable), "embedding"), nil
 }
 
 type httpMCPServer interface {

@@ -30,7 +30,7 @@
         {
           "name": "shared-mcp",
           "path": "cmd/ownward/shared_mcp.go",
-          "sha256": "a521d655b5d4d9d3ffe4c1f339de07185a4985db7518e9b56a2c64190221af05"
+          "sha256": "76b851b24f7424bcda8794ac9c4ce31b4bd7657ec0f3deff2a04053998443872"
         },
         {
           "name": "shared-process-unix",
@@ -61,7 +61,7 @@
           "identity": "80919d7ce74ea5a443c1c0c0d2b957ae3e2f1e1adb559f7b761e2e38e2e713f9"
         }
       ],
-      "identity": "cd5dd1e823deaa759b981eaa5b41fe661b828c6b7c513ec03cc80e6d63495f4b"
+      "identity": "da6c89e0d12d9fb886db43df6fef3e20a434735dee6b0746f1f6b580820ebebf"
     },
     {
       "role": "assembly",
@@ -69,14 +69,24 @@
         {
           "id": "ownward.assembly",
           "version": 1,
-          "definition_sha256": "8379087131c62b4dcd34fe55fc5eee7e205164d4db4548a2d8f9027778055c37"
+          "definition_sha256": "edbd6f55d2dec06311e5faf4f55a2a7b6870050bfa18f4fa748df93ad8106079"
         }
       ],
       "content": [
         {
           "name": "current-command-assembly",
           "path": "cmd/ownward/main.go",
-          "sha256": "1ab5ab67574f4f76b3ef7650401ece8e38d9dc7321f35b8b896ffc081b7ba0b1"
+          "sha256": "4ed780c408e97be70d1fbcb7cfe637a41e25b4cc00ef898702f01fddb18681d1"
+        },
+        {
+          "name": "explicit-assembly",
+          "path": "internal/assembly/assembly.go",
+          "sha256": "38a0a10c5de19ec92ebd09b38160a4d12f98cdeed8f57729e63dc447da25bfa5"
+        },
+        {
+          "name": "release-composition-embed",
+          "path": "manifests/compositions/v1/embed.go",
+          "sha256": "3876742b071a77bb01225a2cf54ff67599d5b7c322a267993d2ae147da43b088"
         },
         {
           "name": "runtime-config",
@@ -85,15 +95,16 @@
         }
       ],
       "config": {
-        "activation": "existing-command-path",
-        "constructor": "core.NewCollaborative",
+        "activation": "unique-explicit-entry",
         "control_state": "not-yet-persisted",
-        "status": "descriptive-only"
+        "entry": "internal/assembly.Open",
+        "product_semantics": "collaborative",
+        "status": "active"
       },
       "dependencies": [
         {
           "role": "access",
-          "identity": "cd5dd1e823deaa759b981eaa5b41fe661b828c6b7c513ec03cc80e6d63495f4b"
+          "identity": "da6c89e0d12d9fb886db43df6fef3e20a434735dee6b0746f1f6b580820ebebf"
         },
         {
           "role": "authority-substrate",
@@ -116,7 +127,7 @@
           "identity": "391b5aa1f4bb3a25d522a4d59c7af1a9aa1150a06480f64d23cfd73f86c808c5"
         }
       ],
-      "identity": "b010fb795606c9541f1c0e7db4ad49ac6ae88e3a490cc64cd53244e9dfd10916"
+      "identity": "55b7d1fe801a55957c43afc3476f6d166de7f7c5d981c340ed7faac29ed8a652"
     },
     {
       "role": "authority-substrate",
@@ -496,9 +507,9 @@
       "identity": "391b5aa1f4bb3a25d522a4d59c7af1a9aa1150a06480f64d23cfd73f86c808c5"
     }
   ],
-  "identity": "55840489d57096c3ae9cff853dc84982100a5c517d40d27144cedd695da06a0c",
+  "identity": "ae56a7d6ad4f9c6b9028311725baca1d0a9b5f770303225cb793a46adbe110f4",
   "audit": {
     "described_product_candidate": "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8",
-    "migration_source_git": "baa726651ca9b227bac4e5b4e8e65ae6b66dfe23"
+    "migration_source_git": "a2ca363ae3a2a421a7445324788ebad82822ec4b"
   }
 }

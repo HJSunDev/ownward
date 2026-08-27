@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,53 +15,117 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HJSunDev/ownward/internal/core"
+	"github.com/HJSunDev/ownward/internal/composition"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func TestCLICompletesAssetLifecycleAcrossIndependentInvocations(t *testing.T) {
+func TestIsolatedReleaseCLIAndMCPAssembleWithoutRepository(t *testing.T) {
 	clearModelEnvironment(t)
-	root := t.TempDir()
+	binary, root, sourceVector := buildIsolatedRelease(t)
 	dataDir := filepath.Join(root, "data")
-	createdOutput := runCLI(t, "create", "--data-dir", dataDir, "--content", "只运行覆盖当前变更的最小充分测试。")
-	var created core.MutationResult
-	if err := json.Unmarshal(createdOutput, &created); err != nil {
-		t.Fatal(err)
-	}
-	if created.Information.ID == "" || created.Information.Revision != 1 || created.Organization.Status != "pending" {
-		t.Fatalf("unexpected create result: %#v", created)
+	rules := runPackagedCLI(t, binary, root, "rules", "--data-dir", dataDir)
+	if !bytes.Contains(rules, []byte("Ownward")) {
+		t.Fatalf("isolated release CLI did not assemble: %s", rules)
 	}
 
-	readOutput := runCLI(t, "read", "--data-dir", dataDir, "--id", created.Information.ID)
-	if !bytes.Contains(readOutput, []byte(created.Information.ID)) {
-		t.Fatalf("read did not return the stable identity: %s", readOutput)
+	mcpData := filepath.Join(root, "mcp-data")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	client := mcp.NewClient(&mcp.Implementation{Name: "isolated-release-test", Version: "1"}, nil)
+	command := exec.Command(binary, "mcp", "--data-dir", mcpData)
+	command.Dir = root
+	session, err := client.Connect(ctx, &mcp.CommandTransport{Command: command}, nil)
+	if err != nil {
+		t.Fatalf("isolated release MCP failed: %v", err)
 	}
-	updatedContent := "开发期间只运行最小充分测试，稳定后再执行完整验证。"
-	updatedOutput := runCLI(t, "update", "--data-dir", dataDir, "--id", created.Information.ID, "--revision", "1", "--content", updatedContent)
-	var updated core.MutationResult
-	if err := json.Unmarshal(updatedOutput, &updated); err != nil {
+	if _, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "ownward_rules", Arguments: map[string]any{}}); err != nil {
+		t.Fatalf("isolated release MCP did not assemble: %v", err)
+	}
+	if err := session.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if updated.Information.Revision != 2 || updated.Information.Content != updatedContent {
-		t.Fatalf("unexpected update result: %#v", updated)
-	}
-
-	searchOutput := runCLI(t, "search", "--data-dir", dataDir, "--query", "什么时候执行完整验证")
-	var results []core.SearchResult
-	if err := json.Unmarshal(searchOutput, &results); err != nil {
+	descriptor, err := readSharedMCPDescriptor(filepath.Join(mcpData, "runtime", "mcp-service.json"))
+	if err != nil {
 		t.Fatal(err)
 	}
-	if len(results) != 1 || results[0].ID != created.Information.ID {
-		t.Fatalf("unexpected search result: %#v", results)
+
+	manifestPath := filepath.Join(root, "bin", "embedding", "manifest.json")
+	manifestBytes, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var vectorManifest struct {
+		Model struct {
+			Path string `json:"path"`
+		} `json:"model"`
+	}
+	if err := json.Unmarshal(manifestBytes, &vectorManifest); err != nil || vectorManifest.Model.Path == "" {
+		t.Fatalf("read packaged model identity: %v", err)
+	}
+	modelPath := filepath.Join(root, "bin", "embedding", filepath.FromSlash(vectorManifest.Model.Path))
+	if err := os.Remove(modelPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(modelPath, []byte("tampered-model"), 0o644); err != nil {
+		t.Fatal(err)
 	}
 
-	backup := filepath.Join(root, "backup.ownward")
-	runCLI(t, "backup", "--data-dir", dataDir, "--output", backup)
-	restoredDir := filepath.Join(root, "restored")
-	runCLI(t, "restore", "--data-dir", restoredDir, "--backup", backup)
-	restoredOutput := runCLI(t, "read", "--data-dir", restoredDir, "--id", created.Information.ID)
-	if !bytes.Contains(restoredOutput, []byte(updatedContent)) {
-		t.Fatalf("restored CLI data differs: %s", restoredOutput)
+	secondClient := mcp.NewClient(&mcp.Implementation{Name: "isolated-release-reuse-test", Version: "1"}, nil)
+	command = exec.Command(binary, "mcp", "--data-dir", mcpData)
+	command.Dir = root
+	secondSession, err := secondClient.Connect(ctx, &mcp.CommandTransport{Command: command}, nil)
+	if err != nil {
+		t.Fatalf("repeated connector rehashed full model instead of reusing shared service: %v", err)
+	}
+	if _, err := secondSession.CallTool(ctx, &mcp.CallToolParams{Name: "ownward_rules", Arguments: map[string]any{}}); err != nil {
+		t.Fatalf("repeated connector did not reuse shared service: %v", err)
+	}
+	if err := secondSession.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reused, err := readSharedMCPDescriptor(filepath.Join(mcpData, "runtime", "mcp-service.json"))
+	if err != nil || reused.PID != descriptor.PID || reused.ServiceIdentity != descriptor.ServiceIdentity {
+		t.Fatalf("repeated connector did not retain the matching shared service: %v %#v", err, reused)
+	}
+	if err := shutdownSharedMCP(context.Background(), descriptor); err != nil {
+		t.Fatal(err)
+	}
+
+	fullValidationData := filepath.Join(root, "full-validation-data")
+	command = exec.Command(binary, "rules", "--data-dir", fullValidationData)
+	command.Dir = root
+	if output, err := command.CombinedOutput(); err == nil || !bytes.Contains(output, []byte("校验向量模型")) {
+		t.Fatalf("runtime owner did not reject tampered full model: %v %s", err, output)
+	}
+	if _, err := os.Stat(fullValidationData); !os.IsNotExist(err) {
+		t.Fatalf("full runtime verification failure created product state: %v", err)
+	}
+	if err := os.Remove(modelPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(filepath.Join(sourceVector, filepath.FromSlash(vectorManifest.Model.Path)), modelPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifestPath, append(manifestBytes, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tamperedData := filepath.Join(root, "tampered-data")
+	command = exec.Command(binary, "rules", "--data-dir", tamperedData)
+	command.Dir = root
+	if output, err := command.CombinedOutput(); err == nil || !bytes.Contains(output, []byte("内置组合身份不一致")) {
+		t.Fatalf("tampered packaged vector was not rejected: %v %s", err, output)
+	}
+	if _, err := os.Stat(tamperedData); !os.IsNotExist(err) {
+		t.Fatalf("tampered package created product state: %v", err)
+	}
+	tamperedMCP := filepath.Join(root, "tampered-mcp")
+	command = exec.Command(binary, "mcp", "--data-dir", tamperedMCP)
+	command.Dir = root
+	if output, err := command.CombinedOutput(); err == nil || !bytes.Contains(output, []byte("内置组合身份不一致")) {
+		t.Fatalf("tampered packaged MCP was not rejected: %v %s", err, output)
+	}
+	if _, err := os.Stat(filepath.Join(tamperedMCP, "runtime", "mcp-service.json")); !os.IsNotExist(err) {
+		t.Fatalf("tampered package created a shared descriptor: %v", err)
 	}
 }
 
@@ -150,6 +216,14 @@ func TestSharedMCPDescriptorRejectsNonLoopbackEndpoint(t *testing.T) {
 	}
 }
 
+func TestSharedMCPIdentityIncludesActiveComposition(t *testing.T) {
+	first, firstData := sharedMCPIdentityFromArtifacts("C:/data", "v1", []byte("binary"), []byte("vector"), "composition-a")
+	second, secondData := sharedMCPIdentityFromArtifacts("C:/data", "v1", []byte("binary"), []byte("vector"), "composition-b")
+	if first == second || firstData != secondData {
+		t.Fatalf("composition did not independently affect shared service identity: %q %q / %q %q", first, second, firstData, secondData)
+	}
+}
+
 func TestSharedMCPExternalBinaryConcurrentClients(t *testing.T) {
 	binary := os.Getenv("OWNWARD_SHARED_MCP_BINARY")
 	if binary == "" {
@@ -220,13 +294,126 @@ func TestSharedMCPExternalBinaryConcurrentClients(t *testing.T) {
 	}
 }
 
-func runCLI(t *testing.T, args ...string) []byte {
+func runPackagedCLI(t *testing.T, binary, directory string, args ...string) []byte {
 	t.Helper()
-	var stdout, stderr bytes.Buffer
-	if err := run(context.Background(), args, &stdout, &stderr); err != nil {
-		t.Fatalf("run %v: %v\nstderr: %s", args, err, stderr.String())
+	command := exec.Command(binary, args...)
+	command.Dir = directory
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("run %v: %v\noutput: %s", args, err, output)
 	}
-	return stdout.Bytes()
+	return output
+}
+
+func buildIsolatedRelease(t *testing.T) (string, string, string) {
+	t.Helper()
+	repository, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(repository, "manifests", "compositions", "v1", "current-collaborative.json")
+	manifest, err := composition.Load(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := composition.Verify(repository, manifest); err != nil {
+		t.Fatalf("source composition was not build-ready: %v", err)
+	}
+	vectorManifest := ""
+	for _, component := range manifest.Components {
+		if component.Role != "vector" {
+			continue
+		}
+		for _, content := range component.Content {
+			if content.Name == "manifest.json" {
+				vectorManifest = filepath.Join(repository, filepath.FromSlash(content.Path))
+			}
+		}
+	}
+	if vectorManifest == "" {
+		t.Fatal("source composition did not bind the packaged vector manifest")
+	}
+	if _, err := os.Stat(vectorManifest); os.IsNotExist(err) {
+		t.Skip("frozen release vector artifacts are not available in this checkout")
+	} else if err != nil {
+		t.Fatal(err)
+	}
+	releaseRoot, err := os.MkdirTemp(filepath.Dir(repository), ".ownward-release-isolation-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			removeErr := os.RemoveAll(releaseRoot)
+			if _, statErr := os.Stat(releaseRoot); os.IsNotExist(statErr) {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Errorf("remove isolated release fixture: %v", removeErr)
+				return
+			}
+			time.Sleep(25 * time.Millisecond)
+		}
+	})
+	binDir := filepath.Join(releaseRoot, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	binary := filepath.Join(binDir, "ownward.exe")
+	build := exec.Command("go", "build", "-trimpath", "-ldflags=-s -w -X main.version=isolated-release", "-o", binary, "./cmd/ownward")
+	build.Dir = repository
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build isolated release: %v\n%s", err, output)
+	}
+	if err := linkReleaseTree(filepath.Dir(vectorManifest), filepath.Join(binDir, "embedding")); err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{".git", "manifests", ".tmp"} {
+		if _, err := os.Stat(filepath.Join(releaseRoot, forbidden)); !os.IsNotExist(err) {
+			t.Fatalf("isolated release contains %s: %v", forbidden, err)
+		}
+	}
+	return binary, releaseRoot, filepath.Dir(vectorManifest)
+}
+
+func linkReleaseTree(source, target string) error {
+	return filepath.WalkDir(source, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		relative, err := filepath.Rel(source, path)
+		if err != nil {
+			return err
+		}
+		destination := filepath.Join(target, relative)
+		if entry.IsDir() {
+			return os.MkdirAll(destination, 0o755)
+		}
+		if !entry.Type().IsRegular() {
+			return errors.New("release fixture contains a non-regular vector artifact")
+		}
+		if filepath.ToSlash(relative) != "manifest.json" {
+			if err := os.Link(path, destination); err == nil {
+				return nil
+			}
+		}
+		sourceFile, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer sourceFile.Close()
+		targetFile, err := os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+		if err != nil {
+			return err
+		}
+		_, copyErr := io.Copy(targetFile, sourceFile)
+		closeErr := targetFile.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		return closeErr
+	})
 }
 
 func clearModelEnvironment(t *testing.T) {

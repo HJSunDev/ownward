@@ -44,7 +44,7 @@ var definitions = []Definition{
 	{VectorCapabilityContract, 1, "在声明的同一向量空间中生成文档与查询表示", []string{"space", "embed_documents", "embed_query", "close"}, []string{"ownward.embedding-bundle/v3"}, "internal/contract/vector.go"},
 	{AccessAdapterContract, 1, "把外部协议映射到统一产品能力，不拥有产品语义或写入权", []string{"rules", "create", "create_batch", "update", "read", "evidence_search", "evidence_read", "search", "navigate", "semantic_work", "semantic_submit", "semantic_status"}, []string{"mcp/2025-06-18"}, "internal/contract/access.go"},
 	{ProductRulesContract, 1, "向所有接入发布同一套信息范围、检索和沉淀规则", []string{"rules"}, []string{"ownward.product-rules/v1"}, "internal/contract/rules.go"},
-	{AssemblyContract, 1, "只读描述并校验当前同进程组件组合及其明确退化语义", []string{"verify"}, []string{"ownward.composition/v1"}, "internal/composition/manifest.go"},
+	{AssemblyContract, 1, "在资源打开前校验当前同进程组合，并以唯一入口显式装配既有产品语义及退化行为", []string{"verify", "open", "close"}, []string{"ownward.composition/v1"}, "internal/composition/manifest.go"},
 }
 
 func Definitions() []Definition {

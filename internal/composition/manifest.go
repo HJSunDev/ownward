@@ -94,12 +94,17 @@ var roles = map[string]roleSpec{
 }
 
 func Load(path string) (Manifest, error) {
-	file, err := os.Open(path)
+	encoded, err := os.ReadFile(path)
 	if err != nil {
 		return Manifest{}, fmt.Errorf("读取组合清单: %w", err)
 	}
-	defer file.Close()
-	decoder := json.NewDecoder(file)
+	return Parse(encoded)
+}
+
+// Parse decodes one composition description without consulting a repository.
+// It is used for the exact source manifest embedded in a release binary.
+func Parse(encoded []byte) (Manifest, error) {
+	decoder := json.NewDecoder(strings.NewReader(string(encoded)))
 	decoder.DisallowUnknownFields()
 	decoder.UseNumber()
 	var manifest Manifest
@@ -220,6 +225,20 @@ func Verify(repository string, manifest Manifest) (Verification, error) {
 	if string(got) != string(want) {
 		return Verification{}, errors.New("组合清单未封存或身份、顺序、直接依赖、契约或内容摘要发生漂移")
 	}
+	return verificationFor(manifest), nil
+}
+
+// VerifySealed validates the structure and all content-derived identities of a
+// composition already sealed during the build. It deliberately performs no
+// repository discovery or source-file reads.
+func VerifySealed(manifest Manifest) (Verification, error) {
+	if err := validateSealed(manifest); err != nil {
+		return Verification{}, err
+	}
+	return verificationFor(manifest), nil
+}
+
+func verificationFor(manifest Manifest) Verification {
 	contracts := 0
 	content := 0
 	for _, component := range manifest.Components {
@@ -230,10 +249,40 @@ func Verify(repository string, manifest Manifest) (Verification, error) {
 		Schema: "ownward.composition-check/v1", Passed: true, Composition: manifest.Identity,
 		Components: len(manifest.Components), Contracts: contracts, ContentFiles: content,
 		GitIsIdentity: false, ActiveStateModified: false,
-	}, nil
+	}
 }
 
 func validateDeclared(repository string, manifest Manifest) error {
+	if err := validateSealed(manifest); err != nil {
+		return err
+	}
+	root, err := filepath.Abs(repository)
+	if err != nil {
+		return err
+	}
+	for _, component := range manifest.Components {
+		for _, reference := range component.Contracts {
+			definition, _ := contract.Resolve(reference.ID, reference.Version)
+			expected, err := resolvedContractReference(root, definition)
+			if err != nil || reference.DefinitionSHA256 != expected.DefinitionSHA256 {
+				return fmt.Errorf("组件 %s 契约定义摘要漂移: %s/v%d", component.Role, reference.ID, reference.Version)
+			}
+		}
+		for _, item := range component.Content {
+			path, err := confinedFile(root, item.Path)
+			if err != nil {
+				return err
+			}
+			digest, err := fileSHA256(path)
+			if err != nil || digest != item.SHA256 {
+				return fmt.Errorf("组件 %s 内容摘要漂移: %s", component.Role, item.Name)
+			}
+		}
+	}
+	return nil
+}
+
+func validateSealed(manifest Manifest) error {
 	if manifest.Schema != ManifestSchema || strings.TrimSpace(manifest.Name) == "" {
 		return errors.New("组合清单 schema 或名称无效")
 	}
@@ -241,10 +290,6 @@ func validateDeclared(repository string, manifest Manifest) error {
 		return errors.New("组合清单缺失有效身份")
 	}
 	if err := rejectVolatileOrSecret(manifest.Audit, "audit"); err != nil {
-		return err
-	}
-	root, err := filepath.Abs(repository)
-	if err != nil {
 		return err
 	}
 	components := make(map[string]*Component, len(manifest.Components))
@@ -286,7 +331,7 @@ func validateDeclared(repository string, manifest Manifest) error {
 			if _, exists := actualContracts[key]; exists {
 				return fmt.Errorf("组件 %s 契约重复: %s", role, key)
 			}
-			definition, exists := contract.Resolve(reference.ID, reference.Version)
+			_, exists := contract.Resolve(reference.ID, reference.Version)
 			if !exists {
 				knownID := false
 				for _, candidate := range contract.Definitions() {
@@ -297,9 +342,8 @@ func validateDeclared(repository string, manifest Manifest) error {
 				}
 				return fmt.Errorf("组件 %s 使用未知契约: %s", role, key)
 			}
-			expected, err := resolvedContractReference(root, definition)
-			if err != nil || reference.DefinitionSHA256 != expected.DefinitionSHA256 {
-				return fmt.Errorf("组件 %s 契约定义摘要漂移: %s", role, key)
+			if !isSHA256(reference.DefinitionSHA256) {
+				return fmt.Errorf("组件 %s 契约定义身份无效: %s", role, key)
 			}
 			actualContracts[key] = reference
 		}
@@ -344,19 +388,17 @@ func validateDeclared(repository string, manifest Manifest) error {
 				return fmt.Errorf("组件 %s 内容名称重复: %s", role, item.Name)
 			}
 			names[item.Name] = struct{}{}
-			path, err := confinedFile(root, item.Path)
-			if err != nil {
-				return err
+			if filepath.IsAbs(item.Path) || strings.TrimSpace(item.Path) == "" || strings.TrimSpace(item.Path) != item.Path {
+				return fmt.Errorf("组件 %s 内容路径无效: %s", role, item.Name)
 			}
-			clean := filepath.ToSlash(item.Path)
+			clean := filepath.ToSlash(filepath.Clean(filepath.FromSlash(item.Path)))
+			if clean == ".." || strings.HasPrefix(clean, "../") {
+				return fmt.Errorf("组件 %s 内容路径越出仓库: %s", role, item.Name)
+			}
 			if _, exists := paths[clean]; exists {
 				return fmt.Errorf("组件 %s 内容路径重复: %s", role, clean)
 			}
 			paths[clean] = struct{}{}
-			digest, err := fileSHA256(path)
-			if err != nil || digest != item.SHA256 {
-				return fmt.Errorf("组件 %s 内容摘要漂移: %s", role, item.Name)
-			}
 		}
 		identity, err := componentIdentity(*component)
 		if err != nil || identity != component.Identity {

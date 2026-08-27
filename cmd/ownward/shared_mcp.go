@@ -52,8 +52,8 @@ func (transport bearerTransport) RoundTrip(request *http.Request) (*http.Respons
 	return transport.base.RoundTrip(clone)
 }
 
-func runSharedMCPConnector(ctx context.Context, dataDir, binaryVersion string, stdout, stderr io.Writer) error {
-	descriptor, err := ensureSharedMCPService(ctx, dataDir, binaryVersion, stderr)
+func runSharedMCPConnector(ctx context.Context, dataDir, binaryVersion, compositionIdentity string, stdout, stderr io.Writer) error {
+	descriptor, err := ensureSharedMCPService(ctx, dataDir, binaryVersion, compositionIdentity, stderr)
 	if err != nil {
 		return err
 	}
@@ -85,17 +85,17 @@ func runSharedMCPConnector(ctx context.Context, dataDir, binaryVersion string, s
 	return nil
 }
 
-func ensureSharedMCPService(ctx context.Context, dataDir, binaryVersion string, stderr io.Writer) (*sharedMCPDescriptor, error) {
+func ensureSharedMCPService(ctx context.Context, dataDir, binaryVersion, compositionIdentity string, stderr io.Writer) (*sharedMCPDescriptor, error) {
 	normalizedDataDir, err := normalizeDataDirectory(dataDir)
+	if err != nil {
+		return nil, err
+	}
+	identity, dataIdentity, err := sharedMCPIdentity(normalizedDataDir, binaryVersion, compositionIdentity)
 	if err != nil {
 		return nil, err
 	}
 	runtimeDir := filepath.Join(normalizedDataDir, "runtime")
 	if err := os.MkdirAll(runtimeDir, 0o700); err != nil {
-		return nil, err
-	}
-	identity, dataIdentity, err := sharedMCPIdentity(normalizedDataDir, binaryVersion)
-	if err != nil {
 		return nil, err
 	}
 	lock, err := acquireServiceStartupLock(filepath.Join(runtimeDir, "mcp-service.lock"), 130*time.Second)
@@ -167,7 +167,7 @@ func normalizeDataDirectory(path string) (string, error) {
 	return absolute, nil
 }
 
-func sharedMCPIdentity(dataDir, binaryVersion string) (string, string, error) {
+func sharedMCPIdentity(dataDir, binaryVersion, compositionIdentity string) (string, string, error) {
 	executable, err := os.Executable()
 	if err != nil {
 		return "", "", err
@@ -180,6 +180,11 @@ func sharedMCPIdentity(dataDir, binaryVersion string) (string, string, error) {
 	if err != nil {
 		return "", "", fmt.Errorf("识别共享向量能力清单: %w", err)
 	}
+	identity, dataIdentity := sharedMCPIdentityFromArtifacts(dataDir, binaryVersion, binary, bundleManifest, compositionIdentity)
+	return identity, dataIdentity, nil
+}
+
+func sharedMCPIdentityFromArtifacts(dataDir, binaryVersion string, binary, bundleManifest []byte, compositionIdentity string) (string, string) {
 	dataHash := sha256.Sum256([]byte(dataDir))
 	dataIdentity := "sha256:" + hex.EncodeToString(dataHash[:])
 	hash := sha256.New()
@@ -187,7 +192,8 @@ func sharedMCPIdentity(dataDir, binaryVersion string) (string, string, error) {
 	_, _ = hash.Write(binary)
 	_, _ = hash.Write([]byte(dataIdentity))
 	_, _ = hash.Write(bundleManifest)
-	return "sha256:" + hex.EncodeToString(hash.Sum(nil)), dataIdentity, nil
+	_, _ = hash.Write([]byte(compositionIdentity))
+	return "sha256:" + hex.EncodeToString(hash.Sum(nil)), dataIdentity
 }
 
 func startSharedMCPService(dataDir, descriptorPath, identity string, stderr io.Writer) error {
