@@ -1,6 +1,6 @@
 # V1 内核大版本迭代
 
-状态：干净候选 `3e712f2` 已通过正式完整内核、core 和 qualification；full 已封存 20/24 场景后暴露资源发现事件分类缺陷，执行器修复已提交，等待按当前工具身份恢复 product 验收。V0 仍是唯一正式基线，V1 尚未达到运行最终 LongMemEval-S 的标准。
+状态：干净产品候选 `3e712f2` 已在当前验收工具身份下通过正式完整内核、core、qualification 8/8 和 full 24/24；V1 内部整体验证完成，已达到运行最终 LongMemEval-S 的标准。V0 仍是唯一正式基线，V1 尚未晋升，最终 LongMemEval-S 尚未运行。
 
 ## 职责
 
@@ -12,7 +12,7 @@
 
 - 唯一正式候选：`99f519018df99bd5202b0c571b8e43481cd1b80e`。
 - 五项已提交成果：按需细粒度证据 `e6bfc82`、长资产语义表示 `436e12c`、来源排名—证据深度调度 `d19c745`、紧凑耐久状态 `c9c8b48`、批量耐久状态切换 `24b847d`；存储回归修复及观察器来源约束已并入干净候选 `2619b2864a9db2dfaca8a7bd3dc6dbec5e78a365`。
-- 唯一正式 state 已绑定干净候选 `3e712f22f0529b4eef81b8826f8bb201bf9f6bf8`，产品二进制摘要 `57e0e63c…97f5`；正式 frontier、core、qualification 检查点有效，V0 基线完整保留且 V1 未晋升。full 尚未形成检查点。
+- 唯一正式 state 已绑定干净候选 `3e712f22f0529b4eef81b8826f8bb201bf9f6bf8`，产品二进制摘要 `57e0e63c…97f5`；正式 frontier、core、qualification、full 检查点均有效，V0 基线历史完整保留且 V1 未晋升。
 - 正式 LongMemEval‑S：500 题正确 242、错误 258；诊断摘要 `15bb1dfc…f6d72`，报告摘要 `3e7355c6…89d9`。
 
 ## 正式质量问题池
@@ -43,7 +43,7 @@
 | 数据结构与存储架构 | `storage-deposition-v1`：产品与派生存储放大均不高于 V0 同输入的 `0.5`；权威恢复日志回收比例不高于 `0.5`；质量、查询、恢复和耐久保护通过 | **已关闭** | `3e712f2` 正式完整模式 `index_bytes=529080`，比 V0 减少 `512 B`，全部质量、时延、资源与恢复保护通过；同候选定向重复测量为 `529064±16 B` |
 | 执行架构与状态维护 | `durable-batch-state-transition-v1`：批量耐久写入与世代构建成本均不高于前驱同输入的 `0.5`；公开创建、内存、并发、顺序、耐久、恢复及前四方向保护通过 | **已关闭** | 当前源码保护观察：批量耐久成本比 `0.1168`，世代构建成本比 `0.3353`，分配比 `1.0170`；全部保护通过 |
 
-五个方向已在同一干净候选 `3e712f2` 上重新全部关闭；当前阻断只属于验收执行器，不重开产品方向，也不得把已完成的内部层写成最终 LongMemEval-S 资格。
+五个方向已在同一干净候选 `3e712f2` 上重新全部关闭；当前工具身份下的内部整体验收也已通过，但不得把内部通过写成最终 LongMemEval-S 结果。
 
 ## 存储方向冻结视图
 
@@ -115,8 +115,9 @@ python benchmarks/acceptance/suite/run.py kernel-execution `
 
 - `3e712f2` 的发布制品、生产存储报告和 `frontier/core/product` binding 均由正式入口生成；观察器与产品二进制来自同一提交且 `vcs.modified=false`。rebind 只移除 `2619b28` 的失败 frontier，V0 基线保持 `99f5190`。
 - 冻结 11 阶段完整模式报告 `.tmp/first-kernel-baseline-v1/acceptance-3e712f2/reports/frontier.json`，摘要 `edcf96d8…1cdf`，墙钟 `4.186 s`：决策 `eligible_for_qualification`，无回归；`index_bytes=529080`，相对 V0 减少 `512 B`。同一干净候选的 indexing 定向重复测量为 `529064±16 B`，证明二者差异属于 `TotalAlloc` 的观测重复误差，不用选择性重跑替换正式结果。
-- core 报告摘要 `3b06f5d7…d446`，墙钟 `26.586 s`，七项核心不变量全部通过。qualification 报告摘要 `3356bce9…865d`，8/8 场景、四类能力、grounding、组织增益、时延和资源全部通过；首次执行在 `1,580 s` 边界安全停止，resume 原样复用 4 个结果和 7 个代理检查点，仅用 `178.240 s` 补齐剩余工作。
-- full 直接复用 qualification 的 8 个结果，已封存 20/24 场景；s23、s24、s27 另有完整代理检查点，s25 保留事务回滚点。s25 的 Codex 只执行“未知 server 资源发现失败”和“codex server 返回空资源”，却被执行器只接受 `server=ownward` 空发现的旧规则误判为绕过；这不是 Ownward 产品失败。
-- 执行器修复将任何未取得资源的失败/空 `list_mcp_resources` 记录为协议元数据，非空资源仍判为绕过。原始 s25 轨迹回放已从 `bypassed=true` 修正为 `bypassed=false`、零产品调用，并进入既有有界重试；新增直接测试、Acceptance Suite 122 项单元测试、Suite check 和差异检查全部通过。未在修复提交前继续正式 full。
+- core 报告摘要 `3b06f5d7…d446`，墙钟 `26.586 s`，七项核心不变量全部通过。当前 qualification 报告摘要 `50d39201…d21`，8/8 场景、四类能力、grounding、组织增益、时延和资源全部通过；严格离线迁移与重算耗时 `5.656 s`，未启动 Codex。
+- 验收工具提交 `ecb3abf` 将原始执行身份与解析/评分身份分离；当前 product 工具摘要 `112f9c2a…f7eb`。正式 rebind 保留 frontier/core，只失效旧 product 派生报告；24 个场景均形成一次性、精确且可审计的旧身份兼容证明，原始事件不一致时不允许复用。
+- rebind 前机械现场为 18/24 个封存结果、21/24 个代理检查点、24/24 个进度检查点和 3 个事务回滚点，不再沿用旧文档的 20/24 转述。`full --resume` 只新增 13 个语义单元、3 个查询和 6 个直接测量，复用其余有效原始执行证据；报告摘要 `f89024c6…81b7`，墙钟 `1,240.317 s`，24/24 场景和四类能力全部通过，峰值资源 `256.004 MiB`。
+- Suite check 与 self-check 通过；唯一 state 中 frontier、core、qualification、full 均绑定同一产品候选和当前有效依赖，未产生选择性结果替换，V1 未晋升。
 
-下一步重新生成当前工具 binding 并按正式生命周期精确失效 product 证据。保留仍有效的 frontier/core 和 V0 基线，重新完成 qualification 后以 `full --resume` 形成当前工具身份下的 24/24 检查点。全部内部层通过前不得运行最终 LongMemEval-S，也不得晋升 V1。
+唯一下一动作：在保持产品候选 `3e712f2` 冻结的前提下运行最终 LongMemEval-S；只有该正式结果满足完成条件后，才判断 V1 是否可以晋升。
