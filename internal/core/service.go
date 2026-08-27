@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"sync"
@@ -30,8 +31,13 @@ type Service struct {
 	derivedStore   *derived.Store
 	index          *retrieval.Lexical
 	semantic       *derived.Index
-	provider       semantics.Provider
-	embedder       embedding.Provider
+	// legacyProvider is the migration-only equivalence boundary for the three
+	// pre-contract constructors. Active assembly never sets it; stage 8 removes
+	// it after terminal equivalence validation.
+	legacyProvider semantics.Provider
+	provider       contract.SemanticCapability
+	providerID     semantics.Capability
+	embedder       contract.VectorCapability
 	collaborative  bool
 	now            func() time.Time
 	mutationMu     [256]sync.Mutex
@@ -121,11 +127,51 @@ func NewOrganizedWithAuthority(authority contract.AssetAuthority, derivedStore *
 		}
 	}
 	return &Service{
+		authority:      authority,
+		derivedStore:   derivedStore,
+		index:          retrieval.NewLexical(assets),
+		semantic:       derived.NewIndex(currentRecords),
+		legacyProvider: provider,
+		now:            time.Now,
+	}, nil
+}
+
+// NewOrganizedWithCapabilities opens the existing organized implementation
+// only through the declared semantic and vector ports. NewOrganized and
+// NewOrganizedWithAuthority remain the migration equivalence baseline.
+func NewOrganizedWithCapabilities(authority contract.AssetAuthority, derivedStore *derived.Store, provider contract.SemanticCapability, embedder contract.VectorCapability) (*Service, error) {
+	if authority == nil {
+		return nil, errors.New("资产权威不能为空")
+	}
+	if provider == nil {
+		return nil, errors.New("语义能力不能为空")
+	}
+	if embedder == nil {
+		return nil, errors.New("向量能力不能为空")
+	}
+	records, err := derivedStore.AllWithEmbeddings()
+	if err != nil {
+		return nil, fmt.Errorf("加载派生检索状态: %w", err)
+	}
+	assets := authority.ListCurrent()
+	currentRevision := make(map[string]uint64, len(assets))
+	for _, asset := range assets {
+		currentRevision[asset.ID] = asset.Revision
+	}
+	currentRecords := records[:0]
+	for _, record := range records {
+		if currentRevision[record.AssetID] == record.AssetRevision {
+			currentRecords = append(currentRecords, record)
+		}
+	}
+	return &Service{
 		authority:    authority,
 		derivedStore: derivedStore,
 		index:        retrieval.NewLexical(assets),
 		semantic:     derived.NewIndex(currentRecords),
 		provider:     provider,
+		providerID:   provider.Identity(),
+		embedder:     embedder,
 		now:          time.Now,
 	}, nil
 }
@@ -143,7 +189,7 @@ func NewCollaborative(store *assetlog.Store, derivedStore *derived.Store, embedd
 	return service, err
 }
 
-func NewCollaborativeWithAuthority(authority contract.AssetAuthority, derivedStore *derived.Store, embedder embedding.Provider) (*Service, error) {
+func NewCollaborativeWithAuthority(authority contract.AssetAuthority, derivedStore *derived.Store, embedder contract.VectorCapability) (*Service, error) {
 	if authority == nil {
 		return nil, errors.New("资产权威不能为空")
 	}
@@ -421,7 +467,7 @@ func (s *Service) Search(ctx context.Context, input SearchInput) ([]SearchResult
 	if len(lexical) > 0 && lexical[0].Information.ID == trimmedQuery && contains(lexical[0].Signals, "identity") {
 		return s.compactResults(lexical[:1]), nil
 	}
-	if s.semantic == nil || !s.semantic.HasVectors() || (!s.collaborative && s.provider == nil) {
+	if s.semantic == nil || !s.semantic.HasVectors() || (!s.collaborative && s.provider == nil && s.legacyProvider == nil) {
 		if len(lexical) > limit {
 			lexical = lexical[:limit]
 		}
@@ -429,14 +475,14 @@ func (s *Service) Search(ctx context.Context, input SearchInput) ([]SearchResult
 	}
 	var queryVector []float32
 	var err error
-	if s.collaborative {
-		queryVector, err = s.embedder.EmbedQuery(ctx, input.Query)
-	} else {
+	if s.legacyProvider != nil {
 		var vectors [][]float32
-		vectors, err = s.provider.Embed(ctx, []string{input.Query})
+		vectors, err = s.legacyProvider.Embed(ctx, []string{input.Query})
 		if len(vectors) == 1 {
 			queryVector = vectors[0]
 		}
+	} else {
+		queryVector, err = s.embedder.EmbedQuery(ctx, input.Query)
 	}
 	if err != nil || len(queryVector) == 0 {
 		if len(lexical) > limit {
@@ -699,7 +745,7 @@ func (s *Service) Close() error {
 }
 
 func (s *Service) Maintain(ctx context.Context, rebuild bool) (map[string]int, error) {
-	if s.derivedStore == nil || (!s.collaborative && s.provider == nil) {
+	if s.derivedStore == nil || (!s.collaborative && s.provider == nil && s.legacyProvider == nil) {
 		return nil, errors.New("语义组织未启用")
 	}
 	if rebuild && s.collaborative {
@@ -755,11 +801,17 @@ func (s *Service) Maintain(ctx context.Context, rebuild bool) (map[string]int, e
 }
 
 func (s *Service) organize(ctx context.Context, value domain.Information) OrganizationState {
-	if s.derivedStore == nil || s.semantic == nil || s.provider == nil {
+	if s.derivedStore == nil || s.semantic == nil || (s.provider == nil && s.legacyProvider == nil) {
 		return OrganizationState{Status: "unavailable"}
 	}
 	previousDependents := s.semantic.Dependents(value.ID)
-	vectors, embeddingErr := s.provider.Embed(ctx, []string{value.Content})
+	var vectors [][]float32
+	var embeddingErr error
+	if s.legacyProvider != nil {
+		vectors, embeddingErr = s.legacyProvider.Embed(ctx, []string{value.Content})
+	} else {
+		vectors, embeddingErr = s.embedder.EmbedDocuments(ctx, []string{value.Content})
+	}
 	lexical := s.index.Search(value.Content, nil, 33)
 	candidates := make([]semantics.Candidate, 0, 32)
 	candidatePositions := make(map[string]int, 32)
@@ -777,8 +829,12 @@ func (s *Service) organize(ctx context.Context, value domain.Information) Organi
 			return
 		}
 		candidatePositions[candidate.ID] = len(candidates)
+		candidateRevision := uint64(0)
+		if s.provider != nil {
+			candidateRevision = candidate.Revision
+		}
 		candidates = append(candidates, semantics.Candidate{
-			ID: candidate.ID, Content: candidate.Content, Contexts: candidate.Contexts, Similarity: similarity,
+			ID: candidate.ID, Revision: candidateRevision, Content: candidate.Content, Contexts: candidate.Contexts, Similarity: similarity,
 		})
 	}
 	for _, relation := range value.Relations {
@@ -820,7 +876,28 @@ func (s *Service) organize(ctx context.Context, value domain.Information) Organi
 			break
 		}
 	}
-	analysis, analysisErr := s.provider.Analyze(ctx, value, candidates)
+	analysis := semantics.Analysis{}
+	var analysisErr error
+	providerName := s.providerID.ID
+	legacyFallback := false
+	if s.legacyProvider != nil {
+		analysis, analysisErr = s.legacyProvider.Analyze(ctx, value, candidates)
+		providerName = s.legacyProvider.Name()
+		_, legacyFallback = s.legacyProvider.(semantics.Heuristic)
+	} else {
+		work, workErr := semantics.NewWork(s.derivedStore.Generation(), value, candidates, nil, s.now())
+		var submission semantics.Submission
+		analysisErr = workErr
+		if workErr == nil {
+			submission, analysisErr = s.provider.Analyze(ctx, work)
+			if analysisErr == nil {
+				analysisErr = validateSemanticSubmissionBinding(work, s.providerID, submission)
+			}
+		}
+		if analysisErr == nil {
+			analysis = submission.Analysis
+		}
+	}
 	incoming := make([]semantics.Relation, 0, len(analysis.Relations))
 	outgoing := make([]semantics.Relation, 0, len(analysis.Relations))
 	explicitTargets := make(map[string]struct{}, len(value.Relations))
@@ -841,7 +918,7 @@ func (s *Service) organize(ctx context.Context, value domain.Information) Organi
 	analysis.Relations = s.finalizeRelations(value, outgoing)
 	status := "ready"
 	errorText := ""
-	if _, fallback := s.provider.(semantics.Heuristic); fallback {
+	if legacyFallback || (s.legacyProvider == nil && s.providerID.ID == (semantics.Heuristic{}).Name()) {
 		status = "degraded"
 	}
 	if analysisErr != nil || embeddingErr != nil || len(vectors) != 1 {
@@ -862,7 +939,7 @@ func (s *Service) organize(ctx context.Context, value domain.Information) Organi
 		AssetID:       value.ID,
 		AssetRevision: value.Revision,
 		GeneratedAt:   s.now().UTC(),
-		Provider:      s.provider.Name(),
+		Provider:      providerName,
 		Status:        status,
 		Error:         errorText,
 		Analysis:      analysis,
@@ -872,7 +949,7 @@ func (s *Service) organize(ctx context.Context, value domain.Information) Organi
 	}
 	current, exists := s.authority.ReadCurrent(value.ID)
 	if !exists || current.Revision != value.Revision {
-		return OrganizationState{Status: "pending", Provider: s.provider.Name(), Error: "信息已被更新版本取代"}
+		return OrganizationState{Status: "pending", Provider: providerName, Error: "信息已被更新版本取代"}
 	}
 	s.graphMu.Lock()
 	defer s.graphMu.Unlock()
@@ -880,7 +957,7 @@ func (s *Service) organize(ctx context.Context, value domain.Information) Organi
 		record.Analysis.Relations = preserveExternalRelations(record.Analysis.Relations, previous.Analysis.Relations, value.ID, value.Relations)
 	}
 	if err := s.derivedStore.Put(record); err != nil {
-		return OrganizationState{Status: "pending", Provider: s.provider.Name(), Error: err.Error()}
+		return OrganizationState{Status: "pending", Provider: providerName, Error: err.Error()}
 	}
 	s.semantic.Upsert(record)
 	if err := s.applyIncomingRelationsLocked(value, previousDependents, incoming); err != nil {
@@ -891,6 +968,50 @@ func (s *Service) organize(ctx context.Context, value domain.Information) Organi
 		return OrganizationState{Status: "pending", Provider: record.Provider, Error: record.Error}
 	}
 	return OrganizationState{Status: status, Provider: record.Provider, Error: errorText}
+}
+
+// validateSemanticSubmissionBinding checks only trust-boundary identity and
+// evidence binding. It deliberately does not normalize a valid analysis, so
+// the legacy organized path keeps its established quality and resource
+// semantics while an external capability cannot decide organization state.
+func validateSemanticSubmissionBinding(work semantics.Work, declared semantics.Capability, submission semantics.Submission) error {
+	if submission.Schema != semantics.SubmissionSchema || submission.WorkID != work.ID ||
+		submission.AssetID != work.Asset.ID || submission.Revision != work.Asset.Revision {
+		return errors.New("语义结果与当前工作或资产版本不一致")
+	}
+	if submission.Status != semantics.SubmissionComplete {
+		return errors.New("语义结果未声明完整完成")
+	}
+	if submission.Capability != declared {
+		return errors.New("语义结果能力身份与装配声明不一致")
+	}
+	candidates := make(map[string]uint64, len(work.Candidates))
+	for _, candidate := range work.Candidates {
+		candidates[candidate.ID] = candidate.Revision
+	}
+	explicit := make(map[string]struct{}, len(work.Asset.Relations))
+	for _, relation := range work.Asset.Relations {
+		explicit[relation.Type+"\x00"+relation.TargetID] = struct{}{}
+	}
+	for _, relation := range submission.Analysis.Relations {
+		revision, exists := candidates[relation.TargetID]
+		if !exists || relation.TargetID == work.Asset.ID {
+			return errors.New("语义关系未绑定当前工作候选")
+		}
+		if relation.TargetRevision != 0 && relation.TargetRevision != revision {
+			return errors.New("语义关系候选版本与当前工作不一致")
+		}
+		if !semantics.IsAllowedRelationType(relation.Type) ||
+			(relation.Direction != "" && !semantics.IsAllowedRelationDirection(relation.Direction)) ||
+			relation.Confidence < 0.75 || relation.Confidence > 1 || math.IsNaN(relation.Confidence) || math.IsInf(relation.Confidence, 0) {
+			return errors.New("语义关系类型、方向或置信度无效")
+		}
+		_, authoritative := explicit[relation.Type+"\x00"+relation.TargetID]
+		if strings.TrimSpace(relation.Evidence) == "" && (!authoritative || relation.Direction == "incoming") {
+			return errors.New("语义关系缺少当前工作证据")
+		}
+	}
+	return nil
 }
 
 func (s *Service) lockMutation(id string) func() {

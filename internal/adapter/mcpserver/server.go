@@ -6,7 +6,6 @@ import (
 	"reflect"
 
 	"github.com/HJSunDev/ownward/internal/contract"
-	"github.com/HJSunDev/ownward/internal/core"
 	"github.com/HJSunDev/ownward/internal/domain"
 	"github.com/HJSunDev/ownward/internal/semantics"
 	"github.com/google/jsonschema-go/jsonschema"
@@ -14,7 +13,7 @@ import (
 )
 
 type Server struct {
-	service *core.Service
+	service contract.ProductCapability
 	server  *mcp.Server
 }
 
@@ -34,7 +33,7 @@ type CreateInput struct {
 }
 
 type CreateOutput struct {
-	Result core.MutationResult `json:"result"`
+	Result contract.MutationResult `json:"result"`
 }
 
 type CreateBatchInput struct {
@@ -42,7 +41,7 @@ type CreateBatchInput struct {
 }
 
 type CreateBatchOutput struct {
-	Results []core.MutationBatchResult `json:"results"`
+	Results []contract.MutationBatchResult `json:"results"`
 }
 
 type ReadInput struct {
@@ -76,7 +75,7 @@ type StatusInput struct {
 }
 
 type StatusOutput struct {
-	Organization core.OrganizationState `json:"organization"`
+	Organization contract.OrganizationState `json:"organization"`
 }
 
 type UpdateInput struct {
@@ -89,7 +88,7 @@ type UpdateInput struct {
 }
 
 type UpdateOutput struct {
-	Result core.MutationResult `json:"result"`
+	Result contract.MutationResult `json:"result"`
 }
 
 type SearchInput struct {
@@ -99,7 +98,7 @@ type SearchInput struct {
 }
 
 type SearchOutput struct {
-	Results []core.SearchResult `json:"results"`
+	Results []contract.SearchResult `json:"results"`
 }
 
 type NavigateInput struct {
@@ -110,7 +109,7 @@ type NavigateInput struct {
 }
 
 type NavigateOutput struct {
-	Result core.NavigationResult `json:"result"`
+	Result contract.NavigationResult `json:"result"`
 }
 
 type SemanticWorkInput struct {
@@ -127,7 +126,7 @@ type SemanticSubmitInput struct {
 }
 
 type SemanticSubmitOutput struct {
-	Organization core.OrganizationState `json:"organization"`
+	Organization contract.OrganizationState `json:"organization"`
 }
 
 type SemanticSubmitBatchInput struct {
@@ -135,13 +134,13 @@ type SemanticSubmitBatchInput struct {
 }
 
 type SemanticSubmitBatchOutput struct {
-	Results []core.SemanticSubmissionResult `json:"results"`
+	Results []contract.SemanticSubmissionResult `json:"results"`
 }
 
-func New(service *core.Service, version string) *Server {
+func New(service contract.ProductCapability, version string) *Server {
 	server := mcp.NewServer(
 		&mcp.Implementation{Name: "ownward", Version: version},
-		&mcp.ServerOptions{Instructions: core.CollaborationRules, Capabilities: &mcp.ServerCapabilities{}},
+		&mcp.ServerOptions{Instructions: service.Rules(context.Background()), Capabilities: &mcp.ServerCapabilities{}},
 	)
 	value := &Server{service: service, server: server}
 	mcp.AddTool(server, &mcp.Tool{
@@ -295,7 +294,7 @@ func (s *Server) create(ctx context.Context, _ *mcp.CallToolRequest, input Creat
 }
 
 func (s *Server) createBatch(ctx context.Context, _ *mcp.CallToolRequest, input CreateBatchInput) (*mcp.CallToolResult, CreateBatchOutput, error) {
-	items := make([]core.CreateInput, len(input.Items))
+	items := make([]contract.CreateInput, len(input.Items))
 	for index, item := range input.Items {
 		value, err := coreCreateInput(item)
 		if err != nil {
@@ -310,16 +309,16 @@ func (s *Server) createBatch(ctx context.Context, _ *mcp.CallToolRequest, input 
 	return nil, CreateBatchOutput{Results: results}, nil
 }
 
-func coreCreateInput(input CreateInput) (core.CreateInput, error) {
+func coreCreateInput(input CreateInput) (contract.CreateInput, error) {
 	kind := domain.KindGeneral
 	if input.Kind != "" {
 		parsed, err := domain.ParseKind(input.Kind)
 		if err != nil {
-			return core.CreateInput{}, err
+			return contract.CreateInput{}, err
 		}
 		kind = parsed
 	}
-	return core.CreateInput{Kind: kind, Content: input.Content, Contexts: input.Contexts, Source: input.Source}, nil
+	return contract.CreateInput{Kind: kind, Content: input.Content, Contexts: input.Contexts, Source: input.Source}, nil
 }
 
 func (s *Server) read(ctx context.Context, _ *mcp.CallToolRequest, input ReadInput) (*mcp.CallToolResult, ReadOutput, error) {
@@ -343,7 +342,7 @@ func (s *Server) evidenceSearch(ctx context.Context, _ *mcp.CallToolRequest, inp
 	if limit == 0 {
 		limit = 3
 	}
-	values, err := s.service.SearchEvidence(ctx, core.EvidenceSearchInput{SourceID: input.SourceID, Query: input.Query, Limit: limit})
+	values, err := s.service.SearchEvidence(ctx, contract.EvidenceSearchInput{SourceID: input.SourceID, Query: input.Query, Limit: limit})
 	if err != nil {
 		return nil, EvidenceSearchOutput{}, err
 	}
@@ -359,7 +358,7 @@ func (s *Server) status(ctx context.Context, _ *mcp.CallToolRequest, input Statu
 }
 
 func (s *Server) update(ctx context.Context, _ *mcp.CallToolRequest, input UpdateInput) (*mcp.CallToolResult, UpdateOutput, error) {
-	update := core.UpdateInput{
+	update := contract.UpdateInput{
 		ID:               input.ID,
 		ExpectedRevision: input.ExpectedRevision,
 		Content:          input.Content,
@@ -381,7 +380,7 @@ func (s *Server) update(ctx context.Context, _ *mcp.CallToolRequest, input Updat
 }
 
 func (s *Server) search(ctx context.Context, _ *mcp.CallToolRequest, input SearchInput) (*mcp.CallToolResult, SearchOutput, error) {
-	values, err := s.service.Search(ctx, core.SearchInput{Query: input.Query, Contexts: input.Contexts, Limit: input.Limit})
+	values, err := s.service.Search(ctx, contract.SearchInput{Query: input.Query, Contexts: input.Contexts, Limit: input.Limit})
 	if err != nil {
 		return nil, SearchOutput{}, err
 	}

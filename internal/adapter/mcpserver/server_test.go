@@ -10,11 +10,47 @@ import (
 	"testing"
 
 	"github.com/HJSunDev/ownward/internal/assetlog"
+	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/core"
 	"github.com/HJSunDev/ownward/internal/derived"
 	"github.com/HJSunDev/ownward/internal/embedding"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+type contractOnlyCapability struct {
+	contract.ProductCapability
+	rules string
+}
+
+func (value contractOnlyCapability) Rules(context.Context) string { return value.rules }
+
+func TestServerDependsOnlyOnProductCapabilityAndUsesItsRules(t *testing.T) {
+	ctx := context.Background()
+	clientTransport, serverTransport := mcp.NewInMemoryTransports()
+	server := New(contractOnlyCapability{rules: "contract-owned-rules"}, "test")
+	serverSession, err := server.MCP().Connect(ctx, serverTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := mcp.NewClient(&mcp.Implementation{Name: "contract-test"}, nil)
+	clientSession, err := client.Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := clientSession.InitializeResult().Instructions; got != "contract-owned-rules" {
+		t.Fatalf("server bypassed product rules: %q", got)
+	}
+	result, err := clientSession.CallTool(ctx, &mcp.CallToolParams{Name: "ownward_rules", Arguments: map[string]any{}})
+	if err != nil || result.IsError || !strings.Contains(result.Content[0].(*mcp.TextContent).Text, "contract-owned-rules") {
+		t.Fatalf("rules tool bypassed product capability: %#v %v", result, err)
+	}
+	if err := clientSession.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := serverSession.Wait(); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestServerExposesUnifiedCoreOperations(t *testing.T) {
 	ctx := context.Background()

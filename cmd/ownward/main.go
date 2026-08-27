@@ -21,7 +21,7 @@ import (
 	"github.com/HJSunDev/ownward/internal/adapter/mcpserver"
 	"github.com/HJSunDev/ownward/internal/assembly"
 	"github.com/HJSunDev/ownward/internal/config"
-	"github.com/HJSunDev/ownward/internal/core"
+	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/domain"
 )
 
@@ -100,7 +100,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	defer runtime.Close()
-	service := runtime.Service()
+	service := runtime.Product()
+	kernel := runtime.Kernel()
 	parsedContexts, err := parseContexts(contexts)
 	if err != nil {
 		return err
@@ -118,7 +119,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		if err != nil {
 			return err
 		}
-		value, err := service.Create(ctx, core.CreateInput{Kind: kind, Content: *content, Contexts: parsedContexts, Source: domain.Source{Actor: "cli"}})
+		value, err := service.Create(ctx, contract.CreateInput{Kind: kind, Content: *content, Contexts: parsedContexts, Source: domain.Source{Actor: "cli"}})
 		if err != nil {
 			return err
 		}
@@ -127,7 +128,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		if *revision == 0 {
 			return errors.New("update 必须提供 --revision")
 		}
-		input := core.UpdateInput{ID: *id, ExpectedRevision: *revision}
+		input := contract.UpdateInput{ID: *id, ExpectedRevision: *revision}
 		if *content != "" {
 			input.Content = content
 		}
@@ -153,7 +154,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		}
 		return writeJSON(stdout, value)
 	case "search":
-		values, err := service.Search(ctx, core.SearchInput{Query: *query, Contexts: parsedContexts, Limit: *limit})
+		values, err := service.Search(ctx, contract.SearchInput{Query: *query, Contexts: parsedContexts, Limit: *limit})
 		if err != nil {
 			return err
 		}
@@ -176,13 +177,13 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		}
 		return writeJSON(stdout, map[string]string{"backup": *output})
 	case "restore":
-		result, err := service.Maintain(ctx, true)
+		result, err := kernel.Maintain(ctx, true)
 		if err != nil {
 			return err
 		}
 		return writeJSON(stdout, map[string]any{"restored": *backup, "organization": result})
 	case "maintain", "rebuild":
-		result, err := service.Maintain(ctx, command == "rebuild")
+		result, err := kernel.Maintain(ctx, command == "rebuild")
 		if err != nil {
 			return err
 		}

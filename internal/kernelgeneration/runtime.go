@@ -10,8 +10,6 @@ import (
 	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/core"
 	"github.com/HJSunDev/ownward/internal/derived"
-	"github.com/HJSunDev/ownward/internal/embedding"
-	"github.com/HJSunDev/ownward/internal/semantics"
 )
 
 type Mode string
@@ -26,8 +24,8 @@ type OpenRequest struct {
 	DataDir          string
 	Mode             Mode
 	Authority        contract.AssetAuthority
-	SemanticProvider semantics.Provider
-	VectorProvider   embedding.Provider
+	SemanticProvider contract.SemanticCapability
+	VectorProvider   contract.VectorCapability
 }
 
 // Open selects one complete, already sealed kernel component and opens its
@@ -58,14 +56,17 @@ func Open(manifest composition.Manifest, request OpenRequest) (*core.Service, er
 		}
 		return core.NewWithAuthority(request.Authority)
 	case Organized:
-		if request.SemanticProvider == nil || request.VectorProvider != nil {
-			return nil, errors.New("organized 内核必须且只能绑定语义能力")
+		if request.SemanticProvider == nil || request.VectorProvider == nil {
+			return nil, errors.New("organized 内核必须显式绑定语义和向量能力")
+		}
+		if err := validateCapabilities(request.SemanticProvider, request.VectorProvider); err != nil {
+			return nil, err
 		}
 		store, err := derived.Open(filepath.Join(request.DataDir, "state"))
 		if err != nil {
 			return nil, err
 		}
-		service, err := core.NewOrganizedWithAuthority(request.Authority, store, request.SemanticProvider)
+		service, err := core.NewOrganizedWithCapabilities(request.Authority, store, request.SemanticProvider, request.VectorProvider)
 		if err != nil {
 			_ = store.Close()
 			return nil, err
@@ -74,6 +75,9 @@ func Open(manifest composition.Manifest, request OpenRequest) (*core.Service, er
 	case Collaborative:
 		if request.SemanticProvider != nil || request.VectorProvider == nil {
 			return nil, errors.New("collaborative 内核必须且只能绑定向量能力")
+		}
+		if err := validateCapabilities(nil, request.VectorProvider); err != nil {
+			return nil, err
 		}
 		store, err := derived.Open(filepath.Join(request.DataDir, "state"))
 		if err != nil {
@@ -88,6 +92,23 @@ func Open(manifest composition.Manifest, request OpenRequest) (*core.Service, er
 	default:
 		return nil, fmt.Errorf("未知内核产品语义: %q", request.Mode)
 	}
+}
+
+func validateCapabilities(semantic contract.SemanticCapability, vector contract.VectorCapability) error {
+	if semantic != nil {
+		identity := semantic.Identity()
+		if strings.TrimSpace(identity.ID) == "" || strings.TrimSpace(identity.Version) == "" {
+			return errors.New("语义能力身份无效")
+		}
+	}
+	if vector == nil || strings.TrimSpace(vector.Name()) == "" {
+		return errors.New("向量能力身份为空")
+	}
+	space := vector.Space()
+	if (strings.TrimSpace(space.ID) == "" || space.Dimensions <= 0) && vector.Name() != "unavailable" {
+		return errors.New("向量能力空间身份无效")
+	}
+	return nil
 }
 
 func component(manifest composition.Manifest, role string) (composition.Component, bool) {

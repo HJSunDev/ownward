@@ -43,7 +43,8 @@ type Request struct {
 	DataDir           string
 	RestoreBackup     string
 	ProductSemantics  ProductSemantics
-	OrganizedProvider semantics.Provider
+	OrganizedProvider contract.SemanticCapability
+	OrganizedVector   contract.VectorCapability
 	VectorBundleDir   string
 }
 
@@ -58,6 +59,22 @@ type Runtime struct {
 }
 
 func (r *Runtime) Service() *core.Service {
+	if r == nil {
+		return nil
+	}
+	return r.service
+}
+
+// Product exposes only the stable product waist to access adapters.
+func (r *Runtime) Product() contract.ProductCapability {
+	if r == nil {
+		return nil
+	}
+	return r.service
+}
+
+// Kernel exposes only the stable lifecycle waist to operational commands.
+func (r *Runtime) Kernel() contract.KernelLifecycle {
 	if r == nil {
 		return nil
 	}
@@ -105,7 +122,7 @@ func (r *Runtime) Close() error {
 type resources struct {
 	restore       contract.AuthorityRestore
 	openAuthority contract.AuthorityOpen
-	openVector    func(string, composition.Manifest) (embedding.Provider, error)
+	openVector    func(string, composition.Manifest) (contract.VectorCapability, error)
 }
 
 var productionResources = resources{
@@ -171,12 +188,15 @@ func openWith(request Request, manifest composition.Manifest, resource resources
 	if err != nil {
 		return nil, err
 	}
+	if err := validateDeclaredCapabilities(manifest, normalized); err != nil {
+		return nil, err
+	}
 	initial, err := authorityInitial(manifest)
 	if err != nil {
 		return nil, err
 	}
 
-	var vector embedding.Provider
+	var vector contract.VectorCapability
 	vectorOwned := false
 	if normalized.ProductSemantics == Collaborative {
 		vector, err = resource.openVector(normalized.VectorBundleDir, manifest)
@@ -211,7 +231,7 @@ func openWith(request Request, manifest composition.Manifest, resource resources
 
 	service, err := kernelgeneration.Open(manifest, kernelgeneration.OpenRequest{
 		DataDir: normalized.DataDir, Mode: normalized.ProductSemantics, Authority: authority.Assets(),
-		SemanticProvider: normalized.OrganizedProvider, VectorProvider: vector,
+		SemanticProvider: normalized.OrganizedProvider, VectorProvider: firstVector(normalized.OrganizedVector, vector),
 	})
 	if err != nil {
 		return nil, err
@@ -260,15 +280,15 @@ func validateRequest(request Request, resource resources) (Request, error) {
 	}
 	switch request.ProductSemantics {
 	case Basic:
-		if request.OrganizedProvider != nil || strings.TrimSpace(request.VectorBundleDir) != "" {
+		if request.OrganizedProvider != nil || request.OrganizedVector != nil || strings.TrimSpace(request.VectorBundleDir) != "" {
 			return Request{}, errors.New("basic 语义不得声明组织或向量能力")
 		}
 	case Organized:
-		if request.OrganizedProvider == nil || strings.TrimSpace(request.VectorBundleDir) != "" {
-			return Request{}, errors.New("organized 语义必须且只能显式声明语义 Provider")
+		if request.OrganizedProvider == nil || request.OrganizedVector == nil || strings.TrimSpace(request.VectorBundleDir) != "" {
+			return Request{}, errors.New("organized 语义必须显式声明语义与向量能力")
 		}
 	case Collaborative:
-		if resource.openVector == nil || request.OrganizedProvider != nil {
+		if resource.openVector == nil || request.OrganizedProvider != nil || request.OrganizedVector != nil {
 			return Request{}, errors.New("collaborative 语义不得声明内置语义 Provider")
 		}
 		request.VectorBundleDir, err = requireAbsolute("向量能力目录", request.VectorBundleDir)
@@ -279,6 +299,37 @@ func validateRequest(request Request, resource resources) (Request, error) {
 		return Request{}, fmt.Errorf("产品语义必须显式选择 basic、organized 或 collaborative，实际 %q", request.ProductSemantics)
 	}
 	return request, nil
+}
+
+func validateDeclaredCapabilities(manifest composition.Manifest, request Request) error {
+	if request.ProductSemantics != Organized {
+		return nil
+	}
+	semantic, exists := component(manifest, "semantic")
+	if !exists {
+		return errors.New("组合缺少语义能力声明")
+	}
+	expectedSemantic := semanticsCapabilityFromConfig(semantic.Config)
+	if request.OrganizedProvider == nil || request.OrganizedProvider.Identity() != expectedSemantic || strings.TrimSpace(expectedSemantic.ID) == "" || strings.TrimSpace(expectedSemantic.Version) == "" {
+		return errors.New("语义能力身份与组合声明不一致")
+	}
+	vector, exists := component(manifest, "vector")
+	if !exists || request.OrganizedVector == nil {
+		return errors.New("组合缺少向量能力声明")
+	}
+	space := request.OrganizedVector.Space()
+	if configString(vector.Config, "capability") != request.OrganizedVector.Name() ||
+		configString(vector.Config, "space") != space.ID || configInt(vector.Config, "dimensions") != space.Dimensions {
+		return errors.New("向量能力身份或空间与组合声明不一致")
+	}
+	return nil
+}
+
+func semanticsCapabilityFromConfig(config map[string]any) semantics.Capability {
+	return semantics.Capability{
+		ID: configString(config, "provider"), Version: configString(config, "provider_version"),
+		Execution: configString(config, "provider_execution"),
+	}
 }
 
 func authorityInitial(manifest composition.Manifest) (contract.ControlState, error) {
@@ -329,7 +380,7 @@ func requireAbsolute(name, value string) (string, error) {
 	return filepath.Clean(trimmed), nil
 }
 
-func openProductionVector(root string, manifest composition.Manifest) (embedding.Provider, error) {
+func openProductionVector(root string, manifest composition.Manifest) (contract.VectorCapability, error) {
 	bundle, err := embedding.LoadBundle(root)
 	if err != nil {
 		return nil, fmt.Errorf("校验发布向量能力包: %w", err)
@@ -392,6 +443,13 @@ func configInt(config map[string]any, key string) int {
 	default:
 		return 0
 	}
+}
+
+func firstVector(primary, fallback contract.VectorCapability) contract.VectorCapability {
+	if primary != nil {
+		return primary
+	}
+	return fallback
 }
 
 func fileSHA256(path string) (string, error) {

@@ -15,7 +15,7 @@
         {
           "name": "mcp-adapter",
           "path": "internal/adapter/mcpserver/server.go",
-          "sha256": "fa9c0ee832cba11754c9bba2bfbe62236c4f22333b8a772ab4452ae2a89baebd"
+          "sha256": "86ed11af044bdeb8a9cb87f2ad5e3c4272dc330291ba8a03a9e907e6b42bd809"
         },
         {
           "name": "shared-lock-unix",
@@ -54,14 +54,14 @@
       "dependencies": [
         {
           "role": "kernel",
-          "identity": "b7e7a2a4f6722e51839b72c1c0191feaa3601d67e70794a9db88d280cc78391d"
+          "identity": "79db0eb70cc357a0c0ee7ef189a7c3622e3eed5ee2ed223db9afed3d38b2cee4"
         },
         {
           "role": "product-rules",
           "identity": "80919d7ce74ea5a443c1c0c0d2b957ae3e2f1e1adb559f7b761e2e38e2e713f9"
         }
       ],
-      "identity": "a909084dc588b63583e39f75c6ca9c7a4a6ee241a94d88463657da970877cd54"
+      "identity": "b98a14230b449104a2de903ef0c5548490a7f1ce2d02c1119faa3c3c06c81d90"
     },
     {
       "role": "assembly",
@@ -76,17 +76,17 @@
         {
           "name": "current-command-assembly",
           "path": "cmd/ownward/main.go",
-          "sha256": "4ed780c408e97be70d1fbcb7cfe637a41e25b4cc00ef898702f01fddb18681d1"
+          "sha256": "4f019335fdc94f4e74dddd90db5345543e7167ad20c0707790bbc6b3716bf09b"
         },
         {
           "name": "explicit-assembly",
           "path": "internal/assembly/assembly.go",
-          "sha256": "4b1f3641bb92401df19aea1c80f2bb31dfc4a88e4612b5e5a6367dc67f7fa50c"
+          "sha256": "907b50632d628a95ab9ad26e3a30020452810f4d849f4ea19edbed2a603c3cd3"
         },
         {
           "name": "kernel-generation-runtime",
           "path": "internal/kernelgeneration/runtime.go",
-          "sha256": "1fba26a1a64a4f1b1191b1883fdd6f54bb13459742894b8ef739d1ebde5c645f"
+          "sha256": "cae51b4e5a2499d0c171eaf420071791369ecce3bdb3d673b855db69e31fda64"
         },
         {
           "name": "release-composition-embed",
@@ -109,7 +109,7 @@
       "dependencies": [
         {
           "role": "access",
-          "identity": "a909084dc588b63583e39f75c6ca9c7a4a6ee241a94d88463657da970877cd54"
+          "identity": "b98a14230b449104a2de903ef0c5548490a7f1ce2d02c1119faa3c3c06c81d90"
         },
         {
           "role": "authority-substrate",
@@ -117,7 +117,7 @@
         },
         {
           "role": "kernel",
-          "identity": "b7e7a2a4f6722e51839b72c1c0191feaa3601d67e70794a9db88d280cc78391d"
+          "identity": "79db0eb70cc357a0c0ee7ef189a7c3622e3eed5ee2ed223db9afed3d38b2cee4"
         },
         {
           "role": "product-rules",
@@ -132,7 +132,7 @@
           "identity": "391b5aa1f4bb3a25d522a4d59c7af1a9aa1150a06480f64d23cfd73f86c808c5"
         }
       ],
-      "identity": "52adee1a5344e5f536dba2fadd8c4243c6c625d360a30afc2953389ff5ebdca4"
+      "identity": "993a098d2014053b3a178999f20b9fd1df0706582eeb40e523c53f30d939bacc"
     },
     {
       "role": "authority-substrate",
@@ -252,7 +252,7 @@
         {
           "name": "core-service",
           "path": "internal/core/service.go",
-          "sha256": "4aaad81ec2be364b2eb21cc4e4fb47d2c99582c08bc63ca3a75aafaf220659c6"
+          "sha256": "097b358fb51317bb1e7e277bd49e157feed7645e9ed6c7e91df0c19a3bc2f0be"
         },
         {
           "name": "derived-evidence",
@@ -290,6 +290,11 @@
           "sha256": "39b7f556feeb35005de12a96f4e97b91f8ba2a1b009213dad54ee59d681d7174"
         },
         {
+          "name": "legacy-capability-adapter",
+          "path": "internal/capabilityadapter/legacy_semantic.go",
+          "sha256": "52b2835195c6176827c70f52c14bdd5f382487b1f353693a50ff6a68fc39587d"
+        },
+        {
           "name": "lexical-retrieval",
           "path": "internal/retrieval/lexical.go",
           "sha256": "33607cb8293df23e00193102cebb4a6a02e65df8e656dfc77d91caebfbadf1c2"
@@ -319,7 +324,7 @@
           "identity": "391b5aa1f4bb3a25d522a4d59c7af1a9aa1150a06480f64d23cfd73f86c808c5"
         }
       ],
-      "identity": "b7e7a2a4f6722e51839b72c1c0191feaa3601d67e70794a9db88d280cc78391d"
+      "identity": "79db0eb70cc357a0c0ee7ef189a7c3622e3eed5ee2ed223db9afed3d38b2cee4"
     },
     {
       "role": "product-rules",
@@ -543,9 +548,9 @@
       "identity": "391b5aa1f4bb3a25d522a4d59c7af1a9aa1150a06480f64d23cfd73f86c808c5"
     }
   ],
-  "identity": "9df2444ea459350a17d5e5879a20054846af43b59f37dde6e16a94128ad8cf12",
+  "identity": "bdebd16f805a7ad22c875b780870676fc0b4929aed8616dc15cad1c498778bc5",
   "audit": {
     "described_product_candidate": "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8",
-    "migration_source_git": "d70b41cee738912ddd42305995ad08aed8240523"
+    "migration_source_git": "dc2c7a09e67f06cfaacbe0a201c7ff27b20d6182"
   }
 }

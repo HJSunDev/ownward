@@ -15,6 +15,7 @@ import (
 
 	"github.com/HJSunDev/ownward/internal/assetlog"
 	"github.com/HJSunDev/ownward/internal/authoritysubstrate"
+	"github.com/HJSunDev/ownward/internal/capabilityadapter"
 	"github.com/HJSunDev/ownward/internal/composition"
 	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/core"
@@ -37,7 +38,7 @@ func TestInvalidCompositionFailsBeforeEveryRuntimeSideEffect(t *testing.T) {
 			calls = append(calls, "assets")
 			return nil, errors.New("must not open")
 		},
-		openVector: func(string, composition.Manifest) (embedding.Provider, error) {
+		openVector: func(string, composition.Manifest) (contract.VectorCapability, error) {
 			calls = append(calls, "vector")
 			return embedding.Unavailable{}, nil
 		},
@@ -73,7 +74,7 @@ func TestInvalidPackagedVectorFailsBeforeProductResources(t *testing.T) {
 			calls = append(calls, "assets")
 			return nil, errors.New("must not open")
 		},
-		openVector: func(string, composition.Manifest) (embedding.Provider, error) {
+		openVector: func(string, composition.Manifest) (contract.VectorCapability, error) {
 			calls = append(calls, "vector")
 			return nil, errors.New("packaged vector identity mismatch")
 		},
@@ -159,14 +160,14 @@ func TestExplicitAssemblyMatchesAllLegacyProductSemantics(t *testing.T) {
 				DataDir: newDir, ProductSemantics: mode,
 			}
 			if mode == Organized {
-				request.OrganizedProvider = semantics.Heuristic{}
+				request.OrganizedProvider, request.OrganizedVector = capabilityadapter.LegacySemanticProvider(semantics.Heuristic{})
 			}
 			if mode == Collaborative {
 				request.VectorBundleDir = filepath.Join(t.TempDir(), "embedding")
 			}
 			runtime, err := openWith(request, manifest, resources{
 				restore: authoritysubstrate.Restore, openAuthority: openTestAuthority,
-				openVector: func(string, composition.Manifest) (embedding.Provider, error) {
+				openVector: func(string, composition.Manifest) (contract.VectorCapability, error) {
 					return embedding.HashForTesting{Dimensions: 32}, nil
 				},
 			})
@@ -208,17 +209,21 @@ func TestExplicitAssemblyPreservesOrganizedAndVectorDegradation(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			manifest := testManifest(t, test.mode)
+			if test.mode == Organized {
+				semantic, vector := capabilityadapter.LegacySemanticProvider(test.provider)
+				manifest = testManifestWithCapabilities(t, test.mode, semantic, vector)
+			}
 			legacy := openLegacy(t, test.mode, filepath.Join(t.TempDir(), "legacy"), test.provider, test.vector)
 			defer legacy.Close()
 			request := Request{DataDir: filepath.Join(t.TempDir(), "new"), ProductSemantics: test.mode}
 			if test.mode == Organized {
-				request.OrganizedProvider = test.provider
+				request.OrganizedProvider, request.OrganizedVector = capabilityadapter.LegacySemanticProvider(test.provider)
 			} else {
 				request.VectorBundleDir = filepath.Join(t.TempDir(), "embedding")
 			}
 			runtime, err := openWith(request, manifest, resources{
 				restore: authoritysubstrate.Restore, openAuthority: openTestAuthority,
-				openVector: func(string, composition.Manifest) (embedding.Provider, error) { return test.vector, nil },
+				openVector: func(string, composition.Manifest) (contract.VectorCapability, error) { return test.vector, nil },
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -230,6 +235,32 @@ func TestExplicitAssemblyPreservesOrganizedAndVectorDegradation(t *testing.T) {
 				t.Fatalf("degradation changed: legacy=%#v/%v new=%#v/%v", legacyResult, legacyErr, newResult, newErr)
 			}
 		})
+	}
+}
+
+func TestOrganizedCapabilityMismatchFailsBeforeProductResources(t *testing.T) {
+	manifest := testManifest(t, Organized)
+	semantic, vector := capabilityadapter.LegacySemanticProvider(failingProvider{})
+	dataDir := filepath.Join(t.TempDir(), "product")
+	opened := false
+	_, err := openWith(Request{
+		DataDir: dataDir, ProductSemantics: Organized,
+		OrganizedProvider: semantic, OrganizedVector: vector,
+	}, manifest, resources{
+		restore: authoritysubstrate.Restore,
+		openAuthority: func(string, contract.ControlState) (contract.AuthoritySubstrate, error) {
+			opened = true
+			return nil, errors.New("must not open")
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "语义能力身份") {
+		t.Fatalf("mismatched semantic capability was accepted: %v", err)
+	}
+	if opened {
+		t.Fatal("capability mismatch opened the authority substrate")
+	}
+	if _, err := os.Stat(dataDir); !os.IsNotExist(err) {
+		t.Fatalf("capability mismatch created product state: %v", err)
 	}
 }
 
@@ -286,7 +317,7 @@ func TestExplicitModeRejectsNilAndManifestMismatchBeforeOpen(t *testing.T) {
 		func() Request {
 			value := base
 			value.ProductSemantics = Organized
-			value.OrganizedProvider = semantics.Heuristic{}
+			value.OrganizedProvider, _ = capabilityadapter.LegacySemanticProvider(semantics.Heuristic{})
 			return value
 		}(),
 	} {
@@ -295,7 +326,7 @@ func TestExplicitModeRejectsNilAndManifestMismatchBeforeOpen(t *testing.T) {
 				t.Fatal("opened assets")
 				return nil, nil
 			},
-			openVector: func(string, composition.Manifest) (embedding.Provider, error) {
+			openVector: func(string, composition.Manifest) (contract.VectorCapability, error) {
 				return embedding.Unavailable{}, nil
 			},
 		})
@@ -422,6 +453,14 @@ func (failingProvider) Embed(context.Context, []string) ([][]float32, error) {
 }
 
 func testManifest(t *testing.T, mode ProductSemantics) composition.Manifest {
+	if mode == Organized {
+		semantic, vector := capabilityadapter.LegacySemanticProvider(semantics.Heuristic{})
+		return testManifestWithCapabilities(t, mode, semantic, vector)
+	}
+	return testManifestWithCapabilities(t, mode, nil, nil)
+}
+
+func testManifestWithCapabilities(t *testing.T, mode ProductSemantics, semantic contract.SemanticCapability, vector contract.VectorCapability) composition.Manifest {
 	t.Helper()
 	repository := t.TempDir()
 	for _, definition := range contract.Definitions() {
@@ -434,6 +473,18 @@ func testManifest(t *testing.T, mode ProductSemantics) composition.Manifest {
 		config := map[string]any{"test_role": role}
 		if role == "kernel" {
 			config["mode"] = string(mode)
+		}
+		if role == "semantic" && semantic != nil {
+			identity := semantic.Identity()
+			config["provider"] = identity.ID
+			config["provider_version"] = identity.Version
+			config["provider_execution"] = identity.Execution
+		}
+		if role == "vector" && vector != nil {
+			space := vector.Space()
+			config["capability"] = vector.Name()
+			config["space"] = space.ID
+			config["dimensions"] = space.Dimensions
 		}
 		if role == "assembly" {
 			config["product_semantics"] = string(mode)
