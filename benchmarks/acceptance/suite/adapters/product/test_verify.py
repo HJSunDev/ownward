@@ -474,6 +474,32 @@ class ProductAdapterTests(unittest.TestCase):
         trace = verify.codex_session.load_exec_events("\n".join(json.dumps(item) for item in events))
         self.assertTrue(trace.bypassed)
 
+    def test_failed_and_empty_generic_resource_discovery_are_protocol_metadata(self) -> None:
+        events = [
+            {"type": "thread.started", "thread_id": "session"},
+            {"type": "item.completed", "item": {
+                "type": "mcp_tool_call", "server": "...", "tool": "list_mcp_resources",
+                "status": "failed", "error": {"message": "unknown MCP server"},
+                "arguments": {"server": "..."}, "result": None,
+            }},
+            {"type": "item.completed", "item": {
+                "type": "mcp_tool_call", "server": "codex", "tool": "list_mcp_resources",
+                "status": "completed", "error": None, "arguments": {},
+                "result": {"content": [{"type": "text", "text": '{"resources":[]}'}], "structured_content": None},
+            }},
+        ]
+        trace = verify.codex_session.load_exec_events("\n".join(json.dumps(item) for item in events))
+        self.assertFalse(trace.bypassed)
+        self.assertEqual((), tuple(trace.calls))
+        self.assertEqual(
+            ("list_mcp_resources:failed", "list_mcp_resources:empty"),
+            trace.protocol_operations,
+        )
+
+        events[2]["item"]["result"]["content"][0]["text"] = '{"resources":[{"uri":"secret"}]}'
+        trace = verify.codex_session.load_exec_events("\n".join(json.dumps(item) for item in events))
+        self.assertTrue(trace.bypassed)
+
     def test_semantic_unit_retries_only_a_no_call_attempt_and_preserves_both_traces(self) -> None:
         asset_id = "asset"
         work_id = "work"

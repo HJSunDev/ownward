@@ -73,8 +73,9 @@ def load_exec_events(text: str) -> SessionTrace:
         if item_type in {"agent_message", "reasoning", "todo_list"}:
             continue
         name = _tool_name(item.get("tool"))
-        if _empty_ownward_resource_discovery(item, name):
-            protocol_operations.append("list_mcp_resources:empty")
+        protocol_operation = _resource_discovery_protocol_operation(item, name)
+        if protocol_operation is not None:
+            protocol_operations.append(protocol_operation)
             continue
         if item_type != "mcp_tool_call" or item.get("server") != "ownward" or not name.startswith("ownward_"):
             bypassed.append(f"{item_type}:{item.get('server')}:{name}")
@@ -92,24 +93,25 @@ def load_exec_events(text: str) -> SessionTrace:
     return SessionTrace(session_id, calls, bool(bypassed), tuple(bypassed), tuple(protocol_operations))
 
 
-def _empty_ownward_resource_discovery(item: dict[str, Any], name: str) -> bool:
+def _resource_discovery_protocol_operation(item: dict[str, Any], name: str) -> str | None:
     if (
         item.get("type") != "mcp_tool_call"
-        or item.get("server") != "ownward"
         or name != "list_mcp_resources"
-        or item.get("status") != "completed"
-        or item.get("error") is not None
     ):
-        return False
+        return None
     arguments = item.get("arguments")
-    if not isinstance(arguments, dict) or arguments.get("server") != "ownward" or arguments.get("cursor") not in {None, ""}:
-        return False
+    if not isinstance(arguments, dict) or arguments.get("cursor") not in {None, ""}:
+        return None
+    if item.get("status") != "completed" or item.get("error") is not None:
+        return "list_mcp_resources:failed" if item.get("result") is None else None
     result = item.get("result")
     content = result.get("content") if isinstance(result, dict) else None
     if not isinstance(content, list) or len(content) != 1 or not isinstance(content[0], dict):
-        return False
+        return None
     payload = _json_fragment(content[0].get("text"))
-    return isinstance(payload, dict) and payload.get("server") == "ownward" and payload.get("resources") == []
+    if isinstance(payload, dict) and payload.get("resources") == []:
+        return "list_mcp_resources:empty"
+    return None
 
 
 def _json_fragment(value: object) -> Any:
