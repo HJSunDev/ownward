@@ -17,18 +17,18 @@ import (
 	"github.com/HJSunDev/ownward/internal/composition"
 	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/core"
-	"github.com/HJSunDev/ownward/internal/derived"
 	"github.com/HJSunDev/ownward/internal/embedding"
+	"github.com/HJSunDev/ownward/internal/kernelgeneration"
 	"github.com/HJSunDev/ownward/internal/semantics"
 	compositionv1 "github.com/HJSunDev/ownward/manifests/compositions/v1"
 )
 
-type ProductSemantics string
+type ProductSemantics = kernelgeneration.Mode
 
 const (
-	Basic         ProductSemantics = "basic"
-	Organized     ProductSemantics = "organized"
-	Collaborative ProductSemantics = "collaborative"
+	Basic         = kernelgeneration.Basic
+	Organized     = kernelgeneration.Organized
+	Collaborative = kernelgeneration.Collaborative
 )
 
 const (
@@ -105,7 +105,6 @@ func (r *Runtime) Close() error {
 type resources struct {
 	restore       contract.AuthorityRestore
 	openAuthority contract.AuthorityOpen
-	openDerived   func(string) (*derived.Store, error)
 	openVector    func(string, composition.Manifest) (embedding.Provider, error)
 }
 
@@ -114,8 +113,7 @@ var productionResources = resources{
 	openAuthority: func(path string, initial contract.ControlState) (contract.AuthoritySubstrate, error) {
 		return authoritysubstrate.Open(path, initial)
 	},
-	openDerived: derived.Open,
-	openVector:  openProductionVector,
+	openVector: openProductionVector,
 }
 
 // Open is the sole active product assembly entry. It validates the complete
@@ -211,33 +209,10 @@ func openWith(request Request, manifest composition.Manifest, resource resources
 		}
 	}()
 
-	var service *core.Service
-	switch normalized.ProductSemantics {
-	case Basic:
-		service, err = core.NewWithAuthority(authority.Assets())
-	case Organized, Collaborative:
-		derivedStore, openErr := resource.openDerived(filepath.Join(normalized.DataDir, "state"))
-		if openErr != nil {
-			return nil, openErr
-		}
-		closeDerived := true
-		defer func() {
-			if closeDerived {
-				_ = derivedStore.Close()
-			}
-		}()
-		if normalized.ProductSemantics == Organized {
-			service, err = core.NewOrganizedWithAuthority(authority.Assets(), derivedStore, normalized.OrganizedProvider)
-		} else {
-			service, err = core.NewCollaborativeWithAuthority(authority.Assets(), derivedStore, vector)
-		}
-		if err != nil {
-			return nil, err
-		}
-		closeDerived = false
-	default:
-		panic("validated product semantics became invalid")
-	}
+	service, err := kernelgeneration.Open(manifest, kernelgeneration.OpenRequest{
+		DataDir: normalized.DataDir, Mode: normalized.ProductSemantics, Authority: authority.Assets(),
+		SemanticProvider: normalized.OrganizedProvider, VectorProvider: vector,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -289,11 +264,11 @@ func validateRequest(request Request, resource resources) (Request, error) {
 			return Request{}, errors.New("basic 语义不得声明组织或向量能力")
 		}
 	case Organized:
-		if resource.openDerived == nil || request.OrganizedProvider == nil || strings.TrimSpace(request.VectorBundleDir) != "" {
+		if request.OrganizedProvider == nil || strings.TrimSpace(request.VectorBundleDir) != "" {
 			return Request{}, errors.New("organized 语义必须且只能显式声明语义 Provider")
 		}
 	case Collaborative:
-		if resource.openDerived == nil || resource.openVector == nil || request.OrganizedProvider != nil {
+		if resource.openVector == nil || request.OrganizedProvider != nil {
 			return Request{}, errors.New("collaborative 语义不得声明内置语义 Provider")
 		}
 		request.VectorBundleDir, err = requireAbsolute("向量能力目录", request.VectorBundleDir)

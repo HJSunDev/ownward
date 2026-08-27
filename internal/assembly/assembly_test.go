@@ -37,10 +37,6 @@ func TestInvalidCompositionFailsBeforeEveryRuntimeSideEffect(t *testing.T) {
 			calls = append(calls, "assets")
 			return nil, errors.New("must not open")
 		},
-		openDerived: func(string) (*derived.Store, error) {
-			calls = append(calls, "derived")
-			return nil, errors.New("must not open")
-		},
 		openVector: func(string, composition.Manifest) (embedding.Provider, error) {
 			calls = append(calls, "vector")
 			return embedding.Unavailable{}, nil
@@ -75,10 +71,6 @@ func TestInvalidPackagedVectorFailsBeforeProductResources(t *testing.T) {
 		restore: func(_, _ string, _ contract.ControlState) error { calls = append(calls, "restore"); return nil },
 		openAuthority: func(string, contract.ControlState) (contract.AuthoritySubstrate, error) {
 			calls = append(calls, "assets")
-			return nil, errors.New("must not open")
-		},
-		openDerived: func(string) (*derived.Store, error) {
-			calls = append(calls, "derived")
 			return nil, errors.New("must not open")
 		},
 		openVector: func(string, composition.Manifest) (embedding.Provider, error) {
@@ -173,7 +165,7 @@ func TestExplicitAssemblyMatchesAllLegacyProductSemantics(t *testing.T) {
 				request.VectorBundleDir = filepath.Join(t.TempDir(), "embedding")
 			}
 			runtime, err := openWith(request, manifest, resources{
-				restore: authoritysubstrate.Restore, openAuthority: openTestAuthority, openDerived: derived.Open,
+				restore: authoritysubstrate.Restore, openAuthority: openTestAuthority,
 				openVector: func(string, composition.Manifest) (embedding.Provider, error) {
 					return embedding.HashForTesting{Dimensions: 32}, nil
 				},
@@ -225,7 +217,7 @@ func TestExplicitAssemblyPreservesOrganizedAndVectorDegradation(t *testing.T) {
 				request.VectorBundleDir = filepath.Join(t.TempDir(), "embedding")
 			}
 			runtime, err := openWith(request, manifest, resources{
-				restore: authoritysubstrate.Restore, openAuthority: openTestAuthority, openDerived: derived.Open,
+				restore: authoritysubstrate.Restore, openAuthority: openTestAuthority,
 				openVector: func(string, composition.Manifest) (embedding.Provider, error) { return test.vector, nil },
 			})
 			if err != nil {
@@ -245,7 +237,7 @@ func TestAssemblyBackupRestoresAssetsAndControlTogether(t *testing.T) {
 	manifest := testManifest(t, Basic)
 	source := filepath.Join(t.TempDir(), "source")
 	runtime, err := openWith(Request{DataDir: source, ProductSemantics: Basic}, manifest, resources{
-		restore: authoritysubstrate.Restore, openAuthority: openTestAuthority, openDerived: derived.Open,
+		restore: authoritysubstrate.Restore, openAuthority: openTestAuthority,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -263,7 +255,7 @@ func TestAssemblyBackupRestoresAssetsAndControlTogether(t *testing.T) {
 	}
 	destination := filepath.Join(t.TempDir(), "restored")
 	restored, err := openWith(Request{DataDir: destination, RestoreBackup: backup, ProductSemantics: Basic}, manifest, resources{
-		restore: authoritysubstrate.Restore, openAuthority: openTestAuthority, openDerived: derived.Open,
+		restore: authoritysubstrate.Restore, openAuthority: openTestAuthority,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -303,7 +295,7 @@ func TestExplicitModeRejectsNilAndManifestMismatchBeforeOpen(t *testing.T) {
 				t.Fatal("opened assets")
 				return nil, nil
 			},
-			openDerived: derived.Open, openVector: func(string, composition.Manifest) (embedding.Provider, error) {
+			openVector: func(string, composition.Manifest) (embedding.Provider, error) {
 				return embedding.Unavailable{}, nil
 			},
 		})

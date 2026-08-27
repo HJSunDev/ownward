@@ -69,7 +69,7 @@
         {
           "id": "ownward.assembly",
           "version": 1,
-          "definition_sha256": "0600dfcfd0b3559352afe3cf2c233474e384ba36838c3bca2e2474b7048a9e02"
+          "definition_sha256": "714849de8109723d739d89e23d900c3f4a82fd01d314ee3a4821313c941b44d9"
         }
       ],
       "content": [
@@ -81,7 +81,12 @@
         {
           "name": "explicit-assembly",
           "path": "internal/assembly/assembly.go",
-          "sha256": "5574b4abd0dd1f5be1b8f8e6ca98e5e98ea89c8f8b2ddad1ae443554a6f5d27f"
+          "sha256": "4b1f3641bb92401df19aea1c80f2bb31dfc4a88e4612b5e5a6367dc67f7fa50c"
+        },
+        {
+          "name": "kernel-generation-runtime",
+          "path": "internal/kernelgeneration/runtime.go",
+          "sha256": "1fba26a1a64a4f1b1191b1883fdd6f54bb13459742894b8ef739d1ebde5c645f"
         },
         {
           "name": "release-composition-embed",
@@ -127,7 +132,7 @@
           "identity": "391b5aa1f4bb3a25d522a4d59c7af1a9aa1150a06480f64d23cfd73f86c808c5"
         }
       ],
-      "identity": "86cbc30b72e61ef8da74d4eadb1d2fbf4f8590828cdc745062cff785f948ec1e"
+      "identity": "52adee1a5344e5f536dba2fadd8c4243c6c625d360a30afc2953389ff5ebdca4"
     },
     {
       "role": "authority-substrate",
@@ -538,9 +543,9 @@
       "identity": "391b5aa1f4bb3a25d522a4d59c7af1a9aa1150a06480f64d23cfd73f86c808c5"
     }
   ],
-  "identity": "407896d65d644d70753668172f3e980a739ca3f13a9b386c52789adcc2dbb1fe",
+  "identity": "9df2444ea459350a17d5e5879a20054846af43b59f37dde6e16a94128ad8cf12",
   "audit": {
     "described_product_candidate": "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8",
-    "migration_source_git": "a2ca363ae3a2a421a7445324788ebad82822ec4b"
+    "migration_source_git": "d70b41cee738912ddd42305995ad08aed8240523"
   }
 }

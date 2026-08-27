@@ -1,0 +1,743 @@
+{
+  "schema": "ownward.kernel-generation-catalog/v1",
+  "generations": [
+    {
+      "name": "v0",
+      "kernel": {
+        "role": "kernel",
+        "contracts": [
+          {
+            "id": "ownward.kernel-lifecycle",
+            "version": 1,
+            "definition_sha256": "02a82d4df79d75d19531c13c9b572b7067230f11469f94d24d5bb5af94562336"
+          },
+          {
+            "id": "ownward.product-capability",
+            "version": 1,
+            "definition_sha256": "0dd352caa94263dbcdc6df71f2a452cbf0894bd07ecb832055845fc518f48e98"
+          }
+        ],
+        "content": [
+          {
+            "name": "core-collaboration",
+            "path": "internal/core/collaboration.go",
+            "sha256": "bde1eb3bff7fe2ca4a28196e11ec17b2e06fc6058b95b2c7a72c355cba57372a"
+          },
+          {
+            "name": "core-generation",
+            "path": "internal/core/generation.go",
+            "sha256": "c518197d99132e2c2f3c845f7c73a004d18ea0a599d356a9836e1b748f8df34b"
+          },
+          {
+            "name": "core-service",
+            "path": "internal/core/service.go",
+            "sha256": "bf6775df0aae156de8cd314c5a3874123be1d023195bb18612811fad9f74aef3"
+          },
+          {
+            "name": "derived-generation",
+            "path": "internal/derived/generation.go",
+            "sha256": "15850254ab5bd1fb8038dd70a7d67759a98b9293ed58dd56ee539343b7a8d89e"
+          },
+          {
+            "name": "derived-index",
+            "path": "internal/derived/index.go",
+            "sha256": "cac675220d15ffd54de9a32edea26ad5dea6bfcd1f5b7e9abcc032850e7cc0a3"
+          },
+          {
+            "name": "derived-replace-other",
+            "path": "internal/derived/replace_other.go",
+            "sha256": "e06c7daffcae31aa9fe5a35755c0a0ef0996e77bcd82e2eb71561a20b4994f3e"
+          },
+          {
+            "name": "derived-replace-windows",
+            "path": "internal/derived/replace_windows.go",
+            "sha256": "26528ac232e27eb74d4ce7ebb0c8105cd562ce7a6bc2c0c9749ecf3c4e44abfc"
+          },
+          {
+            "name": "derived-store",
+            "path": "internal/derived/store.go",
+            "sha256": "a2e786110d99cc542475f5e8584eb06431068135dd1a3260b9017b6d70b1bde5"
+          },
+          {
+            "name": "lexical-retrieval",
+            "path": "internal/retrieval/lexical.go",
+            "sha256": "016c07bdd1bbf5a7660c8caccd8a79230f74aad91bbf40212874c62758283c2e"
+          }
+        ],
+        "config": {
+          "derived_schema": "ownward.derived/v3",
+          "mode": "collaborative",
+          "semantic_degradation": "explicit-pending",
+          "vector_degradation": "preserve-last-valid"
+        },
+        "dependencies": [
+          {
+            "role": "authority-substrate",
+            "identity": "6bfd2100b0c5abcb041710f648bad553074daea8fc2e35d7571e839c09a31dca"
+          },
+          {
+            "role": "product-rules",
+            "identity": "8ce1b261b736ac8c43cbf377709246063fae4fbb9a3e792688aa54f9cc6a6bc9"
+          },
+          {
+            "role": "semantic",
+            "identity": "a4634a65c6f7232d97fcc92f35ff3ac34d9fac63e06eded4f5afa03bb7b030e4"
+          },
+          {
+            "role": "vector",
+            "identity": "b886f52a46388156c6f42282c72a9bf2c4d426d73a8f4bfadc059d87ded69536"
+          }
+        ],
+        "identity": "1952f4b869e49c4aaf2fbac8139fd0a0c25e4331e18ef559a14faf1db7ed7b77"
+      },
+      "dependencies": [
+        {
+          "role": "authority-substrate",
+          "contracts": [
+            {
+              "id": "ownward.asset-authority",
+              "version": 1,
+              "definition_sha256": "9843d36cb1ef1398cb448b47976cec20b997889fc6535de98d106470ebdf7705"
+            },
+            {
+              "id": "ownward.control-state",
+              "version": 1,
+              "definition_sha256": "e7fbcc97ee33a9801fae435ed395345de331a0f2cdf1cb3c240d14d683218ca2"
+            }
+          ],
+          "content": [
+            {
+              "name": "asset-domain",
+              "path": "internal/domain/information.go",
+              "sha256": "48478f2e37043e1c50b38720efef131287f980e572991531d82f54511e3b1059"
+            },
+            {
+              "name": "asset-store",
+              "path": "internal/assetlog/store.go",
+              "sha256": "700459d92e2c917a0edbb4d9be3f5acbef10876bf830a3298f402ef0a918da8f"
+            },
+            {
+              "name": "directory-lock-unix",
+              "path": "internal/assetlog/directory_lock_unix.go",
+              "sha256": "cd08587eb171c5225fda2103b0bf3939fc4a5715daf5a4ac5e3a400cf7e12824"
+            },
+            {
+              "name": "directory-lock-windows",
+              "path": "internal/assetlog/directory_lock_windows.go",
+              "sha256": "2ed618e808ab9144973f8af00856c9365a1885858862ff75e09a43362c742388"
+            }
+          ],
+          "config": {
+            "asset_schema": "ownward.information/v1",
+            "authority_mode": "legacy-single-store"
+          },
+          "dependencies": [],
+          "identity": "6bfd2100b0c5abcb041710f648bad553074daea8fc2e35d7571e839c09a31dca"
+        },
+        {
+          "role": "product-rules",
+          "contracts": [
+            {
+              "id": "ownward.product-rules",
+              "version": 1,
+              "definition_sha256": "f76fd51d7d9ac15f1023ea64e0d542d01c06cae62f3c388e92641bef32ecce37"
+            }
+          ],
+          "content": [
+            {
+              "name": "collaboration-rules",
+              "path": "internal/core/service.go#go-const=CollaborationRules",
+              "sha256": "cc21309d2046bbac110a45e4b7c55fcc53989695c8e561f9b51e180d7c2d33cb"
+            }
+          ],
+          "config": {
+            "version": "legacy-inline-rules"
+          },
+          "dependencies": [],
+          "identity": "8ce1b261b736ac8c43cbf377709246063fae4fbb9a3e792688aa54f9cc6a6bc9"
+        },
+        {
+          "role": "semantic",
+          "contracts": [
+            {
+              "id": "ownward.semantic-capability",
+              "version": 1,
+              "definition_sha256": "6bb1bfbcc51fdbba146f2838eb7c29f269c61aaec830047689bb519adde28819"
+            }
+          ],
+          "content": [
+            {
+              "name": "semantic-analysis",
+              "path": "internal/semantics/provider.go",
+              "sha256": "efd87760bd164d9fe3fb6fb0e1b9292285460b2dcaf7d7d5bb6b419ab88151bc"
+            },
+            {
+              "name": "semantic-work",
+              "path": "internal/semantics/work.go",
+              "sha256": "9c5c707fc1de3151e65991a558365539655bbc7d1a74867fcbb8063014226b4e"
+            }
+          ],
+          "config": {
+            "max_work_batch": 20,
+            "mode": "external-work-submit",
+            "writes_authority": false
+          },
+          "dependencies": [],
+          "identity": "a4634a65c6f7232d97fcc92f35ff3ac34d9fac63e06eded4f5afa03bb7b030e4"
+        },
+        {
+          "role": "vector",
+          "contracts": [
+            {
+              "id": "ownward.vector-capability",
+              "version": 1,
+              "definition_sha256": "89a2e241b5c7861e901e21aea41978258fd8daa9bc6a81740e63d9279acdfa5e"
+            }
+          ],
+          "content": [
+            {
+              "name": "bundle-loader",
+              "path": "internal/embedding/manifest.go",
+              "sha256": "373b9be22ac1841c3027f62870e8f77777cf801c652d232930b411307dceb4d0"
+            },
+            {
+              "name": "managed-runtime",
+              "path": "internal/embedding/llama.go",
+              "sha256": "9f6f16a58c43742769f8c43bdedefdc67583106cab311ece9be1d1ec4a658358"
+            },
+            {
+              "name": "process-other",
+              "path": "internal/embedding/process_other.go",
+              "sha256": "2766f4dc5f71dad91818476ba94d785e84058110197d7b0ac35a3cce6c4ade9b"
+            },
+            {
+              "name": "process-windows",
+              "path": "internal/embedding/process_windows.go",
+              "sha256": "db6b039f6ed7e65b7e3567d485df8514a92cf151b4acd2ee9dd5a070e4936b5b"
+            },
+            {
+              "name": "provider",
+              "path": "internal/embedding/provider.go",
+              "sha256": "de39c26650bd90ba6344a12c6aa4171081186c3c4143ac1c725e2e3db9fe40ad"
+            }
+          ],
+          "config": {
+            "bundle_manifest_sha256": "fc2e4a1aa7d09fc64789618259a1bbedce2a18d00bd1abd81d13a16dfb78c0da",
+            "bundle_schema": "ownward.embedding-bundle/v3",
+            "capability": "embeddinggemma-300m-qat-q8_0-llamacpp-b10488",
+            "dimensions": 512,
+            "space": "emb_79f072bf21c0c0f5226fa4fe6f1946a5"
+          },
+          "dependencies": [],
+          "identity": "b886f52a46388156c6f42282c72a9bf2c4d426d73a8f4bfadc059d87ded69536"
+        }
+      ],
+      "facets": [
+        {
+          "name": "organization",
+          "content": [
+            "core-collaboration",
+            "core-generation"
+          ]
+        },
+        {
+          "name": "representation",
+          "content": [
+            "core-generation",
+            "derived-index"
+          ]
+        },
+        {
+          "name": "retrieval",
+          "content": [
+            "core-service",
+            "derived-index",
+            "lexical-retrieval"
+          ]
+        },
+        {
+          "name": "derived-storage",
+          "content": [
+            "derived-generation",
+            "derived-replace-other",
+            "derived-replace-windows",
+            "derived-store"
+          ],
+          "config": [
+            "derived_schema"
+          ]
+        },
+        {
+          "name": "execution",
+          "content": [
+            "core-service"
+          ],
+          "config": [
+            "mode"
+          ],
+          "dependencies": [
+            "authority-substrate",
+            "product-rules"
+          ]
+        },
+        {
+          "name": "semantic-dependency",
+          "content": [
+            "core-collaboration",
+            "core-generation"
+          ],
+          "config": [
+            "semantic_degradation"
+          ],
+          "dependencies": [
+            "semantic"
+          ]
+        },
+        {
+          "name": "vector-dependency",
+          "content": [
+            "core-collaboration",
+            "core-generation"
+          ],
+          "config": [
+            "vector_degradation"
+          ],
+          "dependencies": [
+            "vector"
+          ]
+        },
+        {
+          "name": "index",
+          "content": [
+            "derived-index",
+            "lexical-retrieval"
+          ]
+        },
+        {
+          "name": "resource-and-degradation",
+          "content": [
+            "core-service",
+            "core-collaboration",
+            "core-generation"
+          ]
+        }
+      ],
+      "mapping": {
+        "lifecycle": "formal-baseline",
+        "candidate_source": "99f519018df99bd5202b0c571b8e43481cd1b80e",
+        "binary_path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-99f5190/ownward.exe",
+        "binary_sha256": "77600820a450b0931b9e63595b8564be757825000af16f9c2f0a028c69e81d2b",
+        "evidence": {
+          "core": {
+            "path": ".tmp/first-kernel-baseline-v1/acceptance-99f5190/reports/core.json",
+            "sha256": "729d7d296803951967c2e530aa1164838813213ad5b8a06a0890463e976522ba"
+          },
+          "frontier": {
+            "path": ".tmp/first-kernel-baseline-v1/acceptance-99f5190/reports/frontier.json",
+            "sha256": "ffee7ebc4cff19dd2814140ad7b8eaa2a20dd3f63b4295ede08516c5b07d525d"
+          },
+          "full": {
+            "path": ".tmp/first-kernel-baseline-v1/acceptance-99f5190/reports/full.json",
+            "sha256": "b3ff0960e26d9cd529aa98b8a0f6f06e2bae02823a020fc6f0b3b4a563d63ebc"
+          },
+          "longmemeval": {
+            "path": ".tmp/first-kernel-baseline-v1/acceptance-99f5190/reports/longmemeval.json",
+            "sha256": "2d6506f99b97517d87ad0f70f2e4888aa179f6030e31205be5bacba73a7cf656"
+          },
+          "qualification": {
+            "path": ".tmp/first-kernel-baseline-v1/acceptance-99f5190/reports/qualification.json",
+            "sha256": "e2a684616b0c26fb3531dc231c01520f3b5f835e33dc7bc2b6aa07e4d8a618a1"
+          }
+        },
+        "acceptance_baseline": true
+      },
+      "audit": {
+        "source_git": "99f519018df99bd5202b0c571b8e43481cd1b80e",
+        "note": "Git is an audit source only; it is excluded from the kernel identity."
+      }
+    },
+    {
+      "name": "v1",
+      "kernel": {
+        "role": "kernel",
+        "contracts": [
+          {
+            "id": "ownward.kernel-lifecycle",
+            "version": 1,
+            "definition_sha256": "02a82d4df79d75d19531c13c9b572b7067230f11469f94d24d5bb5af94562336"
+          },
+          {
+            "id": "ownward.product-capability",
+            "version": 1,
+            "definition_sha256": "0dd352caa94263dbcdc6df71f2a452cbf0894bd07ecb832055845fc518f48e98"
+          }
+        ],
+        "content": [
+          {
+            "name": "core-collaboration",
+            "path": "internal/core/collaboration.go",
+            "sha256": "785dc2949f14571f46d87c8c16eae6276ccf0736f0219a8dcc3ce9cfbcd7e2c7"
+          },
+          {
+            "name": "core-evidence",
+            "path": "internal/core/evidence.go",
+            "sha256": "a17560c3b54bba2cc5d88e2629b738ed38057b310ae5469dfe727600db1a0202"
+          },
+          {
+            "name": "core-generation",
+            "path": "internal/core/generation.go",
+            "sha256": "0ef250ea7ee0223148e13c68749e20cc79f74342e83133693981b74bf3dd8dc6"
+          },
+          {
+            "name": "core-service",
+            "path": "internal/core/service.go",
+            "sha256": "3d404117b5e30de1da18e797eccea04142994201d67cacfbee86994cf005ae9e"
+          },
+          {
+            "name": "derived-evidence",
+            "path": "internal/derived/evidence.go",
+            "sha256": "053c7a8c3371a32aa06b87c9bbe18764a53f49cd8693ec7caf7e5bb4e5cb6d05"
+          },
+          {
+            "name": "derived-generation",
+            "path": "internal/derived/generation.go",
+            "sha256": "2cbf344403c10627634bb793334ce137d02061e69c106a064a6d6ea7c04891f8"
+          },
+          {
+            "name": "derived-index",
+            "path": "internal/derived/index.go",
+            "sha256": "a953cf5824224c7097439674d2b855c335397bf34539a9cfcb1c0518f4f6bbdd"
+          },
+          {
+            "name": "derived-replace-other",
+            "path": "internal/derived/replace_other.go",
+            "sha256": "e06c7daffcae31aa9fe5a35755c0a0ef0996e77bcd82e2eb71561a20b4994f3e"
+          },
+          {
+            "name": "derived-replace-windows",
+            "path": "internal/derived/replace_windows.go",
+            "sha256": "26528ac232e27eb74d4ce7ebb0c8105cd562ce7a6bc2c0c9749ecf3c4e44abfc"
+          },
+          {
+            "name": "derived-store",
+            "path": "internal/derived/store.go",
+            "sha256": "c5ca75aa3f67ac790552c18962e5f6c21f72acfc6bc0fc74476ab25551a84d23"
+          },
+          {
+            "name": "evidence-domain",
+            "path": "internal/domain/evidence.go",
+            "sha256": "39b7f556feeb35005de12a96f4e97b91f8ba2a1b009213dad54ee59d681d7174"
+          },
+          {
+            "name": "lexical-retrieval",
+            "path": "internal/retrieval/lexical.go",
+            "sha256": "33607cb8293df23e00193102cebb4a6a02e65df8e656dfc77d91caebfbadf1c2"
+          }
+        ],
+        "config": {
+          "derived_schema": "ownward.derived/v4",
+          "mode": "collaborative",
+          "semantic_degradation": "explicit-pending",
+          "vector_degradation": "preserve-last-valid"
+        },
+        "dependencies": [
+          {
+            "role": "authority-substrate",
+            "identity": "e73ce81c2323741868446a5e6b7b3046ae00e53455f6844403eb7441ea3337bf"
+          },
+          {
+            "role": "product-rules",
+            "identity": "d8fe1764d5f9c20cca4971230ae22b28acea23ff51f029dd6849665420d61599"
+          },
+          {
+            "role": "semantic",
+            "identity": "ed65006fa7f4fa10dc267b19bd9986f3248111b6e139d584f54bc89260008e34"
+          },
+          {
+            "role": "vector",
+            "identity": "b886f52a46388156c6f42282c72a9bf2c4d426d73a8f4bfadc059d87ded69536"
+          }
+        ],
+        "identity": "5bf5e617f766d6756c412ac504ae77f5395b37fe2673101f5701230350ef6b99"
+      },
+      "dependencies": [
+        {
+          "role": "authority-substrate",
+          "contracts": [
+            {
+              "id": "ownward.asset-authority",
+              "version": 1,
+              "definition_sha256": "9843d36cb1ef1398cb448b47976cec20b997889fc6535de98d106470ebdf7705"
+            },
+            {
+              "id": "ownward.control-state",
+              "version": 1,
+              "definition_sha256": "e7fbcc97ee33a9801fae435ed395345de331a0f2cdf1cb3c240d14d683218ca2"
+            }
+          ],
+          "content": [
+            {
+              "name": "asset-domain",
+              "path": "internal/domain/information.go",
+              "sha256": "48478f2e37043e1c50b38720efef131287f980e572991531d82f54511e3b1059"
+            },
+            {
+              "name": "asset-store",
+              "path": "internal/assetlog/store.go",
+              "sha256": "a21131e82ee9a0a126acb1660a1c3cb491c959811b4cf9c79993badce4584406"
+            },
+            {
+              "name": "directory-lock-unix",
+              "path": "internal/assetlog/directory_lock_unix.go",
+              "sha256": "cd08587eb171c5225fda2103b0bf3939fc4a5715daf5a4ac5e3a400cf7e12824"
+            },
+            {
+              "name": "directory-lock-windows",
+              "path": "internal/assetlog/directory_lock_windows.go",
+              "sha256": "2ed618e808ab9144973f8af00856c9365a1885858862ff75e09a43362c742388"
+            },
+            {
+              "name": "replace-other",
+              "path": "internal/assetlog/replace_other.go",
+              "sha256": "e254edde043d3b2d5234cfd61021e06889779db945ca350078ccbc04100f425e"
+            },
+            {
+              "name": "replace-windows",
+              "path": "internal/assetlog/replace_windows.go",
+              "sha256": "eab8313b69f978263b1c55c39bda28add18c85c7516291f8c506265370cd0bba"
+            }
+          ],
+          "config": {
+            "asset_schema": "ownward.information/v1",
+            "authority_mode": "legacy-single-store"
+          },
+          "dependencies": [],
+          "identity": "e73ce81c2323741868446a5e6b7b3046ae00e53455f6844403eb7441ea3337bf"
+        },
+        {
+          "role": "product-rules",
+          "contracts": [
+            {
+              "id": "ownward.product-rules",
+              "version": 1,
+              "definition_sha256": "f76fd51d7d9ac15f1023ea64e0d542d01c06cae62f3c388e92641bef32ecce37"
+            }
+          ],
+          "content": [
+            {
+              "name": "collaboration-rules",
+              "path": "internal/core/service.go#go-const=CollaborationRules",
+              "sha256": "2d9933360bfa0cb53998f734ed3a5cc938d57a85e8819faf0850188e3dd3f7b5"
+            }
+          ],
+          "config": {
+            "version": "legacy-inline-rules"
+          },
+          "dependencies": [],
+          "identity": "d8fe1764d5f9c20cca4971230ae22b28acea23ff51f029dd6849665420d61599"
+        },
+        {
+          "role": "semantic",
+          "contracts": [
+            {
+              "id": "ownward.semantic-capability",
+              "version": 1,
+              "definition_sha256": "6bb1bfbcc51fdbba146f2838eb7c29f269c61aaec830047689bb519adde28819"
+            }
+          ],
+          "content": [
+            {
+              "name": "semantic-analysis",
+              "path": "internal/semantics/provider.go",
+              "sha256": "efd87760bd164d9fe3fb6fb0e1b9292285460b2dcaf7d7d5bb6b419ab88151bc"
+            },
+            {
+              "name": "semantic-work",
+              "path": "internal/semantics/work.go",
+              "sha256": "c044faa9d4cee6dec84dab212b4f7d9df44bbe79b3ee0af00b384a217084f70e"
+            }
+          ],
+          "config": {
+            "max_work_batch": 20,
+            "mode": "external-work-submit",
+            "writes_authority": false
+          },
+          "dependencies": [],
+          "identity": "ed65006fa7f4fa10dc267b19bd9986f3248111b6e139d584f54bc89260008e34"
+        },
+        {
+          "role": "vector",
+          "contracts": [
+            {
+              "id": "ownward.vector-capability",
+              "version": 1,
+              "definition_sha256": "89a2e241b5c7861e901e21aea41978258fd8daa9bc6a81740e63d9279acdfa5e"
+            }
+          ],
+          "content": [
+            {
+              "name": "bundle-loader",
+              "path": "internal/embedding/manifest.go",
+              "sha256": "373b9be22ac1841c3027f62870e8f77777cf801c652d232930b411307dceb4d0"
+            },
+            {
+              "name": "managed-runtime",
+              "path": "internal/embedding/llama.go",
+              "sha256": "9f6f16a58c43742769f8c43bdedefdc67583106cab311ece9be1d1ec4a658358"
+            },
+            {
+              "name": "process-other",
+              "path": "internal/embedding/process_other.go",
+              "sha256": "2766f4dc5f71dad91818476ba94d785e84058110197d7b0ac35a3cce6c4ade9b"
+            },
+            {
+              "name": "process-windows",
+              "path": "internal/embedding/process_windows.go",
+              "sha256": "db6b039f6ed7e65b7e3567d485df8514a92cf151b4acd2ee9dd5a070e4936b5b"
+            },
+            {
+              "name": "provider",
+              "path": "internal/embedding/provider.go",
+              "sha256": "de39c26650bd90ba6344a12c6aa4171081186c3c4143ac1c725e2e3db9fe40ad"
+            }
+          ],
+          "config": {
+            "bundle_manifest_sha256": "fc2e4a1aa7d09fc64789618259a1bbedce2a18d00bd1abd81d13a16dfb78c0da",
+            "bundle_schema": "ownward.embedding-bundle/v3",
+            "capability": "embeddinggemma-300m-qat-q8_0-llamacpp-b10488",
+            "dimensions": 512,
+            "space": "emb_79f072bf21c0c0f5226fa4fe6f1946a5"
+          },
+          "dependencies": [],
+          "identity": "b886f52a46388156c6f42282c72a9bf2c4d426d73a8f4bfadc059d87ded69536"
+        }
+      ],
+      "facets": [
+        {
+          "name": "organization",
+          "content": [
+            "core-collaboration",
+            "core-generation"
+          ]
+        },
+        {
+          "name": "representation",
+          "content": [
+            "core-evidence",
+            "core-generation",
+            "derived-evidence",
+            "derived-index",
+            "evidence-domain"
+          ]
+        },
+        {
+          "name": "retrieval",
+          "content": [
+            "core-service",
+            "core-evidence",
+            "derived-evidence",
+            "derived-index",
+            "lexical-retrieval"
+          ]
+        },
+        {
+          "name": "derived-storage",
+          "content": [
+            "derived-generation",
+            "derived-replace-other",
+            "derived-replace-windows",
+            "derived-store"
+          ],
+          "config": [
+            "derived_schema"
+          ]
+        },
+        {
+          "name": "execution",
+          "content": [
+            "core-service"
+          ],
+          "config": [
+            "mode"
+          ],
+          "dependencies": [
+            "authority-substrate",
+            "product-rules"
+          ]
+        },
+        {
+          "name": "semantic-dependency",
+          "content": [
+            "core-collaboration",
+            "core-generation"
+          ],
+          "config": [
+            "semantic_degradation"
+          ],
+          "dependencies": [
+            "semantic"
+          ]
+        },
+        {
+          "name": "vector-dependency",
+          "content": [
+            "core-collaboration",
+            "core-generation"
+          ],
+          "config": [
+            "vector_degradation"
+          ],
+          "dependencies": [
+            "vector"
+          ]
+        },
+        {
+          "name": "index",
+          "content": [
+            "derived-index",
+            "lexical-retrieval"
+          ]
+        },
+        {
+          "name": "resource-and-degradation",
+          "content": [
+            "core-service",
+            "core-collaboration",
+            "core-generation",
+            "core-evidence"
+          ]
+        }
+      ],
+      "mapping": {
+        "lifecycle": "unpromoted-candidate",
+        "candidate_source": "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8",
+        "binary_path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/ownward.exe",
+        "binary_sha256": "57e0e63c75e4fbb474112e398a1ec4c7d5fc95ee5ae87a7773210e534b1897f5",
+        "evidence": {
+          "core": {
+            "path": ".tmp/first-kernel-baseline-v1/acceptance-3e712f2/reports/core.json",
+            "sha256": "3b06f5d74dd2565b624b60ef1ef01ec03941290cbe778f6cd7846d42fdbbd446"
+          },
+          "frontier": {
+            "path": ".tmp/first-kernel-baseline-v1/acceptance-3e712f2/reports/frontier.json",
+            "sha256": "edcf96d88a474d3fb561e866b2f6fc3706ebba79b25720d18dbeee30ffab1cdf"
+          },
+          "full": {
+            "path": ".tmp/first-kernel-baseline-v1/acceptance-3e712f2/reports/full.json",
+            "sha256": "f89024c66996881ebcbe9f563d66b3a750cf4f9721d13eb30ee8e5d6d39481b7"
+          },
+          "qualification": {
+            "path": ".tmp/first-kernel-baseline-v1/acceptance-3e712f2/reports/qualification.json",
+            "sha256": "50d39201bbc5d6dcbc88282849480119d197f04ab6ef34d6b5950955c6171d21"
+          }
+        },
+        "acceptance_baseline": false
+      },
+      "audit": {
+        "source_git": "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8",
+        "note": "Git is an audit source only; it is excluded from the kernel identity."
+      }
+    }
+  ],
+  "identity": "aaa05b1af343c10406723a6f2c7bf0696f62d2f59f62d89e3b3f2cec195d97ff"
+}

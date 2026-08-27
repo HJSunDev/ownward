@@ -25,6 +25,7 @@ func run(args []string) error {
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
 	repository := flags.String("repository", ".", "仓库根目录")
 	manifestPath := flags.String("manifest", filepath.FromSlash("manifests/compositions/v1/current-collaborative.json"), "组合清单")
+	outputPath := flags.String("output", "", "seal 输出文件；为空时写标准输出")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -37,6 +38,17 @@ func run(args []string) error {
 		sealed, err := composition.Seal(*repository, manifest)
 		if err != nil {
 			return err
+		}
+		if *outputPath != "" {
+			output, err := os.Create(*outputPath)
+			if err != nil {
+				return err
+			}
+			if err := composition.WriteJSON(output, sealed); err != nil {
+				_ = output.Close()
+				return err
+			}
+			return output.Close()
 		}
 		return composition.WriteJSON(os.Stdout, sealed)
 	case "verify":

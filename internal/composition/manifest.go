@@ -553,6 +553,18 @@ func componentIdentity(component Component) (string, error) {
 	return digestJSON(payload)
 }
 
+// ComponentIdentity returns the deterministic identity of one already
+// described component. Paths and Git metadata are deliberately excluded: the
+// identity is formed only from the component's contracts, named content
+// digests, configuration and declared direct dependency identities.
+//
+// Complete compositions remain the responsibility of Seal and Verify. This
+// narrower entry exists for versioned capability generations whose component
+// boundary must be verified independently before it is selected by assembly.
+func ComponentIdentity(component Component) (string, error) {
+	return componentIdentity(component)
+}
+
 func resolvedContractReference(root string, definition contract.Definition) (contract.Reference, error) {
 	metadata, err := contract.DefinitionSHA256(definition)
 	if err != nil {
