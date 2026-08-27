@@ -434,17 +434,83 @@ def _tool_manifest(suite_root: Path, scope: str) -> dict[str, Any]:
     _require(scope in SCOPE_NAMES, f"未知绑定范围: {scope}")
     repository = suite_root.parents[2]
     shared = [suite_root / name for name in ("run.py", "relationships.py", "binding.py", "execution.py", "execution_support.py", "lifecycle.py", "evidence.py", "contract.py", "materials.py", "process_control.py")]
+    responsibility_path = suite_root / "adapters" / "product" / "tool-responsibilities.json"
     scoped = {
         "frontier": [suite_root / "execution_frontier.py", suite_root / "frontier.py", repository / "cmd" / "ownward-frontier" / "main.go"],
         "core": [suite_root / "execution_core.py", suite_root / "adapters" / "core" / "verify.py", repository / "benchmarks" / "support" / "ownward_mcp.py"],
-        "product": [suite_root / "execution_core.py", suite_root / "execution_product.py", suite_root / "product.py", suite_root / "resource_environment.py", *sorted(path for path in (suite_root / "adapters" / "product").glob("*.py") if not path.name.startswith("test_")), *sorted(path for path in (suite_root / "adapters" / "product_resource").glob("*.py") if not path.name.startswith("test_")), repository / "benchmarks" / "support" / "ownward_mcp.py"],
-        "community": [suite_root / "execution_community.py", suite_root / "community.py", suite_root / "process_control.py", suite_root / "adapters" / "product" / "codex_session.py", repository / "benchmarks" / "longmemeval_s" / "run.py", repository / "benchmarks" / "longmemeval_s" / "codex_app_server.py", repository / "benchmarks" / "longmemeval_s" / "environment.py", repository / "benchmarks" / "longmemeval_s" / "protocol.json", repository / "benchmarks" / "longmemeval_s" / "constraints.txt", repository / "benchmarks" / "support" / "ownward_mcp.py"],
+        "product": [suite_root / "execution_core.py", suite_root / "execution_product.py", suite_root / "product.py", suite_root / "product_scoring.py", suite_root / "resource_environment.py", responsibility_path, *sorted(path for path in (suite_root / "adapters" / "product").glob("*.py") if not path.name.startswith("test_")), *sorted(path for path in (suite_root / "adapters" / "product_resource").glob("*.py") if not path.name.startswith("test_")), repository / "benchmarks" / "support" / "ownward_mcp.py"],
+        "community": [suite_root / "execution_community.py", suite_root / "community.py", suite_root / "process_control.py", suite_root / "adapters" / "product" / "codex_session.py", suite_root / "adapters" / "product" / "codex_transport.py", repository / "benchmarks" / "longmemeval_s" / "run.py", repository / "benchmarks" / "longmemeval_s" / "codex_app_server.py", repository / "benchmarks" / "longmemeval_s" / "environment.py", repository / "benchmarks" / "longmemeval_s" / "protocol.json", repository / "benchmarks" / "longmemeval_s" / "constraints.txt", repository / "benchmarks" / "support" / "ownward_mcp.py"],
     }[scope]
+    files = _files(repository, shared + scoped)
+    if scope == "product":
+        return _product_tool_manifest(repository, responsibility_path, files)
     return {
         "schema": "ownward.acceptance-tool-manifest/v4",
         "scope": scope,
         "repository_commit": _git(repository, "rev-parse", "HEAD"),
-        "files": _files(repository, shared + scoped),
+        "files": files,
+    }
+
+
+def _product_tool_manifest(
+    repository: Path, responsibility_path: Path, files: list[dict[str, str]],
+) -> dict[str, Any]:
+    declaration = load_json(responsibility_path)
+    _require(declaration.get("schema") == "ownward.product-tool-responsibilities/v1", "product 工具职责清单 schema 无效")
+    responsibility_relative = responsibility_path.relative_to(repository).as_posix()
+    available = {item["path"]: item for item in files if item["path"] != responsibility_relative}
+    raw_paths = declaration.get("raw_execution")
+    derivation_paths = declaration.get("derivation")
+    _require(
+        isinstance(raw_paths, list) and isinstance(derivation_paths, list)
+        and all(isinstance(value, str) and value for value in raw_paths + derivation_paths),
+        "product 工具职责清单内容无效",
+    )
+    raw_set, derivation_set = set(raw_paths), set(derivation_paths)
+    _require(len(raw_set) == len(raw_paths) and len(derivation_set) == len(derivation_paths), "product 工具职责清单包含重复路径")
+    _require(not raw_set & derivation_set, "product 工具职责发生重叠")
+    _require(raw_set | derivation_set == set(available), "product 工具职责没有完整覆盖活动文件")
+    responsibilities = {
+        "raw_execution": {
+            "schema": "ownward.product-raw-execution-identity/v1",
+            "files": [available[path] for path in sorted(raw_set)],
+        },
+        "derivation": {
+            "schema": "ownward.product-derivation-identity/v1",
+            "files": [available[path] for path in sorted(derivation_set)],
+        },
+    }
+    for value in responsibilities.values():
+        value["sha256"] = _canonical_sha256({"schema": value["schema"], "files": value["files"]})
+    migrations = declaration.get("legacy_derivation_replay")
+    _require(isinstance(migrations, list) and migrations, "product 旧证据迁移证明缺失")
+    migration_ids: set[str] = set()
+    for migration in migrations:
+        _require(isinstance(migration, dict), "product 旧证据迁移证明无效")
+        migration_id = str(migration.get("migration_id", ""))
+        _require(migration_id and migration_id not in migration_ids, "product 旧证据迁移身份无效")
+        migration_ids.add(migration_id)
+        _require(_is_sha256(str(migration.get("source_tool_sha256", ""))), "product 旧工具身份无效")
+        _require(_is_sha256(str(migration.get("source_files_sha256", ""))), "product 旧工具文件身份无效")
+        _require(_is_sha256(str(migration.get("source_parser_sha256", ""))), "product 旧解析器身份无效")
+        _require(_is_sha256(str(migration.get("target_raw_execution_sha256", ""))), "product 迁移目标原始执行身份无效")
+        _require(_is_sha256(str(migration.get("target_derivation_sha256", ""))), "product 迁移目标派生身份无效")
+    active_migrations = [
+        migration for migration in migrations
+        if migration["target_raw_execution_sha256"] == responsibilities["raw_execution"]["sha256"]
+        and migration["target_derivation_sha256"] == responsibilities["derivation"]["sha256"]
+    ]
+    return {
+        "schema": "ownward.acceptance-tool-manifest/v5",
+        "scope": "product",
+        "repository_commit": _git(repository, "rev-parse", "HEAD"),
+        "files": files,
+        "responsibility_manifest": {
+            "path": responsibility_relative,
+            "sha256": sha256(responsibility_path),
+        },
+        "responsibilities": responsibilities,
+        "legacy_derivation_replay": active_migrations,
     }
 
 

@@ -1,0 +1,48 @@
+{
+  "schema": "ownward.product-tool-responsibilities/v1",
+  "raw_execution": [
+    "benchmarks/acceptance/suite/adapters/product/codex_transport.py",
+    "benchmarks/acceptance/suite/adapters/product/replay.py",
+    "benchmarks/acceptance/suite/adapters/product/verify.py",
+    "benchmarks/acceptance/suite/adapters/product_resource/verify.py",
+    "benchmarks/acceptance/suite/binding.py",
+    "benchmarks/acceptance/suite/contract.py",
+    "benchmarks/acceptance/suite/execution.py",
+    "benchmarks/acceptance/suite/execution_core.py",
+    "benchmarks/acceptance/suite/execution_product.py",
+    "benchmarks/acceptance/suite/execution_support.py",
+    "benchmarks/acceptance/suite/lifecycle.py",
+    "benchmarks/acceptance/suite/materials.py",
+    "benchmarks/acceptance/suite/process_control.py",
+    "benchmarks/acceptance/suite/product.py",
+    "benchmarks/acceptance/suite/relationships.py",
+    "benchmarks/acceptance/suite/resource_environment.py",
+    "benchmarks/acceptance/suite/run.py",
+    "benchmarks/support/ownward_mcp.py"
+  ],
+  "derivation": [
+    "benchmarks/acceptance/suite/adapters/product/codex_session.py",
+    "benchmarks/acceptance/suite/evidence.py",
+    "benchmarks/acceptance/suite/product_scoring.py"
+  ],
+  "legacy_derivation_replay": [
+    {
+      "migration_id": "resource-discovery-parser-classification-v1",
+      "source_tool_sha256": "3221a89ceff7d94d181e98721daecd562c0dbb2a8f28ae14587f0fa7b7fafc3a",
+      "source_files_sha256": "1632c8de346acc85d21f536ee0592be200b3a5c939f957f93c62bff65ef39907",
+      "source_parser_sha256": "42074efbfc08405369270dfa0b624c2ea06156e97d1226a1e38dc7fb11c703e1",
+      "target_raw_execution_sha256": "abf3d5e08ccf4fb479bbaa5b9ca08ac4a2dcc71f574eb80c9dba5b9167d29201",
+      "target_derivation_sha256": "5bd81935c283a4b8beb28998da1d1b17bf53161a97f9ecc8d8fa9aa2bae1f92a",
+      "proof": "Exact legacy product tool identity before the resource-discovery parser classification correction; raw scenario protocol was unchanged."
+    },
+    {
+      "migration_id": "responsibility-identity-bootstrap-v1",
+      "source_tool_sha256": "f8ae105bf41b6a9603ff2c18e2373cc50bfafca62f4358696f7dd813224b47e7",
+      "source_files_sha256": "40d86612cc42b5e2a7730917a128f52d56fc42b2cfaff12f7b2e74cfaeb39013",
+      "source_parser_sha256": "7d37e00cab4513eb28ce8e329cf958457405a76a2b62158412a5d555f29fb3d5",
+      "target_raw_execution_sha256": "abf3d5e08ccf4fb479bbaa5b9ca08ac4a2dcc71f574eb80c9dba5b9167d29201",
+      "target_derivation_sha256": "5bd81935c283a4b8beb28998da1d1b17bf53161a97f9ecc8d8fa9aa2bae1f92a",
+      "proof": "Exact legacy product tool identity after the parser correction; execution transport and scenario protocol are structurally separated without behavior change."
+    }
+  ]
+}

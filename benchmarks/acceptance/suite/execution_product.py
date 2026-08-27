@@ -10,12 +10,14 @@ from typing import Any
 
 import process_control
 import product
+import product_scoring
 from evidence import validate_layer_report
 from execution_core import product_binary
 from execution_support import ExecutionError, load_json, require, run, safe_remove
 import lifecycle
 import binding as candidate_binding
 import resource_environment
+from adapters.product import replay as product_replay
 
 
 def _write_json(path: Path, value: Any) -> None:
@@ -341,6 +343,18 @@ def execute_product(
     tasks = product.prepare_tasks(dataset, qualification, mode)
     tasks_path = _activate_frozen_tasks(workspace, mode, tasks, resume=resume)
     binding_path = _activate_workspace_binding(workspace, state["binding"], resume=resume)
+    if resume:
+        product_replay.rebind_replayable_evidence(
+            binding_dir=Path(config["binding_dir"]),
+            workspace=workspace,
+            tasks=tasks,
+            binding=state["binding"],
+            resource_sha256=lifecycle.file_sha256(resource),
+            codex_binary=Path(section["codex_binary"]),
+            codex_model=str(section["codex_model"]),
+            codex_reasoning_effort=str(section["codex_reasoning_effort"]),
+            include_preflight=mode == "qualification",
+        )
     if mode == "qualification":
         _ensure_product_preflight(
             suite_root, state, config, workspace, tasks, tasks_path, binding_path, resource, deadline,
@@ -356,7 +370,7 @@ def execute_product(
     run(command, cwd=suite_root.parents[2], timeout=maximum)
     results = load_json(results_path)
     score_binding = {"candidate": state["binding"]["candidate"], "binary_sha256": state["binding"]["binary_sha256"], "environment": {"sha256": state["binding"]["environment_sha256"]}, "inputs": {"sha256": state["binding"]["input_manifest_sha256"]}}
-    report = product.score_results(contract, dataset, qualification, tasks, results, score_binding)
+    report = product_scoring.score_results(contract, dataset, qualification, tasks, results, score_binding)
     validate_layer_report(contract, "product", report, expected_binding=state["binding"])
     return report
 

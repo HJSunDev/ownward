@@ -68,7 +68,7 @@ python benchmarks/acceptance/suite/run.py plan --impact <local|asset|retrieval|o
 python benchmarks/acceptance/suite/run.py plan --stage <kernel-baseline|stable-candidate|final-candidate>
 ```
 
-所有正式层级只由 `execute` 调用。它直接启动对应观察器或适配器，验证规范报告后原子写入检查点；不能用手工报告、手填耗时或独立评分命令绕过执行与成本控制。专项报告同时记录 Ownward 内核查询、外部语义协作、智能体查询和逐场景端到端耗时；只有冻结的内核查询前沿参与产品硬判定，其他耗时如实呈现并受阶段异常停止与总成本约束，不另造来源不明的产品门槛。中断后使用同一命令加 `--resume`，只复用绑定未变且摘要仍有效的完整结果，并只补当前层缺失部分；资格集已经封存的八个逐场景结果由完整集直接复用，完整集只补其余十六个场景：
+所有正式层级只由 `execute` 调用。它直接启动对应观察器或适配器，验证规范报告后原子写入检查点；不能用手工报告、手填耗时或独立评分命令绕过执行与成本控制。专项报告同时记录 Ownward 内核查询、外部语义协作、智能体查询和逐场景端到端耗时；只有冻结的内核查询前沿参与产品硬判定，其他耗时如实呈现并受阶段异常停止与总成本约束，不另造来源不明的产品门槛。专项工具清单把完整活动文件机械划分为原始执行与解析/评分派生两种职责，并分别持久化摘要；只有候选、输入、Codex 二进制与模型参数、冻结任务、资源报告以及原始执行摘要全部相同，才允许当前解析器离线重放不可变原始轨迹并留下凭据。旧版清单只能通过绑定精确源清单与当前原始执行摘要的一次性迁移证明进入该流程；不存在按文件路径放行的长期白名单。任一原始事件缺失或改变、当前解析结论不一致，或命令、隔离环境、重试/超时、MCP 工具范围与执行适配器发生变化，均拒绝重放。中断后使用同一命令加 `--resume`，只复用依赖未变且摘要仍有效的完整结果，并只补当前层缺失部分；资格集已经封存的八个逐场景结果由完整集直接复用，完整集只补其余十六个场景：
 
 ```powershell
 python benchmarks/acceptance/suite/run.py execute --state <state.json> --config <execution.json> --checkpoint-mode <targeted|core|frontier|qualification|full|longmemeval> [--resume]

@@ -33,11 +33,14 @@ class BindingManifestTests(unittest.TestCase):
         frontier = {item["path"] for item in manifests["frontier"]["files"]}
         core = {item["path"] for item in manifests["core"]["files"]}
         product = {item["path"] for item in manifests["product"]["files"]}
-        self.assertTrue(all(manifest["schema"] == "ownward.acceptance-tool-manifest/v4" for manifest in manifests.values()))
+        self.assertTrue(all(manifests[scope]["schema"] == "ownward.acceptance-tool-manifest/v4" for scope in ("community", "frontier", "core")))
+        self.assertEqual("ownward.acceptance-tool-manifest/v5", manifests["product"]["schema"])
         self.assertTrue(all(len(manifest["repository_commit"]) == 40 for manifest in manifests.values()))
         self.assertIn("cmd/ownward-frontier/main.go", frontier)
         self.assertIn("benchmarks/acceptance/suite/execution.py", community & frontier & product)
         self.assertIn("benchmarks/acceptance/suite/adapters/product/verify.py", product)
+        self.assertIn("benchmarks/acceptance/suite/adapters/product/codex_transport.py", product)
+        self.assertIn("benchmarks/acceptance/suite/product_scoring.py", product)
         self.assertIn("benchmarks/longmemeval_s/run.py", community)
         self.assertIn("benchmarks/longmemeval_s/codex_app_server.py", community)
         self.assertIn("benchmarks/longmemeval_s/protocol.json", community)
@@ -48,6 +51,15 @@ class BindingManifestTests(unittest.TestCase):
         self.assertNotIn("benchmarks/acceptance/suite/community.py", frontier | core)
         self.assertNotIn("benchmarks/acceptance/suite/execution_product.py", frontier | core)
         self.assertFalse(any(Path(path).name.startswith("test_") for path in community | frontier | core | product))
+        responsibilities = manifests["product"]["responsibilities"]
+        raw = {item["path"] for item in responsibilities["raw_execution"]["files"]}
+        derivation = {item["path"] for item in responsibilities["derivation"]["files"]}
+        self.assertIn("benchmarks/acceptance/suite/execution_product.py", raw)
+        self.assertIn("benchmarks/acceptance/suite/adapters/product/verify.py", raw)
+        self.assertIn("benchmarks/acceptance/suite/adapters/product/codex_transport.py", raw)
+        self.assertIn("benchmarks/acceptance/suite/adapters/product/codex_session.py", derivation)
+        self.assertIn("benchmarks/acceptance/suite/product_scoring.py", derivation)
+        self.assertNotIn("benchmarks/acceptance/suite/adapters/product/replay.py", derivation)
 
     def test_targeted_scope_is_not_a_frozen_input(self) -> None:
         external = self.root / "contract.json"

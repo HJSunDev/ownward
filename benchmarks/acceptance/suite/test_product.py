@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 import product
+import product_scoring
 from contract import load_contract
 
 
@@ -75,20 +76,20 @@ class ProductExecutionTests(unittest.TestCase):
             "mode": "qualification",
             "results": results,
         }
-        report = product.score_results(self.contract, self.dataset, self.qualification, tasks, envelope, self.binding)
+        report = product_scoring.score_results(self.contract, self.dataset, self.qualification, tasks, envelope, self.binding)
         self.assertTrue(report["passed"])
         missing_timing = copy.deepcopy(envelope)
         missing_timing["results"][0].pop("agent_query_ms")
         with self.assertRaisesRegex(product.ProductExecutionError, "agent_query_ms"):
-            product.score_results(self.contract, self.dataset, self.qualification, tasks, missing_timing, self.binding)
+            product_scoring.score_results(self.contract, self.dataset, self.qualification, tasks, missing_timing, self.binding)
         broken = copy.deepcopy(envelope)
         broken["results"][0]["returned_ids"].append("unknown")
         with self.assertRaisesRegex(product.ProductExecutionError, "未映射"):
-            product.score_results(self.contract, self.dataset, self.qualification, tasks, broken, self.binding)
+            product_scoring.score_results(self.contract, self.dataset, self.qualification, tasks, broken, self.binding)
         broken_relation = copy.deepcopy(envelope)
         broken_relation["results"][0]["relation_ids"] = [tasks["tasks"][0]["information"][-1]["node_id"]]
         with self.assertRaisesRegex(product.ProductExecutionError, "不属于直接检索"):
-            product.score_results(
+            product_scoring.score_results(
                 self.contract, self.dataset, self.qualification, tasks, broken_relation, self.binding,
             )
 
