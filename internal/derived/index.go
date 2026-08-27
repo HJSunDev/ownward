@@ -62,9 +62,8 @@ type vectorLocation struct {
 }
 
 type indexedRecord struct {
-	record    Record
-	vector    vectorLocation
-	hasVector bool
+	record Record
+	vector vectorLocation
 }
 
 func NewIndex(records []Record) *Index {
@@ -413,7 +412,7 @@ func (i *Index) rebuildEdgesLocked() {
 func (i *Index) upsertVectorLocked(recordID uint32, record Record) {
 	validVector := len(record.Embedding) > 0 && finiteVector(record.Embedding)
 	indexed := &i.records[recordID]
-	if indexed.hasVector {
+	if indexed.vector.dimensions > 0 {
 		previous := indexed.vector
 		block := i.blocks[previous.dimensions]
 		wasActive := block.active[previous.row]
@@ -440,7 +439,7 @@ func (i *Index) upsertVectorLocked(recordID uint32, record Record) {
 		if wasActive {
 			i.activeVectors--
 		}
-		indexed.hasVector = false
+		indexed.vector = vectorLocation{}
 	}
 	if !validVector {
 		return
@@ -464,7 +463,6 @@ func (i *Index) upsertVectorLocked(recordID uint32, record Record) {
 		i.activeVectors++
 	}
 	indexed.vector = vectorLocation{dimensions: len(record.Embedding), row: row}
-	indexed.hasVector = true
 }
 
 func (i *Index) removeOutgoingLocked(id string) {
