@@ -11,7 +11,8 @@ import sys
 import time
 from typing import Any
 
-import relationships
+import evidence_identity
+import report_relationships as relationships
 
 
 class BindingError(ValueError):
@@ -102,7 +103,14 @@ def create(suite_root: Path, config_path: Path, output_dir: Path) -> dict[str, A
             "tool_sha256": sha256(paths["tools"]),
             "artifact_sha256": _artifact_sha256(config, scope),
         }
-    result = {"schema": "ownward.acceptance-binding/v4", "suite_version": "1.0.0", "candidate": candidate, "scopes": scopes}
+    legacy = {"schema": "ownward.acceptance-binding/v4", "suite_version": "1.0.0", "candidate": candidate, "scopes": scopes}
+    components = evidence_identity.build_candidate_components(
+        repository, candidate, _candidate_binary_sha(config, scopes_to_bind), _release_manifest_sha(config),
+    )
+    result = evidence_identity.build_binding(
+        legacy, components, manifest_values, evidence_identity.lifecycle_identities(repository),
+        evidence_identity.reporting_identities(repository),
+    )
     validate_binding(result)
     shutil.rmtree(output_dir / ".binding-hash")
     _activate_generation(output_dir, result, manifest_values)
@@ -123,7 +131,7 @@ def rebind_scope(suite_root: Path, config_path: Path, output_dir: Path, scope: s
     validate_binding(previous)
     repository = Path(config["repository"]).resolve()
     _require(not _git(repository, "status", "--porcelain"), "验收工具仓库不是干净、冻结的提交")
-    candidate = previous["candidate"]
+    candidate = evidence_identity.source_git(previous)
     _git(repository, "cat-file", "-e", candidate + "^{commit}")
     if scope == "frontier":
         _verify_go_binary(Path(_mapping(config, "frontier")["tool"]).resolve(), candidate)
@@ -152,13 +160,53 @@ def rebind_scope(suite_root: Path, config_path: Path, output_dir: Path, scope: s
     }
     manifest_values.update({f"{scope}-{name}.json": value for name, value in replacement.items()})
     hashes = {name: _serialized_json_sha256(value) for name, value in replacement.items()}
-    scopes[scope] = {
-        "environment_sha256": hashes["environment"],
-        "input_manifest_sha256": hashes["inputs"],
-        "tool_sha256": hashes["tools"],
-        "artifact_sha256": _artifact_sha256(config, scope),
-    }
-    result = {"schema": "ownward.acceptance-binding/v4", "suite_version": previous["suite_version"], "candidate": candidate, "scopes": scopes}
+    artifact_sha256 = _artifact_sha256(config, scope)
+    if previous.get("schema") == evidence_identity.BINDING_SCHEMA:
+        current_lifecycle = evidence_identity.lifecycle_identities(repository)
+        current_reporting = evidence_identity.reporting_identities(repository)
+        for name, value in scopes.items():
+            direct = dict(value["direct_dependencies"])
+            direct["report-reception"] = current_reporting["reception"]["identity"]
+            direct["relationship-execution"] = current_reporting["relationships"]["identity"]
+            value["direct_dependencies"] = dict(sorted(direct.items()))
+            value["identity"] = evidence_identity.dependency_identity(name, direct)
+        prior = scopes[scope]
+        direct_dependencies = dict(prior["direct_dependencies"])
+        direct_dependencies["environment"] = hashes["environment"]
+        direct_dependencies["input"] = hashes["inputs"]
+        direct_dependencies["acceptance-tool"] = evidence_identity.tool_identity(replacement["tools"])
+        if scope == "frontier":
+            direct_dependencies["observer"] = artifact_sha256
+        else:
+            _require(artifact_sha256 == previous["components"]["binary"]["identity"], "scope rebind 不得改变冻结候选二进制")
+        report_tool = prior["report_binding"]["tool_sha256"]
+        if direct_dependencies["acceptance-tool"] != prior["direct_dependencies"]["acceptance-tool"]:
+            report_tool = hashes["tools"]
+        scopes[scope] = {
+            "identity": evidence_identity.dependency_identity(scope, direct_dependencies),
+            "direct_dependencies": dict(sorted(direct_dependencies.items())),
+            "report_binding": {
+                "environment_sha256": hashes["environment"],
+                "input_manifest_sha256": hashes["inputs"],
+                "tool_sha256": report_tool,
+                "artifact_sha256": artifact_sha256,
+            },
+        }
+        result = {
+            "schema": previous["schema"], "suite_version": previous["suite_version"],
+            "product": previous["product"], "components": previous["components"],
+            "lifecycle": current_lifecycle,
+            "reporting": current_reporting,
+            "scopes": scopes, "audit": previous["audit"],
+        }
+    else:
+        scopes[scope] = {
+            "environment_sha256": hashes["environment"],
+            "input_manifest_sha256": hashes["inputs"],
+            "tool_sha256": hashes["tools"],
+            "artifact_sha256": artifact_sha256,
+        }
+        result = {"schema": "ownward.acceptance-binding/v4", "suite_version": previous["suite_version"], "candidate": candidate, "scopes": scopes}
     validate_binding(result)
     preserved_sources = {
         filename: active_dir / filename
@@ -199,6 +247,18 @@ def _activate_generation(
     *,
     raw_sources: dict[str, Path] | None = None,
 ) -> None:
+    generation = _stage_generation(output_dir, binding, manifests, raw_sources=raw_sources)
+    _publish_generation(output_dir, generation)
+
+
+def _stage_generation(
+    output_dir: Path,
+    binding: dict[str, Any],
+    manifests: dict[str, dict[str, Any]],
+    *,
+    raw_sources: dict[str, Path] | None = None,
+) -> str:
+    """Persist an immutable generation without changing the active pointer."""
     generation = _canonical_sha256({"binding": binding, "manifests": manifests})[:24]
     generations = output_dir / "generations"
     generations.mkdir(parents=True, exist_ok=True)
@@ -220,12 +280,22 @@ def _activate_generation(
             if temporary.exists():
                 shutil.rmtree(temporary)
     _validate_generation(destination, expected_binding=binding, expected_manifests=manifests)
+    return generation
+
+
+def _publish_generation(output_dir: Path, generation: str) -> None:
+    """Atomically select one already validated immutable generation."""
+    destination = output_dir / "generations" / generation
+    _validate_generation(destination)
+    binding = load_json(destination / "binding.json")
     active = {"schema": "ownward.acceptance-binding-active/v1", "generation": generation, "binding_sha256": sha256(destination / "binding.json")}
     _write_json(output_dir / "active.json", active)
     # Compatibility mirrors are not authoritative; readers resolve active.json first.
     _write_json(output_dir / "binding.json", binding)
-    for filename, value in manifests.items():
-        _write_json(output_dir / filename, value)
+    for scope in binding["scopes"]:
+        for kind in ("environment", "inputs", "tools"):
+            filename = f"{scope}-{kind}.json"
+            _copy_exact(destination / filename, output_dir / filename)
 
 
 def _preserve_legacy_generation(output_dir: Path, binding: dict[str, Any]) -> None:
@@ -273,6 +343,7 @@ def _validate_generation(
     if expected_binding is not None:
         _require(binding == expected_binding, "不可变绑定代次的候选身份不一致")
     for scope, identity in binding["scopes"].items():
+        report_identity = identity["report_binding"] if binding.get("schema") == evidence_identity.BINDING_SCHEMA else identity
         for kind, field in (
             ("environment", "environment_sha256"),
             ("inputs", "input_manifest_sha256"),
@@ -280,7 +351,14 @@ def _validate_generation(
         ):
             filename = f"{scope}-{kind}.json"
             path = directory / filename
-            _require(path.is_file() and sha256(path) == identity[field], f"不可变绑定代次的 {filename} 缺失或摘要不一致")
+            _require(path.is_file(), f"不可变绑定代次的 {filename} 缺失")
+            if binding.get("schema") == evidence_identity.BINDING_SCHEMA and kind == "tools":
+                _require(
+                    evidence_identity.tool_manifest_identity_valid(load_json(path), identity["direct_dependencies"]["acceptance-tool"]),
+                    f"不可变绑定代次的 {filename} 执行身份不一致",
+                )
+            else:
+                _require(sha256(path) == report_identity[field], f"不可变绑定代次的 {filename} 摘要不一致")
             if expected_manifests is not None:
                 _require(load_json(path) == expected_manifests[filename], f"不可变绑定代次的 {filename} 内容不一致")
 
@@ -311,6 +389,12 @@ def validate_config(config: dict[str, Any]) -> None:
 
 
 def validate_binding(value: dict[str, Any]) -> None:
+    if isinstance(value, dict) and value.get("schema") == evidence_identity.BINDING_SCHEMA:
+        try:
+            evidence_identity.validate_binding(value)
+        except evidence_identity.EvidenceIdentityError as error:
+            raise BindingError(str(error)) from error
+        return
     _require(isinstance(value, dict), "候选绑定必须是对象")
     _require(set(value) == {"schema", "suite_version", "candidate", "scopes"}, "候选绑定顶层字段无效")
     _require(value.get("schema") == "ownward.acceptance-binding/v4", "候选绑定 schema 无效")
@@ -336,6 +420,11 @@ def scope_for_mode(mode: str) -> str:
 
 def for_scope(value: dict[str, Any], scope: str) -> dict[str, str]:
     validate_binding(value)
+    if value.get("schema") == evidence_identity.BINDING_SCHEMA:
+        try:
+            return evidence_identity.report_binding(value, scope)
+        except evidence_identity.EvidenceIdentityError as error:
+            raise BindingError(str(error)) from error
     _require(scope in value["scopes"], f"候选尚未绑定 {scope} 验收材料")
     active = value["scopes"][scope]
     result = {"suite_version": value["suite_version"], "candidate": value["candidate"], "environment_sha256": active["environment_sha256"], "input_manifest_sha256": active["input_manifest_sha256"], "tool_sha256": active["tool_sha256"]}
@@ -355,7 +444,10 @@ def aggregate(value: dict[str, Any]) -> dict[str, str]:
     selected = {name: for_scope(value, name) for name in ("core", "product", "community")}
     binaries = {item["binary_sha256"] for item in selected.values()}
     _require(len(binaries) == 1, "正式三层没有绑定同一候选二进制")
-    return {"suite_version": value["suite_version"], "candidate": value["candidate"], "binary_sha256": binaries.pop(), "environment_sha256": _canonical_sha256({name: item["environment_sha256"] for name, item in selected.items()}), "input_manifest_sha256": _canonical_sha256({name: item["input_manifest_sha256"] for name, item in selected.items()}), "tool_sha256": _canonical_sha256({name: item["tool_sha256"] for name, item in selected.items()})}
+    tool_inputs = {name: item["tool_sha256"] for name, item in selected.items()}
+    if value.get("schema") == evidence_identity.BINDING_SCHEMA:
+        tool_inputs["summary-generation"] = evidence_identity.reporting_identity(value, "summary")
+    return {"suite_version": value["suite_version"], "candidate": evidence_identity.source_git(value), "binary_sha256": binaries.pop(), "environment_sha256": _canonical_sha256({name: item["environment_sha256"] for name, item in selected.items()}), "input_manifest_sha256": _canonical_sha256({name: item["input_manifest_sha256"] for name, item in selected.items()}), "tool_sha256": _canonical_sha256(tool_inputs)}
 
 
 def verify_current(suite_root: Path, binding_dir: Path, config: dict[str, Any], expected: dict[str, Any], mode: str) -> None:
@@ -371,8 +463,17 @@ def verify_current(suite_root: Path, binding_dir: Path, config: dict[str, Any], 
     manifests = {name: active_dir / f"{scope}-{name}.json" for name in ("environment", "inputs", "tools")}
     current = {"environment": _environment_manifest(config, scope), "inputs": _input_manifest(suite_root, config, scope), "tools": _tool_manifest(suite_root, scope)}
     for name, field in (("environment", "environment_sha256"), ("inputs", "input_manifest_sha256"), ("tools", "tool_sha256")):
-        _require(manifests[name].is_file() and sha256(manifests[name]) == active[field], f"{scope} {name} 清单发生变化")
-        _require(load_json(manifests[name]) == current[name], f"{scope} {name} 直接事实已经变化")
+        _require(manifests[name].is_file(), f"{scope} {name} 清单缺失")
+        if expected.get("schema") == evidence_identity.BINDING_SCHEMA and name == "tools":
+            current_identity = evidence_identity.tool_identity(current[name])
+            _require(current_identity == expected["scopes"][scope]["direct_dependencies"]["acceptance-tool"], f"{scope} 执行/评分工具已经变化")
+            _require(evidence_identity.tool_identity(load_json(manifests[name])) == current_identity, f"{scope} 封存工具执行身份不一致")
+            current_reporting = evidence_identity.reporting_identities(suite_root.parents[2])
+            _require(expected["reporting"]["reception"] == current_reporting["reception"], "报告接收语义已经变化")
+            _require(expected["reporting"]["relationships"] == current_reporting["relationships"], "报告执行关系语义已经变化")
+        else:
+            _require(sha256(manifests[name]) == active[field], f"{scope} {name} 清单发生变化")
+            _require(load_json(manifests[name]) == current[name], f"{scope} {name} 直接事实已经变化")
     expected_artifact = active["observer_sha256"] if scope == "frontier" else active["binary_sha256"]
     _require(_artifact_sha256(config, scope) == expected_artifact, f"{scope} 候选执行制品已经变化")
 
@@ -569,6 +670,29 @@ def _artifact_sha256(config: dict[str, Any], scope: str) -> str:
     path = Path(_mapping(config, "frontier")["tool"]).resolve() if scope == "frontier" else _candidate_paths(config)[0]
     _require(path.is_file(), f"{scope} 候选执行制品不存在")
     return sha256(path)
+
+
+def _candidate_binary_sha(config: dict[str, Any], scopes: list[str]) -> str:
+    if set(scopes) & {"core", "product", "community"}:
+        return sha256(_candidate_paths(config)[0])
+    frontier = Path(_mapping(config, "frontier")["tool"]).resolve()
+    return sha256(frontier)
+
+
+def _release_manifest_sha(config: dict[str, Any]) -> str:
+    product = config.get("product")
+    if isinstance(product, dict) and isinstance(product.get("package"), str):
+        manifest = Path(product["package"]).resolve() / "manifest.json"
+        if manifest.is_file():
+            return sha256(manifest)
+    candidate = config.get("candidate")
+    if isinstance(candidate, dict) and isinstance(candidate.get("binary"), str):
+        sibling = Path(candidate["binary"]).resolve().parent / "ownward-windows-amd64" / "manifest.json"
+        if sibling.is_file():
+            return sha256(sibling)
+    # Frontier-only bindings have no release package dependency. The explicit
+    # absence is still a deterministic technical identity, not a Git identity.
+    return _canonical_sha256({"schema": "ownward.release-artifact-absence/v1"})
 
 
 def _candidate_paths(config: dict[str, Any]) -> tuple[Path, Path]:

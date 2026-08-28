@@ -137,7 +137,9 @@ def main() -> None:
         return
     if args.output is None:
         raise lifecycle.LifecycleError("summarize 需要 --output")
-    reusable = lifecycle.reusable_report(contract, state, "summarize")
+    import report_semantics
+    import summary_reporting
+    reusable = report_semantics.reusable_report(contract, state, "summarize")
     if reusable is not None:
         if not args.resume:
             raise lifecycle.LifecycleError("summarize 已有有效检查点；使用 --resume 复用")
@@ -148,14 +150,14 @@ def main() -> None:
             raise lifecycle.LifecycleError("汇总报告已存在；使用 --resume 恢复")
         try:
             recovered = json.loads(args.output.read_text(encoding="utf-8"))
-            lifecycle.record(contract, state, "summarize", recovered, lifecycle.file_sha256(args.output), 0, str(args.output.resolve()))
+            report_semantics.record(contract, state, "summarize", recovered, report_semantics.file_sha256(args.output), 0, str(args.output.resolve()))
         except (OSError, ValueError, json.JSONDecodeError):
             args.output.unlink(missing_ok=True)
         else:
             lifecycle.save_state(args.state, state)
             print(json.dumps(recovered, ensure_ascii=False))
             return
-    report = lifecycle.summarize(contract, state)
+    report = summary_reporting.summarize(contract, state)
     layer_reports = [Path(state["checkpoints"][name]["report_path"]).resolve() for name in ("core", "full", "longmemeval")]
     if len({path.parent for path in layer_reports}) != 1 or args.output.resolve().parent not in {path.parent for path in layer_reports}:
         raise lifecycle.LifecycleError("汇总报告必须与三层报告位于同一验收工作区的 reports 目录")
@@ -165,7 +167,7 @@ def main() -> None:
     temporary = args.output.with_suffix(args.output.suffix + ".tmp")
     temporary.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     temporary.replace(args.output)
-    lifecycle.record(contract, state, "summarize", report, lifecycle.file_sha256(args.output), 0, str(args.output.resolve()))
+    report_semantics.record(contract, state, "summarize", report, report_semantics.file_sha256(args.output), 0, str(args.output.resolve()))
     lifecycle.save_state(args.state, state)
     print(json.dumps(report, ensure_ascii=False))
 

@@ -65,7 +65,7 @@ class UnifiedEntryTests(unittest.TestCase):
             )
             with (
                 patch.object(run, "parse_args", return_value=arguments),
-                patch("lifecycle.reusable_report", return_value=report_path),
+                patch("report_semantics.reusable_report", return_value=report_path),
                 patch("sys.stdout", new_callable=io.StringIO) as output,
             ):
                 run.main()

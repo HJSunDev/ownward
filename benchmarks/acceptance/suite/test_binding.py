@@ -1,4 +1,5 @@
 import unittest
+import copy
 import hashlib
 import json
 from pathlib import Path
@@ -227,7 +228,7 @@ class BindingManifestTests(unittest.TestCase):
                     "codex_reasoning_effort": binding.ACTIVE_CODEX_REASONING_EFFORT,
                 },
             }
-            candidate = "a" * 40
+            candidate = "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8"
             git_result = lambda _repository, *arguments: candidate if arguments == ("rev-parse", "HEAD") else ""
             version = SimpleNamespace(returncode=0, stdout=candidate + "\n")
             environment = lambda _config, scope: {"schema": "fixture", "scope": scope}
@@ -240,7 +241,23 @@ class BindingManifestTests(unittest.TestCase):
                 result = binding.create(self.root, self._write_config(root, config), output)
                 self.assertEqual({"frontier", "core", "product"}, set(result["scopes"]))
                 self.assertFalse(any(path.name.startswith("community-") for path in output.iterdir()))
-                binding.verify_current(self.root, output, config, result, "core")
+                with patch.object(
+                    binding.evidence_identity,
+                    "lifecycle_identities",
+                    side_effect=AssertionError("report verification must not consult lifecycle maintenance identity"),
+                ):
+                    binding.verify_current(self.root, output, config, result, "core")
+                lifecycle_only = copy.deepcopy(result["lifecycle"])
+                lifecycle_only["evidence"]["identity"] = "9" * 64
+                with patch.object(binding.evidence_identity, "lifecycle_identities", return_value=lifecycle_only):
+                    rebound = binding.rebind_scope(
+                        self.root, self._write_config(root, config), output, "product",
+                    )
+                self.assertEqual(
+                    {name: value["identity"] for name, value in result["scopes"].items()},
+                    {name: value["identity"] for name, value in rebound["scopes"].items()},
+                )
+                self.assertEqual("9" * 64, rebound["lifecycle"]["evidence"]["identity"])
 
     def test_frontier_binding_does_not_require_candidate_or_model(self) -> None:
         temporary_root = self.root.parents[2] / ".tmp"
@@ -255,7 +272,7 @@ class BindingManifestTests(unittest.TestCase):
                 "repository": str(self.root.parents[2]), "workspace": str(root / "workspace"), "binding_dir": str(output),
                 "enabled_scopes": ["frontier"], "frontier": {"tool": str(observer), "targeted_stages": ["lexical"]},
             }
-            candidate = "a" * 40
+            candidate = "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8"
             git_result = lambda _repository, *arguments: candidate if arguments == ("rev-parse", "HEAD") else ""
             with patch.object(binding, "_git", side_effect=git_result), patch.object(binding, "_verify_go_binary"):
                 result = binding.create(self.root, self._write_config(root, config), output)

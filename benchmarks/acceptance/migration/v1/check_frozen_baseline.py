@@ -18,6 +18,7 @@ SUITE_ROOT = DEFAULT_REPOSITORY / "benchmarks" / "acceptance" / "suite"
 sys.path.insert(0, str(SUITE_ROOT))
 
 import binding  # noqa: E402
+import evidence_identity  # noqa: E402
 import lifecycle  # noqa: E402
 from contract import load_contract  # noqa: E402
 from evidence import validate_report_artifacts  # noqa: E402
@@ -66,7 +67,7 @@ def verify_manifest_identity(manifest: dict[str, Any]) -> None:
     _require(is_sha256(expected) and canonical_sha256(content) == expected, "冻结基线自身摘要无效")
 
 
-def verify_direct_files(repository: Path, entries: list[dict[str, Any]]) -> None:
+def verify_direct_files(repository: Path, entries: list[dict[str, Any]], mapped_state: dict[str, Any] | None = None) -> None:
     _require(isinstance(entries, list) and entries, "冻结基线缺少直接文件")
     roles: set[str] = set()
     paths: set[str] = set()
@@ -79,8 +80,14 @@ def verify_direct_files(repository: Path, entries: list[dict[str, Any]]) -> None
         paths.add(value)
         path = confined_path(repository, value)
         _require(path.is_file(), f"直接依赖缺失: {role} ({value})")
-        _require(path.stat().st_size == entry["bytes"], f"直接依赖大小变化: {role}")
-        _require(file_sha256(path) == entry["sha256"], f"直接依赖摘要变化: {role}")
+        actual = file_sha256(path)
+        if actual != entry["sha256"] and mapped_state is not None and role in {"acceptance-unique-state", "v1-binding-pointer"}:
+            migration = mapped_state.get("identity_migration", {}).get("source", {})
+            source_field = "state_file_sha256" if role == "acceptance-unique-state" else "active_pointer_sha256"
+            _require(migration.get(source_field) == entry["sha256"], f"直接依赖迁移来源错绑: {role}")
+        else:
+            _require(path.stat().st_size == entry["bytes"], f"直接依赖大小变化: {role}")
+            _require(actual == entry["sha256"], f"直接依赖摘要变化: {role}")
 
 
 def verify_embedding_bundle(repository: Path, spec: dict[str, Any]) -> int:
@@ -193,7 +200,7 @@ def verify_candidate(repository: Path, spec: dict[str, Any]) -> tuple[int, int]:
     embedding_files = verify_embedding_bundle(repository, spec["embedding_bundle"])
     workspace = confined_path(repository, spec["acceptance_workspace"])
     active_binding = binding.load_active_binding(workspace / "binding")
-    _require(active_binding.get("candidate") == spec["candidate"], f"候选活动绑定错绑: {spec['name']}")
+    _require(evidence_identity.source_git(active_binding) == spec["candidate"], f"候选活动绑定错绑: {spec['name']}")
     for report_spec in spec["reports"].values():
         report_path = confined_path(repository, report_spec["path"])
         _require(file_sha256(report_path) == report_spec["sha256"], f"候选报告摘要变化: {report_path.name}")
@@ -204,15 +211,24 @@ def verify_candidate(repository: Path, spec: dict[str, Any]) -> tuple[int, int]:
 
 
 def verify_state_projection(state: dict[str, Any], expected: dict[str, Any]) -> None:
-    _require(state.get("schema") == "ownward.acceptance-state/v1", "唯一验收状态 schema 无效")
-    _require(state.get("binding", {}).get("candidate") == expected["bound_candidate"], "唯一验收状态绑定另一候选")
+    _require(state.get("schema") in {"ownward.acceptance-state/v1", evidence_identity.STATE_SCHEMA}, "唯一验收状态 schema 无效")
+    _require(evidence_identity.source_git(state.get("binding", {})) == expected["bound_candidate"], "唯一验收状态绑定另一候选")
     _require((state.get("baseline") is None) == expected["active_baseline_is_null"], "活动基线指针状态变化")
-    _require(canonical_sha256(state.get("binding")) == expected["binding_sha256"], "活动候选绑定变化")
-    _require(canonical_sha256(state.get("checkpoints")) == expected["checkpoints_sha256"], "有效检查点集合变化")
+    if state.get("schema") == evidence_identity.STATE_SCHEMA:
+        source = state.get("identity_migration", {}).get("source", {})
+        _require(source.get("binding_sha256") == expected["binding_sha256"], "活动候选旧绑定来源变化")
+        _require(source.get("checkpoints_sha256") == expected["checkpoints_sha256"], "有效检查点旧来源变化")
+    else:
+        _require(canonical_sha256(state.get("binding")) == expected["binding_sha256"], "活动候选绑定变化")
+        _require(canonical_sha256(state.get("checkpoints")) == expected["checkpoints_sha256"], "有效检查点集合变化")
     _require(state.get("invalidated_reports") == expected["invalidated_reports"], "失效报告登记变化")
     history = state.get("baseline_history")
     _require(isinstance(history, list), "正式基线历史无效")
-    actual_history = [canonical_sha256(value) for value in history]
+    actual_history = (
+        state.get("identity_migration", {}).get("source", {}).get("baseline_history_record_sha256", [])
+        if state.get("schema") == evidence_identity.STATE_SCHEMA
+        else [canonical_sha256(value) for value in history]
+    )
     _require(actual_history == expected["baseline_history_record_sha256"], "正式基线历史变化")
 
 
@@ -283,7 +299,10 @@ def verify(repository: Path, manifest_path: Path) -> dict[str, Any]:
     repository = repository.resolve()
     manifest = load_json(manifest_path.resolve())
     verify_manifest_identity(manifest)
-    verify_direct_files(repository, manifest["direct_files"])
+    state_path = confined_path(repository, manifest["acceptance"]["state_path"])
+    mapped_state = load_json(state_path)
+    mapped_state = mapped_state if mapped_state.get("schema") == evidence_identity.STATE_SCHEMA else None
+    verify_direct_files(repository, manifest["direct_files"], mapped_state)
     _require(manifest["source_snapshot"]["git_commit"] == "a2c8c6deeacbcde03a09fccb22bbc79b7ea3ce58", "迁移源码起点变化")
     source = subprocess.run(
         ["git", "cat-file", "-e", f"{manifest['source_snapshot']['git_commit']}^{{commit}}"],

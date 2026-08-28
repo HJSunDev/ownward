@@ -6,6 +6,7 @@ from pathlib import Path
 
 import lifecycle
 import evidence
+import evidence_identity
 import binding as candidate_binding
 from contract import load_contract
 
@@ -36,12 +37,22 @@ class EvidenceLifecycleTests(unittest.TestCase):
         return lifecycle.new_state(self.contract, self.binding)
 
     def checkpoint(self, state, name, passed=True, report=None, directory=None):
+        report_sha256 = name[0] * 64
+        if state.get("schema") == evidence_identity.STATE_SCHEMA:
+            report_sha256 = evidence_identity.canonical_sha256({"mode": name})
         state["checkpoints"][name] = {
             "binding": candidate_binding.for_mode(state["binding"], name),
-            "report_sha256": name[0] * 64,
+            "report_sha256": report_sha256,
             "passed": passed,
             "elapsed_seconds": 1,
         }
+        if state.get("schema") == evidence_identity.STATE_SCHEMA:
+            scope = candidate_binding.scope_for_mode(name)
+            state["checkpoints"][name]["evidence_identity"] = evidence_identity.evidence_identity(
+                name,
+                state["checkpoints"][name]["report_sha256"],
+                evidence_identity.scope_dependencies(state["binding"], scope),
+            )
         if report is not None:
             path = Path(directory) / f"{name}.json"
             raw = Path(directory) / "evidence" / f"{name}.txt"
@@ -54,6 +65,13 @@ class EvidenceLifecycleTests(unittest.TestCase):
                 "report_sha256": lifecycle.file_sha256(path),
                 "artifact_manifest_sha256": evidence.validate_report_artifacts(path, report),
             })
+            if state.get("schema") == evidence_identity.STATE_SCHEMA:
+                scope = candidate_binding.scope_for_mode(name)
+                state["checkpoints"][name]["evidence_identity"] = evidence_identity.evidence_identity(
+                    name,
+                    state["checkpoints"][name]["report_sha256"],
+                    evidence_identity.scope_dependencies(state["binding"], scope),
+                )
 
     def test_change_scope_selects_only_required_levels(self):
         self.assertEqual([], lifecycle.plan_for_impacts(["local"]))
@@ -283,12 +301,70 @@ class EvidenceLifecycleTests(unittest.TestCase):
         self.assertEqual(observation, embedded["value"])
         self.assertEqual(lifecycle.canonical_sha256(observation), embedded["canonical_sha256"])
 
+    def test_v3_promotion_and_history_use_one_complete_baseline_contract(self):
+        repository = self.root.parents[2]
+        components = evidence_identity.build_candidate_components(
+            repository,
+            "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8",
+            "b" * 64,
+            "e" * 64,
+        )
+        manifests = {}
+        for scope in self.binding["scopes"]:
+            manifests[f"{scope}-tools.json"] = {
+                "schema": "ownward.acceptance-tool-manifest/v4",
+                "scope": scope,
+                "repository_commit": "a" * 40,
+                "files": [{"path": f"tool/{scope}.py", "sha256": "c" * 64}],
+            }
+        direct = evidence_identity.build_binding(
+            self.binding, components, manifests, evidence_identity.lifecycle_identities(repository),
+            evidence_identity.reporting_identities(repository),
+        )
+        state = lifecycle.new_state(self.contract, direct)
+        original = self.binding
+        self.binding = direct
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                self.checkpoint(state, "core", report=self.core_report(), directory=directory)
+                self.checkpoint(state, "frontier", report=self.frontier_report("full"), directory=directory)
+                self.checkpoint(state, "qualification", report=self.product_report("qualification"), directory=directory)
+                lifecycle.promote_baseline(self.contract, state)
+                lifecycle._validate_state(self.contract, state)
+        finally:
+            self.binding = original
+        baseline = state["baseline"]
+        self.assertEqual(
+            {"product_identity", "direct_dependencies", "evidence_identities", "identity"},
+            {name for name in baseline if name in {"product_identity", "direct_dependencies", "evidence_identities", "identity"}},
+        )
+        tampered = copy.deepcopy(state)
+        tampered["baseline_history"].append(tampered.pop("baseline"))
+        tampered["baseline_history"][0]["direct_dependencies"]["core"]["kernel"] = "0" * 64
+        with self.assertRaisesRegex(lifecycle.LifecycleError, "基线历史 0"):
+            lifecycle._validate_state(self.contract, tampered)
+        identity_drift = copy.deepcopy(state)
+        identity_drift["baseline"]["identity"] = "0" * 64
+        with self.assertRaisesRegex(lifecycle.LifecycleError, "identity"):
+            lifecycle._validate_state(self.contract, identity_drift)
+        report_drift = copy.deepcopy(state)
+        report_drift["baseline"]["reports"]["core"]["canonical_sha256"] = "0" * 64
+        with self.assertRaisesRegex(lifecycle.LifecycleError, "报告摘要漂移"):
+            lifecycle._validate_state(self.contract, report_drift)
+        checkpoint_drift = copy.deepcopy(state)
+        checkpoint_drift["checkpoints"]["core"]["report_sha256"] = "0" * 64
+        checkpoint_drift["checkpoints"]["core"]["evidence_identity"] = evidence_identity.evidence_identity(
+            "core", "0" * 64, evidence_identity.scope_dependencies(state["binding"], "core"),
+        )
+        with self.assertRaisesRegex(lifecycle.LifecycleError, "活动基线 core"):
+            lifecycle._validate_state(self.contract, checkpoint_drift)
+
     def frontier_report(self, mode):
         active = candidate_binding.for_mode(self.binding, "frontier")
         return {
             "schema": "ownward.frontier-report/v1", "suite_version": "1.0.0",
             "benchmark_version": "ownward-core-frontier/v1", "mode": mode,
-            "candidate": self.binding["candidate"], "baseline": "baseline",
+            "candidate": evidence_identity.source_git(self.binding), "baseline": "baseline",
             "environment": {"sha256": active["environment_sha256"]},
             "inputs": {"sha256": active["input_manifest_sha256"]},
             "quality": [], "latency": [], "resources": [], "diagnostics": {},
@@ -299,7 +375,7 @@ class EvidenceLifecycleTests(unittest.TestCase):
         active = candidate_binding.for_mode(self.binding, "core")
         return {
             "schema": "ownward.core-baseline-report/v1", "suite_version": "1.0.0",
-            "candidate": self.binding["candidate"], "binary_sha256": active["binary_sha256"],
+            "candidate": evidence_identity.source_git(self.binding), "binary_sha256": active["binary_sha256"],
             "environment": {"sha256": active["environment_sha256"]},
             "inputs": {"sha256": active["input_manifest_sha256"]},
             "invariants": {name: True for name in self.contract["evidence_layers"]["core"]["required_invariants"]},
@@ -312,7 +388,7 @@ class EvidenceLifecycleTests(unittest.TestCase):
         return {
             "schema": "ownward.product-report/v1", "suite_version": "1.0.0",
             "dataset_version": "ownward-product-dataset/v2", "mode": mode,
-            "candidate": self.binding["candidate"], "binary_sha256": active["binary_sha256"],
+            "candidate": evidence_identity.source_git(self.binding), "binary_sha256": active["binary_sha256"],
             "environment": {"sha256": active["environment_sha256"]},
             "inputs": {"sha256": active["input_manifest_sha256"]},
             "categories": {name: {"scenarios": count, "passed": True} for name in self.contract["evidence_layers"]["product"]["categories"]},
@@ -327,7 +403,7 @@ class EvidenceLifecycleTests(unittest.TestCase):
             "schema": "ownward.longmemeval-report/v1", "suite_version": "1.0.0",
             "official_version": "longmemeval-s/9e0b455f4ef0e2ab8f2e582289761153549043fc+d6f21ea9",
             "profile": "Ownward LongMemEval-S Production Profile",
-            "candidate": self.binding["candidate"], "binary_sha256": active["binary_sha256"],
+            "candidate": evidence_identity.source_git(self.binding), "binary_sha256": active["binary_sha256"],
             "environment": {"sha256": active["environment_sha256"]},
             "inputs": {"sha256": active["input_manifest_sha256"]},
             "capabilities": self.contract["evidence_layers"]["community"]["capabilities"],

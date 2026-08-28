@@ -10,7 +10,8 @@ from typing import Any
 import binding
 import evidence
 import lifecycle
-import relationships
+import report_relationships as relationships
+import report_semantics
 from contract import validate_report
 from evidence import validate_layer_report
 from execution_support import ExecutionError, load_json, require
@@ -19,10 +20,10 @@ from execution_support import ExecutionError, load_json, require
 def _archive_invalidated_report(state: dict[str, Any], mode: str, report_path: Path) -> None:
     if not lifecycle.report_was_invalidated(state, mode, report_path):
         return
-    digest = lifecycle.file_sha256(report_path)
+    digest = report_semantics.file_sha256(report_path)
     archive = report_path.parent / "_audit" / mode / f"{digest}.json"
     if archive.is_file():
-        require(lifecycle.file_sha256(archive) == digest, "失效报告归档发生变化")
+        require(report_semantics.file_sha256(archive) == digest, "失效报告归档发生变化")
     else:
         archive.parent.mkdir(parents=True, exist_ok=True)
         temporary = archive.with_name(f".{archive.name}.{os.getpid()}.{time.time_ns()}.tmp")
@@ -64,7 +65,7 @@ def execute(
         selection = relationships.selection_identity(mode, config)
     except relationships.RelationshipError as error:
         raise ExecutionError(str(error)) from error
-    reusable = lifecycle.reusable_report(contract, state, mode, selection)
+    reusable = report_semantics.reusable_report(contract, state, mode, selection)
     if reusable is not None:
         require(resume, f"{mode} 已有有效检查点；使用 --resume 复用")
         return {"outcome": "reused", "mode": mode, "report": str(reusable)}
@@ -82,7 +83,7 @@ def execute(
             report_path.unlink()
         else:
             elapsed = _report_elapsed(recovered)
-            outcome = lifecycle.record(contract, state, mode, recovered, lifecycle.file_sha256(report_path), elapsed, str(report_path.resolve()), selection)
+            outcome = report_semantics.record(contract, state, mode, recovered, report_semantics.file_sha256(report_path), elapsed, str(report_path.resolve()), selection)
             lifecycle.save_state(state_path, state)
             return {"outcome": outcome, "mode": mode, "elapsed_seconds": elapsed, "report": str(report_path), "recovered": True}
 
@@ -114,11 +115,11 @@ def execute(
     temporary = report_path.with_suffix(report_path.suffix + ".tmp")
     temporary.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     temporary.replace(report_path)
-    outcome = lifecycle.record(contract, state, mode, report, lifecycle.file_sha256(report_path), elapsed, str(report_path.resolve()), selection)
+    outcome = report_semantics.record(contract, state, mode, report, report_semantics.file_sha256(report_path), elapsed, str(report_path.resolve()), selection)
     if observation_path is not None:
         checkpoint = state["checkpoints"][mode]
         checkpoint["observation_path"] = str(observation_path.resolve())
-        checkpoint["observation_sha256"] = lifecycle.file_sha256(observation_path)
+        checkpoint["observation_sha256"] = report_semantics.file_sha256(observation_path)
     lifecycle.save_state(state_path, state)
     return {"outcome": outcome, "mode": mode, "elapsed_seconds": elapsed, "report": str(report_path)}
 

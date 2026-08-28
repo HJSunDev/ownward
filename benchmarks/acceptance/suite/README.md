@@ -57,7 +57,14 @@ python benchmarks/acceptance/suite/run.py init --binding <binding-directory>/bin
 python benchmarks/acceptance/suite/run.py rebind --binding <binding-directory>/binding.json --state <state.json>
 ```
 
-候选提交是全部范围共享且不可拼接的身份。发布二进制只属于真实运行它的 `core`、`product` 和 `community`；`frontier` 单独绑定由同一提交构建的观察器制品，跨候选比较的环境身份只包含真实测量环境，不包含必然随候选变化的观察器摘要。以后为同一候选新增 `community` 绑定不会使内部检查点失效。某一 scope 的直接事实变化只失效消费它的结果、实际嵌入该结果的汇总及包含该报告的有效基线，不按执行顺序向后传播。定向阶段选择属于单次 `targeted` 检查点身份，不属于冻结材料、完整前沿结果或有效基线。
+`ownward.acceptance-binding/v6` 以内容和声明依赖记录产品、权威基座、内核效果、内核世代、语义、向量与空间、接入、组合、二进制、发布制品、环境、观察者和验收工具身份；Git 提交只保留在 `audit.source_git` 供取回和审计，不参与产品、scope 或证据身份。`frontier` 使用冻结的语义/向量夹具，只绑定内核效果、环境、材料、观察者和验收工具；生产语义模型、向量模型、向量空间及权威持久化均不进入该报告身份。`core` 才绑定权威基座、内核、语义/向量能力、空间与候选二进制，`product` / `community` 进一步绑定完整产品、接入、组合和发布制品。纯 binding、状态迁移、失效与恢复代码由独立证据生命周期制品和 state 完整性保护，不是原始 scope 报告的直接依赖；报告接收/复核语义与执行关系语义则分别以 `report-reception`、`relationship-execution` 直接绑定其真实消费者。`summarize` 额外绑定独立 `summary-generation` 内容身份，因此汇总生成变化只失效汇总，不能隐藏在生命周期文件中或连带抹掉三份来源报告。某个直接依赖变化只失效真实消费它的 scope、实际嵌入该结果的汇总及相关基线，不按执行顺序或全仓提交传播；新增 `community` 不使内部检查点失效。`report_binding` 只保存旧报告逐字校验所需的兼容字段，不能代替新的直接依赖身份。
+
+唯一正式 state 使用 `ownward.acceptance-state/v3`，每个检查点及基线记录都封存报告摘要与直接依赖图产生的证据身份；迁移历史与未来 `promote` 共用同一基线构造和只读校验合同。第 1 项冻结起点到 v3 的一次性入口如下；它也能把早期 v5/v2 的生命周期过度绑定原子收敛到唯一 v6/v3 结构。不带 `--write` 只读演练，带 `--write` 先封存不可变 binding 世代、再原子替换唯一 state、最后发布 binding 指针，任一源身份不符均不写状态。重复执行只校验已有迁移收据；报告、原始证据、检查点集合和基线历史均不重写，也不创建平行 state：
+
+```powershell
+python benchmarks/acceptance/migration/v1/migrate_evidence_identities.py
+python benchmarks/acceptance/migration/v1/migrate_evidence_identities.py --write
+```
 
 ## 执行
 
@@ -86,4 +93,4 @@ python benchmarks/acceptance/suite/run.py promote --state <state.json>
 python benchmarks/acceptance/suite/run.py summarize --state <state.json> --output <acceptance-workspace>/reports/suite.json
 ```
 
-状态文件是中断恢复、局部失效和证据复用的唯一权威。候选制品、环境、输入或工具变化时，重新生成绑定并使用 `rebind`；只失效受影响结果时使用 `invalidate`。开始资格会在执行、恢复和晋升前重新核验，但不自动成为高成本结果的直接内容身份；直接事实未变且资格重新成立时，已有结果可以复用。专项资源报告同时封存当前 `product` scope、发布包、阈值、生产规模证据、测量工具与原始证据身份。LongMemEval‑S 的逐题检查点写入持久环境 `runs/<candidate>/`，Suite 工作区封存官方结果、submission 与摘要；两者由同一 community binding 绑定。内部层的成本上限、报告结构和禁止事项以 `contract.json` 为机器权威；最低反馈、阶段触发、开始资格、scope、单次选择、失效和聚合关系以 `relationships.py` 为唯一机器权威。
+状态文件是中断恢复、局部失效和证据复用的唯一权威。产品组件、环境、输入、观察者或报告生产工具变化时，重新生成绑定并使用 `rebind`；只有 scope 身份真实变化才失效其消费者。纯 binding/lifecycle/身份迁移维护只更新独立生命周期制品和迁移完整性，不使既有报告失效。开始资格会在执行、恢复和晋升前重新核验，但不自动成为高成本结果的直接内容身份；直接依赖未变且资格重新成立时，已有结果可以复用。专项资源报告同时封存当前 `product` scope、发布包、阈值、生产规模证据、测量工具与原始证据身份。LongMemEval‑S 的逐题检查点写入持久环境 `runs/<candidate>/`，Suite 工作区封存官方结果、submission 与摘要；两者由同一 community binding 绑定。内部层的成本上限、报告结构和禁止事项以 `contract.json` 为机器权威；开始资格、scope、单次选择和汇总选择由 `report_relationships.py` 定义，阶段计划、失效与恢复传播由 `state_relationships.py` 独立定义；`relationships.py` 仅是迁移期兼容入口，不拥有两类职责。
