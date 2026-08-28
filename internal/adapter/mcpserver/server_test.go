@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/HJSunDev/ownward/internal/assetlog"
+	"github.com/HJSunDev/ownward/internal/authorityport"
 	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/core"
 	"github.com/HJSunDev/ownward/internal/derived"
@@ -59,11 +60,12 @@ func TestServerExposesUnifiedCoreOperations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer store.Close()
 	state, err := derived.Open(filepath.Join(root, "state"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := core.NewCollaborative(store, state, embedding.HashForTesting{Dimensions: 64})
+	service, err := openCollaborativeForTest(store, state)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -276,11 +278,12 @@ func TestStreamableHTTPUsesTheSameCore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer store.Close()
 	state, err := derived.Open(filepath.Join(root, "state"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := core.NewCollaborative(store, state, embedding.HashForTesting{Dimensions: 64})
+	service, err := openCollaborativeForTest(store, state)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,4 +305,12 @@ func TestStreamableHTTPUsesTheSameCore(t *testing.T) {
 	if len(store.All()) != 1 {
 		t.Fatalf("streamable HTTP did not reach the shared core: %#v", store.All())
 	}
+}
+
+func openCollaborativeForTest(store *assetlog.Store, state *derived.Store) (*core.Service, error) {
+	authority, err := authorityport.Bind(store)
+	if err != nil {
+		return nil, err
+	}
+	return core.NewCollaborativeWithAuthority(authority, state, embedding.HashForTesting{Dimensions: 64})
 }

@@ -379,10 +379,10 @@ func (adapter *legacyAuthorityCandidate) ApplyChanges(values []domain.Informatio
 	return ApplyAuthorityChanges(adapter.AssetAuthority, values)
 }
 func (adapter *legacyAuthorityCandidate) ChangesSince([]contract.AssetVersion) ([]domain.Information, error) {
-	return nil, errors.New("legacy rollback adapter does not own active change history")
+	return nil, errors.New("read-only rollback adapter does not own active change history")
 }
 func (adapter *legacyAuthorityCandidate) BackupAuthority(string, contract.ControlState) error {
-	return errors.New("legacy rollback adapter does not publish candidate backups")
+	return errors.New("read-only rollback adapter does not publish candidate backups")
 }
 
 type trackedAuthorityCandidate struct {

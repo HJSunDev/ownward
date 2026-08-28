@@ -53,14 +53,14 @@ def migrate(
     _verify_legacy_state(repository, state, state_bytes, binding_dir, frozen)
     v1_spec = frozen["candidates"]["v1"]
     v0_spec = frozen["candidates"]["v0"]
-    active_dir = binding._active_generation_dir(binding_dir)
+    active_dir = _raw_active_generation_dir(binding_dir)
     active_legacy = binding.load_json(active_dir / "binding.json")
     active_manifests = _manifests_from_directory(active_dir, active_legacy)
     v1_components = evidence_identity.build_candidate_components(
         repository, v1_spec["candidate"], v1_spec["binary_sha256"], v1_spec["release_bundle"]["manifest_sha256"],
     )
     lifecycle_components = evidence_identity.lifecycle_identities(repository)
-    next_binding = evidence_identity.build_binding(
+    next_binding = evidence_identity.build_binding_from_legacy_migration(
         active_legacy, v1_components, active_manifests, lifecycle_components,
         evidence_identity.reporting_identities(repository),
     )
@@ -121,7 +121,7 @@ def _correct_v2(
         repository, v1_spec["candidate"], v1_spec["binary_sha256"], v1_spec["release_bundle"]["manifest_sha256"],
     )
     lifecycle_components = evidence_identity.lifecycle_identities(repository)
-    corrected_binding = evidence_identity.build_binding(
+    corrected_binding = evidence_identity.build_binding_from_legacy_migration(
         legacy, components, manifests, lifecycle_components,
         evidence_identity.reporting_identities(repository),
     )
@@ -146,11 +146,25 @@ def _refresh_v3_lifecycle(
 ) -> dict[str, Any]:
     current = evidence_identity.lifecycle_identities(repository)
     reporting = evidence_identity.reporting_identities(repository)
+    _require(
+        state["binding"].get("reporting") == reporting,
+        "当前报告语义身份与活动 binding 不一致；必须使用正式 rebind/失效流程",
+    )
     active_dir = _raw_active_generation_dir(binding_dir)
-    legacy = _legacy_binding_from_v5_like(state["binding"])
-    manifests = _manifests_from_directory(active_dir, legacy)
-    corrected_binding = evidence_identity.build_binding(
-        legacy, state["binding"]["components"], manifests, current, reporting,
+    scopes = {
+        name: copy.deepcopy(value["report_binding"])
+        for name, value in state["binding"]["scopes"].items()
+    }
+    manifests = _manifests_from_directory(active_dir, _legacy_binding_from_v5_like(state["binding"]))
+    corrected_binding = evidence_identity.build_current_binding(
+        candidate=evidence_identity.source_git(state["binding"]),
+        suite_version=state["binding"]["suite_version"],
+        scopes=scopes,
+        components=state["binding"]["components"],
+        manifests=manifests,
+        lifecycle=current,
+        reporting=state["binding"]["reporting"],
+        audit=state["binding"]["audit"],
     )
     if state.get("binding") == corrected_binding:
         return state
@@ -165,7 +179,8 @@ def _refresh_v3_lifecycle(
 
 def _recover_binding_pointer(binding_dir: Path, expected: dict[str, Any], *, write: bool) -> None:
     try:
-        active = binding.load_active_binding(binding_dir)
+        active_dir = _raw_active_generation_dir(binding_dir)
+        active = _load_json(active_dir / "binding.json")
     except (OSError, ValueError):
         active = None
     if active == expected:
@@ -229,7 +244,7 @@ def _map_state(
         _require(baseline.get("candidate") == v0_spec["candidate"], "基线历史包含非 V0 候选")
         legacy = _legacy_binding_from_baseline(baseline)
         manifests = _find_manifests(v0_binding_dir, legacy)
-        mapped = evidence_identity.build_binding(
+        mapped = evidence_identity.build_binding_from_legacy_migration(
             legacy, v0_components, manifests, lifecycle_components,
             evidence_identity.reporting_identities(repository),
         )
@@ -313,7 +328,7 @@ def _map_corrected_state(
         _require(baseline.get("candidate") == v0_spec["candidate"], "基线历史包含非 V0 候选")
         legacy = _legacy_binding_from_baseline(baseline)
         manifests = _find_manifests(v0_binding_dir, legacy)
-        mapped = evidence_identity.build_binding(
+        mapped = evidence_identity.build_binding_from_legacy_migration(
             legacy, v0_components, manifests, lifecycle_components,
             evidence_identity.reporting_identities(repository),
         )
@@ -385,8 +400,7 @@ def _verify_legacy_state(
     acceptance = frozen.get("acceptance")
     _require(isinstance(acceptance, dict), "冻结基线缺少 Acceptance 投影")
     _require(state.get("schema") == "ownward.acceptance-state/v1", "源状态不是唯一可迁移的 v1")
-    binding.validate_binding(state.get("binding"))
-    _require(state["binding"].get("schema") == "ownward.acceptance-binding/v4", "源状态已经不是旧提交绑定")
+    evidence_identity._validate_legacy_binding(state.get("binding"))
     _require(evidence_identity.file_sha256_bytes(state_bytes) == _direct_file_sha(frozen, "acceptance-unique-state"), "源 state 字节不等于冻结起点")
     _require(evidence_identity.canonical_sha256(state["binding"]) == acceptance["binding_sha256"], "源绑定不等于冻结起点")
     _require(evidence_identity.canonical_sha256(state["checkpoints"]) == acceptance["checkpoints_sha256"], "源检查点不等于冻结起点")
@@ -394,7 +408,7 @@ def _verify_legacy_state(
         [evidence_identity.canonical_sha256(value) for value in state.get("baseline_history", [])] == acceptance["baseline_history_record_sha256"],
         "源基线历史不等于冻结起点",
     )
-    active = binding.load_active_binding(binding_dir)
+    active = _load_json(_raw_active_generation_dir(binding_dir) / "binding.json")
     _require(active == state["binding"], "源活动绑定与唯一 state 不一致")
     for mode, expected in acceptance["checkpoints"].items():
         checkpoint = state["checkpoints"].get(mode)
@@ -444,7 +458,7 @@ def _legacy_binding_from_baseline(baseline: dict[str, Any]) -> dict[str, Any]:
         "candidate": baseline["candidate"],
         "scopes": scopes,
     }
-    binding.validate_binding(legacy)
+    evidence_identity._validate_legacy_binding(legacy)
     return legacy
 
 
@@ -466,7 +480,7 @@ def _legacy_binding_from_v5_like(value: dict[str, Any]) -> dict[str, Any]:
         "candidate": value.get("audit", {}).get("source_git"),
         "scopes": scopes,
     }
-    binding.validate_binding(legacy)
+    evidence_identity._validate_legacy_binding(legacy)
     return legacy
 
 

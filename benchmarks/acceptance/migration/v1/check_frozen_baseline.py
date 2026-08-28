@@ -199,8 +199,8 @@ def verify_candidate(repository: Path, spec: dict[str, Any]) -> tuple[int, int]:
     release_files = verify_release_bundle(repository, spec["release_bundle"])
     embedding_files = verify_embedding_bundle(repository, spec["embedding_bundle"])
     workspace = confined_path(repository, spec["acceptance_workspace"])
-    active_binding = binding.load_active_binding(workspace / "binding")
-    _require(evidence_identity.source_git(active_binding) == spec["candidate"], f"候选活动绑定错绑: {spec['name']}")
+    active_binding = load_audit_binding(workspace / "binding")
+    _require(audit_binding_source(active_binding) == spec["candidate"], f"候选活动绑定错绑: {spec['name']}")
     for report_spec in spec["reports"].values():
         report_path = confined_path(repository, report_spec["path"])
         _require(file_sha256(report_path) == report_spec["sha256"], f"候选报告摘要变化: {report_path.name}")
@@ -212,7 +212,7 @@ def verify_candidate(repository: Path, spec: dict[str, Any]) -> tuple[int, int]:
 
 def verify_state_projection(state: dict[str, Any], expected: dict[str, Any]) -> None:
     _require(state.get("schema") in {"ownward.acceptance-state/v1", evidence_identity.STATE_SCHEMA}, "唯一验收状态 schema 无效")
-    _require(evidence_identity.source_git(state.get("binding", {})) == expected["bound_candidate"], "唯一验收状态绑定另一候选")
+    _require(audit_binding_source(state.get("binding", {})) == expected["bound_candidate"], "唯一验收状态绑定另一候选")
     _require((state.get("baseline") is None) == expected["active_baseline_is_null"], "活动基线指针状态变化")
     if state.get("schema") == evidence_identity.STATE_SCHEMA:
         source = state.get("identity_migration", {}).get("source", {})
@@ -230,6 +230,23 @@ def verify_state_projection(state: dict[str, Any], expected: dict[str, Any]) -> 
         else [canonical_sha256(value) for value in history]
     )
     _require(actual_history == expected["baseline_history_record_sha256"], "正式基线历史变化")
+
+
+def load_audit_binding(binding_dir: Path) -> dict[str, Any]:
+    """Read terminal v6 or the frozen v4 source without widening runtime readers."""
+    try:
+        return binding.load_active_binding(binding_dir)
+    except (OSError, ValueError):
+        historical = load_json(binding_dir / "binding.json")
+        evidence_identity._validate_legacy_binding(historical)
+        return historical
+
+
+def audit_binding_source(value: dict[str, Any]) -> str:
+    if value.get("schema") == evidence_identity.BINDING_SCHEMA:
+        return evidence_identity.source_git(value)
+    evidence_identity._validate_legacy_binding(value)
+    return str(value["candidate"])
 
 
 def verify_acceptance(repository: Path, spec: dict[str, Any]) -> int:

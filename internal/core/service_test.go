@@ -20,7 +20,7 @@ func TestServiceCreateUpdateAndSearch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := New(store)
+	service := newTestBasic(t, store)
 	defer service.Close()
 	service.now = func() time.Time { return time.Date(2026, 8, 18, 8, 0, 0, 0, time.UTC) }
 	created, err := service.Create(context.Background(), CreateInput{
@@ -58,7 +58,7 @@ func TestServiceNavigatesSemanticRelations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := NewOrganized(store, derivedStore, semantics.Heuristic{})
+	service, err := newTestOrganized(t, store, derivedStore, semantics.Heuristic{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestSearchDoesNotForceContextOnGeneralInformation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := New(store)
+	service := newTestBasic(t, store)
 	defer service.Close()
 	_, err = service.Create(context.Background(), CreateInput{Kind: domain.KindThought, Content: "信息资产应当长期属于用户"})
 	if err != nil {
@@ -124,7 +124,7 @@ func TestCurrentAssetDoesNotUseStaleDerivedSemantics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := NewOrganized(store, state, staleContextProvider{})
+	service, err := newTestOrganized(t, store, state, staleContextProvider{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +160,7 @@ func TestSearchByStableIdentityDoesNotCallTheSemanticProvider(t *testing.T) {
 		t.Fatal(err)
 	}
 	provider := &relationProvider{}
-	service, err := NewOrganized(store, state, provider)
+	service, err := newTestOrganized(t, store, state, provider)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func TestSearchKeepsDirectEvidenceAheadOfAccumulatedRelations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := NewOrganized(store, state, fusionProvider{})
+	service, err := newTestOrganized(t, store, state, fusionProvider{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +237,7 @@ func TestSearchPreservesRelationEvidenceBetweenDirectSeeds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := NewOrganized(store, state, fusionProvider{})
+	service, err := newTestOrganized(t, store, state, fusionProvider{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,7 +280,7 @@ func TestSearchOnlyMarksRelationsThatContributeToTheQuery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := NewOrganized(store, state, queryRelationProvider{})
+	service, err := newTestOrganized(t, store, state, queryRelationProvider{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -344,7 +344,7 @@ func TestSearchRelationsDoNotReorderDirectEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := NewOrganized(store, state, fusionProvider{})
+	service, err := newTestOrganized(t, store, state, fusionProvider{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -392,7 +392,7 @@ func TestSearchDoesNotMarkRelationsBetweenSecondarySeedsAsQueryEvidence(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := NewOrganized(store, state, fusionProvider{})
+	service, err := newTestOrganized(t, store, state, fusionProvider{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -425,7 +425,7 @@ func TestSearchDoesNotMarkRelationsBetweenSecondarySeedsAsQueryEvidence(t *testi
 	}
 }
 
-func TestServicePreservesExplicitRelationsAndRefreshesStaleInferences(t *testing.T) {
+func TestServicePreservesCandidateBoundRelationsAndRefreshesStaleInferences(t *testing.T) {
 	root := t.TempDir()
 	store, err := assetlog.Open(filepath.Join(root, "assets"))
 	if err != nil {
@@ -436,7 +436,7 @@ func TestServicePreservesExplicitRelationsAndRefreshesStaleInferences(t *testing
 		t.Fatal(err)
 	}
 	provider := &relationProvider{}
-	service, err := NewOrganized(store, derivedStore, provider)
+	service, err := newTestOrganized(t, store, derivedStore, provider)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -447,7 +447,7 @@ func TestServicePreservesExplicitRelationsAndRefreshesStaleInferences(t *testing
 		t.Fatal(err)
 	}
 	provider.targetID = target.Information.ID
-	inferred, err := service.Create(context.Background(), CreateInput{Content: "source"})
+	inferred, err := service.Create(context.Background(), CreateInput{Content: "source target"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -493,7 +493,7 @@ func TestExplicitRelationOverridesConflictingOutgoingInference(t *testing.T) {
 		t.Fatal(err)
 	}
 	provider := &relationProvider{}
-	service, err := NewOrganized(store, state, provider)
+	service, err := newTestOrganized(t, store, state, provider)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -525,7 +525,7 @@ func TestExplicitRelationOverridesConflictingIncomingInference(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := NewOrganized(store, state, incomingRelationProvider{})
+	service, err := newTestOrganized(t, store, state, incomingRelationProvider{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -560,7 +560,7 @@ func TestExplicitRelationOnCurrentInformationSuppressesReverseInference(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := NewOrganized(store, state, incomingRelationProvider{})
+	service, err := newTestOrganized(t, store, state, incomingRelationProvider{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -595,7 +595,7 @@ func TestServiceAppliesAndRemovesRelationsInferredTowardCurrentInformation(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := NewOrganized(store, state, incomingRelationProvider{})
+	service, err := newTestOrganized(t, store, state, incomingRelationProvider{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -641,7 +641,7 @@ func TestUpdateOrganizesAssetAndDependentsConcurrently(t *testing.T) {
 		t.Fatal(err)
 	}
 	provider := &concurrentOrganizationProvider{release: make(chan struct{}), overlapStarted: make(chan struct{})}
-	service, err := NewOrganized(store, state, provider)
+	service, err := newTestOrganized(t, store, state, provider)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -688,7 +688,7 @@ func TestServiceNeverLoadsDerivedStateForAnOlderAssetRevision(t *testing.T) {
 		t.Fatal(err)
 	}
 	provider := &relationProvider{}
-	service, err := NewOrganized(store, state, provider)
+	service, err := newTestOrganized(t, store, state, provider)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -728,7 +728,7 @@ func TestServiceNeverLoadsDerivedStateForAnOlderAssetRevision(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err = NewOrganized(store, state, provider)
+	service, err = newTestOrganized(t, store, state, provider)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -752,7 +752,7 @@ func TestConcurrentUpdatesCannotOverwriteTheSameRevision(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := NewOrganized(store, state, semantics.Heuristic{})
+	service, err := newTestOrganized(t, store, state, semantics.Heuristic{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -795,7 +795,7 @@ func TestServicePreservesInformationContentExactly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := New(store)
+	service := newTestBasic(t, store)
 	defer service.Close()
 	original := "  第一行\r\n第二行  \n"
 	created, err := service.Create(context.Background(), CreateInput{Content: original})
@@ -963,7 +963,7 @@ func (p *relationProvider) Embed(_ context.Context, values []string) ([][]float3
 
 func (p *relationProvider) Analyze(_ context.Context, value domain.Information, _ []semantics.Candidate) (semantics.Analysis, error) {
 	analysis := semantics.Analysis{Summary: value.Content}
-	if value.Content == "source" {
+	if strings.HasPrefix(value.Content, "source") {
 		analysis.Relations = []semantics.Relation{{Type: "related_to", TargetID: p.targetID, Confidence: 0.95, Evidence: "test fixture"}}
 	}
 	return analysis, nil

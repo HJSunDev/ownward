@@ -7,7 +7,6 @@ import (
 
 	"github.com/HJSunDev/ownward/internal/assetlog"
 	"github.com/HJSunDev/ownward/internal/authorityport"
-	"github.com/HJSunDev/ownward/internal/capabilityadapter"
 	"github.com/HJSunDev/ownward/internal/derived"
 	"github.com/HJSunDev/ownward/internal/domain"
 	"github.com/HJSunDev/ownward/internal/embedding"
@@ -54,7 +53,7 @@ func TestSemanticSubmissionBindingRejectsEveryUntrustedIdentity(t *testing.T) {
 }
 
 func TestLegacySemanticAdapterRemainsBindingEquivalent(t *testing.T) {
-	semantic, _ := capabilityadapter.LegacySemanticProvider(semantics.Heuristic{})
+	semantic, _ := adaptProvider(semantics.Heuristic{})
 	asset := domain.Information{
 		ID: "asset-current", Revision: 1,
 		Relations: []domain.ExplicitRelation{{Type: "supports", TargetID: "candidate-current"}},

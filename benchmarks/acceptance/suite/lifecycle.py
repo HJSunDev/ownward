@@ -24,7 +24,7 @@ def new_state(contract: dict[str, Any], binding: dict[str, Any]) -> dict[str, An
     candidate_binding.validate_binding(binding)
     _require(binding["suite_version"] == contract["suite_version"], "候选绑定的体系版本无效")
     return {
-        "schema": evidence_identity.STATE_SCHEMA if binding.get("schema") == evidence_identity.BINDING_SCHEMA else "ownward.acceptance-state/v1",
+        "schema": evidence_identity.STATE_SCHEMA,
         "suite_version": contract["suite_version"],
         "binding": copy.deepcopy(binding),
         "checkpoints": {},
@@ -77,54 +77,26 @@ def rebind(contract: dict[str, Any], state: dict[str, Any], binding: dict[str, A
     candidate_binding.validate_binding(binding)
     _require(binding["suite_version"] == contract["suite_version"], "新候选绑定的体系版本无效")
     current = state["binding"]
-    if current.get("schema") == evidence_identity.BINDING_SCHEMA and binding.get("schema") == evidence_identity.BINDING_SCHEMA:
-        changed_scopes = {
-            name for name in set(current["scopes"]) | set(binding["scopes"])
-            if current["scopes"].get(name, {}).get("identity") != binding["scopes"].get(name, {}).get("identity")
-        }
-        if not changed_scopes:
-            summary_changed = current.get("reporting", {}).get("summary") != binding.get("reporting", {}).get("summary")
-            state["binding"] = copy.deepcopy(binding)
-            if summary_changed and "summarize" in state["checkpoints"]:
-                checkpoint = state["checkpoints"].pop("summarize")
-                digest = checkpoint.get("report_sha256")
-                if isinstance(digest, str) and digest:
-                    state["invalidated_reports"]["summarize"] = digest
-                return ["summarize"]
-            return []
-        affected: set[str] = set()
-        for name in changed_scopes:
-            for mode in state_relationships.SCOPE_RESULTS.get(name, ()):
-                affected.update(state_relationships.MODE_INVALIDATION[mode])
-        removed = sorted(name for name in affected if name in state["checkpoints"])
-        if state.get("baseline") is not None and changed_scopes & {"frontier", "core", "product"}:
-            state.setdefault("baseline_history", []).append(state["baseline"])
-            state["baseline"] = None
+    changed_scopes = {
+        name for name in set(current["scopes"]) | set(binding["scopes"])
+        if current["scopes"].get(name, {}).get("identity") != binding["scopes"].get(name, {}).get("identity")
+    }
+    if not changed_scopes:
+        summary_changed = current.get("reporting", {}).get("summary") != binding.get("reporting", {}).get("summary")
         state["binding"] = copy.deepcopy(binding)
-        for name in removed:
-            checkpoint = state["checkpoints"].pop(name)
+        if summary_changed and "summarize" in state["checkpoints"]:
+            checkpoint = state["checkpoints"].pop("summarize")
             digest = checkpoint.get("report_sha256")
             if isinstance(digest, str) and digest:
-                state["invalidated_reports"][name] = digest
-        return removed
-    common_changed = binding.get("candidate") != current.get("candidate")
-    current_scopes = current["scopes"]
-    next_scopes = binding["scopes"]
-    changed_scopes = {
-        name for name in set(current_scopes) | set(next_scopes)
-        if current_scopes.get(name) != next_scopes.get(name)
-    }
-    if not common_changed and not changed_scopes:
+                state["invalidated_reports"]["summarize"] = digest
+            return ["summarize"]
         return []
-    if common_changed:
-        affected = set(state["checkpoints"])
-    else:
-        affected = set()
-        for name in changed_scopes:
-            for mode in state_relationships.SCOPE_RESULTS.get(name, ()):
-                affected.update(state_relationships.MODE_INVALIDATION[mode])
+    affected: set[str] = set()
+    for name in changed_scopes:
+        for mode in state_relationships.SCOPE_RESULTS.get(name, ()):
+            affected.update(state_relationships.MODE_INVALIDATION[mode])
     removed = sorted(name for name in affected if name in state["checkpoints"])
-    if state.get("baseline") is not None and not common_changed and changed_scopes & {"frontier", "core", "product"}:
+    if state.get("baseline") is not None and changed_scopes & {"frontier", "core", "product"}:
         state.setdefault("baseline_history", []).append(state["baseline"])
         state["baseline"] = None
     state["binding"] = copy.deepcopy(binding)
@@ -221,47 +193,46 @@ def canonical_sha256(value: Any) -> str:
 
 
 def _validate_state(contract: dict[str, Any], state: dict[str, Any]) -> None:
-    _require(state.get("schema") in {"ownward.acceptance-state/v1", evidence_identity.STATE_SCHEMA}, "状态文件 schema 无效")
+    _require(state.get("schema") == evidence_identity.STATE_SCHEMA, "状态文件 schema 无效")
     _require(state.get("suite_version") == contract["suite_version"], "状态文件体系版本无效")
     _require(isinstance(state.get("binding"), dict), "状态文件缺少候选绑定")
     candidate_binding.validate_binding(state["binding"])
     _require(isinstance(state.get("checkpoints"), dict), "状态文件缺少检查点")
     _require(isinstance(state.get("invalidated_reports"), dict), "状态文件缺少失效报告记录")
-    if state.get("schema") == evidence_identity.STATE_SCHEMA:
-        _require(state["binding"].get("schema") == evidence_identity.BINDING_SCHEMA, "当前状态必须使用直接依赖绑定")
-        for mode, checkpoint in state["checkpoints"].items():
-            _require(isinstance(checkpoint, dict), f"{mode} 检查点无效")
-            try:
-                evidence_identity.validate_evidence_identity(
-                    checkpoint.get("evidence_identity"), kind=mode,
-                    report_sha256=str(checkpoint.get("report_sha256", "")),
-                    dependencies=_dependencies_for_mode(state["binding"], mode),
-                )
-            except evidence_identity.EvidenceIdentityError as error:
-                raise LifecycleError(str(error)) from error
-        baseline = state.get("baseline")
-        if baseline is not None:
-            try:
-                evidence_identity.validate_baseline_identity(baseline, binding=state["binding"])
-            except evidence_identity.EvidenceIdentityError as error:
-                raise LifecycleError(str(error)) from error
-            for mode, field in (
-                ("core", "core_report_sha256"),
-                ("frontier", "frontier_report_sha256"),
-                ("qualification", "qualification_report_sha256"),
-            ):
-                checkpoint = state["checkpoints"].get(mode)
-                _require(
-                    isinstance(checkpoint, dict) and checkpoint.get("report_sha256") == baseline.get(field),
-                    f"活动基线 {mode} 报告不是当前检查点",
-                )
-        history = state.get("baseline_history")
-        _require(isinstance(history, list), "基线历史必须是数组")
-        for index, value in enumerate(history):
-            try:
-                evidence_identity.validate_baseline_identity(value)
-            except evidence_identity.EvidenceIdentityError as error:
-                raise LifecycleError(f"基线历史 {index}: {error}") from error
+    _require(state["binding"].get("schema") == evidence_identity.BINDING_SCHEMA, "当前状态必须使用直接依赖绑定")
+    for mode, checkpoint in state["checkpoints"].items():
+        _require(isinstance(checkpoint, dict), f"{mode} 检查点无效")
+        try:
+            evidence_identity.validate_evidence_identity(
+                checkpoint.get("evidence_identity"), kind=mode,
+                report_sha256=str(checkpoint.get("report_sha256", "")),
+                dependencies=_dependencies_for_mode(state["binding"], mode),
+            )
+        except evidence_identity.EvidenceIdentityError as error:
+            raise LifecycleError(str(error)) from error
+    baseline = state.get("baseline")
+    if baseline is not None:
+        try:
+            evidence_identity.validate_baseline_identity(baseline, binding=state["binding"])
+        except evidence_identity.EvidenceIdentityError as error:
+            raise LifecycleError(str(error)) from error
+        for mode, field in (
+            ("core", "core_report_sha256"),
+            ("frontier", "frontier_report_sha256"),
+            ("qualification", "qualification_report_sha256"),
+        ):
+            checkpoint = state["checkpoints"].get(mode)
+            _require(
+                isinstance(checkpoint, dict) and checkpoint.get("report_sha256") == baseline.get(field),
+                f"活动基线 {mode} 报告不是当前检查点",
+            )
+    history = state.get("baseline_history")
+    _require(isinstance(history, list), "基线历史必须是数组")
+    for index, value in enumerate(history):
+        try:
+            evidence_identity.validate_baseline_identity(value)
+        except evidence_identity.EvidenceIdentityError as error:
+            raise LifecycleError(f"基线历史 {index}: {error}") from error
 
 
 def _require(condition: bool, message: str) -> None:

@@ -26,7 +26,7 @@ func TestCollaborativeLongAssetUsesTraceableEvidenceUnits(t *testing.T) {
 		t.Fatal(err)
 	}
 	embedder := &countingEmbedding{HashForTesting: embedding.HashForTesting{Dimensions: 64}}
-	service, err := NewCollaborative(assets, state, embedder)
+	service, err := newTestCollaborative(t, assets, state, embedder)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestCollaborativeLongAssetUsesTraceableEvidenceUnits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reopened, err := NewCollaborative(assets, state, embedding.HashForTesting{Dimensions: 64})
+	reopened, err := newTestCollaborative(t, assets, state, embedding.HashForTesting{Dimensions: 64})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestCollaborativeSearchSkipsEmbeddingWithoutComparableVectors(t *testing.T)
 		t.Fatal(err)
 	}
 	embedder := &countingEmbedding{HashForTesting: embedding.HashForTesting{Dimensions: 64}}
-	service, err := NewCollaborative(assets, state, embedder)
+	service, err := newTestCollaborative(t, assets, state, embedder)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func TestCollaborativeSemanticWorkIsVersionedAndAppliedByTheKernel(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := NewCollaborative(assets, state, embedding.HashForTesting{Dimensions: 64})
+	service, err := newTestCollaborative(t, assets, state, embedding.HashForTesting{Dimensions: 64})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +167,7 @@ func TestCollaborativeSemanticWorkIsVersionedAndAppliedByTheKernel(t *testing.T)
 	if first.Organization.Status != "pending" || first.Organization.RequiredAction != semanticWorkRequiredAction {
 		t.Fatalf("asset must be durable before external understanding completes: %#v", first.Organization)
 	}
-	work := nextSemanticWork(t, ctx, service)
+	work := nextSemanticWork(t, ctx, service.Service)
 	if work.Asset.ID != first.Information.ID || len(work.Candidates) != 0 {
 		t.Fatalf("unexpected first semantic work: %#v", work)
 	}
@@ -179,7 +179,7 @@ func TestCollaborativeSemanticWorkIsVersionedAndAppliedByTheKernel(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	work = nextSemanticWork(t, ctx, service)
+	work = nextSemanticWork(t, ctx, service.Service)
 	if work.Asset.ID != second.Information.ID || len(work.Candidates) == 0 || work.Candidates[0].Revision == 0 {
 		t.Fatalf("semantic work did not bind candidate revisions: %#v", work)
 	}
@@ -226,7 +226,7 @@ func TestCollaborativeCompactReceiptPreservesIdempotencyAfterRestart(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := NewCollaborative(assets, state, embedding.HashForTesting{Dimensions: 64})
+	service, err := newTestCollaborative(t, assets, state, embedding.HashForTesting{Dimensions: 64})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,7 +234,7 @@ func TestCollaborativeCompactReceiptPreservesIdempotencyAfterRestart(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	work := nextSemanticWork(t, ctx, service)
+	work := nextSemanticWork(t, ctx, service.Service)
 	submission := semanticSubmission(work, semantics.Analysis{Summary: "durable compact receipt"})
 	if _, err := service.SubmitSemantic(ctx, submission); err != nil {
 		t.Fatal(err)
@@ -251,7 +251,7 @@ func TestCollaborativeCompactReceiptPreservesIdempotencyAfterRestart(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	reopened, err := NewCollaborative(assets, state, embedding.HashForTesting{Dimensions: 64})
+	reopened, err := newTestCollaborative(t, assets, state, embedding.HashForTesting{Dimensions: 64})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -277,7 +277,7 @@ func TestUpdateRefreshesPendingSemanticWorkThatReferencesTheOldRevision(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := NewCollaborative(assets, state, embedding.HashForTesting{Dimensions: 64})
+	service, err := newTestCollaborative(t, assets, state, embedding.HashForTesting{Dimensions: 64})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,7 +322,7 @@ func TestCollaborativeRebuildSwitchesOnlyACompleteGeneration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := NewCollaborative(assets, state, embedding.HashForTesting{Dimensions: 64})
+	service, err := newTestCollaborative(t, assets, state, embedding.HashForTesting{Dimensions: 64})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -331,7 +331,7 @@ func TestCollaborativeRebuildSwitchesOnlyACompleteGeneration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	work := nextSemanticWork(t, ctx, service)
+	work := nextSemanticWork(t, ctx, service.Service)
 	if _, err := service.SubmitSemantic(ctx, semanticSubmission(work, semantics.Analysis{Summary: "周一力量训练"})); err != nil {
 		t.Fatal(err)
 	}
@@ -366,7 +366,7 @@ func TestCollaborativeRebuildKeepsCurrentGenerationWhenEmbeddingFails(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := NewCollaborative(assets, state, embedding.Unavailable{Reason: "expected failure"})
+	service, err := newTestCollaborative(t, assets, state, embedding.Unavailable{Reason: "expected failure"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -398,7 +398,7 @@ func TestUnavailableCapabilityPreservesLastValidVectorsAndOrganization(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := NewCollaborative(assets, state, embedding.HashForTesting{Dimensions: 64})
+	service, err := newTestCollaborative(t, assets, state, embedding.HashForTesting{Dimensions: 64})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -406,7 +406,7 @@ func TestUnavailableCapabilityPreservesLastValidVectorsAndOrganization(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	work := nextSemanticWork(t, ctx, service)
+	work := nextSemanticWork(t, ctx, service.Service)
 	if _, err := service.SubmitSemantic(ctx, semanticSubmission(work, semantics.Analysis{Summary: "保持最后有效状态"})); err != nil {
 		t.Fatal(err)
 	}
@@ -422,7 +422,7 @@ func TestUnavailableCapabilityPreservesLastValidVectorsAndOrganization(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err = NewCollaborative(assets, state, embedding.Unavailable{Reason: "temporary outage"})
+	service, err = newTestCollaborative(t, assets, state, embedding.Unavailable{Reason: "temporary outage"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -447,7 +447,7 @@ func TestChangedVectorSpaceIsPersistentlyIsolatedUntilRebuild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := NewCollaborative(assets, state, embedding.HashForTesting{Dimensions: 64})
+	service, err := newTestCollaborative(t, assets, state, embedding.HashForTesting{Dimensions: 64})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -455,7 +455,7 @@ func TestChangedVectorSpaceIsPersistentlyIsolatedUntilRebuild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	work := nextSemanticWork(t, ctx, service)
+	work := nextSemanticWork(t, ctx, service.Service)
 	if _, err := service.SubmitSemantic(ctx, semanticSubmission(work, semantics.Analysis{Summary: "向量空间隔离"})); err != nil {
 		t.Fatal(err)
 	}
@@ -465,7 +465,7 @@ func TestChangedVectorSpaceIsPersistentlyIsolatedUntilRebuild(t *testing.T) {
 
 	assets, _ = assetlog.Open(filepath.Join(root, "assets"))
 	state, _ = derived.Open(filepath.Join(root, "state"))
-	service, err = NewCollaborative(assets, state, alternateEmbedding{HashForTesting: embedding.HashForTesting{Dimensions: 64}})
+	service, err = newTestCollaborative(t, assets, state, alternateEmbedding{HashForTesting: embedding.HashForTesting{Dimensions: 64}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -482,7 +482,7 @@ func TestChangedVectorSpaceIsPersistentlyIsolatedUntilRebuild(t *testing.T) {
 
 	assets, _ = assetlog.Open(filepath.Join(root, "assets"))
 	state, _ = derived.Open(filepath.Join(root, "state"))
-	service, err = NewCollaborative(assets, state, embedding.HashForTesting{Dimensions: 64})
+	service, err = newTestCollaborative(t, assets, state, embedding.HashForTesting{Dimensions: 64})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -507,7 +507,7 @@ func TestSemanticBatchReportsEachIndependentResult(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := NewCollaborative(assets, state, embedding.HashForTesting{Dimensions: 64})
+	service, err := newTestCollaborative(t, assets, state, embedding.HashForTesting{Dimensions: 64})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -545,7 +545,7 @@ func TestCreateBatchSharesOneEmbeddingRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 	embedder := &countingEmbedding{HashForTesting: embedding.HashForTesting{Dimensions: 64}}
-	service, err := NewCollaborative(assets, state, embedder)
+	service, err := newTestCollaborative(t, assets, state, embedder)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -605,7 +605,7 @@ func TestCreateBatchPreservesEarlierBatchSemanticCandidatesBeforePublishing(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := NewCollaborative(assets, state, constantEmbedding{})
+	service, err := newTestCollaborative(t, assets, state, constantEmbedding{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -685,7 +685,7 @@ func TestSemanticSubmissionCreatesOneRecoverableVectorForLongAssets(t *testing.T
 		t.Fatal(err)
 	}
 	embedder := &boundedSemanticEmbedding{}
-	service, err := NewCollaborative(assets, state, embedder)
+	service, err := newTestCollaborative(t, assets, state, embedder)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -760,7 +760,7 @@ func TestSemanticSubmissionCreatesOneRecoverableVectorForLongAssets(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	reopened, err := NewCollaborative(assets, state, &boundedSemanticEmbedding{})
+	reopened, err := newTestCollaborative(t, assets, state, &boundedSemanticEmbedding{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -777,7 +777,7 @@ func TestAcceptedSemanticSubmissionCanRecoverAPreviouslyFailedVector(t *testing.
 	assets, _ := assetlog.Open(filepath.Join(root, "assets"))
 	state, _ := derived.Open(filepath.Join(root, "state"))
 	embedder := &boundedSemanticEmbedding{failNext: true}
-	service, err := NewCollaborative(assets, state, embedder)
+	service, err := newTestCollaborative(t, assets, state, embedder)
 	if err != nil {
 		t.Fatal(err)
 	}

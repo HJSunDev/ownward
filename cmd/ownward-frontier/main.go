@@ -24,6 +24,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/HJSunDev/ownward/internal/assetlog"
+	"github.com/HJSunDev/ownward/internal/authorityport"
 	"github.com/HJSunDev/ownward/internal/core"
 	"github.com/HJSunDev/ownward/internal/derived"
 	"github.com/HJSunDev/ownward/internal/domain"
@@ -40,6 +41,31 @@ const (
 type contextValue struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
+}
+
+type ownedCollaborative struct {
+	*core.Service
+	assets *assetlog.Store
+}
+
+func openCollaborative(assets *assetlog.Store, state *derived.Store, vector embedding.Provider) (*ownedCollaborative, error) {
+	authority, err := authorityport.Bind(assets)
+	if err != nil {
+		return nil, err
+	}
+	service, err := core.NewCollaborativeWithAuthority(authority, state, vector)
+	if err != nil {
+		return nil, err
+	}
+	return &ownedCollaborative{Service: service, assets: assets}, nil
+}
+
+func (service *ownedCollaborative) Close() error {
+	first := service.Service.Close()
+	if err := service.assets.Close(); first == nil {
+		first = err
+	}
+	return first
 }
 
 type assetValue struct {
@@ -562,7 +588,7 @@ func measureFixture(ctx context.Context, value fixture, stages map[string]bool, 
 				return err
 			}
 		}
-		service, err := core.NewCollaborative(assets, states, frozenProvider{queries: value.QueryVectors})
+		service, err := openCollaborative(assets, states, frozenProvider{queries: value.QueryVectors})
 		if err != nil {
 			return err
 		}
@@ -588,13 +614,13 @@ func measureFixture(ctx context.Context, value fixture, stages map[string]bool, 
 			}
 			if query.ContextBudgetChars > 0 {
 				v0Started := time.Now()
-				v0Delivery, err := budgetedFullServiceReadIDs(ctx, service, results, query.ContextBudgetChars, query.ReadLimit)
+				v0Delivery, err := budgetedFullServiceReadIDs(ctx, service.Service, results, query.ContextBudgetChars, query.ReadLimit)
 				v0Elapsed := time.Since(v0Started)
 				if err != nil {
 					return err
 				}
 				candidateStarted := time.Now()
-				candidateDelivery, err := budgetedServiceReadIDs(ctx, service, results, query.Query, query.ContextBudgetChars, query.ReadLimit)
+				candidateDelivery, err := budgetedServiceReadIDs(ctx, service.Service, results, query.Query, query.ContextBudgetChars, query.ReadLimit)
 				candidateElapsed := time.Since(candidateStarted)
 				if err != nil {
 					return err
@@ -811,7 +837,7 @@ func measureOrganizationLifecycle(ctx context.Context, assets []domain.Informati
 		return lifecycleMeasurement{}, err
 	}
 	provider := &measuringProvider{}
-	service, err := core.NewCollaborative(assetStore, stateStore, provider)
+	service, err := openCollaborative(assetStore, stateStore, provider)
 	if err != nil {
 		_ = stateStore.Close()
 		_ = assetStore.Close()
@@ -886,7 +912,7 @@ func measureStorageArchitecture(ctx context.Context, value fixture, out collecto
 		_ = assetStore.Close()
 		return err
 	}
-	service, err := core.NewCollaborative(assetStore, stateStore, embedding.HashForTesting{Dimensions: 64})
+	service, err := openCollaborative(assetStore, stateStore, embedding.HashForTesting{Dimensions: 64})
 	if err != nil {
 		_ = stateStore.Close()
 		_ = assetStore.Close()
@@ -961,7 +987,7 @@ func measureStorageArchitecture(ctx context.Context, value fixture, out collecto
 		_ = assetStore.Close()
 		return err
 	}
-	service, err = core.NewCollaborative(assetStore, stateStore, embedding.HashForTesting{Dimensions: 64})
+	service, err = openCollaborative(assetStore, stateStore, embedding.HashForTesting{Dimensions: 64})
 	if err != nil {
 		_ = stateStore.Close()
 		_ = assetStore.Close()
@@ -1384,7 +1410,7 @@ func measurePublicCreate(ctx context.Context, root string, assets []domain.Infor
 		_ = assetStore.Close()
 		return 0, false, false, err
 	}
-	service, err := core.NewCollaborative(assetStore, stateStore, embedding.HashForTesting{Dimensions: 16})
+	service, err := openCollaborative(assetStore, stateStore, embedding.HashForTesting{Dimensions: 16})
 	if err != nil {
 		return 0, false, false, err
 	}
@@ -1432,7 +1458,7 @@ func measurePublicCreate(ctx context.Context, root string, assets []domain.Infor
 		_ = assetStore.Close()
 		return 0, false, false, err
 	}
-	reopened, err := core.NewCollaborative(assetStore, stateStore, embedding.HashForTesting{Dimensions: 16})
+	reopened, err := openCollaborative(assetStore, stateStore, embedding.HashForTesting{Dimensions: 16})
 	if err != nil {
 		return 0, false, false, err
 	}
@@ -1474,7 +1500,7 @@ func measureConcurrentBatchCreate(ctx context.Context, root string) (bool, error
 		_ = assetStore.Close()
 		return false, err
 	}
-	service, err := core.NewCollaborative(assetStore, stateStore, embedding.HashForTesting{Dimensions: 16})
+	service, err := openCollaborative(assetStore, stateStore, embedding.HashForTesting{Dimensions: 16})
 	if err != nil {
 		return false, err
 	}
@@ -1769,7 +1795,7 @@ func measureSemanticRepresentation(ctx context.Context, value fixture, out colle
 		return err
 	}
 	provider := &boundedSemanticProvider{queries: value.QueryVectors, embeddingKeys: value.EmbeddingKeys}
-	service, err := core.NewCollaborative(assetStore, stateStore, provider)
+	service, err := openCollaborative(assetStore, stateStore, provider)
 	if err != nil {
 		return err
 	}
@@ -1911,7 +1937,7 @@ func measureSemanticRepresentation(ctx context.Context, value fixture, out colle
 	if err != nil {
 		return err
 	}
-	reopened, err := core.NewCollaborative(assetStore, stateStore, &boundedSemanticProvider{queries: value.QueryVectors, embeddingKeys: value.EmbeddingKeys})
+	reopened, err := openCollaborative(assetStore, stateStore, &boundedSemanticProvider{queries: value.QueryVectors, embeddingKeys: value.EmbeddingKeys})
 	if err != nil {
 		return err
 	}

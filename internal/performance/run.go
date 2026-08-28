@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/HJSunDev/ownward/internal/assetlog"
+	"github.com/HJSunDev/ownward/internal/authorityport"
 	"github.com/HJSunDev/ownward/internal/candidate"
 	"github.com/HJSunDev/ownward/internal/core"
 	"github.com/HJSunDev/ownward/internal/derived"
@@ -533,7 +534,16 @@ func measurePersistence(ctx context.Context, iterations int) (Distribution, Dist
 	if err != nil {
 		return Distribution{}, Distribution{}, err
 	}
-	service := core.New(searchStore)
+	authority, err := authorityport.Bind(searchStore)
+	if err != nil {
+		_ = searchStore.Close()
+		return Distribution{}, Distribution{}, err
+	}
+	service, err := core.NewWithAuthority(authority)
+	if err != nil {
+		_ = searchStore.Close()
+		return Distribution{}, Distribution{}, err
+	}
 	searchable := make([]time.Duration, iterations)
 	lastID := ""
 	for index := 0; index < iterations; index++ {
@@ -552,6 +562,10 @@ func measurePersistence(ctx context.Context, iterations int) (Distribution, Dist
 		return Distribution{}, Distribution{}, fmt.Errorf("持久信息未达到基础可检索状态")
 	}
 	if err := service.Close(); err != nil {
+		_ = searchStore.Close()
+		return Distribution{}, Distribution{}, err
+	}
+	if err := searchStore.Close(); err != nil {
 		return Distribution{}, Distribution{}, err
 	}
 	return distribution(durable), distribution(searchable), nil

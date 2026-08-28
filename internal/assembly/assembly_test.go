@@ -14,8 +14,8 @@ import (
 	"testing"
 
 	"github.com/HJSunDev/ownward/internal/assetlog"
+	"github.com/HJSunDev/ownward/internal/authorityport"
 	"github.com/HJSunDev/ownward/internal/authoritysubstrate"
-	"github.com/HJSunDev/ownward/internal/capabilityadapter"
 	"github.com/HJSunDev/ownward/internal/composition"
 	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/core"
@@ -148,19 +148,19 @@ func TestSharedConnectorPreflightDoesNotHashTechnicalArtifacts(t *testing.T) {
 	}
 }
 
-func TestExplicitAssemblyMatchesAllLegacyProductSemantics(t *testing.T) {
+func TestExplicitAssemblyMatchesDirectStableProductSemantics(t *testing.T) {
 	for _, mode := range []ProductSemantics{Basic, Organized, Collaborative} {
 		t.Run(string(mode), func(t *testing.T) {
 			manifest := testManifest(t, mode)
 			oldDir := filepath.Join(t.TempDir(), "old")
 			newDir := filepath.Join(t.TempDir(), "new")
-			legacy := openLegacy(t, mode, oldDir, semantics.Heuristic{}, embedding.HashForTesting{Dimensions: 32})
-			t.Cleanup(func() { _ = legacy.Close() })
+			direct := openDirectStable(t, mode, oldDir, semantics.Heuristic{}, embedding.HashForTesting{Dimensions: 32})
+			t.Cleanup(func() { _ = direct.Close() })
 			request := Request{
 				DataDir: newDir, ProductSemantics: mode,
 			}
 			if mode == Organized {
-				request.OrganizedProvider, request.OrganizedVector = capabilityadapter.LegacySemanticProvider(semantics.Heuristic{})
+				request.OrganizedProvider, request.OrganizedVector = adaptProvider(semantics.Heuristic{})
 			}
 			if mode == Collaborative {
 				request.VectorBundleDir = filepath.Join(t.TempDir(), "embedding")
@@ -175,15 +175,15 @@ func TestExplicitAssemblyMatchesAllLegacyProductSemantics(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _ = runtime.Close() })
-			legacySnapshot := exerciseProduct(t, legacy)
+			directSnapshot := exerciseProduct(t, direct.Service)
 			assembledSnapshot := exerciseProduct(t, runtime.Service())
-			if !reflect.DeepEqual(legacySnapshot, assembledSnapshot) {
-				t.Fatalf("new assembly changed %s semantics:\nlegacy=%#v\nassembled=%#v", mode, legacySnapshot, assembledSnapshot)
+			if !reflect.DeepEqual(directSnapshot, assembledSnapshot) {
+				t.Fatalf("new assembly changed %s semantics:\ndirect=%#v\nassembled=%#v", mode, directSnapshot, assembledSnapshot)
 			}
 			if runtime.ProductSemantics() != mode || runtime.Composition().Composition == "" {
 				t.Fatalf("runtime did not retain explicit identity: %#v", runtime.Composition())
 			}
-			if err := legacy.Close(); err != nil {
+			if err := direct.Close(); err != nil {
 				t.Fatal(err)
 			}
 			if err := runtime.Close(); err != nil {
@@ -192,7 +192,7 @@ func TestExplicitAssemblyMatchesAllLegacyProductSemantics(t *testing.T) {
 			if err := runtime.Close(); err != nil {
 				t.Fatalf("runtime close was not idempotent: %v", err)
 			}
-			assertPersistedEquivalent(t, oldDir, newDir, legacySnapshot.Content)
+			assertPersistedEquivalent(t, oldDir, newDir, directSnapshot.Content)
 		})
 	}
 }
@@ -210,14 +210,14 @@ func TestExplicitAssemblyPreservesOrganizedAndVectorDegradation(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			manifest := testManifest(t, test.mode)
 			if test.mode == Organized {
-				semantic, vector := capabilityadapter.LegacySemanticProvider(test.provider)
+				semantic, vector := adaptProvider(test.provider)
 				manifest = testManifestWithCapabilities(t, test.mode, semantic, vector)
 			}
-			legacy := openLegacy(t, test.mode, filepath.Join(t.TempDir(), "legacy"), test.provider, test.vector)
-			defer legacy.Close()
+			direct := openDirectStable(t, test.mode, filepath.Join(t.TempDir(), "direct"), test.provider, test.vector)
+			defer direct.Close()
 			request := Request{DataDir: filepath.Join(t.TempDir(), "new"), ProductSemantics: test.mode}
 			if test.mode == Organized {
-				request.OrganizedProvider, request.OrganizedVector = capabilityadapter.LegacySemanticProvider(test.provider)
+				request.OrganizedProvider, request.OrganizedVector = adaptProvider(test.provider)
 			} else {
 				request.VectorBundleDir = filepath.Join(t.TempDir(), "embedding")
 			}
@@ -229,10 +229,10 @@ func TestExplicitAssemblyPreservesOrganizedAndVectorDegradation(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer runtime.Close()
-			legacyResult, legacyErr := legacy.Create(context.Background(), core.CreateInput{Kind: domain.KindGeneral, Content: "明确保留既有退化语义"})
+			directResult, directErr := direct.Create(context.Background(), core.CreateInput{Kind: domain.KindGeneral, Content: "明确保留既有退化语义"})
 			newResult, newErr := runtime.Service().Create(context.Background(), core.CreateInput{Kind: domain.KindGeneral, Content: "明确保留既有退化语义"})
-			if errorText(legacyErr) != errorText(newErr) || legacyResult.Organization.Status != newResult.Organization.Status || legacyResult.Organization.Error != newResult.Organization.Error || legacyResult.Organization.RequiredAction != newResult.Organization.RequiredAction {
-				t.Fatalf("degradation changed: legacy=%#v/%v new=%#v/%v", legacyResult, legacyErr, newResult, newErr)
+			if errorText(directErr) != errorText(newErr) || directResult.Organization.Status != newResult.Organization.Status || directResult.Organization.Error != newResult.Organization.Error || directResult.Organization.RequiredAction != newResult.Organization.RequiredAction {
+				t.Fatalf("degradation changed: direct=%#v/%v new=%#v/%v", directResult, directErr, newResult, newErr)
 			}
 		})
 	}
@@ -240,7 +240,7 @@ func TestExplicitAssemblyPreservesOrganizedAndVectorDegradation(t *testing.T) {
 
 func TestOrganizedCapabilityMismatchFailsBeforeProductResources(t *testing.T) {
 	manifest := testManifest(t, Organized)
-	semantic, vector := capabilityadapter.LegacySemanticProvider(failingProvider{})
+	semantic, vector := adaptProvider(failingProvider{})
 	dataDir := filepath.Join(t.TempDir(), "product")
 	opened := false
 	_, err := openWith(Request{
@@ -317,7 +317,7 @@ func TestExplicitModeRejectsNilAndManifestMismatchBeforeOpen(t *testing.T) {
 		func() Request {
 			value := base
 			value.ProductSemantics = Organized
-			value.OrganizedProvider, _ = capabilityadapter.LegacySemanticProvider(semantics.Heuristic{})
+			value.OrganizedProvider, _ = adaptProvider(semantics.Heuristic{})
 			return value
 		}(),
 	} {
@@ -392,14 +392,35 @@ func exerciseProduct(t *testing.T, service *core.Service) productSnapshot {
 	}
 }
 
-func openLegacy(t *testing.T, mode ProductSemantics, dataDir string, provider semantics.Provider, vector embedding.Provider) *core.Service {
+type ownedTestService struct {
+	*core.Service
+	store *assetlog.Store
+}
+
+func (service *ownedTestService) Close() error {
+	first := service.Service.Close()
+	if err := service.store.Close(); first == nil {
+		first = err
+	}
+	return first
+}
+
+func openDirectStable(t *testing.T, mode ProductSemantics, dataDir string, provider semantics.Provider, vector embedding.Provider) *ownedTestService {
 	t.Helper()
 	store, err := assetlog.Open(filepath.Join(dataDir, "assets"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	authority, err := authorityport.Bind(store)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if mode == Basic {
-		return core.New(store)
+		service, openErr := core.NewWithAuthority(authority)
+		if openErr != nil {
+			t.Fatal(openErr)
+		}
+		return &ownedTestService{Service: service, store: store}
 	}
 	derivedStore, err := derived.Open(filepath.Join(dataDir, "state"))
 	if err != nil {
@@ -408,16 +429,17 @@ func openLegacy(t *testing.T, mode ProductSemantics, dataDir string, provider se
 	}
 	var service *core.Service
 	if mode == Organized {
-		service, err = core.NewOrganized(store, derivedStore, provider)
+		semantic, vectorCapability := adaptProvider(provider)
+		service, err = core.NewOrganizedWithCapabilities(authority, derivedStore, semantic, vectorCapability)
 	} else {
-		service, err = core.NewCollaborative(store, derivedStore, vector)
+		service, err = core.NewCollaborativeWithAuthority(authority, derivedStore, vector)
 	}
 	if err != nil {
 		_ = derivedStore.Close()
 		_ = store.Close()
 		t.Fatal(err)
 	}
-	return service
+	return &ownedTestService{Service: service, store: store}
 }
 
 func openTestAuthority(path string, initial contract.ControlState) (contract.AuthoritySubstrate, error) {
@@ -452,9 +474,55 @@ func (failingProvider) Embed(context.Context, []string) ([][]float32, error) {
 	return nil, errors.New("semantic unavailable")
 }
 
+func adaptProvider(provider semantics.Provider) (contract.SemanticCapability, contract.VectorCapability) {
+	if provider == nil {
+		provider = semantics.Heuristic{}
+	}
+	return testSemanticCapability{provider: provider}, testVectorCapability{provider: provider}
+}
+
+type testSemanticCapability struct{ provider semantics.Provider }
+
+func (value testSemanticCapability) Identity() semantics.Capability {
+	return semantics.Capability{ID: value.provider.Name(), Version: "test-provider-v1", Execution: "in-process"}
+}
+
+func (value testSemanticCapability) Analyze(ctx context.Context, work semantics.Work) (semantics.Submission, error) {
+	analysis, err := value.provider.Analyze(ctx, work.Asset, work.Candidates)
+	if err != nil {
+		return semantics.Submission{}, err
+	}
+	return semantics.Submission{
+		Schema: semantics.SubmissionSchema, WorkID: work.ID, AssetID: work.Asset.ID,
+		Revision: work.Asset.Revision, Capability: value.Identity(), Status: semantics.SubmissionComplete,
+		Analysis: analysis,
+	}, nil
+}
+
+type testVectorCapability struct{ provider semantics.Provider }
+
+func (value testVectorCapability) Name() string { return value.provider.Name() }
+func (value testVectorCapability) Space() embedding.Space {
+	return embedding.Space{ID: "test:" + strings.TrimSpace(value.provider.Name()), Dimensions: semantics.DefaultEmbeddingDimensions}
+}
+func (value testVectorCapability) EmbedDocuments(ctx context.Context, inputs []string) ([][]float32, error) {
+	return value.provider.Embed(ctx, inputs)
+}
+func (value testVectorCapability) EmbedQuery(ctx context.Context, input string) ([]float32, error) {
+	values, err := value.provider.Embed(ctx, []string{input})
+	if err != nil {
+		return nil, err
+	}
+	if len(values) != 1 {
+		return nil, errors.New("test vector capability returned an invalid count")
+	}
+	return values[0], nil
+}
+func (testVectorCapability) Close() error { return nil }
+
 func testManifest(t *testing.T, mode ProductSemantics) composition.Manifest {
 	if mode == Organized {
-		semantic, vector := capabilityadapter.LegacySemanticProvider(semantics.Heuristic{})
+		semantic, vector := adaptProvider(semantics.Heuristic{})
 		return testManifestWithCapabilities(t, mode, semantic, vector)
 	}
 	return testManifestWithCapabilities(t, mode, nil, nil)

@@ -7,20 +7,21 @@ import sys
 import unittest
 
 import binding
-import relationships
+import report_relationships
+import state_relationships
 
 
 class InternalRelationshipMatrixTests(unittest.TestCase):
     def test_feedback_and_stage_triggers_are_distinct(self) -> None:
-        self.assertEqual(["targeted"], relationships.plan_for_impacts(["retrieval", "organization"]))
-        self.assertEqual(["core"], relationships.plan_for_impacts(["asset"]))
-        self.assertEqual([], relationships.stages_for_impacts(["asset"]))
-        self.assertEqual(["core", "frontier", "qualification"], relationships.plan_for_stage("kernel-baseline"))
+        self.assertEqual(["targeted"], state_relationships.plan_for_impacts(["retrieval", "organization"]))
+        self.assertEqual(["core"], state_relationships.plan_for_impacts(["asset"]))
+        self.assertEqual([], state_relationships.stages_for_impacts(["asset"]))
+        self.assertEqual(["core", "frontier", "qualification"], state_relationships.plan_for_stage("kernel-baseline"))
 
     def test_frontier_has_no_targeted_eligibility_dependency(self) -> None:
-        self.assertEqual((), relationships.START_ELIGIBILITY["frontier"])
-        self.assertEqual(("core", "frontier"), relationships.START_ELIGIBILITY["qualification"])
-        self.assertEqual(("core", "frontier", "qualification"), relationships.BASELINE_AGGREGATES)
+        self.assertEqual((), report_relationships.START_ELIGIBILITY["frontier"])
+        self.assertEqual(("core", "frontier"), report_relationships.START_ELIGIBILITY["qualification"])
+        self.assertEqual(("core", "frontier", "qualification"), state_relationships.BASELINE_AGGREGATES)
 
     def test_each_internal_scope_accepts_its_minimum_config(self) -> None:
         common = {"schema": "ownward.acceptance-execution/v3", "repository": "repo", "workspace": "workspace", "binding_dir": "binding"}

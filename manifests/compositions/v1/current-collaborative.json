@@ -54,14 +54,14 @@
       "dependencies": [
         {
           "role": "kernel",
-          "identity": "79db0eb70cc357a0c0ee7ef189a7c3622e3eed5ee2ed223db9afed3d38b2cee4"
+          "identity": "db18a3a1e42ca48d23757deef53c822c813ace62ff57db666f692a04dc1c2684"
         },
         {
           "role": "product-rules",
           "identity": "80919d7ce74ea5a443c1c0c0d2b957ae3e2f1e1adb559f7b761e2e38e2e713f9"
         }
       ],
-      "identity": "b98a14230b449104a2de903ef0c5548490a7f1ce2d02c1119faa3c3c06c81d90"
+      "identity": "53bf4f66e72aba5dc307c5988289e17867909bae95359ab2c2ba22e41c9a31d0"
     },
     {
       "role": "assembly",
@@ -109,7 +109,7 @@
       "dependencies": [
         {
           "role": "access",
-          "identity": "b98a14230b449104a2de903ef0c5548490a7f1ce2d02c1119faa3c3c06c81d90"
+          "identity": "53bf4f66e72aba5dc307c5988289e17867909bae95359ab2c2ba22e41c9a31d0"
         },
         {
           "role": "authority-substrate",
@@ -117,7 +117,7 @@
         },
         {
           "role": "kernel",
-          "identity": "79db0eb70cc357a0c0ee7ef189a7c3622e3eed5ee2ed223db9afed3d38b2cee4"
+          "identity": "db18a3a1e42ca48d23757deef53c822c813ace62ff57db666f692a04dc1c2684"
         },
         {
           "role": "product-rules",
@@ -132,7 +132,7 @@
           "identity": "391b5aa1f4bb3a25d522a4d59c7af1a9aa1150a06480f64d23cfd73f86c808c5"
         }
       ],
-      "identity": "993a098d2014053b3a178999f20b9fd1df0706582eeb40e523c53f30d939bacc"
+      "identity": "32fa22dcf6dfe2f9d68e0df1e9e3652165b6c64fa5ebd9564b79db084a288015"
     },
     {
       "role": "authority-substrate",
@@ -252,7 +252,7 @@
         {
           "name": "core-service",
           "path": "internal/core/service.go",
-          "sha256": "097b358fb51317bb1e7e277bd49e157feed7645e9ed6c7e91df0c19a3bc2f0be"
+          "sha256": "c1ff24050194826fc5ec6db5c46681bbf780a8d6e0a514a73fcd81dfe9b045ae"
         },
         {
           "name": "derived-evidence",
@@ -290,11 +290,6 @@
           "sha256": "39b7f556feeb35005de12a96f4e97b91f8ba2a1b009213dad54ee59d681d7174"
         },
         {
-          "name": "legacy-capability-adapter",
-          "path": "internal/capabilityadapter/legacy_semantic.go",
-          "sha256": "52b2835195c6176827c70f52c14bdd5f382487b1f353693a50ff6a68fc39587d"
-        },
-        {
           "name": "lexical-retrieval",
           "path": "internal/retrieval/lexical.go",
           "sha256": "33607cb8293df23e00193102cebb4a6a02e65df8e656dfc77d91caebfbadf1c2"
@@ -324,7 +319,7 @@
           "identity": "391b5aa1f4bb3a25d522a4d59c7af1a9aa1150a06480f64d23cfd73f86c808c5"
         }
       ],
-      "identity": "79db0eb70cc357a0c0ee7ef189a7c3622e3eed5ee2ed223db9afed3d38b2cee4"
+      "identity": "db18a3a1e42ca48d23757deef53c822c813ace62ff57db666f692a04dc1c2684"
     },
     {
       "role": "product-rules",
@@ -548,7 +543,7 @@
       "identity": "391b5aa1f4bb3a25d522a4d59c7af1a9aa1150a06480f64d23cfd73f86c808c5"
     }
   ],
-  "identity": "bdebd16f805a7ad22c875b780870676fc0b4929aed8616dc15cad1c498778bc5",
+  "identity": "c068ae206a89df9dd2146e98fa875dca80bb05c3ecdafe0343cd825ddd6d751e",
   "audit": {
     "described_product_candidate": "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8",
     "migration_source_git": "dc2c7a09e67f06cfaacbe0a201c7ff27b20d6182"

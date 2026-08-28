@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 import product
-import relationships
+import report_relationships as relationships
 import materials
 
 

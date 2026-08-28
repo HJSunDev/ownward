@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import binding
+import evidence_identity
 
 
 class BindingManifestTests(unittest.TestCase):
@@ -36,7 +37,7 @@ class BindingManifestTests(unittest.TestCase):
         product = {item["path"] for item in manifests["product"]["files"]}
         self.assertTrue(all(manifests[scope]["schema"] == "ownward.acceptance-tool-manifest/v4" for scope in ("community", "frontier", "core")))
         self.assertEqual("ownward.acceptance-tool-manifest/v5", manifests["product"]["schema"])
-        self.assertTrue(all(len(manifest["repository_commit"]) == 40 for manifest in manifests.values()))
+        self.assertTrue(all("repository_commit" not in manifest for manifest in manifests.values()))
         self.assertIn("cmd/ownward-frontier/main.go", frontier)
         self.assertIn("benchmarks/acceptance/suite/execution.py", community & frontier & product)
         self.assertIn("benchmarks/acceptance/suite/adapters/product/verify.py", product)
@@ -163,7 +164,7 @@ class BindingManifestTests(unittest.TestCase):
         }
         binding.validate_config(config)
 
-    def test_deferred_community_scope_is_required_only_when_used(self) -> None:
+    def test_legacy_binding_is_not_an_active_binding(self) -> None:
         value = {
             "schema": "ownward.acceptance-binding/v4", "suite_version": "1.0.0",
             "candidate": "a" * 40,
@@ -172,25 +173,60 @@ class BindingManifestTests(unittest.TestCase):
                 for name in ("frontier", "core", "product")
             },
         }
-        binding.validate_binding(value)
-        self.assertEqual("a" * 40, binding.for_mode(value, "qualification")["candidate"])
-        with self.assertRaisesRegex(binding.BindingError, "尚未绑定 community"):
-            binding.for_mode(value, "longmemeval")
+        with self.assertRaisesRegex(binding.BindingError, "顶层字段"):
+            binding.validate_binding(value)
+
+        manifests = {
+            "frontier-tools.json": self._tool_fixture("frontier", 1),
+        }
+        current = self._current_binding("a" * 40, {"frontier": value["scopes"]["frontier"]}, manifests)
+        current["schema"] = "ownward.acceptance-binding/v5"
+        with self.assertRaisesRegex(binding.BindingError, "schema"):
+            binding.validate_binding(current)
+
+    def test_v6_binding_root_without_active_pointer_is_not_an_active_generation(self) -> None:
+        temporary_root = self.root.parents[2] / ".tmp"
+        temporary_root.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=temporary_root) as directory:
+            output = Path(directory) / "binding"
+            output.mkdir()
+            manifests = {
+                "frontier-environment.json": {"kind": "environment"},
+                "frontier-inputs.json": {"kind": "inputs"},
+                "frontier-tools.json": self._tool_fixture("frontier", 1),
+            }
+            scope = {
+                "environment_sha256": binding._serialized_json_sha256(manifests["frontier-environment.json"]),
+                "input_manifest_sha256": binding._serialized_json_sha256(manifests["frontier-inputs.json"]),
+                "tool_sha256": binding._serialized_json_sha256(manifests["frontier-tools.json"]),
+                "artifact_sha256": "f" * 64,
+            }
+            value = self._current_binding("a" * 40, {"frontier": scope}, manifests)
+            (output / "binding.json").write_text(json.dumps(value), encoding="utf-8")
+            for name, manifest in manifests.items():
+                (output / name).write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(binding.BindingError, "活动绑定指针缺失"):
+                binding.load_active_binding(output)
 
     def test_binding_rejects_unbound_fields_and_invalid_candidate(self) -> None:
-        value = {
-            "schema": "ownward.acceptance-binding/v4", "suite_version": "1.0.0",
-            "candidate": "a" * 40,
-            "scopes": {
-                name: {"environment_sha256": "c" * 64, "input_manifest_sha256": "d" * 64, "tool_sha256": "e" * 64, "artifact_sha256": "f" * 64}
-                for name in ("frontier", "core", "product")
-            },
+        manifests = {
+            "frontier-environment.json": {"kind": "environment"},
+            "frontier-inputs.json": {"kind": "inputs"},
+            "frontier-tools.json": self._tool_fixture("frontier", 1),
         }
+        scope = {
+            "environment_sha256": binding._serialized_json_sha256(manifests["frontier-environment.json"]),
+            "input_manifest_sha256": binding._serialized_json_sha256(manifests["frontier-inputs.json"]),
+            "tool_sha256": binding._serialized_json_sha256(manifests["frontier-tools.json"]),
+            "artifact_sha256": "f" * 64,
+        }
+        value = self._current_binding("a" * 40, {"frontier": scope}, manifests)
         unexpected = dict(value, ignored="not-bound")
         with self.assertRaisesRegex(binding.BindingError, "顶层字段"):
             binding.validate_binding(unexpected)
-        invalid_candidate = dict(value, candidate="z" * 40)
-        with self.assertRaisesRegex(binding.BindingError, "提交身份"):
+        invalid_candidate = copy.deepcopy(value)
+        invalid_candidate["audit"]["source_git"] = "z" * 40
+        with self.assertRaisesRegex(binding.BindingError, "审计来源"):
             binding.validate_binding(invalid_candidate)
         with self.assertRaisesRegex(binding.BindingError, "必须是对象"):
             binding.validate_binding([])
@@ -229,11 +265,10 @@ class BindingManifestTests(unittest.TestCase):
                 },
             }
             candidate = "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8"
-            git_result = lambda _repository, *arguments: candidate if arguments == ("rev-parse", "HEAD") else ""
             version = SimpleNamespace(returncode=0, stdout=candidate + "\n")
             environment = lambda _config, scope: {"schema": "fixture", "scope": scope}
             with (
-                patch.object(binding, "_git", side_effect=git_result),
+                patch.object(binding, "_go_binary_revision", return_value=candidate),
                 patch.object(binding, "_verify_go_binary"),
                 patch.object(binding.subprocess, "run", return_value=version),
                 patch.object(binding, "_environment_manifest", side_effect=environment),
@@ -273,8 +308,7 @@ class BindingManifestTests(unittest.TestCase):
                 "enabled_scopes": ["frontier"], "frontier": {"tool": str(observer), "targeted_stages": ["lexical"]},
             }
             candidate = "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8"
-            git_result = lambda _repository, *arguments: candidate if arguments == ("rev-parse", "HEAD") else ""
-            with patch.object(binding, "_git", side_effect=git_result), patch.object(binding, "_verify_go_binary"):
+            with patch.object(binding, "_go_binary_revision", return_value=candidate), patch.object(binding, "_verify_go_binary"):
                 result = binding.create(self.root, self._write_config(root, config), output)
             self.assertEqual({"frontier"}, set(result["scopes"]))
             self.assertNotIn("binary_sha256", binding.for_mode(result, "frontier"))
@@ -358,7 +392,8 @@ class BindingManifestTests(unittest.TestCase):
             manifests = {}
             scopes = {}
             for scope in ("frontier", "core", "product"):
-                values = {kind: {"scope": scope, "kind": kind, "version": 1} for kind in ("environment", "inputs", "tools")}
+                values = {kind: {"scope": scope, "kind": kind, "version": 1} for kind in ("environment", "inputs")}
+                values["tools"] = self._tool_fixture(scope, 1)
                 manifests.update({f"{scope}-{kind}.json": value for kind, value in values.items()})
                 scopes[scope] = {
                     "environment_sha256": binding._serialized_json_sha256(values["environment"]),
@@ -366,7 +401,7 @@ class BindingManifestTests(unittest.TestCase):
                     "tool_sha256": binding._serialized_json_sha256(values["tools"]),
                     "artifact_sha256": "f" * 64,
                 }
-            previous = {"schema": "ownward.acceptance-binding/v4", "suite_version": "1.0.0", "candidate": candidate, "scopes": scopes}
+            previous = self._current_binding(candidate, scopes, manifests)
             binding._activate_generation(output, previous, manifests)
             old_active = binding._active_generation_dir(output)
             old_core = (old_active / "core-tools.json").read_bytes()
@@ -379,9 +414,8 @@ class BindingManifestTests(unittest.TestCase):
                 "product": {"package": str(root), "production_storage_report": str(binary), "codex_binary": str(binary), "codex_auth_file": str(binary), "codex_model": binding.ACTIVE_CODEX_MODEL, "codex_reasoning_effort": binding.ACTIVE_CODEX_REASONING_EFFORT},
             }
             config_path = self._write_config(root, config)
-            replacement = {"scope": "product", "kind": "tools", "version": 2}
+            replacement = self._tool_fixture("product", 2)
             with (
-                patch.object(binding, "_git", return_value=""),
                 patch.object(binding, "_verify_go_binary"),
                 patch.object(binding.subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout=candidate + "\n")),
                 patch.object(binding, "_environment_manifest", return_value=manifests["product-environment.json"]),
@@ -391,13 +425,13 @@ class BindingManifestTests(unittest.TestCase):
             ):
                 current = binding.rebind_scope(self.root, config_path, output, "product")
             active = binding._active_generation_dir(output)
-            self.assertEqual(candidate, current["candidate"])
-            self.assertEqual(previous["scopes"]["core"], current["scopes"]["core"])
+            self.assertEqual(candidate, evidence_identity.source_git(current))
+            self.assertEqual(previous["scopes"]["core"]["identity"], current["scopes"]["core"]["identity"])
             self.assertEqual(old_core, (active / "core-tools.json").read_bytes())
             self.assertNotEqual(old_active, active)
             self.assertEqual(replacement, json.loads((active / "product-tools.json").read_text(encoding="utf-8")))
 
-    def test_scope_rebind_preserves_a_legacy_root_binding_as_an_immutable_generation(self) -> None:
+    def test_scope_rebind_rejects_a_legacy_root_binding_without_the_one_time_migrator(self) -> None:
         temporary_root = self.root.parents[2] / ".tmp"
         temporary_root.mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(dir=temporary_root) as directory:
@@ -429,34 +463,9 @@ class BindingManifestTests(unittest.TestCase):
             previous = {"schema": "ownward.acceptance-binding/v4", "suite_version": "1.0.0", "candidate": candidate, "scopes": scopes}
             legacy_binding = (json.dumps(previous, ensure_ascii=False, indent=2) + "\n").replace("\n", "\r\n").encode("utf-8")
             (output / "binding.json").write_bytes(legacy_binding)
-            config = {
-                "schema": "ownward.acceptance-execution/v3", "repository": str(self.root.parents[2]),
-                "workspace": str(root / "workspace"), "binding_dir": str(output),
-                "enabled_scopes": ["frontier", "core", "product"],
-                "candidate": {"binary": str(binary), "embedding_bundle_dir": str(embedding)},
-                "frontier": {"tool": str(binary), "targeted_stages": []},
-                "product": {"package": str(root), "production_storage_report": str(binary), "codex_binary": str(binary), "codex_auth_file": str(binary), "codex_model": binding.ACTIVE_CODEX_MODEL, "codex_reasoning_effort": binding.ACTIVE_CODEX_REASONING_EFFORT},
-            }
-            config_path = self._write_config(root, config)
-            replacement = {"scope": "product", "kind": "tools", "version": 2}
-            old_product_sha = previous["scopes"]["product"]["tool_sha256"]
-            with (
-                patch.object(binding, "_git", return_value=""),
-                patch.object(binding, "_verify_go_binary"),
-                patch.object(binding.subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout=candidate + "\n")),
-                patch.object(binding, "_environment_manifest", return_value=manifests["product-environment.json"]),
-                patch.object(binding, "_input_manifest", return_value=manifests["product-inputs.json"]),
-                patch.object(binding, "_tool_manifest", return_value=replacement),
-                patch.object(binding, "_artifact_sha256", return_value="f" * 64),
-            ):
-                binding.rebind_scope(self.root, config_path, output, "product")
-            generations = list((output / "generations").iterdir())
-            self.assertEqual(2, len(generations))
-            legacy_tools = [path for path in output.rglob("product-tools.json") if binding.sha256(path) == old_product_sha]
-            self.assertEqual(1, len(legacy_tools))
-            self.assertIn(b"\r\n", legacy_tools[0].read_bytes())
-            self.assertEqual(manifests["product-tools.json"], json.loads(legacy_tools[0].read_text(encoding="utf-8")))
-            self.assertEqual(replacement, json.loads((binding._active_generation_dir(output) / "product-tools.json").read_text(encoding="utf-8")))
+            with self.assertRaisesRegex(binding.BindingError, "活动绑定指针缺失"):
+                binding.load_active_binding(output)
+            self.assertFalse((output / "active.json").exists())
 
     def test_invalid_generation_is_not_published(self) -> None:
         temporary_root = self.root.parents[2] / ".tmp"
@@ -466,7 +475,7 @@ class BindingManifestTests(unittest.TestCase):
             manifests = {
                 "frontier-environment.json": {"kind": "environment"},
                 "frontier-inputs.json": {"kind": "inputs"},
-                "frontier-tools.json": {"kind": "tools"},
+                "frontier-tools.json": self._tool_fixture("frontier", 1),
             }
             scope = {
                 "environment_sha256": "f" * 64,
@@ -474,7 +483,7 @@ class BindingManifestTests(unittest.TestCase):
                 "tool_sha256": "f" * 64,
                 "artifact_sha256": "f" * 64,
             }
-            value = {"schema": "ownward.acceptance-binding/v4", "suite_version": "1.0.0", "candidate": "a" * 40, "scopes": {"frontier": scope}}
+            value = self._current_binding("a" * 40, {"frontier": scope}, manifests)
             with self.assertRaisesRegex(binding.BindingError, "摘要不一致"):
                 binding._activate_generation(output, value, manifests)
             self.assertEqual([], list((output / "generations").iterdir()))
@@ -487,7 +496,7 @@ class BindingManifestTests(unittest.TestCase):
             manifests = {
                 "frontier-environment.json": {"kind": "environment"},
                 "frontier-inputs.json": {"kind": "inputs"},
-                "frontier-tools.json": {"kind": "tools"},
+                "frontier-tools.json": self._tool_fixture("frontier", 1),
             }
             scope = {
                 "environment_sha256": binding._serialized_json_sha256(manifests["frontier-environment.json"]),
@@ -495,13 +504,33 @@ class BindingManifestTests(unittest.TestCase):
                 "tool_sha256": binding._serialized_json_sha256(manifests["frontier-tools.json"]),
                 "artifact_sha256": "f" * 64,
             }
-            value = {"schema": "ownward.acceptance-binding/v4", "suite_version": "1.0.0", "candidate": "a" * 40, "scopes": {"frontier": scope}}
+            value = self._current_binding("a" * 40, {"frontier": scope}, manifests)
             binding._activate_generation(output, value, manifests)
             active = json.loads((output / "active.json").read_text(encoding="utf-8"))
             generation = output / "generations" / active["generation"]
             (generation / "frontier-tools.json").write_text('{"tampered":true}\n', encoding="utf-8")
-            with self.assertRaisesRegex(binding.BindingError, "摘要不一致"):
+            with self.assertRaises(binding.BindingError):
                 binding.load_active_binding(output)
+
+    @staticmethod
+    def _tool_fixture(scope: str, version: int) -> dict:
+        return {
+            "schema": "fixture-tool", "scope": scope,
+            "files": [{"path": f"fixture/{scope}.py", "sha256": str(version) * 64}],
+        }
+
+    def _current_binding(self, candidate: str, scopes: dict, manifests: dict) -> dict:
+        components = {
+            role: {"identity": ("f" * 64 if role == "binary" else evidence_identity.canonical_sha256({"role": role})), "direct_dependencies": {}}
+            for role in evidence_identity.COMPONENT_ROLES
+        }
+        return evidence_identity.build_current_binding(
+            candidate=candidate, suite_version="1.0.0", scopes=scopes,
+            components=components, manifests=manifests,
+            lifecycle=evidence_identity.lifecycle_identities(self.root.parents[2]),
+            reporting=evidence_identity.reporting_identities(self.root.parents[2]),
+            audit={"source_git": candidate},
+        )
 
 
 if __name__ == "__main__":

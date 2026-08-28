@@ -18,6 +18,16 @@ class AcceptanceSuiteContractTests(unittest.TestCase):
         self.assertEqual(set(self.value["evidence_layers"]), {"core", "product", "community"})
         self.assertEqual(set(self.value["optimization_loop"]["modes"]), {"targeted", "full"})
 
+    def test_contract_machine_fields_match_the_only_active_v6_binding(self) -> None:
+        self.assertEqual(
+            {"schema", "suite_version", "product", "components", "lifecycle", "reporting", "scopes", "audit"},
+            set(self.value["execution"]["binding_fields"]),
+        )
+        changed = copy.deepcopy(self.value)
+        changed["execution"]["binding_fields"] = ["schema", "suite_version", "candidate", "scopes"]
+        with self.assertRaisesRegex(ValueError, "v6"):
+            contract.validate_contract(changed)
+
     def test_contract_rejects_compensating_score(self) -> None:
         changed = copy.deepcopy(self.value)
         changed["optimization_loop"]["allow_compensating_score"] = True

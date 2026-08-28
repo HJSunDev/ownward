@@ -12,7 +12,9 @@ import execution_product
 import evidence
 import lifecycle
 import binding as candidate_binding
+import evidence_identity
 from contract import load_contract
+from identity_fixtures import current_binding
 
 
 class UnifiedExecutionTests(unittest.TestCase):
@@ -23,21 +25,6 @@ class UnifiedExecutionTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory(dir=self.repository / ".tmp")
         self.workspace = Path(self.temporary.name)
         self.contract = load_contract(self.root / "contract.json")
-        self.binding = {
-            "schema": "ownward.acceptance-binding/v4",
-            "suite_version": self.contract["suite_version"], "candidate": "c" * 40,
-            "scopes": {
-                name: {
-                    "environment_sha256": values[0] * 64,
-                    "input_manifest_sha256": values[1] * 64,
-                    "tool_sha256": values[2] * 64,
-                    "artifact_sha256": values[3] * 64,
-                }
-                for name, values in {
-                    "frontier": "bdea", "core": "f01a", "product": "234a", "community": "567a",
-                }.items()
-            },
-        }
         self.state_path = self.workspace / "state.json"
         self.tool = self.workspace / "frontier.py"
         self.tool.write_text(textwrap.dedent("""
@@ -57,7 +44,18 @@ class UnifiedExecutionTests(unittest.TestCase):
             Path(a.output).parent.mkdir(parents=True,exist_ok=True)
             Path(a.output).write_text(json.dumps(report),encoding='utf-8')
         """), encoding="utf-8")
-        self.binding["scopes"]["frontier"]["artifact_sha256"] = lifecycle.file_sha256(self.tool)
+        scopes = {
+            name: {
+                "environment_sha256": values[0] * 64,
+                "input_manifest_sha256": values[1] * 64,
+                "tool_sha256": values[2] * 64,
+                "artifact_sha256": lifecycle.file_sha256(self.tool) if name == "frontier" else values[3] * 64,
+            }
+            for name, values in {
+                "frontier": "bdea", "core": "f01a", "product": "234a", "community": "567a",
+            }.items()
+        }
+        self.binding = current_binding(self.repository, "c" * 40, scopes)
         lifecycle.save_state(self.state_path, lifecycle.new_state(self.contract, self.binding))
         self.config = {
             "schema": "ownward.acceptance-execution/v3", "repository": str(self.repository),
@@ -123,7 +121,11 @@ class UnifiedExecutionTests(unittest.TestCase):
     def test_timeout_stops_without_checkpoint(self, _verify_current) -> None:
         self.tool.write_text("import time; time.sleep(2)\n", encoding="utf-8")
         state = lifecycle.load_state(self.state_path)
-        state["binding"]["scopes"]["frontier"]["artifact_sha256"] = lifecycle.file_sha256(self.tool)
+        frontier = state["binding"]["scopes"]["frontier"]
+        artifact = lifecycle.file_sha256(self.tool)
+        frontier["report_binding"]["artifact_sha256"] = artifact
+        frontier["direct_dependencies"]["observer"] = artifact
+        frontier["identity"] = evidence_identity.dependency_identity("frontier", frontier["direct_dependencies"])
         lifecycle.save_state(self.state_path, state)
         contract = copy.deepcopy(self.contract)
         contract["optimization_loop"]["modes"]["targeted"]["max_wall_seconds"] = 0.05
@@ -136,8 +138,8 @@ class UnifiedExecutionTests(unittest.TestCase):
         state["binding"] = candidate_binding.for_mode(self.binding, "qualification")
         report = {
             "schema": "ownward.delivery-resource-report/v1",
-            "candidate": self.binding["candidate"],
-            "release_binary_sha256": self.binding["scopes"]["product"]["artifact_sha256"],
+            "candidate": evidence_identity.source_git(self.binding),
+            "release_binary_sha256": self.binding["scopes"]["product"]["report_binding"]["artifact_sha256"],
             "resource_binding": {"schema": "fixture"},
             "passed": False,
         }
@@ -158,9 +160,9 @@ class UnifiedExecutionTests(unittest.TestCase):
             artifacts[name] = {"path": str(path), "sha256": lifecycle.file_sha256(path)}
         report = {
             "schema": "ownward.delivery-resource-report/v1",
-            "candidate": self.binding["candidate"],
-            "release_binary_sha256": self.binding["scopes"]["product"]["artifact_sha256"],
-            "resource_binding": {"schema": "fixture", "candidate": self.binding["candidate"]},
+            "candidate": evidence_identity.source_git(self.binding),
+            "release_binary_sha256": self.binding["scopes"]["product"]["report_binding"]["artifact_sha256"],
+            "resource_binding": {"schema": "fixture", "candidate": evidence_identity.source_git(self.binding)},
             "evidence": artifacts,
             "passed": True,
         }

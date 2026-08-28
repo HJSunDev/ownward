@@ -16,11 +16,7 @@ class EvidenceLifecycleTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.root = Path(__file__).resolve().parent
         cls.contract = load_contract(cls.root / "contract.json")
-        cls.binding = {
-            "schema": "ownward.acceptance-binding/v4",
-            "suite_version": "1.0.0",
-            "candidate": "a" * 40,
-            "scopes": {
+        scopes = {
                 name: {
                     "environment_sha256": values[0] * 64,
                     "input_manifest_sha256": values[1] * 64,
@@ -30,28 +26,54 @@ class EvidenceLifecycleTests(unittest.TestCase):
                 for name, values in {
                     "frontier": "cdef", "core": "f01b", "product": "234b", "community": "567b",
                 }.items()
-            },
+            }
+        components = {
+            role: {"identity": ("b" * 64 if role == "binary" else evidence_identity.canonical_sha256({"role": role})), "direct_dependencies": {}}
+            for role in evidence_identity.COMPONENT_ROLES
         }
+        manifests = {
+            f"{scope}-tools.json": {
+                "schema": "fixture-tool", "scope": scope,
+                "files": [{"path": f"fixture/{scope}.py", "sha256": evidence_identity.canonical_sha256({"scope": scope})}],
+            }
+            for scope in scopes
+        }
+        cls.binding = evidence_identity.build_current_binding(
+            candidate="a" * 40,
+            suite_version="1.0.0",
+            scopes=scopes,
+            components=components,
+            manifests=manifests,
+            lifecycle=evidence_identity.lifecycle_identities(cls.root.parents[2]),
+            reporting=evidence_identity.reporting_identities(cls.root.parents[2]),
+            audit={"source_git": "a" * 40},
+        )
 
     def state(self):
         return lifecycle.new_state(self.contract, self.binding)
+
+    def test_legacy_state_schemas_are_not_active_lifecycle_inputs(self):
+        for schema in ("ownward.acceptance-state/v1", "ownward.acceptance-state/v2"):
+            value = self.state()
+            value["schema"] = schema
+            with self.assertRaisesRegex(lifecycle.LifecycleError, "schema"):
+                lifecycle._validate_state(self.contract, value)
 
     def checkpoint(self, state, name, passed=True, report=None, directory=None):
         report_sha256 = name[0] * 64
         if state.get("schema") == evidence_identity.STATE_SCHEMA:
             report_sha256 = evidence_identity.canonical_sha256({"mode": name})
         state["checkpoints"][name] = {
-            "binding": candidate_binding.for_mode(state["binding"], name),
+            "binding": candidate_binding.aggregate(state["binding"]) if name == "summarize" else candidate_binding.for_mode(state["binding"], name),
             "report_sha256": report_sha256,
             "passed": passed,
             "elapsed_seconds": 1,
         }
         if state.get("schema") == evidence_identity.STATE_SCHEMA:
-            scope = candidate_binding.scope_for_mode(name)
             state["checkpoints"][name]["evidence_identity"] = evidence_identity.evidence_identity(
                 name,
                 state["checkpoints"][name]["report_sha256"],
-                evidence_identity.scope_dependencies(state["binding"], scope),
+                lifecycle._dependencies_for_mode(state["binding"], name),
             )
         if report is not None:
             path = Path(directory) / f"{name}.json"
@@ -66,11 +88,10 @@ class EvidenceLifecycleTests(unittest.TestCase):
                 "artifact_manifest_sha256": evidence.validate_report_artifacts(path, report),
             })
             if state.get("schema") == evidence_identity.STATE_SCHEMA:
-                scope = candidate_binding.scope_for_mode(name)
                 state["checkpoints"][name]["evidence_identity"] = evidence_identity.evidence_identity(
                     name,
                     state["checkpoints"][name]["report_sha256"],
-                    evidence_identity.scope_dependencies(state["binding"], scope),
+                    lifecycle._dependencies_for_mode(state["binding"], name),
                 )
 
     def test_change_scope_selects_only_required_levels(self):
@@ -130,10 +151,9 @@ class EvidenceLifecycleTests(unittest.TestCase):
     def test_binding_change_invalidates_all_and_identical_binding_reuses(self):
         state = self.state()
         self.checkpoint(state, "core")
-        state["baseline"] = {"candidate": "previous"}
         self.assertEqual([], lifecycle.rebind(self.contract, state, copy.deepcopy(self.binding)))
         changed = copy.deepcopy(self.binding)
-        changed["scopes"]["core"]["tool_sha256"] = "e" * 64
+        self.change_scope_dependency(changed, "core", "acceptance-tool", "e" * 64)
         self.assertEqual(["core"], lifecycle.rebind(self.contract, state, changed))
         self.assertFalse(state["checkpoints"])
         self.assertIsNone(state["baseline"])
@@ -141,23 +161,26 @@ class EvidenceLifecycleTests(unittest.TestCase):
     def test_state_owns_nested_binding_snapshots(self):
         initial = copy.deepcopy(self.binding)
         state = lifecycle.new_state(self.contract, initial)
-        initial["scopes"]["core"]["tool_sha256"] = "9" * 64
-        self.assertEqual("1" * 64, state["binding"]["scopes"]["core"]["tool_sha256"])
+        initial["audit"]["source_git"] = "9" * 40
+        self.assertEqual("a" * 40, state["binding"]["audit"]["source_git"])
 
         replacement = copy.deepcopy(self.binding)
-        replacement["scopes"]["product"]["tool_sha256"] = "f" * 64
         lifecycle.rebind(self.contract, state, replacement)
-        replacement["scopes"]["product"]["tool_sha256"] = "0" * 64
-        self.assertEqual("f" * 64, state["binding"]["scopes"]["product"]["tool_sha256"])
+        replacement["reporting"]["summary"]["identity"] = "0" * 64
+        self.assertNotEqual("0" * 64, state["binding"]["reporting"]["summary"]["identity"])
 
     def test_environment_input_or_tool_change_archives_active_baseline(self):
         state = self.state()
-        state["baseline"] = {"candidate": "previous"}
+        with tempfile.TemporaryDirectory() as directory:
+            self.checkpoint(state, "core", report=self.core_report(), directory=directory)
+            self.checkpoint(state, "frontier", report=self.frontier_report("full"), directory=directory)
+            self.checkpoint(state, "qualification", report=self.product_report("qualification"), directory=directory)
+            lifecycle.promote_baseline(self.contract, state)
         changed = copy.deepcopy(self.binding)
-        changed["scopes"]["product"]["input_manifest_sha256"] = "f" * 64
+        self.change_scope_dependency(changed, "product", "input", "f" * 64)
         lifecycle.rebind(self.contract, state, changed)
         self.assertIsNone(state["baseline"])
-        self.assertEqual("previous", state["baseline_history"][0]["candidate"])
+        self.assertEqual("a" * 40, state["baseline_history"][0]["candidate"])
 
     def test_adding_deferred_community_binding_preserves_internal_checkpoints(self):
         initial = copy.deepcopy(self.binding)
@@ -173,7 +196,7 @@ class EvidenceLifecycleTests(unittest.TestCase):
         for name in ("core", "frontier", "qualification", "full", "longmemeval", "summarize"):
             self.checkpoint(state, name)
         changed = copy.deepcopy(self.binding)
-        changed["scopes"]["community"]["input_manifest_sha256"] = "f" * 64
+        self.change_scope_dependency(changed, "community", "input", "f" * 64)
         self.assertEqual(["longmemeval", "summarize"], lifecycle.rebind(self.contract, state, changed))
         self.assertEqual({"core", "frontier", "qualification", "full"}, set(state["checkpoints"]))
 
@@ -267,7 +290,7 @@ class EvidenceLifecycleTests(unittest.TestCase):
             self.checkpoint(state, "core", report=self.core_report(), directory=directory)
             self.checkpoint(state, "qualification", report=self.product_report("qualification"), directory=directory)
             lifecycle.promote_baseline(self.contract, state)
-        self.assertEqual(self.binding["candidate"], state["baseline"]["candidate"])
+        self.assertEqual(evidence_identity.source_git(self.binding), state["baseline"]["candidate"])
         self.assertEqual(state["checkpoints"]["frontier"]["report_sha256"], state["baseline"]["frontier_report_sha256"])
         self.assertEqual("full", state["baseline"]["reports"]["frontier"]["value"]["mode"])
 
@@ -302,25 +325,7 @@ class EvidenceLifecycleTests(unittest.TestCase):
         self.assertEqual(lifecycle.canonical_sha256(observation), embedded["canonical_sha256"])
 
     def test_v3_promotion_and_history_use_one_complete_baseline_contract(self):
-        repository = self.root.parents[2]
-        components = evidence_identity.build_candidate_components(
-            repository,
-            "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8",
-            "b" * 64,
-            "e" * 64,
-        )
-        manifests = {}
-        for scope in self.binding["scopes"]:
-            manifests[f"{scope}-tools.json"] = {
-                "schema": "ownward.acceptance-tool-manifest/v4",
-                "scope": scope,
-                "repository_commit": "a" * 40,
-                "files": [{"path": f"tool/{scope}.py", "sha256": "c" * 64}],
-            }
-        direct = evidence_identity.build_binding(
-            self.binding, components, manifests, evidence_identity.lifecycle_identities(repository),
-            evidence_identity.reporting_identities(repository),
-        )
+        direct = copy.deepcopy(self.binding)
         state = lifecycle.new_state(self.contract, direct)
         original = self.binding
         self.binding = direct
@@ -338,6 +343,7 @@ class EvidenceLifecycleTests(unittest.TestCase):
             {"product_identity", "direct_dependencies", "evidence_identities", "identity"},
             {name for name in baseline if name in {"product_identity", "direct_dependencies", "evidence_identities", "identity"}},
         )
+
         tampered = copy.deepcopy(state)
         tampered["baseline_history"].append(tampered.pop("baseline"))
         tampered["baseline_history"][0]["direct_dependencies"]["core"]["kernel"] = "0" * 64
@@ -358,6 +364,18 @@ class EvidenceLifecycleTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(lifecycle.LifecycleError, "活动基线 core"):
             lifecycle._validate_state(self.contract, checkpoint_drift)
+
+    @staticmethod
+    def change_scope_dependency(value, scope, name, identity):
+        active = value["scopes"][scope]
+        active["direct_dependencies"][name] = identity
+        if name == "environment":
+            active["report_binding"]["environment_sha256"] = identity
+        elif name == "input":
+            active["report_binding"]["input_manifest_sha256"] = identity
+        elif name == "acceptance-tool":
+            active["report_binding"]["tool_sha256"] = identity
+        active["identity"] = evidence_identity.dependency_identity(scope, active["direct_dependencies"])
 
     def frontier_report(self, mode):
         active = candidate_binding.for_mode(self.binding, "frontier")

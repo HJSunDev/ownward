@@ -9,7 +9,10 @@ from unittest.mock import patch
 import run
 import lifecycle
 import binding as candidate_binding
+import evidence_identity
+import report_semantics
 from contract import load_contract
+from identity_fixtures import current_binding
 
 
 class UnifiedEntryTests(unittest.TestCase):
@@ -36,25 +39,26 @@ class UnifiedEntryTests(unittest.TestCase):
             report_path = root / "suite.json"
             report_path.write_text('{"sealed": true}\n', encoding="utf-8")
             contract = load_contract(run.HERE / "contract.json")
-            binding = {
-                "schema": "ownward.acceptance-binding/v4",
-                "suite_version": "1.0.0", "candidate": "a" * 40,
-                "scopes": {
-                    name: {
-                        "environment_sha256": values[0] * 64,
-                        "input_manifest_sha256": values[1] * 64,
-                        "tool_sha256": values[2] * 64,
-                        "artifact_sha256": values[3] * 64,
-                    }
-                    for name, values in {
-                        "frontier": "cdef", "core": "f01b", "product": "234b", "community": "567b",
-                    }.items()
-                },
+            scopes = {
+                name: {
+                    "environment_sha256": values[0] * 64,
+                    "input_manifest_sha256": values[1] * 64,
+                    "tool_sha256": values[2] * 64,
+                    "artifact_sha256": values[3] * 64,
+                }
+                for name, values in {
+                    "frontier": "cdef", "core": "f01b", "product": "234b", "community": "567b",
+                }.items()
             }
+            binding = current_binding(run.HERE.parents[2], "a" * 40, scopes)
             state = lifecycle.new_state(contract, binding)
+            digest = lifecycle.file_sha256(report_path)
             state["checkpoints"]["summarize"] = {
-                "binding": candidate_binding.for_mode(binding, "summarize"), "report_path": str(report_path),
-                "report_sha256": lifecycle.file_sha256(report_path), "passed": True,
+                "binding": candidate_binding.aggregate(binding), "report_path": str(report_path),
+                "report_sha256": digest, "passed": True,
+                "evidence_identity": evidence_identity.evidence_identity(
+                    "summarize", digest, report_semantics.dependencies_for_mode(binding, "summarize"),
+                ),
             }
             state_path = root / "state.json"
             lifecycle.save_state(state_path, state)

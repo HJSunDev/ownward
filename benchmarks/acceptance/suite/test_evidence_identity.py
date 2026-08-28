@@ -19,9 +19,10 @@ class EvidenceIdentityTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.suite = Path(__file__).resolve().parent
         cls.repository = cls.suite.parents[2]
+        cls.candidate = "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8"
         cls.components = evidence_identity.build_candidate_components(
             cls.repository,
-            "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8",
+            cls.candidate,
             "f" * 64,
             "e" * 64,
         )
@@ -32,23 +33,22 @@ class EvidenceIdentityTests(unittest.TestCase):
         base = {
             "schema": "ownward.acceptance-tool-manifest/v4",
             "scope": "core",
-            "repository_commit": "a" * 40,
             "files": [
                 {"path": "benchmarks/acceptance/suite/binding.py", "sha256": "1" * 64},
                 {"path": "benchmarks/acceptance/suite/execution_core.py", "sha256": "2" * 64},
-                {"path": "benchmarks/acceptance/suite/relationships.py", "sha256": "5" * 64},
+                {"path": "benchmarks/acceptance/suite/state_relationships.py", "sha256": "5" * 64},
             ],
         }
         changed_audit = copy.deepcopy(base)
-        changed_audit["repository_commit"] = "b" * 40
+        changed_audit["audit_source_git"] = "b" * 40
         changed_audit["files"][0]["sha256"] = "3" * 64
         self.assertEqual(evidence_identity.tool_identity(base), evidence_identity.tool_identity(changed_audit))
         changed_execution = copy.deepcopy(base)
         changed_execution["files"][1]["sha256"] = "4" * 64
         self.assertNotEqual(evidence_identity.tool_identity(base), evidence_identity.tool_identity(changed_execution))
-        changed_relationships = copy.deepcopy(base)
-        changed_relationships["files"][2]["sha256"] = "6" * 64
-        self.assertEqual(evidence_identity.tool_identity(base), evidence_identity.tool_identity(changed_relationships))
+        changed_state_relationships = copy.deepcopy(base)
+        changed_state_relationships["files"][2]["sha256"] = "6" * 64
+        self.assertEqual(evidence_identity.tool_identity(base), evidence_identity.tool_identity(changed_state_relationships))
 
     def test_reporting_identities_are_responsibility_scoped(self) -> None:
         first = copy.deepcopy(self.reporting)
@@ -60,11 +60,11 @@ class EvidenceIdentityTests(unittest.TestCase):
         self._change_reporting(changed_relationships, "relationships", "2" * 64)
         changed_summary = copy.deepcopy(first)
         self._change_reporting(changed_summary, "summary", "3" * 64)
-        manifests, legacy = self._legacy_fixture()
-        base = evidence_identity.build_binding(legacy, self.components, manifests, self.lifecycle, first)
-        reception = evidence_identity.build_binding(legacy, self.components, manifests, self.lifecycle, changed_reception)
-        relationships = evidence_identity.build_binding(legacy, self.components, manifests, self.lifecycle, changed_relationships)
-        summary = evidence_identity.build_binding(legacy, self.components, manifests, self.lifecycle, changed_summary)
+        manifests, scopes = self._current_fixture()
+        base = self._binding(scopes, manifests, reporting=first)
+        reception = self._binding(scopes, manifests, reporting=changed_reception)
+        relationships = self._binding(scopes, manifests, reporting=changed_relationships)
+        summary = self._binding(scopes, manifests, reporting=changed_summary)
         self.assertNotEqual(base["scopes"], reception["scopes"])
         self.assertNotEqual(base["scopes"], relationships["scopes"])
         self.assertEqual(base["scopes"], summary["scopes"])
@@ -74,8 +74,8 @@ class EvidenceIdentityTests(unittest.TestCase):
                 report_semantics.verify_current_reporting(base, include_summary=True)
 
     def test_direct_dependencies_encode_only_real_consumers(self) -> None:
-        manifests, legacy = self._legacy_fixture()
-        value = evidence_identity.build_binding(legacy, self.components, manifests, self.lifecycle, self.reporting)
+        manifests, scopes = self._current_fixture()
+        value = self._binding(scopes, manifests)
         scopes = {name: set(item["direct_dependencies"]) for name, item in value["scopes"].items()}
         self.assertEqual({"product", "community"}, {name for name, deps in scopes.items() if "access" in deps})
         self.assertEqual({"product", "community"}, {name for name, deps in scopes.items() if "composition" in deps})
@@ -102,11 +102,11 @@ class EvidenceIdentityTests(unittest.TestCase):
         self.assertIn("authority-substrate", self.components["kernel-generation"]["direct_dependencies"])
 
     def test_lifecycle_maintenance_changes_do_not_change_report_scopes(self) -> None:
-        manifests, legacy = self._legacy_fixture()
-        first = evidence_identity.build_binding(legacy, self.components, manifests, self.lifecycle, self.reporting)
+        manifests, scopes = self._current_fixture()
+        first = self._binding(scopes, manifests)
         changed = copy.deepcopy(self.lifecycle)
         changed["evidence"]["identity"] = "9" * 64
-        second = evidence_identity.build_binding(legacy, self.components, manifests, changed, self.reporting)
+        second = self._binding(scopes, manifests, lifecycle=changed)
         self.assertNotEqual(first["lifecycle"]["evidence"]["identity"], second["lifecycle"]["evidence"]["identity"])
         self.assertEqual(
             {scope: value["identity"] for scope, value in first["scopes"].items()},
@@ -114,15 +114,13 @@ class EvidenceIdentityTests(unittest.TestCase):
         )
 
     def test_summary_checkpoint_has_own_generation_dependency(self) -> None:
-        manifests, legacy = self._legacy_fixture()
-        value = evidence_identity.build_binding(legacy, self.components, manifests, self.lifecycle, self.reporting)
+        manifests, scopes = self._current_fixture()
+        value = self._binding(scopes, manifests)
         dependencies = report_semantics.dependencies_for_mode(value, "summarize")
         self.assertEqual(self.reporting["summary"]["identity"], dependencies["summary-generation"])
         changed_reporting = copy.deepcopy(self.reporting)
         self._change_reporting(changed_reporting, "summary", "7" * 64)
-        changed = evidence_identity.build_binding(
-            legacy, self.components, manifests, self.lifecycle, changed_reporting,
-        )
+        changed = self._binding(scopes, manifests, reporting=changed_reporting)
         self.assertEqual(value["scopes"], changed["scopes"])
         state = lifecycle.new_state(load_contract(self.suite / "contract.json"), value)
         for mode in ("core", "full", "longmemeval", "summarize"):
@@ -138,8 +136,8 @@ class EvidenceIdentityTests(unittest.TestCase):
         self.assertEqual({"core", "full", "longmemeval"}, set(state["checkpoints"]))
 
     def test_observer_change_invalidates_only_observer_evidence(self) -> None:
-        manifests, legacy = self._legacy_fixture()
-        value = evidence_identity.build_binding(legacy, self.components, manifests, self.lifecycle, self.reporting)
+        manifests, scopes = self._current_fixture()
+        value = self._binding(scopes, manifests)
         state = lifecycle.new_state(load_contract(self.suite / "contract.json"), value)
         for mode in ("frontier", "core", "qualification", "full", "longmemeval"):
             report_sha = evidence_identity.canonical_sha256({"mode": mode})
@@ -161,8 +159,8 @@ class EvidenceIdentityTests(unittest.TestCase):
         self.assertEqual({"core", "qualification", "full", "longmemeval"}, set(state["checkpoints"]))
 
     def test_environment_change_is_local_and_identity_graph_rejects_cycles(self) -> None:
-        manifests, legacy = self._legacy_fixture()
-        value = evidence_identity.build_binding(legacy, self.components, manifests, self.lifecycle, self.reporting)
+        manifests, scopes = self._current_fixture()
+        value = self._binding(scopes, manifests)
         before = {name: item["identity"] for name, item in value["scopes"].items()}
         product = value["scopes"]["product"]
         product["report_binding"]["environment_sha256"] = "8" * 64
@@ -213,15 +211,15 @@ class EvidenceIdentityTests(unittest.TestCase):
                 catalog_path=changed_catalog,
             )
         self.assertEqual(self.components["kernel"]["identity"], changed["kernel"]["identity"])
-        manifests, legacy = self._legacy_fixture()
-        before = evidence_identity.build_binding(legacy, self.components, manifests, self.lifecycle, self.reporting)
-        after = evidence_identity.build_binding(legacy, changed, manifests, self.lifecycle, self.reporting)
+        manifests, scopes = self._current_fixture()
+        before = self._binding(scopes, manifests)
+        after = self._binding(scopes, manifests, components=changed)
         self.assertEqual(before["scopes"]["frontier"]["identity"], after["scopes"]["frontier"]["identity"])
         self.assertNotEqual(before["scopes"]["core"]["identity"], after["scopes"]["core"]["identity"])
         self.assertNotEqual(before["scopes"]["product"]["identity"], after["scopes"]["product"]["identity"])
         self.assertNotEqual(before["scopes"]["community"]["identity"], after["scopes"]["community"]["identity"])
 
-    def _legacy_fixture(self) -> tuple[dict[str, dict], dict]:
+    def _current_fixture(self) -> tuple[dict[str, dict], dict[str, dict[str, str]]]:
         scopes = {}
         manifests = {}
         for index, scope in enumerate(("frontier", "core", "product", "community"), start=1):
@@ -241,10 +239,27 @@ class EvidenceIdentityTests(unittest.TestCase):
                 "tool_sha256": evidence_identity.canonical_sha256(tools),
                 "artifact_sha256": "0" * 64 if scope == "frontier" else "f" * 64,
             }
-        return manifests, {
-            "schema": "ownward.acceptance-binding/v4", "suite_version": "1.0.0",
-            "candidate": "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8", "scopes": scopes,
-        }
+        return manifests, scopes
+
+    def _binding(
+        self,
+        scopes: dict[str, dict[str, str]],
+        manifests: dict[str, dict],
+        *,
+        components: dict | None = None,
+        lifecycle: dict | None = None,
+        reporting: dict | None = None,
+    ) -> dict:
+        return evidence_identity.build_current_binding(
+            candidate=self.candidate,
+            suite_version="1.0.0",
+            scopes=scopes,
+            components=self.components if components is None else components,
+            manifests=manifests,
+            lifecycle=self.lifecycle if lifecycle is None else lifecycle,
+            reporting=self.reporting if reporting is None else reporting,
+            audit={"source_git": self.candidate},
+        )
 
     @staticmethod
     def _change_reporting(value: dict, name: str, digest: str) -> None:

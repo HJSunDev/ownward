@@ -15,7 +15,6 @@
     "benchmarks/acceptance/suite/materials.py",
     "benchmarks/acceptance/suite/process_control.py",
     "benchmarks/acceptance/suite/product.py",
-    "benchmarks/acceptance/suite/relationships.py",
     "benchmarks/acceptance/suite/resource_environment.py",
     "benchmarks/acceptance/suite/run.py",
     "benchmarks/support/ownward_mcp.py"

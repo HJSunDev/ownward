@@ -84,8 +84,11 @@
   },
   "execution": {
     "modes": ["targeted", "core", "frontier", "qualification", "full", "longmemeval", "summarize", "self-check"],
-    "relationship_authority": "relationships.py",
-    "binding_fields": ["schema", "suite_version", "candidate", "scopes"],
+    "relationship_authorities": {
+      "report_execution": "report_relationships.py",
+      "state_propagation": "state_relationships.py"
+    },
+    "binding_fields": ["schema", "suite_version", "product", "components", "lifecycle", "reporting", "scopes", "audit"],
     "binding_scopes": ["frontier", "core", "product", "community"],
     "artifact_manifest_required": true,
     "stop_on": ["budget_exceeded", "binding_changed", "prerequisite_failed", "incomplete_evidence"],

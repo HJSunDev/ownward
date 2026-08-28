@@ -57,8 +57,13 @@ EVIDENCE_LIFECYCLE_ONLY = {
     "benchmarks/acceptance/suite/evidence_identity.py",
     "benchmarks/acceptance/suite/lifecycle.py",
     "benchmarks/acceptance/suite/lifecycle_error.py",
-    "benchmarks/acceptance/suite/relationships.py",
     "benchmarks/acceptance/suite/state_relationships.py",
+}
+
+# The retired facade remains an audit-only classification for sealed historical
+# tool manifests. It is not an active source, dependency, or runtime fallback.
+LEGACY_EVIDENCE_LIFECYCLE_ONLY = {
+    "benchmarks/acceptance/suite/relationships.py",
 }
 
 
@@ -94,7 +99,7 @@ def tool_identity(manifest: dict[str, Any]) -> str:
         digest = str(item["sha256"])
         _require(path not in seen and is_sha256(digest), "验收工具文件重复或摘要无效")
         seen.add(path)
-        if path not in EVIDENCE_LIFECYCLE_ONLY:
+        if path not in EVIDENCE_LIFECYCLE_ONLY and path not in LEGACY_EVIDENCE_LIFECYCLE_ONLY:
             selected.append({"path": path, "sha256": digest})
     _require(selected, "验收工具执行身份不能为空")
     projection: dict[str, Any] = {
@@ -207,19 +212,48 @@ def build_candidate_components(
     return graph
 
 
-def build_binding(
+def build_binding_from_legacy_migration(
     legacy: dict[str, Any],
     components: dict[str, dict[str, Any]],
     manifests: dict[str, dict[str, Any]],
     lifecycle: dict[str, dict[str, Any]],
     reporting: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
+    """Map one sealed v4 report binding during the one-time identity migration."""
     _validate_legacy_binding(legacy)
+    return build_current_binding(
+        candidate=legacy["candidate"], suite_version=legacy["suite_version"], scopes=legacy["scopes"],
+        components=components, manifests=manifests, lifecycle=lifecycle, reporting=reporting,
+        audit={"source_git": legacy["candidate"]},
+    )
+
+
+def build_current_binding(
+    *,
+    candidate: str,
+    suite_version: str,
+    scopes: dict[str, dict[str, str]],
+    components: dict[str, dict[str, Any]],
+    manifests: dict[str, dict[str, Any]],
+    lifecycle: dict[str, dict[str, Any]],
+    reporting: dict[str, dict[str, Any]],
+    audit: dict[str, str],
+) -> dict[str, Any]:
+    """Build the sole active v6 binding without accepting a legacy binding as input."""
+    _require(_is_git_commit(candidate), "候选审计来源无效")
+    _require(suite_version == "1.0.0", "候选绑定体系版本无效")
+    _require(isinstance(scopes, dict) and scopes and set(scopes) <= set(SCOPE_COMPONENTS), "候选绑定范围无效")
     validate_component_graph(components)
     _validate_lifecycle(lifecycle)
     _validate_reporting(reporting)
-    scopes: dict[str, dict[str, Any]] = {}
-    for scope, old in legacy["scopes"].items():
+    result_scopes: dict[str, dict[str, Any]] = {}
+    for scope, old in scopes.items():
+        _require(
+            isinstance(old, dict)
+            and set(old) == {"environment_sha256", "input_manifest_sha256", "tool_sha256", "artifact_sha256"}
+            and all(is_sha256(str(value)) for value in old.values()),
+            f"{scope} 报告绑定摘要无效",
+        )
         dependencies = {name: components[name]["identity"] for name in SCOPE_COMPONENTS[scope]}
         dependencies.update({
             "environment": old["environment_sha256"],
@@ -233,7 +267,7 @@ def build_binding(
         else:
             _require(old["artifact_sha256"] == components["binary"]["identity"], f"{scope} 二进制与产品组件错绑")
         scope_identity = dependency_identity(scope, dependencies)
-        scopes[scope] = {
+        result_scopes[scope] = {
             "identity": scope_identity,
             "direct_dependencies": dict(sorted(dependencies.items())),
             "report_binding": {
@@ -245,17 +279,13 @@ def build_binding(
         }
     result = {
         "schema": BINDING_SCHEMA,
-        "suite_version": legacy["suite_version"],
+        "suite_version": suite_version,
         "product": components["product"]["identity"],
         "components": components,
         "lifecycle": lifecycle,
         "reporting": reporting,
-        "scopes": scopes,
-        "audit": {
-            "source_git": legacy["candidate"],
-            "legacy_schema": legacy["schema"],
-            "legacy_binding_sha256": canonical_sha256(legacy),
-        },
+        "scopes": result_scopes,
+        "audit": dict(audit),
     }
     validate_binding(result)
     return result
@@ -340,8 +370,8 @@ def validate_binding(value: dict[str, Any]) -> None:
     _validate_lifecycle(value.get("lifecycle"))
     _validate_reporting(value.get("reporting"))
     audit = value.get("audit")
-    _require(isinstance(audit, dict) and set(audit) == {"source_git", "legacy_schema", "legacy_binding_sha256"}, "候选审计来源无效")
-    _require(_is_git_commit(audit["source_git"]) and audit["legacy_schema"] == "ownward.acceptance-binding/v4" and is_sha256(audit["legacy_binding_sha256"]), "候选审计来源身份无效")
+    _require(isinstance(audit, dict) and set(audit) == {"source_git"}, "候选审计来源无效")
+    _require(_is_git_commit(audit["source_git"]), "候选审计来源身份无效")
     scopes = value.get("scopes")
     _require(isinstance(scopes, dict) and scopes and set(scopes) <= set(SCOPE_COMPONENTS), "候选绑定范围无效")
     for name, scope in scopes.items():
@@ -508,15 +538,13 @@ def validate_baseline_identity(value: dict[str, Any], *, binding: dict[str, Any]
 
 
 def source_git(value: dict[str, Any]) -> str:
-    if value.get("schema") == BINDING_SCHEMA:
-        return str(value["audit"]["source_git"])
-    return str(value.get("candidate", ""))
+    validate_binding(value)
+    return str(value["audit"]["source_git"])
 
 
 def product_identity(value: dict[str, Any]) -> str:
-    if value.get("schema") == BINDING_SCHEMA:
-        return str(value["product"])
-    return ""
+    validate_binding(value)
+    return str(value["product"])
 
 
 def scope_dependencies(value: dict[str, Any], scope: str) -> dict[str, str]:

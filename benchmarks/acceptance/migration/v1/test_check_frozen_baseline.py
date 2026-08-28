@@ -51,14 +51,21 @@ class FrozenBaselineTest(unittest.TestCase):
     def test_state_projection_rejects_checkpoint_or_baseline_drift(self) -> None:
         state = {
             "schema": "ownward.acceptance-state/v1",
-            "binding": {"candidate": "v1"},
+            "binding": {
+                "schema": "ownward.acceptance-binding/v4", "suite_version": "1.0.0",
+                "candidate": "a" * 40,
+                "scopes": {"core": {
+                    "environment_sha256": "1" * 64, "input_manifest_sha256": "2" * 64,
+                    "tool_sha256": "3" * 64, "artifact_sha256": "4" * 64,
+                }},
+            },
             "baseline": None,
             "checkpoints": {"core": {"passed": True}},
             "invalidated_reports": {"community": "x"},
             "baseline_history": [{"candidate": "v0"}],
         }
         expected = {
-            "bound_candidate": "v1", "active_baseline_is_null": True,
+            "bound_candidate": "a" * 40, "active_baseline_is_null": True,
             "binding_sha256": checker.canonical_sha256(state["binding"]),
             "checkpoints_sha256": checker.canonical_sha256(state["checkpoints"]),
             "invalidated_reports": state["invalidated_reports"],

@@ -12,8 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/HJSunDev/ownward/internal/assetlog"
-	"github.com/HJSunDev/ownward/internal/authorityport"
 	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/derived"
 	"github.com/HJSunDev/ownward/internal/domain"
@@ -26,23 +24,18 @@ import (
 const CollaborationRules = productrules.Collaboration
 
 type Service struct {
-	authority      contract.AssetAuthority
-	closeAuthority func() error
-	derivedStore   *derived.Store
-	index          *retrieval.Lexical
-	semantic       *derived.Index
-	// legacyProvider is the migration-only equivalence boundary for the three
-	// pre-contract constructors. Active assembly never sets it; stage 8 removes
-	// it after terminal equivalence validation.
-	legacyProvider semantics.Provider
-	provider       contract.SemanticCapability
-	providerID     semantics.Capability
-	embedder       contract.VectorCapability
-	collaborative  bool
-	now            func() time.Time
-	mutationMu     [256]sync.Mutex
-	graphMu        sync.Mutex
-	stateMu        sync.RWMutex
+	authority     contract.AssetAuthority
+	derivedStore  *derived.Store
+	index         *retrieval.Lexical
+	semantic      *derived.Index
+	provider      contract.SemanticCapability
+	providerID    semantics.Capability
+	embedder      contract.VectorCapability
+	collaborative bool
+	now           func() time.Time
+	mutationMu    [256]sync.Mutex
+	graphMu       sync.Mutex
+	stateMu       sync.RWMutex
 }
 
 func appendUniqueIDs(values []string, extra ...string) []string {
@@ -72,27 +65,8 @@ type EvidenceSearchInput = contract.EvidenceSearchInput
 type NavigationNode = contract.NavigationNode
 type NavigationResult = contract.NavigationResult
 
-func New(store *assetlog.Store) *Service {
-	authority, _ := authorityport.Bind(store)
-	service, _ := NewWithAuthority(authority)
-	service.closeAuthority = store.Close
-	return service
-}
-
 var _ contract.ProductCapability = (*Service)(nil)
 var _ contract.KernelLifecycle = (*Service)(nil)
-
-func NewOrganized(store *assetlog.Store, derivedStore *derived.Store, provider semantics.Provider) (*Service, error) {
-	authority, err := authorityport.Bind(store)
-	if err != nil {
-		return nil, err
-	}
-	service, err := NewOrganizedWithAuthority(authority, derivedStore, provider)
-	if err == nil {
-		service.closeAuthority = store.Close
-	}
-	return service, err
-}
 
 // NewWithAuthority constructs the basic kernel against the stable authority
 // port. The caller retains authority lifecycle ownership.
@@ -104,41 +78,8 @@ func NewWithAuthority(authority contract.AssetAuthority) (*Service, error) {
 	return &Service{authority: authority, index: retrieval.NewLexical(assets), now: time.Now}, nil
 }
 
-func NewOrganizedWithAuthority(authority contract.AssetAuthority, derivedStore *derived.Store, provider semantics.Provider) (*Service, error) {
-	if authority == nil {
-		return nil, errors.New("资产权威不能为空")
-	}
-	if provider == nil {
-		provider = semantics.Heuristic{}
-	}
-	records, err := derivedStore.AllWithEmbeddings()
-	if err != nil {
-		return nil, fmt.Errorf("加载派生检索状态: %w", err)
-	}
-	assets := authority.ListCurrent()
-	currentRevision := make(map[string]uint64, len(assets))
-	for _, asset := range assets {
-		currentRevision[asset.ID] = asset.Revision
-	}
-	currentRecords := records[:0]
-	for _, record := range records {
-		if currentRevision[record.AssetID] == record.AssetRevision {
-			currentRecords = append(currentRecords, record)
-		}
-	}
-	return &Service{
-		authority:      authority,
-		derivedStore:   derivedStore,
-		index:          retrieval.NewLexical(assets),
-		semantic:       derived.NewIndex(currentRecords),
-		legacyProvider: provider,
-		now:            time.Now,
-	}, nil
-}
-
-// NewOrganizedWithCapabilities opens the existing organized implementation
-// only through the declared semantic and vector ports. NewOrganized and
-// NewOrganizedWithAuthority remain the migration equivalence baseline.
+// NewOrganizedWithCapabilities opens the organized implementation only
+// through the declared authority, semantic, and vector ports.
 func NewOrganizedWithCapabilities(authority contract.AssetAuthority, derivedStore *derived.Store, provider contract.SemanticCapability, embedder contract.VectorCapability) (*Service, error) {
 	if authority == nil {
 		return nil, errors.New("资产权威不能为空")
@@ -174,19 +115,6 @@ func NewOrganizedWithCapabilities(authority contract.AssetAuthority, derivedStor
 		embedder:     embedder,
 		now:          time.Now,
 	}, nil
-}
-
-// NewCollaborative 创建本地向量能力与外部语义理解相互独立的正式产品架构。
-func NewCollaborative(store *assetlog.Store, derivedStore *derived.Store, embedder embedding.Provider) (*Service, error) {
-	authority, err := authorityport.Bind(store)
-	if err != nil {
-		return nil, err
-	}
-	service, err := NewCollaborativeWithAuthority(authority, derivedStore, embedder)
-	if err == nil {
-		service.closeAuthority = store.Close
-	}
-	return service, err
 }
 
 func NewCollaborativeWithAuthority(authority contract.AssetAuthority, derivedStore *derived.Store, embedder contract.VectorCapability) (*Service, error) {
@@ -467,23 +395,13 @@ func (s *Service) Search(ctx context.Context, input SearchInput) ([]SearchResult
 	if len(lexical) > 0 && lexical[0].Information.ID == trimmedQuery && contains(lexical[0].Signals, "identity") {
 		return s.compactResults(lexical[:1]), nil
 	}
-	if s.semantic == nil || !s.semantic.HasVectors() || (!s.collaborative && s.provider == nil && s.legacyProvider == nil) {
+	if s.semantic == nil || !s.semantic.HasVectors() || (!s.collaborative && s.provider == nil) {
 		if len(lexical) > limit {
 			lexical = lexical[:limit]
 		}
 		return s.compactResults(lexical), nil
 	}
-	var queryVector []float32
-	var err error
-	if s.legacyProvider != nil {
-		var vectors [][]float32
-		vectors, err = s.legacyProvider.Embed(ctx, []string{input.Query})
-		if len(vectors) == 1 {
-			queryVector = vectors[0]
-		}
-	} else {
-		queryVector, err = s.embedder.EmbedQuery(ctx, input.Query)
-	}
+	queryVector, err := s.embedder.EmbedQuery(ctx, input.Query)
 	if err != nil || len(queryVector) == 0 {
 		if len(lexical) > limit {
 			lexical = lexical[:limit]
@@ -736,16 +654,11 @@ func (s *Service) Close() error {
 			first = err
 		}
 	}
-	if s.closeAuthority != nil {
-		if err := s.closeAuthority(); first == nil {
-			first = err
-		}
-	}
 	return first
 }
 
 func (s *Service) Maintain(ctx context.Context, rebuild bool) (map[string]int, error) {
-	if s.derivedStore == nil || (!s.collaborative && s.provider == nil && s.legacyProvider == nil) {
+	if s.derivedStore == nil || (!s.collaborative && s.provider == nil) {
 		return nil, errors.New("语义组织未启用")
 	}
 	if rebuild && s.collaborative {
@@ -801,17 +714,11 @@ func (s *Service) Maintain(ctx context.Context, rebuild bool) (map[string]int, e
 }
 
 func (s *Service) organize(ctx context.Context, value domain.Information) OrganizationState {
-	if s.derivedStore == nil || s.semantic == nil || (s.provider == nil && s.legacyProvider == nil) {
+	if s.derivedStore == nil || s.semantic == nil || s.provider == nil {
 		return OrganizationState{Status: "unavailable"}
 	}
 	previousDependents := s.semantic.Dependents(value.ID)
-	var vectors [][]float32
-	var embeddingErr error
-	if s.legacyProvider != nil {
-		vectors, embeddingErr = s.legacyProvider.Embed(ctx, []string{value.Content})
-	} else {
-		vectors, embeddingErr = s.embedder.EmbedDocuments(ctx, []string{value.Content})
-	}
+	vectors, embeddingErr := s.embedder.EmbedDocuments(ctx, []string{value.Content})
 	lexical := s.index.Search(value.Content, nil, 33)
 	candidates := make([]semantics.Candidate, 0, 32)
 	candidatePositions := make(map[string]int, 32)
@@ -829,12 +736,8 @@ func (s *Service) organize(ctx context.Context, value domain.Information) Organi
 			return
 		}
 		candidatePositions[candidate.ID] = len(candidates)
-		candidateRevision := uint64(0)
-		if s.provider != nil {
-			candidateRevision = candidate.Revision
-		}
 		candidates = append(candidates, semantics.Candidate{
-			ID: candidate.ID, Revision: candidateRevision, Content: candidate.Content, Contexts: candidate.Contexts, Similarity: similarity,
+			ID: candidate.ID, Revision: candidate.Revision, Content: candidate.Content, Contexts: candidate.Contexts, Similarity: similarity,
 		})
 	}
 	for _, relation := range value.Relations {
@@ -877,26 +780,18 @@ func (s *Service) organize(ctx context.Context, value domain.Information) Organi
 		}
 	}
 	analysis := semantics.Analysis{}
-	var analysisErr error
 	providerName := s.providerID.ID
-	legacyFallback := false
-	if s.legacyProvider != nil {
-		analysis, analysisErr = s.legacyProvider.Analyze(ctx, value, candidates)
-		providerName = s.legacyProvider.Name()
-		_, legacyFallback = s.legacyProvider.(semantics.Heuristic)
-	} else {
-		work, workErr := semantics.NewWork(s.derivedStore.Generation(), value, candidates, nil, s.now())
-		var submission semantics.Submission
-		analysisErr = workErr
-		if workErr == nil {
-			submission, analysisErr = s.provider.Analyze(ctx, work)
-			if analysisErr == nil {
-				analysisErr = validateSemanticSubmissionBinding(work, s.providerID, submission)
-			}
-		}
+	work, workErr := semantics.NewWork(s.derivedStore.Generation(), value, candidates, nil, s.now())
+	var submission semantics.Submission
+	analysisErr := workErr
+	if workErr == nil {
+		submission, analysisErr = s.provider.Analyze(ctx, work)
 		if analysisErr == nil {
-			analysis = submission.Analysis
+			analysisErr = validateSemanticSubmissionBinding(work, s.providerID, submission)
 		}
+	}
+	if analysisErr == nil {
+		analysis = submission.Analysis
 	}
 	incoming := make([]semantics.Relation, 0, len(analysis.Relations))
 	outgoing := make([]semantics.Relation, 0, len(analysis.Relations))
@@ -918,7 +813,7 @@ func (s *Service) organize(ctx context.Context, value domain.Information) Organi
 	analysis.Relations = s.finalizeRelations(value, outgoing)
 	status := "ready"
 	errorText := ""
-	if legacyFallback || (s.legacyProvider == nil && s.providerID.ID == (semantics.Heuristic{}).Name()) {
+	if s.providerID.ID == (semantics.Heuristic{}).Name() {
 		status = "degraded"
 	}
 	if analysisErr != nil || embeddingErr != nil || len(vectors) != 1 {
@@ -972,8 +867,7 @@ func (s *Service) organize(ctx context.Context, value domain.Information) Organi
 
 // validateSemanticSubmissionBinding checks only trust-boundary identity and
 // evidence binding. It deliberately does not normalize a valid analysis, so
-// the legacy organized path keeps its established quality and resource
-// semantics while an external capability cannot decide organization state.
+// an external capability cannot decide organization state.
 func validateSemanticSubmissionBinding(work semantics.Work, declared semantics.Capability, submission semantics.Submission) error {
 	if submission.Schema != semantics.SubmissionSchema || submission.WorkID != work.ID ||
 		submission.AssetID != work.Asset.ID || submission.Revision != work.Asset.Revision {

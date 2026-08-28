@@ -168,6 +168,31 @@ class IdentityMigrationTest(unittest.TestCase):
         self.assertEqual(before["checkpoints"], after["checkpoints"])
         self.assertEqual(before["baseline_history"], after["baseline_history"])
 
+    def test_reporting_semantics_drift_cannot_be_relabelled_by_identity_migration(self) -> None:
+        identity_migration.migrate(REPOSITORY, self.state, self.binding, self.frozen, write=True)
+        state_before = self.state.read_bytes()
+        pointer_before = (self.binding / "active.json").read_bytes()
+        generations_before = sorted(path.name for path in (self.binding / "generations").iterdir())
+        current = evidence_identity.reporting_identities(REPOSITORY)
+        for kind in ("reception", "relationships", "summary"):
+            with self.subTest(kind=kind):
+                changed = json.loads(json.dumps(current))
+                changed[kind]["content"]["sha256"] = "9" * 64
+                changed[kind]["identity"] = evidence_identity.canonical_sha256({
+                    "schema": changed[kind]["schema"], "content": changed[kind]["content"],
+                })
+                with mock.patch.object(evidence_identity, "reporting_identities", return_value=changed):
+                    with self.assertRaisesRegex(identity_migration.IdentityMigrationError, "正式 rebind"):
+                        identity_migration.migrate(
+                            REPOSITORY, self.state, self.binding, self.frozen, write=True,
+                        )
+                self.assertEqual(state_before, self.state.read_bytes())
+                self.assertEqual(pointer_before, (self.binding / "active.json").read_bytes())
+                self.assertEqual(
+                    generations_before,
+                    sorted(path.name for path in (self.binding / "generations").iterdir()),
+                )
+
     def _restore_frozen_source(self) -> None:
         state = json.loads(self.state.read_text(encoding="utf-8"))
         source = state["identity_migration"]["source"]

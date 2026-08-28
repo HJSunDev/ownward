@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import binding
-import relationships
+import report_relationships as relationships
 
 
 class PreflightError(ValueError):

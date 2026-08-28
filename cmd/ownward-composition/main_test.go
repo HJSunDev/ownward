@@ -30,7 +30,7 @@ func TestStatelessLifecycleCommandsAreDurableAndDoNotEnterProductIdentity(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.Identity != "bdebd16f805a7ad22c875b780870676fc0b4929aed8616dc15cad1c498778bc5" {
+	if manifest.Identity != "c068ae206a89df9dd2146e98fa875dca80bb05c3ecdafe0343cd825ddd6d751e" {
 		t.Fatalf("offline lifecycle changed active product identity: %s", manifest.Identity)
 	}
 	dependencies := runGo(t, repository, "list", "-deps", "./cmd/ownward")

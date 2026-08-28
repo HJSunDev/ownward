@@ -442,7 +442,7 @@ func (adapter *candidateAdapter) ApplyChanges(values []domain.Information) error
 	return capabilitylifecycle.ApplyAuthorityChanges(adapter.AssetAuthority, values)
 }
 func (adapter *candidateAdapter) ChangesSince([]contract.AssetVersion) ([]domain.Information, error) {
-	return nil, errors.New("legacy rollback adapter does not own active change history")
+	return nil, errors.New("read-only rollback adapter does not own active change history")
 }
 func (adapter *candidateAdapter) BackupAuthority(string, contract.ControlState) error {
 	return errors.New("回退源备份不由候选适配器执行")
