@@ -1,0 +1,287 @@
+{
+  "schema": "ownward.kernel-iteration-comparison/v2",
+  "frozen": true,
+  "frozen_before_v2_results": true,
+  "formal_isolation": {
+    "formal_contract_mode": false,
+    "formal_evidence_layer": false,
+    "may_write_acceptance_state": false,
+    "may_promote_or_switch_kernel": false
+  },
+  "sources": {
+    "kernel_catalog": {
+      "path": "manifests/kernel-generations/v1/catalog.json",
+      "sha256": "e92ab851e553760feeb32d5e18c368f3c8cc06d542444171e8f6502d92c2e56d"
+    },
+    "current_composition": {
+      "path": "manifests/compositions/v1/current-collaborative.json",
+      "sha256": "2af8f9ca01c712677d5c49d7d5ab9e1dc9fa0ab37c791f3ecd02cae007563707"
+    },
+    "frozen_baseline": {
+      "path": "benchmarks/acceptance/migration/v1/frozen-baseline.json",
+      "sha256": "1bbcdc29e0ae8549645774425214f21335e2e19073a449fcf45a4e08d0041d10"
+    },
+    "v0_baseline_facts": {
+      "path": "benchmarks/acceptance/suite/iteration/v2/v0-baseline-facts.json",
+      "sha256": "246660581803440d3c9c68d6e1bfd7a7685f6d778fea781a6c548b8aa64d3dfe"
+    }
+  },
+  "subjects": {
+    "v0": {
+      "role": "evaluation-baseline",
+      "kernel_generation_identity": "1952f4b869e49c4aaf2fbac8139fd0a0c25e4331e18ef559a14faf1db7ed7b77",
+      "kernel_effect_identity": "61729fb8bfdb2fb2895017c0cf00713adf95414978b161f76593509af5a0017a",
+      "binary_identity": "77600820a450b0931b9e63595b8564be757825000af16f9c2f0a028c69e81d2b",
+      "direct_dependencies": {
+        "authority-substrate": "6bfd2100b0c5abcb041710f648bad553074daea8fc2e35d7571e839c09a31dca",
+        "product-rules": "8ce1b261b736ac8c43cbf377709246063fae4fbb9a3e792688aa54f9cc6a6bc9",
+        "semantic": "a4634a65c6f7232d97fcc92f35ff3ac34d9fac63e06eded4f5afa03bb7b030e4",
+        "vector": "b886f52a46388156c6f42282c72a9bf2c4d426d73a8f4bfadc059d87ded69536"
+      },
+      "audit_source_git": "99f519018df99bd5202b0c571b8e43481cd1b80e",
+      "formal_evaluation_baseline": true
+    },
+    "current-product": {
+      "role": "current-product-not-baseline",
+      "composition_identity": "c068ae206a89df9dd2146e98fa875dca80bb05c3ecdafe0343cd825ddd6d751e",
+      "kernel_identity": "db18a3a1e42ca48d23757deef53c822c813ace62ff57db666f692a04dc1c2684",
+      "kernel_generation_identity": "5bf5e617f766d6756c412ac504ae77f5395b37fe2673101f5701230350ef6b99",
+      "direct_dependencies": {
+        "access": "53bf4f66e72aba5dc307c5988289e17867909bae95359ab2c2ba22e41c9a31d0",
+        "assembly": "32fa22dcf6dfe2f9d68e0df1e9e3652165b6c64fa5ebd9564b79db084a288015",
+        "authority-substrate": "dc4539c88ad3fdcd99bc686ebbfc9e47df8190a44b65a19867b2a44636276607",
+        "product-rules": "80919d7ce74ea5a443c1c0c0d2b957ae3e2f1e1adb559f7b761e2e38e2e713f9",
+        "semantic": "ed65006fa7f4fa10dc267b19bd9986f3248111b6e139d584f54bc89260008e34",
+        "vector": "391b5aa1f4bb3a25d522a4d59c7af1a9aa1150a06480f64d23cfd73f86c808c5"
+      },
+      "formal_evaluation_baseline": false
+    }
+  },
+  "v2_subject_contract": {
+    "schema": "ownward.kernel-iteration-subject/v1",
+    "role": "v2-candidate",
+    "required_identity_fields": [
+      "kernel_generation_identity",
+      "kernel_effect_identity",
+      "direct_dependencies"
+    ],
+    "allowed_direct_dependency_roles": [
+      "authority-substrate",
+      "product-rules",
+      "semantic",
+      "vector"
+    ],
+    "git_is_audit_only": true
+  },
+  "shared_evaluation_conditions": {
+    "comparison_rule": "pairwise-identical",
+    "required_roles": [
+      "dataset",
+      "environment",
+      "executor",
+      "model-profile",
+      "observer",
+      "prompt-and-schema",
+      "scorer"
+    ],
+    "production_profile_reference": {
+      "official_version": "longmemeval-s/9e0b455f4ef0e2ab8f2e582289761153549043fc+d6f21ea9",
+      "questions": 500,
+      "environment_identity": "33c5f590444a6b062a05c8ee70036da11b99a88c8ed7d54e11c90e7badf91014",
+      "input_identity": "683c108c7b0fe4e4374e3ddc8c03fd7285c707f8eac0652b579aa7c6ed76b9f9",
+      "semantic": "gpt-5.6-luna/low",
+      "reader": "gpt-5.6-luna/medium",
+      "judge": "gpt-5.6-terra/medium"
+    },
+    "only_planned_variable": "kernel-generation-and-declared-direct-dependencies"
+  },
+  "dimensions": {
+    "information-organization-quality": {
+      "cross_dimension_compensation": false,
+      "metrics": [
+        {
+          "name": "context_precision",
+          "source": "v0-frontier",
+          "baseline": 1.0,
+          "direction": "higher",
+          "repeatability_error": 0.0,
+          "materiality": 0.005,
+          "gate": {"kind": "non-regression", "minimum": 0.995}
+        },
+        {
+          "name": "relation_precision",
+          "source": "v0-frontier",
+          "baseline": 1.0,
+          "direction": "higher",
+          "repeatability_error": 0.0,
+          "materiality": 0.005,
+          "gate": {"kind": "non-regression", "minimum": 0.995}
+        },
+        {
+          "name": "relation_recall",
+          "source": "v0-frontier",
+          "baseline": 1.0,
+          "direction": "higher",
+          "repeatability_error": 0.0,
+          "materiality": 0.005,
+          "gate": {"kind": "non-regression", "minimum": 0.995}
+        },
+        {
+          "name": "target_evidence_delivery_failures",
+          "source": "v0-community-diagnostic-summary",
+          "baseline": 249,
+          "direction": "lower",
+          "repeatability_error": 0,
+          "materiality": 1,
+          "gate": {"kind": "large-improvement", "maximum": 124, "basis": "errors-at-least-halved"}
+        }
+      ]
+    },
+    "retrieval-and-final-answer-quality": {
+      "cross_dimension_compensation": false,
+      "metrics": [
+        {
+          "name": "final_answer_accuracy",
+          "source": "v0-community",
+          "baseline": 0.484,
+          "direction": "higher",
+          "repeatability_error": 0.0,
+          "materiality": 0.002,
+          "gate": {"kind": "large-improvement", "minimum": 0.742, "basis": "remaining-errors-at-least-halved"}
+        },
+        {
+          "name": "incorrect_answers",
+          "source": "v0-community",
+          "baseline": 258,
+          "direction": "lower",
+          "repeatability_error": 0,
+          "materiality": 1,
+          "gate": {"kind": "large-improvement", "maximum": 129, "basis": "errors-at-least-halved"}
+        },
+        {
+          "name": "fusion_ndcg",
+          "source": "v0-frontier",
+          "baseline": 0.9924413492014472,
+          "direction": "higher",
+          "repeatability_error": 0.0,
+          "materiality": 0.005,
+          "gate": {"kind": "non-regression", "minimum": 0.9874413492014472}
+        },
+        {
+          "name": "fusion_recall",
+          "source": "v0-frontier",
+          "baseline": 1.0,
+          "direction": "higher",
+          "repeatability_error": 0.0,
+          "materiality": 0.005,
+          "gate": {"kind": "non-regression", "minimum": 0.995}
+        },
+        {
+          "name": "v0-correct-capability-protection",
+          "source": "future-independent-regression-materials",
+          "baseline": 1.0,
+          "direction": "higher",
+          "repeatability_error": 0.0,
+          "materiality": 0.0,
+          "gate": {"kind": "non-regression", "minimum": 1.0, "basis": "all-protected-capabilities-pass"}
+        }
+      ]
+    },
+    "end-to-end-efficiency": {
+      "cross_dimension_compensation": false,
+      "metrics": [
+        {
+          "name": "semantic_input_tokens",
+          "source": "v0-community",
+          "baseline": 96909125,
+          "direction": "lower",
+          "repeatability_error": 0,
+          "materiality": 1,
+          "gate": {"kind": "large-improvement", "maximum": 48454562, "basis": "cost-at-least-halved"}
+        },
+        {
+          "name": "end_to_end_wall_seconds",
+          "source": "v0-community",
+          "baseline": 12475.843,
+          "direction": "lower",
+          "repeatability_error": 0.0,
+          "materiality": 0.001,
+          "gate": {"kind": "large-improvement", "maximum": 6237.9215, "basis": "cost-at-least-halved"}
+        },
+        {
+          "name": "retrieval_mean_ms",
+          "source": "v0-community",
+          "baseline": 41.1999999999025,
+          "direction": "lower",
+          "repeatability_error": 0.0,
+          "materiality": 0.001,
+          "gate": {"kind": "non-regression", "maximum": 41.2009999999025}
+        },
+        {
+          "name": "retrieval_p95_ms",
+          "source": "v0-community",
+          "baseline": 77.9999999977008,
+          "direction": "lower",
+          "repeatability_error": 0.0,
+          "materiality": 0.001,
+          "gate": {"kind": "non-regression", "maximum": 78.0009999977008}
+        },
+        {
+          "name": "frontier_query_p95_ms",
+          "source": "v0-frontier",
+          "baseline": 1.0584,
+          "direction": "lower",
+          "repeatability_error": 0.46340000000000003,
+          "materiality": 0.9268000000000001,
+          "gate": {"kind": "non-regression", "maximum": 1.5218, "basis": "baseline-plus-repeatability-error"}
+        }
+      ]
+    }
+  },
+  "v1_benefit_policy": {
+    "status": "requires-same-scale-reproof",
+    "may_be_used_as_second_baseline": false,
+    "known_aggregate_observations": {
+      "correct": 285,
+      "improved_questions": 101,
+      "regressed_questions": 58,
+      "retrieval_mean_ms": 347.8
+    },
+    "protection_requires_mechanism_separation": true
+  },
+  "evidence_types": {
+    "identity-calibration": {"required_dependencies": []},
+    "problem-pool": {"required_dependencies": ["aggregate-diagnostics", "abstraction-rules"]},
+    "development": {"required_dependencies": ["development-materials", "executor", "observer"]},
+    "regression": {"required_dependencies": ["regression-materials", "executor", "observer"]},
+    "integrated": {"required_dependencies": ["integrated-plan", "executor", "observer"]},
+    "blind-calibration": {"required_dependencies": ["generator", "quality-admission", "executor", "observer"]},
+    "blind-gate": {"required_dependencies": ["sealed-blind-materials", "quality-admission", "executor", "observer"]}
+  },
+  "invalidation": {
+    "subject_identity_change": ["that-subject-evidence"],
+    "subject_direct_dependency_change": ["that-subject-evidence"],
+    "shared_condition_change": ["evidence-consuming-that-condition"],
+    "evidence_input_change": ["that-evidence-type-and-downstream"],
+    "documentation_change": [],
+    "git_audit_source_change": [],
+    "unrelated_component_change": []
+  },
+  "cost_limits": {
+    "single_deterministic_view_seconds": 180,
+    "affected_development_and_regression_target_seconds": 420,
+    "affected_development_and_regression_hard_seconds": 600,
+    "formal_longmemeval_allowed": false
+  },
+  "runtime_calibration": {
+    "schema": "ownward.kernel-iteration-runtime-calibration/v1",
+    "acceptance_state_schema": "ownward.acceptance-state/v3",
+    "acceptance_binding_schema": "ownward.acceptance-binding/v6",
+    "checkpoint_policy": "validate-all-present-without-requiring-stage-completion",
+    "consumable_dependency_roles": ["runtime-calibration"],
+    "state_and_reports_are_read_only": true,
+    "binding_and_checkpoint_changes_do_not_change_policy_identity": true
+  },
+  "identity": "b1e3b07abd5c9527dfbde5ea8d7fa5459c8b0b5da224ef2eb1aca29add22fbbe",
+  "seal_sha256": "65c224d99aec71cd452dbc35ac90ec804346f4f5e69e772e812f0497ee54b50e"
+}

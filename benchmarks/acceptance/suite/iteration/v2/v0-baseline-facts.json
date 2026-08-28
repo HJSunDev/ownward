@@ -1,0 +1,49 @@
+{
+  "schema": "ownward.kernel-iteration-baseline-facts/v1",
+  "v0": {
+    "kernel_generation_identity": "1952f4b869e49c4aaf2fbac8139fd0a0c25e4331e18ef559a14faf1db7ed7b77",
+    "kernel_effect_identity": "61729fb8bfdb2fb2895017c0cf00713adf95414978b161f76593509af5a0017a",
+    "binary_sha256": "77600820a450b0931b9e63595b8564be757825000af16f9c2f0a028c69e81d2b",
+    "community": {
+      "questions": 500,
+      "correct": 242,
+      "incorrect": 258,
+      "accuracy": 0.484,
+      "semantic_input_tokens": 96909125,
+      "wall_seconds": 12475.843,
+      "retrieval_mean_ms": 41.1999999999025,
+      "retrieval_p95_ms": 77.9999999977008
+    },
+    "diagnostic_first_observed_gaps": {
+      "target_evidence_not_search_returned": 116,
+      "target_evidence_not_read": 133,
+      "evidence_read_answer_incorrect": 9,
+      "none": 242
+    },
+    "automatic_root_cause_attribution": false,
+    "frontier": {
+      "context_precision": {"value": 1.0, "repeatability_error": 0.0},
+      "relation_precision": {"value": 1.0, "repeatability_error": 0.0},
+      "relation_recall": {"value": 1.0, "repeatability_error": 0.0},
+      "fusion_ndcg": {"value": 0.9924413492014472, "repeatability_error": 0.0},
+      "fusion_recall": {"value": 1.0, "repeatability_error": 0.0},
+      "query_p95_ms": {"value": 1.0584, "repeatability_error": 0.46340000000000003}
+    },
+    "audit_provenance": {
+      "source_candidate_git": "99f519018df99bd5202b0c571b8e43481cd1b80e",
+      "frontier_report_sha256": "ffee7ebc4cff19dd2814140ad7b8eaa2a20dd3f63b4295ede08516c5b07d525d",
+      "community_report_sha256": "2d6506f99b97517d87ad0f70f2e4888aa179f6030e31205be5bacba73a7cf656",
+      "diagnostic_summary_sha256": "c479a92895e1a8a1ed2ca4ea58041e5bfd7c6599bf2d44f2a0b2d423228453dc"
+    }
+  },
+  "v1_observation": {
+    "correct": 285,
+    "improved_questions": 101,
+    "regressed_questions": 58,
+    "retrieval_mean_ms": 347.8,
+    "status": "requires-same-scale-reproof",
+    "audit_source_candidate_git": "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8"
+  },
+  "contains_formal_questions_answers_gold_or_content": false,
+  "identity": "308b7249ecf8a0e35db073829de5b9cfce25af897c0e971f47b760868191931f"
+}

@@ -41,7 +41,21 @@ ITERATION_IMPLEMENTATION_PATHS = (
 )
 
 
-def run_execution(
+def run(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+    raise KernelIterationError(
+        "V1 专用 kernel-iteration 已退出生产入口；请使用 kernel_iteration_run.py 的版本化非正式证据入口"
+    )
+
+
+def run_storage(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+    raise KernelIterationError("V1 专用 kernel-storage 只保留历史实现，不再是生产入口")
+
+
+def run_execution(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+    raise KernelIterationError("V1 专用 kernel-execution 只保留历史实现，不再是生产入口")
+
+
+def _run_v1_execution_historical(
     suite_root: Path,
     formal_run: Path,
     output_root: Path,
@@ -57,7 +71,7 @@ def run_execution(
     _require(execution_path.is_file(), "执行状态方向材料不存在")
 
     storage_root = output_root / "four-direction-protection"
-    storage_protection = run_storage(suite_root, formal_run, storage_root, candidate, resume)
+    storage_protection = _run_v1_storage_historical(suite_root, formal_run, storage_root, candidate, resume)
     _require(storage_protection.get("passed") is True, "前四方向交叉保护失败")
     storage_result = load_json(Path(str(storage_protection["result"])))
 
@@ -253,7 +267,7 @@ def _validate_formal_execution_observation(observation: dict[str, Any], view: di
     _require(observation.get("classification") == _mapping(_mapping(view, "optimization_view"), "cost_classification"), "正式执行成本分类漂移")
 
 
-def run_storage(
+def _run_v1_storage_historical(
     suite_root: Path,
     formal_run: Path,
     output_root: Path,
@@ -518,7 +532,7 @@ def _within_upper_bound(value: float, maximum: float) -> bool:
     return value <= maximum or math.isclose(value, maximum, rel_tol=1e-12, abs_tol=1e-12)
 
 
-def run(
+def _run_v1_historical(
     suite_root: Path,
     formal_run: Path,
     output_root: Path,

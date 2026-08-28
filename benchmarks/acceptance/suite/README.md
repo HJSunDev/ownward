@@ -19,27 +19,28 @@ python benchmarks/acceptance/suite/run.py self-check --output <self-check-report
 python benchmarks/acceptance/suite/run.py preflight --config <execution.json> --isolation-dir <new-empty-directory-on-non-system-drive>
 ```
 
-V1 大版本的正式失败归因与首方向快速视图仍由本 Suite 的非正式入口承载，不写唯一正式 state，也不产生验收结论。它绑定冻结 V0 的正式诊断摘要，机械生成 258 项问题池，只把证据足以证明的通用机制归入方向；快速视图及共用保护检查按精确输入身份分别复用，失效时只重跑对应部分：
+内核大版本迭代使用独立于正式执行器的唯一非正式入口。版本化比较合同位于 `iteration/v2/comparison-contract.json`，小型聚合基线位于 `iteration/v2/v0-baseline-facts.json`；二者只依赖受版本控制的冻结基线、内核目录和组合清单，在干净检出中可独立校验。入口只按组件内容与直接依赖选择 V0、当前产品或独立候选，不把 Git、文档或当前正式 `state.json` 当作候选或政策身份。每种证据写入独立非正式工作区的原子计划与检查点；同一身份可恢复，变化只生成该 subject 的新证据路径，不能晋升或切换内核：
 
 ```powershell
-python benchmarks/acceptance/suite/run.py kernel-iteration `
-  --formal-run E:\Ownward\acceptance\longmemeval-s\runs\99f5190\formal `
-  --output .tmp\kernel-v1-major-iteration `
-  --candidate 99f519018df99bd5202b0c571b8e43481cd1b80e `
+python benchmarks/acceptance/suite/kernel_iteration_run.py `
+  --output .tmp\kernel-v2-major-iteration `
+  --subject v0 `
+  --evidence-type identity-calibration `
   --resume
 ```
 
-第五方向使用同一非正式体系入口核验批量耐久写入、不可见世代构建、原子切换、恢复和前四方向交叉保护；它只读正式聚合成本，不读取正式题面或答案，也不写正式 state：
+当前机器 v6/v3 state、binding、报告摘要和基线历史属于可变运行态，必须显式只读校准，不能进入永久比较政策。校准会调用正式 state 校验并逐份核对现存报告，输出前后 state 字节摘要；阶段 5 合法重绑只产生新的校准身份，不改变比较政策或不依赖该校准的既有非正式证据：
 
 ```powershell
-python benchmarks/acceptance/suite/run.py kernel-execution `
-  --formal-run E:\Ownward\acceptance\longmemeval-s\runs\99f5190\formal `
-  --output .tmp\kernel-v1-major-iteration\execution-state-v1 `
-  --candidate worktree `
+python benchmarks/acceptance/suite/kernel_iteration_run.py `
+  --output .tmp\kernel-v2-major-iteration `
+  --runtime-state .tmp\first-kernel-baseline-v1\acceptance\state.json `
   --resume
 ```
 
-版本化视图位于 `materials/optimization/v1/`。它只含与正式题目事实、答案和表达不重合的合成机制样本；正式问题池、观察报告和 V0 基线留在输出目录，任务文档只引用证据，不复制机器结果。
+未来 V2 subject 使用 `ownward.kernel-iteration-subject/v1` 清单；问题池、开发、回归、整体验证和盲测使用同一入口及 `ownward.kernel-iteration-input/v1` 直接依赖清单。当前阶段只启用不参与候选判断的 `identity-calibration` 与只读 `runtime-calibration`；其他证据类型已冻结身份与恢复骨架，实际材料、执行器和盲测校准须由后续阶段补齐后才可运行。
+
+V1 的 `materials/optimization/v1/` 及历史分析实现只保留审计与回归价值；旧 `run.py kernel-iteration`、`kernel-storage`、`kernel-execution` 会明确拒绝，不再构成第二条生产路径。
 
 内核前沿观察器由同一候选源码构建；正式运行会拒绝提交身份不一致或由脏工作树构建的观察器：
 
