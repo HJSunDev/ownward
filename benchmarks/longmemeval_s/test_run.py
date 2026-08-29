@@ -679,6 +679,127 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             self.assertEqual(2, usage["attempts"])
             self.assertEqual(1, usage["retries"])
 
+    def test_cached_codex_output_is_revalidated_and_archived_before_bounded_retry(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stage = root / "stage"
+            first_transport = FakeTransport(outputs=[{"items": ["stale"]}])
+            first, _usage = adapter.CodexCapability(first_transport)._invoke(
+                prompt="prompt", schema={"type": "object"}, stage=stage,
+                model="model", effort="low", timeout_seconds=1, attempts=3,
+            )
+            self.assertEqual({"items": ["stale"]}, first)
+
+            transport = FakeTransport(outputs=[{"items": ["ok"]}])
+            value, usage = adapter.CodexCapability(transport)._invoke(
+                prompt="prompt", schema={"type": "object"}, stage=stage,
+                model="model", effort="low", timeout_seconds=1, attempts=3,
+                validate=lambda result: adapter.require(result["items"] == ["ok"], "cached output is invalid"),
+            )
+            self.assertEqual({"items": ["ok"]}, value)
+            self.assertEqual(2, usage["attempts"])
+            self.assertEqual(1, transport.calls)
+            self.assertEqual(1, len(list((stage / "_audit").glob("invalid-complete-*.json"))))
+
+    def test_invalid_cached_codex_output_cannot_reset_the_frozen_attempt_bound(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            stage = Path(directory) / "stage"
+            adapter.CodexCapability(FakeTransport(outputs=[{"items": ["stale"]}]))._invoke(
+                prompt="prompt", schema={"type": "object"}, stage=stage,
+                model="model", effort="low", timeout_seconds=1, attempts=1,
+            )
+            transport = FakeTransport(outputs=[{"items": ["must-not-run"]}])
+            with self.assertRaisesRegex(adapter.AdapterError, "after 1 bounded attempts"):
+                adapter.CodexCapability(transport)._invoke(
+                    prompt="prompt", schema={"type": "object"}, stage=stage,
+                    model="model", effort="low", timeout_seconds=1, attempts=1,
+                    validate=lambda result: adapter.require(result["items"] == ["ok"], "cached output is invalid"),
+                )
+            self.assertEqual(0, transport.calls)
+            self.assertEqual(1, len(list((stage / "_audit").glob("invalid-complete-*.json"))))
+
+    def test_cached_codex_revalidation_never_masks_request_identity_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            stage = Path(directory) / "stage"
+            adapter.CodexCapability(FakeTransport(outputs=[{"items": ["stale"]}]))._invoke(
+                prompt="prompt", schema={"type": "object"}, stage=stage,
+                model="model", effort="low", timeout_seconds=1, attempts=3,
+            )
+            transport = FakeTransport(outputs=[{"items": ["ok"]}])
+            with self.assertRaisesRegex(adapter.AdapterError, "request identity changed"):
+                adapter.CodexCapability(transport)._invoke(
+                    prompt="different-prompt", schema={"type": "object"}, stage=stage,
+                    model="model", effort="low", timeout_seconds=1, attempts=3,
+                    validate=lambda _result: None,
+                )
+            self.assertEqual(0, transport.calls)
+            self.assertTrue((stage / "complete.json").is_file())
+            self.assertFalse((stage / "_audit").exists())
+
+    def test_codex_runtime_cleanup_retries_a_transient_windows_file_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "codex-app-server-fixture"
+            root.mkdir()
+            (root / "goals.sqlite").write_bytes(b"fixture")
+            real_rmtree = adapter.shutil.rmtree
+            calls = 0
+
+            def transient(path: Path) -> None:
+                nonlocal calls
+                calls += 1
+                if calls == 1:
+                    raise PermissionError(32, "fixture lock")
+                real_rmtree(path)
+
+            with mock.patch("codex_app_server.shutil.rmtree", side_effect=transient), mock.patch("codex_app_server.time.sleep"):
+                adapter.remove_runtime_root(root, timeout_seconds=1)
+            self.assertEqual(2, calls)
+            self.assertFalse(root.exists())
+
+    def test_codex_runtime_cleanup_fails_open_after_its_bound(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "codex-app-server-fixture"
+            root.mkdir()
+            with mock.patch("codex_app_server.shutil.rmtree", side_effect=PermissionError(32, "fixture lock")):
+                with self.assertRaisesRegex(adapter.AppServerError, "cleanup did not quiesce"):
+                    adapter.remove_runtime_root(root, timeout_seconds=0)
+            self.assertTrue(root.exists())
+
+    def test_codex_worker_shutdown_targets_its_exact_windows_process_tree(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "codex-app-server-fixture"
+            root.mkdir()
+            server = adapter.CodexAppServer(Path(directory) / "codex.exe", Path(directory) / "auth.json", root, ["codex"], {})
+            process = mock.Mock(pid=43210, stdin=None, stdout=None, stderr=None)
+            process.poll.side_effect = [None, 0]
+            server.process = process
+            with mock.patch("codex_app_server.os.name", "nt"), mock.patch("codex_app_server.subprocess.run") as taskkill:
+                server.__exit__()
+            taskkill.assert_called_once_with(
+                ["taskkill", "/PID", "43210", "/T", "/F"],
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5, check=False,
+            )
+            process.terminate.assert_not_called()
+            process.wait.assert_called_once_with(timeout=5)
+            self.assertFalse(root.exists())
+
+    def test_retrieval_treats_explicit_null_evidence_as_no_passage_and_reads_full_source(self) -> None:
+        client = FakeToolClient()
+        client.contents["info-1"] = "A short source that must be read in full."
+        original = client.call_tool
+
+        def call_tool(name: str, arguments: dict):
+            if name == "ownward_evidence_search":
+                return {"evidence": None}
+            return original(name, arguments)
+
+        client.call_tool = call_tool  # type: ignore[method-assign]
+        runtime = mock.Mock(client=client)
+        evidence, retrieval = adapter.retrieve(runtime, "short source", self.protocol)
+        self.assertEqual("A short source that must be read in full.", evidence[0]["content"])
+        self.assertEqual("full", retrieval["read_paths"][0]["mode"])
+        self.assertEqual([], retrieval["evidence_read_ids"])
+
     def test_app_server_timeout_interrupts_the_exact_fresh_turn(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -38,7 +38,36 @@ python benchmarks/acceptance/suite/kernel_iteration_run.py `
   --resume
 ```
 
-未来 V2 subject 使用 `ownward.kernel-iteration-subject/v1` 清单；问题池、开发、回归、整体验证和盲测使用同一入口及 `ownward.kernel-iteration-input/v1` 直接依赖清单。当前阶段只启用不参与候选判断的 `identity-calibration` 与只读 `runtime-calibration`；其他证据类型已冻结身份与恢复骨架，实际材料、执行器和盲测校准须由后续阶段补齐后才可运行。
+未来 V2 subject 使用 `ownward.kernel-iteration-subject/v1` 清单；问题池、开发、回归和整体验证均由同一入口以 `development`、`regression`、`integrated` 三种非正式证据执行。材料、执行器、观察器和共享条件先封存为 `ownward.kernel-iteration-input/v1`，候选达到冻结绝对门后才在完全相同的材料与条件上顺序运行 V0；中断只恢复身份未变的原子检查点，失败反馈只陈述首个可证阶段缺口。入口不会成为正式 contract 模式或证据层，也不能写正式 state：
+
+```powershell
+python benchmarks/acceptance/suite/kernel_iteration_run.py `
+  --output .tmp\kernel-v2-major-iteration `
+  --prepare-materials <materials.json> `
+  --execution-config <execution.json> `
+  --evidence-type development `
+  --write-input <input.json>
+
+python benchmarks/acceptance/suite/kernel_iteration_run.py `
+  --output .tmp\kernel-v2-major-iteration `
+  --subject-manifest <v2-subject.json> `
+  --execution-config <execution.json> `
+  --input-manifest <input.json> `
+  --formal-state <state.json> `
+  --evidence-type development `
+  --resume
+```
+
+一次性盲测的生成、独立先验准入、Production Profile 执行/评价、不可逆摘要和销毁也由该入口管理。终态只保存身份、覆盖、聚合指标、判断和成本；题面、真值、证据及逐题输出在质量拒绝、失败或完成后销毁。运行中的 gate 只在临时 scratch 保存恢复 seed，并以活动定位文件连接 plan；终态删除两者后，保留一份不含秘密与盲测内容的当前依赖定位收据。新进程仅凭 plan identity 复用时会只读重算执行配置、环境、二进制、向量制品、模型协议和运行态校准等全部直接依赖，完全一致才返回零模型、零产品执行结果。历史终态可审计读取不等于当前预算仍有效。
+
+```powershell
+python benchmarks/acceptance/suite/kernel_iteration_run.py `
+  --output .tmp\kernel-v2-major-iteration `
+  --blind-plan-identity <plan-sha256> `
+  --resume
+```
+
+版本化合同为 `iteration/v2/validation-contract.json`，五题非候选校准预算为 `iteration/v2/blind-calibration-budget.json`：5/15/25/50 题正常路径分别冻结为 406/751/1097/1961 秒，失败路径为 320/492/665/1097 秒，包含 20% 波动、10% 有界重试和每级 60 秒恢复余量，正常路径总计 4215 秒。版本化预算可脱离运行现场作为历史事实读取；将其用于当前阶段判断时必须同时验证计划、结果、依赖定位收据及全部当前直接依赖。
 
 V1 的 `materials/optimization/v1/` 及历史分析实现只保留审计与回归价值；旧 `run.py kernel-iteration`、`kernel-storage`、`kernel-execution` 会明确拒绝，不再构成第二条生产路径。
 

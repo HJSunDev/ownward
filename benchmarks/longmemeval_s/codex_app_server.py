@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import queue
 import shutil
@@ -325,14 +326,32 @@ class CodexAppServer:
                     self.request("turn/interrupt", {"threadId": thread_id, "turnId": turn_id}, timeout_seconds=2)
                 except AppServerError:
                     pass
-            process.terminate()
+            if os.name == "nt":
+                subprocess.run(
+                    ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=5,
+                    check=False,
+                )
+            if process.poll() is None:
+                process.terminate()
             try:
                 process.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=5)
+        if process is not None:
+            for stream in (process.stdin, process.stdout, process.stderr):
+                if stream is not None:
+                    try:
+                        stream.close()
+                    except OSError:
+                        pass
         self.process = None
-        shutil.rmtree(self.runtime_root, ignore_errors=True)
+        remove_runtime_root(self.runtime_root)
 
 
 class CodexAppServerPool:
@@ -429,3 +448,20 @@ class CodexAppServerPool:
 def isolated_runtime_root(parent: Path) -> Path:
     parent.mkdir(parents=True, exist_ok=True)
     return Path(tempfile.mkdtemp(prefix="codex-app-server-", dir=parent))
+
+
+def remove_runtime_root(path: Path, *, timeout_seconds: float = 5.0) -> None:
+    """Remove one isolated worker root after Windows releases terminated-process handles."""
+    deadline = time.perf_counter() + timeout_seconds
+    last_error: OSError | None = None
+    while path.exists():
+        try:
+            shutil.rmtree(path)
+            return
+        except OSError as error:
+            last_error = error
+            if time.perf_counter() >= deadline:
+                raise AppServerError(f"Codex App Server runtime cleanup did not quiesce: {path.name}") from error
+            time.sleep(0.05)
+    if last_error is not None and path.exists():
+        raise AppServerError(f"Codex App Server runtime cleanup failed: {path.name}") from last_error

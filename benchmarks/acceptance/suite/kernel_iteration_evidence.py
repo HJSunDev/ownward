@@ -227,6 +227,61 @@ def calibrate_runtime(
     state_path = state_path.resolve()
     _validate_output_boundary(repository, output_root)
     contract = load_contract(suite_root, contract_path)
+    before = state_path.read_bytes() if state_path.is_file() else b""
+    result = inspect_runtime_calibration(suite_root, state_path, contract_path=contract_path)
+    state_sha256 = result["state_sha256_before"]
+    calibration_identity = result["identity"]
+    evidence_root = output_root / "runtime-calibration" / calibration_identity
+    plan = {
+        "schema": PLAN_SCHEMA,
+        "contract_identity": contract["identity"],
+        "evidence_type": "runtime-calibration",
+        "direct_dependencies": {
+            "comparison-contract": contract["identity"],
+            "runtime-state": state_sha256,
+            "runtime-binding": result["binding_identity"],
+            **{f"runtime-report:{name}": value["report_sha256"] for name, value in result["checkpoints"].items()},
+        },
+        "formal": False,
+    }
+    plan["identity"] = canonical_sha256(plan)
+
+    _require(state_path.read_bytes() == before, "校准期间正式 state 发生变化")
+    plan_path = evidence_root / "plan.json"
+    result_path = evidence_root / "result.json"
+    if plan_path.exists() or result_path.exists():
+        _require(resume and plan_path.is_file() and result_path.is_file(), "运行态校准已存在；只有 --resume 可精确复用")
+        _require(_load_json(plan_path) == plan and _load_json(result_path) == result, "既有运行态校准身份漂移")
+        reused = True
+    else:
+        atomic_json(plan_path, plan)
+        atomic_json(result_path, result)
+        reused = False
+    _require(state_path.read_bytes() == before, "运行态校准改写了正式 state")
+    return {
+        "passed": True,
+        "formal": False,
+        "status": "calibrated",
+        "contract_identity": contract["identity"],
+        "runtime_calibration_identity": calibration_identity,
+        "state_sha256_before": state_sha256,
+        "state_sha256_after": state_sha256,
+        "evidence_root": str(evidence_root),
+        "reused": reused,
+    }
+
+
+def inspect_runtime_calibration(
+    suite_root: Path,
+    state_path: Path,
+    *,
+    contract_path: Path | None = None,
+) -> dict[str, Any]:
+    """Recompute current runtime facts without writing calibration evidence."""
+    suite_root = suite_root.resolve()
+    repository = suite_root.parents[2]
+    state_path = state_path.resolve()
+    contract = load_contract(suite_root, contract_path)
     definition = _mapping(contract, "runtime_calibration")
     _require(definition.get("schema") == RUNTIME_CALIBRATION_SCHEMA, "运行态校准合同无效")
     _require(state_path.is_file(), "运行态校准缺少 Acceptance state")
@@ -259,17 +314,17 @@ def calibrate_runtime(
         _require(report_path.is_file(), f"运行态 {name} 报告缺失")
         report_sha256 = str(checkpoint.get("report_sha256", ""))
         _require(is_sha256(report_sha256) and file_sha256(report_path) == report_sha256, f"运行态 {name} 报告摘要漂移")
-        evidence = _mapping(checkpoint, "evidence_identity")
-        _require(is_sha256(evidence.get("identity")), f"运行态 {name} 证据身份无效")
+        evidence_identity = _mapping(checkpoint, "evidence_identity")
+        _require(is_sha256(evidence_identity.get("identity")), f"运行态 {name} 证据身份无效")
         checkpoint_facts[name] = {
             "report_sha256": report_sha256,
-            "evidence_identity": evidence["identity"],
+            "evidence_identity": evidence_identity["identity"],
             "passed": checkpoint.get("passed") is True,
         }
 
     history = state.get("baseline_history")
     _require(isinstance(history, list), "运行态基线历史无效")
-    calibration_content = {
+    content = {
         "schema": RUNTIME_CALIBRATION_RESULT_SCHEMA,
         "comparison_contract_identity": contract["identity"],
         "state_schema": state["schema"],
@@ -284,46 +339,7 @@ def calibrate_runtime(
         "baseline_history_identities": [item.get("identity") for item in history],
         "formal_state_written": False,
     }
-    calibration_identity = canonical_sha256(calibration_content)
-    result = {**calibration_content, "identity": calibration_identity}
-    evidence_root = output_root / "runtime-calibration" / calibration_identity
-    plan = {
-        "schema": PLAN_SCHEMA,
-        "contract_identity": contract["identity"],
-        "evidence_type": "runtime-calibration",
-        "direct_dependencies": {
-            "comparison-contract": contract["identity"],
-            "runtime-state": state_sha256,
-            "runtime-binding": calibration_content["binding_identity"],
-            **{f"runtime-report:{name}": value["report_sha256"] for name, value in checkpoint_facts.items()},
-        },
-        "formal": False,
-    }
-    plan["identity"] = canonical_sha256(plan)
-
-    _require(state_path.read_bytes() == before, "校准期间正式 state 发生变化")
-    plan_path = evidence_root / "plan.json"
-    result_path = evidence_root / "result.json"
-    if plan_path.exists() or result_path.exists():
-        _require(resume and plan_path.is_file() and result_path.is_file(), "运行态校准已存在；只有 --resume 可精确复用")
-        _require(_load_json(plan_path) == plan and _load_json(result_path) == result, "既有运行态校准身份漂移")
-        reused = True
-    else:
-        atomic_json(plan_path, plan)
-        atomic_json(result_path, result)
-        reused = False
-    _require(state_path.read_bytes() == before, "运行态校准改写了正式 state")
-    return {
-        "passed": True,
-        "formal": False,
-        "status": "calibrated",
-        "contract_identity": contract["identity"],
-        "runtime_calibration_identity": calibration_identity,
-        "state_sha256_before": state_sha256,
-        "state_sha256_after": state_sha256,
-        "evidence_root": str(evidence_root),
-        "reused": reused,
-    }
+    return {**content, "identity": canonical_sha256(content)}
 
 
 def compare_plans(left_path: Path, right_path: Path) -> dict[str, Any]:

@@ -32,7 +32,7 @@ for dependency_root in (SUITE_ROOT, PRODUCT_ADAPTER_ROOT):
 
 from ownward_mcp import MCPError, OwnwardRuntime  # noqa: E402
 import codex_session  # noqa: E402
-from codex_app_server import AppServerError, AppServerTimeout, CodexAppServer, CodexAppServerPool, isolated_runtime_root  # noqa: E402
+from codex_app_server import AppServerError, AppServerTimeout, CodexAppServer, CodexAppServerPool, isolated_runtime_root, remove_runtime_root  # noqa: E402
 
 
 PROTOCOL_SCHEMA = "ownward.longmemeval-s-protocol/v1"
@@ -44,7 +44,7 @@ OFFICIAL_DATA_SHA256 = "d6f21ea9d60a0d56f34a05b609c79c88a451d2ae03597821ea3d5a96
 OFFICIAL_QUESTION_COUNT = 500
 PRODUCTION_PROFILE = "Ownward LongMemEval-S Production Profile"
 SEMANTIC_TRANSPORT_VERSION = "ownward.longmemeval-s-semantic-transport/v2"
-RETRIEVAL_STAGE_VERSION = "ownward.longmemeval-s-retrieval/v4"
+RETRIEVAL_STAGE_VERSION = "ownward.longmemeval-s-retrieval/v5"
 READER_STAGE_VERSION = "ownward.longmemeval-s-reader/v1"
 JUDGE_STAGE_VERSION = "ownward.longmemeval-s-judge/v1"
 DIAGNOSTIC_STAGE_VERSION = "ownward.longmemeval-s-diagnostic/v2"
@@ -637,7 +637,20 @@ class CodexCapability:
         if complete_path.is_file():
             complete = load_json(complete_path)
             require(isinstance(complete, dict) and complete.get("identity") == identity, "Codex capability checkpoint identity changed")
-            return complete["output"], complete["usage"]
+            try:
+                if validate is not None:
+                    validate(complete["output"])
+            except (AdapterError, ValueError) as error:
+                audit = stage / "_audit"
+                audit.mkdir(parents=True, exist_ok=True)
+                archived = audit / f"invalid-complete-{sha256(complete_path)}.json"
+                if archived.is_file():
+                    require(archived.read_bytes() == complete_path.read_bytes(), "Codex invalid checkpoint audit changed")
+                    complete_path.unlink()
+                else:
+                    complete_path.replace(archived)
+            else:
+                return complete["output"], complete["usage"]
         stage.mkdir(parents=True, exist_ok=True)
         last_error = ""
         attempt_directories = sorted(path for path in stage.glob("attempt-*") if path.is_dir())
@@ -1118,6 +1131,8 @@ def retrieve(runtime: OwnwardRuntime, question: str, protocol: dict[str, Any]) -
             })
             evidence_search_ms += (time.monotonic() - before) * 1000
             references = narrowed.get("evidence") if isinstance(narrowed, dict) else None
+            if isinstance(narrowed, dict) and "evidence" in narrowed and references is None:
+                references = []
             require(isinstance(references, list), "Ownward evidence search returned no evidence list")
             for reference in references:
                 require(
@@ -1224,7 +1239,7 @@ def clean_stale_codex_runtime_roots(output_dir: Path) -> list[str]:
         require(child.is_dir() and child.name.startswith("codex-app-server-"), f"unexpected object in Codex runtime root: {child.name}")
         require(child.resolve().parent == parent, "Codex runtime child escapes its parent")
         cleaned.append(child.name)
-        shutil.rmtree(child)
+        remove_runtime_root(child)
     parent.rmdir()
     if cleaned:
         append_jsonl(output_dir / "_audit" / "transport-cleanup.jsonl", {

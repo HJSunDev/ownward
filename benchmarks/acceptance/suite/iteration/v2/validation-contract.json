@@ -1,0 +1,116 @@
+{
+  "schema": "ownward.kernel-iteration-validation/v1",
+  "frozen_before_calibration": true,
+  "contains_formal_questions_answers_gold_or_content": false,
+  "execution": {
+    "engine": "ownward.longmemeval-s-nonformal/v1",
+    "supported_evidence_types": ["development", "regression", "integrated"],
+    "required_observations": [
+      "fact_delivery",
+      "final_answer_accuracy",
+      "temporal_correctness",
+      "conflict_correctness",
+      "retrieval_latency",
+      "wall_seconds",
+      "semantic_tokens",
+      "reader_tokens",
+      "judge_tokens",
+      "ownward_data_bytes"
+    ],
+    "pair_order": ["candidate", "v0"],
+    "candidate_role": "v2-candidate",
+    "baseline_role": "evaluation-baseline",
+    "candidate_must_pass_absolute_gate_before_v0": true,
+    "baseline_execution_requires_candidate_result": true,
+    "irreversible_failure_stops_early": true,
+    "formal_state_read_only": true,
+    "fact_delivery_missing_gaps": [
+      "source_session_not_created",
+      "semantic_work_not_fully_submitted",
+      "target_evidence_not_search_returned",
+      "target_evidence_not_read"
+    ],
+    "answer_only_gaps": [
+      "evidence_read_answer_incorrect",
+      "abstention_response_incorrect",
+      "answer_incorrect_without_labeled_evidence"
+    ]
+  },
+  "blind": {
+    "schema": "ownward.kernel-iteration-blind-gate/v1",
+    "levels": [5, 15, 25, 50],
+    "calibration_questions": 5,
+    "calibration_is_candidate_decision": false,
+    "fresh_generation_nonce_required": true,
+    "resume_addressing": "explicit-plan-identity",
+    "running_secret_location": "temporary-scratch-only",
+    "terminal_reuse": "plan-identity-read-only-zero-execution",
+    "controller_direct_dependency_required": true,
+    "coverage": [
+      "knowledge-update-conflict",
+      "temporal-order",
+      "multi-session-relation",
+      "single-session-assistant-fact",
+      "multi-session-distractor"
+    ],
+    "minimum_sessions_per_question": 5,
+    "minimum_distractor_sessions_per_question": 2,
+    "mechanical_truth": "answer-verbatim-in-declared-evidence-and-derived-claim-bindings",
+    "generation": {
+      "model": "gpt-5.6-terra",
+      "reasoning_effort": "medium",
+      "timeout_seconds": 240,
+      "attempts": 2,
+      "prompt_version": "ownward.kernel-iteration-blind-generator/v7"
+    },
+    "quality_admission": {
+      "model": "gpt-5.6-terra",
+      "reasoning_effort": "medium",
+      "timeout_seconds": 240,
+      "attempts": 2,
+      "prompt_version": "ownward.kernel-iteration-blind-admission/v3",
+      "required_checks": [
+        "plausible",
+        "difficulty_sufficient",
+        "unique_answer",
+        "evidence_sufficient",
+        "no_surface_shortcut",
+        "scoring_discriminative"
+      ]
+    },
+    "production_roles": {
+      "semantic": "gpt-5.6-luna/low",
+      "reader": "gpt-5.6-luna/medium",
+      "judge": "gpt-5.6-terra/medium"
+    },
+    "controls": [
+      "known-correct",
+      "missing-evidence",
+      "wrong-evidence",
+      "stale-evidence",
+      "wrong-answer"
+    ],
+    "terminal_raw_policy": "destroy-all-reversible-content",
+    "persistent_fields": [
+      "identities",
+      "coverage-counts",
+      "aggregate-metrics",
+      "decision",
+      "general-root-cause",
+      "cost-and-recovery"
+    ]
+  },
+  "calibration": {
+    "repetitions": 2,
+    "question_concurrency": 4,
+    "codex_concurrency": 8,
+    "normal_variation_reserve_ratio": 0.2,
+    "bounded_retry_reserve_ratio": 0.1,
+    "level_recovery_reserve_seconds": 60,
+    "design_total_normal_seconds": 9000,
+    "budget_rule": "measured-slower-repetition-plus-30-percent-and-level-recovery",
+    "failure_rule": "candidate-side-only-plus-generation-admission-and-level-recovery",
+    "resume_requires_byte_identical_terminal_result": true
+  },
+  "identity": "a511498187990d0831272ed2ab162c7bc94987b861a72ae1b37e7ed301994a02"
+}
