@@ -81,6 +81,11 @@ def retrieve_with_v0_compatibility(runtime: Any, question: str, protocol: dict[s
         "search_ms": search_ms, "evidence_search_ms": 0.0, "read_ms": read_ms,
         "total_ms": search_ms + read_ms, "returned": observed, "read_ids": read_ids,
         "evidence_read_ids": [], "read_paths": read_paths, "context_chars": used_chars,
+        "limits": {
+            "read_units": int(settings["read_limit"]),
+            "context_chars": int(settings["context_max_chars"]),
+            "evidence_depth_per_source": int(settings["evidence_search_limit_per_source"]),
+        },
         "selection_policy": "v0-ranked-full-read/v1", "selection_steps": selection_steps,
     }
 

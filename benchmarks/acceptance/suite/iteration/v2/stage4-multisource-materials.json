@@ -1,0 +1,180 @@
+{
+  "schema": "ownward.kernel-iteration-materials/v2",
+  "contains_formal_questions_answers_gold_or_content": false,
+  "cases": [
+    {
+      "case_id": "v2m-lower-ranked-authority",
+      "coverage": "multi-source-lower-ranked-authority",
+      "question_type": "single-session-user",
+      "question_date": "2026-08-05",
+      "question": "For the active Bracken Quay emergency dispatch, what rally marker is authorized?",
+      "answer": "The authorized rally marker is cobalt lantern.",
+      "answer_session_ids": ["v2m01-s08"],
+      "stale_session_ids": [],
+      "distractor_session_ids": ["v2m01-s01", "v2m01-s02", "v2m01-s03", "v2m01-s04", "v2m01-s05", "v2m01-s06", "v2m01-s07"],
+      "truth_claims": [
+        {"claim": "The authorized rally marker is cobalt lantern.", "evidence_session_ids": ["v2m01-s08"]}
+      ],
+      "sessions": [
+        {"session_id": "v2m01-s01", "date": "2026-07-20", "turns": [
+          {"role": "user", "content": "The Bracken Quay emergency dispatch exercise used an amber pennant as a rally marker during the first rehearsal. The planning sheet repeats the quay name, emergency dispatch route, radio sequence, assembly lanes, and marker placement so crews can compare that rehearsal with later drafts. It explicitly labels amber pennant as a rehearsal artifact, not an authorized instruction."},
+          {"role": "assistant", "content": "A second paragraph again discusses the Bracken Quay emergency dispatch and the amber pennant marker. It lists harbor traffic, response teams, access ladders, signal visibility, tide warnings, and observer positions. The paragraph says the rehearsal record is retained only for training analysis and cannot authorize the active dispatch."},
+          {"role": "user", "content": "The closing checklist repeats rally marker, authorized channel, emergency dispatch, and Bracken Quay while explaining how obsolete sheets are stamped. It contains no current marker decision and says operators must not promote the amber pennant example into an active instruction."}
+        ]},
+        {"session_id": "v2m01-s02", "date": "2026-07-22", "turns": [
+          {"role": "assistant", "content": "A rejected Bracken Quay emergency dispatch draft proposed a silver mast lamp as the rally marker. The draft describes dispatch timing, quay access, launch supervisors, marker visibility, backup radios, and the approval workflow in detail. It states that the silver mast lamp proposal was rejected after glare testing."},
+          {"role": "user", "content": "The draft review repeats the phrases active dispatch, authorized marker, and emergency rally several times while documenting why no authorization occurred. It records weather checks, viewing angles, maintenance ownership, and replacement bulbs, but the entire page remains a rejected proposal."},
+          {"role": "assistant", "content": "The archival note says the silver mast lamp must never be read as the authorized Bracken Quay rally marker. It is kept beside other rejected emergency dispatch options solely to demonstrate the review process."}
+        ]},
+        {"session_id": "v2m01-s03", "date": "2026-07-24", "turns": [
+          {"role": "user", "content": "The Bracken Quay emergency dispatch communications test assigned the phrase green tower to a simulated rally marker. The test report repeats emergency dispatch, current channel, authorized sequence, and rally marker because it checks message parsing. It says every value in the simulation is synthetic."},
+          {"role": "assistant", "content": "The simulation log contains three long sections on radio delay, crew acknowledgements, map overlays, and marker recognition. Green tower appears in each section, but the report labels it a parser fixture rather than an operational instruction for Bracken Quay."},
+          {"role": "user", "content": "The final line warns that a successful communications test does not authorize its rally marker. The active emergency dispatch must be taken from a separately signed controller notice."}
+        ]},
+        {"session_id": "v2m01-s04", "date": "2026-07-26", "turns": [
+          {"role": "assistant", "content": "A logistics worksheet for the Bracken Quay emergency dispatch uses copper flag as a placeholder rally marker while calculating storage bins and transport weights. The worksheet repeatedly names the active quay, dispatch crews, signal equipment, authorization columns, and emergency routes."},
+          {"role": "user", "content": "Every copper flag entry is marked placeholder. The surrounding long inventory covers ropes, lamps, batteries, waterproof cases, traffic cones, and spare radios. Nothing in the worksheet grants operational authorization."},
+          {"role": "assistant", "content": "The sign-off box is empty and the footer says placeholders cannot become the active Bracken Quay rally marker. A signed controller notice is required instead."}
+        ]},
+        {"session_id": "v2m01-s05", "date": "2026-07-28", "turns": [
+          {"role": "user", "content": "A neighboring Stonehook Pier dispatch uses a white beacon as its authorized rally marker. The comparison document repeatedly mentions Bracken Quay, emergency dispatch, current authorization, and rally marker to prevent crews from confusing the two sites."},
+          {"role": "assistant", "content": "The long comparison lists entry roads, dock numbers, emergency contacts, marker mounts, and radio call signs for both locations. It states that white beacon belongs only to Stonehook Pier and conveys no instruction for Bracken Quay."},
+          {"role": "user", "content": "The comparison ends by directing Bracken Quay crews to their own signed controller notice. It never assigns the white beacon to the active Bracken Quay dispatch."}
+        ]},
+        {"session_id": "v2m01-s06", "date": "2026-07-30", "turns": [
+          {"role": "assistant", "content": "The Bracken Quay night-visibility trial tested a red lattice, an amber pennant, and a silver mast lamp as possible emergency rally markers. The trial repeats the query vocabulary while reporting distance, rain, fog, reflection, installation time, and observer confidence."},
+          {"role": "user", "content": "No item in the visibility trial was authorized. The trial is evidence for a later decision, not the active dispatch itself, and its tables should not be treated as a controller notice."},
+          {"role": "assistant", "content": "The conclusion says the authorized Bracken Quay rally marker will be stated only after the trial in a final signed record. This report contains no such record."}
+        ]},
+        {"session_id": "v2m01-s07", "date": "2026-08-01", "turns": [
+          {"role": "user", "content": "A training handbook asks learners to choose a blue arch for a fictional Bracken Quay emergency dispatch. The handbook repeats authorized rally marker, active response, quay closure, and emergency coordination in examples and exercises."},
+          {"role": "assistant", "content": "The handbook's blue arch answer is confined to a fictional exercise. Its long explanation covers grading, map symbols, radio etiquette, supervisor review, and learner mistakes, none of which forms a real dispatch decision."},
+          {"role": "user", "content": "The handbook explicitly says operational crews must ignore training answers and consult the signed controller notice for the current Bracken Quay rally marker."}
+        ]},
+        {"session_id": "v2m01-s08", "date": "2026-08-03", "turns": [
+          {"role": "user", "content": "The signed controller notice cancels every rehearsal, draft, simulation, worksheet, neighboring-site comparison, trial, and training marker. The authorized rally marker is cobalt lantern. This is the only active Bracken Quay emergency dispatch instruction."}
+        ]}
+      ]
+    },
+    {
+      "case_id": "v2m-joint-authorities",
+      "coverage": "multi-source-joint-authorities",
+      "question_type": "multi-session",
+      "question_date": "2026-09-18",
+      "question": "For the final Alder Meridian supply release, state the loading pier, verification phrase, and receiving unit.",
+      "answer": "The loading pier is Pier Solace. The verification phrase is kiln sparrow. The receiving unit is North Loom Team.",
+      "answer_session_ids": ["v2m02-s06", "v2m02-s07", "v2m02-s08"],
+      "stale_session_ids": [],
+      "distractor_session_ids": ["v2m02-s01", "v2m02-s02", "v2m02-s03", "v2m02-s04", "v2m02-s05"],
+      "truth_claims": [
+        {"claim": "The loading pier is Pier Solace.", "evidence_session_ids": ["v2m02-s06"]},
+        {"claim": "The verification phrase is kiln sparrow.", "evidence_session_ids": ["v2m02-s07"]},
+        {"claim": "The receiving unit is North Loom Team.", "evidence_session_ids": ["v2m02-s08"]}
+      ],
+      "sessions": [
+        {"session_id": "v2m02-s01", "date": "2026-09-01", "turns": [
+          {"role": "user", "content": "The first Alder Meridian supply release draft used Pier Ember, the verification phrase glass heron, and East Frame Crew. The draft repeats loading pier, verification phrase, receiving unit, supply release, and final routing while comparing crane schedules and inventory counts."},
+          {"role": "assistant", "content": "Every value in that draft was superseded. The long routing analysis covers truck queues, tide windows, pallet dimensions, inspection desks, and radio channels, but it never became the final Alder Meridian release."},
+          {"role": "user", "content": "The draft is retained to explain rejected coordination choices. It says Pier Ember, glass heron, and East Frame Crew must not be used after the three separate final authority notices arrive."}
+        ]},
+        {"session_id": "v2m02-s02", "date": "2026-09-03", "turns": [
+          {"role": "assistant", "content": "A rehearsal for the Alder Meridian supply release practiced at Pier Moss with verification phrase cedar wheel and receiving unit South Gauge Team. The rehearsal notes repeatedly name all three requested fields and describe loading, verification, and receipt."},
+          {"role": "user", "content": "The rehearsal includes long checklists for seals, forklifts, radios, manifests, and safety observers. It is explicitly a practice run and none of its three values is authorized for the final release."},
+          {"role": "assistant", "content": "The closing note says final loading pier, phrase, and receiving unit are controlled by separate signed notices, not by this rehearsal."}
+        ]},
+        {"session_id": "v2m02-s03", "date": "2026-09-05", "turns": [
+          {"role": "user", "content": "A different Birch Meridian release uses Pier Solace with phrase iron lark and West Shuttle Unit. The comparison page repeats Alder Meridian supply release, loading pier, verification phrase, and receiving unit to distinguish the projects."},
+          {"role": "assistant", "content": "The long comparison covers similar vessel names, pallet labels, access badges, shift times, and dispatch desks. Only the project name differs in several rows, so the page warns against copying Birch values into Alder."},
+          {"role": "user", "content": "Pier Solace on this page is not sufficient evidence for the Alder release because the phrase and receiving unit belong to Birch Meridian."}
+        ]},
+        {"session_id": "v2m02-s04", "date": "2026-09-07", "turns": [
+          {"role": "assistant", "content": "An Alder Meridian parser test combines Pier Slate, phrase kiln finch, and North Weave Team. It repeats final supply release terminology in each test row so software can recognize loading, verification, and receiving fields."},
+          {"role": "user", "content": "The parser values are artificial. Several long sections cover field order, punctuation, retry messages, corrupted labels, and validation errors, but no section grants operational authority."},
+          {"role": "assistant", "content": "The test footer says the three final facts must come from independent signed notices after the parser test is closed."}
+        ]},
+        {"session_id": "v2m02-s05", "date": "2026-09-09", "turns": [
+          {"role": "user", "content": "A contingency proposal for Alder Meridian lists Pier Ash, phrase kiln sparrow, and North Loom Reserve. It repeatedly discusses the final release, loading pier, verification phrase, receiving group, alternate routes, and weather holds."},
+          {"role": "assistant", "content": "The proposal was not activated. The phrase appears as a proposed constant, while both the pier and receiving group are alternatives. The document is long because it includes staffing tables, crane limits, tide charts, and security review."},
+          {"role": "user", "content": "The sign-off remains rejected and instructs operators to assemble the final answer only from the three later authority notices."}
+        ]},
+        {"session_id": "v2m02-s06", "date": "2026-09-12", "turns": [
+          {"role": "assistant", "content": "The final harbor authority notice supersedes every draft and rehearsal. The loading pier is Pier Solace."}
+        ]},
+        {"session_id": "v2m02-s07", "date": "2026-09-14", "turns": [
+          {"role": "user", "content": "The final security authority notice replaces all proposed call signs. The verification phrase is kiln sparrow."}
+        ]},
+        {"session_id": "v2m02-s08", "date": "2026-09-16", "turns": [
+          {"role": "assistant", "content": "The final receiving authority notice closes the remaining assignment. The receiving unit is North Loom Team."}
+        ]}
+      ]
+    },
+    {
+      "case_id": "v2m-long-short-budget",
+      "coverage": "multi-source-long-short-budget",
+      "question_type": "multi-session",
+      "question_date": "2026-10-22",
+      "question": "For the current Dovetail archive recovery, state the checksum family and the handoff locker.",
+      "answer": "The checksum family is Quartz-9. The handoff locker is Locker Mistral.",
+      "answer_session_ids": ["v2m03-s07", "v2m03-s08"],
+      "stale_session_ids": [],
+      "distractor_session_ids": ["v2m03-s01", "v2m03-s02", "v2m03-s03", "v2m03-s04", "v2m03-s05", "v2m03-s06"],
+      "truth_claims": [
+        {"claim": "The checksum family is Quartz-9.", "evidence_session_ids": ["v2m03-s07"]},
+        {"claim": "The handoff locker is Locker Mistral.", "evidence_session_ids": ["v2m03-s08"]}
+      ],
+      "sessions": [
+        {"session_id": "v2m03-s01", "date": "2026-10-01", "turns": [
+          {"role": "user", "content": "The Dovetail archive recovery rehearsal used checksum family Onyx-3 and handoff locker Locker Cedar. The rehearsal report repeats current recovery, checksum family, handoff locker, archive package, and verification chain while describing 18 practice bundles."},
+          {"role": "assistant", "content": "The report contains long tables for bundle sizes, failed checks, retry counts, operator initials, scanner temperatures, storage aisles, and transfer times. Onyx-3 and Locker Cedar belong only to the rehearsal."},
+          {"role": "user", "content": "A final warning says neither rehearsal value is authorized for the current Dovetail archive recovery. Later independent records control checksum and handoff."}
+        ]},
+        {"session_id": "v2m03-s02", "date": "2026-10-03", "turns": [
+          {"role": "assistant", "content": "A migration worksheet for the Dovetail archive recovery uses checksum family Opal-6 and handoff locker Locker North as placeholders. It repeats the requested fields throughout schema examples, migration rows, and validation notes."},
+          {"role": "user", "content": "The worksheet is intentionally verbose, with record counts, path layouts, recovery checkpoints, sample hashes, operator roles, and dry-run results. Every Opal-6 and Locker North occurrence is marked placeholder."},
+          {"role": "assistant", "content": "The worksheet cannot authorize the current recovery. It directs operators to later checksum and handoff authority records."}
+        ]},
+        {"session_id": "v2m03-s03", "date": "2026-10-05", "turns": [
+          {"role": "user", "content": "The adjacent Swallow archive recovery uses checksum family Quartz-4 and handoff locker Locker Mistral. A long comparison repeatedly mentions Dovetail, current archive recovery, checksum family, and handoff locker so teams do not mix the two jobs."},
+          {"role": "assistant", "content": "The comparison covers bundle labels, verification stages, transfer staff, access cards, shelf zones, and recovery dates. Locker Mistral on this page belongs to Swallow, not Dovetail."},
+          {"role": "user", "content": "The document says Dovetail values must be proven by Dovetail authority records even when a neighboring recovery happens to share a word."}
+        ]},
+        {"session_id": "v2m03-s04", "date": "2026-10-07", "turns": [
+          {"role": "assistant", "content": "A Dovetail scanner test cycles through checksum families Quartz-7, Quartz-8, and Quartz-9 while sending all sample packages to Locker Temp. The test repeats checksum family, handoff locker, current recovery, and archive verification in every section."},
+          {"role": "user", "content": "The long test log measures scanner speed, malformed blocks, power interruptions, thermal drift, retry behavior, and display formatting. None of the sample values is an operational decision."},
+          {"role": "assistant", "content": "The test conclusion says a checksum authority and a separate handoff authority will issue the current Dovetail values later."}
+        ]},
+        {"session_id": "v2m03-s05", "date": "2026-10-09", "turns": [
+          {"role": "user", "content": "A rejected Dovetail contingency proposed checksum family Basalt-2 and handoff locker Locker Rain. The proposal repeats all query concepts while documenting alternate power, damaged media, courier delays, fallback storage, and emergency contacts."},
+          {"role": "assistant", "content": "The proposal was never signed. Its long appendices contain capacity calculations, labels, inspection steps, and escalation paths, but Basalt-2 and Locker Rain remain rejected alternatives."},
+          {"role": "user", "content": "The active recovery must use the later authority records rather than this contingency."}
+        ]},
+        {"session_id": "v2m03-s06", "date": "2026-10-11", "turns": [
+          {"role": "assistant", "content": "A training exercise for Dovetail archive recovery teaches checksum family Flint-1 and handoff locker Locker West. The lesson repeats current recovery language, checksum family, handoff locker, and archive handoff in instructions and grading examples."},
+          {"role": "user", "content": "The exercise is lengthy because it covers common mistakes, role assignments, mock incidents, practice manifests, and review questions. Flint-1 and Locker West are fictional training answers."},
+          {"role": "assistant", "content": "The lesson explicitly forbids using training answers in the active Dovetail archive recovery."}
+        ]},
+        {"session_id": "v2m03-s07", "date": "2026-10-16", "turns": [
+          {"role": "user", "content": "The checksum authority begins with a long audit of block boundaries, damaged media, retry policy, validation order, scanner calibration, operator separation, and archival signatures. It cancels rehearsal, placeholder, neighboring, test, contingency, and training families. The checksum family is Quartz-9. The remaining paragraphs record implementation-neutral audit detail and do not change that value."},
+          {"role": "assistant", "content": "The same authority record verifies that Quartz-9 applies to the current Dovetail archive recovery. It lists historical comparisons, checksum notation, error reporting, custody stages, and sign-off requirements without assigning any locker."},
+          {"role": "user", "content": "The authority closes by preserving Quartz-9 across retries and stating that handoff location comes from a separate record. No other checksum family is current."}
+        ]},
+        {"session_id": "v2m03-s08", "date": "2026-10-18", "turns": [
+          {"role": "assistant", "content": "The independent handoff authority closes the location decision. The handoff locker is Locker Mistral."}
+        ]}
+      ]
+    }
+  ],
+  "criteria": {
+    "minimum_accuracy": 1.0,
+    "require_complete_fact_delivery": true,
+    "category_minimums": {},
+    "maximum_wall_seconds": 300,
+    "provenance": {
+      "origin": "independent-stage4-multisource-handcrafted",
+      "stage2_calibration_reuse": false,
+      "stage3_material_reuse": false,
+      "formal_source_access": false
+    }
+  },
+  "identity": "af55db3e9fe699e597a2077586e4ca5d8fdc732db1093cb03dab752cc3fd4ce1"
+}

@@ -626,6 +626,7 @@ def observe_case_evidence(run_root: Path, materials: dict[str, Any]) -> list[dic
         read = set(str(item) for item in coverage.get("read_expected", []))
         expected = set(expected_assets)
         retrieved = _mapping(retrieval_checkpoint, "retrieval")
+        selection = _observe_selection_trace(case, source_to_asset, expected, retrieved, retrieval_checkpoint.get("evidence", []))
         delivered: dict[str, list[str]] = {}
         for item in retrieval_checkpoint.get("evidence", []):
             if not isinstance(item, dict) or not isinstance(item.get("content"), str):
@@ -654,7 +655,7 @@ def observe_case_evidence(run_root: Path, materials: dict[str, Any]) -> list[dic
         elif not all_returned:
             mechanism = "search-return-gap"
         elif not all_read:
-            mechanism = "read-selection-gap"
+            mechanism = selection["first_proven_mechanism"]
         elif not claims_complete and not correct:
             mechanism = "fragment-incomplete-after-read"
         elif claims_complete and not correct:
@@ -673,11 +674,95 @@ def observe_case_evidence(run_root: Path, materials: dict[str, Any]) -> list[dic
             "truth_claims": len(claim_results),
             "delivered_truth_claims": sum(int(item["delivered"]) for item in claim_results),
             "context_chars": int(retrieved.get("context_chars", 0)),
+            "selection": selection,
             "retrieval_sha256": evidence.file_sha256(retrieval_path),
             "diagnostic_sha256": evidence.file_sha256(diagnostic_path),
         })
     _require(len(observations) == len(materials["cases"]), "阶段 3 逐案例机制证据不完整")
     return observations
+
+
+def _observe_selection_trace(
+    case: dict[str, Any],
+    source_to_asset: dict[str, str],
+    expected_assets: set[str],
+    retrieved: dict[str, Any],
+    delivered_evidence: Any,
+) -> dict[str, Any]:
+    """Describe the first post-search delivery deviation without feeding truth into execution."""
+    returned_values = retrieved.get("returned", [])
+    _require(isinstance(returned_values, list), f"{case['case_id']} 检索返回轨迹无效")
+    returned: dict[str, dict[str, Any]] = {}
+    for rank, item in enumerate(returned_values):
+        _require(isinstance(item, dict) and isinstance(item.get("id"), str), f"{case['case_id']} 检索返回项无效")
+        signals = item.get("signals", [])
+        _require(isinstance(signals, list) and all(isinstance(signal, str) for signal in signals), f"{case['case_id']} 检索信号无效")
+        returned[item["id"]] = {"rank": rank, "signals": sorted(signals)}
+    steps = retrieved.get("selection_steps", [])
+    _require(isinstance(steps, list) and all(isinstance(step, dict) for step in steps), f"{case['case_id']} 读取选择轨迹无效")
+    limits = _mapping(retrieved, "limits")
+    read_limit = int(limits.get("read_units", 0))
+    context_limit = int(limits.get("context_chars", 0))
+    depth_limit = int(limits.get("evidence_depth_per_source", 0))
+    _require(read_limit > 0 and context_limit > 0 and depth_limit > 0, f"{case['case_id']} 读取预算轨迹无效")
+    selected = [step for step in steps if step.get("selected") is True]
+    selected_sources: list[str] = []
+    for step in selected:
+        source_id = str(step.get("source_id", ""))
+        if source_id and source_id not in selected_sources:
+            selected_sources.append(source_id)
+    selected_depth_units = sum(int(step.get("depth", 0)) > 0 for step in selected)
+    delivered_units = len(delivered_evidence) if isinstance(delivered_evidence, list) else 0
+    _require(delivered_units == len(selected), f"{case['case_id']} 已选读取与交付单元数量不一致")
+    source_traces: list[dict[str, Any]] = []
+    missing_returned_ranks: list[int] = []
+    context_rejected = False
+    unreadable_rejected = False
+    case_identity = _case_fact_identity(case)
+    for session_id, asset_id in source_to_asset.items():
+        source_steps = [step for step in steps if step.get("source_id") == asset_id]
+        selected_depths = sorted(int(step.get("depth", 0)) for step in source_steps if step.get("selected") is True)
+        reasons = sorted({str(step.get("reason")) for step in source_steps if step.get("selected") is False and isinstance(step.get("reason"), str)})
+        context_rejected = context_rejected or "context_budget" in reasons
+        unreadable_rejected = unreadable_rejected or "unreadable" in reasons
+        returned_item = returned.get(asset_id)
+        if returned_item is not None and not selected_depths:
+            missing_returned_ranks.append(int(returned_item["rank"]))
+        source_traces.append({
+            "source_identity": evidence.canonical_sha256({"case": case_identity, "session": session_id}),
+            "returned": returned_item is not None,
+            "fusion_rank": int(returned_item["rank"]) if returned_item is not None else None,
+            "channel_signals": returned_item["signals"] if returned_item is not None else [],
+            "read": bool(selected_depths),
+            "selected_depths": selected_depths,
+            "rejection_reasons": reasons,
+        })
+    if context_rejected:
+        mechanism = "context-budget-fit-gap"
+    elif unreadable_rejected:
+        mechanism = "unreadable-evidence-gap"
+    elif missing_returned_ranks and len(selected) >= read_limit:
+        if min(missing_returned_ranks) >= read_limit:
+            mechanism = "target-ranked-below-read-budget"
+        elif selected_depth_units > 0:
+            mechanism = "source-depth-consumed-read-budget-before-target-rank"
+        else:
+            mechanism = "source-order-consumed-read-budget-before-target-rank"
+    else:
+        mechanism = "read-selection-gap"
+    return {
+        "first_proven_mechanism": mechanism,
+        "limits": {"read_units": read_limit, "context_chars": context_limit, "evidence_depth_per_source": depth_limit},
+        "returned_sources": len(returned),
+        "selected_units": len(selected),
+        "selected_sources": len(selected_sources),
+        "selected_depth_units": selected_depth_units,
+        "selected_nonrequired_sources": len(set(selected_sources) - expected_assets),
+        "selected_source_ranks": [int(step.get("source_rank", -1)) for step in selected],
+        "selected_depths": [int(step.get("depth", 0)) for step in selected],
+        "context_chars": int(retrieved.get("context_chars", 0)),
+        "expected_sources": sorted(source_traces, key=lambda item: (item["fusion_rank"] is None, item["fusion_rank"] if item["fusion_rank"] is not None else 1 << 30, item["source_identity"])),
+    }
 
 
 def evaluate_observation(observation: dict[str, Any], criteria: dict[str, Any]) -> tuple[bool, list[dict[str, Any]]]:

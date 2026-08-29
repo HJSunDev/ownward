@@ -246,6 +246,9 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
         self.assertTrue(all(item["mode"] == "evidence" for item in trace["read_paths"]))
         self.assertLessEqual(trace["context_chars"], self.protocol["retrieval"]["context_max_chars"])
         self.assertLessEqual(len(evidence), self.protocol["retrieval"]["read_limit"])
+        self.assertEqual(self.protocol["retrieval"]["read_limit"], trace["limits"]["read_units"])
+        self.assertEqual(self.protocol["retrieval"]["context_max_chars"], trace["limits"]["context_chars"])
+        self.assertEqual(self.protocol["retrieval"]["evidence_search_limit_per_source"], trace["limits"]["evidence_depth_per_source"])
         self.assertTrue(any("VIOLET-731" in item["content"] for item in evidence))
         self.assertTrue(trace["evidence_read_ids"])
 

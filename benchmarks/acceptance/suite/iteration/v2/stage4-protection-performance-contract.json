@@ -1,0 +1,62 @@
+{
+  "schema": "ownward.kernel-iteration-stage4-protection-performance-contract/v1",
+  "frozen_before_performance_replay": true,
+  "purpose": "paired-read-only-first-chain-development-repeat-error-adjudication",
+  "random_rerun_allowed": false,
+  "model_or_answer_execution": false,
+  "contains_formal_questions_answers_gold_content_outputs_or_case_ids": false,
+  "materials_identity": "59dee66dd999c5b84162013aeb415de8b785b834365d5c4f9031cf1ac14941d2",
+  "controller_sha256": "51c6d7d6e2eec2ee4eea5aed032d1b8afffc4916cb054c93473c0a0ad2d2745c",
+  "paired_controller_sha256": "e39feec67ef7ecb29d91aac28079e44da9299dfb266325f40a24ba48dad2c599",
+  "protocol_sha256": "898a0ebe943e99ca2357723f328668afaee09c5f4c5cd99c50417571b252a123",
+  "formal_state_sha256": "3c7826e0ef86a82ddfab676886e384e2674a23dc80f6df3612d4443be00ffcdc",
+  "subjects": {
+    "baseline": "784fb1bf4f19b02fa59d26b339513ab9191e9f00ed34633479ffff5c95bebe69",
+    "candidate": "7b78a0ef7036f1c6c34665162262cefbc98d9c3819f736616a7aeea3e4e74fbd"
+  },
+  "binaries": {
+    "baseline": "514b853abee8bb974d2965feffe89a3ec4ae705b58c99fa3142887062a20a991",
+    "candidate": "cc38cb3dcf3ed415fcff482a2432f2cace4ffccbe359f81de17c6f296f1c47cb"
+  },
+  "sealed_results": {
+    "baseline": "f6000fa7ad9549707619ca45a679fd29e4d9569aa316e68b095f7ee34af9558e",
+    "candidate": "028d38f79fa6a155b05d19a1ab76dda909de604975544363858b5636c5ec0198"
+  },
+  "one_shot_observation": {
+    "baseline_p95_ms": 297.0,
+    "candidate_p95_ms": 375.0,
+    "status": "requires-paired-repeat-error-adjudication"
+  },
+  "prepared_data": {
+    "baseline": {
+      "v2d-long-multifact": "741c323fa413354758f5c05c06dcc280f176367641e82004111082d5ef123af3",
+      "v2d-multisession-sufficiency": "00f7251a81316d4b8b02468c20b1b632b1bfde424c1688c99c21f66d19354dcb",
+      "v2d-structured-boundary": "3ccd0a5d17603643a83cf1094a06d03fc0a4532a17f0213b3dd294fd26014509",
+      "v2d-temporal-conflict": "9beefdfb4cd91b7ad3ce0d14ab87c6c9ae5d17653fe27831988f2ecad6bc65c0"
+    },
+    "candidate": {
+      "v2d-long-multifact": "2dfdf3d80885698ff5cf66ae9faff30d656c87d80b31fea7cbaa455f3bce047e",
+      "v2d-multisession-sufficiency": "b41653bb98abb4284d251374757b11b8c14ca6f9435a5d53a7fa9a522db531f6",
+      "v2d-structured-boundary": "1d5ea544dd8732223099fac65392b4ac49d7f890f4d9baf98edf2879d0ae0244",
+      "v2d-temporal-conflict": "d7ec6f14a990d51efeeddbea427cdd7b9491a413d82e5f48e71636cfb6fe1f72"
+    }
+  },
+  "schedule": {
+    "workers": 4,
+    "warmups_per_round": 1,
+    "measured_repetitions_per_round": 3,
+    "balanced_order": [
+      ["baseline", "candidate"],
+      ["candidate", "baseline"]
+    ]
+  },
+  "gates": {
+    "candidate_p95_delta_max_ms": 47.0,
+    "stable_selection_trace_per_case": true,
+    "prepared_data_byte_identity_unchanged": true,
+    "formal_state_writes": 0,
+    "model_calls": 0,
+    "product_mutations": 0
+  },
+  "identity": "385ce4100ed5c1392b06f3d34a1fb7a0e1240c0a91236e4ce43cd76298d69200"
+}

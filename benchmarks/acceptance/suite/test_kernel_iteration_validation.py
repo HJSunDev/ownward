@@ -359,7 +359,12 @@ class KernelIterationValidationTests(unittest.TestCase):
             retrieval = {
                 "schema": "ownward.longmemeval-s-retrieval/v1", "question_identity": "1" * 64,
                 "evidence": [{"id": "asset-1", "content": "A different fragment."}],
-                "retrieval": {"context_chars": 21},
+                "retrieval": {
+                    "context_chars": 21,
+                    "returned": [{"id": "asset-1", "signals": ["lexical", "semantic"]}],
+                    "selection_steps": [{"source_id": "asset-1", "source_rank": 0, "depth": 0, "selected": True}],
+                    "limits": {"read_units": 8, "context_chars": 24000, "evidence_depth_per_source": 3},
+                },
             }
             self._write_json(question / "retrieval.json", retrieval)
             diagnostic = {
@@ -377,6 +382,52 @@ class KernelIterationValidationTests(unittest.TestCase):
             self.assertEqual("fragment-incomplete-after-read", observed[0]["first_proven_mechanism"])
             self.assertEqual(1, observed[0]["read_sources"])
             self.assertEqual(0, observed[0]["delivered_truth_claims"])
+
+    def test_stage4_selection_observer_proves_depth_exhausted_budget_before_returned_target(self) -> None:
+        with tempfile.TemporaryDirectory(dir=REPOSITORY) as temporary:
+            root = Path(temporary) / "run"
+            materials = self._materials(1)
+            materials["schema"] = validation.STAGE3_MATERIALS_SCHEMA
+            case = materials["cases"][0]
+            case["answer_session_ids"] = ["c01-s03"]
+            case["truth_claims"] = [{"claim": "fact-3", "evidence_session_ids": ["c01-s03"]}]
+            case["answer"] = "fact-3"
+            materials["identity"] = iteration.canonical_sha256({key: item for key, item in materials.items() if key != "identity"})
+            question = root / "questions" / case["case_id"]
+            returned = [
+                {"id": f"asset-{index}", "signals": ["lexical", "semantic"]}
+                for index in range(1, 7)
+            ]
+            steps = [
+                {"source_id": "asset-1", "source_rank": 0, "depth": 0, "selected": True},
+                {"source_id": "asset-2", "source_rank": 1, "depth": 0, "selected": True},
+                {"source_id": "asset-1", "source_rank": 0, "depth": 1, "selected": True},
+                {"source_id": "asset-4", "source_rank": 3, "depth": 0, "selected": True},
+            ]
+            retrieval = {
+                "schema": "ownward.longmemeval-s-retrieval/v1", "question_identity": "1" * 64,
+                "evidence": [{"id": step["source_id"], "content": "distractor"} for step in steps],
+                "retrieval": {
+                    "context_chars": 400, "returned": returned, "selection_steps": steps,
+                    "limits": {"read_units": 4, "context_chars": 24000, "evidence_depth_per_source": 3},
+                },
+            }
+            self._write_json(question / "retrieval.json", retrieval)
+            diagnostic = {
+                "correct": False, "first_observed_gap": "target_evidence_not_read",
+                "evidence_coverage": {
+                    "expected_session_ids": ["c01-s03"], "expected_asset_ids": ["asset-3"],
+                    "search_returned_expected": ["asset-3"], "read_expected": [],
+                },
+                "execution_observations": {"source_creation_complete": True, "semantic_submission_complete": True},
+                "artifacts": {"retrieval": {"sha256": iteration.file_sha256(question / "retrieval.json")}},
+            }
+            self._write_json(question / "diagnostic.json", diagnostic)
+            observed = validation.observe_case_evidence(root, materials)[0]
+            self.assertEqual("source-depth-consumed-read-budget-before-target-rank", observed["first_proven_mechanism"])
+            self.assertEqual(1, observed["selection"]["selected_depth_units"])
+            self.assertEqual(2, observed["selection"]["expected_sources"][0]["fusion_rank"])
+            self.assertFalse(observed["selection"]["expected_sources"][0]["read"])
 
     def test_stage3_finalization_requires_resume_receipts_and_never_forms_candidate_decision(self) -> None:
         with tempfile.TemporaryDirectory(dir=REPOSITORY) as temporary:

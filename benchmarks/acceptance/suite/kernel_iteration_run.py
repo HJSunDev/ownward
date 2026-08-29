@@ -11,8 +11,12 @@ sys.path.insert(0, str(HERE))
 
 import kernel_iteration_evidence
 import kernel_iteration_candidate
+import kernel_iteration_candidate_multisource
 import kernel_iteration_validation
 import kernel_iteration_stage4
+import kernel_iteration_stage4_multisource
+import kernel_iteration_stage4_performance
+import kernel_iteration_stage4_protection_performance
 
 
 def parse_args() -> argparse.Namespace:
@@ -27,7 +31,12 @@ def parse_args() -> argparse.Namespace:
     selection.add_argument("--stage3-prepare", action="store_true")
     selection.add_argument("--stage3-finalize", action="store_true")
     selection.add_argument("--prepare-v2-candidate", action="store_true")
+    selection.add_argument("--prepare-v2-multisource-candidate", action="store_true")
     parser.add_argument("--stage4-finalize", action="store_true")
+    parser.add_argument("--stage4-multisource-diagnose", action="store_true")
+    parser.add_argument("--stage4-multisource-performance", action="store_true")
+    parser.add_argument("--stage4-protection-performance", action="store_true")
+    parser.add_argument("--stage4-multisource-finalize", action="store_true")
     parser.add_argument("--evidence-type", default="identity-calibration")
     parser.add_argument("--input-manifest", type=Path)
     parser.add_argument("--execution-config", type=Path)
@@ -38,6 +47,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--compare-left", type=Path)
     parser.add_argument("--compare-right", type=Path)
     parser.add_argument("--candidate-result", type=Path)
+    parser.add_argument("--baseline-subject-manifest", type=Path)
+    parser.add_argument("--baseline-execution-config", type=Path)
+    parser.add_argument("--baseline-run-root", type=Path)
+    parser.add_argument("--baseline-result", type=Path)
+    parser.add_argument("--candidate-run-root", type=Path)
+    parser.add_argument("--multisource-result", type=Path)
+    parser.add_argument("--multisource-performance-result", type=Path)
+    parser.add_argument("--protection-performance-result", type=Path)
     parser.add_argument("--noncandidate-diagnostic", action="store_true")
     parser.add_argument("--stage3-plan-identity")
     parser.add_argument("--development-input", type=Path)
@@ -56,7 +73,53 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    if args.stage4_finalize:
+    if args.stage4_multisource_finalize:
+        required = (
+            args.subject_manifest, args.execution_config, args.multisource_result,
+            args.development_result, args.regression_result, args.multisource_performance_result,
+            args.protection_performance_result, args.formal_state,
+        )
+        if any(path is None for path in required):
+            raise SystemExit("多来源终态必须提供候选、三份结果、两份性能复核与正式 state")
+        result = kernel_iteration_stage4_multisource.finalize(
+            HERE, args.output, args.subject_manifest, args.execution_config,
+            args.multisource_result, args.development_result, args.regression_result,
+            args.multisource_performance_result, args.protection_performance_result,
+            args.formal_state, resume=args.resume,
+        )
+    elif args.stage4_protection_performance:
+        required = (
+            args.baseline_subject_manifest, args.baseline_execution_config, args.baseline_run_root,
+            args.baseline_result, args.subject_manifest, args.execution_config, args.candidate_run_root,
+            args.candidate_result, args.formal_state,
+        )
+        if any(path is None for path in required):
+            raise SystemExit("保护性能复核必须提供基线/候选 subject、配置、运行根、结果与正式 state")
+        result = kernel_iteration_stage4_protection_performance.run(
+            HERE, args.output, args.baseline_subject_manifest, args.baseline_execution_config,
+            args.baseline_run_root, args.baseline_result, args.subject_manifest, args.execution_config,
+            args.candidate_run_root, args.candidate_result, args.formal_state,
+        )
+    elif args.stage4_multisource_performance:
+        required = (
+            args.baseline_subject_manifest, args.baseline_execution_config, args.baseline_run_root,
+            args.baseline_result, args.subject_manifest, args.execution_config, args.candidate_run_root,
+            args.candidate_result, args.formal_state,
+        )
+        if any(path is None for path in required):
+            raise SystemExit("成对性能复核必须提供基线/候选 subject、配置、运行根、结果与正式 state")
+        result = kernel_iteration_stage4_performance.run(
+            HERE, args.output, args.baseline_subject_manifest, args.baseline_execution_config,
+            args.baseline_run_root, args.baseline_result, args.subject_manifest, args.execution_config,
+            args.candidate_run_root, args.candidate_result, args.formal_state,
+        )
+    elif args.stage4_multisource_diagnose:
+        if args.subject_manifest is None or args.candidate_result is None or args.formal_state is None:
+            raise SystemExit("多来源诊断必须提供首候选、执行结果与正式 state")
+        result = kernel_iteration_stage4_multisource.diagnose(
+            HERE, args.output, args.subject_manifest, args.candidate_result, args.formal_state, resume=args.resume,
+        )
+    elif args.stage4_finalize:
         required = (
             args.subject_manifest, args.execution_config, args.development_input, args.regression_input,
             args.development_result, args.regression_result, args.formal_state,
@@ -73,6 +136,12 @@ def main() -> None:
             raise SystemExit("阶段 3 准备必须提供开发/回归输入与正式 state 只读基线")
         result = kernel_iteration_validation.prepare_stage3(
             HERE, args.output, args.development_input, args.regression_input, args.formal_state, resume=args.resume,
+        )
+    elif args.prepare_v2_multisource_candidate:
+        if args.execution_config is None:
+            raise SystemExit("V2 多来源候选准备必须提供当前非正式 --execution-config")
+        result = kernel_iteration_candidate_multisource.prepare(
+            HERE, args.output, args.execution_config, resume=args.resume,
         )
     elif args.prepare_v2_candidate:
         if args.execution_config is None:

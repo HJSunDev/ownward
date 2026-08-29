@@ -1,0 +1,26 @@
+{
+  "direct_dependencies": {
+    "executor": "d2156a8b6aed21f744417591eaf916195f609709a291a8a2cd8a94952f04e20f",
+    "observer": "27862e07de0ee72d0a04c07c7c7a8887353d039289bd2a044b26d422d5053a96",
+    "regression-materials": "7cee414db10192f116aec17e22804d42a1a0c51683002272e5ec82e7578c6d65"
+  },
+  "evidence_type": "regression",
+  "identity": "c78e99c83bf85970be4c0cf7dcf689f17341045ad6fbb7026077d4079a71660d",
+  "payloads": [
+    {
+      "path": "stage3-regression-materials.json",
+      "sha256": "fcf483821f2a62f2e6f4149d7b091a1c8a09858503f435e66d53c2577979b1b1"
+    }
+  ],
+  "runtime_dependencies": {},
+  "schema": "ownward.kernel-iteration-input/v1",
+  "shared_conditions": {
+    "dataset": "7cee414db10192f116aec17e22804d42a1a0c51683002272e5ec82e7578c6d65",
+    "environment": "cb889873e2888699ea5dc1c9980591e2609edb3c0318c659815f08197691a88c",
+    "executor": "d2156a8b6aed21f744417591eaf916195f609709a291a8a2cd8a94952f04e20f",
+    "model-profile": "5c537b90d7b0513153b2b4c582138dbf92aaa2e8aa1bcad871ede276ed45fa7b",
+    "observer": "27862e07de0ee72d0a04c07c7c7a8887353d039289bd2a044b26d422d5053a96",
+    "prompt-and-schema": "d5f8ed8ddda1e38686a65ca9e68b7f7ad9cad83eb40aecb0fe130842ca1fad71",
+    "scorer": "9321ff233a513298fed71d0341fb89f1707dbe505aab622565aa57fb475eadd2"
+  }
+}

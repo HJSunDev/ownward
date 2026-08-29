@@ -1,0 +1,41 @@
+{
+  "schema": "ownward.kernel-iteration-stage4-multisource-route/v1",
+  "frozen_before_new_candidate_results": true,
+  "contract_identity": "f2df855423813e0d96aca8e784ea53fed55fb9ffb3a0a47dee18feb6bdb51d1d",
+  "diagnosis_contract_identity": "669f2addc2544a1b80d001b1e87e13dad592c48449b0d2603491b4280e31d4ac",
+  "diagnosis_identity": "315f4b735b684753c7603c1256f9a752ec8508b03e8079b4eb22002460322eca",
+  "current_subject_identity": "784fb1bf4f19b02fa59d26b339513ab9191e9f00ed34633479ffff5c95bebe69",
+  "current_result_identity": "c8d6dd340e52027c28d36084d62f6d23dc09069697cd654c7862fa34078aebda",
+  "root_status": "proven",
+  "first_proven_mechanism": "source-depth-consumed-read-budget-before-target-rank",
+  "responsible_direction": "retrieval-architecture",
+  "business_flow": {
+    "expected": "search returns every authoritative source, bounded evidence loading reaches each necessary source, and the reader receives every required fact",
+    "observed": "search returned every necessary source, but deeper fragments from earlier long sources consumed three of eight read units before fusion ranks five through seven were loaded",
+    "first_divergence": "bounded evidence source-depth scheduling",
+    "not_proven_as_root": [
+      "search-recall",
+      "context-budget-fit",
+      "reader-reasoning",
+      "cross-channel-score-calibration"
+    ]
+  },
+  "route": {
+    "policy": "bounded-source-breadth-before-repeated-depth/v1",
+    "selection": "when more than one returned source exposes multiple query-positive evidence units, expose one unit per returned source before repeated depth; when only one source has multiple units, preserve its requested bounded depth",
+    "bounded": true,
+    "deterministic": true,
+    "uses_formal_question_answer_gold_type_or_score": false,
+    "increases_search_limit": false,
+    "increases_read_limit": false,
+    "increases_context_budget": false,
+    "increases_persistent_state": false,
+    "changes_model_prompt_schema_or_scoring": false,
+    "preserves_source_rank": true,
+    "preserves_in_source_evidence_rank": true,
+    "preserves_first_chain_same_source_depth": true
+  },
+  "new_candidate_results_may_be_consumed_after_this_freeze": true,
+  "stage4_may_complete": false,
+  "identity": "00a88fef6075a55fe2971052289e016896f340a6920ce6898eaf7e8763ae19b0"
+}

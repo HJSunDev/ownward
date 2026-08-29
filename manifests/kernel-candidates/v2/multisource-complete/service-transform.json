@@ -1,0 +1,48 @@
+{
+  "schema": "ownward.kernel-candidate-source-transform/v1",
+  "source": "internal/core/service.go",
+  "replacements": [
+    {
+      "name": "candidate-planner-import",
+      "count": 1,
+      "before": "\t\"github.com/HJSunDev/ownward/internal/domain\"\n\t\"github.com/HJSunDev/ownward/internal/embedding\"",
+      "after": "\t\"github.com/HJSunDev/ownward/internal/domain\"\n\t\"github.com/HJSunDev/ownward/internal/embedding\"\n\t\"github.com/HJSunDev/ownward/internal/kernelv2candidate\""
+    },
+    {
+      "name": "candidate-planner-state",
+      "count": 1,
+      "before": "\tstateMu       sync.RWMutex\n}",
+      "after": "\tstateMu       sync.RWMutex\n\tevidencePlans *kernelv2candidate.EvidencePlans\n}"
+    },
+    {
+      "name": "basic-planner-construction",
+      "count": 1,
+      "before": "\treturn &Service{authority: authority, index: retrieval.NewLexical(assets), now: time.Now}, nil",
+      "after": "\treturn &Service{authority: authority, index: retrieval.NewLexical(assets), now: time.Now, evidencePlans: kernelv2candidate.NewEvidencePlans()}, nil"
+    },
+    {
+      "name": "organized-planner-construction",
+      "count": 1,
+      "before": "\t\tnow:          time.Now,\n",
+      "after": "\t\tnow:          time.Now,\n\t\tevidencePlans: kernelv2candidate.NewEvidencePlans(),\n"
+    },
+    {
+      "name": "collaborative-planner-construction",
+      "count": 1,
+      "before": "\t\tnow:           time.Now,\n",
+      "after": "\t\tnow:           time.Now,\n\t\tevidencePlans: kernelv2candidate.NewEvidencePlans(),\n"
+    },
+    {
+      "name": "planned-evidence-lanes",
+      "count": 1,
+      "before": "\treturn rankEvidence(value, input.Query, input.Limit), nil\n}",
+      "after": "\tif s.evidencePlans != nil {\n\t\tif references, planned := s.evidencePlans.References(input.Query, value.ID, input.Limit, s.authority.ReadCurrent, rankEvidence); planned {\n\t\t\treturn references, nil\n\t\t}\n\t}\n\treturn rankEvidence(value, input.Query, input.Limit), nil\n}"
+    },
+    {
+      "name": "observe-ranked-sources",
+      "count": 1,
+      "before": "\tif len(results) > limit {\n\t\tresults = results[:limit]\n\t}\n\treturn results, nil\n}",
+      "after": "\tif len(results) > limit {\n\t\tresults = results[:limit]\n\t}\n\tif s.evidencePlans != nil {\n\t\tsourceIDs := make([]string, 0, len(results))\n\t\tfor _, result := range results {\n\t\t\tsourceIDs = append(sourceIDs, result.ID)\n\t\t}\n\t\ts.evidencePlans.ObserveSearch(input.Query, sourceIDs)\n\t}\n\treturn results, nil\n}"
+    }
+  ]
+}

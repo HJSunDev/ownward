@@ -1,0 +1,60 @@
+{
+  "schema": "ownward.kernel-iteration-stage4-multisource-performance-contract/v1",
+  "frozen_before_performance_replay": true,
+  "purpose": "paired-read-only-retrieval-repeat-error-adjudication",
+  "random_rerun_allowed": false,
+  "model_or_answer_execution": false,
+  "contains_formal_questions_answers_gold_content_outputs_or_case_ids": false,
+  "materials_identity": "af55db3e9fe699e597a2077586e4ca5d8fdc732db1093cb03dab752cc3fd4ce1",
+  "input_identity": "b566ac6ed60b7150ac998417034ee9562f0d65a942307bc5dae018dbf8f2707e",
+  "controller_sha256": "e39feec67ef7ecb29d91aac28079e44da9299dfb266325f40a24ba48dad2c599",
+  "protocol_sha256": "898a0ebe943e99ca2357723f328668afaee09c5f4c5cd99c50417571b252a123",
+  "formal_state_sha256": "3c7826e0ef86a82ddfab676886e384e2674a23dc80f6df3612d4443be00ffcdc",
+  "subjects": {
+    "baseline": "784fb1bf4f19b02fa59d26b339513ab9191e9f00ed34633479ffff5c95bebe69",
+    "candidate": "7b78a0ef7036f1c6c34665162262cefbc98d9c3819f736616a7aeea3e4e74fbd"
+  },
+  "binaries": {
+    "baseline": "514b853abee8bb974d2965feffe89a3ec4ae705b58c99fa3142887062a20a991",
+    "candidate": "cc38cb3dcf3ed415fcff482a2432f2cace4ffccbe359f81de17c6f296f1c47cb"
+  },
+  "sealed_results": {
+    "baseline": "c8d6dd340e52027c28d36084d62f6d23dc09069697cd654c7862fa34078aebda",
+    "candidate": "b1dfa6429fe5f0c6b1199014cb6fc9acd337f0dd1a4a2b85a254e472116bb017"
+  },
+  "one_shot_observation": {
+    "baseline_p95_ms": 344.0,
+    "candidate_p95_ms": 375.0,
+    "status": "requires-paired-repeat-error-adjudication"
+  },
+  "prepared_data": {
+    "baseline": {
+      "v2m-joint-authorities": "d4aed82ff59cccb1a1263462e0cba6b0702912edc173df7c5c3bb1161214101d",
+      "v2m-long-short-budget": "29775366e3005da7572c400c924445be3b378cc12d44c46cbb5a2d6250350348",
+      "v2m-lower-ranked-authority": "729905e466713f1dfc8ce90335f48d65c3036f82ccf1973f366f2d3cbdf17119"
+    },
+    "candidate": {
+      "v2m-joint-authorities": "796a50848509dfd2c8e33d505efec7c9d44455540812430b8c0ba522f02036a7",
+      "v2m-long-short-budget": "93e2c90972f3fb41d29f67b875195bd66353daa73f4e1b7d79055049995b84e7",
+      "v2m-lower-ranked-authority": "4bb26a78ff1c5f93027f030d5f45a736516d91b1a9663926ea2b524933f1dbfa"
+    }
+  },
+  "schedule": {
+    "workers": 3,
+    "warmups_per_round": 1,
+    "measured_repetitions_per_round": 3,
+    "balanced_order": [
+      ["baseline", "candidate"],
+      ["candidate", "baseline"]
+    ]
+  },
+  "gates": {
+    "candidate_p95_delta_max_ms": 47.0,
+    "stable_selection_trace_per_case": true,
+    "prepared_data_byte_identity_unchanged": true,
+    "formal_state_writes": 0,
+    "model_calls": 0,
+    "product_mutations": 0
+  },
+  "identity": "6aabb865a2b58d0c35a1e33f86ce253440268fb5a067fac4a422581d33d9cf20"
+}
