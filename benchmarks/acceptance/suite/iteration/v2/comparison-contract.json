@@ -1,7 +1,9 @@
 {
-  "schema": "ownward.kernel-iteration-comparison/v2",
+  "schema": "ownward.kernel-iteration-comparison/v3",
   "frozen": true,
-  "frozen_before_v2_results": true,
+  "unchanged_dimensions_frozen_before_v2_results": true,
+  "latency_correction_frozen_before_new_candidate_measurement": true,
+  "candidate_results_excluded_from_latency_correction": true,
   "formal_isolation": {
     "formal_contract_mode": false,
     "formal_evidence_layer": false,
@@ -24,6 +26,14 @@
     "v0_baseline_facts": {
       "path": "benchmarks/acceptance/suite/iteration/v2/v0-baseline-facts.json",
       "sha256": "246660581803440d3c9c68d6e1bfd7a7685f6d778fea781a6c548b8aa64d3dfe"
+    },
+    "retrieval_latency_comparability_audit": {
+      "path": "benchmarks/acceptance/suite/iteration/v2/stage4-retrieval-latency-comparability-audit-contract.json",
+      "sha256": "48c99dfaad24caea53ac0467af059a28befc70552c46e3fcc083ee0ca76f207d"
+    },
+    "retrieval_latency_migration": {
+      "path": "benchmarks/acceptance/suite/iteration/v2/retrieval-latency-comparability-migration.json",
+      "sha256": "8a7fad77842cbcfc93e1844123203a8ae61a0d939fccef031a09585b0f416ba9"
     }
   },
   "subjects": {
@@ -209,22 +219,18 @@
           "gate": {"kind": "large-improvement", "maximum": 6237.9215, "basis": "cost-at-least-halved"}
         },
         {
-          "name": "retrieval_mean_ms",
-          "source": "v0-community",
-          "baseline": 41.1999999999025,
+          "name": "complete_consumer_retrieval_p95_ms",
+          "source": "v1-budget-selection-authority",
+          "baseline": 600.0,
           "direction": "lower",
-          "repeatability_error": 0.0,
-          "materiality": 0.001,
-          "gate": {"kind": "non-regression", "maximum": 41.2009999999025}
-        },
-        {
-          "name": "retrieval_p95_ms",
-          "source": "v0-community",
-          "baseline": 77.9999999977008,
-          "direction": "lower",
-          "repeatability_error": 0.0,
-          "materiality": 0.001,
-          "gate": {"kind": "non-regression", "maximum": 78.0009999977008}
+          "repeatability_error": 47.0,
+          "materiality": 47.0,
+          "gate": {
+            "kind": "non-regression",
+            "maximum": 553.0,
+            "absolute_maximum": 600.0,
+            "basis": "preexisting-complete-consumer-absolute-gate-minus-frozen-repeatability-error"
+          }
         },
         {
           "name": "frontier_query_p95_ms",
@@ -282,6 +288,25 @@
     "state_and_reports_are_read_only": true,
     "binding_and_checkpoint_changes_do_not_change_policy_identity": true
   },
+  "historical_latency_diagnostics": {
+    "v0_community_retrieval_mean_ms": 41.1999999999025,
+    "v0_community_retrieval_p95_ms": 77.9999999977008,
+    "status": "diagnostic-only-not-a-complete-consumer-non-regression-gate",
+    "migration_receipt_identity": "55131b81ae6b14357cd7281f40cd86ddc7bb5d2de69399f631f178b064cc0cec"
+  },
+  "latency_policy_migration": {
+    "from_schema": "ownward.kernel-iteration-comparison/v2",
+    "from_identity": "b1e3b07abd5c9527dfbde5ea8d7fa5459c8b0b5da224ef2eb1aca29add22fbbe",
+    "evidence_compatibility_identity": "b1e3b07abd5c9527dfbde5ea8d7fa5459c8b0b5da224ef2eb1aca29add22fbbe",
+    "receipt_identity": "55131b81ae6b14357cd7281f40cd86ddc7bb5d2de69399f631f178b064cc0cec",
+    "unchanged_dimension_identities": {
+      "information-organization-quality": "5b856eb03dd15d1d9d62e87209280f661f08147db18c85011e2ff1e2abe83c8f",
+      "retrieval-and-final-answer-quality": "7013f0705ef778225af06d35139c2c5015b5d5db8408448d90bf3358720656e2"
+    },
+    "compatibility_scope": "preexisting-non-latency-evidence-only",
+    "new-latency-decisions-must-bind-current-policy-revision-identity": true
+  },
   "identity": "b1e3b07abd5c9527dfbde5ea8d7fa5459c8b0b5da224ef2eb1aca29add22fbbe",
-  "seal_sha256": "65c224d99aec71cd452dbc35ac90ec804346f4f5e69e772e812f0497ee54b50e"
+  "policy_revision_identity": "b5400416de89df4cc821f9827de72b20a25075f4d6e8b5e70e920743d43b198b",
+  "seal_sha256": "8235b67733e6b377439677f80125e0264fa19b908583a85e840dd8eabf73ea9d"
 }

@@ -1,0 +1,51 @@
+{
+  "schema": "ownward.kernel-iteration-stage4-retrieval-latency-real-scale-contract/v1",
+  "frozen_before_measurement": true,
+  "candidate_results_seen": false,
+  "purpose": "same-runtime-real-38-62-asset-retrieval-stage-attribution",
+  "contains_formal_questions_answers_gold_content_outputs_or_case_ids": false,
+  "formal": false,
+  "formal_state_written": false,
+  "materials_identity": "e9ecd0befde7c3dfceb1424258fd37e274f1c4de4bb1a16dca7f88b66572a330",
+  "controller_sha256": "4ed9c33c12576d897f8edb71ee52e2517f3798aeb99951e9f747e3a9053a8cc3",
+  "transport_sha256": "fbca3e4f15afbd0e8409c043fc5742c5b4aeec72dbaa79d66be550f10b6f1a86",
+  "protocol_sha256": "898a0ebe943e99ca2357723f328668afaee09c5f4c5cd99c50417571b252a123",
+  "embedding_manifest_sha256": "fc2e4a1aa7d09fc64789618259a1bbedce2a18d00bd1abd81d13a16dfb78c0da",
+  "runtime_calibration_identity": "20c20331b287eb47dbe03a0cd3be1032783e7dab8d8900ba0312847ee37613ff",
+  "shared_runtime_receipt_identity": "594e3a4c72c59ceb729e0ffbb5e2d635936af94994a9b3d11c805afb5d583bef",
+  "runtime_configuration": {"threads": 6, "threads_batch": 6, "parallel": 2},
+  "formal_state_sha256": "3c7826e0ef86a82ddfab676886e384e2674a23dc80f6df3612d4443be00ffcdc",
+  "subjects": {
+    "v0": "1952f4b869e49c4aaf2fbac8139fd0a0c25e4331e18ef559a14faf1db7ed7b77",
+    "previous-v2": "7b78a0ef7036f1c6c34665162262cefbc98d9c3819f736616a7aeea3e4e74fbd",
+    "candidate": "dd6ed86c1cf5af6507ae062cc10b07c45d0d90b4e53de53bf4b3a87faedd4dae"
+  },
+  "binary_sha256": {
+    "v0": "ff25b583d4ceed18f49f80fe3bc71b9db55b915c7a8a931206f8086501250f39",
+    "previous-v2": "c41e400f04be17ab806285598cd0d5a985e6d417926ca1960980adec91c7bccd",
+    "candidate": "c87e54c68e5c7b9c579cfdb2b30dce271c9425bf6bc6ef6bd433e7aae1b1323b"
+  },
+  "schedule": {
+    "workers": 4,
+    "warmups_per_round": 1,
+    "measured_repetitions_per_round": 3,
+    "balanced_order": [
+      ["v0", "previous-v2", "candidate"],
+      ["previous-v2", "candidate", "v0"],
+      ["candidate", "v0", "previous-v2"]
+    ]
+  },
+  "gates": {
+    "retrieval_mean_ms_maximum": 41.2009999999025,
+    "retrieval_p95_ms_maximum": 78.0009999977008,
+    "paired_repeat_error_ms": 47.0,
+    "maximum_vector_component_drift": 0.0000001,
+    "target_source_return_and_read_rate": 1.0,
+    "read_calls_maximum": 8,
+    "context_chars_maximum": 24000,
+    "formal_state_writes": 0,
+    "codex_calls": 0,
+    "answer_generation_calls": 0
+  },
+  "identity": "4381c23eb3ba80ab56f4a9d4fe52c64c8cecae233f3e721022f1da2be0367284"
+}

@@ -74,6 +74,21 @@ func TestCurrentTemporalFactStillOutranksStaleFact(t *testing.T) {
 	}
 }
 
+func TestProbeEvidencePreservesFirstRankAndReportsDepth(t *testing.T) {
+	content := strings.Repeat("neutral preface. ", 40) +
+		"The current harbor marker is Cobalt-41. " + strings.Repeat("neutral bridge. ", 40) +
+		"The related departure channel is Silver Narrows."
+	asset := domain.Information{Schema: domain.AssetSchema, ID: "probe", Revision: 3, Kind: domain.KindGeneral, Content: content}
+	full := RankEvidence(asset, "harbor marker departure channel", 2)
+	probe, deep := ProbeEvidence(asset, "harbor marker departure channel")
+	if len(full) != 2 || len(probe) != 1 || !deep {
+		t.Fatalf("probe must expose the first reference and preserve the deep-lane fact: full=%v probe=%v deep=%v", full, probe, deep)
+	}
+	if probe[0] != full[0] {
+		t.Fatalf("probe changed the first ranked reference: full=%v probe=%v", full[0], probe[0])
+	}
+}
+
 func BenchmarkRankEvidenceAtFormalMaximumLength(b *testing.B) {
 	content := strings.Repeat("neutral context without the requested code. ", 2000) + "superseding archive marker is Indigo-88."
 	asset := domain.Information{Schema: domain.AssetSchema, ID: "maximum", Revision: 1, Kind: domain.KindGeneral, Content: content}

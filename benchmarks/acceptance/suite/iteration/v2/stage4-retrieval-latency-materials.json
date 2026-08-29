@@ -1,0 +1,83 @@
+{
+  "schema": "ownward.kernel-iteration-stage4-retrieval-latency-materials/v1",
+  "contains_formal_questions_answers_gold_content_outputs_or_case_ids": false,
+  "performance_only": true,
+  "quality_material_overlap": false,
+  "generation": {
+    "content_format": "headline-newline-repeated-filler/v1",
+    "context": {"key": "source", "value": "V2 retrieval latency"},
+    "source_actor": "kernel-v2-latency",
+    "sources_per_case": 8
+  },
+  "cases": [
+    {
+      "case_id": "v2l-short-eight-source",
+      "query": "Which Aster timing ledger entry mentions the amber relay checkpoint?",
+      "shared_phrase": "Aster timing ledger entry",
+      "filler": "The bounded timing worksheet records an ordinary relay observation without changing authority or truth. ",
+      "repeat": [8, 8, 8, 8, 8, 8, 8, 8],
+      "headlines": [
+        "The amber relay checkpoint is listed in lane one.",
+        "The cobalt relay checkpoint is listed in lane two.",
+        "The silver relay checkpoint is listed in lane three.",
+        "The violet relay checkpoint is listed in lane four.",
+        "The copper relay checkpoint is listed in lane five.",
+        "The ivory relay checkpoint is listed in lane six.",
+        "The green relay checkpoint is listed in lane seven.",
+        "The black relay checkpoint is listed in lane eight."
+      ]
+    },
+    {
+      "case_id": "v2l-medium-eight-source",
+      "query": "In the Boreal timing register, which maintenance lane records the quartz inspection marker after the routine handoff?",
+      "shared_phrase": "Boreal timing register maintenance lane routine handoff",
+      "filler": "Each register paragraph preserves a synthetic maintenance observation for read-only latency measurement and contains no candidate answer. ",
+      "repeat": [8, 8, 8, 8, 8, 8, 8, 8],
+      "headlines": [
+        "Lane one records the quartz inspection marker.",
+        "Lane two records the cedar inspection marker.",
+        "Lane three records the opal inspection marker.",
+        "Lane four records the slate inspection marker.",
+        "Lane five records the moss inspection marker.",
+        "Lane six records the pearl inspection marker.",
+        "Lane seven records the ochre inspection marker.",
+        "Lane eight records the indigo inspection marker."
+      ]
+    },
+    {
+      "case_id": "v2l-mixed-length-eight-source",
+      "query": "Review the Cygnus timing archive and locate the signed delta-window observation among short and long authority notes without changing the fixed read budget.",
+      "shared_phrase": "Cygnus timing archive signed delta-window observation authority note fixed read budget",
+      "filler": "This synthetic archive sentence varies source length while retaining identical protocol responsibilities and stable nonformal content. ",
+      "repeat": [4, 8, 12, 16, 20, 24, 24, 24],
+      "headlines": [
+        "Authority note one contains the signed delta-window observation.",
+        "Authority note two contains the signed epsilon-window observation.",
+        "Authority note three contains the signed zeta-window observation.",
+        "Authority note four contains the signed eta-window observation.",
+        "Authority note five contains the signed theta-window observation.",
+        "Authority note six contains the signed iota-window observation.",
+        "Authority note seven contains the signed kappa-window observation.",
+        "Authority note eight contains the signed lambda-window observation."
+      ]
+    },
+    {
+      "case_id": "v2l-long-eight-source",
+      "query": "For the Dorsal timing dossier, identify the numbered source that carries the vermilion stability notation while all eight long sources remain eligible for bounded retrieval.",
+      "shared_phrase": "Dorsal timing dossier numbered source vermilion stability notation bounded retrieval",
+      "filler": "The long synthetic dossier repeats neutral operational prose to exercise query embedding, fusion, evidence probing, bounded reading, and protocol overhead. ",
+      "repeat": [8, 8, 8, 8, 8, 8, 8, 8],
+      "headlines": [
+        "Numbered source one carries the vermilion stability notation.",
+        "Numbered source two carries the azure stability notation.",
+        "Numbered source three carries the umber stability notation.",
+        "Numbered source four carries the saffron stability notation.",
+        "Numbered source five carries the lilac stability notation.",
+        "Numbered source six carries the bronze stability notation.",
+        "Numbered source seven carries the white stability notation.",
+        "Numbered source eight carries the charcoal stability notation."
+      ]
+    }
+  ],
+  "identity": "be36ade31b1971ca49a1e408cc995f77d71c113d24db5432ea425dcd7808c209"
+}

@@ -1,0 +1,378 @@
+{
+  "schema": "ownward.kernel-iteration-stage4-retrieval-latency-route/v4",
+  "frozen_before_candidate_measurement": true,
+  "candidate_result_seen": false,
+  "quality_duties_changed": false,
+  "controller_sha256": "d0c7e6ad9259d2f28b82b14f72428869151d7c2dde5ac76289e3c611a392f68c",
+  "candidate_preparer_sha256": "9f89051579f63a9effd9aa7fdb61ab7b3b6cd5b02f07318363e6dfe108e33489",
+  "root": {
+    "status": "closed-by-system-level-four-worker-thread-budget",
+    "mechanism": "the previous single-process 6/2 choice overcommitted 24 inference threads and eight slots across four independent workers on 12 logical processors; the product-native 2/1 runtime bounds the same four-worker load to eight inference threads and four slots without changing exact vectors or retrieval duties",
+    "business_boundary": "a complete consumer request now runs from source search through bounded evidence planning, evidence search/read and final context formation; its pre-existing product gate is p95 <= 600 ms, with the frozen 47 ms repeatability error reserved before a candidate can close the chain",
+    "not_claimed": [
+      "semantic retrieval is globally unnecessary",
+      "the current V2 adds more Search work than V0",
+      "a single-process throughput winner is automatically a safe four-process system budget",
+      "the existing 596.211 ms p95 has enough repeatability margin",
+      "a shared exact-vector process is automatically equivalent under concurrent inference",
+      "parallel evidence calls can erase Search or exact-query contention"
+    ]
+  },
+  "comparability_audit": {
+    "contract_identity": "e2a33fe5e97a3636e220e71076af1738f8c38f5592427642b4a89eaeec673bf8",
+    "migration_receipt_identity": "55131b81ae6b14357cd7281f40cd86ddc7bb5d2de69399f631f178b064cc0cec",
+    "comparison_policy_revision_identity": "b5400416de89df4cc821f9827de72b20a25075f4d6e8b5e70e920743d43b198b",
+    "result_identity": "f2ef1f642ea69f46fde92f354ec1456255963d18b4962c8d9f7c669fcf79c8b3",
+    "same_scale": false,
+    "v0_community_41_2_78_status": "historical-diagnostic-only",
+    "complete_consumer_p95_absolute_maximum_ms": 600.0,
+    "frozen_repeatability_error_ms": 47.0,
+    "candidate_decision_maximum_ms": 553.0,
+    "existing_real_scale_p95_ms": 596.2112999999931,
+    "existing_real_scale_p95_with_margin_ms": 643.2112999999931,
+    "retrieval_latency_closed": false,
+    "new_measurement_required_for_this_decision": false,
+    "next_validation": "no-authorized-tail-route-remains-after-shared-vector-and-evidence-parallel-lower-bounds-failed"
+  },
+  "evidence": {
+    "preparation_identity": "6077b1b96174680186563f43675604fa506ea3426b5b9d5584149a35a3626bba",
+    "paired_diagnosis_identity": "279f79f9a16cd4a77c59bc4fd32ae22d5837a7fb7b9379f3e75c0af24a94ac6b",
+    "contention_diagnosis_identity": "cebdd6fb63584effb7bfa978bbd07071f8faeeb550580504a49febd0f9b57dad",
+    "paired_current_v2_search_p95_ms": 354.17000000000166,
+    "paired_current_v2_returned_sources": 8,
+    "paired_current_v2_evidence_probes": 8,
+    "serial_current_v2_search_p95_ms": 157.49809999999934,
+    "serial_current_v2_total_p95_ms": 383.4222999999995,
+    "prepared_data_sha256": {
+      "v2l-long-eight-source": "d1f6d67f5ba64976de6d7a1b81ec1c18bc534af4d2229be16c6f0d114e16814a",
+      "v2l-medium-eight-source": "0a9115a41b0916d42d9f5164dceeee2a5ecab76e458d5be258331147671d4f44",
+      "v2l-mixed-length-eight-source": "62818207c66c0aaf210ef649b54ba5ac0ccf518d0c496dc3b7cf25a0975016d2",
+      "v2l-short-eight-source": "e388c906feda1b9b76f9a569717946319757a3c65500079527567647e40ddd09"
+    }
+  },
+  "shared_evaluation": {
+    "materials_identity": "be36ade31b1971ca49a1e408cc995f77d71c113d24db5432ea425dcd7808c209",
+    "baseline_preparation_identity": "6077b1b96174680186563f43675604fa506ea3426b5b9d5584149a35a3626bba",
+    "mcp_transport_sha256": "fbca3e4f15afbd0e8409c043fc5742c5b4aeec72dbaa79d66be550f10b6f1a86",
+    "stage_timing_controller_sha256": "346697e9a6fb61fad2a4c57658995454a284a03696524d091bb9533b3d2fc5df"
+  },
+  "subjects": {
+    "v0": "1952f4b869e49c4aaf2fbac8139fd0a0c25e4331e18ef559a14faf1db7ed7b77",
+    "v0_binary_sha256": "77600820a450b0931b9e63595b8564be757825000af16f9c2f0a028c69e81d2b",
+    "previous-v2": "7b78a0ef7036f1c6c34665162262cefbc98d9c3819f736616a7aeea3e4e74fbd"
+  },
+  "superseded_evidence": {
+    "identity": "04c9cc0c0479417b65edc2f99c7a1fdc9cc9f7c2ab7a58600562bcdd05cebc68",
+    "eligible_for_candidate_decision": false,
+    "reason": "V0 and previous-V2 baselines used a transport identity older than the final candidate transport"
+  },
+  "rejected_routes_disposition": {
+    "status": "historical-mechanism-diagnostic-only",
+    "may_close_or_reject_under_current_latency_policy": false,
+    "reason": "all 41.201/78.001-dependent latency outcomes predate the same-scale correction; quality failures and mechanism observations remain factual, but their old latency pass/fail does not decide the current complete-consumer gate"
+  },
+  "rejected_routes": [
+    {
+      "name": "new-v2-search-algorithm-amplification",
+      "reason": "paired current V2 Search p95 was 52.939 ms lower than V0, so the candidate-specific algorithm was not the first amplified stage"
+    },
+    {
+      "name": "shared-vector-runtime-only",
+      "reason": "serial current V2 remained 304.50/383.42 ms mean/p95 and therefore could not meet 41.201/78.001 ms"
+    },
+    {
+      "name": "larger-vector-worker-thread-pool",
+      "reason": "bounded feasibility probes showed independent or shared concurrent inference retained material CPU contention; thread expansion was not admitted as candidate evidence"
+    },
+    {
+      "name": "requested-limit-only-saturation-guard",
+      "reason": "the public protocol requests 24 sources while the complete isolated corpus contains eight; requiring 24 lexical hits left the redundant vector inference active and candidate 04cb9a2a…92fe1 failed at 350.20/596.18 ms mean/p95"
+    },
+    {
+      "name": "lexical-saturation-semantic-anchor-only",
+      "reason": "candidate c4548485…7328 removed Search amplification at 6.01/14.25 ms mean/p95 but repeated loopback connection setup kept total retrieval at 72.13/115.13 ms mean/p95, so it did not meet the frozen absolute gates"
+    },
+    {
+      "name": "complete-corpus-anchor-and-persistent-loopback-without-read-through",
+      "evidence_identity": "f8ea8cbe12465d6f50e9814c9ebf9d2a829a3f0b10bdc7b2eae757688d12ef26",
+      "reason": "same-final-transport three-generation measurement attributed the kernel gain cleanly, but candidate 3b3815dc…3334 still missed the frozen 41.201 ms mean gate at 42.547 ms; the remaining 37.868 ms was bounded evidence-search/read work"
+    },
+    {
+      "name": "sequential-bounded-evidence-planning-with-read-through",
+      "evidence_identity": "9293987763ebaef0dfbda00832491a8976d8feed72c7a03096f6448584c2cf19",
+      "reason": "candidate 4b5120bd…8027 preserved the same trace and p95 gate but its sequential per-source evidence planning left mean latency at 49.352 ms under the three-generation final-transport schedule"
+    },
+    {
+      "name": "parallel-bounded-evidence-planning-with-two-reference-materialization",
+      "evidence_identity": "2c29714027e469d1fe3ad9309df177049b1306eac1930d592f3dc3cc023b676a",
+      "reason": "candidate 3118e32a…63a reached 42.082/46.447 ms outer wall and 41.695 ms formal retrieval mean; p95 passed but the formal 41.201 ms mean gate still failed because every breadth lane materialized a second reference that was not consumed"
+    },
+    {
+      "name": "rank-weighted-complete-corpus-vector-anchor",
+      "candidate_subject": "547d54827f3fa8149f1fd5f57ab7898ac8719281d50fb7dd37e41390f97cb881",
+      "evidence_identity": "a61234401aa5bce1e62edb0c27b7cb6f5166461588e2529b46397f004b0f5382",
+      "reason": "the 24-source frozen fast-path protection triggered semantic-anchor, but the first target was returned below the fixed eight-source read budget and the final answer failed; a corpus-derived vector is not an exact query-semantic representation"
+    },
+    {
+      "name": "organized-query-requiring-submission-status-complete",
+      "candidate_subject": "3809b380183d1a544869908531cc336ec40c29fdd8d332193607dc7b7e4e6d17",
+      "evidence_identity": "5815b6f8727e2bd51038e0ca62b68c7d248ce5f8ecb17f5ef7daf9b912b4ad1f",
+      "reason": "the accepted collaborative organization lifecycle persists ready plus a semantic receipt, not complete; the candidate therefore used exact-query fallback and is ineligible as fast-path proof despite passing 2/2"
+    },
+    {
+      "name": "organized-query-limited-to-lexically-returned-corpus-with-equal-fusion-weight",
+      "candidate_subject": "da4c82e2fd913d17c3f101325ada5636ec003f194533cdc0adc6d66c2a162382",
+      "evidence_identity": "51d98ef21083fc9dd0bf352c05990c492ede6bcc0f5340faa454d1f081999f99",
+      "reason": "the pollinator case activated the route but equal fusion left its semantic target at rank nine, while the convoy case fell back because one weak-lexical source was absent from the lexical result; complete-corpus semantic ranking must enumerate the authoritative corpus and carry enough bounded weight to defeat surface-only distractors"
+    },
+    {
+      "name": "complete-corpus-structured-ranking-without-redundancy-control",
+      "candidate_subject": "a4855eef3b11e5728d1365c2410c3c4c7aad10d1409e8a6ea6cbad2c6f1392b2",
+      "evidence_identity": "c8210d7ad04702a2c4377f8c8b740200b443caa8d5b25370f8bb0ff23d94f25b",
+      "reason": "after all material-specific word priors were removed, repeated question-like structured records occupied the bounded read prefix and left an independently organized answer-bearing source at fusion rank eleven; the rejected route passed 1/2 and proves that stable field weighting alone did not control cross-source redundancy"
+    },
+    {
+      "name": "iterative-all-pairs-structured-diversity",
+      "candidate_subject": "032ed8c4322825ccbb614e9ce8bfc3b104901dad9875ddd271427ed4456a34e6",
+      "evidence_identity": "95ac9d6fb8cbdc3e1f5b35237573bacc15febcc63dd91014d7f934d4da7cf5cc",
+      "reason": "the all-pairs greedy diversity pass was deterministic and bounded but performed unnecessary repeated comparisons after the dominant surface cluster was identified; its 41.405 ms mean missed the immutable 41.201 ms absolute gate, so the implementation was replaced by a single dominant-cluster comparison rather than accepted on noise"
+    },
+    {
+      "name": "dominant-cluster-diversity-without-field-responsibility-signal",
+      "candidate_subject": "1274a53c3fd0807d1cd0bcb3da613af2f3423b7e936245b1d21689171379d567",
+      "evidence_identity": "3e0129d6456bfbdec115f7697b31702241e1bbb45ab4536cd909567c5f1e16c7",
+      "reason": "the route passed the immutable 41.201/78.001 ms gates at 41.140/48.014 ms, but the frozen pollinator protection still left the answer-bearing source at lexical rank ten and structured-semantic rank eleven; redundancy control alone cannot replace the stable cue/topic field responsibilities"
+    },
+    {
+      "name": "complete-corpus-organized-ranking-fast-path",
+      "candidate_subject": "2a9f04d1a64f77f28cd95d0bc1cc4d7140876c6b5a5cd2c24bbb2e755e8184c6",
+      "evidence_identity": "d12bf3e0",
+      "reason": "the shortcut requires the whole eligible authority corpus to fit within requested breadth and every source to satisfy a query-overlap proof; formal LongMemEval-S questions normally contain 38-62 sessions while the request width is 24, so the route falls back on the real workload and cannot close production retrieval latency. Its narrow performance observation remains diagnostic only."
+    },
+    {
+      "name": "multilingual-e5-small-onnx-o4",
+      "artifact_identity": "2413ae72bdd06d1fad7c6b170d05cafdfa7e1fa6c6c8526228675bc9a2505ff5",
+      "evidence_identity": "f1b6d5c64402673086c827737c1db2125096678d5597c951ebf96a760376b972",
+      "reason": "the pinned MIT ONNX candidate measured 33.325/42.628 ms isolated mean/p95; p95 passed but mean exceeded the pre-frozen 28.0 ms component ceiling needed to leave the measured V0 evidence-read and protocol lower bound inside the immutable 41.201 ms full-retrieval gate, so breadth quality was not run"
+    },
+    {
+      "name": "paraphrase-multilingual-minilm-l12-v2-onnx-avx2",
+      "artifact_identity": "16a7d616ab49d7ba07c3e12b5af72d89e1a1d3f9f4ee841af888c0746b24648b",
+      "evidence_identity": "f1b6d5c64402673086c827737c1db2125096678d5597c951ebf96a760376b972",
+      "reason": "the pinned Apache-2.0 AVX2 ONNX candidate passed isolated latency at 14.760/20.126 ms but failed the frozen 512-query breadth gate at 0.6875 overall Recall@10 and 0.15625 cross-language Recall@10, and also regressed the independent time/conflict supplement; it was rejected before any V2 vector generation or end-to-end candidate work"
+    },
+    {
+      "name": "exact-fail-open-hierarchical-semantic-bypass",
+      "evidence_identity": "0aaee5f036a6278454a2fe110023647e2145e0e67e50ba5a1dc77bdf8b3b5f8d",
+      "reason": "under the frozen equal-weight RRF fusion, lexical rank 2 plus a legal semantic rank 1 contribution exceeds lexical rank 1 plus semantic rank 3; therefore an unobserved exact semantic channel can change direct order, the first four relation seeds, reads, and context. All 22 representative full-semantic requests had at least three eligible vector documents and multi-result delivery, so the exact safety certificate covered 0%, below the pre-frozen 95% mean/p95 requirement. The route was rejected before candidate implementation, model calls, or product execution."
+    },
+    {
+      "name": "single-shared-6-2-exact-vector-service",
+      "evidence_identity": "dfeba5147e33d0b2f66804ec1ae7888f313a6a74a964b5d88fb1b493f728e1cb",
+      "reason": "one 6/2 service carrying four concurrent exact requests measured 441.876 ms p95 versus 378.845 ms for the existing four independent processes and produced maximum component drift 0.002115, above the frozen 1e-7 contract; it supplied negative latency margin and failed exact-vector equivalence before product integration"
+    },
+    {
+      "name": "bounded-parallel-evidence-search-and-read",
+      "evidence_identity": "dfeba5147e33d0b2f66804ec1ae7888f313a6a74a964b5d88fb1b493f728e1cb",
+      "reason": "on the decisive same-request p95 sample, Search consumed 719.914 ms while all evidence-search and read calls consumed 46.619 ms; even the optimistic two-phase parallel lower bound reduced observed p95 by only 36.775 ms, below the pre-frozen 63.211 ms required gap plus engineering margin"
+    }
+  ],
+  "implementation": {
+    "policy": "exact-query-vector-plus-persistent-loopback-and-lazy-bounded-parallel-evidence-read-through/v18",
+    "source_transform_sha256": "86884a678fa3dc4b95c86276b1f234a326d7d6363b3de41a4c3bcb712fd7d796",
+    "planned_evidence_sha256": "ecb555f3927a0c1dbf92b8b1daeab47301cf5d8ee068c86c02868f604ff8aa60",
+    "evidence_ranking_sha256": "c32856879af0dc09b88e84a2f58c552c9f223cd871586fe16dc4662c8580296d",
+    "mcp_transport_sha256": "fbca3e4f15afbd0e8409c043fc5742c5b4aeec72dbaa79d66be550f10b6f1a86",
+    "semantic_query": "the unchanged EmbeddingGemma model, query prefix, 512 delivered dimensions, mean pooling, L2 normalization and prefix truncation always materialize the exact query vector",
+    "calibrated_next_runtime_configuration": {"threads": 6, "threads_batch": 6, "parallel": 2, "request_serialization": "bounded-two-active-requests"},
+    "active_product_runtime_changed": false,
+    "transport": "one TCP_NODELAY HTTP/1.1 loopback connection is reused per isolated client while preserving the exact sequential JSON-RPC call order, count and failure semantics",
+    "read_through": "only evidence identities produced by the exact bounded in-memory selection plan may reuse their already validated source slice; every accepted authority mutation atomically clears all plans, while unknown or caller-modified identities fall back to the complete authority validation path",
+    "evidence_planning": "the fixed at-most-eight returned source lanes are probed concurrently on the first evidence request; the first lane reuses the exact authority revision already validated by the public evidence boundary, prepared lanes avoid reopening that unchanged revision, and only the first breadth reference is materialized while a lone consumed deep lane is deterministically reranked at the original requested bound",
+    "bounded": true,
+    "persistent_state_growth_bytes": 0,
+    "read_limit_changed": false,
+    "context_limit_changed": false,
+    "evidence_depth_changed": false,
+    "model_or_prompt_changed": false
+  },
+  "schedule": {
+    "workers": 4,
+    "warmups_per_round": 1,
+    "measured_repetitions_per_round": 3,
+    "balanced_order": [
+      ["v0", "previous-v2", "candidate"],
+      ["candidate", "previous-v2", "v0"],
+      ["previous-v2", "v0", "candidate"]
+    ]
+  },
+  "gates": {
+    "paired_repeat_error_ms": 47.0,
+    "complete_consumer_retrieval_p95_absolute_maximum_ms": 600.0,
+    "complete_consumer_retrieval_p95_decision_maximum_ms": 553.0,
+    "historical_v0_community_retrieval_mean_ms_diagnostic": 41.1999999999025,
+    "historical_v0_community_retrieval_p95_ms_diagnostic": 77.9999999977008,
+    "read_units_maximum": 8,
+    "evidence_probes_required": 8,
+    "context_chars_maximum": 24000,
+    "quality_protection_required_after_performance": true,
+    "formal_state_writes": 0,
+    "model_calls": 0,
+    "product_mutations": 0
+  },
+  "formal_state_sha256": "3c7826e0ef86a82ddfab676886e384e2674a23dc80f6df3612d4443be00ffcdc",
+  "runtime_calibration": {
+    "identity": "20c20331b287eb47dbe03a0cd3be1032783e7dab8d8900ba0312847ee37613ff",
+    "artifact_sha256": "5a670e2ac8197cf0f9edd71ea2005dcd20604ed507a0858a06c48636d4241521",
+    "controller_sha256": "b8e32422da7046e444ac0b6e20174c6cdfac4e18ac211bda1a32eb234ddc4f36",
+    "tested": ["2/1", "4/1", "6/1", "2/2", "4/2", "6/2"],
+    "selected": "6/2",
+    "selected_single_mean_ms": 59.04828333333345,
+    "selected_single_p95_ms": 79.54440000000318,
+    "selected_concurrent_two_p95_ms": 137.5643999999987,
+    "selected_peak_working_set_bytes": 202878976,
+    "maximum_vector_component_drift": 0.0,
+    "absolute_end_to_end_gate_met": false,
+    "conclusion": "six threads with two bounded active requests is the best measured configuration on this 6-core/12-thread host, but exact query inference alone remains above the frozen p95 gate and leaves no budget for evidence delivery; retrieval-latency remains open"
+  },
+  "real_scale_measurement": {
+    "contract_identity": "4381c23eb3ba80ab56f4a9d4fe52c64c8cecae233f3e721022f1da2be0367284",
+    "result_identity": "72b6988e9368a508e1d8264e3f78d5dc0ce7d12a5d95653464dd1a552d3333f4",
+    "shared_runtime_receipt_identity": "594e3a4c72c59ceb729e0ffbb5e2d635936af94994a9b3d11c805afb5d583bef",
+    "candidate_subject": "dd6ed86c1cf5af6507ae062cc10b07c45d0d90b4e53de53bf4b3a87faedd4dae",
+    "asset_range": [38, 62],
+    "workers": 4,
+    "candidate_mean_ms": 419.63978333332835,
+    "candidate_p95_ms": 596.2112999999931,
+    "candidate_search_mean_ms": 360.2539833333312,
+    "candidate_search_p95_ms": 514.6141000000171,
+    "candidate_evidence_search_mean_ms": 29.326455555553665,
+    "candidate_read_mean_ms": 30.059344444443543,
+    "isolated_exact_query_p95_ms": 112.84969999999817,
+    "four_worker_exact_query_p95_ms": 378.8452999999947,
+    "maximum_vector_component_drift": 0.0,
+    "quality_and_resource_bounds_preserved": true,
+    "formal_state_unchanged": true,
+    "eligible_for_closure": false
+  },
+  "runtime_followup": {
+    "contract_identity": "a60a11dbbc6d9007bd79b87b30ce970ddd0c35dfbb93249efdb58c300c36af66",
+    "result_identity": "94e543b7369cc3950bec9f18c0eda9b49b511475332e60e3899de2f7273342f9",
+    "isolated_selected_6_2_mean_ms": 85.65470000000023,
+    "isolated_selected_6_2_p95_ms": 99.61840000000066,
+    "two_active_p95_ms": 259.4706000000002,
+    "three_active_p95_ms": 307.7834999999993,
+    "four_active_p95_ms": 284.4139000000006,
+    "batch_four_per_query_throughput_ms": 95.9401312499999,
+    "maximum_vector_component_drift": 0.0,
+    "exact_query_lower_bound_exceeds_total_mean_gate": true,
+    "conclusion": "bounded slots and batching cannot close the frozen end-to-end gate on the current exact model runtime; no candidate quality rerun is eligible until the isolated exact-query lower bound is reduced"
+  },
+  "runtime_implementation_assessment": {
+    "result_identity": "0656ac12160637e516ebfc9e74af1a83908e1e5a42715a7b9deac3fad3b46662",
+    "source_release": "llama.cpp-b10488@9d77fa17254e1dee4b9e92504c91611a60b1359f",
+    "fixed_model_sha256": "6fa0c02a9c302be6f977521d399b4de3a46310a4f2621ee0063747881b673f67",
+    "fixed_space_identity": "emb_79f072bf21c0c0f5226fa4fe6f1946a5",
+    "isolated_gates": {"mean_ms_exclusive": 41.201, "p95_ms_maximum": 62.4, "maximum_vector_component_drift": 0.0000001},
+    "cpu": {"result_identity": "94e543b7369cc3950bec9f18c0eda9b49b511475332e60e3899de2f7273342f9", "mean_ms": 85.65470000000023, "p95_ms": 99.61840000000066, "status": "rejected-lower-bound"},
+    "vulkan": {"result_identity": "5f0eb06b366a605be3658e65cea6b24c222c07f8a4a7cad23847bdb4b15550a8", "mean_ms": 216.23988999999992, "p95_ms": 242.89249999999996, "maximum_vector_component_drift": 0.0032150325380996686, "status": "rejected-latency-and-vector-drift"},
+    "openvino": {"result_identity": "838ef5d583c4311b605d57068d8678231ea35cb17286b007b2244b4ed03faa22", "status": "rejected-query-http-500"},
+    "sycl": {"status": "rejected-no-device"},
+    "cuda": {"status": "rejected-driver-runtime-incompatibility"},
+    "all_realistic_fixed_model_runtime_implementations_rejected": true,
+    "retrieval_latency_closed": false,
+    "next_validation": "completed-by-semantic-model-screening-below"
+  },
+  "semantic_model_screening": {
+    "contract_sha256": "7b1cc7bc0308234b553c606ac2b99509b6e62c4ee4abb99f0b1d89724bb1e1ff",
+    "result_identity": "f1b6d5c64402673086c827737c1db2125096678d5597c951ebf96a760376b972",
+    "candidate_limit": 2,
+    "embeddinggemma_runtime_retried": false,
+    "multilingual_e5_small": {
+      "isolated_mean_ms": 33.3246375,
+      "isolated_p95_ms": 42.6284,
+      "status": "rejected-isolated-latency",
+      "quality_executed": false
+    },
+    "paraphrase_multilingual_minilm_l12_v2": {
+      "isolated_mean_ms": 14.760205,
+      "isolated_p95_ms": 20.1263,
+      "formal_overall_recall_at_10": 0.6875,
+      "formal_cross_language_recall_at_10": 0.15625,
+      "supplement_mrr_at_10": 0.7372685185185185,
+      "status": "rejected-breadth-quality"
+    },
+    "first_layer_winners": [],
+    "v2_vector_generation_created": false,
+    "retrieval_latency_closed": false,
+    "next_validation": "precise-fail-open-hierarchical-retrieval-with-semantic-fallback"
+  },
+  "hierarchical_retrieval_feasibility": {
+    "contract_sha256": "26d704c2ff76dacffabffe6cba8d4d9fd25ddeae65daf0dee2ec28af3913414f",
+    "result_identity": "0aaee5f036a6278454a2fe110023647e2145e0e67e50ba5a1dc77bdf8b3b5f8d",
+    "representative_requests": 22,
+    "safe_bypass_requests": 0,
+    "safe_bypass_fraction": 0.0,
+    "required_bypass_fraction": 0.95,
+    "candidate_implemented": false,
+    "model_calls": 0,
+    "product_executions": 0,
+    "formal_state_unchanged": true,
+    "retrieval_latency_closed": false,
+    "next_validation": "completed-by-comparability-audit"
+  },
+  "tail_route_probe": {
+    "contract_identity": "4d3e435a015164bbfa4e3a5e87258d3b7e469ab1264e88dee0709a32b16d1903",
+    "result_identity": "dfeba5147e33d0b2f66804ec1ae7888f313a6a74a964b5d88fb1b493f728e1cb",
+    "required_isolated_gain_ms": 63.211,
+    "same_request_p95_ms": 766.5331000000001,
+    "decisive_search_ms": 719.9138999999999,
+    "decisive_evidence_search_ms": 24.50170000000007,
+    "decisive_read_ms": 22.117500000000234,
+    "ideal_evidence_parallel_p95_gain_ms": 36.77480000000082,
+    "shared_service_p95_ms": 441.8755000000001,
+    "four_independent_service_p95_ms": 378.8452999999947,
+    "shared_service_maximum_vector_component_drift": 0.0021153742089819504,
+    "selected_route": null,
+    "candidate_implemented": false,
+    "retrieval_latency_closed": false,
+    "formal_state_unchanged": true,
+    "next_validation": "completed-by-system-thread-budget-resolution-below"
+  },
+  "system_thread_budget_resolution": {
+    "contract_identity": "0555bdfe5cec301140b85389bbbb7525d80b834e4d2b47b7877593874a226564",
+    "performance_result_identity": "d4f859b8a85e482c48b11c5145419218b0901a1053490f303957aef306fc0436",
+    "final_evidence_identity": "10b84de7e4d3600696e6aa4668e03eeb269d30137849b12451f1a5d91c0d4caa",
+    "candidate_subject": "208982be002df5cae85e5f9fd6b3d9c4fcc0bf143db50a799b27fa5cb006517f",
+    "kernel_generation_identity": "c84215c392559bcf0a98f5df79439c45cd4939b9894c990abdfca1527742a664",
+    "kernel_effect_identity": "f20de76fef21deb12825a0494200ca90888ec8478522e6702cf3581461b232d6",
+    "binary_sha256": "c6b97f7e840208896288aed741201502d250e6c63286a58f448fc0152183921f",
+    "runtime_configuration": {"threads": 2, "threads_batch": 2, "parallel": 1},
+    "logical_processors": 12,
+    "workers": 4,
+    "aggregate_inference_threads": 8,
+    "measured_samples": 36,
+    "complete_consumer_mean_ms": 295.5492638888888,
+    "complete_consumer_p95_ms": 356.67289999999593,
+    "p95_improvement_ms": 239.53840000000412,
+    "decision_p95_ms_maximum": 553.0,
+    "route_p95_ms_maximum": 533.0,
+    "vector_maximum_component_drift": 0.0,
+    "development_accuracy": 1.0,
+    "long_multifact_delivery": "5/5",
+    "multisource_accuracy": 1.0,
+    "multisource_fact_delivery": "6/6",
+    "regression_accuracy": 1.0,
+    "long_asset_semantic_recall": 1.0,
+    "read_units_maximum": 8,
+    "context_chars_maximum": 4754,
+    "persistent_state_growth_bytes": 0,
+    "source_and_candidate_prepared_data_unchanged": true,
+    "resume_byte_identical_and_zero_execution": true,
+    "formal_state_unchanged": true,
+    "three_thread_probe_run": false,
+    "retrieval_latency_closed": true,
+    "next_validation": "end-to-end-resource-cost"
+  },
+  "identity": "77777ecf58da57cde1a517e3de2eb1883a94ca83b6fad3a4d82b195badd532da"
+}

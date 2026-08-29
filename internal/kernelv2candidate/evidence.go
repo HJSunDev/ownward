@@ -31,6 +31,23 @@ type scoredEvidenceUnit struct {
 // and its immediately following value together. It creates neither persistent
 // ranges nor vectors and keeps the number of scored ranges unchanged.
 func RankEvidence(value domain.Information, query string, limit int) []domain.EvidenceReference {
+	selected := rankedEvidence(value, query, limit)
+	return materializeReferences(value, selected)
+}
+
+// ProbeEvidence proves whether a source has repeated useful depth while
+// materializing only the first reference needed by breadth-first scheduling.
+// A lone deep source is reranked with the caller's full bound only if the
+// selection path actually consumes that depth.
+func ProbeEvidence(value domain.Information, query string) ([]domain.EvidenceReference, bool) {
+	selected := rankedEvidence(value, query, 2)
+	if len(selected) == 0 {
+		return nil, false
+	}
+	return materializeReferences(value, selected[:1]), len(selected) > 1
+}
+
+func rankedEvidence(value domain.Information, query string, limit int) []scoredEvidenceUnit {
 	units := continuityRanges(value)
 	if len(units) == 0 || limit <= 0 {
 		return nil
@@ -48,7 +65,10 @@ func RankEvidence(value domain.Information, query string, limit int) []domain.Ev
 		}
 		return scored[left].score > scored[right].score
 	})
-	selected := selectMarginalCoverage(scored, limit)
+	return selectMarginalCoverage(scored, limit)
+}
+
+func materializeReferences(value domain.Information, selected []scoredEvidenceUnit) []domain.EvidenceReference {
 	result := make([]domain.EvidenceReference, 0, len(selected))
 	for _, selected := range selected {
 		unit, err := derived.MaterializeEvidenceUnit(value, selected.unit)

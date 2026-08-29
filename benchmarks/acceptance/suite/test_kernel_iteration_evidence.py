@@ -25,7 +25,9 @@ class KernelIterationEvidenceTests(unittest.TestCase):
         cls.contract = iteration.load_contract(cls.suite_root)
 
     def test_contract_freezes_three_dimensions_before_any_v2_result(self) -> None:
-        self.assertTrue(self.contract["frozen_before_v2_results"])
+        self.assertTrue(self.contract["unchanged_dimensions_frozen_before_v2_results"])
+        self.assertTrue(self.contract["latency_correction_frozen_before_new_candidate_measurement"])
+        self.assertTrue(self.contract["candidate_results_excluded_from_latency_correction"])
         self.assertEqual(
             {
                 "information-organization-quality",
@@ -36,6 +38,26 @@ class KernelIterationEvidenceTests(unittest.TestCase):
         )
         self.assertNotIn("result", self.contract)
         self.assertNotIn("candidate_result", self.contract)
+        self.assertEqual(
+            self.contract["latency_policy_migration"]["from_identity"],
+            self.contract["identity"],
+        )
+        self.assertEqual(
+            self.contract["policy_revision_identity"],
+            iteration.canonical_sha256(iteration._contract_policy_content(self.contract)),
+        )
+        active_names = {
+            metric["name"]
+            for dimension in self.contract["dimensions"].values()
+            for metric in dimension["metrics"]
+        }
+        self.assertNotIn("retrieval_mean_ms", active_names)
+        self.assertNotIn("retrieval_p95_ms", active_names)
+        self.assertIn("complete_consumer_retrieval_p95_ms", active_names)
+        self.assertEqual(
+            "diagnostic-only-not-a-complete-consumer-non-regression-gate",
+            self.contract["historical_latency_diagnostics"]["status"],
+        )
         self.assertTrue(self.contract["subjects"]["v0"]["formal_evaluation_baseline"])
         self.assertEqual(
             "ownward.kernel-iteration-baseline-facts/v1",
@@ -149,7 +171,7 @@ class KernelIterationEvidenceTests(unittest.TestCase):
         changed_registry = copy.deepcopy(self.contract)
         changed_registry["subjects"]["current-product"]["direct_dependencies"]["access"] = "0" * 64
         self.assertEqual(
-            self.contract["identity"],
+            self.contract["policy_revision_identity"],
             iteration.canonical_sha256(iteration._contract_policy_content(changed_registry)),
         )
         self.assertNotEqual(

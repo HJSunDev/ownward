@@ -11,7 +11,7 @@ class KernelIterationEvidenceError(ValueError):
     pass
 
 
-CONTRACT_SCHEMA = "ownward.kernel-iteration-comparison/v2"
+CONTRACT_SCHEMA = "ownward.kernel-iteration-comparison/v3"
 SUBJECT_SCHEMA = "ownward.kernel-iteration-subject/v1"
 INPUT_SCHEMA = "ownward.kernel-iteration-input/v1"
 PLAN_SCHEMA = "ownward.kernel-iteration-plan/v1"
@@ -34,7 +34,10 @@ def load_contract(suite_root: Path, path: Path | None = None) -> dict[str, Any]:
 def validate_contract(suite_root: Path, value: dict[str, Any], contract_path: Path | None = None) -> None:
     repository = suite_root.resolve().parents[2]
     _require(value.get("schema") == CONTRACT_SCHEMA, "V2 迭代比较合同 schema 无效")
-    _require(value.get("frozen") is True and value.get("frozen_before_v2_results") is True, "V2 比较合同未在候选结果前冻结")
+    _require(value.get("frozen") is True, "V2 比较合同未冻结")
+    _require(value.get("unchanged_dimensions_frozen_before_v2_results") is True, "V2 未变比较维度未在候选结果前冻结")
+    _require(value.get("latency_correction_frozen_before_new_candidate_measurement") is True, "检索时延修正未在新候选测量前冻结")
+    _require(value.get("candidate_results_excluded_from_latency_correction") is True, "检索时延修正使用了候选结果")
     isolation = _mapping(value, "formal_isolation")
     _require(
         isolation == {
@@ -45,8 +48,10 @@ def validate_contract(suite_root: Path, value: dict[str, Any], contract_path: Pa
         },
         "V2 非正式证据隔离边界无效",
     )
-    expected_identity = canonical_sha256(_contract_policy_content(value))
-    _require(value.get("identity") == expected_identity, "V2 比较政策身份漂移")
+    migration = _mapping(value, "latency_policy_migration")
+    _require(value.get("identity") == migration.get("evidence_compatibility_identity"), "V2 比较证据兼容身份漂移")
+    expected_revision_identity = canonical_sha256(_contract_policy_content(value))
+    _require(value.get("policy_revision_identity") == expected_revision_identity, "V2 比较政策修订身份漂移")
     _require(value.get("seal_sha256") == canonical_sha256(_contract_seal_content(value)), "V2 比较合同封存摘要漂移")
     _validate_sources(repository, value)
     _validate_subjects(repository, value)
@@ -413,7 +418,10 @@ def _load_iteration_input(contract: dict[str, Any], evidence_type: str, path: Pa
 
 def _validate_sources(repository: Path, contract: dict[str, Any]) -> None:
     sources = _mapping(contract, "sources")
-    expected = {"kernel_catalog", "current_composition", "frozen_baseline", "v0_baseline_facts"}
+    expected = {
+        "kernel_catalog", "current_composition", "frozen_baseline", "v0_baseline_facts",
+        "retrieval_latency_comparability_audit", "retrieval_latency_migration",
+    }
     _require(set(sources) == expected, "V2 比较合同来源集合无效")
     for name, source in sources.items():
         _require(isinstance(source, dict) and isinstance(source.get("path"), str) and is_sha256(source.get("sha256")), f"{name} 来源无效")
@@ -434,8 +442,33 @@ def _validate_sources(repository: Path, contract: dict[str, Any]) -> None:
     _require(_metric_baseline(dimensions, "target_evidence_delivery_failures") == gaps["target_evidence_not_read"] + gaps["target_evidence_not_search_returned"], "V0 证据交付错误基线漂移")
     _require(_metric_baseline(dimensions, "semantic_input_tokens") == community["semantic_input_tokens"], "V0 语义输入成本基线漂移")
     _require(_metric_baseline(dimensions, "end_to_end_wall_seconds") == community["wall_seconds"], "V0 端到端墙钟基线漂移")
-    _require(abs(_metric_baseline(dimensions, "retrieval_mean_ms") - community["retrieval_mean_ms"]) < 1e-9, "V0 检索平均时延基线漂移")
-    _require(abs(_metric_baseline(dimensions, "retrieval_p95_ms") - community["retrieval_p95_ms"]) < 1e-9, "V0 检索 p95 基线漂移")
+    historical = _mapping(contract, "historical_latency_diagnostics")
+    _require(abs(float(historical.get("v0_community_retrieval_mean_ms")) - community["retrieval_mean_ms"]) < 1e-9, "V0 历史检索平均时延诊断漂移")
+    _require(abs(float(historical.get("v0_community_retrieval_p95_ms")) - community["retrieval_p95_ms"]) < 1e-9, "V0 历史检索 p95 诊断漂移")
+    _require(historical.get("status") == "diagnostic-only-not-a-complete-consumer-non-regression-gate", "V0 历史检索时延仍被用作完整消费者门槛")
+    receipt = _load_json(repository / sources["retrieval_latency_migration"]["path"])
+    receipt_content = {key: item for key, item in receipt.items() if key != "identity"}
+    _require(receipt.get("schema") == "ownward.kernel-iteration-retrieval-latency-comparability-migration/v1", "检索时延迁移收据 schema 无效")
+    _require(receipt.get("identity") == canonical_sha256(receipt_content), "检索时延迁移收据身份漂移")
+    audit = _load_json(repository / sources["retrieval_latency_comparability_audit"]["path"])
+    audit_content = {key: item for key, item in audit.items() if key != "identity"}
+    _require(audit.get("schema") == "ownward.kernel-iteration-stage4-retrieval-latency-comparability-audit-contract/v1", "检索时延同尺审计合同 schema 无效")
+    _require(audit.get("identity") == canonical_sha256(audit_content), "检索时延同尺审计合同身份漂移")
+    _require(receipt.get("audit_contract_identity") == audit["identity"], "检索时延迁移收据未绑定同尺审计")
+    migration = _mapping(contract, "latency_policy_migration")
+    _require(migration.get("from_schema") == "ownward.kernel-iteration-comparison/v2", "检索时延迁移来源 schema 无效")
+    _require(migration.get("from_identity") == receipt["old_comparison"]["identity"], "检索时延迁移来源身份错绑")
+    _require(migration.get("evidence_compatibility_identity") == migration.get("from_identity"), "非时延证据兼容身份漂移")
+    _require(migration.get("receipt_identity") == receipt["identity"] == historical.get("migration_receipt_identity"), "检索时延迁移收据错绑")
+    _require(migration.get("unchanged_dimension_identities") == {
+        name: canonical_sha256(_mapping(dimensions, name))
+        for name in ("information-organization-quality", "retrieval-and-final-answer-quality")
+    }, "未变质量维度身份漂移")
+    replacement = _mapping(receipt, "replacement_latency_policy")
+    complete = _metric(dimensions, "complete_consumer_retrieval_p95_ms")
+    _require(complete.get("baseline") == replacement.get("absolute_maximum_ms"), "完整消费者检索绝对门漂移")
+    _require(complete.get("repeatability_error") == replacement.get("frozen_repeatability_error_ms"), "完整消费者检索重复误差漂移")
+    _require(_mapping(complete, "gate").get("maximum") == replacement.get("decision_maximum_ms"), "完整消费者检索决策门漂移")
     for name in ("context_precision", "relation_precision", "relation_recall", "fusion_ndcg", "fusion_recall"):
         _require(_metric_baseline(dimensions, name) == _mapping(frontier, name)["value"], f"V0 {name} 基线漂移")
     query = _mapping(frontier, "query_p95_ms")
@@ -516,6 +549,22 @@ def _validate_dimensions(contract: dict[str, Any]) -> None:
                 _require(float(gate["minimum"]) >= 1 - (1 - float(metric["baseline"])) / 2, f"{metric['name']} 没有达到剩余错误减半门槛")
             large_improvements += int(gate["kind"] == "large-improvement")
     _require(large_improvements >= 4, "V2 合同没有冻结足够的大幅跃升门槛")
+    metric_names = {
+        metric["name"]
+        for dimension in dimensions.values()
+        for metric in dimension["metrics"]
+    }
+    _require("retrieval_mean_ms" not in metric_names and "retrieval_p95_ms" not in metric_names, "非同尺 V0 community 检索时延仍是活动门槛")
+    complete = _metric(dimensions, "complete_consumer_retrieval_p95_ms")
+    gate = _mapping(complete, "gate")
+    _require(complete.get("source") == "v1-budget-selection-authority", "完整消费者检索门来源无效")
+    _require(complete.get("baseline") == 600.0 and complete.get("repeatability_error") == 47.0, "完整消费者检索基线或重复误差无效")
+    _require(gate == {
+        "kind": "non-regression",
+        "maximum": 553.0,
+        "absolute_maximum": 600.0,
+        "basis": "preexisting-complete-consumer-absolute-gate-minus-frozen-repeatability-error",
+    }, "完整消费者检索门槛无效")
 
 
 def _validate_evidence_types(contract: dict[str, Any]) -> None:
@@ -586,7 +635,7 @@ def _contract_seal_content(value: dict[str, Any]) -> dict[str, Any]:
             return {
                 key: project(nested)
                 for key, nested in item.items()
-                if key not in {"identity", "seal_sha256"} and not key.startswith("audit_")
+                if key not in {"identity", "policy_revision_identity", "seal_sha256"} and not key.startswith("audit_")
             }
         if isinstance(item, list):
             return [project(nested) for nested in item]
@@ -610,6 +659,8 @@ def _contract_policy_content(value: dict[str, Any]) -> dict[str, Any]:
         "invalidation",
         "cost_limits",
         "runtime_calibration",
+        "historical_latency_diagnostics",
+        "latency_policy_migration",
     }
     projected = _contract_seal_content(value)
     return {name: projected[name] for name in sorted(names)}
@@ -659,6 +710,17 @@ def _metric_repeatability(dimensions: dict[str, Any], name: str) -> float | int:
     ]
     _require(len(matches) == 1, f"冻结指标不存在或重复: {name}")
     return matches[0]["repeatability_error"]
+
+
+def _metric(dimensions: dict[str, Any], name: str) -> dict[str, Any]:
+    matches = [
+        metric
+        for dimension in dimensions.values()
+        for metric in dimension.get("metrics", [])
+        if metric.get("name") == name
+    ]
+    _require(len(matches) == 1, f"冻结指标不存在或重复: {name}")
+    return matches[0]
 
 
 def _safe(value: str) -> str:

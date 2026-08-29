@@ -1,0 +1,48 @@
+{
+  "schema": "ownward.kernel-candidate-source-transform/v1",
+  "source": "internal/embedding/llama.go",
+  "replacements": [
+    {
+      "name": "runtime-import",
+      "count": 1,
+      "before": "\t\"path/filepath\"\n\t\"sort\"",
+      "after": "\t\"path/filepath\"\n\t\"runtime\"\n\t\"sort\""
+    },
+    {
+      "name": "bounded-runtime-state",
+      "count": 1,
+      "before": "type Managed struct {\n\tbundle Bundle\n\tclient *http.Client\n\n\tmu        sync.Mutex\n\trequestMu sync.Mutex\n\tcommand   *exec.Cmd\n\tdone      chan error\n\tlifetime  io.Closer\n\tport      int\n\tclosed    bool\n\tlogs      bytes.Buffer\n}",
+      "after": "// These values are build-time inputs. Production builds retain the historical\n// 2/1 runtime unless an explicitly sealed non-formal comparison binary uses\n// -X to select another validated configuration.\nvar (\n\tmanagedRuntimeThreads  = \"2\"\n\tmanagedRuntimeParallel = \"1\"\n)\n\ntype ManagedRuntimeConfig struct {\n\tThreads      int\n\tThreadsBatch int\n\tParallel     int\n}\n\ntype Managed struct {\n\tbundle Bundle\n\tclient *http.Client\n\tconfig ManagedRuntimeConfig\n\tslots  chan struct{}\n\n\tmu       sync.Mutex\n\tidle     *sync.Cond\n\tactive   int\n\tcommand  *exec.Cmd\n\tdone     chan error\n\tlifetime io.Closer\n\tport     int\n\tclosed   bool\n\tlogs     bytes.Buffer\n}"
+    },
+    {
+      "name": "explicit-runtime-construction",
+      "count": 1,
+      "before": "func OpenManagedBundle(bundle Bundle) (*Managed, error) {\n\tif !bundle.verified {\n\t\treturn nil, errors.New(\"本地向量能力包尚未完成完整性校验\")\n\t}\n\treturn &Managed{\n\t\tbundle: bundle,\n\t\tclient: &http.Client{Transport: &http.Transport{Proxy: nil}},\n\t}, nil\n}",
+      "after": "func OpenManagedBundle(bundle Bundle) (*Managed, error) {\n\tconfig, err := linkedManagedRuntimeConfig()\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\treturn OpenManagedBundleWithRuntime(bundle, config)\n}\n\n// OpenManagedBundleWithRuntime is the explicit non-formal comparison entry.\n// The selected runtime is immutable for the Managed lifetime and does not\n// alter the model, vector space, prefixes, pooling, normalization or truncation.\nfunc OpenManagedBundleWithRuntime(bundle Bundle, config ManagedRuntimeConfig) (*Managed, error) {\n\tif !bundle.verified {\n\t\treturn nil, errors.New(\"本地向量能力包尚未完成完整性校验\")\n\t}\n\tif err := validateManagedRuntimeConfig(config); err != nil {\n\t\treturn nil, err\n\t}\n\tmanaged := &Managed{\n\t\tbundle: bundle,\n\t\tclient: &http.Client{Transport: &http.Transport{Proxy: nil}},\n\t\tconfig: config,\n\t\tslots:  make(chan struct{}, config.Parallel),\n\t}\n\tmanaged.idle = sync.NewCond(&managed.mu)\n\treturn managed, nil\n}\n\nfunc linkedManagedRuntimeConfig() (ManagedRuntimeConfig, error) {\n\tthreads, err := strconv.Atoi(managedRuntimeThreads)\n\tif err != nil {\n\t\treturn ManagedRuntimeConfig{}, errors.New(\"本地向量运行时 build threads 无效\")\n\t}\n\tparallel, err := strconv.Atoi(managedRuntimeParallel)\n\tif err != nil {\n\t\treturn ManagedRuntimeConfig{}, errors.New(\"本地向量运行时 build parallel 无效\")\n\t}\n\treturn ManagedRuntimeConfig{Threads: threads, ThreadsBatch: threads, Parallel: parallel}, nil\n}\n\nfunc validateManagedRuntimeConfig(config ManagedRuntimeConfig) error {\n\tif config.Threads < 1 || config.Threads > runtime.NumCPU() {\n\t\treturn fmt.Errorf(\"本地向量运行时 threads 必须在 1..%d\", runtime.NumCPU())\n\t}\n\tif config.ThreadsBatch < 1 || config.ThreadsBatch > runtime.NumCPU() {\n\t\treturn fmt.Errorf(\"本地向量运行时 threads-batch 必须在 1..%d\", runtime.NumCPU())\n\t}\n\tif config.Parallel < 1 || config.Parallel > 4 {\n\t\treturn errors.New(\"本地向量运行时 parallel 必须在 1..4\")\n\t}\n\treturn nil\n}"
+    },
+    {
+      "name": "bounded-request-admission",
+      "count": 1,
+      "before": "\tm.requestMu.Lock()\n\tdefer m.requestMu.Unlock()\n\tif err := m.ensureRunning(ctx); err != nil {",
+      "after": "\tif err := m.beginRequest(ctx); err != nil {\n\t\treturn nil, err\n\t}\n\tdefer m.endRequest()\n\tif err := m.ensureRunning(ctx); err != nil {"
+    },
+    {
+      "name": "bounded-request-lifecycle",
+      "count": 1,
+      "before": "func (m *Managed) ensureRunning(ctx context.Context) error {",
+      "after": "func (m *Managed) beginRequest(ctx context.Context) error {\n\tselect {\n\tcase m.slots <- struct{}{}:\n\tcase <-ctx.Done():\n\t\treturn ctx.Err()\n\t}\n\tm.mu.Lock()\n\tif m.closed {\n\t\tm.mu.Unlock()\n\t\t<-m.slots\n\t\treturn errors.New(\"本地向量能力已关闭\")\n\t}\n\tm.active++\n\tm.mu.Unlock()\n\treturn nil\n}\n\nfunc (m *Managed) endRequest() {\n\tm.mu.Lock()\n\tm.active--\n\tif m.active == 0 {\n\t\tm.idle.Broadcast()\n\t}\n\tm.mu.Unlock()\n\t<-m.slots\n}\n\nfunc (m *Managed) ensureRunning(ctx context.Context) error {"
+    },
+    {
+      "name": "runtime-arguments",
+      "count": 1,
+      "before": "\t\t\"--threads\", \"2\", \"--threads-batch\", \"2\", \"--parallel\", \"1\",",
+      "after": "\t\t\"--threads\", strconv.Itoa(m.config.Threads), \"--threads-batch\", strconv.Itoa(m.config.ThreadsBatch),\n\t\t\"--parallel\", strconv.Itoa(m.config.Parallel),"
+    },
+    {
+      "name": "close-waits-for-admitted-requests",
+      "count": 1,
+      "before": "func (m *Managed) Close() error {\n\tm.requestMu.Lock()\n\tdefer m.requestMu.Unlock()\n\tm.mu.Lock()\n\tdefer m.mu.Unlock()\n\tif m.closed {\n\t\treturn nil\n\t}\n\tm.closed = true\n\treturn m.stopLocked()\n}",
+      "after": "func (m *Managed) Close() error {\n\tm.mu.Lock()\n\tdefer m.mu.Unlock()\n\tif m.closed {\n\t\treturn nil\n\t}\n\tm.closed = true\n\tfor m.active > 0 {\n\t\tm.idle.Wait()\n\t}\n\treturn m.stopLocked()\n}"
+    }
+  ]
+}

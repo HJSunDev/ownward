@@ -1,0 +1,60 @@
+{
+  "schema": "ownward.kernel-iteration-stage4-retrieval-latency-contention-contract/v1",
+  "frozen_before_serial_measurement": true,
+  "purpose": "separate-query-work-from-four-process-vector-runtime-contention",
+  "contains_formal_questions_answers_gold_content_outputs_or_case_ids": false,
+  "model_or_answer_execution": false,
+  "random_rerun_allowed": false,
+  "controller_sha256": "d26056c7bd90f1c6a70dc3cd252d342e3987ff2a59079b2e9d4a7a67b04b0eb7",
+  "paired_controller_sha256": "4d8103afe614aab97a1fc9eb5032b1178fc95dc0367342821b550e78782a3ef6",
+  "embedding_runtime_source_sha256": "9f6f16a58c43742769f8c43bdedefdc67583106cab311ece9be1d1ec4a658358",
+  "materials_identity": "be36ade31b1971ca49a1e408cc995f77d71c113d24db5432ea425dcd7808c209",
+  "preparation_identity": "6077b1b96174680186563f43675604fa506ea3426b5b9d5584149a35a3626bba",
+  "paired_diagnosis_identity": "279f79f9a16cd4a77c59bc4fd32ae22d5837a7fb7b9379f3e75c0af24a94ac6b",
+  "protocol_sha256": "898a0ebe943e99ca2357723f328668afaee09c5f4c5cd99c50417571b252a123",
+  "formal_state_sha256": "3c7826e0ef86a82ddfab676886e384e2674a23dc80f6df3612d4443be00ffcdc",
+  "binaries": {
+    "v0": "77600820a450b0931b9e63595b8564be757825000af16f9c2f0a028c69e81d2b",
+    "current-v2": "cc38cb3dcf3ed415fcff482a2432f2cace4ffccbe359f81de17c6f296f1c47cb"
+  },
+  "embedding_manifest_sha256": {
+    "v0": "fc2e4a1aa7d09fc64789618259a1bbedce2a18d00bd1abd81d13a16dfb78c0da",
+    "current-v2": "fc2e4a1aa7d09fc64789618259a1bbedce2a18d00bd1abd81d13a16dfb78c0da"
+  },
+  "prepared_data_sha256": {
+    "v0": {
+      "v2l-long-eight-source": "b887d42c2f6b25bc439228cdd5c3e505d2bf56c95ddbc9403f24a072e7d3998f",
+      "v2l-medium-eight-source": "1b1fada25f6558c71d6b613700ed04fe5b3b90945d8eefe428c567221f6b6967",
+      "v2l-mixed-length-eight-source": "a9dad2cf56ad998d4d63928108e8c6b4a4938651f109b25ffa4a017f9bf24654",
+      "v2l-short-eight-source": "96fc89a46a2e928b1441d97c2ed735c8feef7f9a343b79da31fdabd066abf790"
+    },
+    "current-v2": {
+      "v2l-long-eight-source": "d1f6d67f5ba64976de6d7a1b81ec1c18bc534af4d2229be16c6f0d114e16814a",
+      "v2l-medium-eight-source": "0a9115a41b0916d42d9f5164dceeee2a5ecab76e458d5be258331147671d4f44",
+      "v2l-mixed-length-eight-source": "62818207c66c0aaf210ef649b54ba5ac0ccf518d0c496dc3b7cf25a0975016d2",
+      "v2l-short-eight-source": "e388c906feda1b9b76f9a569717946319757a3c65500079527567647e40ddd09"
+    }
+  },
+  "schedule": {
+    "workers": 1,
+    "warmups_per_round": 1,
+    "measured_repetitions_per_round": 3,
+    "balanced_order": [
+      ["v0", "current-v2"],
+      ["current-v2", "v0"]
+    ]
+  },
+  "gates": {
+    "paired_repeat_error_ms": 47.0,
+    "retrieval_mean_ms_maximum": 41.2009999999025,
+    "retrieval_p95_ms_maximum": 78.0009999977008,
+    "serial_current_v2_must_meet_absolute_contract": true,
+    "concurrent_search_amplification_must_exceed_repeat_error": true,
+    "formal_state_writes": 0,
+    "model_calls": 0,
+    "product_mutations": 0
+  },
+  "route_frozen": false,
+  "candidate_decision": null,
+  "identity": "9ab06a0847b7d3ad05213264e27a5a74bbc34ed9964eb3d2e5b24354c486d333"
+}

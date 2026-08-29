@@ -1,0 +1,58 @@
+{
+  "schema": "ownward.kernel-iteration-stage4-retrieval-latency-real-scale-materials/v1",
+  "contains_formal_questions_answers_gold_content_outputs_or_case_ids": false,
+  "performance_only": true,
+  "quality_material_overlap": false,
+  "generation": {
+    "content_format": "target-and-deterministic-decoys/v1",
+    "context": {"key": "source", "value": "V2 real-scale retrieval latency"},
+    "source_actor": "kernel-v2-real-scale-latency",
+    "formal_observed_asset_range": [38, 62],
+    "search_limit": 24,
+    "read_limit": 8,
+    "context_max_chars": 24000
+  },
+  "cases": [
+    {
+      "case_id": "v2rl-oriole-38",
+      "asset_count": 38,
+      "target_index": 5,
+      "query": "In the Oriole service chronology, locate the verified heliotrope synchronization checkpoint after the maintenance handoff.",
+      "target_headline": "The verified heliotrope synchronization checkpoint follows the maintenance handoff in service lane five.",
+      "decoy_headline": "Service lane {index} records a routine synchronization observation after the maintenance handoff.",
+      "filler": "This independent operational chronology preserves an ordinary synthetic observation for bounded retrieval measurement. ",
+      "repeat_base": 7
+    },
+    {
+      "case_id": "v2rl-northstar-46",
+      "asset_count": 46,
+      "target_index": 11,
+      "query": "在北辰维护编年中，查找例行交接后写有绛紫色校准印记的那条权威记录。",
+      "target_headline": "第十一条权威记录说明：例行交接完成后保留绛紫色校准印记。",
+      "decoy_headline": "第 {index} 条维护记录只描述例行交接后的常规校准观察。",
+      "filler": "这是一段独立构造的中性维护说明，用于在固定读取预算下测量真实规模检索，不改变任何权威真值。",
+      "repeat_base": 9
+    },
+    {
+      "case_id": "v2rl-meridian-54",
+      "asset_count": 54,
+      "target_index": 17,
+      "query": "Which Meridian continuity memorandum binds the cobalt-six seal to the post-audit recovery window?",
+      "target_headline": "Memorandum seventeen binds the cobalt-six seal to the post-audit recovery window.",
+      "decoy_headline": "Memorandum {index} records a neutral continuity note for the post-audit recovery window.",
+      "filler": "The synthetic memorandum varies source length while preserving identical authority, semantic organization, and retrieval responsibilities. ",
+      "repeat_base": 11
+    },
+    {
+      "case_id": "v2rl-polaris-62",
+      "asset_count": 62,
+      "target_index": 23,
+      "query": "Review the Polaris operations archive and identify the source containing the saffron lattice authorization for the final verification interval.",
+      "target_headline": "Source twenty-three contains the saffron lattice authorization for the final verification interval.",
+      "decoy_headline": "Source {index} contains a routine operations entry for the final verification interval.",
+      "filler": "This independent archive entry supplies realistic long-session competition without changing the fixed search width, read count, or context budget. ",
+      "repeat_base": 13
+    }
+  ],
+  "identity": "e9ecd0befde7c3dfceb1424258fd37e274f1c4de4bb1a16dca7f88b66572a330"
+}

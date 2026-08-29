@@ -1,0 +1,79 @@
+{
+  "schema": "ownward.kernel-iteration-materials/v2",
+  "contains_formal_questions_answers_gold_or_content": false,
+  "cases": [
+    {
+      "case_id": "v2sg-chinese-ceramic-v1",
+      "coverage": "language-independent-structured-cue-ranking-chinese-process-control",
+      "question_type": "multi-session",
+      "question_date": "2031-04-20",
+      "question": "冷却完成后，陶瓷浆料应送入哪个槽位进行静置？",
+      "answer": "青岚四号槽。",
+      "answer_session_ids": ["v2sg01-s10"],
+      "stale_session_ids": [],
+      "distractor_session_ids": ["v2sg01-s01", "v2sg01-s02", "v2sg01-s03", "v2sg01-s04", "v2sg01-s05", "v2sg01-s06", "v2sg01-s07", "v2sg01-s08", "v2sg01-s09"],
+      "truth_claims": [
+        {"claim": "陶瓷浆料冷却完成后进入青岚四号槽静置。", "evidence_session_ids": ["v2sg01-s10"]}
+      ],
+      "sessions": [
+        {"session_id": "v2sg01-s01", "date": "2031-04-01", "turns": [{"role": "user", "content": "陶瓷浆料冷却与静置槽位是本页索引标题，页面只列出字段名称。"}]},
+        {"session_id": "v2sg01-s02", "date": "2031-04-02", "turns": [{"role": "assistant", "content": "课程练习询问陶瓷浆料冷却后应进入哪个槽位，但没有给出工艺值。"}]},
+        {"session_id": "v2sg01-s03", "date": "2031-04-03", "turns": [{"role": "user", "content": "陶瓷浆料静置槽位表的打印预览只展示列宽和分页线。"}]},
+        {"session_id": "v2sg01-s04", "date": "2031-04-04", "turns": [{"role": "assistant", "content": "词汇卡片分别解释陶瓷、浆料、冷却、静置和槽位。"}]},
+        {"session_id": "v2sg01-s05", "date": "2031-04-05", "turns": [{"role": "user", "content": "检索界面演示输入陶瓷浆料冷却槽位，结果区域没有数据。"}]},
+        {"session_id": "v2sg01-s06", "date": "2031-04-06", "turns": [{"role": "assistant", "content": "排版样张重复陶瓷浆料静置槽位问题，用来检查字体。"}]},
+        {"session_id": "v2sg01-s07", "date": "2031-04-07", "turns": [{"role": "user", "content": "设备目录说明多种冷却槽位尺寸，不涉及陶瓷浆料的静置流程。"}]},
+        {"session_id": "v2sg01-s08", "date": "2031-04-08", "turns": [{"role": "assistant", "content": "状态面板包含陶瓷浆料冷却和静置两个未填写栏位。"}]},
+        {"session_id": "v2sg01-s09", "date": "2031-04-09", "turns": [{"role": "user", "content": "术语审校记录检查“陶瓷浆料应送入哪个槽位进行静置”这句话的标点。"}]},
+        {"session_id": "v2sg01-s10", "date": "2031-04-10", "turns": [{"role": "assistant", "content": "工艺控制记录如下。陶瓷浆料冷却完成后进入青岚四号槽静置。后续批次沿用该槽位。"}]}
+      ]
+    },
+    {
+      "case_id": "v2sg-spanish-solar-v1",
+      "coverage": "language-independent-structured-cue-ranking-spanish-engineering-control",
+      "question_type": "multi-session",
+      "question_date": "2031-06-20",
+      "question": "¿Qué módulo equilibra la presión del circuito solar durante el reinicio?",
+      "answer": "El módulo Delta.",
+      "answer_session_ids": ["v2sg02-s10"],
+      "stale_session_ids": [],
+      "distractor_session_ids": ["v2sg02-s01", "v2sg02-s02", "v2sg02-s03", "v2sg02-s04", "v2sg02-s05", "v2sg02-s06", "v2sg02-s07", "v2sg02-s08", "v2sg02-s09"],
+      "truth_claims": [
+        {"claim": "El módulo Delta equilibra la presión del circuito solar durante el reinicio.", "evidence_session_ids": ["v2sg02-s10"]}
+      ],
+      "sessions": [
+        {"session_id": "v2sg02-s01", "date": "2031-06-01", "turns": [{"role": "user", "content": "El índice menciona presión, circuito solar, módulo y reinicio como campos de búsqueda."}]},
+        {"session_id": "v2sg02-s02", "date": "2031-06-02", "turns": [{"role": "assistant", "content": "Una lección pregunta qué módulo regula la presión solar durante el reinicio, sin resolverla."}]},
+        {"session_id": "v2sg02-s03", "date": "2031-06-03", "turns": [{"role": "user", "content": "La maqueta del panel repite circuito solar y presión, pero todos los valores están vacíos."}]},
+        {"session_id": "v2sg02-s04", "date": "2031-06-04", "turns": [{"role": "assistant", "content": "El glosario define módulo, presión y reinicio en páginas separadas."}]},
+        {"session_id": "v2sg02-s05", "date": "2031-06-05", "turns": [{"role": "user", "content": "La prueba tipográfica imprime la pregunta sobre presión del circuito solar durante el reinicio."}]},
+        {"session_id": "v2sg02-s06", "date": "2031-06-06", "turns": [{"role": "assistant", "content": "El formulario de mantenimiento tiene casillas para módulo y presión solar sin completar."}]},
+        {"session_id": "v2sg02-s07", "date": "2031-06-07", "turns": [{"role": "user", "content": "Un catálogo enumera módulos de carcasa para circuitos solares y no describe el reinicio."}]},
+        {"session_id": "v2sg02-s08", "date": "2031-06-08", "turns": [{"role": "assistant", "content": "La guía de traducción analiza la frase presión del circuito solar durante el reinicio."}]},
+        {"session_id": "v2sg02-s09", "date": "2031-06-09", "turns": [{"role": "user", "content": "El tablero de ejemplo muestra presión solar y reinicio como etiquetas de navegación."}]},
+        {"session_id": "v2sg02-s10", "date": "2031-06-10", "turns": [{"role": "assistant", "content": "El registro técnico fija la operación. El módulo Delta equilibra la presión del circuito solar durante el reinicio. La línea permanece estable."}]}
+      ]
+    }
+  ],
+  "criteria": {
+    "minimum_accuracy": 1.0,
+    "require_complete_fact_delivery": true,
+    "category_minimums": {},
+    "maximum_wall_seconds": 300,
+    "provenance": {
+      "origin": "independent-stage4-language-and-domain-generalization-v1-frozen-before-candidate-execution",
+      "stage2_calibration_reuse": false,
+      "stage3_material_reuse": false,
+      "stage4_existing_material_reuse": false,
+      "formal_source_access": false
+    },
+    "fast_path_proof": {
+      "authoritative_assets_per_case": 10,
+      "search_limit": 24,
+      "read_limit": 8,
+      "candidate_anchor_signal_required": true,
+      "implementation_vocabulary_forbidden": true
+    }
+  },
+  "identity": "10f52c0a574ffefbeea042b3faad6a8b5bee5213697e9057fc86e29b551b0aa7"
+}

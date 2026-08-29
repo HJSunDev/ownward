@@ -1,0 +1,28 @@
+{
+  "schema": "ownward.kernel-iteration-stage4-vector-runtime-followup-contract/v1",
+  "frozen_before_measurement": true,
+  "candidate_results_seen": false,
+  "formal": false,
+  "formal_state_written": false,
+  "purpose": "same-model-exact-query-runtime-lower-bound-and-bounded-formal-worker-scheduling",
+  "contains_formal_questions_answers_gold_content_outputs_or_case_ids": false,
+  "controller_sha256": "3dc8c37f917903fc8b68f65cefe69e5a877a8204deb055092bbb08befae9e68e",
+  "prior_calibration_path": ".tmp/kernel-v2-major-iteration/stage4-retrieval-latency/vector-runtime-calibration-v1.json",
+  "prior_calibration_identity": "20c20331b287eb47dbe03a0cd3be1032783e7dab8d8900ba0312847ee37613ff",
+  "materials_identity": "e9ecd0befde7c3dfceb1424258fd37e274f1c4de4bb1a16dca7f88b66572a330",
+  "embedding_manifest_sha256": "fc2e4a1aa7d09fc64789618259a1bbedce2a18d00bd1abd81d13a16dfb78c0da",
+  "formal_state_sha256": "3c7826e0ef86a82ddfab676886e384e2674a23dc80f6df3612d4443be00ffcdc",
+  "trials": [
+    {"name":"isolated-selected-6-2","servers":1,"active_requests":1,"threads":6,"parallel":2,"batch_size":1,"repetitions":12},
+    {"name":"two-active-4-1","servers":2,"active_requests":2,"threads":4,"parallel":1,"batch_size":1,"repetitions":6},
+    {"name":"three-active-2-1","servers":3,"active_requests":3,"threads":2,"parallel":1,"batch_size":1,"repetitions":6},
+    {"name":"formal-four-active-2-1","servers":4,"active_requests":4,"threads":2,"parallel":1,"batch_size":1,"repetitions":6},
+    {"name":"single-runtime-batch-four-6-1","servers":1,"active_requests":1,"threads":6,"parallel":1,"batch_size":4,"repetitions":8}
+  ],
+  "gates": {
+    "retrieval_mean_ms_maximum": 41.2009999999025,
+    "retrieval_p95_ms_maximum": 78.0009999977008,
+    "maximum_vector_component_drift": 0.0000001
+  },
+  "identity": "a60a11dbbc6d9007bd79b87b30ce970ddd0c35dfbb93249efdb58c300c36af66"
+}

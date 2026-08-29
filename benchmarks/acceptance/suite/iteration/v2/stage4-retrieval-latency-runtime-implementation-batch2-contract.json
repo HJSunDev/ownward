@@ -1,0 +1,58 @@
+{
+  "schema": "ownward.kernel-iteration-stage4-runtime-implementation-batch2-contract/v1",
+  "frozen_before_measurement": true,
+  "candidate_results_seen": false,
+  "formal": false,
+  "formal_state_written": false,
+  "purpose": "remaining-official-b10488-same-model-exact-query-runtime-lower-bounds",
+  "contains_formal_questions_answers_gold_content_outputs_or_case_ids": false,
+  "source_release": {
+    "repository": "https://github.com/ggml-org/llama.cpp",
+    "tag": "b10488",
+    "commit": "9d77fa17254e1dee4b9e92504c91611a60b1359f"
+  },
+  "prior_rejection": {
+    "implementation": "llamacpp-b10488-vulkan-x64",
+    "result_identity": "5f0eb06b366a605be3658e65cea6b24c222c07f8a4a7cad23847bdb4b15550a8"
+  },
+  "reference": {
+    "embedding_manifest_sha256": "fc2e4a1aa7d09fc64789618259a1bbedce2a18d00bd1abd81d13a16dfb78c0da",
+    "model_sha256": "6fa0c02a9c302be6f977521d399b4de3a46310a4f2621ee0063747881b673f67",
+    "space_id": "emb_79f072bf21c0c0f5226fa4fe6f1946a5",
+    "queries_sha256": "621ad9ea09db26ad2da83dec1e6fbd9dde2ef1b33392797375014454b64b1781"
+  },
+  "measurement": {
+    "warmups": 3,
+    "repetitions": 20,
+    "threads": 6,
+    "parallel": 1,
+    "context_size": 512,
+    "batch_size": 512,
+    "ubatch_size": 512
+  },
+  "implementations": {
+    "llamacpp-b10488-openvino-2026.3-x64": {
+      "official_archive": "llama-b10488-bin-win-openvino-2026.3-x64.zip",
+      "official_archive_sha256": "5638eeb385d2355f7e8d849a7dc5335a7adfd671a7027b6d9fa10beab659d3c8",
+      "device": "OPENVINO0",
+      "gpu_layers": 999,
+      "backend_log_marker": "openvino"
+    },
+    "llamacpp-b10488-sycl-x64": {
+      "official_archive": "llama-b10488-bin-win-sycl-x64.zip",
+      "official_archive_sha256": "a243e54915d7582793dc4697169103bcbf33f475667893891862390c11c7ee2d",
+      "device": "SYCL0",
+      "gpu_layers": 999,
+      "backend_log_marker": "sycl"
+    }
+  },
+  "gates": {
+    "retrieval_mean_ms_maximum_exclusive": 41.201,
+    "exact_query_p95_ms_maximum": 62.4,
+    "maximum_vector_component_drift": 0.0000001,
+    "formal_state_writes": 0,
+    "model_calls": 0,
+    "product_mutations": 0
+  },
+  "formal_state_sha256": "3c7826e0ef86a82ddfab676886e384e2674a23dc80f6df3612d4443be00ffcdc"
+}

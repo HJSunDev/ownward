@@ -1,17 +1,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import http.client
 import json
 import os
 from pathlib import Path
 import queue
 import secrets
 import signal
+import socket
 import subprocess
 import threading
 import time
 from typing import Any
-from urllib import request
+from urllib.parse import urlsplit
 
 
 class MCPError(RuntimeError):
@@ -23,7 +25,16 @@ class StreamableHTTPClient:
         self.endpoint = endpoint
         self.timeout_seconds = timeout_seconds
         self.bearer_token = bearer_token
-        self._opener = request.build_opener(request.ProxyHandler({}))
+        parsed = urlsplit(endpoint)
+        if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost"} or parsed.port is None:
+            raise MCPError("Ownward MCP endpoint must be an explicit loopback HTTP endpoint")
+        self._host = parsed.hostname
+        self._port = parsed.port
+        self._path = parsed.path or "/"
+        if parsed.query:
+            self._path += "?" + parsed.query
+        self._connection: http.client.HTTPConnection | None = None
+        self._connection_lock = threading.Lock()
         self._session_id = ""
         self._next_id = 1
         initialized = self._request(
@@ -51,12 +62,30 @@ class StreamableHTTPClient:
 
     def _post(self, payload: dict[str, Any], *, expect_result: bool) -> dict[str, Any] | None:
         encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-        message = request.Request(self.endpoint, data=encoded, headers=self._headers(), method="POST")
-        with self._opener.open(message, timeout=self.timeout_seconds) as response:
-            session = response.headers.get("Mcp-Session-Id", "").strip()
+        with self._connection_lock:
+            connection = self._connection
+            if connection is None:
+                connection = http.client.HTTPConnection(self._host, self._port, timeout=self.timeout_seconds)
+                connection.connect()
+                assert connection.sock is not None
+                connection.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                self._connection = connection
+            try:
+                connection.request("POST", self._path, body=encoded, headers=self._headers())
+                response = connection.getresponse()
+                content = response.read()
+            except (OSError, http.client.HTTPException) as error:
+                connection.close()
+                self._connection = None
+                raise MCPError(f"Ownward MCP transport failed: {error}") from error
+            session = response.getheader("Mcp-Session-Id", "").strip()
             if session:
                 self._session_id = session
-            content = response.read()
+            if response.status < 200 or response.status >= 300:
+                raise MCPError(f"Ownward MCP HTTP status {response.status}: {content[:4096]!r}")
+            if response.will_close:
+                connection.close()
+                self._connection = None
         if not expect_result:
             return None
         if not content:
@@ -106,15 +135,22 @@ class StreamableHTTPClient:
         raise MCPError(f"Ownward tool {name} returned no structured result")
 
     def close(self) -> None:
-        if not self._session_id:
-            return
-        message = request.Request(self.endpoint, headers=self._headers(), method="DELETE")
-        try:
-            with self._opener.open(message, timeout=min(self.timeout_seconds, 5)):
+        with self._connection_lock:
+            connection = self._connection
+            try:
+                if self._session_id:
+                    if connection is None:
+                        connection = http.client.HTTPConnection(self._host, self._port, timeout=min(self.timeout_seconds, 5))
+                    connection.request("DELETE", self._path, headers=self._headers())
+                    response = connection.getresponse()
+                    response.read()
+            except (OSError, http.client.HTTPException):
                 pass
-        except Exception:
-            pass
-        self._session_id = ""
+            finally:
+                if connection is not None:
+                    connection.close()
+                self._connection = None
+                self._session_id = ""
 
 
 @dataclass(frozen=True)

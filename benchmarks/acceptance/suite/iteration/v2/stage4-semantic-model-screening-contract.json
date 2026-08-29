@@ -1,0 +1,105 @@
+{
+  "schema": "ownward.kernel-iteration-stage4-semantic-model-screening-contract/v1",
+  "frozen_before_candidate_results": true,
+  "candidate_results_seen": false,
+  "formal": false,
+  "purpose": "early-stop-screen-at-most-two-existing-research-candidates-before-any-v2-vector-generation",
+  "reference": {
+    "model": "EmbeddingGemma 300M Q8_0 GGUF",
+    "quality_result": "benchmarks/vector-model-evaluation/results/quality-v2/embeddinggemma_300m/summary.json",
+    "quality_supplement": "benchmarks/vector-model-evaluation/results/quality-supplement-v1/comparison.json",
+    "fixed_runtime_rejection_identity": "0656ac12160637e516ebfc9e74af1a83908e1e5a42715a7b9deac3fad3b46662",
+    "existing_vector_space": "emb_79f072bf21c0c0f5226fa4fe6f1946a5"
+  },
+  "candidates": [
+    {
+      "key": "multilingual-e5-small",
+      "repository": "intfloat/multilingual-e5-small",
+      "revision": "614241f622f53c4eeff9890bdc4f31cfecc418b3",
+      "license": "mit",
+      "runtime": "onnxruntime-cpu",
+      "weight": "onnx/model_O4.onnx",
+      "dimension": 384,
+      "max_length": 512,
+      "query_prefix": "query: ",
+      "document_prefix": "passage: ",
+      "pooling": "attention-mask-mean",
+      "normalization": "l2",
+      "truncation": "official-tokenizer-right"
+    },
+    {
+      "key": "paraphrase-multilingual-minilm-l12-v2",
+      "repository": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+      "revision": "e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
+      "license": "apache-2.0",
+      "runtime": "onnxruntime-cpu",
+      "weight": "onnx/model_quint8_avx2.onnx",
+      "dimension": 384,
+      "max_length": 128,
+      "query_prefix": "",
+      "document_prefix": "",
+      "pooling": "attention-mask-mean",
+      "normalization": "l2",
+      "truncation": "official-tokenizer-right"
+    }
+  ],
+  "order": [
+    "multilingual-e5-small",
+    "paraphrase-multilingual-minilm-l12-v2"
+  ],
+  "runtime": {
+    "provider": "CPUExecutionProvider",
+    "intra_op_threads": 6,
+    "inter_op_threads": 1,
+    "execution_mode": "sequential",
+    "graph_optimization": "all",
+    "warmup_queries": 8,
+    "measured_queries": 40,
+    "latency_query_ids": [
+      "q-00000",
+      "q-00001",
+      "q-00002",
+      "q-00006",
+      "q-00007"
+    ]
+  },
+  "inputs": {
+    "formal_dataset": "benchmarks/vector-model-evaluation/data/ownward-v2",
+    "formal_manifest_sha256": "dcadebd0303877367b865ab1347fb194b3b7df1ba46f51618f02d739ba0ef16e",
+    "formal_queries_sha256": "899a7dc00be663b42ba311d03bc773ef50bea3f37ed3b977190d3b26cafe69b4",
+    "formal_corpus_sha256": "b49c10ed2ed21faa3796f40a785173b4ad9c8633609c4581ea5acd87ec4c48d4",
+    "formal_qrels_sha256": "9c31bc7782afbf2863e6bddc0ff4d426f1d4528697622a0b4f8d616c19c2aada",
+    "supplement_dataset": "benchmarks/vector-model-evaluation/data/ownward-quality-supplement-v1",
+    "supplement_manifest_sha256": "0e3f14bad23895a813e75e22e937c0282accd9f0d87a4d6050c4cde0ebc7409d",
+    "supplement_queries_sha256": "23e351f1ec6fd170036d12c7cb2720fca87bd3c77b3bd28fa5860c36ba70f57a",
+    "supplement_corpus_sha256": "978b873bca514f4c5a9500025db168b8e50d21ed7809ccc732ab882e148fbe97",
+    "supplement_qrels_sha256": "65360b0e74336df312f24c8c6dc25044f76523f6346d7a72d09a6228f329c493",
+    "contains_formal_longmemeval_content": false,
+    "uses_stage4_candidate_development_material_as_model_quality_proof": false
+  },
+  "gates": {
+    "full_retrieval_mean_ms_maximum": 41.201,
+    "full_retrieval_p95_ms_maximum": 78.001,
+    "v0_evidence_read_mean_ms_lower_bound": 12.890088888888663,
+    "v0_evidence_read_p95_ms_lower_bound": 27.857500000010305,
+    "v0_protocol_mean_ms_lower_bound": 0.07591944444287593,
+    "v0_protocol_p95_ms_lower_bound": 0.21430000001032568,
+    "isolated_query_mean_ms_maximum": 28.0,
+    "isolated_query_p95_ms_maximum": 49.9,
+    "formal_overall_recall_at_10_minimum": 0.99609375,
+    "formal_each_category_recall_at_10_minimum": 0.984375,
+    "formal_overall_ndcg_reference_tolerance": 0.03,
+    "formal_each_category_ndcg_reference_tolerance": 0.05,
+    "supplement_recall_at_5_minimum": 1.0,
+    "supplement_mrr_at_10_reference_tolerance": 0.05,
+    "supplement_top1_reference_tolerance": 0.041666666666666664
+  },
+  "early_stop": [
+    "reject-before-quality-if-isolated-query-gate-fails",
+    "reject-before-vector-generation-if-breadth-quality-gate-fails",
+    "build-no-v2-model-package-or-generation-unless-exactly-one-candidate-passes-both-layers",
+    "do-not-run-a-second-attempt-on-the-same-frozen-candidate-data"
+  ],
+  "formal_state_sha256": "3c7826e0ef86a82ddfab676886e384e2674a23dc80f6df3612d4443be00ffcdc",
+  "next_if_all_rejected": "precise-fail-open-hierarchical-retrieval-with-semantic-fallback"
+}

@@ -189,6 +189,26 @@ class KernelIterationValidationTests(unittest.TestCase):
             self.assertEqual(self._materials(1)["identity"], value["direct_dependencies"]["development-materials"])
             self.assertEqual(value["shared_conditions"]["executor"], value["direct_dependencies"]["executor"])
 
+    def test_executor_identity_includes_the_actual_mcp_transport(self) -> None:
+        with tempfile.TemporaryDirectory(dir=REPOSITORY) as temporary:
+            root = Path(temporary)
+            config, runtime = self._runtime_fixture(root)
+            del config
+            materials = validation.validate_materials(self._materials(1))
+            baseline = validation.execution_identities(HERE, self.validation, materials, runtime)
+            original = iteration.file_sha256
+
+            def drifted(path: Path) -> str:
+                if Path(path).resolve() == (REPOSITORY / "benchmarks" / "support" / "ownward_mcp.py").resolve():
+                    return "f" * 64
+                return original(path)
+
+            with mock.patch.object(iteration, "file_sha256", side_effect=drifted):
+                changed = validation.execution_identities(HERE, self.validation, materials, runtime)
+            self.assertNotEqual(baseline["executor"], changed["executor"])
+            self.assertEqual(baseline["model-profile"], changed["model-profile"])
+            self.assertEqual(baseline["prompt-and-schema"], changed["prompt-and-schema"])
+
     def test_end_to_end_evidence_executes_observes_and_resumes_without_formal_state(self) -> None:
         with tempfile.TemporaryDirectory(dir=REPOSITORY) as temporary:
             root = Path(temporary)

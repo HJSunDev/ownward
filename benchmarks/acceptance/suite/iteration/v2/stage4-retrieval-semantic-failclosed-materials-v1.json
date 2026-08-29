@@ -1,0 +1,316 @@
+{
+  "schema": "ownward.kernel-iteration-materials/v2",
+  "contains_formal_questions_answers_gold_or_content": false,
+  "cases": [
+    {
+      "case_id": "v2sf-paraphrased-authority-v1",
+      "coverage": "organized-query-must-fail-closed-when-surface-matching-distractors-do-not-cover-a-semantic-paraphrase",
+      "question_type": "multi-session",
+      "question_date": "2028-07-31",
+      "question": "Where should nocturnal horticulture samples be secured before morning courier pickup?",
+      "answer": "Meridian Locker Twelve.",
+      "answer_session_ids": [
+        "v2sf01-s24"
+      ],
+      "stale_session_ids": [],
+      "distractor_session_ids": [
+        "v2sf01-s01",
+        "v2sf01-s02",
+        "v2sf01-s03",
+        "v2sf01-s04",
+        "v2sf01-s05",
+        "v2sf01-s06",
+        "v2sf01-s07",
+        "v2sf01-s08",
+        "v2sf01-s09",
+        "v2sf01-s10",
+        "v2sf01-s11",
+        "v2sf01-s12",
+        "v2sf01-s13",
+        "v2sf01-s14",
+        "v2sf01-s15",
+        "v2sf01-s16",
+        "v2sf01-s17",
+        "v2sf01-s18",
+        "v2sf01-s19",
+        "v2sf01-s20",
+        "v2sf01-s21",
+        "v2sf01-s22",
+        "v2sf01-s23"
+      ],
+      "truth_claims": [
+        {
+          "claim": "The signed custody directive places moon-bloom specimens inside Meridian Locker Twelve until sunrise collection.",
+          "evidence_session_ids": [
+            "v2sf01-s24"
+          ]
+        }
+      ],
+      "sessions": [
+        {
+          "session_id": "v2sf01-s01",
+          "date": "2028-07-01",
+          "turns": [
+            {
+              "role": "user",
+              "content": "A typography fixture asks where nocturnal horticulture samples should be secured before morning courier pickup, but it contains no destination."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sf01-s02",
+          "date": "2028-07-02",
+          "turns": [
+            {
+              "role": "assistant",
+              "content": "A form mockup labels nocturnal horticulture samples, morning courier, and secured pickup fields; every value is blank."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sf01-s03",
+          "date": "2028-07-03",
+          "turns": [
+            {
+              "role": "user",
+              "content": "A grammar lesson parses where samples should be secured before courier pickup and supplies no operational instruction."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sf01-s04",
+          "date": "2028-07-04",
+          "turns": [
+            {
+              "role": "assistant",
+              "content": "A search interface repeats nocturnal horticulture samples and morning courier pickup as demonstration text without authority."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sf01-s05",
+          "date": "2028-07-05",
+          "turns": [
+            {
+              "role": "user",
+              "content": "A vocabulary card defines horticulture, nocturnal, secured, courier, and pickup as unrelated terms."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sf01-s06",
+          "date": "2028-07-06",
+          "turns": [
+            {
+              "role": "assistant",
+              "content": "A load test repeatedly asks where the samples should be secured before morning pickup, then discards the generated answer."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sf01-s07",
+          "date": "2028-07-07",
+          "turns": [
+            {
+              "role": "user",
+              "content": "An accessibility audit checks whether the morning courier pickup button has a horticulture samples label."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sf01-s08",
+          "date": "2028-07-08",
+          "turns": [
+            {
+              "role": "assistant",
+              "content": "A harbor ledger catalogs cobalt buoys and tidal instruments without any biological custody instruction."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sf01-s09",
+          "date": "2028-07-09",
+          "turns": [
+            {
+              "role": "user",
+              "content": "A theater schedule lists rehearsal rooms, costume racks, and evening lighting cues."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sf01-s10",
+          "date": "2028-07-10",
+          "turns": [
+            {
+              "role": "assistant",
+              "content": "A mineral catalog describes quartz hardness, amber color, and slate cleavage for classroom use."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sf01-s11",
+          "date": "2028-07-11",
+          "turns": [
+            {
+              "role": "user",
+              "content": "A navigation manual explains compass bearings for sailboats crossing an inland lake."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sf01-s12",
+          "date": "2028-07-12",
+          "turns": [
+            {
+              "role": "assistant",
+              "content": "A music archive indexes brass quartets, tempo markings, and concert hall acoustics."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sf01-s13",
+          "date": "2028-07-13",
+          "turns": [
+            {
+              "role": "user",
+              "content": "A bakery inventory records rye flour, copper pans, and afternoon oven maintenance."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sf01-s14",
+          "date": "2028-07-14",
+          "turns": [
+            {
+              "role": "assistant",
+              "content": "A geology worksheet maps basalt layers beside a dormant volcanic ridge."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sf01-s15",
+          "date": "2028-07-15",
+          "turns": [
+            {
+              "role": "user",
+              "content": "A robotics note records wheel torque, battery voltage, and calibration timestamps."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sf01-s16",
+          "date": "2028-07-16",
+          "turns": [
+            {
+              "role": "assistant",
+              "content": "A library card lists historical atlases, binding repairs, and shelf numbers."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sf01-s17",
+          "date": "2028-07-17",
+          "turns": [
+            {
+              "role": "user",
+              "content": "A weather chart compares coastal wind direction with mountain rainfall totals."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sf01-s18",
+          "date": "2028-07-18",
+          "turns": [
+            {
+              "role": "assistant",
+              "content": "A ceramic workshop plan describes glaze colors and kiln firing intervals."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sf01-s19",
+          "date": "2028-07-19",
+          "turns": [
+            {
+              "role": "user",
+              "content": "A railway timetable marks platform changes and locomotive inspection periods."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sf01-s20",
+          "date": "2028-07-20",
+          "turns": [
+            {
+              "role": "assistant",
+              "content": "A museum brochure introduces textile looms and restored wooden frames."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sf01-s21",
+          "date": "2028-07-21",
+          "turns": [
+            {
+              "role": "user",
+              "content": "A telescope log records lunar craters and lens alignment observations."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sf01-s22",
+          "date": "2028-07-22",
+          "turns": [
+            {
+              "role": "assistant",
+              "content": "A fountain maintenance sheet lists pump pressure and stone cleaning dates."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sf01-s23",
+          "date": "2028-07-23",
+          "turns": [
+            {
+              "role": "user",
+              "content": "A language exercise practices river, lantern, compass, and orchard as unrelated vocabulary."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sf01-s24",
+          "date": "2028-07-30",
+          "turns": [
+            {
+              "role": "user",
+              "content": "The signed custody directive places moon-bloom specimens inside Meridian Locker Twelve until sunrise collection. This binding instruction governs all overnight transport."
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "criteria": {
+    "minimum_accuracy": 1.0,
+    "require_complete_fact_delivery": true,
+    "category_minimums": {},
+    "maximum_wall_seconds": 180,
+    "provenance": {
+      "origin": "independent-stage4-retrieval-organized-query-fail-closed-protection-v1-frozen-before-candidate-execution",
+      "stage2_calibration_reuse": false,
+      "stage3_material_reuse": false,
+      "stage4_existing_material_reuse": false,
+      "formal_source_access": false
+    },
+    "fail_closed_proof": {
+      "authoritative_assets_per_case": 24,
+      "search_limit": 24,
+      "read_limit": 8,
+      "target_query_token_overlap": 0,
+      "surface_matching_distractors_minimum": 7,
+      "candidate_path_required": "exact-query-vector-fallback-or-mechanically-complete-organized-query",
+      "previous_exact_query_reference_required": true
+    }
+  },
+  "identity": "71dd654e89d7746c322170a47791362c2a8b338e7b5b4deb2dbd2dc2e35fa06c"
+}

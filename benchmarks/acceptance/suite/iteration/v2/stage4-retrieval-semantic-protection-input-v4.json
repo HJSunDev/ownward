@@ -1,0 +1,26 @@
+{
+  "direct_dependencies": {
+    "executor": "3789e602ca948a73fc71ba7d5629db41946cf2909351b869fb71863e3816f723",
+    "integrated-plan": "cf438e2317ede4af3253d3456f4cb7f67d9cc6c48fcd0bc305d5befa379ead24",
+    "observer": "4bda55505b8c1657704ca8d5bec355fde28e6b81c8a99b5ca827752906dd0ef2"
+  },
+  "evidence_type": "integrated",
+  "identity": "ef0d8b657f85fda0a8c6fd3872b681daef6644ecfffbf192ea5baacf224ee256",
+  "payloads": [
+    {
+      "path": "stage4-retrieval-semantic-protection-materials-v3.json",
+      "sha256": "79ff9656c97a345289e6dfb8bc3cd29fc55dafcdc0beb64750cc8e527b16f198"
+    }
+  ],
+  "runtime_dependencies": {},
+  "schema": "ownward.kernel-iteration-input/v1",
+  "shared_conditions": {
+    "dataset": "cf438e2317ede4af3253d3456f4cb7f67d9cc6c48fcd0bc305d5befa379ead24",
+    "environment": "cb889873e2888699ea5dc1c9980591e2609edb3c0318c659815f08197691a88c",
+    "executor": "3789e602ca948a73fc71ba7d5629db41946cf2909351b869fb71863e3816f723",
+    "model-profile": "5c537b90d7b0513153b2b4c582138dbf92aaa2e8aa1bcad871ede276ed45fa7b",
+    "observer": "4bda55505b8c1657704ca8d5bec355fde28e6b81c8a99b5ca827752906dd0ef2",
+    "prompt-and-schema": "d5f8ed8ddda1e38686a65ca9e68b7f7ad9cad83eb40aecb0fe130842ca1fad71",
+    "scorer": "9321ff233a513298fed71d0341fb89f1707dbe505aab622565aa57fb475eadd2"
+  }
+}

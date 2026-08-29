@@ -1,0 +1,112 @@
+{
+  "schema": "ownward.kernel-iteration-stage4-hierarchical-retrieval-feasibility-contract/v1",
+  "frozen_before_feasibility_results": true,
+  "candidate_implementation_allowed_before_pass": false,
+  "formal": false,
+  "purpose": "prove-before-implementation whether an exact fail-open semantic bypass can cover enough representative requests to meet the immutable retrieval gates",
+  "fusion_contract": {
+    "source_sha256": "c1ff24050194826fc5ec6db5c46681bbf780a8d6e0a514a73fcd81dfe9b045ae",
+    "rrf_offset": 60,
+    "lexical_weight": 1.0,
+    "semantic_weight": 1.0,
+    "candidate_limit_multiplier": 4,
+    "candidate_limit_minimum": 20,
+    "relation_seed_limit": 4,
+    "ordering": "descending-fused-score-then-signal-priority-then-stable-id",
+    "downstream_dependency": "relation expansion depends on the ordered first four direct seeds; evidence planning and context loading depend on the final ordered source list"
+  },
+  "proof_obligation": {
+    "must_preserve": [
+      "returned-source-identities",
+      "returned-source-order",
+      "relation-expansion-seeds",
+      "source-coverage",
+      "evidence-read-identities-and-order",
+      "context-bytes"
+    ],
+    "unobserved_semantic_channel": "any finite positive cosine ordering over every current context-compatible organized vector document is legal",
+    "safe_only_if": "the lexical and static relation facts prove the required delivery invariant for every legal semantic hit set and order",
+    "failure_semantics": "missing proof, malformed trace, identity drift, score-bound drift, or channel-contract drift rejects bypass and retains exact EmbeddingGemma query inference",
+    "excluded_shortcut": "stable identity lookup already exits before EmbedQuery and is not counted as an expensive semantic request"
+  },
+  "gates": {
+    "retrieval_mean_ms_maximum": 41.201,
+    "retrieval_p95_ms_maximum": 78.001,
+    "fallback_request_fraction_maximum": 0.05,
+    "safe_bypass_fraction_minimum_from_p95": 0.95,
+    "representative_safe_bypass_fraction_minimum": 0.95,
+    "oracle_delivery_mismatches_maximum": 0,
+    "formal_state_writes": 0,
+    "model_calls": 0,
+    "product_executions": 0
+  },
+  "cost_basis": {
+    "real_scale_result_identity": "72b6988e9368a508e1d8264e3f78d5dc0ce7d12a5d95653464dd1a552d3333f4",
+    "fallback_full_retrieval_mean_ms": 419.63978333332835,
+    "fallback_full_retrieval_p95_ms": 596.2112999999931,
+    "optimistic_nonsemantic_mean_floor_ms": 12.966008333331539,
+    "mean_required_bypass_fraction": 0.9305709062093599,
+    "p95_required_bypass_fraction": 0.95,
+    "required_bypass_fraction": 0.95,
+    "note": "the optimistic floor uses only the existing V0 read and protocol means; it deliberately omits search, evidence planning, and scheduling cost, so it cannot overstate route feasibility"
+  },
+  "representative_oracle_traces": [
+    {
+      "name": "real-scale-38-62-assets",
+      "path": ".tmp/kernel-v2-major-iteration/stage4-retrieval-latency/real-scale-v1/result.json",
+      "sha256": "d68889b0962e8be0a607edc2805517422ecb0d0ce204e9ca258db93c31f51b56",
+      "identity": "72b6988e9368a508e1d8264e3f78d5dc0ce7d12a5d95653464dd1a552d3333f4",
+      "kind": "real-scale-summary",
+      "distinct_requests": 4,
+      "minimum_semantic_eligible_documents": 38
+    },
+    {
+      "name": "same-source-long-and-temporal-development",
+      "path": ".tmp/kernel-v2-major-iteration/subjects/v2-candidate/7b78a0ef7036f1c6c34665162262cefbc98d9c3819f736616a7aeea3e4e74fbd/development/4f506426a99f644aeb6ef55797298b75f59f9fdda59015c6b999665845612053/execution-result.json",
+      "sha256": "954058c5cc057f384405288a887f7f34962064f72f0771c44b84d17d22822e7e",
+      "identity": "028d38f79fa6a155b05d19a1ab76dda909de604975544363858b5636c5ec0198",
+      "kind": "execution-result",
+      "distinct_requests": 4,
+      "minimum_semantic_eligible_documents": 4
+    },
+    {
+      "name": "multi-source-bounded-read",
+      "path": ".tmp/kernel-v2-major-iteration/subjects/v2-candidate/7b78a0ef7036f1c6c34665162262cefbc98d9c3819f736616a7aeea3e4e74fbd/development/eff8ce5413c15c377d56a4e6b9164c8591cf89ccb94996efcacd2ebf5dbd2c52/execution-result.json",
+      "sha256": "d093fdf3477c8acfeb129b4a27f74ec5eaaead7de786dce28176b8923dd40bb0",
+      "identity": "b1dfa6429fe5f0c6b1199014cb6fc9acd337f0dd1a4a2b85a254e472116bb017",
+      "kind": "execution-result",
+      "distinct_requests": 3,
+      "minimum_semantic_eligible_documents": 8
+    },
+    {
+      "name": "v0-correct-capability-regression",
+      "path": ".tmp/kernel-v2-major-iteration/subjects/v2-candidate/7b78a0ef7036f1c6c34665162262cefbc98d9c3819f736616a7aeea3e4e74fbd/regression/826b63309378569036c5b978bab928c1c9ec46931c1d417d01127d80afd131eb/execution-result.json",
+      "sha256": "26f5d5dff9650b483cba7bd3592f18a4b3bcdfa60615cf4bf6341c8ab79929f9",
+      "identity": "40cbd0224a61ca785a7b3e0b32832359421e7b4e6e7e046158b6f166248e08a0",
+      "kind": "execution-result",
+      "distinct_requests": 8,
+      "minimum_semantic_eligible_documents": 3
+    },
+    {
+      "name": "independent-surface-interference",
+      "path": ".tmp/kernel-v2-major-iteration/stage4-retrieval-latency/semantic-protection-v4-previous/subjects/v2-candidate/7b78a0ef7036f1c6c34665162262cefbc98d9c3819f736616a7aeea3e4e74fbd/integrated/968ec8ed23e872fbf0982d4c76ad7b6842b73abdabdde7807c36cef6219a97b4/execution-result.json",
+      "sha256": "6acc36752100114abd3a48144e9bac3ea28848788f036a34e9ee2fa98ed8df73",
+      "identity": "fd8695bf0425a371179d8eba2ed3d15c27dd7606c04c84ae29fcfe09a794ae42",
+      "kind": "execution-result",
+      "distinct_requests": 2,
+      "minimum_semantic_eligible_documents": 24
+    },
+    {
+      "name": "semantic-rewrite-fail-open",
+      "path": ".tmp/kernel-v2-major-iteration/stage4-retrieval-latency/semantic-failclosed-v2-previous/subjects/v2-candidate/7b78a0ef7036f1c6c34665162262cefbc98d9c3819f736616a7aeea3e4e74fbd/integrated/1b06e43946859c7d94e266d9e8a6171913c1c458590aa94bb6b15c8315c77a7a/execution-result.json",
+      "sha256": "31a6c2ced15290f5be31c706ab52a670651aea102ae861571041e6b76901f50a",
+      "identity": "4bb913c5974f80af11be867600105a8ffdf864a68e8ccf284c63f3abd2f9766e",
+      "kind": "execution-result",
+      "distinct_requests": 1,
+      "minimum_semantic_eligible_documents": 24
+    }
+  ],
+  "subject": "7b78a0ef7036f1c6c34665162262cefbc98d9c3819f736616a7aeea3e4e74fbd",
+  "formal_state_sha256": "3c7826e0ef86a82ddfab676886e384e2674a23dc80f6df3612d4443be00ffcdc",
+  "next_if_rejected": "retain-exact-embeddinggemma-and-reframe-the-41ms-gate-against-the-v0-non-equivalent-retrieval-contract"
+}

@@ -1,0 +1,109 @@
+{
+  "schema": "ownward.kernel-iteration-retrieval-latency-comparability-migration/v1",
+  "audit_contract_identity": "e2a33fe5e97a3636e220e71076af1738f8c38f5592427642b4a89eaeec673bf8",
+  "old_comparison": {
+    "schema": "ownward.kernel-iteration-comparison/v2",
+    "identity": "b1e3b07abd5c9527dfbde5ea8d7fa5459c8b0b5da224ef2eb1aca29add22fbbe",
+    "file_sha256": "cf06b796146c0213cca3d83d2f10a3a31c75badb9360a6d6b84b25cfd7226899",
+    "dimension_identities": {
+      "information-organization-quality": "5b856eb03dd15d1d9d62e87209280f661f08147db18c85011e2ff1e2abe83c8f",
+      "retrieval-and-final-answer-quality": "7013f0705ef778225af06d35139c2c5015b5d5db8408448d90bf3358720656e2",
+      "end-to-end-efficiency": "12150876cc342c1167733935e637ef81a7f4d8b150ea0f8e039faab7489bbec1"
+    }
+  },
+  "decision": {
+    "same_scale": false,
+    "reason": "v0-counted-source-search-plus-greedy-full-session-reads-without-evidence-planning-search-read-or-completeness-while-v2-counts-complete-two-stage-consumer-delivery",
+    "v0_historical_latency_is_diagnostic_only": true,
+    "candidate_results_used_to_select_replacement_gate": false
+  },
+  "audit_matrix": {
+    "request_boundary": {
+      "v0": "ownward_search-entry-through-greedy-ownward_read-return",
+      "v2": "ownward_search-entry-through-evidence-plan-search-read-and-context-return",
+      "equal": false
+    },
+    "exact_query_vector": {
+      "v0": "inside-ownward_search",
+      "v2": "inside-ownward_search",
+      "equal": true
+    },
+    "source_search_and_fusion": {
+      "v0": "ownward_search-limit-24",
+      "v2": "ownward_search-limit-24",
+      "equal": true
+    },
+    "evidence_planning_search_read": {
+      "v0": "absent-full-session-read-in-prefix-order",
+      "v2": "rank-depth-diagonal-plan-plus-source-bound-evidence-search-and-read",
+      "equal": false
+    },
+    "context_formation": {
+      "v0": "greedy-break-on-first-non-fitting-full-session-after-first-read",
+      "v2": "skip-non-fitting-unit-and-continue-under-24000-char-budget",
+      "equal": false
+    },
+    "delivery_completeness": {
+      "v0": "249-of-500-first-observed-target-delivery-gaps",
+      "v2": "required-evidence-completeness-is-a-gate",
+      "equal": false
+    },
+    "load_and_statistics": {
+      "v0": "one-formal-observation-per-heterogeneous-question-four-workers-no-balanced-repeat-error",
+      "v2": "38-46-54-62-assets-four-workers-three-balanced-rounds-with-frozen-repeat-error",
+      "equal": false
+    },
+    "external_semantic_ownership": {
+      "v0": "excluded-from-retrieval-total-and-recorded-separately",
+      "v2": "excluded-from-retrieval-total-and-recorded-separately",
+      "equal": true
+    }
+  },
+  "replacement_latency_policy": {
+    "metric": "complete_consumer_retrieval_p95_ms",
+    "scope": "single-complete-consumer-request-under-four-worker-formal-shape",
+    "absolute_maximum_ms": 600.0,
+    "source": "benchmarks/acceptance/suite/materials/optimization/v1/direction-budget-selection.json#optimization_view.frozen_gate.consumer_retrieval_p95_ms_max",
+    "source_sha256": "1b00ede752ea5a40d615a4de15edaca7b342530534f516c53b25223e9b760420",
+    "frozen_repeatability_error_ms": 47.0,
+    "decision_maximum_ms": 553.0,
+    "decision_rule": "measured-p95-plus-frozen-repeatability-error-not-greater-than-absolute-maximum",
+    "mean_absolute_gate": null
+  },
+  "separate_gates": {
+    "pure_kernel_frontier_query_p95_ms": {
+      "maximum_ms": 1.5218,
+      "scope": "deterministic-in-process-frontier-fusion-query"
+    },
+    "formal_benchmark_wall_seconds": {
+      "maximum_seconds": 20400,
+      "scope": "complete-500-question-production-profile-four-question-workers"
+    },
+    "external_semantic_inference": {
+      "scope": "separately-recorded-not-in-ownward-operation-latency",
+      "arbitrary_absolute_gate_allowed": false
+    }
+  },
+  "evidence_disposition": {
+    "preserved_unmodified": [
+      "information-organization-quality",
+      "retrieval-and-final-answer-quality",
+      "v0-v1-aggregate-facts",
+      "same-source-fragment-delivery",
+      "multisource-evidence-loading",
+      "resume-and-formal-state-read-only",
+      "blind-calibration-budget"
+    ],
+    "diagnostic_only": [
+      "fixed-embedding-runtime-rejections-against-41.201-78.001",
+      "lightweight-model-rejections-against-41.201-78.001",
+      "exact-fail-open-bypass-coverage-rejection-against-41.201-78.001",
+      "v0-community-41.2-78-latency"
+    ],
+    "requires_current_latency_policy": [
+      "retrieval-latency-closure",
+      "stage5-efficiency-acceptance"
+    ]
+  },
+  "identity": "55131b81ae6b14357cd7281f40cd86ddc7bb5d2de69399f631f178b064cc0cec"
+}

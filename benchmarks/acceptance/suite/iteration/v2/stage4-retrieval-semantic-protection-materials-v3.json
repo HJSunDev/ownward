@@ -1,0 +1,601 @@
+{
+  "schema": "ownward.kernel-iteration-materials/v2",
+  "contains_formal_questions_answers_gold_or_content": false,
+  "cases": [
+    {
+      "case_id": "v2sp-weak-lexical-pollinator-v3",
+      "coverage": "anchor-fast-path-lexical-breadth-filled-by-surface-distractors-while-authoritative-source-is-semantically-strong",
+      "question_type": "multi-session",
+      "question_date": "2028-03-31",
+      "question": "Which enclosure should receive the dormant pollinator cocoons during the overnight transfer?",
+      "answer": "Northwind Vault Eight should receive them.",
+      "answer_session_ids": [
+        "v2sp01-s25"
+      ],
+      "stale_session_ids": [],
+      "distractor_session_ids": [
+        "v2sp01-s01",
+        "v2sp01-s02",
+        "v2sp01-s03",
+        "v2sp01-s04",
+        "v2sp01-s05",
+        "v2sp01-s06",
+        "v2sp01-s07",
+        "v2sp01-s08",
+        "v2sp01-s09",
+        "v2sp01-s10",
+        "v2sp01-s11",
+        "v2sp01-s12",
+        "v2sp01-s13",
+        "v2sp01-s14",
+        "v2sp01-s15",
+        "v2sp01-s16",
+        "v2sp01-s17",
+        "v2sp01-s18",
+        "v2sp01-s19",
+        "v2sp01-s20",
+        "v2sp01-s21",
+        "v2sp01-s22",
+        "v2sp01-s23"
+      ],
+      "truth_claims": [
+        {
+          "claim": "The approved specimen-handling order places the dormant pollinator cocoons in Northwind Vault Eight until dawn pickup.",
+          "evidence_session_ids": [
+            "v2sp01-s25"
+          ]
+        }
+      ],
+      "sessions": [
+        {
+          "session_id": "v2sp01-s01",
+          "date": "2028-03-01",
+          "turns": [
+            {
+              "role": "user",
+              "content": "A typography fixture prints the question which enclosure should receive the dormant pollinator cocoons during the overnight transfer. It contains no storage instruction."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp01-s02",
+          "date": "2028-03-02",
+          "turns": [
+            {
+              "role": "assistant",
+              "content": "A search-interface mockup repeats which enclosure should receive dormant pollinator cocoons during an overnight transfer. Its sample result is not operational."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp01-s03",
+          "date": "2028-03-03",
+          "turns": [
+            {
+              "role": "user",
+              "content": "A grammar lesson parses which enclosure should receive the dormant pollinator cocoons during the overnight transfer; the lesson defines no enclosure."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp01-s04",
+          "date": "2028-03-04",
+          "turns": [
+            {
+              "role": "assistant",
+              "content": "A localization test translates the phrase dormant pollinator cocoons and overnight transfer. The translated screen has no authority."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp01-s05",
+          "date": "2028-03-05",
+          "turns": [
+            {
+              "role": "user",
+              "content": "A font specimen displays enclosure, pollinator, cocoons, overnight, and transfer as independent vocabulary labels."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp01-s06",
+          "date": "2028-03-06",
+          "turns": [
+            {
+              "role": "assistant",
+              "content": "A benchmark tokenizer counts the words which enclosure should receive dormant pollinator cocoons during overnight transfer. It stores no decision."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp01-s07",
+          "date": "2028-03-07",
+          "turns": [
+            {
+              "role": "user",
+              "content": "A help-page screenshot shows an empty field titled enclosure for dormant pollinator cocoons and an overnight transfer button."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp01-s08",
+          "date": "2028-03-08",
+          "turns": [
+            {
+              "role": "assistant",
+              "content": "A synthetic form asks which enclosure should receive the dormant pollinator cocoons during the overnight transfer but deliberately leaves the answer blank."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp01-s09",
+          "date": "2028-03-09",
+          "turns": [
+            {
+              "role": "user",
+              "content": "The museum catalog defines a pollinator as an animal that transports pollen; it does not discuss specimen custody."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp01-s10",
+          "date": "2028-03-10",
+          "turns": [
+            {
+              "role": "assistant",
+              "content": "The packaging manual defines a cocoon-shaped enclosure for display models, unrelated to living specimens."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp01-s11",
+          "date": "2028-03-11",
+          "turns": [
+            {
+              "role": "user",
+              "content": "An overnight transfer progress bar appears in a software tutorial and never names a biological sample."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp01-s12",
+          "date": "2028-03-12",
+          "turns": [
+            {
+              "role": "assistant",
+              "content": "A receiving checklist explains that an enclosure field may be empty during data import; no shipment is described."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp01-s13",
+          "date": "2028-03-13",
+          "turns": [
+            {
+              "role": "user",
+              "content": "A dormant account transfer policy uses the same words receive and overnight but concerns billing records."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp01-s14",
+          "date": "2028-03-14",
+          "turns": [
+            {
+              "role": "assistant",
+              "content": "A pollinator garden sign explains seasonal dormancy and contains no handling order."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp01-s15",
+          "date": "2028-03-15",
+          "turns": [
+            {
+              "role": "user",
+              "content": "A fictional logistics diagram labels an enclosure node and a transfer edge; all values are placeholders."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp01-s16",
+          "date": "2028-03-16",
+          "turns": [
+            {
+              "role": "assistant",
+              "content": "A vocabulary quiz pairs cocoons with emergence and overnight with morning. It is not a custody record."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp01-s17",
+          "date": "2028-03-17",
+          "turns": [
+            {
+              "role": "user",
+              "content": "An interface accessibility audit checks whether the receive button has an enclosure label."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp01-s18",
+          "date": "2028-03-18",
+          "turns": [
+            {
+              "role": "assistant",
+              "content": "A nonbinding rehearsal mentions dormant insects moving between rooms but explicitly omits the destination."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp01-s19",
+          "date": "2028-03-19",
+          "turns": [
+            {
+              "role": "user",
+              "content": "A glossary entry says a transfer may occur overnight and that receiving is the opposite of sending."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp01-s20",
+          "date": "2028-03-20",
+          "turns": [
+            {
+              "role": "assistant",
+              "content": "A display cabinet brochure uses the word enclosure and shows decorative butterfly cocoons."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp01-s21",
+          "date": "2028-03-21",
+          "turns": [
+            {
+              "role": "user",
+              "content": "A spelling exercise repeats pollinator and dormant without describing any real specimen."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp01-s22",
+          "date": "2028-03-22",
+          "turns": [
+            {
+              "role": "assistant",
+              "content": "A load-test record repeatedly invokes the receive-transfer form but discards every field value."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp01-s23",
+          "date": "2028-03-23",
+          "turns": [
+            {
+              "role": "user",
+              "content": "A classroom diagram asks students to draw a safe enclosure for an imaginary cocoon."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp01-s25",
+          "date": "2028-03-30",
+          "turns": [
+            {
+              "role": "user",
+              "content": "The approved specimen-handling order places the dormant pollinator cocoons in Northwind Vault Eight until dawn pickup. This signed order governs the night relay."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "v2sp-semantic-intent-convoy-v3",
+      "coverage": "anchor-fast-path-lexically-similar-acoustic-topics-with-distinct-operational-intent",
+      "question_type": "multi-session",
+      "question_date": "2028-05-31",
+      "question": "What acoustic pattern authorizes the rover convoy to depart the canyon?",
+      "answer": "Two low notes followed by one high note authorize departure.",
+      "answer_session_ids": [
+        "v2sp02-s25"
+      ],
+      "stale_session_ids": [],
+      "distractor_session_ids": [
+        "v2sp02-s01",
+        "v2sp02-s02",
+        "v2sp02-s03",
+        "v2sp02-s04",
+        "v2sp02-s05",
+        "v2sp02-s06",
+        "v2sp02-s07",
+        "v2sp02-s08",
+        "v2sp02-s09",
+        "v2sp02-s10",
+        "v2sp02-s11",
+        "v2sp02-s12",
+        "v2sp02-s13",
+        "v2sp02-s14",
+        "v2sp02-s15",
+        "v2sp02-s16",
+        "v2sp02-s17",
+        "v2sp02-s18",
+        "v2sp02-s19",
+        "v2sp02-s20",
+        "v2sp02-s21",
+        "v2sp02-s22",
+        "v2sp02-s23"
+      ],
+      "truth_claims": [
+        {
+          "claim": "The certified dispatch instruction releases the autonomous ground vehicles when two low notes are followed by one high note.",
+          "evidence_session_ids": [
+            "v2sp02-s25"
+          ]
+        }
+      ],
+      "sessions": [
+        {
+          "session_id": "v2sp02-s01",
+          "date": "2028-05-01",
+          "turns": [
+            {
+              "role": "user",
+              "content": "A sound-library screen asks what acoustic pattern authorizes the rover convoy to depart the canyon, but every waveform is sample UI data."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp02-s02",
+          "date": "2028-05-02",
+          "turns": [
+            {
+              "role": "assistant",
+              "content": "A parser fixture repeats acoustic pattern, rover convoy, depart, and canyon without defining a command."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp02-s03",
+          "date": "2028-05-03",
+          "turns": [
+            {
+              "role": "user",
+              "content": "A translation worksheet contains the sentence what acoustic pattern authorizes the rover convoy to depart the canyon. It has no answer."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp02-s04",
+          "date": "2028-05-04",
+          "turns": [
+            {
+              "role": "assistant",
+              "content": "A typography specimen displays the exact rover convoy departure question as a heading, not an instruction."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp02-s05",
+          "date": "2028-05-05",
+          "turns": [
+            {
+              "role": "user",
+              "content": "A search quality test indexes acoustic pattern and canyon departure as disconnected labels."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp02-s06",
+          "date": "2028-05-06",
+          "turns": [
+            {
+              "role": "assistant",
+              "content": "A synthetic form asks what authorizes a rover convoy to depart and intentionally stores a null acoustic field."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp02-s07",
+          "date": "2028-05-07",
+          "turns": [
+            {
+              "role": "user",
+              "content": "A tutorial button named Depart Canyon plays an arbitrary acoustic preview and controls no rover."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp02-s08",
+          "date": "2028-05-08",
+          "turns": [
+            {
+              "role": "assistant",
+              "content": "A load test repeats the rover convoy acoustic authorization question but discards its generated values."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp02-s09",
+          "date": "2028-05-09",
+          "turns": [
+            {
+              "role": "user",
+              "content": "One rising whistle tells survey rovers to begin sensor calibration; it does not release the convoy."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp02-s10",
+          "date": "2028-05-10",
+          "turns": [
+            {
+              "role": "assistant",
+              "content": "Three rapid clicks tell the canyon convoy to halt for an obstacle inspection."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp02-s11",
+          "date": "2028-05-11",
+          "turns": [
+            {
+              "role": "user",
+              "content": "A continuous low tone warns a rover operator that radio contact is degrading."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp02-s12",
+          "date": "2028-05-12",
+          "turns": [
+            {
+              "role": "assistant",
+              "content": "Two high notes acknowledge that the convoy has arrived at the canyon entrance."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp02-s13",
+          "date": "2028-05-13",
+          "turns": [
+            {
+              "role": "user",
+              "content": "A descending trill requests that a single rover return to its charging station."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp02-s14",
+          "date": "2028-05-14",
+          "turns": [
+            {
+              "role": "assistant",
+              "content": "Four even pulses mean the canyon weather station has finished sampling."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp02-s15",
+          "date": "2028-05-15",
+          "turns": [
+            {
+              "role": "user",
+              "content": "A long high note tells the convoy to hold position while the route is checked."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp02-s16",
+          "date": "2028-05-16",
+          "turns": [
+            {
+              "role": "assistant",
+              "content": "Two alternating chirps announce that a rover camera has entered maintenance mode."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp02-s17",
+          "date": "2028-05-17",
+          "turns": [
+            {
+              "role": "user",
+              "content": "A short bell marks canyon-map synchronization and carries no movement authority."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp02-s18",
+          "date": "2028-05-18",
+          "turns": [
+            {
+              "role": "assistant",
+              "content": "Five low taps warn personnel that the convoy loading bay is occupied."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp02-s19",
+          "date": "2028-05-19",
+          "turns": [
+            {
+              "role": "user",
+              "content": "A pulsing siren instructs all rovers to stop after a safety fault."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp02-s20",
+          "date": "2028-05-20",
+          "turns": [
+            {
+              "role": "assistant",
+              "content": "A single high chime confirms receipt of a route file but does not authorize departure."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp02-s21",
+          "date": "2028-05-21",
+          "turns": [
+            {
+              "role": "user",
+              "content": "A double buzz indicates that the canyon gate is still closed."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp02-s22",
+          "date": "2028-05-22",
+          "turns": [
+            {
+              "role": "assistant",
+              "content": "A rising three-note pattern calls technicians to the convoy service platform."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp02-s23",
+          "date": "2028-05-23",
+          "turns": [
+            {
+              "role": "user",
+              "content": "A low-high-low sequence confirms an autonomous rover has completed diagnostics."
+            }
+          ]
+        },
+        {
+          "session_id": "v2sp02-s25",
+          "date": "2028-05-30",
+          "turns": [
+            {
+              "role": "user",
+              "content": "The certified dispatch instruction releases the autonomous ground vehicles when two low notes are followed by one high note. This pattern alone authorizes the canyon departure."
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "criteria": {
+    "minimum_accuracy": 1.0,
+    "require_complete_fact_delivery": true,
+    "category_minimums": {},
+    "maximum_wall_seconds": 300,
+    "provenance": {
+      "origin": "independent-stage4-retrieval-anchor-fast-path-protection-v3-frozen-before-candidate-execution",
+      "stage2_calibration_reuse": false,
+      "stage3_material_reuse": false,
+      "stage4_existing_material_reuse": false,
+      "formal_source_access": false
+    },
+    "fast_path_proof": {
+      "authoritative_assets_per_case": 24,
+      "search_limit": 24,
+      "read_limit": 8,
+      "candidate_anchor_signal_required": true,
+      "previous_exact_query_reference_required": true
+    }
+  },
+  "identity": "cf438e2317ede4af3253d3456f4cb7f67d9cc6c48fcd0bc305d5befa379ead24"
+}

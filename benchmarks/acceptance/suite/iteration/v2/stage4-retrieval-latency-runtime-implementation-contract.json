@@ -1,0 +1,60 @@
+{
+  "schema": "ownward.kernel-iteration-stage4-runtime-implementation-contract/v1",
+  "frozen_before_measurement": true,
+  "candidate_results_seen": false,
+  "formal": false,
+  "formal_state_written": false,
+  "purpose": "same-embeddinggemma-exact-query-runtime-implementation-lower-bound",
+  "contains_formal_questions_answers_gold_content_outputs_or_case_ids": false,
+  "source_release": {
+    "repository": "https://github.com/ggml-org/llama.cpp",
+    "tag": "b10488",
+    "commit": "9d77fa17254e1dee4b9e92504c91611a60b1359f"
+  },
+  "reference": {
+    "prior_calibration_identity": "20c20331b287eb47dbe03a0cd3be1032783e7dab8d8900ba0312847ee37613ff",
+    "followup_identity": "94e543b7369cc3950bec9f18c0eda9b49b511475332e60e3899de2f7273342f9",
+    "embedding_manifest_sha256": "fc2e4a1aa7d09fc64789618259a1bbedce2a18d00bd1abd81d13a16dfb78c0da",
+    "model_sha256": "6fa0c02a9c302be6f977521d399b4de3a46310a4f2621ee0063747881b673f67",
+    "space_id": "emb_79f072bf21c0c0f5226fa4fe6f1946a5",
+    "dimensions": 512,
+    "source_dimensions": 768,
+    "query_prefix": "task: search result | query: ",
+    "pooling": "mean",
+    "normalization": "l2",
+    "truncation": "prefix",
+    "queries_sha256": "621ad9ea09db26ad2da83dec1e6fbd9dde2ef1b33392797375014454b64b1781"
+  },
+  "measurement": {
+    "warmups": 3,
+    "repetitions": 20,
+    "threads": 6,
+    "parallel": 1,
+    "context_size": 512,
+    "batch_size": 512,
+    "ubatch_size": 512
+  },
+  "implementations": {
+    "llamacpp-b10488-vulkan-x64": {
+      "official_archive": "llama-b10488-bin-win-vulkan-x64.zip",
+      "official_archive_sha256": "8de77b0f912ad9c22bcfcb3798a36f2140fb0232df5defa2ea87d7f3e2652183",
+      "device": "Vulkan0",
+      "gpu_layers": 999
+    },
+    "llamacpp-b10488-cuda-12.4-x64": {
+      "official_archive": "llama-b10488-bin-win-cuda-12.4-x64.zip",
+      "official_archive_sha256": "0cd86c05fba686c693cacced567c8f824a89595382040338d875eb41e35c0499",
+      "static_rejection": "machine-driver-442.62-exposes-cuda-10.2-and-cannot-load-the-official-cuda-12.4-runtime"
+    }
+  },
+  "gates": {
+    "retrieval_mean_ms_maximum_exclusive": 41.201,
+    "exact_query_p95_ms_maximum": 62.4,
+    "p95_margin_before_total_retrieval_gate_ms": 15.601,
+    "maximum_vector_component_drift": 0.0000001,
+    "formal_state_writes": 0,
+    "model_calls": 0,
+    "product_mutations": 0
+  },
+  "formal_state_sha256": "3c7826e0ef86a82ddfab676886e384e2674a23dc80f6df3612d4443be00ffcdc"
+}

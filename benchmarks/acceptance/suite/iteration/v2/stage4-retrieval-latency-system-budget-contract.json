@@ -1,0 +1,85 @@
+{
+  "schema": "ownward.kernel-iteration-stage4-retrieval-latency-system-budget-contract/v1",
+  "frozen_before_measurement": true,
+  "candidate_results_seen": false,
+  "scope": "single-authorized-cross-process-cpu-thread-budget-route",
+  "comparison_policy_identity": "b1e3b07abd5c9527dfbde5ea8d7fa5459c8b0b5da224ef2eb1aca29add22fbbe",
+  "route_identity_before_measurement": "fba63600b28ceac03669ec18ee2a6ffcf9b578c5a78a8e526ef103f114246b4f",
+  "superseded_real_scale_result_identity": "72b6988e9368a508e1d8264e3f78d5dc0ce7d12a5d95653464dd1a552d3333f4",
+  "preparation_identity": "b124d17ec2448365df50bc9dfca7ee8b7cc25dd176f2b31ea14b90b6904373b9",
+  "materials_identity": "e9ecd0befde7c3dfceb1424258fd37e274f1c4de4bb1a16dca7f88b66572a330",
+  "candidate_receipt_identity": "7259bbe769d124e7619a1169f25e9519a83a6cded30adba4b1e8dda2c58603d3",
+  "candidate_subject_identity": "208982be002df5cae85e5f9fd6b3d9c4fcc0bf143db50a799b27fa5cb006517f",
+  "candidate_binary_sha256": "c6b97f7e840208896288aed741201502d250e6c63286a58f448fc0152183921f",
+  "runtime_configuration": {
+    "threads": 2,
+    "threads_batch": 2,
+    "parallel": 1
+  },
+  "system_thread_budget": {
+    "logical_processors": 12,
+    "independent_workers": 4,
+    "aggregate_inference_threads": 8,
+    "aggregate_runtime_slots": 4,
+    "replaces_rejected_configuration": {
+      "threads": 6,
+      "threads_batch": 6,
+      "parallel": 2,
+      "aggregate_inference_threads": 24,
+      "aggregate_runtime_slots": 8
+    }
+  },
+  "frozen_shared_conditions": {
+    "model": "EmbeddingGemma GGUF from the existing immutable bundle",
+    "query_and_document_prefixes": "unchanged",
+    "dimension_pooling_normalization_truncation": "unchanged",
+    "retrieval_responsibility": "exact query vector plus search, evidence planning/search/read, and final context formation",
+    "asset_counts": [38, 46, 54, 62],
+    "search_limit": 24,
+    "read_limit": 8,
+    "context_max_chars": 24000,
+    "workers": 4,
+    "source_prepared_data_mutation_allowed": false,
+    "candidate_prepared_data_reuse": "byte-exact authority assets and organization state are cloned once; only the authority substrate initializes the candidate-bound control state before measurement",
+    "asset_or_semantic_repreparation_allowed": false,
+    "formal_state_mutation_allowed": false,
+    "selection_trace_requirement": "stable byte-identity per case across all balanced repetitions"
+  },
+  "schedule": {
+    "balanced_rounds": 3,
+    "warmups_per_round": 1,
+    "measured_repetitions_per_round": 3,
+    "workers": 4,
+    "expected_measured_samples": 36
+  },
+  "gates": {
+    "superseded_observed_p95_ms": 596.2113,
+    "decision_p95_ms_maximum": 553.0,
+    "engineering_margin_ms": 20.0,
+    "route_p95_ms_maximum": 533.0,
+    "minimum_improvement_ms": 63.2113,
+    "maximum_vector_component_drift": 0.0000001,
+    "native_2_1_isolated_query_p95_ms": 65.82379999999999,
+    "read_calls_maximum": 8,
+    "context_chars_maximum": 24000,
+    "quality_compensation_allowed": false
+  },
+  "conditional_3_1_policy": {
+    "maximum_additional_probes": 1,
+    "aggregate_inference_threads": 12,
+    "parallel": 1,
+    "admission": "only if the same 2/1 run fails and an ideal one-third reduction of the frozen 2/1 isolated query p95 is sufficient to reach 533 ms",
+    "no_admission_means_route_rejected": true
+  },
+  "native_runtime_calibration_path": ".tmp/kernel-v2-major-iteration/stage4-retrieval-latency/vector-runtime-calibration-v1.json",
+  "native_runtime_calibration_identity": "20c20331b287eb47dbe03a0cd3be1032783e7dab8d8900ba0312847ee37613ff",
+  "formal_state_sha256": "3c7826e0ef86a82ddfab676886e384e2674a23dc80f6df3612d4443be00ffcdc",
+  "protocol_sha256": "898a0ebe943e99ca2357723f328668afaee09c5f4c5cd99c50417571b252a123",
+  "embedding_manifest_sha256": "fc2e4a1aa7d09fc64789618259a1bbedce2a18d00bd1abd81d13a16dfb78c0da",
+  "controller_sha256": "ec0582edbcd15d1283899d0d02d267550c9941d3ed881bb2d009a9eb5e237c47",
+  "candidate_builder_sha256": "d74c89df782c6210b8f3893ac95444f00caad5f58d7e938a8b6adc9419e35ff1",
+  "measurement_controller_sha256": "4ed9c33c12576d897f8edb71ee52e2517f3798aeb99951e9f747e3a9053a8cc3",
+  "transport_sha256": "fbca3e4f15afbd0e8409c043fc5742c5b4aeec72dbaa79d66be550f10b6f1a86",
+  "embedding_runtime_source_sha256": "9f6f16a58c43742769f8c43bdedefdc67583106cab311ece9be1d1ec4a658358",
+  "identity": "0555bdfe5cec301140b85389bbbb7525d80b834e4d2b47b7877593874a226564"
+}

@@ -1,0 +1,121 @@
+{
+  "schema": "ownward.kernel-iteration-stage4-retrieval-latency-comparability-audit-contract/v1",
+  "frozen_before_new_candidate_measurement": true,
+  "candidate_measurements_are_not_authority": true,
+  "purpose": "decide-whether-v0-community-retrieval-latency-and-v2-complete-consumer-retrieval-are-same-scale",
+  "contains_formal_questions_answers_gold_content_outputs_or_case_ids": false,
+  "criteria": {
+    "request_boundary": [
+      "entry",
+      "terminal"
+    ],
+    "included_work": [
+      "exact-query-vector",
+      "source-search-and-fusion",
+      "relation-expansion",
+      "evidence-planning",
+      "evidence-search",
+      "evidence-read",
+      "context-formation"
+    ],
+    "delivery_contract": [
+      "returned-source-count",
+      "read-unit-count",
+      "evidence-depth",
+      "context-budget",
+      "required-evidence-completeness"
+    ],
+    "load_shape": [
+      "asset-count",
+      "single-or-concurrent-request",
+      "worker-count"
+    ],
+    "statistics": [
+      "warmup-count",
+      "repetition-count",
+      "balanced-order",
+      "mean-definition",
+      "p95-definition",
+      "repeatability-error"
+    ],
+    "ownership": [
+      "external-semantic-inference",
+      "ownward-operation"
+    ]
+  },
+  "decision_rule": {
+    "same_scale_requires_every_criterion_equal": true,
+    "missing-field_is_not-equivalent": true,
+    "quality-incomplete-observation_cannot_set_complete-delivery-non-regression-gate": true,
+    "candidate_result_cannot_select_threshold": true
+  },
+  "authorities": {
+    "first_version_delivery": {
+      "path": "docs/delivery/first-version-delivery-definition.md",
+      "sha256": "8ce5a6bf4f18bea95e216fd9ccaba8a0452846d61219b6b1aa4aa914df737948"
+    },
+    "v0_baseline_facts": {
+      "path": "benchmarks/acceptance/suite/iteration/v2/v0-baseline-facts.json",
+      "sha256": "246660581803440d3c9c68d6e1bfd7a7685f6d778fea781a6c548b8aa64d3dfe"
+    },
+    "consumer_retrieval_gate": {
+      "path": "benchmarks/acceptance/suite/materials/optimization/v1/direction-budget-selection.json",
+      "sha256": "1b00ede752ea5a40d615a4de15edaca7b342530534f516c53b25223e9b760420",
+      "json_pointer": "optimization_view.frozen_gate.consumer_retrieval_p95_ms_max",
+      "maximum_ms": 600.0
+    },
+    "consumer_retrieval_gate_origin": {
+      "path": "benchmarks/acceptance/suite/adapters/product_resource/thresholds.json",
+      "sha256": "18887027da298676b955d687571712beea571ead0a4995cf514a4bf432f60026",
+      "json_pointer": "limits.warm_query_p95_ms_max",
+      "maximum_ms": 600.0
+    },
+    "production_profile": {
+      "path": "benchmarks/longmemeval_s/protocol.json",
+      "sha256": "898a0ebe943e99ca2357723f328668afaee09c5f4c5cd99c50417571b252a123",
+      "question_workers": 4,
+      "questions": 500,
+      "full_wall_seconds": 20400
+    },
+    "v0_retrieval_adapter": {
+      "git_commit": "07bd76255395eea6f7ced28319fb89d26f338eb1",
+      "git_blob": "b37012eb4919978281b509921ea047bc1ac7a370",
+      "path": "benchmarks/longmemeval_s/run.py"
+    },
+    "current_retrieval_adapter": {
+      "path": "benchmarks/longmemeval_s/run.py",
+      "sha256": "f85430ab86a43fd88368e0d5f283fa71abc5ea45021585faa2826320f481819d"
+    }
+  },
+  "historical_v0_evidence": {
+    "candidate": "99f519018df99bd5202b0c571b8e43481cd1b80e",
+    "report_sha256": "3e7355c61a538e52663e8be5c9c93b83493238fe5bda72640b89504518fe89d9",
+    "diagnostic_summary_sha256": "c479a92895e1a8a1ed2ca4ea58041e5bfd7c6599bf2d44f2a0b2d423228453dc",
+    "questions": 500,
+    "retrieval_mean_ms": 41.1999999999025,
+    "retrieval_p95_ms": 77.9999999977008,
+    "target_evidence_not_search_returned": 116,
+    "target_evidence_not_read": 133,
+    "evidence_read_answer_incorrect": 9
+  },
+  "post_audit_measurement_policy": {
+    "eligible_existing_result_identity": "72b6988e9368a508e1d8264e3f78d5dc0ce7d12a5d95653464dd1a552d3333f4",
+    "eligible_existing_result_sha256": "d68889b0962e8be0a607edc2805517422ecb0d0ce204e9ca258db93c31f51b56",
+    "required_asset_counts": [
+      38,
+      46,
+      54,
+      62
+    ],
+    "workers": 4,
+    "search_limit": 24,
+    "read_limit": 8,
+    "context_chars": 24000,
+    "warmups_per_round": 1,
+    "measured_repetitions_per_round": 3,
+    "balanced_rounds": 3,
+    "frozen_repeatability_error_ms": 47.0,
+    "decision": "measured-p95-plus-frozen-repeatability-error-must-not-exceed-600ms"
+  },
+  "identity": "e2a33fe5e97a3636e220e71076af1738f8c38f5592427642b4a89eaeec673bf8"
+}

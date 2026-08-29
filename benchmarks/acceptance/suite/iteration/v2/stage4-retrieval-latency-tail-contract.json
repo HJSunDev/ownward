@@ -1,0 +1,50 @@
+{
+  "schema": "ownward.kernel-iteration-stage4-retrieval-latency-tail-contract/v1",
+  "frozen_before_measurement": true,
+  "results_seen": false,
+  "purpose": "same-request-tail-attribution-and-two-route-lower-bound-probes",
+  "contains_formal_questions_answers_gold_content_outputs_or_case_ids": false,
+  "formal": false,
+  "formal_state_written": false,
+  "controller_sha256": "ec69028c3ead8d0910828da2ddd3a675c883b6a97546d50bfd579c248660f786",
+  "comparison_policy_identity": "b1e3b07abd5c9527dfbde5ea8d7fa5459c8b0b5da224ef2eb1aca29add22fbbe",
+  "comparability_audit_identity": "f2ef1f642ea69f46fde92f354ec1456255963d18b4962c8d9f7c669fcf79c8b3",
+  "comparability_migration_identity": "55131b81ae6b14357cd7281f40cd86ddc7bb5d2de69399f631f178b064cc0cec",
+  "prior_real_scale_result_path": ".tmp/kernel-v2-major-iteration/stage4-retrieval-latency/real-scale-v1/result.json",
+  "prior_real_scale_result_identity": "72b6988e9368a508e1d8264e3f78d5dc0ce7d12a5d95653464dd1a552d3333f4",
+  "preparation_path": ".tmp/kernel-v2-major-iteration/stage4-retrieval-latency/real-scale-v1/preparation.json",
+  "preparation_identity": "b124d17ec2448365df50bc9dfca7ee8b7cc25dd176f2b31ea14b90b6904373b9",
+  "runtime_receipt_path": ".tmp/kernel-v2-major-iteration/stage4-retrieval-latency/shared-runtime-v1/runtime-binaries.json",
+  "runtime_receipt_identity": "594e3a4c72c59ceb729e0ffbb5e2d635936af94994a9b3d11c805afb5d583bef",
+  "materials_identity": "e9ecd0befde7c3dfceb1424258fd37e274f1c4de4bb1a16dca7f88b66572a330",
+  "candidate_binary_sha256": "c87e54c68e5c7b9c579cfdb2b30dce271c9425bf6bc6ef6bd433e7aae1b1323b",
+  "protocol_sha256": "898a0ebe943e99ca2357723f328668afaee09c5f4c5cd99c50417571b252a123",
+  "embedding_manifest_sha256": "fc2e4a1aa7d09fc64789618259a1bbedce2a18d00bd1abd81d13a16dfb78c0da",
+  "formal_state_sha256": "3c7826e0ef86a82ddfab676886e384e2674a23dc80f6df3612d4443be00ffcdc",
+  "schedule": {
+    "workers": 4,
+    "warmups": 1,
+    "measured_repetitions": 3
+  },
+  "shared_vector_probe": {
+    "service_count": 1,
+    "threads": 6,
+    "threads_batch": 6,
+    "parallel": 2,
+    "concurrent_requests": 4,
+    "repetitions": 6
+  },
+  "gates": {
+    "complete_consumer_p95_ms_maximum": 553.0,
+    "observed_gap_ms": 43.211,
+    "additional_engineering_margin_ms": 20.0,
+    "quality_trace_byte_equivalent": true,
+    "maximum_vector_component_drift": 0.0000001,
+    "read_calls_maximum": 8,
+    "context_chars_maximum": 24000,
+    "formal_state_writes": 0,
+    "codex_calls": 0,
+    "answer_generation_calls": 0
+  },
+  "identity": "4d3e435a015164bbfa4e3a5e87258d3b7e469ab1264e88dee0709a32b16d1903"
+}

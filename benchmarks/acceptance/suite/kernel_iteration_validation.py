@@ -420,6 +420,7 @@ def execution_identities(
         name: evidence.file_sha256(long_root / name)
         for name in ("run.py", "codex_app_server.py", "protocol.json")
     }
+    implementation["ownward-mcp-transport"] = evidence.file_sha256(repository / "benchmarks" / "support" / "ownward_mcp.py")
     implementation["iteration-validation"] = evidence.file_sha256(Path(__file__).resolve())
     implementation["iteration-longmemeval"] = evidence.file_sha256(Path(__file__).with_name("kernel_iteration_longmemeval.py"))
     protocol = runtime["protocol_value"]

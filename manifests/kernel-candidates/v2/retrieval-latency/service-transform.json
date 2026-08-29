@@ -1,0 +1,78 @@
+{
+  "schema": "ownward.kernel-candidate-source-transform/v1",
+  "source": "internal/core/service.go",
+  "replacements": [
+    {
+      "name": "candidate-planner-import",
+      "count": 1,
+      "before": "\t\"github.com/HJSunDev/ownward/internal/domain\"\n\t\"github.com/HJSunDev/ownward/internal/embedding\"",
+      "after": "\t\"github.com/HJSunDev/ownward/internal/domain\"\n\t\"github.com/HJSunDev/ownward/internal/embedding\"\n\t\"github.com/HJSunDev/ownward/internal/kernelv2candidate\""
+    },
+    {
+      "name": "candidate-planner-state",
+      "count": 1,
+      "before": "\tstateMu       sync.RWMutex\n}",
+      "after": "\tstateMu       sync.RWMutex\n\tevidencePlans *kernelv2candidate.EvidencePlans\n}"
+    },
+    {
+      "name": "basic-planner-construction",
+      "count": 1,
+      "before": "\treturn &Service{authority: authority, index: retrieval.NewLexical(assets), now: time.Now}, nil",
+      "after": "\treturn &Service{authority: authority, index: retrieval.NewLexical(assets), now: time.Now, evidencePlans: kernelv2candidate.NewEvidencePlans()}, nil"
+    },
+    {
+      "name": "organized-planner-construction",
+      "count": 1,
+      "before": "\t\tnow:          time.Now,\n",
+      "after": "\t\tnow:          time.Now,\n\t\tevidencePlans: kernelv2candidate.NewEvidencePlans(),\n"
+    },
+    {
+      "name": "collaborative-planner-construction",
+      "count": 1,
+      "before": "\t\tnow:           time.Now,\n",
+      "after": "\t\tnow:           time.Now,\n\t\tevidencePlans: kernelv2candidate.NewEvidencePlans(),\n"
+    },
+    {
+      "name": "batch-create-asset-count",
+      "count": 1,
+      "before": "\t\tfor _, value := range values {\n\t\t\ts.index.Upsert(value)\n\t\t}\n\t}\n\tstates := make([]OrganizationState, len(values))",
+      "after": "\t\tfor _, value := range values {\n\t\t\ts.index.Upsert(value)\n\t\t}\n\t\tif s.evidencePlans != nil {\n\t\t\ts.evidencePlans.Reset()\n\t\t}\n\t}\n\tstates := make([]OrganizationState, len(values))"
+    },
+    {
+      "name": "single-create-asset-count",
+      "count": 1,
+      "before": "\tif _, err := s.authority.CreateAsset(value); err != nil {\n\t\treturn domain.Information{}, err\n\t}\n\ts.index.Upsert(value)\n\treturn value, nil",
+      "after": "\tif _, err := s.authority.CreateAsset(value); err != nil {\n\t\treturn domain.Information{}, err\n\t}\n\ts.index.Upsert(value)\n\tif s.evidencePlans != nil {\n\t\ts.evidencePlans.Reset()\n\t}\n\treturn value, nil"
+    },
+    {
+      "name": "update-invalidates-evidence-plans",
+      "count": 1,
+      "before": "\tif _, err := s.authority.UpdateAsset(updated, input.ExpectedRevision); err != nil {\n\t\treturn MutationResult{}, err\n\t}\n\ts.index.Upsert(updated)",
+      "after": "\tif _, err := s.authority.UpdateAsset(updated, input.ExpectedRevision); err != nil {\n\t\treturn MutationResult{}, err\n\t}\n\ts.index.Upsert(updated)\n\tif s.evidencePlans != nil {\n\t\ts.evidencePlans.Reset()\n\t}"
+    },
+    {
+      "name": "reuse-prepared-evidence-lane",
+      "count": 1,
+      "before": "\tvalue, exists := s.authority.ReadCurrent(strings.TrimSpace(input.SourceID))",
+      "after": "\tif s.evidencePlans != nil {\n\t\tif references, planned := s.evidencePlans.CachedReferences(input.Query, input.SourceID, input.Limit); planned {\n\t\t\treturn references, nil\n\t\t}\n\t}\n\tvalue, exists := s.authority.ReadCurrent(strings.TrimSpace(input.SourceID))"
+    },
+    {
+      "name": "planned-evidence-lanes",
+      "count": 1,
+      "before": "\treturn rankEvidence(value, input.Query, input.Limit), nil\n}",
+      "after": "\tif s.evidencePlans != nil {\n\t\tif references, planned := s.evidencePlans.ReferencesWithCurrent(input.Query, value, input.Limit, s.authority.ReadCurrent, rankEvidence, kernelv2candidate.ProbeEvidence); planned {\n\t\t\treturn references, nil\n\t\t}\n\t}\n\treturn rankEvidence(value, input.Query, input.Limit), nil\n}"
+    },
+    {
+      "name": "bounded-planned-evidence-read-through",
+      "count": 1,
+      "before": "func (s *Service) ReadEvidence(_ context.Context, id string) (domain.Evidence, error) {\n\ts.stateMu.RLock()\n\tdefer s.stateMu.RUnlock()\n\treturn readEvidence(s.authority, strings.TrimSpace(id))\n}",
+      "after": "func (s *Service) ReadEvidence(_ context.Context, id string) (domain.Evidence, error) {\n\ts.stateMu.RLock()\n\tdefer s.stateMu.RUnlock()\n\tid = strings.TrimSpace(id)\n\tif s.evidencePlans != nil {\n\t\tif value, exists := s.evidencePlans.ReadCached(id); exists {\n\t\t\treturn value, nil\n\t\t}\n\t}\n\treturn readEvidence(s.authority, id)\n}"
+    },
+    {
+      "name": "observe-ranked-sources",
+      "count": 1,
+      "before": "\tif len(results) > limit {\n\t\tresults = results[:limit]\n\t}\n\treturn results, nil\n}",
+      "after": "\tif len(results) > limit {\n\t\tresults = results[:limit]\n\t}\n\tif s.evidencePlans != nil {\n\t\tsourceIDs := make([]string, 0, len(results))\n\t\tfor _, result := range results {\n\t\t\tsourceIDs = append(sourceIDs, result.ID)\n\t\t}\n\t\ts.evidencePlans.ObserveSearch(input.Query, sourceIDs)\n\t}\n\treturn results, nil\n}"
+    }
+  ]
+}
