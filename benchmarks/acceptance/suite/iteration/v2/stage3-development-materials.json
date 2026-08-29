@@ -1,0 +1,128 @@
+{
+  "schema": "ownward.kernel-iteration-materials/v2",
+  "contains_formal_questions_answers_gold_or_content": false,
+  "cases": [
+    {
+      "case_id": "v2d-long-multifact",
+      "coverage": "long-session-multi-fact",
+      "question_type": "single-session-user",
+      "question_date": "2026-04-20",
+      "question": "For the final field expedition plan, state the chosen vessel, launch inlet, departure weekday, sampling depth, and archive label.",
+      "answer": "The vessel is Kestrel, the inlet is Amber Cove, departure is Thursday, sampling depth is 42 meters, and the archive label is Juniper-17.",
+      "answer_session_ids": ["v2d01-s01"],
+      "stale_session_ids": [],
+      "distractor_session_ids": ["v2d01-s02", "v2d01-s03", "v2d01-s04", "v2d01-s05", "v2d01-s06", "v2d01-s07"],
+      "truth_claims": [
+        {"claim": "The selected vessel is Kestrel.", "evidence_session_ids": ["v2d01-s01"]},
+        {"claim": "The launch inlet is Amber Cove.", "evidence_session_ids": ["v2d01-s01"]},
+        {"claim": "The confirmed departure day is Thursday.", "evidence_session_ids": ["v2d01-s01"]},
+        {"claim": "The sampling depth is 42 meters.", "evidence_session_ids": ["v2d01-s01"]},
+        {"claim": "The archive label is Juniper-17.", "evidence_session_ids": ["v2d01-s01"]}
+      ],
+      "sessions": [
+        {"session_id": "v2d01-s01", "date": "2026-04-12", "turns": [
+          {"role": "user", "content": "The expedition planning notebook begins with navigation constraints, fuel reserve calculations, two tide windows, and a list of rejected craft. The selected vessel is Kestrel. This choice supersedes the skiff and cutter options because the shallow-draft hull can cross the reef without transferring crates. The rest of this entry records radio checks, spare batteries, meal counts, weather abbreviations, and names of observers who are not part of the final requested plan."},
+          {"role": "assistant", "content": "The next section compares eastern and western launch points, parking access, crane clearance, and temporary closure notices. Several coves appear in examples, but the final routing sentence is unambiguous: The launch inlet is Amber Cove. A separate note about Cedar Bay concerns a training trip, while North Cut is only an emergency return route. Equipment inventory and permit reminders continue for several paragraphs."},
+          {"role": "user", "content": "The calendar section lists Monday for packing, Tuesday for a rehearsal, and Wednesday for the safety briefing. It then records the actual operational choice: The confirmed departure day is Thursday. Friday is reserved for weather recovery and is not the planned departure. The same section contains unrelated shift rosters, vehicle pickup times, and a historical timetable from last season."},
+          {"role": "assistant", "content": "The methods section discusses sensors at 12, 26, 42, and 58 meters, including calibration examples and rejected profiles. The signed operating line states: The sampling depth is 42 meters. The 58-meter figure is a pressure-test limit, 26 meters is a comparison layer, and 12 meters is used only for surface calibration. Notes about sample bottles and cable lengths follow."},
+          {"role": "user", "content": "The records section explains folder ownership, checksum sheets, duplicate media, and several provisional tags. The final archival instruction says: The archive label is Juniper-17. Juniper-11 is a retired practice label and Maple-17 belongs to another team. The closing pages contain only packing counts, contact rotations, and routine sign-off language."}
+        ]},
+        {"session_id": "v2d01-s02", "date": "2026-04-02", "turns": [{"role": "user", "content": "A training voyage used the vessel Heron from Cedar Bay on Tuesday, sampled at 18 meters, and filed notes under Maple-03."}]},
+        {"session_id": "v2d01-s03", "date": "2026-04-04", "turns": [{"role": "assistant", "content": "A maintenance checklist mentions Kestrel batteries, but it contains no final launch, day, depth, or archive decision."}]},
+        {"session_id": "v2d01-s04", "date": "2026-04-06", "turns": [{"role": "user", "content": "The alternate-weather exercise considered Friday at North Cut with a shallow 12-meter calibration profile."}]},
+        {"session_id": "v2d01-s05", "date": "2026-04-07", "turns": [{"role": "assistant", "content": "An inventory note lists Juniper-11 stickers and spare cases for a retired trial."}]},
+        {"session_id": "v2d01-s06", "date": "2026-04-08", "turns": [{"role": "user", "content": "A permit example describes Amber Cove access on Wednesday, but explicitly calls it a sample form rather than the expedition plan."}]},
+        {"session_id": "v2d01-s07", "date": "2026-04-09", "turns": [{"role": "assistant", "content": "A sensor manual gives 58 meters as a hardware limit and does not record an operational sampling decision."}]}
+      ]
+    },
+    {
+      "case_id": "v2d-temporal-conflict",
+      "coverage": "temporal-update-conflict",
+      "question_type": "knowledge-update",
+      "question_date": "2026-05-20",
+      "question": "What is the current community workshop arrangement, including venue, start time, facilitator, and access method, after the recorded revisions?",
+      "answer": "It is at Lumen Hall at 10:30, facilitated by Mira Sol, with access through the east courtyard code 7314.",
+      "answer_session_ids": ["v2d02-s03"],
+      "stale_session_ids": ["v2d02-s01"],
+      "distractor_session_ids": ["v2d02-s02", "v2d02-s04", "v2d02-s05"],
+      "truth_claims": [
+        {"claim": "The current venue is Lumen Hall.", "evidence_session_ids": ["v2d02-s03"]},
+        {"claim": "The revised start time is 10:30.", "evidence_session_ids": ["v2d02-s03"]},
+        {"claim": "The confirmed facilitator is Mira Sol.", "evidence_session_ids": ["v2d02-s03"]},
+        {"claim": "Entry uses the east courtyard code 7314.", "evidence_session_ids": ["v2d02-s03"]}
+      ],
+      "sessions": [
+        {"session_id": "v2d02-s01", "date": "2026-05-01", "turns": [{"role": "user", "content": "The first draft placed the workshop in Rowan Studio at 09:00 with Leon Park and ordinary front-desk check-in."}]},
+        {"session_id": "v2d02-s02", "date": "2026-05-06", "turns": [{"role": "assistant", "content": "A different event at Lumen Annex begins at 11:00 and uses a west gate; it is not the community workshop."}]},
+        {"session_id": "v2d02-s03", "date": "2026-05-15", "turns": [
+          {"role": "user", "content": "The revision record first cancels the Rowan Studio booking after a ventilation inspection, while preserving the equipment checklist and seating count. The current venue is Lumen Hall. Lumen Annex remains reserved for a separate rehearsal and should not be substituted."},
+          {"role": "assistant", "content": "The timing correction explains that 09:00 is only the delivery slot and 10:00 is the volunteer briefing. The revised start time is 10:30. A later cleanup shift at 14:00 is unrelated to attendee arrival."},
+          {"role": "user", "content": "The staffing section lists several volunteers and the former draft lead. The confirmed facilitator is Mira Sol. Leon Park now handles supplies and does not facilitate the session."},
+          {"role": "assistant", "content": "The access notice replaces front-desk check-in because the lobby is closed. Entry uses the east courtyard code 7314. The west gate number printed on the rehearsal notice applies only to Lumen Annex."}
+        ]},
+        {"session_id": "v2d02-s04", "date": "2026-05-16", "turns": [{"role": "user", "content": "A supply delivery reaches Lumen Hall at 09:00 through the loading door, but this does not change attendee access."}]},
+        {"session_id": "v2d02-s05", "date": "2026-05-17", "turns": [{"role": "assistant", "content": "Leon Park confirmed the chairs and projector as logistics coordinator."}]}
+      ]
+    },
+    {
+      "case_id": "v2d-structured-boundary",
+      "coverage": "structured-boundary",
+      "question_type": "single-session-assistant",
+      "question_date": "2026-06-10",
+      "question": "From the approved greenhouse ledger, give the bay, cultivar, irrigation interval, and inspection owner for lot T-17.",
+      "answer": "Lot T-17 is in Bay C, uses cultivar Oriole, is irrigated every 36 hours, and is inspected by Nia Vale.",
+      "answer_session_ids": ["v2d03-s01"],
+      "stale_session_ids": [],
+      "distractor_session_ids": ["v2d03-s02", "v2d03-s03", "v2d03-s04"],
+      "truth_claims": [
+        {"claim": "T-17 is assigned to Bay C.", "evidence_session_ids": ["v2d03-s01"]},
+        {"claim": "T-17 uses cultivar Oriole.", "evidence_session_ids": ["v2d03-s01"]},
+        {"claim": "T-17 has a 36-hour irrigation interval.", "evidence_session_ids": ["v2d03-s01"]},
+        {"claim": "T-17 is inspected by Nia Vale.", "evidence_session_ids": ["v2d03-s01"]}
+      ],
+      "sessions": [
+        {"session_id": "v2d03-s01", "date": "2026-06-02", "turns": [
+          {"role": "assistant", "content": "Approved greenhouse ledger, location section:\n| lot | bay | bench |\n| T-14 | Bay A | 2 |\n| T-17 | Bay C | 8 |\n| T-21 | Bay B | 4 |\nThe signed note below the table states: T-17 is assigned to Bay C. The surrounding rows are valid for their own lots but are not interchangeable."},
+          {"role": "assistant", "content": "Cultivar section:\n| lot | cultivar | reserve seed |\n| T-14 | Finch | R2 |\n| T-17 | Oriole | R7 |\n| T-21 | Wren | R4 |\nThe row interpretation is explicit: T-17 uses cultivar Oriole. Reserve seed codes are inventory references, not cultivar names."},
+          {"role": "assistant", "content": "Water schedule section:\n| lot | interval | flush |\n| T-14 | 24 hours | Monday |\n| T-17 | 36 hours | Wednesday |\n| T-21 | 48 hours | Friday |\nThe operational sentence records: T-17 has a 36-hour irrigation interval. Flush weekday is a separate maintenance field."},
+          {"role": "assistant", "content": "Inspection section:\n| lot | owner | backup |\n| T-14 | Eli Moss | Uma Reed |\n| T-17 | Nia Vale | Eli Moss |\n| T-21 | Uma Reed | Nia Vale |\nThe assignment statement is: T-17 is inspected by Nia Vale. Backup names do not replace the primary owner."}
+        ]},
+        {"session_id": "v2d03-s02", "date": "2026-05-28", "turns": [{"role": "user", "content": "A draft ledger placed T-17 in Bay B, but it was never approved."}]},
+        {"session_id": "v2d03-s03", "date": "2026-06-03", "turns": [{"role": "assistant", "content": "Nia Vale is the backup inspector for T-21, which is distinct from the T-17 assignment."}]},
+        {"session_id": "v2d03-s04", "date": "2026-06-04", "turns": [{"role": "user", "content": "A cleaning chart uses a 36-hour cycle for Bay A equipment but does not describe lot irrigation."}]}
+      ]
+    },
+    {
+      "case_id": "v2d-multisession-sufficiency",
+      "coverage": "multi-session-answer-sufficiency",
+      "question_type": "multi-session",
+      "question_date": "2026-07-15",
+      "question": "Summarize the final library outreach plan by naming the audience, the selected format, and the measurable follow-up commitment.",
+      "answer": "The audience is first-year apprentices, the format is a mobile repair clinic, and the follow-up is a six-week parts-lending check-in.",
+      "answer_session_ids": ["v2d04-s01", "v2d04-s03", "v2d04-s05"],
+      "stale_session_ids": [],
+      "distractor_session_ids": ["v2d04-s02", "v2d04-s04", "v2d04-s06"],
+      "truth_claims": [
+        {"claim": "The audience is first-year apprentices.", "evidence_session_ids": ["v2d04-s01"]},
+        {"claim": "The selected format is a mobile repair clinic.", "evidence_session_ids": ["v2d04-s03"]},
+        {"claim": "The follow-up is a six-week parts-lending check-in.", "evidence_session_ids": ["v2d04-s05"]}
+      ],
+      "sessions": [
+        {"session_id": "v2d04-s01", "date": "2026-07-01", "turns": [{"role": "user", "content": "The audience is first-year apprentices. Senior volunteers will assist but are not the target group."}]},
+        {"session_id": "v2d04-s02", "date": "2026-07-02", "turns": [{"role": "assistant", "content": "A reading-circle proposal was considered for retired residents and then set aside."}]},
+        {"session_id": "v2d04-s03", "date": "2026-07-05", "turns": [{"role": "assistant", "content": "The selected format is a mobile repair clinic. A lecture and a book display were rejected as too passive."}]},
+        {"session_id": "v2d04-s04", "date": "2026-07-06", "turns": [{"role": "user", "content": "A separate school visit will use a fixed demonstration table for one afternoon."}]},
+        {"session_id": "v2d04-s05", "date": "2026-07-10", "turns": [{"role": "user", "content": "The follow-up is a six-week parts-lending check-in. Attendance alone is not the follow-up measure."}]},
+        {"session_id": "v2d04-s06", "date": "2026-07-11", "turns": [{"role": "assistant", "content": "A newsletter may mention the clinic, but no newsletter metric was adopted."}]}
+      ]
+    }
+  ],
+  "criteria": {
+    "minimum_accuracy": 0.0,
+    "require_complete_fact_delivery": false,
+    "category_minimums": {},
+    "maximum_wall_seconds": 300,
+    "provenance": {"origin": "independent-stage3-handcrafted", "stage2_calibration_reuse": false, "formal_source_access": false}
+  },
+  "identity": "59dee66dd999c5b84162013aeb415de8b785b834365d5c4f9031cf1ac14941d2"
+}

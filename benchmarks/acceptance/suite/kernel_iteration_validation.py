@@ -24,7 +24,11 @@ class KernelIterationValidationError(ValueError):
 VALIDATION_CONTRACT_SCHEMA = "ownward.kernel-iteration-validation/v1"
 MATERIALS_SCHEMA = "ownward.kernel-iteration-materials/v1"
 EXECUTION_INPUT_SCHEMA = evidence.INPUT_SCHEMA
-EXECUTION_RESULT_SCHEMA = "ownward.kernel-iteration-execution-evidence/v2"
+STAGE3_MATERIALS_SCHEMA = "ownward.kernel-iteration-materials/v2"
+EXECUTION_RESULT_SCHEMA = "ownward.kernel-iteration-execution-evidence/v3"
+STAGE3_CONTRACT_SCHEMA = "ownward.kernel-iteration-stage3-contract/v1"
+STAGE3_PLAN_SCHEMA = "ownward.kernel-iteration-stage3-plan/v1"
+STAGE3_RESULT_SCHEMA = "ownward.kernel-iteration-stage3-evidence/v1"
 BLIND_PLAN_SCHEMA = "ownward.kernel-iteration-blind-plan/v2"
 BLIND_RESULT_SCHEMA = "ownward.kernel-iteration-blind-calibration/v2"
 BLIND_RECOVERY_SCHEMA = "ownward.kernel-iteration-blind-recovery/v1"
@@ -32,6 +36,7 @@ BLIND_SECRET_SCHEMA = "ownward.kernel-iteration-blind-recovery-secret/v1"
 BLIND_DEPENDENCY_LOCATOR_SCHEMA = "ownward.kernel-iteration-blind-dependency-locator/v1"
 VALIDATION_CONTRACT_RELATIVE = Path("iteration/v2/validation-contract.json")
 BLIND_BUDGET_RELATIVE = Path("iteration/v2/blind-calibration-budget.json")
+STAGE3_CONTRACT_RELATIVE = Path("iteration/v2/stage3-contract.json")
 SUPPORTED_EXECUTION_TYPES = {"development", "regression", "integrated"}
 BLIND_COVERAGE = (
     "knowledge-update-conflict",
@@ -80,6 +85,75 @@ def load_validation_contract(suite_root: Path) -> dict[str, Any]:
     _require(calibration.get("repetitions") == 2, "五题校准必须包含两次独立执行以测量重复误差")
     _require(calibration.get("question_concurrency") == 4 and calibration.get("codex_concurrency") == 8, "校准并发合同漂移")
     _require(calibration.get("design_total_normal_seconds") == 9000, "盲测总设计上限不得超过 150 分钟")
+    return value
+
+
+def load_stage3_contract(suite_root: Path) -> dict[str, Any]:
+    """Load the aggregate-only stage-3 policy and independently authored materials."""
+    suite_root = suite_root.resolve()
+    path = suite_root / STAGE3_CONTRACT_RELATIVE
+    value = _load_json(path)
+    _require(value.get("schema") == STAGE3_CONTRACT_SCHEMA, "V2 阶段 3 合同 schema 无效")
+    _require(value.get("frozen_before_diagnostic_results") is True, "阶段 3 门槛未在诊断结果前冻结")
+    _require(value.get("contains_formal_questions_answers_gold_content_outputs_or_case_ids") is False, "阶段 3 合同不得包含正式逐题内容")
+    content = {key: item for key, item in value.items() if key != "identity"}
+    _require(value.get("identity") == evidence.canonical_sha256(content), "V2 阶段 3 合同身份漂移")
+    sources = _mapping(value, "sources")
+    loaded: dict[str, dict[str, Any]] = {}
+    for name in ("aggregate-problem-pool", "development-materials", "regression-materials"):
+        source = _mapping(sources, name)
+        relative = Path(str(source.get("path", "")))
+        _require(not relative.is_absolute() and ".." not in relative.parts, f"阶段 3 {name} 路径越界")
+        source_path = (suite_root / relative).resolve()
+        _require(source_path.is_relative_to(suite_root) and source_path.is_file(), f"阶段 3 {name} 缺失")
+        _require(source.get("sha256") == evidence.file_sha256(source_path), f"阶段 3 {name} 文件摘要漂移")
+        loaded[name] = _load_json(source_path)
+    pool = validate_stage3_problem_pool(loaded["aggregate-problem-pool"])
+    development = validate_stage3_materials(loaded["development-materials"])
+    regression = validate_stage3_materials(loaded["regression-materials"])
+    _require(development["schema"] == regression["schema"] == STAGE3_MATERIALS_SCHEMA, "阶段 3 必须使用可组合真值的独立材料 schema")
+    for name, materials in (("development", development), ("regression", regression)):
+        provenance = _mapping(_mapping(materials, "criteria"), "provenance")
+        _require(provenance.get("origin") == "independent-stage3-handcrafted" and provenance.get("stage2_calibration_reuse") is False, f"{name} 材料来源边界无效")
+        _require(provenance.get("formal_source_access") is False, f"{name} 材料不得接触正式逐题来源")
+    development_facts = {_case_fact_identity(case) for case in development["cases"]}
+    regression_facts = {_case_fact_identity(case) for case in regression["cases"]}
+    _require(development_facts.isdisjoint(regression_facts), "阶段 3 开发与回归材料存在事实重合")
+    coverage = _mapping(value, "coverage")
+    _require(set(coverage.get("development_required", [])) <= {case["coverage"] for case in development["cases"]}, "阶段 3 开发材料覆盖不完整")
+    _require(set(coverage.get("regression_required", [])) <= {case["coverage"] for case in regression["cases"]}, "阶段 3 回归材料覆盖不完整")
+    thresholds = _mapping(value, "thresholds")
+    _require(0 < int(thresholds.get("daily_feedback_hard_seconds", 0)) <= 600, "阶段 3 日常反馈超过 10 分钟")
+    _require(int(thresholds.get("root_minimum_cases", 0)) >= 1, "阶段 3 根因复现门槛无效")
+    _require(float(thresholds.get("v0_regression_minimum_accuracy", 0)) == 1.0, "V0 正确能力保护必须全部通过")
+    benefits = _mapping(value, "v1_benefit_reproof")
+    _require(set(benefits) == {"long-asset-semantic-recall", "fine-grained-evidence", "batch-durability", "storage-convergence"}, "V1 待重证收益不完整")
+    _require(pool["aggregate_sources"] == value["aggregate_sources"], "问题池与阶段 3 聚合来源错绑")
+    current_artifact = _mapping(value, "current_product_artifact")
+    _require(evidence.is_sha256(current_artifact.get("binary_sha256")) and current_artifact.get("role") == "current-product-not-baseline" and current_artifact.get("candidate_decision") is None, "阶段 3 当前产品制品边界无效")
+    return {**value, "loaded": {"problem_pool": pool, "development": development, "regression": regression}}
+
+
+def validate_stage3_problem_pool(value: dict[str, Any]) -> dict[str, Any]:
+    _require(value.get("schema") == "ownward.kernel-iteration-problem-pool/v1", "阶段 3 问题池 schema 无效")
+    _require(value.get("aggregate_only") is True and value.get("contains_formal_question_content_or_case_ids") is False, "阶段 3 问题池越过聚合边界")
+    items = value.get("items")
+    _require(isinstance(items, list) and len(items) >= 8, "阶段 3 问题池覆盖不足")
+    required = {
+        "evidence-not-recalled", "evidence-not-loaded", "fragment-incompleteness", "temporal-conflict",
+        "final-answer-sufficiency", "previously-correct-regression", "retrieval-latency", "end-to-end-resource-cost",
+    }
+    names = {item.get("name") for item in items if isinstance(item, dict)}
+    _require(required <= names, "阶段 3 问题池缺少必要维度")
+    for item in items:
+        _require(isinstance(item, dict), "阶段 3 问题池条目无效")
+        _require(item.get("observation_kind") in {"first-observed-gap", "aggregate-observation"}, "阶段 3 聚合现象类型无效")
+        _require(item.get("root_status") in {"unproven", "proven-by-independent-evidence"}, "阶段 3 根因状态无效")
+        _require(isinstance(item.get("mechanism_hypotheses"), list) and item["mechanism_hypotheses"], "阶段 3 条目缺少待证明机制")
+        _require(isinstance(item.get("required_independent_evidence"), list) and item["required_independent_evidence"], "阶段 3 条目缺少独立证据要求")
+        _require(isinstance(item.get("next_validation"), str) and item["next_validation"], "阶段 3 条目缺少唯一下一验证点")
+    content = {key: item for key, item in value.items() if key != "identity"}
+    _require(value.get("identity") == evidence.canonical_sha256(content), "阶段 3 问题池身份漂移")
     return value
 
 
@@ -213,6 +287,35 @@ def validate_materials(value: dict[str, Any], *, expected_questions: int | None 
     return {**content, "identity": value["identity"]}
 
 
+def validate_stage3_materials(value: dict[str, Any], *, expected_questions: int | None = None) -> dict[str, Any]:
+    """Validate composed-answer stage-3 materials without changing the blind-gate schema contract."""
+    _require(value.get("schema") == STAGE3_MATERIALS_SCHEMA, "阶段 3 材料 schema 无效")
+    cases = value.get("cases")
+    _require(isinstance(cases, list) and cases, "阶段 3 材料缺少案例")
+    for case in cases:
+        _require(isinstance(case, dict), "阶段 3 案例无效")
+        _require(isinstance(case.get("answer"), str) and case["answer"].strip(), "阶段 3 案例答案无效")
+        _require(_normalize(case["answer"]) not in _normalize(str(case.get("question", ""))), "阶段 3 问题表面泄漏答案")
+    compatibility = json.loads(json.dumps(value))
+    compatibility["schema"] = MATERIALS_SCHEMA
+    for case in compatibility["cases"]:
+        claims = case.get("truth_claims")
+        _require(isinstance(claims, list) and claims, "阶段 3 案例缺少组合真值")
+        case["answer"] = claims[0]["claim"]
+    compatibility_content = {key: item for key, item in compatibility.items() if key != "identity"}
+    compatibility["identity"] = evidence.canonical_sha256(compatibility_content)
+    validate_materials(compatibility, expected_questions=expected_questions)
+    content = {
+        "schema": STAGE3_MATERIALS_SCHEMA,
+        "contains_formal_questions_answers_gold_or_content": False,
+        "cases": [_case_projection(case) for case in cases],
+        "criteria": value.get("criteria", {}),
+    }
+    _require(isinstance(content["criteria"], dict), "阶段 3 材料判定合同无效")
+    _require(value.get("identity") == evidence.canonical_sha256(content), "阶段 3 材料身份漂移")
+    return {**content, "identity": value["identity"]}
+
+
 def build_input_manifest(
     suite_root: Path,
     materials_path: Path,
@@ -223,7 +326,8 @@ def build_input_manifest(
     _require(evidence_type in SUPPORTED_EXECUTION_TYPES, "该证据类型不使用端到端执行材料")
     comparison = evidence.load_contract(suite_root)
     validation = load_validation_contract(suite_root)
-    materials = validate_materials(_load_json(materials_path.resolve()))
+    materials_value = _load_json(materials_path.resolve())
+    materials = validate_stage3_materials(materials_value) if materials_value.get("schema") == STAGE3_MATERIALS_SCHEMA else validate_materials(materials_value)
     runtime = validate_execution_config(suite_root, execution_config_path.resolve())
     identities = execution_identities(suite_root, validation, materials, runtime)
     required = set(_mapping(_mapping(comparison, "evidence_types"), evidence_type)["required_dependencies"])
@@ -317,6 +421,7 @@ def execution_identities(
         for name in ("run.py", "codex_app_server.py", "protocol.json")
     }
     implementation["iteration-validation"] = evidence.file_sha256(Path(__file__).resolve())
+    implementation["iteration-longmemeval"] = evidence.file_sha256(Path(__file__).with_name("kernel_iteration_longmemeval.py"))
     protocol = runtime["protocol_value"]
     return {
         "dataset": materials["identity"],
@@ -330,7 +435,7 @@ def execution_identities(
         "observer": evidence.canonical_sha256({"schema": EXECUTION_RESULT_SCHEMA, "validation-contract": validation["identity"], "implementation": implementation["iteration-validation"]}),
         "prompt-and-schema": evidence.canonical_sha256({
             "semantic": protocol["memory"], "reader": protocol["reader"], "judge": protocol["judge"],
-            "retrieval": protocol["retrieval"], "materials-schema": MATERIALS_SCHEMA,
+            "retrieval": protocol["retrieval"], "materials-schema": materials["schema"],
         }),
         "scorer": evidence.canonical_sha256({"official-evaluator": evidence.file_sha256(evaluator), "observer-schema": EXECUTION_RESULT_SCHEMA}),
     }
@@ -346,6 +451,7 @@ def execute_prepared_evidence(
     evidence_type: str,
     input_manifest: Path,
     candidate_result_path: Path | None = None,
+    noncandidate_diagnostic: bool = False,
     resume: bool = False,
     runner: Callable[..., dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
@@ -367,6 +473,18 @@ def execute_prepared_evidence(
         prepared_plan = _load_json(evidence_root / "plan.json")
         _require(result.get("plan_identity") == prepared["plan_identity"] and result.get("subject_identity") == prepared["subject_identity"], "端到端结果计划或 subject 身份漂移")
         _require(result.get("subject_role") == _mapping(prepared_plan, "subject").get("role"), "端到端结果 subject 角色漂移")
+        expected_purpose = "stage3-current-product-diagnostic" if noncandidate_diagnostic else "candidate-evaluation"
+        if result["subject_role"] == "evaluation-baseline":
+            expected_purpose = "stage3-current-product-diagnostic" if result.get("comparison_purpose") == "stage3-current-product-diagnostic" else "candidate-evaluation"
+        _require(result.get("comparison_purpose") == expected_purpose, "端到端恢复目的与已封存结果不一致")
+        receipt_content = {
+            "schema": "ownward.kernel-iteration-execution-resume/v1",
+            "plan_identity": prepared["plan_identity"],
+            "execution_result_sha256": evidence.file_sha256(completed_path),
+            "reused_execution": True,
+            "model_or_product_execution": False,
+        }
+        evidence.atomic_json(evidence_root / "execution-resume.json", {**receipt_content, "identity": evidence.canonical_sha256(receipt_content)})
         return {**prepared, "status": result["status"], "passed": result["passed"], "execution_result": str(completed_path), "reused_execution": True}
     runtime = validate_execution_config(suite_root, execution_config_path.resolve())
     validation = load_validation_contract(suite_root)
@@ -374,24 +492,34 @@ def execute_prepared_evidence(
     payloads = manifest.get("payloads")
     _require(isinstance(payloads, list) and len(payloads) == 1, "端到端输入必须且只能封存一份材料")
     materials_path = (input_manifest.resolve().parent / payloads[0]["path"]).resolve()
-    materials = validate_materials(_load_json(materials_path))
+    materials_value = _load_json(materials_path)
+    materials = validate_stage3_materials(materials_value) if materials_value.get("schema") == STAGE3_MATERIALS_SCHEMA else validate_materials(materials_value)
     identities = execution_identities(suite_root, validation, materials, runtime)
     _verify_execution_manifest_dependencies(evidence.load_contract(suite_root), manifest, evidence_type, materials, identities)
     subject = evidence.select_subject(evidence.load_contract(suite_root), selector, subject_manifest)
-    _require(subject["role"] in {"v2-candidate", "evaluation-baseline"}, "端到端同尺执行只接受 V2 候选或冻结 V0 基线")
+    _require(subject["role"] in {"v2-candidate", "evaluation-baseline", "current-product-not-baseline"}, "端到端同尺执行 subject 角色无效")
+    _require(subject["role"] != "current-product-not-baseline" or noncandidate_diagnostic, "当前产品只能用于明确的非候选诊断")
+    _require(subject["role"] != "v2-candidate" or not noncandidate_diagnostic, "V2 候选不得伪装为非候选诊断")
     candidate_result = None
     if subject["role"] == "evaluation-baseline":
-        _require(candidate_result_path is not None, "V0 只能在 V2 候选绝对门通过后执行")
+        _require(candidate_result_path is not None, "V0 只能在前置同尺 subject 执行后运行")
         candidate_result = _load_execution_result(candidate_result_path.resolve())
-        _require(candidate_result["subject_role"] == "v2-candidate", "V0 前置结果不是 V2 候选")
-        _require(candidate_result["passed"] is True and candidate_result["candidate_decision"] is True, "V2 候选未通过冻结绝对门，禁止消耗 V0 执行")
+        if noncandidate_diagnostic:
+            _require(candidate_result["subject_role"] == "current-product-not-baseline", "V0 诊断前置结果不是当前产品")
+            _require(candidate_result["comparison_purpose"] == "stage3-current-product-diagnostic" and candidate_result["candidate_decision"] is None, "当前产品诊断不得形成候选决定")
+        else:
+            _require(candidate_result["subject_role"] == "v2-candidate", "V0 前置结果不是 V2 候选")
+            _require(candidate_result["passed"] is True and candidate_result["candidate_decision"] is True, "V2 候选未通过冻结绝对门，禁止消耗 V0 执行")
         _require(candidate_result["evidence_type"] == evidence_type, "V0 与候选证据类型不同")
         _require(candidate_result["input_identity"] == manifest.get("identity"), "V0 与候选完整输入身份不同")
         _require(candidate_result["shared_conditions"] == dict(sorted(_mapping(manifest, "shared_conditions").items())), "V0 与候选共享评测条件不同")
         _require(candidate_result["direct_dependencies"] == dict(sorted(_mapping(manifest, "direct_dependencies").items())), "V0 与候选材料、执行器或观察器不同")
     else:
-        _require(candidate_result_path is None, "V2 候选执行不得伪装成基线后置阶段")
-    _verify_subject_binary(subject, runtime["binary"])
+        _require(candidate_result_path is None, "前置 subject 执行不得伪装成基线后置阶段")
+    if subject["role"] == "current-product-not-baseline":
+        _verify_current_product_binary(suite_root, runtime["binary"])
+    else:
+        _verify_subject_binary(subject, runtime["binary"])
     state_path = suite_root.resolve().parents[2] / evidence.FORMAL_STATE_RELATIVE
     state_before = state_path.read_bytes() if state_path.is_file() else None
     dataset = [_longmemeval_case(case) for case in materials["cases"]]
@@ -410,6 +538,8 @@ def execute_prepared_evidence(
     if not isinstance(report.get("diagnostic_summary"), dict) and summary_path.is_file():
         report = {**report, "diagnostic_summary": _load_json(summary_path)}
     observation = observe_report(report, materials)
+    if materials["schema"] == STAGE3_MATERIALS_SCHEMA:
+        observation["case_evidence"] = observe_case_evidence(scratch / "run", materials)
     criteria = materials.get("criteria", {})
     passed, feedback = evaluate_observation(observation, criteria)
     content = {
@@ -418,6 +548,7 @@ def execute_prepared_evidence(
         "subject_identity": subject["identity"],
         "subject_role": subject["role"],
         "subject_name": subject["name"],
+        "comparison_purpose": "stage3-current-product-diagnostic" if noncandidate_diagnostic else "candidate-evaluation",
         "evidence_type": evidence_type,
         "status": "passed" if passed else "failed",
         "passed": passed,
@@ -474,6 +605,81 @@ def observe_report(report: dict[str, Any], materials: dict[str, Any]) -> dict[st
     }
 
 
+def observe_case_evidence(run_root: Path, materials: dict[str, Any]) -> list[dict[str, Any]]:
+    """Reduce independent synthetic traces to mechanistic facts without persisting raw content."""
+    observations: list[dict[str, Any]] = []
+    for case in materials["cases"]:
+        case_id = str(case["case_id"])
+        root = run_root.resolve() / "questions" / case_id
+        diagnostic_path = root / "diagnostic.json"
+        retrieval_path = root / "retrieval.json"
+        diagnostic = _load_json(diagnostic_path)
+        retrieval_checkpoint = _load_json(retrieval_path)
+        artifacts = _mapping(diagnostic, "artifacts")
+        _require(_mapping(artifacts, "retrieval").get("sha256") == evidence.file_sha256(retrieval_path), f"{case_id} 检索证据摘要漂移")
+        coverage = _mapping(diagnostic, "evidence_coverage")
+        expected_sessions = [str(item) for item in coverage.get("expected_session_ids", [])]
+        expected_assets = [str(item) for item in coverage.get("expected_asset_ids", [])]
+        _require(len(expected_sessions) == len(expected_assets), f"{case_id} 答案会话与资产身份未闭合")
+        source_to_asset = dict(zip(expected_sessions, expected_assets))
+        returned = set(str(item) for item in coverage.get("search_returned_expected", []))
+        read = set(str(item) for item in coverage.get("read_expected", []))
+        expected = set(expected_assets)
+        retrieved = _mapping(retrieval_checkpoint, "retrieval")
+        delivered: dict[str, list[str]] = {}
+        for item in retrieval_checkpoint.get("evidence", []):
+            if not isinstance(item, dict) or not isinstance(item.get("content"), str):
+                continue
+            source_id = str(item.get("id", ""))
+            delivered.setdefault(source_id, []).append(item["content"])
+        claim_results: list[dict[str, Any]] = []
+        for claim in case["truth_claims"]:
+            bound_assets = {source_to_asset[item] for item in claim["evidence_session_ids"] if item in source_to_asset}
+            supplied = " ".join(content for asset in bound_assets for content in delivered.get(asset, []))
+            claim_results.append({
+                "claim_identity": evidence.canonical_sha256({"claim": _normalize(claim["claim"]), "bound_assets": sorted(bound_assets)}),
+                "delivered": _normalize(claim["claim"]) in _normalize(supplied),
+            })
+        created = bool(_mapping(diagnostic, "execution_observations").get("source_creation_complete"))
+        semantic = bool(_mapping(diagnostic, "execution_observations").get("semantic_submission_complete"))
+        correct = bool(diagnostic.get("correct"))
+        first_gap = str(diagnostic.get("first_observed_gap"))
+        all_returned = bool(expected) and expected <= returned
+        all_read = bool(expected) and expected <= read
+        claims_complete = bool(claim_results) and all(item["delivered"] for item in claim_results)
+        if not created:
+            mechanism = "source-creation-incomplete"
+        elif not semantic:
+            mechanism = "semantic-submission-incomplete"
+        elif not all_returned:
+            mechanism = "search-return-gap"
+        elif not all_read:
+            mechanism = "read-selection-gap"
+        elif not claims_complete and not correct:
+            mechanism = "fragment-incomplete-after-read"
+        elif claims_complete and not correct:
+            mechanism = "reader-answer-failure-after-complete-evidence"
+        else:
+            mechanism = "none"
+        observations.append({
+            "case_identity": _case_fact_identity(case),
+            "coverage": case["coverage"],
+            "correct": correct,
+            "first_observed_gap": first_gap,
+            "first_proven_mechanism": mechanism,
+            "expected_sources": len(expected),
+            "search_returned_sources": len(expected & returned),
+            "read_sources": len(expected & read),
+            "truth_claims": len(claim_results),
+            "delivered_truth_claims": sum(int(item["delivered"]) for item in claim_results),
+            "context_chars": int(retrieved.get("context_chars", 0)),
+            "retrieval_sha256": evidence.file_sha256(retrieval_path),
+            "diagnostic_sha256": evidence.file_sha256(diagnostic_path),
+        })
+    _require(len(observations) == len(materials["cases"]), "阶段 3 逐案例机制证据不完整")
+    return observations
+
+
 def evaluate_observation(observation: dict[str, Any], criteria: dict[str, Any]) -> tuple[bool, list[dict[str, Any]]]:
     failures: list[dict[str, Any]] = []
     minimum_accuracy = criteria.get("minimum_accuracy")
@@ -494,9 +700,15 @@ def evaluate_observation(observation: dict[str, Any], criteria: dict[str, Any]) 
 def compare_execution_results(left_path: Path, right_path: Path) -> dict[str, Any]:
     left = _load_execution_result(left_path.resolve())
     right = _load_execution_result(right_path.resolve())
-    _require(left["subject_role"] == "v2-candidate", "同尺比较左侧必须是 V2 候选")
+    diagnostic = left["subject_role"] == "current-product-not-baseline"
+    _require(left["subject_role"] in {"v2-candidate", "current-product-not-baseline"}, "同尺比较左侧必须是 V2 候选或明确的当前产品诊断")
     _require(right["subject_role"] == "evaluation-baseline", "同尺比较右侧必须是冻结 V0 基线")
-    _require(left["passed"] is True and left["candidate_decision"] is True, "V2 候选未通过冻结绝对门，禁止比较 V0")
+    if diagnostic:
+        _require(left["comparison_purpose"] == right["comparison_purpose"] == "stage3-current-product-diagnostic", "当前产品诊断目的错绑")
+        _require(left["candidate_decision"] is None, "当前产品诊断不得形成候选决定")
+    else:
+        _require(left["comparison_purpose"] == right["comparison_purpose"] == "candidate-evaluation", "候选比较目的错绑")
+        _require(left["passed"] is True and left["candidate_decision"] is True, "V2 候选未通过冻结绝对门，禁止比较 V0")
     _require(right["candidate_decision"] is None, "V0 结果不得形成候选决定")
     _require(left["evidence_type"] == right["evidence_type"], "同尺比较的证据类型不同")
     _require(left["input_identity"] == right["input_identity"], "同尺比较的完整输入身份不同")
@@ -512,7 +724,9 @@ def compare_execution_results(left_path: Path, right_path: Path) -> dict[str, An
         "wall_seconds": float(right["observation"]["latency"]["wall_seconds"]) - float(left["observation"]["latency"]["wall_seconds"]),
     }
     value = {
-        "schema": "ownward.kernel-iteration-pair-observation/v1",
+        "schema": "ownward.kernel-iteration-pair-observation/v2",
+        "comparison_purpose": left["comparison_purpose"],
+        "candidate_decision": None if diagnostic else True,
         "evidence_type": left["evidence_type"],
         "left_subject": left["subject_identity"],
         "right_subject": right["subject_identity"],
@@ -529,12 +743,220 @@ def _load_execution_result(path: Path) -> dict[str, Any]:
     _require(value.get("schema") == EXECUTION_RESULT_SCHEMA, "同尺执行结果 schema 无效")
     content = {key: item for key, item in value.items() if key != "identity"}
     _require(value.get("identity") == evidence.canonical_sha256(content), "同尺执行结果身份漂移")
-    _require(value.get("subject_role") in {"v2-candidate", "evaluation-baseline"}, "同尺执行结果 subject 角色无效")
+    _require(value.get("subject_role") in {"v2-candidate", "evaluation-baseline", "current-product-not-baseline"}, "同尺执行结果 subject 角色无效")
+    purpose = value.get("comparison_purpose")
+    _require(purpose in {"candidate-evaluation", "stage3-current-product-diagnostic"}, "同尺执行结果比较目的无效")
+    if value["subject_role"] == "current-product-not-baseline":
+        _require(purpose == "stage3-current-product-diagnostic" and value.get("candidate_decision") is None, "当前产品结果越过非候选诊断边界")
+    if value["subject_role"] == "v2-candidate":
+        _require(purpose == "candidate-evaluation", "V2 候选结果比较目的无效")
     _require(isinstance(value.get("subject_identity"), str) and len(value["subject_identity"]) == 64, "同尺执行结果 subject 身份无效")
     _require(evidence.is_sha256(value.get("input_identity")), "同尺执行结果完整输入身份无效")
     conditions = _mapping(value, "shared_conditions")
     _require(conditions and all(evidence.is_sha256(item) for item in conditions.values()), "同尺执行结果共享评测条件无效")
     return value
+
+
+def prepare_stage3(
+    suite_root: Path,
+    output_root: Path,
+    development_input: Path,
+    regression_input: Path,
+    formal_state_path: Path,
+    *,
+    resume: bool = False,
+) -> dict[str, Any]:
+    """Freeze stage-3 policy, subjects and inputs before any diagnostic result exists."""
+    suite_root = suite_root.resolve()
+    output_root = output_root.resolve()
+    repository = suite_root.parents[2]
+    evidence._validate_output_boundary(repository, output_root)
+    stage3 = load_stage3_contract(suite_root)
+    comparison = evidence.load_contract(suite_root)
+    inputs = {
+        "development": _load_stage3_input(development_input, "development", stage3["loaded"]["development"]),
+        "regression": _load_stage3_input(regression_input, "regression", stage3["loaded"]["regression"]),
+    }
+    state_path = formal_state_path.resolve()
+    _require(state_path.is_file(), "阶段 3 缺少正式 state 只读基线")
+    state_sha = evidence.file_sha256(state_path)
+    current = evidence.select_subject(comparison, "current-product")
+    baseline = evidence.select_subject(comparison, "v0")
+    content = {
+        "schema": STAGE3_PLAN_SCHEMA,
+        "contract_identity": stage3["identity"],
+        "comparison_contract_identity": comparison["identity"],
+        "subjects": {"current-product": current["identity"], "v0": baseline["identity"]},
+        "inputs": {name: item["identity"] for name, item in sorted(inputs.items())},
+        "formal_state_sha256": state_sha,
+        "formal": False,
+        "candidate_decision": None,
+        "v2_candidate_exists": False,
+    }
+    plan = {**content, "identity": evidence.canonical_sha256(content)}
+    root = output_root / "stage3" / plan["identity"]
+    plan_path = root / "plan.json"
+    if plan_path.is_file():
+        _require(resume and _load_json(plan_path) == plan, "阶段 3 计划已存在或身份漂移")
+        reused = True
+    else:
+        evidence.atomic_json(plan_path, plan)
+        reused = False
+    _require(evidence.file_sha256(state_path) == state_sha, "阶段 3 准备改写了正式 state")
+    return {"passed": True, "status": "prepared", "plan_identity": plan["identity"], "plan_path": str(plan_path), "reused": reused}
+
+
+def finalize_stage3(
+    suite_root: Path,
+    output_root: Path,
+    plan_identity: str,
+    result_paths: dict[str, Path],
+    formal_state_path: Path,
+    *,
+    resume: bool = False,
+) -> dict[str, Any]:
+    """Close aggregate attribution and material freeze without creating a V2 decision."""
+    suite_root = suite_root.resolve()
+    output_root = output_root.resolve()
+    _require(evidence.is_sha256(plan_identity), "阶段 3 计划身份无效")
+    root = output_root / "stage3" / plan_identity
+    plan = _load_json(root / "plan.json")
+    _require(plan.get("schema") == STAGE3_PLAN_SCHEMA and plan.get("identity") == plan_identity, "阶段 3 计划错绑")
+    content = {key: item for key, item in plan.items() if key != "identity"}
+    _require(evidence.canonical_sha256(content) == plan_identity, "阶段 3 计划内容漂移")
+    stage3 = load_stage3_contract(suite_root)
+    _require(plan["contract_identity"] == stage3["identity"], "阶段 3 计划与当前合同错绑")
+    state_path = formal_state_path.resolve()
+    _require(evidence.file_sha256(state_path) == plan["formal_state_sha256"], "阶段 3 期间正式 state 发生变化")
+    expected = {"current-development", "v0-development", "current-regression", "v0-regression"}
+    _require(set(result_paths) == expected, "阶段 3 结果角色不完整")
+    results = {name: _load_execution_result(path.resolve()) for name, path in result_paths.items()}
+    for evidence_type in ("development", "regression"):
+        current = results[f"current-{evidence_type}"]
+        baseline = results[f"v0-{evidence_type}"]
+        _require(current["subject_role"] == "current-product-not-baseline" and baseline["subject_role"] == "evaluation-baseline", f"{evidence_type} subject 顺序错绑")
+        _require(current["subject_identity"] == plan["subjects"]["current-product"] and baseline["subject_identity"] == plan["subjects"]["v0"], f"{evidence_type} subject 身份漂移")
+        _require(current["input_identity"] == baseline["input_identity"] == plan["inputs"][evidence_type], f"{evidence_type} 输入身份漂移")
+        _require(current["comparison_purpose"] == baseline["comparison_purpose"] == "stage3-current-product-diagnostic", f"{evidence_type} 越过非候选诊断边界")
+        _require(current["candidate_decision"] is None and baseline["candidate_decision"] is None, f"{evidence_type} 不得形成候选决定")
+        _validate_execution_resume_receipt(result_paths[f"current-{evidence_type}"])
+        _validate_execution_resume_receipt(result_paths[f"v0-{evidence_type}"])
+    development_pair = compare_execution_results(result_paths["current-development"], result_paths["v0-development"])
+    regression_pair = compare_execution_results(result_paths["current-regression"], result_paths["v0-regression"])
+    current_development = results["current-development"]["observation"]
+    v0_development = results["v0-development"]["observation"]
+    current_regression = results["current-regression"]["observation"]
+    v0_regression = results["v0-regression"]["observation"]
+    thresholds = _mapping(stage3, "thresholds")
+    root_cases = [item for item in current_development["case_evidence"] if item["first_proven_mechanism"] == "fragment-incomplete-after-read"]
+    root_proven = len(root_cases) >= int(thresholds["root_minimum_cases"])
+    v0_protection = (
+        float(v0_regression["final_answer_accuracy"]) >= float(thresholds["v0_regression_minimum_accuracy"])
+        and v0_regression["fact_delivery"]["complete"] is True
+    )
+    wall_seconds = sum(float(results[name]["observation"]["latency"]["wall_seconds"]) for name in expected)
+    benefit_results = _adjudicate_v1_benefits(stage3, results)
+    directions = _stage3_direction_decisions(root_proven, benefit_results)
+    passed = root_proven and v0_protection and wall_seconds <= float(thresholds["daily_feedback_hard_seconds"]) and len(directions) == 5
+    result_content = {
+        "schema": STAGE3_RESULT_SCHEMA,
+        "plan_identity": plan_identity,
+        "contract_identity": stage3["identity"],
+        "status": "passed" if passed else "failed",
+        "passed": passed,
+        "formal": False,
+        "formal_state_written": False,
+        "candidate_decision": None,
+        "v2_candidate_exists": False,
+        "root_cause": {
+            "status": "proven" if root_proven else "not-proven",
+            "mechanism": "source-read-complete-but-required-fragments-incomplete",
+            "independent_cases": len(root_cases),
+            "minimum_cases": int(thresholds["root_minimum_cases"]),
+            "responsible_direction": "information-representation-and-organization",
+        },
+        "v0_correct_capability_protection": {"passed": v0_protection, "accuracy": v0_regression["final_answer_accuracy"], "fact_delivery_complete": v0_regression["fact_delivery"]["complete"]},
+        "v1_benefit_reproof": benefit_results,
+        "direction_decisions": directions,
+        "comparisons": {"development": development_pair["identity"], "regression": regression_pair["identity"]},
+        "execution_results": {name: {"identity": value["identity"], "sha256": evidence.file_sha256(result_paths[name].resolve())} for name, value in sorted(results.items())},
+        "cost": {"wall_seconds": wall_seconds, "hard_seconds": int(thresholds["daily_feedback_hard_seconds"])},
+        "formal_state_sha256": plan["formal_state_sha256"],
+    }
+    result = {**result_content, "identity": evidence.canonical_sha256(result_content)}
+    result_path = root / "result.json"
+    if result_path.is_file():
+        _require(resume and _load_json(result_path) == result, "阶段 3 终态已存在或结果漂移")
+    else:
+        evidence.atomic_json(result_path, result)
+    _require(evidence.file_sha256(state_path) == plan["formal_state_sha256"], "阶段 3 终态改写了正式 state")
+    return {**result, "result_path": str(result_path)}
+
+
+def _load_stage3_input(path: Path, evidence_type: str, materials: dict[str, Any]) -> dict[str, Any]:
+    value = _load_json(path.resolve())
+    _require(value.get("schema") == EXECUTION_INPUT_SCHEMA and value.get("evidence_type") == evidence_type, f"阶段 3 {evidence_type} 输入无效")
+    _require(_mapping(value, "shared_conditions").get("dataset") == materials["identity"], f"阶段 3 {evidence_type} 材料身份错绑")
+    content = {key: item for key, item in value.items() if key != "identity"}
+    _require(value.get("identity") == evidence.canonical_sha256(content), f"阶段 3 {evidence_type} 输入身份漂移")
+    return value
+
+
+def _validate_execution_resume_receipt(result_path: Path) -> None:
+    result_path = result_path.resolve()
+    receipt_path = result_path.parent / "execution-resume.json"
+    _require(receipt_path.is_file(), "阶段 3 缺少执行恢复收据")
+    receipt = _load_json(receipt_path)
+    _require(receipt.get("schema") == "ownward.kernel-iteration-execution-resume/v1", "阶段 3 缺少执行恢复收据")
+    content = {key: item for key, item in receipt.items() if key != "identity"}
+    _require(receipt.get("identity") == evidence.canonical_sha256(content), "执行恢复收据身份漂移")
+    _require(receipt.get("execution_result_sha256") == evidence.file_sha256(result_path), "执行恢复收据与结果错绑")
+    _require(receipt.get("reused_execution") is True and receipt.get("model_or_product_execution") is False, "恢复证明没有做到零模型与零产品执行")
+
+
+def _adjudicate_v1_benefits(stage3: dict[str, Any], results: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    policies = _mapping(stage3, "v1_benefit_reproof")
+    current_cases = results["current-development"]["observation"]["case_evidence"]
+    baseline_cases = results["v0-development"]["observation"]["case_evidence"]
+    long_coverages = set(_mapping(policies, "long-asset-semantic-recall")["coverages"])
+    current_long = [item for item in current_cases if item["coverage"] in long_coverages]
+    baseline_long = [item for item in baseline_cases if item["coverage"] in long_coverages]
+    def source_recall(items: list[dict[str, Any]]) -> float:
+        expected = sum(int(item["expected_sources"]) for item in items)
+        return sum(int(item["search_returned_sources"]) for item in items) / expected if expected else 0.0
+    def claim_recall(items: list[dict[str, Any]]) -> float:
+        total = sum(int(item["truth_claims"]) for item in items)
+        return sum(int(item["delivered_truth_claims"]) for item in items) / total if total else 0.0
+    current_source = source_recall(current_long)
+    baseline_source = source_recall(baseline_long)
+    source_policy = _mapping(policies, "long-asset-semantic-recall")
+    source_accepted = current_source >= float(source_policy["minimum_recall"]) and current_source >= baseline_source
+    source_separable = source_accepted and any(item["first_proven_mechanism"] == "fragment-incomplete-after-read" for item in current_long)
+    current_claim = claim_recall(current_cases)
+    baseline_claim = claim_recall(baseline_cases)
+    evidence_policy = _mapping(policies, "fine-grained-evidence")
+    evidence_accepted = current_claim >= float(evidence_policy["minimum_claim_delivery"]) and current_claim >= baseline_claim
+    current_bytes = sum(int(results[name]["observation"]["resources"]["ownward_data_bytes"]) for name in ("current-development", "current-regression"))
+    baseline_bytes = sum(int(results[name]["observation"]["resources"]["ownward_data_bytes"]) for name in ("v0-development", "v0-regression"))
+    storage_ratio = current_bytes / baseline_bytes if baseline_bytes else math.inf
+    storage_policy = _mapping(policies, "storage-convergence")
+    storage_accepted = storage_ratio <= float(storage_policy["maximum_ratio_to_v0"])
+    return {
+        "long-asset-semantic-recall": {"decision": "protect" if source_accepted and source_separable else "reject-protection", "current": current_source, "v0": baseline_source, "mechanism_separable": source_separable},
+        "fine-grained-evidence": {"decision": "protect" if evidence_accepted else "reject-protection", "current": current_claim, "v0": baseline_claim, "mechanism_separable": evidence_accepted and not any(item["first_proven_mechanism"] == "fragment-incomplete-after-read" for item in current_cases)},
+        "batch-durability": {"decision": "protect", "resume_byte_identity": True, "zero_execution_resume": True},
+        "storage-convergence": {"decision": "protect" if storage_accepted else "reject-protection", "current_bytes": current_bytes, "v0_bytes": baseline_bytes, "ratio": storage_ratio},
+    }
+
+
+def _stage3_direction_decisions(root_proven: bool, benefits: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "information-representation-and-organization": {"decision": "optimize" if root_proven else "unresolved", "target": "complete-required-fragment-delivery", "gate": "fragment-gap-at-least-halved", "protect": ["source-identity", "authority-content", "semantic-submission"]},
+        "retrieval-architecture": {"decision": "optimize", "target": "evidence-delivery-with-v0-latency-bound", "gate": "retrieval-mean-no-worse-than-v0-plus-repeatability", "protect": ["search-recall", "read-budget", "ranking-quality"]},
+        "semantic-capability": {"decision": "protect" if benefits["long-asset-semantic-recall"]["decision"] == "protect" else "optimize", "target": "long-asset-search-return", "gate": "same-scale-reproof", "protect": ["semantic-identity", "organization-completeness"]},
+        "data-and-storage": {"decision": "protect" if benefits["storage-convergence"]["decision"] == "protect" else "optimize", "target": "storage-convergence", "gate": "no-regression-versus-v0", "protect": ["durability", "rebuild", "authority-losslessness"]},
+        "execution-and-state": {"decision": "protect", "target": "batch-durability-and-resume", "gate": "byte-identical-zero-execution-resume", "protect": ["atomic-checkpoints", "bounded-recovery", "formal-state-isolation"]},
+    }
 
 
 def calibrate_blind(
@@ -1249,7 +1671,7 @@ def _run_longmemeval(
     resume: bool,
 ) -> dict[str, Any]:
     repository = suite_root.resolve().parents[2]
-    adapter = repository / "benchmarks" / "longmemeval_s" / "run.py"
+    adapter = Path(__file__).with_name("kernel_iteration_longmemeval.py")
     python = Path(str(_mapping(runtime["environment"], "layout")["python"])) / "Scripts" / "python.exe"
     arguments = [
         str(python), str(adapter), "run", "--non-formal",
@@ -1437,6 +1859,22 @@ def _case_projection(case: dict[str, Any]) -> dict[str, Any]:
     return {name: case[name] for name in required}
 
 
+def _case_fact_identity(case: dict[str, Any]) -> str:
+    """Identity for overlap rejection; excludes labels but includes every authored fact."""
+    return evidence.canonical_sha256({
+        "question": _normalize(str(case["question"])),
+        "answer": _normalize(str(case["answer"])),
+        "claims": sorted(_normalize(str(item["claim"])) for item in case["truth_claims"]),
+        "sessions": [
+            {
+                "date": session["date"],
+                "turns": [{"role": turn["role"], "content": _normalize(turn["content"])} for turn in session["turns"]],
+            }
+            for session in case["sessions"]
+        ],
+    })
+
+
 def _longmemeval_case(case: dict[str, Any]) -> dict[str, Any]:
     sessions = case["sessions"]
     return {
@@ -1487,6 +1925,11 @@ def _verify_subject_binary(subject: dict[str, Any], binary: Path, *, allow_curre
     if expected is None and allow_current_product:
         return
     _require(expected == digest, "subject 身份与实际产品二进制错绑")
+
+
+def _verify_current_product_binary(suite_root: Path, binary: Path) -> None:
+    expected = _mapping(load_stage3_contract(suite_root), "current_product_artifact")["binary_sha256"]
+    _require(evidence.file_sha256(binary) == expected, "当前产品诊断二进制与冻结 V1 制品错绑")
 
 
 def _verify_runtime_binary_binding(state_path: Path, binary: Path) -> None:

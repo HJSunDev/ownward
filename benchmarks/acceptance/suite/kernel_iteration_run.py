@@ -22,6 +22,8 @@ def parse_args() -> argparse.Namespace:
     selection.add_argument("--runtime-state", type=Path)
     selection.add_argument("--blind-calibration-config", type=Path)
     selection.add_argument("--blind-plan-identity")
+    selection.add_argument("--stage3-prepare", action="store_true")
+    selection.add_argument("--stage3-finalize", action="store_true")
     parser.add_argument("--evidence-type", default="identity-calibration")
     parser.add_argument("--input-manifest", type=Path)
     parser.add_argument("--execution-config", type=Path)
@@ -32,6 +34,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--compare-left", type=Path)
     parser.add_argument("--compare-right", type=Path)
     parser.add_argument("--candidate-result", type=Path)
+    parser.add_argument("--noncandidate-diagnostic", action="store_true")
+    parser.add_argument("--stage3-plan-identity")
+    parser.add_argument("--development-input", type=Path)
+    parser.add_argument("--regression-input", type=Path)
+    parser.add_argument("--current-development-result", type=Path)
+    parser.add_argument("--v0-development-result", type=Path)
+    parser.add_argument("--current-regression-result", type=Path)
+    parser.add_argument("--v0-regression-result", type=Path)
     parser.add_argument("--bind-blind-current-dependencies", action="store_true")
     parser.add_argument("--contract", type=Path)
     parser.add_argument("--resume", action="store_true")
@@ -40,7 +50,25 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    if args.compare_left is not None or args.compare_right is not None:
+    if args.stage3_prepare:
+        if args.development_input is None or args.regression_input is None or args.formal_state is None:
+            raise SystemExit("阶段 3 准备必须提供开发/回归输入与正式 state 只读基线")
+        result = kernel_iteration_validation.prepare_stage3(
+            HERE, args.output, args.development_input, args.regression_input, args.formal_state, resume=args.resume,
+        )
+    elif args.stage3_finalize:
+        paths = {
+            "current-development": args.current_development_result,
+            "v0-development": args.v0_development_result,
+            "current-regression": args.current_regression_result,
+            "v0-regression": args.v0_regression_result,
+        }
+        if args.stage3_plan_identity is None or args.formal_state is None or any(path is None for path in paths.values()):
+            raise SystemExit("阶段 3 收口必须提供 plan identity、四份同尺结果与正式 state")
+        result = kernel_iteration_validation.finalize_stage3(
+            HERE, args.output, args.stage3_plan_identity, paths, args.formal_state, resume=args.resume,
+        )
+    elif args.compare_left is not None or args.compare_right is not None:
         if args.compare_left is None or args.compare_right is None:
             raise SystemExit("同尺比较必须同时提供 --compare-left 和 --compare-right")
         result = kernel_iteration_validation.compare_execution_results(args.compare_left, args.compare_right)
@@ -113,6 +141,7 @@ def main() -> None:
                 evidence_type=args.evidence_type,
                 input_manifest=args.input_manifest,
                 candidate_result_path=args.candidate_result,
+                noncandidate_diagnostic=args.noncandidate_diagnostic,
                 resume=args.resume,
             )
         else:

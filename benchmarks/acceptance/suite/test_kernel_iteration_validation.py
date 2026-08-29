@@ -304,6 +304,139 @@ class KernelIterationValidationTests(unittest.TestCase):
         self.assertTrue(observation["fact_delivery"]["complete"])
         self.assertEqual(0, observation["fact_delivery"]["missing_questions"])
 
+    def test_stage3_contract_is_aggregate_only_disjoint_and_pre_result_frozen(self) -> None:
+        stage3 = validation.load_stage3_contract(HERE)
+        self.assertTrue(stage3["frozen_before_diagnostic_results"])
+        self.assertFalse(stage3["contains_formal_questions_answers_gold_content_outputs_or_case_ids"])
+        self.assertEqual(4, len(stage3["loaded"]["development"]["cases"]))
+        self.assertEqual(8, len(stage3["loaded"]["regression"]["cases"]))
+        serialized = json.dumps(stage3["loaded"]["problem_pool"], ensure_ascii=False)
+        self.assertNotIn("question_id", serialized)
+        self.assertNotIn("answer_session_ids", serialized)
+
+    def test_current_product_diagnostic_is_explicit_non_candidate_and_precedes_v0(self) -> None:
+        with tempfile.TemporaryDirectory(dir=REPOSITORY) as temporary:
+            root = Path(temporary)
+            materials_path = root / "materials.json"
+            self._write_json(materials_path, self._materials(1))
+            config, _runtime = self._runtime_fixture(root)
+            input_path = root / "input.json"
+            validation.build_input_manifest(HERE, materials_path, config, "development", input_path)
+            with mock.patch.object(validation, "_verify_subject_binary", return_value=None), mock.patch.object(validation, "_verify_current_product_binary", return_value=None):
+                with self.assertRaisesRegex(validation.KernelIterationValidationError, "只能用于明确的非候选诊断"):
+                    validation.execute_prepared_evidence(
+                        HERE, root / "rejected", config, selector="current-product",
+                        evidence_type="development", input_manifest=input_path,
+                        runner=lambda **_kwargs: self._report(1),
+                    )
+                current = validation.execute_prepared_evidence(
+                    HERE, root / "evidence", config, selector="current-product",
+                    evidence_type="development", input_manifest=input_path,
+                    noncandidate_diagnostic=True, runner=lambda **_kwargs: self._report(1),
+                )
+                baseline = validation.execute_prepared_evidence(
+                    HERE, root / "evidence", config, selector="v0",
+                    evidence_type="development", input_manifest=input_path,
+                    candidate_result_path=Path(current["execution_result"]),
+                    noncandidate_diagnostic=True, runner=lambda **_kwargs: self._report(1),
+                )
+            current_value = json.loads(Path(current["execution_result"]).read_text(encoding="utf-8"))
+            baseline_value = json.loads(Path(baseline["execution_result"]).read_text(encoding="utf-8"))
+            self.assertIsNone(current_value["candidate_decision"])
+            self.assertIsNone(baseline_value["candidate_decision"])
+            self.assertEqual("stage3-current-product-diagnostic", current_value["comparison_purpose"])
+            compared = validation.compare_execution_results(Path(current["execution_result"]), Path(baseline["execution_result"]))
+            self.assertIsNone(compared["candidate_decision"])
+
+    def test_stage3_case_observer_proves_fragment_gap_after_source_read(self) -> None:
+        with tempfile.TemporaryDirectory(dir=REPOSITORY) as temporary:
+            root = Path(temporary) / "run"
+            materials = self._materials(1)
+            materials["schema"] = validation.STAGE3_MATERIALS_SCHEMA
+            materials["identity"] = iteration.canonical_sha256({key: item for key, item in materials.items() if key != "identity"})
+            case = materials["cases"][0]
+            question = root / "questions" / case["case_id"]
+            retrieval = {
+                "schema": "ownward.longmemeval-s-retrieval/v1", "question_identity": "1" * 64,
+                "evidence": [{"id": "asset-1", "content": "A different fragment."}],
+                "retrieval": {"context_chars": 21},
+            }
+            self._write_json(question / "retrieval.json", retrieval)
+            diagnostic = {
+                "correct": False,
+                "first_observed_gap": "evidence_read_answer_incorrect",
+                "evidence_coverage": {
+                    "expected_session_ids": ["c01-s01"], "expected_asset_ids": ["asset-1"],
+                    "search_returned_expected": ["asset-1"], "read_expected": ["asset-1"],
+                },
+                "execution_observations": {"source_creation_complete": True, "semantic_submission_complete": True},
+                "artifacts": {"retrieval": {"sha256": iteration.file_sha256(question / "retrieval.json")}},
+            }
+            self._write_json(question / "diagnostic.json", diagnostic)
+            observed = validation.observe_case_evidence(root, materials)
+            self.assertEqual("fragment-incomplete-after-read", observed[0]["first_proven_mechanism"])
+            self.assertEqual(1, observed[0]["read_sources"])
+            self.assertEqual(0, observed[0]["delivered_truth_claims"])
+
+    def test_stage3_finalization_requires_resume_receipts_and_never_forms_candidate_decision(self) -> None:
+        with tempfile.TemporaryDirectory(dir=REPOSITORY) as temporary:
+            output = Path(temporary)
+            state = output / "state.json"
+            state.write_bytes(b"formal-state-read-only")
+            stage3 = validation.load_stage3_contract(HERE)
+            comparison = iteration.load_contract(HERE)
+            current_identity = iteration.select_subject(comparison, "current-product")["identity"]
+            v0_identity = iteration.select_subject(comparison, "v0")["identity"]
+            inputs = {"development": "1" * 64, "regression": "2" * 64}
+            plan_content = {
+                "schema": validation.STAGE3_PLAN_SCHEMA,
+                "contract_identity": stage3["identity"], "comparison_contract_identity": comparison["identity"],
+                "subjects": {"current-product": current_identity, "v0": v0_identity}, "inputs": inputs,
+                "formal_state_sha256": iteration.file_sha256(state), "formal": False,
+                "candidate_decision": None, "v2_candidate_exists": False,
+            }
+            plan_identity = iteration.canonical_sha256(plan_content)
+            self._write_json(output / "stage3" / plan_identity / "plan.json", {**plan_content, "identity": plan_identity})
+            paths: dict[str, Path] = {}
+            for evidence_type in ("development", "regression"):
+                for prefix, role, identity, data_bytes in (
+                    ("current", "current-product-not-baseline", current_identity, 100),
+                    ("v0", "evaluation-baseline", v0_identity, 1000),
+                ):
+                    name = f"{prefix}-{evidence_type}"
+                    value = self._execution_result(identity, 1.0, role=role, input_identity=inputs[evidence_type])
+                    value["comparison_purpose"] = "stage3-current-product-diagnostic"
+                    value["candidate_decision"] = None
+                    value["evidence_type"] = evidence_type
+                    value["observation"].update({
+                        "fact_delivery": {"complete": True, "missing_questions": 0},
+                        "resources": {"ownward_data_bytes": data_bytes},
+                        "case_evidence": [{
+                            "coverage": "long-session-multi-fact", "expected_sources": 1,
+                            "search_returned_sources": 1, "truth_claims": 2,
+                            "delivered_truth_claims": 1 if prefix == "current" else 2,
+                            "first_proven_mechanism": "fragment-incomplete-after-read" if prefix == "current" and evidence_type == "development" else "none",
+                        }],
+                    })
+                    value["identity"] = iteration.canonical_sha256({key: item for key, item in value.items() if key != "identity"})
+                    path = output / "results" / name / "execution-result.json"
+                    self._write_json(path, value)
+                    receipt_content = {
+                        "schema": "ownward.kernel-iteration-execution-resume/v1", "plan_identity": value["plan_identity"],
+                        "execution_result_sha256": iteration.file_sha256(path), "reused_execution": True,
+                        "model_or_product_execution": False,
+                    }
+                    self._write_json(path.parent / "execution-resume.json", {**receipt_content, "identity": iteration.canonical_sha256(receipt_content)})
+                    paths[name] = path
+            result = validation.finalize_stage3(HERE, output, plan_identity, paths, state)
+            self.assertTrue(result["passed"])
+            self.assertIsNone(result["candidate_decision"])
+            self.assertFalse(result["v2_candidate_exists"])
+            (paths["current-development"].parent / "execution-resume.json").unlink()
+            (output / "stage3" / plan_identity / "result.json").unlink()
+            with self.assertRaisesRegex(validation.KernelIterationValidationError, "恢复收据"):
+                validation.finalize_stage3(HERE, output, plan_identity, paths, state)
+
     def test_v0_execution_is_not_consumed_before_candidate_absolute_pass(self) -> None:
         with tempfile.TemporaryDirectory(dir=REPOSITORY) as temporary:
             root = Path(temporary)
@@ -769,6 +902,7 @@ class KernelIterationValidationTests(unittest.TestCase):
             "subject_identity": subject,
             "subject_role": role,
             "subject_name": "synthetic-v2" if role == "v2-candidate" else "v0",
+            "comparison_purpose": "candidate-evaluation",
             "evidence_type": "development",
             "status": "passed" if passed else "failed",
             "passed": passed,

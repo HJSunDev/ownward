@@ -1,0 +1,57 @@
+{
+  "schema": "ownward.kernel-iteration-stage3-contract/v1",
+  "frozen_before_diagnostic_results": true,
+  "contains_formal_questions_answers_gold_content_outputs_or_case_ids": false,
+  "aggregate_sources": {
+    "v0": {"identity": "246660581803440d3c9c68d6e1bfd7a7685f6d778fea781a6c548b8aa64d3dfe", "correct": 242, "questions": 500, "first_observed_gaps": {"search_not_returned": 116, "not_read": 133, "read_answer_incorrect": 9}},
+    "v1": {"version_record_sha256": "ed5ff87009fa69263393d8775824b532e90280fc4524898caf6584f9c7634a50", "incident_aggregate_sha256": "418ddfda27ef2eb6219bc9329fc2a91bba3b0f6c0640d6d5506b45b8c7850805", "correct": 285, "questions": 500, "improved": 101, "regressed": 58, "first_observed_gaps": {"search_not_returned": 6, "not_read": 69, "read_answer_incorrect": 140}, "retrieval_mean_ms": 347.8}
+  },
+  "sources": {
+    "aggregate-problem-pool": {"path": "iteration/v2/stage3-problem-pool.json", "sha256": "a2058ebce5b5136b4e5b7582d2a0b9865bcb50f98e0dfa2c1a4569921bc45866"},
+    "development-materials": {"path": "iteration/v2/stage3-development-materials.json", "sha256": "b4165589cb4dc6ab8ea853a456a68502bcb28c3f68d643cdc3fa6899467b8b98"},
+    "regression-materials": {"path": "iteration/v2/stage3-regression-materials.json", "sha256": "fcf483821f2a62f2e6f4149d7b091a1c8a09858503f435e66d53c2577979b1b1"}
+  },
+  "selection_rules": {
+    "development": "mechanism-complete-hard-cases-not-result-selected",
+    "regression": "representative-v0-correct-capability-quota-not-ease-selected",
+    "development_regression_disjoint": true,
+    "stage2_calibration_reuse": false,
+    "blind_material_generation_or_execution": false,
+    "current_product_role": "current-product-not-baseline",
+    "current_product_may_form_candidate_decision": false,
+    "pair_order": ["current-product-not-baseline", "evaluation-baseline"]
+  },
+  "current_product_artifact": {
+    "binary_sha256": "57e0e63c75e4fbb474112e398a1ec4c7d5fc95ee5ae87a7773210e534b1897f5",
+    "role": "current-product-not-baseline",
+    "candidate_decision": null
+  },
+  "coverage": {
+    "development_required": ["long-session-multi-fact", "temporal-update-conflict", "structured-boundary", "multi-session-answer-sufficiency"],
+    "regression_required": ["single-session-user-fact", "single-session-assistant-fact", "preference", "temporal", "knowledge-update", "multi-session", "short-structure", "long-structure"]
+  },
+  "thresholds": {
+    "root_mechanism": "source-read-complete-but-required-fragments-incomplete",
+    "root_minimum_cases": 1,
+    "v0_regression_minimum_accuracy": 1.0,
+    "v0_regression_requires_complete_fact_delivery": true,
+    "daily_feedback_target_seconds": 420,
+    "daily_feedback_hard_seconds": 600,
+    "candidate_decision": null,
+    "formal_state_writes": 0
+  },
+  "v1_benefit_reproof": {
+    "long-asset-semantic-recall": {"coverages": ["long-session-multi-fact", "temporal-update-conflict", "structured-boundary"], "minimum_recall": 0.75, "comparison": "current-at-least-v0", "protection_requires_mechanism_separation": true},
+    "fine-grained-evidence": {"minimum_claim_delivery": 0.75, "comparison": "current-at-least-v0", "protection_requires_no-fragment-root-overlap": true},
+    "batch-durability": {"requires_byte_identical_resume": true, "requires_zero_model_and_product_execution": true},
+    "storage-convergence": {"maximum_ratio_to_v0": 0.5, "measure": "same-material-ownward-data-bytes"}
+  },
+  "direction_rules": {
+    "information-representation-and-organization": "optimize-if-fragment-root-proven",
+    "retrieval-architecture": "optimize-for-delivery-under-v0-latency-bound",
+    "semantic-capability": "protect-only-if-long-recall-reproved-and-separable",
+    "data-and-storage": "protect-only-if-storage-convergence-reproved",
+    "execution-and-state": "protect-only-with-byte-identical-zero-execution-resume"
+  },
+  "identity": "049c3e4acec62d205314b297dcb74bc73486c5c85cd91567dad21ca45b88e84e"
+}
