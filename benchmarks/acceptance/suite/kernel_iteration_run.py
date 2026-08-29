@@ -10,7 +10,9 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 import kernel_iteration_evidence
+import kernel_iteration_candidate
 import kernel_iteration_validation
+import kernel_iteration_stage4
 
 
 def parse_args() -> argparse.Namespace:
@@ -24,6 +26,8 @@ def parse_args() -> argparse.Namespace:
     selection.add_argument("--blind-plan-identity")
     selection.add_argument("--stage3-prepare", action="store_true")
     selection.add_argument("--stage3-finalize", action="store_true")
+    selection.add_argument("--prepare-v2-candidate", action="store_true")
+    parser.add_argument("--stage4-finalize", action="store_true")
     parser.add_argument("--evidence-type", default="identity-calibration")
     parser.add_argument("--input-manifest", type=Path)
     parser.add_argument("--execution-config", type=Path)
@@ -42,6 +46,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--v0-development-result", type=Path)
     parser.add_argument("--current-regression-result", type=Path)
     parser.add_argument("--v0-regression-result", type=Path)
+    parser.add_argument("--development-result", type=Path)
+    parser.add_argument("--regression-result", type=Path)
     parser.add_argument("--bind-blind-current-dependencies", action="store_true")
     parser.add_argument("--contract", type=Path)
     parser.add_argument("--resume", action="store_true")
@@ -50,11 +56,29 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    if args.stage3_prepare:
+    if args.stage4_finalize:
+        required = (
+            args.subject_manifest, args.execution_config, args.development_input, args.regression_input,
+            args.development_result, args.regression_result, args.formal_state,
+        )
+        if any(path is None for path in required):
+            raise SystemExit("阶段 4 收口必须提供候选、执行配置、开发/回归输入与结果、正式 state")
+        result = kernel_iteration_stage4.finalize(
+            HERE, args.output, args.subject_manifest, args.execution_config,
+            args.development_input, args.regression_input, args.development_result,
+            args.regression_result, args.formal_state, resume=args.resume,
+        )
+    elif args.stage3_prepare:
         if args.development_input is None or args.regression_input is None or args.formal_state is None:
             raise SystemExit("阶段 3 准备必须提供开发/回归输入与正式 state 只读基线")
         result = kernel_iteration_validation.prepare_stage3(
             HERE, args.output, args.development_input, args.regression_input, args.formal_state, resume=args.resume,
+        )
+    elif args.prepare_v2_candidate:
+        if args.execution_config is None:
+            raise SystemExit("V2 候选准备必须提供当前非正式 --execution-config")
+        result = kernel_iteration_candidate.prepare(
+            HERE, args.output, args.execution_config, resume=args.resume,
         )
     elif args.stage3_finalize:
         paths = {

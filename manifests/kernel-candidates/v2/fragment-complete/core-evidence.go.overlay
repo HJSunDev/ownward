@@ -1,0 +1,29 @@
+package core
+
+import (
+	"errors"
+
+	"github.com/HJSunDev/ownward/internal/derived"
+	"github.com/HJSunDev/ownward/internal/domain"
+	"github.com/HJSunDev/ownward/internal/kernelv2candidate"
+)
+
+// rankEvidence is the candidate-only replacement selected by the sealed build
+// overlay. The current product continues to compile its original implementation.
+func rankEvidence(value domain.Information, query string, limit int) []domain.EvidenceReference {
+	return kernelv2candidate.RankEvidence(value, query, limit)
+}
+
+func readEvidence(store interface {
+	ReadCurrent(string) (domain.Information, bool)
+}, id string) (domain.Evidence, error) {
+	unit, err := derived.ParseEvidenceUnitID(id)
+	if err != nil {
+		return domain.Evidence{}, errors.New("证据引用不存在或已经过期")
+	}
+	value, exists := store.ReadCurrent(unit.SourceID)
+	if !exists || value.Revision != unit.SourceRevision {
+		return domain.Evidence{}, errors.New("证据来源不存在或已经过期")
+	}
+	return derived.ResolveEvidence(value, unit)
+}

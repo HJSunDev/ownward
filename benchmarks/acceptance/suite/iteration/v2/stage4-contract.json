@@ -1,0 +1,68 @@
+{
+  "schema": "ownward.kernel-iteration-stage4-contract/v1",
+  "gates_frozen_before_any_candidate_quality_results": true,
+  "current_route_frozen_before_current_route_quality_results": true,
+  "candidate_scope": "first-independent-v2-fragment-completeness-chain",
+  "sources": {
+    "comparison_contract": "b1e3b07abd5c9527dfbde5ea8d7fa5459c8b0b5da224ef2eb1aca29add22fbbe",
+    "stage3_contract": "049c3e4acec62d205314b297dcb74bc73486c5c85cd91567dad21ca45b88e84e",
+    "development_materials": "59dee66dd999c5b84162013aeb415de8b785b834365d5c4f9031cf1ac14941d2",
+    "regression_materials": "7cee414db10192f116aec17e22804d42a1a0c51683002272e5ec82e7578c6d65",
+    "v0_development_result": "b0d78d5597a90be52efa1617f0615484df09ca2752aad424a08c95a748a57711",
+    "v0_regression_accuracy": 1.0,
+    "current_development_result": "0d2436cd8b5ac5c922eafc70c0c154d15a67f2c7a63128231923203b28fae5ca"
+  },
+  "mechanism": {
+    "root": "query-anchor-and-required-value-separated-by-non-overlapping-source-partition",
+    "policy": "bounded-source-continuity-diversity/v1",
+    "base_unit_runes": 384,
+    "maximum_predecessor_context_runes": 256,
+    "maximum_successor_context_runes": 128,
+    "maximum_evidence_runes": 768,
+    "maximum_reads": 8,
+    "selection": "query-positive-then-maximum-marginal-source-coverage",
+    "range_count_may_increase": false,
+    "persistent_ranges_or_vectors_may_increase": false
+  },
+  "gates": {
+    "development": {
+      "questions": 4,
+      "accuracy": 1.0,
+      "complete_fact_delivery": true,
+      "long_multifact_truth_claims": 5,
+      "long_multifact_delivered_claims": 5
+    },
+    "regression": {
+      "questions": 8,
+      "accuracy": 1.0,
+      "complete_fact_delivery": true
+    },
+    "v1_protection": {
+      "long_asset_semantic_recall": 1.0,
+      "byte_identical_resume": true,
+      "resume_model_or_product_execution": false
+    },
+    "cost_and_isolation": {
+      "affected_feedback_hard_seconds": 600,
+      "development_retrieval_p95_same_scale_max_ms": 344.0,
+      "regression_retrieval_p95_same_scale_max_ms": 406.0,
+      "maximum_evidence_runes": 768,
+      "maximum_reads": 8,
+      "persistent_state_growth_bytes": 0,
+      "formal_state_writes": 0
+    }
+  },
+  "stage4_may_complete": false,
+  "failed_routes": [
+    {
+      "policy": "bounded-source-continuity/v1",
+      "subject_identity": "9c9c7dde9c86fffbe165fba413f07b94a68b8239569ac3a80baced642963b7f8",
+      "development_result": "672e0a5ba60b015b8884d2c7b54afdeccc8da956f5fd0072f61481edc80b6b63",
+      "long_multifact_delivered_claims": 2,
+      "reason": "predecessor-only continuity still separated following field values and did not cover the earlier same-source decision"
+    }
+  ],
+  "blind_gate_allowed": false,
+  "formal_acceptance_allowed": false,
+  "identity": "43625b147f883592bbbc8f5033b71656db71d280d29dc5bac995f3f5d7bb0c90"
+}

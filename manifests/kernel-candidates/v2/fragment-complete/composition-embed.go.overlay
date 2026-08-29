@@ -1,0 +1,16 @@
+// Package compositionv1 exposes the exact source-verified composition sealed
+// into this independently built V2 candidate. The build injects the already
+// sealed manifest; runtime code never discovers or rewrites repository state.
+package compositionv1
+
+import "encoding/base64"
+
+var sealedCompositionBase64 string
+
+func CurrentCollaborative() []byte {
+	value, err := base64.StdEncoding.DecodeString(sealedCompositionBase64)
+	if err != nil {
+		panic("invalid sealed V2 candidate composition: " + err.Error())
+	}
+	return value
+}
