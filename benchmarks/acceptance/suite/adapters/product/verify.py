@@ -1918,7 +1918,7 @@ def _run_full_information_query_preflight(
         ]})
         created_values = created.get("results") if isinstance(created, dict) else None
         require(isinstance(created_values, list) and len(created_values) == len(source["information"]), "full-information query preflight did not persist all information")
-        data_before = _tree_sha256(data_dir)
+        initial_data_sha256 = _tree_sha256(data_dir)
         try:
             warmup_samples = _establish_warm_query_readiness(
                 runtime.client,
@@ -1933,13 +1933,17 @@ def _run_full_information_query_preflight(
             write_json(failure / "readiness.json", {
                 "schema": "ownward.product-full-information-readiness-failure/v1",
                 "identity": identity,
-                "data_tree_sha256": data_before,
+                "data_tree_sha256": initial_data_sha256,
                 "query_limit_ms": query_limit_ms,
                 "warmup_probe_chars": len(source["query"]["question"]),
                 "warmup_samples_ms": error.samples_ms,
                 "passed": False,
             })
             raise
+        # A query may finish an already accepted, rebuildable derived generation.
+        # Treat that bounded readiness transition as setup, then require the bound
+        # measurement itself to be byte-for-byte read-only.
+        data_before = _tree_sha256(data_dir)
         query_started = time.perf_counter()
         direct = runtime.client.call_tool("ownward_search", {"query": source["query"]["question"], "limit": 10})
         latency_ms = (time.perf_counter() - query_started) * 1000

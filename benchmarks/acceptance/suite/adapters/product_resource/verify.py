@@ -361,7 +361,7 @@ def main() -> None:
     args = parse_args()
     require(os.name == "nt", "first-version complete delivery resource acceptance requires Windows")
     candidate = args.candidate.strip()
-    require(re.fullmatch(r"[0-9a-f]{40}", candidate) is not None, "candidate must be a full lowercase Git commit hash")
+    require(re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", candidate) is not None, "candidate must be a sealed lowercase identity")
     package = args.package.resolve()
     thresholds_path = args.thresholds.resolve()
     performance_path = args.production_storage_report.resolve()

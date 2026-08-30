@@ -162,7 +162,7 @@ def validate_report_for_mode(
         validate_layer_report(contract, kind, report, expected_binding=active_binding)
     else:
         validate_report(contract, kind, report)
-        _require(report.get("candidate") == evidence_identity.source_git(state["binding"]), f"{mode} 报告候选审计来源不一致")
+        _require(report.get("candidate") == active_binding["candidate"], f"{mode} 报告候选运行身份不一致")
     if mode in {"targeted", "frontier"}:
         _require(report.get("mode") == ("targeted" if mode == "targeted" else "full"), f"{mode} 报告模式无效")
     if mode in {"qualification", "full"}:

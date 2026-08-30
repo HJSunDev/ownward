@@ -1,0 +1,20 @@
+{
+  "schema": "ownward.acceptance-candidate-components/v1",
+  "identity": "d7df5e202b71186b0a31ec633951e7999050e3fe777a1d7c32a9160037510bec",
+  "source_subject_identity": "834e204c89623bf1bdf6c9b5c5b49589b49f22137ae1ef31c58201ff6ff9f17c",
+  "runtime_identity": "66a6e827841c09279dec99d53cc7e5db04a879c94da14cbd3355419029bfa2db",
+  "kernel_effect_identity": "a2ad626f00e3806599f625c07d4df4a6430c23c27b3e996c50bd75a9e5fef922",
+  "sealed_composition_identity": "6768d65d12c4c539a01ef5e69a32428867012002f81bb0d68725a7aada2ed291",
+  "components": {
+    "access": "bb88b75bd0c9c1999f3eec7f3ff1b42e03960e44baf528bc2d7fbeb8de45736c",
+    "authority-substrate": "dc4539c88ad3fdcd99bc686ebbfc9e47df8190a44b65a19867b2a44636276607",
+    "product-rules": "80919d7ce74ea5a443c1c0c0d2b957ae3e2f1e1adb559f7b761e2e38e2e713f9",
+    "semantic": "bd8551d33bfcb8b9ec8a2224d723f5c65d9d378b2b037526129015f833bd6dc3",
+    "vector": "391b5aa1f4bb3a25d522a4d59c7af1a9aa1150a06480f64d23cfd73f86c808c5"
+  },
+  "vector_space": {
+    "capability": "embeddinggemma-300m-qat-q8_0-llamacpp-b10488",
+    "space": "emb_79f072bf21c0c0f5226fa4fe6f1946a5",
+    "dimensions": 512
+  }
+}

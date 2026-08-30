@@ -474,6 +474,31 @@ class ProductAdapterTests(unittest.TestCase):
         trace = verify.codex_session.load_exec_events("\n".join(json.dumps(item) for item in events))
         self.assertTrue(trace.bypassed)
 
+    def test_empty_ownward_resource_template_discovery_is_protocol_metadata_not_a_product_bypass(self) -> None:
+        events = [
+            {"type": "thread.started", "thread_id": "session"},
+            {"type": "item.completed", "item": {
+                "type": "mcp_tool_call", "server": "ownward", "tool": "list_mcp_resource_templates",
+                "status": "completed", "error": None, "arguments": {"server": "ownward"},
+                "result": {"content": [{"type": "text", "text": '{"server":"ownward","resourceTemplates":[]}'}], "structured_content": None},
+            }},
+            {"type": "item.completed", "item": {
+                "type": "mcp_tool_call", "server": "ownward", "tool": "ownward_semantic_work",
+                "status": "completed", "error": None, "arguments": {"asset_ids": ["asset"]},
+                "result": {"structured_content": {"work": []}},
+            }},
+        ]
+        trace = verify.codex_session.load_exec_events("\n".join(json.dumps(item) for item in events))
+        self.assertFalse(trace.bypassed)
+        self.assertEqual(("list_mcp_resource_templates:empty",), trace.protocol_operations)
+        self.assertEqual(["ownward_semantic_work"], [call.name for call in trace.calls])
+
+        events[1]["item"]["result"]["content"][0]["text"] = (
+            '{"server":"ownward","resourceTemplates":[{"uriTemplate":"secret/{id}"}]}'
+        )
+        trace = verify.codex_session.load_exec_events("\n".join(json.dumps(item) for item in events))
+        self.assertTrue(trace.bypassed)
+
     def test_failed_and_empty_generic_resource_discovery_are_protocol_metadata(self) -> None:
         events = [
             {"type": "thread.started", "thread_id": "session"},
@@ -1270,6 +1295,77 @@ class ProductAdapterTests(unittest.TestCase):
             with mock.patch.object(verify.support, "OwnwardRuntime", side_effect=AssertionError("bound query repeated")):
                 with self.assertRaisesRegex(RuntimeError, "selective rerun is prohibited"):
                     verify._run_full_information_query_preflight(args, source, binding, 600.0, "r" * 64, root)
+
+    def test_full_information_snapshot_is_taken_after_bounded_derived_readiness(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = {
+                "information": [{"node_id": str(index), "content": str(index)} for index in range(5)],
+                "query": {"question": "question"},
+            }
+
+            class Client:
+                search_calls = 0
+
+                def call_tool(self, name, arguments):
+                    if name == "ownward_create_batch":
+                        data = root / "workspace" / "data"
+                        (data / "assets").mkdir(parents=True, exist_ok=True)
+                        (data / "assets" / "information.jsonl").write_text("authority", encoding="utf-8")
+                        return {"results": [{} for _ in arguments["items"]]}
+                    self.search_calls += 1
+                    if self.search_calls == 1:
+                        state = root / "workspace" / "data" / "state"
+                        state.mkdir(parents=True, exist_ok=True)
+                        (state / "organization.binlog").write_text("ready", encoding="utf-8")
+                    return {"results": []}
+
+            client = Client()
+            runtime = SimpleNamespace(client=client)
+            runtime.__enter__ = lambda: runtime
+            runtime.__exit__ = lambda *_: None
+            args = SimpleNamespace(binary=root / "ownward.exe", max_wall_seconds=60.0, resume=False)
+            with mock.patch.object(verify.support, "OwnwardRuntime") as factory:
+                factory.return_value.__enter__.return_value = runtime
+                factory.return_value.__exit__.return_value = None
+                report, _ = verify._run_full_information_query_preflight(
+                    args, source, {"candidate": "candidate"}, 600.0, "r" * 64, root,
+                )
+            self.assertTrue(report["passed"])
+            self.assertGreaterEqual(client.search_calls, verify.WARM_READINESS_REQUIRED_CONSECUTIVE + 1)
+
+    def test_full_information_bound_query_still_rejects_a_post_readiness_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = {
+                "information": [{"node_id": str(index), "content": str(index)} for index in range(5)],
+                "query": {"question": "question"},
+            }
+
+            class Client:
+                search_calls = 0
+
+                def call_tool(self, name, arguments):
+                    if name == "ownward_create_batch":
+                        data = root / "workspace" / "data" / "assets"
+                        data.mkdir(parents=True, exist_ok=True)
+                        (data / "information.jsonl").write_text("authority", encoding="utf-8")
+                        return {"results": [{} for _ in arguments["items"]]}
+                    self.search_calls += 1
+                    if self.search_calls == verify.WARM_READINESS_REQUIRED_CONSECUTIVE + 1:
+                        (root / "workspace" / "data" / "unexpected").write_text("mutation", encoding="utf-8")
+                    return {"results": []}
+
+            client = Client()
+            runtime = SimpleNamespace(client=client)
+            args = SimpleNamespace(binary=root / "ownward.exe", max_wall_seconds=60.0, resume=False)
+            with mock.patch.object(verify.support, "OwnwardRuntime") as factory:
+                factory.return_value.__enter__.return_value = runtime
+                factory.return_value.__exit__.return_value = None
+                with self.assertRaisesRegex(RuntimeError, "changed state while reading"):
+                    verify._run_full_information_query_preflight(
+                        args, source, {"candidate": "candidate"}, 600.0, "r" * 64, root,
+                    )
 
     def test_resume_archives_a_scenario_from_the_previous_binding(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

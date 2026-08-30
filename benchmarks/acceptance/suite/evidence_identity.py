@@ -212,6 +212,102 @@ def build_candidate_components(
     return graph
 
 
+def build_candidate_components_from_manifest(
+    manifest_path: Path,
+    binary_sha256: str,
+    release_sha256: str,
+) -> dict[str, dict[str, Any]]:
+    """Build a component graph for an independently sealed kernel generation.
+
+    The manifest is the immutable capability input.  Git remains an audit source
+    on the outer binding and is deliberately absent from this identity graph.
+    """
+    manifest = _load_json(manifest_path.resolve())
+    _require(manifest.get("schema") == "ownward.acceptance-candidate-components/v1", "独立候选组件清单 schema 无效")
+    identity = manifest.get("identity")
+    unsigned = {name: value for name, value in manifest.items() if name != "identity"}
+    _require(is_sha256(str(identity)) and identity == canonical_sha256(unsigned), "独立候选组件清单身份漂移")
+    for name in ("source_subject_identity", "runtime_identity", "kernel_effect_identity", "sealed_composition_identity"):
+        _require(is_sha256(str(manifest.get(name, ""))), f"独立候选组件清单缺少 {name}")
+    components = manifest.get("components")
+    _require(
+        isinstance(components, dict)
+        and set(components) == {"access", "authority-substrate", "product-rules", "semantic", "vector"}
+        and all(is_sha256(str(value)) for value in components.values()),
+        "独立候选直接组件身份无效",
+    )
+    vector = manifest.get("vector_space")
+    _require(
+        isinstance(vector, dict)
+        and set(vector) == {"capability", "space", "dimensions"}
+        and isinstance(vector["capability"], str)
+        and isinstance(vector["space"], str)
+        and isinstance(vector["dimensions"], int),
+        "独立候选向量空间声明无效",
+    )
+    vector_space = canonical_sha256({
+        "schema": "ownward.vector-space-identity/v1",
+        "capability": vector["capability"],
+        "space": vector["space"],
+        "dimensions": vector["dimensions"],
+        "vector": components["vector"],
+    })
+    component_ids = {
+        "authority-substrate": components["authority-substrate"],
+        "kernel": manifest["kernel_effect_identity"],
+        "kernel-generation": manifest["runtime_identity"],
+        "product-rules": components["product-rules"],
+        "semantic": components["semantic"],
+        "vector": components["vector"],
+        "vector-space": vector_space,
+        "access": components["access"],
+        "binary": binary_sha256,
+        "release": release_sha256,
+    }
+    _require(all(is_sha256(str(value)) for value in component_ids.values()), "独立候选组件身份不完整")
+    composition_identity = canonical_sha256({
+        "schema": "ownward.evidence-composition-identity/v1",
+        "components": {name: component_ids[name] for name in sorted(component_ids) if name not in {"binary", "release"}},
+    })
+    product_identity = canonical_sha256({
+        "schema": "ownward.product-capability-identity/v1",
+        "composition": composition_identity,
+        "binary": binary_sha256,
+        "release": release_sha256,
+    })
+    component_ids["composition"] = composition_identity
+    component_ids["product"] = product_identity
+    graph = {
+        "authority-substrate": _node(component_ids["authority-substrate"]),
+        "product-rules": _node(component_ids["product-rules"]),
+        "semantic": _node(component_ids["semantic"]),
+        "vector": _node(component_ids["vector"]),
+        "vector-space": _node(component_ids["vector-space"], {"vector": component_ids["vector"]}),
+        "kernel": _node(component_ids["kernel"], {"product-rules": component_ids["product-rules"]}),
+        "kernel-generation": _node(component_ids["kernel-generation"], {
+            "authority-substrate": component_ids["authority-substrate"],
+            "kernel": component_ids["kernel"],
+            "product-rules": component_ids["product-rules"],
+            "semantic": component_ids["semantic"],
+            "vector": component_ids["vector"],
+        }),
+        "access": _node(component_ids["access"], {
+            "kernel": component_ids["kernel"], "product-rules": component_ids["product-rules"],
+        }),
+        "binary": _node(component_ids["binary"]),
+        "release": _node(component_ids["release"], {"binary": component_ids["binary"]}),
+        "composition": _node(component_ids["composition"], {
+            name: component_ids[name]
+            for name in ("access", "authority-substrate", "kernel-generation", "product-rules", "semantic", "vector", "vector-space")
+        }),
+        "product": _node(component_ids["product"], {
+            "composition": component_ids["composition"], "binary": component_ids["binary"], "release": component_ids["release"],
+        }),
+    }
+    validate_component_graph(graph)
+    return graph
+
+
 def build_binding_from_legacy_migration(
     legacy: dict[str, Any],
     components: dict[str, dict[str, Any]],
@@ -238,6 +334,7 @@ def build_current_binding(
     lifecycle: dict[str, dict[str, Any]],
     reporting: dict[str, dict[str, Any]],
     audit: dict[str, str],
+    runtime_identity: str | None = None,
 ) -> dict[str, Any]:
     """Build the sole active v6 binding without accepting a legacy binding as input."""
     _require(_is_git_commit(candidate), "候选审计来源无效")
@@ -277,6 +374,10 @@ def build_current_binding(
                 "artifact_sha256": old["artifact_sha256"],
             },
         }
+    if runtime_identity is not None:
+        _require(is_sha256(runtime_identity), "独立候选运行身份无效")
+        _require(runtime_identity == components["kernel-generation"]["identity"], "独立候选运行身份与内核世代错绑")
+        audit = {**audit, "runtime_identity": runtime_identity}
     result = {
         "schema": BINDING_SCHEMA,
         "suite_version": suite_version,
@@ -370,8 +471,14 @@ def validate_binding(value: dict[str, Any]) -> None:
     _validate_lifecycle(value.get("lifecycle"))
     _validate_reporting(value.get("reporting"))
     audit = value.get("audit")
-    _require(isinstance(audit, dict) and set(audit) == {"source_git"}, "候选审计来源无效")
+    _require(isinstance(audit, dict) and set(audit) in ({"source_git"}, {"source_git", "runtime_identity"}), "候选审计来源无效")
     _require(_is_git_commit(audit["source_git"]), "候选审计来源身份无效")
+    if "runtime_identity" in audit:
+        _require(
+            is_sha256(audit["runtime_identity"])
+            and audit["runtime_identity"] == components["kernel-generation"]["identity"],
+            "候选运行身份错绑",
+        )
     scopes = value.get("scopes")
     _require(isinstance(scopes, dict) and scopes and set(scopes) <= set(SCOPE_COMPONENTS), "候选绑定范围无效")
     for name, scope in scopes.items():
@@ -565,7 +672,7 @@ def report_binding(value: dict[str, Any], scope: str) -> dict[str, str]:
     active = value["scopes"][scope]["report_binding"]
     result = {
         "suite_version": value["suite_version"],
-        "candidate": source_git(value),
+        "candidate": source_git(value) if scope == "frontier" else runtime_identity(value),
         "environment_sha256": active["environment_sha256"],
         "input_manifest_sha256": active["input_manifest_sha256"],
         "tool_sha256": active["tool_sha256"],
@@ -575,6 +682,11 @@ def report_binding(value: dict[str, Any], scope: str) -> dict[str, str]:
     else:
         result["binary_sha256"] = active["artifact_sha256"]
     return result
+
+
+def runtime_identity(value: dict[str, Any]) -> str:
+    validate_binding(value)
+    return str(value["audit"].get("runtime_identity", value["audit"]["source_git"]))
 
 
 def _kernel_effect_identity(kernel: dict[str, Any], facets: Any, dependencies: dict[str, dict[str, Any]]) -> str:

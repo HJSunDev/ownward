@@ -129,7 +129,7 @@ def promote_baseline(contract: dict[str, Any], state: dict[str, Any]) -> None:
     frontier_binding = candidate_binding.for_mode(state["binding"], "frontier")
     product_binding = candidate_binding.for_mode(state["binding"], "qualification")
     promoted = {
-        "candidate": evidence_identity.source_git(state["binding"]),
+        "candidate": evidence_identity.runtime_identity(state["binding"]),
         "binary_sha256": core_binding["binary_sha256"],
         "bindings": {"core": core_binding, "frontier": frontier_binding, "product": product_binding},
         "core_report_sha256": core["report_sha256"],

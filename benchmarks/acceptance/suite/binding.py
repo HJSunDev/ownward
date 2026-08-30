@@ -55,6 +55,7 @@ def create(suite_root: Path, config_path: Path, output_dir: Path) -> dict[str, A
     _require_isolated_path(workspace, "验收工作区")
     _require_isolated_path(output_dir, "绑定清单")
     candidate = _candidate_audit_source(config, scopes_to_bind)
+    runtime_identity = _candidate_runtime_identity(config, candidate, scopes_to_bind)
     if "frontier" in scopes_to_bind:
         observer = Path(_mapping(config, "frontier")["tool"]).resolve()
         _require(observer.is_file(), f"内核观察器不存在: {observer}")
@@ -65,7 +66,7 @@ def create(suite_root: Path, config_path: Path, output_dir: Path) -> dict[str, A
         _require(embedding.is_dir(), "本地向量能力包不存在")
         _require(embedding == (binary.parent / "embedding").resolve(), "向量能力包必须是候选二进制相邻的正式产品制品")
         version = subprocess.run([str(binary), "version"], cwd=repository, capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
-        _require(version.returncode == 0 and version.stdout.strip() == candidate, "候选二进制没有绑定候选提交")
+        _require(version.returncode == 0 and version.stdout.strip() == runtime_identity, "候选二进制没有绑定声明的运行身份")
         _verify_go_binary(binary, candidate)
     if "product" in scopes_to_bind:
         product = _mapping(config, "product")
@@ -101,15 +102,22 @@ def create(suite_root: Path, config_path: Path, output_dir: Path) -> dict[str, A
             "tool_sha256": sha256(paths["tools"]),
             "artifact_sha256": _artifact_sha256(config, scope),
         }
-    components = evidence_identity.build_candidate_components(
-        repository, candidate, _candidate_binary_sha(config, scopes_to_bind), _release_manifest_sha(config),
-    )
+    component_manifest = _mapping(config, "candidate").get("component_manifest") if set(scopes_to_bind) & {"core", "product", "community"} else None
+    if isinstance(component_manifest, str):
+        components = evidence_identity.build_candidate_components_from_manifest(
+            Path(component_manifest), _candidate_binary_sha(config, scopes_to_bind), _release_manifest_sha(config),
+        )
+    else:
+        components = evidence_identity.build_candidate_components(
+            repository, candidate, _candidate_binary_sha(config, scopes_to_bind), _release_manifest_sha(config),
+        )
     result = evidence_identity.build_current_binding(
         candidate=candidate, suite_version="1.0.0", scopes=scopes,
         components=components, manifests=manifest_values,
         lifecycle=evidence_identity.lifecycle_identities(repository),
         reporting=evidence_identity.reporting_identities(repository),
         audit={"source_git": candidate},
+        runtime_identity=runtime_identity if runtime_identity != candidate else None,
     )
     validate_binding(result)
     shutil.rmtree(output_dir / ".binding-hash")
@@ -130,13 +138,14 @@ def rebind_scope(suite_root: Path, config_path: Path, output_dir: Path, scope: s
     validate_binding(previous)
     repository = Path(config["repository"]).resolve()
     candidate = evidence_identity.source_git(previous)
+    runtime_identity = evidence_identity.runtime_identity(previous)
     if scope == "frontier":
         _verify_go_binary(Path(_mapping(config, "frontier")["tool"]).resolve(), candidate)
     else:
         binary, embedding = _candidate_paths(config)
         _require(binary.is_file() and embedding.is_dir(), "冻结候选制品不完整")
         version = subprocess.run([str(binary), "version"], cwd=repository, capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
-        _require(version.returncode == 0 and version.stdout.strip() == candidate, "候选二进制没有绑定既有冻结提交")
+        _require(version.returncode == 0 and version.stdout.strip() == runtime_identity, "候选二进制没有绑定既有冻结运行身份")
         _verify_go_binary(binary, candidate)
 
     manifest_values: dict[str, dict[str, Any]] = {}
@@ -336,6 +345,15 @@ def validate_config(config: dict[str, Any]) -> None:
             _require(representation_path.is_file(), "候选语义表示清单不存在")
             representation_value = load_json(representation_path)
             _require(representation_value.get("identity") == representation["identity"], "候选语义表示清单身份错绑")
+        runtime_identity = candidate.get("runtime_identity")
+        component_manifest = candidate.get("component_manifest")
+        if runtime_identity is not None or component_manifest is not None:
+            _require(_is_sha256(runtime_identity), "独立候选缺少有效 runtime_identity")
+            _require(isinstance(component_manifest, str) and component_manifest.strip(), "独立候选缺少 component_manifest")
+            manifest_path = Path(component_manifest).resolve()
+            _require(manifest_path.is_file(), "独立候选组件清单不存在")
+            manifest = load_json(manifest_path)
+            _require(manifest.get("runtime_identity") == runtime_identity, "独立候选组件清单与运行身份错绑")
     if "product" in enabled:
         product = _mapping(config, "product")
         for name in ("package", "production_storage_report", "codex_binary", "codex_auth_file", "codex_model", "codex_reasoning_effort"):
@@ -379,7 +397,7 @@ def aggregate(value: dict[str, Any]) -> dict[str, str]:
     _require(len(binaries) == 1, "正式三层没有绑定同一候选二进制")
     tool_inputs = {name: item["tool_sha256"] for name, item in selected.items()}
     tool_inputs["summary-generation"] = evidence_identity.reporting_identity(value, "summary")
-    return {"suite_version": value["suite_version"], "candidate": evidence_identity.source_git(value), "binary_sha256": binaries.pop(), "environment_sha256": _canonical_sha256({name: item["environment_sha256"] for name, item in selected.items()}), "input_manifest_sha256": _canonical_sha256({name: item["input_manifest_sha256"] for name, item in selected.items()}), "tool_sha256": _canonical_sha256(tool_inputs)}
+    return {"suite_version": value["suite_version"], "candidate": evidence_identity.runtime_identity(value), "binary_sha256": binaries.pop(), "environment_sha256": _canonical_sha256({name: item["environment_sha256"] for name, item in selected.items()}), "input_manifest_sha256": _canonical_sha256({name: item["input_manifest_sha256"] for name, item in selected.items()}), "tool_sha256": _canonical_sha256(tool_inputs)}
 
 
 def verify_current(suite_root: Path, binding_dir: Path, config: dict[str, Any], expected: dict[str, Any], mode: str) -> None:
@@ -766,6 +784,17 @@ def _candidate_audit_source(config: dict[str, Any], scopes: list[str]) -> str:
         revisions.add(_go_binary_revision(binary))
     _require(len(revisions) == 1, "候选制品没有唯一、干净的审计源码来源")
     return revisions.pop()
+
+
+def _candidate_runtime_identity(config: dict[str, Any], audit_source: str, scopes: list[str]) -> str:
+    if not set(scopes) & {"core", "product", "community"}:
+        return audit_source
+    candidate = _mapping(config, "candidate")
+    declared = candidate.get("runtime_identity")
+    if declared is None:
+        return audit_source
+    _require(_is_sha256(declared), "候选运行身份必须是内容摘要")
+    return str(declared)
 
 
 def _go_binary_revision(binary: Path) -> str:

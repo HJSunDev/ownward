@@ -188,6 +188,42 @@ class EvidenceIdentityTests(unittest.TestCase):
             self.components["kernel-generation"]["identity"],
         )
 
+    def test_independent_generation_keeps_git_audit_separate_from_runtime_identity(self) -> None:
+        component_manifest = self.repository / "manifests" / "kernel-candidates" / "v2" / "stage5-components.json"
+        components = evidence_identity.build_candidate_components_from_manifest(
+            component_manifest, "f" * 64, "e" * 64,
+        )
+        manifests, scopes = self._current_fixture()
+        runtime = "66a6e827841c09279dec99d53cc7e5db04a879c94da14cbd3355419029bfa2db"
+        value = evidence_identity.build_current_binding(
+            candidate=self.candidate,
+            suite_version="1.0.0",
+            scopes=scopes,
+            components=components,
+            manifests=manifests,
+            lifecycle=self.lifecycle,
+            reporting=self.reporting,
+            audit={"source_git": self.candidate},
+            runtime_identity=runtime,
+        )
+        self.assertEqual(self.candidate, evidence_identity.report_binding(value, "frontier")["candidate"])
+        self.assertEqual(runtime, evidence_identity.report_binding(value, "core")["candidate"])
+        self.assertEqual(runtime, binding.aggregate(value)["candidate"])
+        changed = copy.deepcopy(value)
+        changed["audit"]["runtime_identity"] = "7" * 64
+        with self.assertRaisesRegex(evidence_identity.EvidenceIdentityError, "运行身份"):
+            evidence_identity.validate_binding(changed)
+
+    def test_independent_generation_manifest_rejects_tampering(self) -> None:
+        source = self.repository / "manifests" / "kernel-candidates" / "v2" / "stage5-components.json"
+        value = json.loads(source.read_text(encoding="utf-8"))
+        value["components"]["semantic"] = "7" * 64
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "components.json"
+            path.write_text(json.dumps(value), encoding="utf-8")
+            with self.assertRaisesRegex(evidence_identity.EvidenceIdentityError, "身份漂移"):
+                evidence_identity.build_candidate_components_from_manifest(path, "f" * 64, "e" * 64)
+
     def test_model_and_space_changes_do_not_leak_into_kernel_effect_or_frontier(self) -> None:
         catalog_path = self.repository / "manifests" / "kernel-generations" / "v1" / "catalog.json"
         catalog = json.loads(catalog_path.read_text(encoding="utf-8"))

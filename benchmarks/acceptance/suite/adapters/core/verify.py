@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -232,18 +233,33 @@ def main() -> None:
     require(first_rebuild is not None and first_rebuild.get("ready") == 1 and first_rebuild.get("uncertain") == 1, "initial generation rebuild lost semantic state")
     before = generation_snapshot(data / "state")
 
-    naked = args.evidence_dir / ".naked" / args.binary.name
-    naked.parent.mkdir()
-    shutil.copy2(args.binary, naked)
-    _, failed = run_json([str(naked), "rebuild", "--data-dir", str(data)], expected_success=False, timeout=120)
+    outage_root = args.evidence_dir / ".vector-outage"
+    outage_binary = outage_root / args.binary.name
+    outage_root.mkdir()
+    shutil.copy2(args.binary, outage_binary)
+    shutil.copytree(args.binary.parent / "embedding", outage_root / "embedding")
+    outage_manifest = load_json(outage_root / "embedding" / "manifest.json")
+    runtime_entry = outage_root / "embedding" / str(outage_manifest["runtime"]["entry"])
+    unavailable_runtime = runtime_entry.with_suffix(runtime_entry.suffix + ".unavailable")
+    runtime_entry.replace(unavailable_runtime)
+    _, failed = run_json([str(outage_binary), "rebuild", "--data-dir", str(data)], expected_success=False, timeout=120)
     after_failure = generation_snapshot(data / "state")
     require(after_failure["pointer_sha256"] == before["pointer_sha256"], "failed rebuild changed the active generation")
-    durable, _ = run_json([str(naked), "read", "--data-dir", str(data), "--id", asset_ids[0]])
-    require(durable is not None and durable.get("revision") == 2, "embedding failure affected the authoritative asset")
-    unavailable, _ = run_json([str(naked), "create", "--data-dir", str(data), "--content", "Project Atlas recovery review is scheduled for Friday."])
-    require(unavailable is not None and unavailable.get("organization", {}).get("status") == "pending", "embedding outage did not preserve a pending asset")
-    unavailable_id = str(unavailable["information"]["id"])
-    shutil.rmtree(naked.parent)
+    unavailable_runtime.replace(runtime_entry)
+    try:
+        with OwnwardRuntime(outage_binary, data, environment) as outage_runtime:
+            runtime_entry.replace(unavailable_runtime)
+            durable = tool(outage_runtime, "ownward_read", {"id": asset_ids[0]})["information"]
+            require(durable.get("revision") == 2, "embedding failure affected the authoritative asset")
+            unavailable = tool(outage_runtime, "ownward_create", {
+                "content": "Project Atlas recovery review is scheduled for Friday."
+            })["result"]
+            require(unavailable.get("organization", {}).get("status") == "pending", "embedding outage did not preserve a pending asset")
+            unavailable_id = str(unavailable["information"]["id"])
+    finally:
+        if unavailable_runtime.is_file() and not runtime_entry.exists():
+            unavailable_runtime.replace(runtime_entry)
+    shutil.rmtree(outage_root)
 
     recovered_rebuild, _ = run_json(rebuild_command, timeout=300)
     require(recovered_rebuild is not None and recovered_rebuild.get("pending") == 1, "embedding recovery did not rebuild the pending asset")
@@ -257,10 +273,21 @@ def main() -> None:
     alternate_root = args.evidence_dir / ".alternate-release"
     alternate_binary, alternate_space = copy_alternate_space_release(args.binary, alternate_root)
     require(alternate_space != bundle_manifest["space"]["id"], "alternate vector space was not distinct")
-    with OwnwardRuntime(alternate_binary, data, environment) as runtime:
-        isolated = tool(runtime, "ownward_status", {"id": asset_ids[0]})
-        require(isolated["organization"]["status"] == "pending", "old vector space remained active under a changed capability generation")
-        contract["space_isolation"] = {"alternate_space": alternate_space, "status": isolated}
+    isolation_before = generation_snapshot(data / "state")
+    mismatch_rejected = False
+    try:
+        with OwnwardRuntime(alternate_binary, data, environment):
+            pass
+    except MCPError:
+        mismatch_rejected = True
+    require(mismatch_rejected, "release accepted a vector space not sealed by its composition")
+    isolation_after = generation_snapshot(data / "state")
+    require(isolation_after["state_tree_sha256"] == isolation_before["state_tree_sha256"], "vector space mismatch changed derived state")
+    contract["space_isolation"] = {
+        "alternate_space": alternate_space,
+        "rejected_before_open": True,
+        "state_unchanged": True,
+    }
     shutil.rmtree(alternate_root)
 
     final_rebuild, _ = run_json(rebuild_command, timeout=300)
@@ -293,11 +320,21 @@ def main() -> None:
     require(backup_result is not None and Path(str(backup_result.get("backup", ""))).resolve() == backup_path, "production backup did not return the independent archive")
     with zipfile.ZipFile(backup_path) as archive:
         backup_entries = sorted(archive.namelist())
-        require(backup_entries == ["backup.json", "information.jsonl", "manifest.json"], "backup contains derived or runtime state")
+        require(backup_entries == ["assets.zip", "backup.json", "control.json"], "authority backup contains derived or runtime state")
+        backup_manifest = json.loads(archive.read("backup.json"))
+        require(backup_manifest.get("format") == "ownward.authority-backup/v1", "authority backup schema changed")
         require(
-            all(archive.read(name) == (data / "assets" / name).read_bytes() for name in ("manifest.json", "information.jsonl")),
-            "backup asset bytes differ from the authoritative source",
+            all(hashlib.sha256(archive.read(name)).hexdigest() == backup_manifest.get("sha256", {}).get(name) for name in ("assets.zip", "control.json")),
+            "authority backup member digest changed",
         )
+        control = json.loads(archive.read("control.json"))
+        require(control.get("schema") == "ownward.control-state-envelope/v1", "authority backup omitted the minimum control state")
+        with zipfile.ZipFile(io.BytesIO(archive.read("assets.zip"))) as assets_archive:
+            require(
+                sorted(assets_archive.namelist()) == ["backup.json", "information.jsonl", "manifest.json"]
+                and all(assets_archive.read(name) == (data / "assets" / name).read_bytes() for name in ("manifest.json", "information.jsonl")),
+                "backup asset bytes differ from the authoritative source",
+            )
 
     restored_data = args.evidence_dir / "blank-restored-data"
     require(not restored_data.exists(), "restore destination was not blank")

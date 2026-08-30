@@ -68,23 +68,27 @@ def load_exec_events(text: str) -> SessionTrace:
 
 
 def _resource_discovery_protocol_operation(item: dict[str, Any], name: str) -> str | None:
+    empty_field = {
+        "list_mcp_resources": "resources",
+        "list_mcp_resource_templates": "resourceTemplates",
+    }.get(name)
     if (
         item.get("type") != "mcp_tool_call"
-        or name != "list_mcp_resources"
+        or empty_field is None
     ):
         return None
     arguments = item.get("arguments")
     if not isinstance(arguments, dict) or arguments.get("cursor") not in {None, ""}:
         return None
     if item.get("status") != "completed" or item.get("error") is not None:
-        return "list_mcp_resources:failed" if item.get("result") is None else None
+        return f"{name}:failed" if item.get("result") is None else None
     result = item.get("result")
     content = result.get("content") if isinstance(result, dict) else None
     if not isinstance(content, list) or len(content) != 1 or not isinstance(content[0], dict):
         return None
     payload = _json_fragment(content[0].get("text"))
-    if isinstance(payload, dict) and payload.get("resources") == []:
-        return "list_mcp_resources:empty"
+    if isinstance(payload, dict) and payload.get(empty_field) == []:
+        return f"{name}:empty"
     return None
 
 
