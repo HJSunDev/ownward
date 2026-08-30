@@ -1,7 +1,8 @@
 {
-  "schema": "ownward.kernel-iteration-blind-budget-freeze/v1",
-  "validation_contract_identity": "a511498187990d0831272ed2ab162c7bc94987b861a72ae1b37e7ed301994a02",
+  "schema": "ownward.kernel-iteration-blind-budget-freeze/v2",
+  "validation_contract_identity": "75b06118a96e4d160fcfdec8e68b66fff400401a9a8a3a124799ab3253fee2df",
   "calibration": {
+    "historical": true,
     "plan_identity": "7db58bb3eab2c84309ca135285636782dfb0bfb2cc6cbfff402c872ad44418ce",
     "result_identity": "e05ea3bbd985fc327a958f0b753ecd9c941f623f4aac5581eb4528b370a14689",
     "current_verifier_identity": "059bda21cdf7c7fbaf524abe25f2a457c74e6d59ded91eedd4b6868f86b32519",
@@ -33,6 +34,53 @@
     "resume_report_byte_identical": true,
     "resume_checkpoint_byte_identical": true
   },
+  "migration_receipt": {
+    "source_budget_identity": "90d2b7440f74e83317f672cc02200bf49a419171a16dccdcf794289e07eda224",
+    "historical_validation_contract_identity": "a511498187990d0831272ed2ab162c7bc94987b861a72ae1b37e7ed301994a02",
+    "qualification_contract_identity": "fe2bd18db572b1071911fb236acfc7274bea097ff0d4aea27ba43b5ecc45bdaa",
+    "qualification_plan_identity": "24e70a5c52c61d8f00f8b8454bb7f2aa8704214010fd65e870364900ddc941ac",
+    "qualification_result_identity": "8df3fee5ae3ccc0f9b052b03e366e355a1f1956030163b83d5f79e33fd99adb6",
+    "qualification_plan_direct_dependencies": {
+      "codex-auth-location": "fb6657ecd238873a91d048297821f27ae3bf5d61e0a70e46bed427b25d0ce8f1",
+      "codex-executor": "0c149db80ed0bf442c810146b0ad0163b74982fe4542d673f56c354d7b8229cb",
+      "contract": "fe2bd18db572b1071911fb236acfc7274bea097ff0d4aea27ba43b5ecc45bdaa",
+      "controller": "d2996f35dbb201f7fe7a9b49c1913464e13491fa9d336ccdebc4e0b46dead8f7",
+      "controller-entry": "82f5708b908931af82420a9179d152eaf1626f9f448de55f3f36fa22805ce127",
+      "generator": "c53c887996d47b37b93b61d2d0ab3f9d40c7c3548370b48d99d9a93241894af0",
+      "quality-admission": "26cc9bb16f6008c9c8a4011121dcb9fdf7e5ebca98170e59e34467832bae9794",
+      "runs-root": "b7380d455b3469fb854c654986e18cec78f3600329e785e380098af2d9e4f22b",
+      "validation-contract": "75b06118a96e4d160fcfdec8e68b66fff400401a9a8a3a124799ab3253fee2df"
+    },
+    "changed_shared_direct_dependencies": [
+      "validation-contract",
+      "controller-entry",
+      "generator",
+      "quality-admission"
+    ],
+    "invalidated_blind_gate_results": [
+      "851f80be476d5e55718d0cc5d3b1732bb8d163ad3862bd74d80d64e4c7da2bb2",
+      "b90d36ce3cacbc2756a233c19cb091dc5e8ae406cdf8ef82c7933d9911b8981d"
+    ],
+    "qualification": {
+      "batches": 2,
+      "questions_per_batch": 15,
+      "admitted_questions": 30,
+      "candidate_executions": 0,
+      "baseline_executions": 0,
+      "model_calls": 32,
+      "generator_retries": 1,
+      "rate_limit_events": 0,
+      "batch_wall_seconds": [409.9744977, 426.6836531],
+      "total_wall_seconds": 836.6581508,
+      "per_batch_failure_budget_seconds": 492,
+      "qualification_budget_seconds": 984,
+      "raw_materials_destroyed": true,
+      "terminal_resume_zero_model_zero_product": true,
+      "formal_state_sha256": "0587d7f9f147bcb2ae0e4ca70afe1ca051e4dbe6b2b0e34af2e2174fcc82da01"
+    },
+    "budgets_reused_without_relaxation": true,
+    "next_action": "restart-stage6-from-fresh-5-question-gate"
+  },
   "measurement": {
     "total_wall_seconds": 285.51604210000005,
     "generation_admission_seconds": 132.78652519999997,
@@ -61,5 +109,5 @@
   },
   "total_normal_seconds": 4215,
   "design_total_normal_seconds": 9000,
-  "identity": "90d2b7440f74e83317f672cc02200bf49a419171a16dccdcf794289e07eda224"
+  "identity": "a93059774c736586b2c3624aacbb0fc99826e70f172129ad737378c4ddb40619"
 }

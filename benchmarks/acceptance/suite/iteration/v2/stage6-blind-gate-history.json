@@ -1,0 +1,103 @@
+{
+  "schema": "ownward.kernel-iteration-stage6-blind-gate-history/v3",
+  "controller_identity": "bdbcc3e4dd2e1581d09d08a9c652016de9b4a55ded5d9ae6111da9f0c274b222",
+  "level_contract_identities": {
+    "5": "1a59fde32af919090b084f8ccc7cffce6dedbbd5962edd53ec0313998a20e9d9",
+    "15": "fb5939fb3072e663ecb8c6c49c0397113a7f50ccf1ee8236b27c59e1b958d941",
+    "25": "9b2eb0024a9a9a8b35273130064575cd26442b60e90f9d26407f1d608f27fce8",
+    "50": "8ae9dc990018acdfdd8d5aecf7086c031e1b170894f77f5fe48a443bf7d48dd8"
+  },
+  "invalidated_diagnostics": [
+    {
+      "plan_identity": "b436954d3c5eed17bcc51f473a18e3266214bee28c23551e78b657302d86d0f7",
+      "result_identity": "e8da3e5371acf9f8fa77659d6884a07d3a3cc329ad849afb4ab437c716f22499",
+      "reason": "five-question-specific-controller-would-have-invalidated-this-result-when-enabling-later-levels"
+    },
+    {
+      "plan_identity": "0df2eb4d7d65b15b01c00e9eb23d8e68f10ac86f8117144f2e3872928e041c8e",
+      "result_identity": "09c6a35dba1ad8413a92cccaccdca2ecc6b0a444737e96be11ef755e8a7a1a39",
+      "reason": "controller-misclassified-destroyed-quality-admission-batch-wall-as-candidate-cost"
+    },
+    {
+      "plan_identity": "9eeedb71803aeaff5bab6195428fc77470a98dd3514697294d4a215cea8d5865",
+      "result_identity": "851f80be476d5e55718d0cc5d3b1732bb8d163ad3862bd74d80d64e4c7da2bb2",
+      "reason": "shared-validation-contract-controller-entry-generator-and-quality-admission-identities-changed-after-stage2-reliability-qualification"
+    },
+    {
+      "plan_identity": "dfe881934aa000f80189ce45fcc3047815e946f57712f54c5a18d4586d4ce9e7",
+      "result_identity": "b90d36ce3cacbc2756a233c19cb091dc5e8ae406cdf8ef82c7933d9911b8981d",
+      "reason": "shared-validation-contract-controller-entry-generator-and-quality-admission-identities-changed-after-stage2-reliability-qualification"
+    },
+    {
+      "plan_identity": "c74ed5634a86d787cf7323084a981ec30d8b45909813691a9ff767a1d3c552f5",
+      "result_identity": "3ce4bb4e6191981ee58a02ed79171fcb8fafea6287abeda7559a24c29dceb1f7",
+      "reason": "old-controller-counted-shared-generation-admission-and-v0-wall-as-a-candidate-failure",
+      "candidate_quality_passed": true,
+      "candidate_failure": false,
+      "evaluation_process_failed": true,
+      "same_blind_content_rerun_forbidden": true
+    }
+  ],
+  "last_passed_gate": {
+    "level": 5,
+    "plan_identity": "82cfab1b381cb5405ef503f309604a366b519e631b4ecacb33592f008f16c2b9",
+    "result_identity": "b13bf7c136fb6963d8ec9f2f33b8659566913e9408e2e6d9fc13dc045b6160bd",
+    "passed": true,
+    "next_level": 15,
+    "raw_materials_destroyed": true,
+    "valid_for_current_controller": false
+  },
+  "current": null,
+  "stage3_wall_attribution": {
+    "contract_identity": "0015fcc670052988a98fa6e044d363d57fb8a5f98e342d08c944da86971023b1",
+    "result_identity": "72d6f045c9b9ad383caf92436afb5c6b975850d22975acbae5cd38fc2525aaef",
+    "root_cause": "stage6-serial-per-call-app-server-generation-scheduling",
+    "candidate_kernel_failed": false,
+    "projected_wall_plus_repeatability_error_seconds": 568.40126615,
+    "level_wall_seconds_maximum": 751,
+    "remaining_margin_seconds": 182.59873385,
+    "passed": true
+  },
+  "stage4_stage5_revalidation": {
+    "candidate_subject_identity": "834e204c89623bf1bdf6c9b5c5b49589b49f22137ae1ef31c58201ff6ff9f17c",
+    "kernel_generation_identity": "66a6e827841c09279dec99d53cc7e5db04a879c94da14cbd3355419029bfa2db",
+    "kernel_effect_identity": "a2ad626f00e3806599f625c07d4df4a6430c23c27b3e996c50bd75a9e5fef922",
+    "stage5_contract_identity": "e7a27b75f7d94c4a9d8e18a8a271b59b6899f45a1da16fcbe04bba811cdcfa1e",
+    "candidate_direct_dependencies_changed": false,
+    "stage4_evidence_reused": true,
+    "stage5_checkpoints_reused": true,
+    "ready_for_fresh_stage6": true
+  },
+  "stage2_reliability_qualification": {
+    "plan_identity": "24e70a5c52c61d8f00f8b8454bb7f2aa8704214010fd65e870364900ddc941ac",
+    "result_identity": "8df3fee5ae3ccc0f9b052b03e366e355a1f1956030163b83d5f79e33fd99adb6",
+    "admitted_questions": 30,
+    "candidate_executions": 0,
+    "baseline_executions": 0,
+    "raw_materials_destroyed": true
+  },
+  "invalidated_incomplete_plans": [{
+    "level": 15,
+    "plan_identity": "ac540d1423fe1535ee2adfdc95150f77b9d6a1f84edcab9ef2288ede1c253b6c",
+    "previous_plan_identity": "82cfab1b381cb5405ef503f309604a366b519e631b4ecacb33592f008f16c2b9",
+    "status": "invalidated-recovery-secret-lost",
+    "completed_rejected_attempts": [1],
+    "maximum_admission_batches": 3,
+    "rejected_questions": 1,
+    "candidate_executions": 0,
+    "baseline_executions": 0,
+    "rejected_material_destroyed": true,
+    "rejection_evidence_path": ".tmp/kernel-v2-major-iteration/stage6/evidence/blind-gate/ac540d1423fe1535ee2adfdc95150f77b9d6a1f84edcab9ef2288ede1c253b6c/admission-rejections.json",
+    "rejection_evidence_sha256": "1405105b84459a19829a9ca3b7ea857cfb3a7730d22fddd200ae1ac3f888242a",
+    "classification": {
+      "candidate_failure": false,
+      "stage2_reliability_failure": false,
+      "terminal": false
+    },
+    "counts_toward_stage6": false,
+    "current_gate": false,
+    "reason": "coordinator-misclassification-cleanup-destroyed-the-only-random-recovery-secret"
+  }],
+  "next_action": "restart-stage6-from-fresh-5-question-gate",
+  "identity": "064b70efca93859f6f857c5397847532b7e1432d14cbb89d8e6fa7e93ba3cdf8"
+}

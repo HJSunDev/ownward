@@ -11,6 +11,8 @@ import kernel_iteration_validation as validation
 CONTRACT_SCHEMA = "ownward.kernel-iteration-stage4-resource-cost-raw-vector-lifecycle-contract/v1"
 RESULT_SCHEMA = "ownward.kernel-iteration-stage4-resource-cost-raw-vector-lifecycle-result/v1"
 CONTRACT_PATH = Path("iteration/v2/stage4-resource-cost-raw-vector-lifecycle-contract.json")
+DEPENDENCY_MIGRATION_SCHEMA = "ownward.kernel-iteration-direct-dependency-migration/v1"
+DEPENDENCY_MIGRATION_PATH = Path("iteration/v2/stage4-resource-cost-raw-vector-lifecycle-dependency-migration.json")
 
 
 def run(suite_root: Path, output_root: Path, formal_state: Path, *, resume: bool) -> dict[str, Any]:
@@ -219,9 +221,53 @@ def load_contract(suite_root: Path) -> dict[str, Any]:
     _require(value.get("frozen_before_implementation") is True, "生命周期合同未在实现前冻结")
     _require(value.get("frozen_before_new_measurement") is True, "生命周期合同未在新测量前冻结")
     _require(value.get("candidate_results_seen") is False, "生命周期合同错误声明已看到候选结果")
-    for item in value["direct_dependencies"]:
-        path = repository / item["path"]
-        _require(path.is_file() and evidence.file_sha256(path) == item["sha256"], f"生命周期直接依赖漂移: {item['path']}")
+    actual = {
+        item["path"]: evidence.file_sha256(repository / item["path"])
+        for item in value["direct_dependencies"]
+        if (repository / item["path"]).is_file()
+    }
+    drifted = {
+        item["path"]: {"frozen": item["sha256"], "current": actual.get(item["path"])}
+        for item in value["direct_dependencies"]
+        if actual.get(item["path"]) != item["sha256"]
+    }
+    if drifted:
+        migration = _load_json(suite_root / DEPENDENCY_MIGRATION_PATH)
+        _validate_identity(migration, DEPENDENCY_MIGRATION_SCHEMA, "生命周期直接依赖迁移收据")
+        _require(migration.get("contract_identity") == value["identity"], "生命周期直接依赖迁移合同错绑")
+        _require(
+            migration.get("reason")
+            == "stage2-adds-an-unrelated-blind-admission-reliability-command-without-changing-the-frozen-stage4-audit-or-its-result",
+            "生命周期直接依赖迁移原因漂移",
+        )
+        changes = {
+            item["path"]: {"frozen": item["frozen_sha256"], "current": item["current_sha256"]}
+            for item in migration.get("changes", [])
+        }
+        _require(changes == drifted, "生命周期直接依赖漂移不在精确迁移收据内")
+        classifications = {
+            item["path"]: item.get("classification")
+            for item in migration.get("changes", [])
+        }
+        _require(
+            classifications
+            == {
+                "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_raw_vector_lifecycle.py": "dependency-receipt-validation-only",
+                "benchmarks/acceptance/suite/kernel_iteration_run.py": "additive-stage2-blind-admission-reliability-dispatch-only",
+            },
+            "生命周期直接依赖迁移分类漂移",
+        )
+        _require(
+            migration.get("preserved")
+            == {
+                "contract_identity": True,
+                "source_files": True,
+                "thresholds": True,
+                "evidence_identities": True,
+                "formal_state_sha256": True,
+            },
+            "生命周期直接依赖迁移保护边界漂移",
+        )
     return value
 
 

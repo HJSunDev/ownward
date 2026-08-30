@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import time
+from contextlib import contextmanager
 from typing import Any, Callable
 
 import kernel_iteration_evidence as evidence
@@ -166,11 +167,12 @@ def validate_stage3_problem_pool(value: dict[str, Any]) -> dict[str, Any]:
 def load_blind_budget_archive(suite_root: Path) -> dict[str, Any]:
     validation = load_validation_contract(suite_root)
     value = _load_json(suite_root.resolve() / BLIND_BUDGET_RELATIVE)
-    _require(value.get("schema") == "ownward.kernel-iteration-blind-budget-freeze/v1", "V2 盲测预算 schema 无效")
+    _require(value.get("schema") == "ownward.kernel-iteration-blind-budget-freeze/v2", "V2 盲测预算 schema 无效")
     _require(value.get("validation_contract_identity") == validation["identity"], "V2 盲测预算与验证合同错绑")
     content = {key: item for key, item in value.items() if key != "identity"}
     _require(value.get("identity") == evidence.canonical_sha256(content), "V2 盲测预算身份漂移")
     calibration = _mapping(value, "calibration")
+    _require(calibration.get("historical") is True, "旧五题预算校准没有明确降为历史来源")
     _require(calibration.get("candidate_decision") is None and calibration.get("formal") is False and calibration.get("formal_state_written") is False, "五题校准不得形成候选或正式判定")
     _require(calibration.get("raw_materials_destroyed") is True and calibration.get("quality_admission_passed") is True and calibration.get("control_discrimination_passed") is True, "五题校准质量、对照或销毁证明不完整")
     _require(calibration.get("resume_report_byte_identical") is True and calibration.get("resume_checkpoint_byte_identical") is True, "五题校准缺少逐字恢复证明")
@@ -178,6 +180,35 @@ def load_blind_budget_archive(suite_root: Path) -> dict[str, Any]:
     _require(calibration_dependencies and all(evidence.is_sha256(item) for item in calibration_dependencies.values()), "五题预算冻结的计划直接依赖无效")
     _require(evidence.is_sha256(calibration.get("current_verifier_identity")), "五题预算冻结缺少当前有效性校验器身份")
     _require(calibration.get("plan_schema") == BLIND_PLAN_SCHEMA and calibration.get("result_schema") == BLIND_RESULT_SCHEMA, "五题预算冻结的计划或结果合同漂移")
+    receipt = _mapping(value, "migration_receipt")
+    _require(receipt.get("source_budget_identity") == "90d2b7440f74e83317f672cc02200bf49a419171a16dccdcf794289e07eda224", "V2 盲测预算迁移来源漂移")
+    _require(receipt.get("historical_validation_contract_identity") == calibration_dependencies.get("validation-contract"), "旧五题校准验证合同来源错绑")
+    _require(receipt.get("qualification_contract_identity") == "fe2bd18db572b1071911fb236acfc7274bea097ff0d4aea27ba43b5ecc45bdaa", "阶段 2 资格合同身份漂移")
+    _require(evidence.is_sha256(receipt.get("qualification_plan_identity")) and evidence.is_sha256(receipt.get("qualification_result_identity")), "阶段 2 资格证据身份无效")
+    qualification_dependencies = _mapping(receipt, "qualification_plan_direct_dependencies")
+    _require(qualification_dependencies and all(evidence.is_sha256(item) for item in qualification_dependencies.values()), "阶段 2 资格直接依赖无效")
+    _require(qualification_dependencies.get("validation-contract") == validation["identity"] and qualification_dependencies.get("contract") == receipt["qualification_contract_identity"], "阶段 2 资格证据与当前合同错绑")
+    _require(receipt.get("changed_shared_direct_dependencies") == ["validation-contract", "controller-entry", "generator", "quality-admission"], "共享盲测依赖失效图漂移")
+    _require(receipt.get("invalidated_blind_gate_results") == [
+        "851f80be476d5e55718d0cc5d3b1732bb8d163ad3862bd74d80d64e4c7da2bb2",
+        "b90d36ce3cacbc2756a233c19cb091dc5e8ae406cdf8ef82c7933d9911b8981d",
+    ], "旧五题或十五题关卡没有精确降为历史诊断")
+    qualification = _mapping(receipt, "qualification")
+    walls = qualification.get("batch_wall_seconds")
+    _require(
+        qualification.get("batches") == 2
+        and qualification.get("questions_per_batch") == 15
+        and qualification.get("admitted_questions") == 30
+        and qualification.get("candidate_executions") == 0
+        and qualification.get("baseline_executions") == 0
+        and isinstance(walls, list)
+        and len(walls) == 2
+        and all(float(item) <= 492 for item in walls)
+        and float(qualification.get("total_wall_seconds", 0)) <= 984,
+        "阶段 2 双批资格或预算证据不完整",
+    )
+    _require(qualification.get("raw_materials_destroyed") is True and qualification.get("terminal_resume_zero_model_zero_product") is True, "阶段 2 资格缺少销毁或终态复用证明")
+    _require(receipt.get("budgets_reused_without_relaxation") is True and receipt.get("next_action") == "restart-stage6-from-fresh-5-question-gate", "预算迁移放宽了原门槛或下一动作漂移")
     levels = _mapping(value, "budgets")
     _require(set(levels) == {"5", "15", "25", "50"}, "五题校准没有冻结四级预算")
     _require(all(int(item["normal_seconds"]) > 0 and int(item["failure_seconds"]) > 0 for item in levels.values()), "五题校准预算无效")
@@ -187,19 +218,31 @@ def load_blind_budget_archive(suite_root: Path) -> dict[str, Any]:
 
 
 def load_blind_budget(suite_root: Path, output_root: Path) -> dict[str, Any]:
-    """Load a historical budget only after all current direct dependencies still match."""
+    """Load the budget only after the current Stage 2 qualification still matches."""
+    import kernel_iteration_admission_reliability as reliability
     value = load_blind_budget_archive(suite_root)
-    calibration = _mapping(value, "calibration")
-    plan_identity = str(calibration["plan_identity"])
-    root = output_root.resolve() / "blind-calibration" / plan_identity
+    receipt = _mapping(value, "migration_receipt")
+    plan_identity = str(receipt["qualification_plan_identity"])
+    output_root = output_root.resolve()
+    roots = (
+        output_root / "stage2-admission-reliability" / "admission-reliability" / plan_identity,
+        output_root / "admission-reliability" / plan_identity,
+    )
+    root = next((item for item in roots if item.is_dir()), roots[0])
     plan = _load_json(root / "plan.json")
-    _validate_blind_plan(plan, plan_identity)
+    reliability._validate_plan(plan, plan_identity)
+    _require(_mapping(plan, "direct_dependencies") == _mapping(receipt, "qualification_plan_direct_dependencies"), "阶段 2 资格计划直接依赖与预算收据错绑")
     result = _load_json(root / "result.json")
-    _validate_blind_terminal_result(result, plan_identity)
-    _require(result.get("identity") == calibration.get("result_identity"), "五题预算冻结的终态结果身份漂移")
-    locator = _load_blind_dependency_locator(root / "dependency-locator.json", plan_identity)
-    _require(locator["current_verifier_identity"] == calibration.get("current_verifier_identity"), "五题预算冻结的当前校验器身份错绑")
-    _validate_current_blind_dependencies(suite_root, plan, locator)
+    reliability._validate_result(result, plan_identity)
+    _require(
+        result.get("identity") == receipt.get("qualification_result_identity")
+        and result.get("passed") is True
+        and result.get("raw_materials_destroyed") is True,
+        "阶段 2 资格终态身份或通过证明漂移",
+    )
+    locator = reliability._load_locator(root / "locator.json", plan_identity)
+    current = reliability._current_dependencies(suite_root, locator)
+    _require(current == _mapping(plan, "direct_dependencies"), "阶段 2 资格当前直接依赖已漂移")
     return {**value, "current_valid": True}
 
 
@@ -1197,7 +1240,7 @@ def calibrate_blind(
         generated_cases: list[dict[str, Any]] = []
         generator_usages: list[dict[str, Any]] = []
         for index, coverage in enumerate(BLIND_COVERAGE, start=1):
-            case_id = f"c{index:02d}"
+            case_id = f"b01-c{index:02d}"
             generator_output, case_usage = invoke(
                 suite_root=suite_root,
                 runtime=runtime,
@@ -1511,15 +1554,45 @@ def validate_admission(output: dict[str, Any], materials: dict[str, Any], valida
     _require(set(by_id) == {case["case_id"] for case in materials["cases"]}, "质量准入案例身份缺失或错绑")
     counts = {name: 0 for name in required}
     rejected: list[str] = []
+    failures_by_check = {name: 0 for name in required}
+    failures_by_coverage = {name: 0 for name in BLIND_COVERAGE}
+    failures_by_coverage_and_check = {
+        coverage: {name: 0 for name in required}
+        for coverage in BLIND_COVERAGE
+    }
+    failed_check_combinations: dict[tuple[str, ...], int] = {}
     for case in materials["cases"]:
         item = by_id[case["case_id"]]
         checks = item.get("checks")
         _require(isinstance(checks, dict) and set(checks) == set(required), "质量准入检查项漂移")
         for name in required:
             counts[name] += int(checks[name] is True)
-        if not all(checks[name] is True for name in required):
+        failed = tuple(name for name in required if checks[name] is not True)
+        if failed:
             rejected.append(case["case_id"])
-    return {"passed": not rejected, "questions": len(materials["cases"]), "passed_counts": counts, "rejected_count": len(rejected)}
+            coverage = str(case["coverage"])
+            _require(coverage in failures_by_coverage, "质量准入覆盖类型漂移")
+            failures_by_coverage[coverage] += 1
+            failed_check_combinations[failed] = failed_check_combinations.get(failed, 0) + 1
+            for name in failed:
+                failures_by_check[name] += 1
+                failures_by_coverage_and_check[coverage][name] += 1
+    aggregate = {
+        "rejected_by_coverage": failures_by_coverage,
+        "failed_by_check": failures_by_check,
+        "failed_by_coverage_and_check": failures_by_coverage_and_check,
+        "failed_check_combinations": [
+            {"checks": list(names), "count": failed_check_combinations[names]}
+            for names in sorted(failed_check_combinations)
+        ],
+    }
+    return {
+        "passed": not rejected,
+        "questions": len(materials["cases"]),
+        "passed_counts": counts,
+        "rejected_count": len(rejected),
+        "failure_aggregate": aggregate,
+    }
 
 
 def score_controls(materials: dict[str, Any]) -> dict[str, Any]:
@@ -1753,33 +1826,64 @@ def _native_codex_invoke(
     settings: dict[str, Any],
     validate: Callable[[dict[str, Any]], Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
+    with _native_codex_batch_invoker(suite_root, runtime, stage / ".codex-runtime") as invoke:
+        return invoke(
+            suite_root=suite_root,
+            runtime=runtime,
+            stage=stage,
+            role=role,
+            prompt=prompt,
+            schema=schema,
+            settings=settings,
+            validate=validate,
+        )
+
+
+@contextmanager
+def _native_codex_batch_invoker(
+    suite_root: Path,
+    runtime: dict[str, Any],
+    transport_parent: Path,
+) -> Any:
     module = _load_longmemeval_module(suite_root)
     command_prefix = module.CodexAppServer.direct_command_prefix(
         runtime["codex_binary"], module.codex_session.command_prefix(runtime["codex_binary"]),
     )
-    transport_parent = stage / ".codex-runtime"
 
     def factory(_index: int, _generation: int) -> Any:
         runtime_root = module.isolated_runtime_root(transport_parent)
         environment = module.codex_session.isolated_environment(runtime["codex_auth_file"], runtime_root / "codex-home")
         return module.CodexAppServer(runtime["codex_binary"], runtime["codex_auth_file"], runtime_root, command_prefix, environment)
 
-    started = time.perf_counter()
     with module.CodexAppServerPool(1, factory) as transport:
         capability = module.CodexCapability(transport)
-        value, usage = capability._invoke(
-            prompt=prompt,
-            schema=schema,
-            stage=stage / "checkpoint",
-            model=settings["model"],
-            effort=settings["reasoning_effort"],
-            timeout_seconds=float(settings["timeout_seconds"]),
-            attempts=int(settings["attempts"]),
-            validate=validate,
-        )
-        diagnostics = transport.diagnostics()
-    usage = {**usage, "role": role, "elapsed_seconds": time.perf_counter() - started, "transport": diagnostics}
-    return value, usage
+        def invoke(
+            *,
+            suite_root: Path,
+            runtime: dict[str, Any],
+            stage: Path,
+            role: str,
+            prompt: str,
+            schema: dict[str, Any],
+            settings: dict[str, Any],
+            validate: Callable[[dict[str, Any]], Any] | None = None,
+        ) -> tuple[dict[str, Any], dict[str, Any]]:
+            started = time.perf_counter()
+            value, usage = capability._invoke(
+                prompt=prompt,
+                schema=schema,
+                stage=stage / "checkpoint",
+                model=settings["model"],
+                effort=settings["reasoning_effort"],
+                timeout_seconds=float(settings["timeout_seconds"]),
+                attempts=int(settings["attempts"]),
+                validate=validate,
+            )
+            diagnostics = transport.diagnostics()
+            usage = {**usage, "role": role, "elapsed_seconds": time.perf_counter() - started, "transport": diagnostics}
+            return value, usage
+
+        yield invoke
 
 
 def _run_longmemeval(
@@ -1833,6 +1937,8 @@ def _run_longmemeval(
 
 def _generator_prompt(validation: dict[str, Any], seed: str, case_id: str, coverage: str) -> str:
     blind = _mapping(validation, "blind")
+    case_number = int(case_id.rsplit("-c", 1)[1])
+    session_ids = [f"c{case_number:02d}-s{number:02d}" for number in range(1, 7)]
     return (
         "Generate exactly one new synthetic memory-evaluation case for an internal, non-formal calibration. "
         "Do not use, imitate, retrieve, or refer to any LongMemEval-S question, answer, Gold ID, dataset content, candidate implementation, or candidate output. "
@@ -1841,14 +1947,16 @@ def _generator_prompt(validation: dict[str, Any], seed: str, case_id: str, cover
         "Invent fresh people, organizations, dates, facts, relationships, conflicts, updates, and distractors. Each case must have at least "
         + str(blind["minimum_sessions_per_question"])
         + " sessions and at least " + str(blind["minimum_distractor_sessions_per_question"])
-        + " relevant distractor sessions. Session IDs must be opaque case-local IDs such as c01-s01 and must not reveal the answer. "
+        + " relevant distractor sessions. Emit exactly six sessions and use each of these case-local IDs exactly once: "
+        + ", ".join(session_ids) + ". Every answer, stale, and distractor ID must name one of those six emitted sessions. "
         "Make each question require evidence-sensitive disambiguation, not a direct keyword copy: the question must paraphrase the requested fact and must not contain "
         "the answer or an answer-shaped phrase. Distractor sessions must reuse relevant entities or concepts while supporting a plausible but wrong alternative; unrelated filler is insufficient. "
         "For temporal-order, multi-session-relation, and multi-session-distractor, bind at least two jointly necessary facts across at least two answer sessions; neither answer session alone may support the complete answer. "
         "For single-session-assistant-fact, require both correct speaker attribution and disambiguation from a plausible user or assistant distractor. "
-        "For temporal-order, make one answer session establish an event fact and another establish the ordering or time anchor. For multi-session-relation, make one session establish an entity/key relation and another map that key to the requested fact. "
-        "For multi-session-distractor, use similarly worded competing records so that a second answer session is needed to select the right one. "
-        "Every complete answer must appear verbatim somewhere in the declared answer evidence. The system derives immutable truth-claim bindings from those declared source turns; do not emit a duplicate truth_claims field. "
+        "For temporal-order, use exactly two answer sessions with distinct dates and emit temporal_binding. The value session must map an opaque link_key to the verbatim answer but contain neither ordering anchor; the temporal session must map that same link_key to the relative order between exactly two question_anchor_terms but must not contain the answer. The question must ask for the value using both anchor terms while containing neither link_key nor answer, so the value and temporal sessions are jointly necessary. No other session may contain link_key or both anchor terms together. Relevant distractors must use different opaque keys and plausible wrong values or orders, and each may reuse at most one anchor term. "
+        "For multi-session-relation, make one session establish an entity/key relation and another map that key to the requested fact. "
+        "For multi-session-distractor, use exactly two answer sessions and emit distractor_binding. The value session must map an opaque link_key to the verbatim answer but contain neither question qualifier; the selector session must map the same key to exactly two question_qualifier_terms but must not contain the answer. The question must ask for the value using both qualifiers while containing neither link_key nor answer. No other session may contain link_key or both qualifiers together; similarly worded distractors must use different opaque keys and may match at most one qualifier. "
+        "Before returning, mechanically check that the complete answer string appears verbatim in at least one turn named by answer_session_ids, never in a distractor turn, and never in the question. The system derives immutable truth-claim bindings from those declared source turns; do not emit a duplicate truth_claims field. "
         "Removing necessary answer evidence, supplying only distractor evidence, supplying an outdated value, or changing the answer must each make the case incorrect. "
         "For knowledge-update-conflict, provide an older plausible stale session and a later answer session that explicitly supersedes it. Produce only the requested structured object."
     )
@@ -1856,13 +1964,16 @@ def _generator_prompt(validation: dict[str, Any], seed: str, case_id: str, cover
 
 def _admission_prompt(validation: dict[str, Any], materials: dict[str, Any]) -> str:
     checks = _mapping(_mapping(validation, "blind"), "quality_admission")["required_checks"]
+    batch_size = len(materials["cases"])
+    coverage_counts = {name: sum(case["coverage"] == name for case in materials["cases"]) for name in BLIND_COVERAGE}
     return (
         "Act as an independent pre-output quality admission reviewer. You have no candidate implementation or candidate output. "
         "Reject weak cases; do not repair them. For every case, decide all required booleans: " + ", ".join(checks) + ". "
         "A case passes only when it is plausible, structurally non-trivial, has one uniquely supported answer, sufficient evidence, no answer-shaped surface shortcut, "
         "and can distinguish correct evidence/answers from all applicable controls: remove at least one necessary answer evidence item (or all answer evidence for a single-evidence case), "
         "use only declared distractor evidence, or keep correct evidence but change the answer. The stale-evidence control applies only to knowledge-update-conflict; do not fail other coverage labels merely because they have no stale evidence. "
-        "Across the five-case batch, the controls must collectively cover known-correct, missing-evidence, wrong-evidence, stale-evidence, and wrong-answer. "
+        f"Assess all {batch_size} cases independently; repeated coverage labels do not let one strong case compensate for another. The frozen coverage counts are {json.dumps(coverage_counts, sort_keys=True)}. "
+        "Across the complete batch, the controls must collectively cover known-correct, missing-evidence, wrong-evidence, stale-evidence, and wrong-answer. "
         "Relevant-entity distractors and paraphrased questions are required; unrelated filler or direct keyword-copy questions fail. "
         "Return only the requested structured object.\n\n"
         + json.dumps(materials, ensure_ascii=False, separators=(",", ":"))
@@ -1871,6 +1982,8 @@ def _admission_prompt(validation: dict[str, Any], materials: dict[str, Any]) -> 
 
 def _generator_case_schema(case_id: str, coverage: str, validation: dict[str, Any]) -> dict[str, Any]:
     blind = _mapping(validation, "blind")
+    case_number = int(case_id.rsplit("-c", 1)[1])
+    session_ids = [f"c{case_number:02d}-s{number:02d}" for number in range(1, 7)]
     turn = {
         "type": "object", "additionalProperties": False, "required": ["role", "content"],
         "properties": {"role": {"type": "string", "enum": ["user", "assistant"]}, "content": {"type": "string", "minLength": 1, "maxLength": 800}},
@@ -1878,26 +1991,54 @@ def _generator_case_schema(case_id: str, coverage: str, validation: dict[str, An
     session = {
         "type": "object", "additionalProperties": False, "required": ["session_id", "date", "turns"],
         "properties": {
-            "session_id": {"type": "string", "pattern": "^c[0-9]{2}-s[0-9]{2}$"},
+            "session_id": {"type": "string", "enum": session_ids},
             "date": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
             "turns": {"type": "array", "minItems": 1, "maxItems": 6, "items": turn},
         },
     }
+    required = ["case_id", "coverage", "question_type", "question_date", "question", "answer", "answer_session_ids", "stale_session_ids", "distractor_session_ids", "sessions"]
+    properties: dict[str, Any] = {
+        "case_id": {"type": "string", "enum": [case_id]},
+        "coverage": {"type": "string", "enum": [coverage]},
+        "question_type": {"type": "string", "enum": ["knowledge-update", "temporal-reasoning", "multi-session", "single-session-assistant"]},
+        "question_date": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+        "question": {"type": "string", "minLength": 10, "maxLength": 500},
+        "answer": {"type": "string", "minLength": 1, "maxLength": 300},
+        "answer_session_ids": {"type": "array", "minItems": 1, "maxItems": 3, "items": {"type": "string", "enum": session_ids}},
+        "stale_session_ids": {"type": "array", "maxItems": 3, "items": {"type": "string", "enum": session_ids}},
+        "distractor_session_ids": {"type": "array", "minItems": int(blind["minimum_distractor_sessions_per_question"]), "maxItems": 5, "items": {"type": "string", "enum": session_ids}},
+        "sessions": {"type": "array", "minItems": 6, "maxItems": 6, "items": session},
+    }
+    if coverage == "temporal-order":
+        required.append("temporal_binding")
+        properties["temporal_binding"] = {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["link_key", "value_session_id", "temporal_session_id", "question_anchor_terms"],
+            "properties": {
+                "link_key": {"type": "string", "minLength": 3, "maxLength": 40},
+                "value_session_id": {"type": "string", "enum": session_ids},
+                "temporal_session_id": {"type": "string", "enum": session_ids},
+                "question_anchor_terms": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "string", "minLength": 2, "maxLength": 80}},
+            },
+        }
+    if coverage == "multi-session-distractor":
+        required.append("distractor_binding")
+        properties["distractor_binding"] = {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["link_key", "value_session_id", "selector_session_id", "question_qualifier_terms"],
+            "properties": {
+                "link_key": {"type": "string", "minLength": 3, "maxLength": 40},
+                "value_session_id": {"type": "string", "enum": session_ids},
+                "selector_session_id": {"type": "string", "enum": session_ids},
+                "question_qualifier_terms": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "string", "minLength": 2, "maxLength": 80}},
+            },
+        }
     case = {
         "type": "object", "additionalProperties": False,
-        "required": ["case_id", "coverage", "question_type", "question_date", "question", "answer", "answer_session_ids", "stale_session_ids", "distractor_session_ids", "sessions"],
-        "properties": {
-            "case_id": {"type": "string", "enum": [case_id]},
-            "coverage": {"type": "string", "enum": [coverage]},
-            "question_type": {"type": "string", "enum": ["knowledge-update", "temporal-reasoning", "multi-session", "single-session-assistant"]},
-            "question_date": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
-            "question": {"type": "string", "minLength": 10, "maxLength": 500},
-            "answer": {"type": "string", "minLength": 1, "maxLength": 300},
-            "answer_session_ids": {"type": "array", "minItems": 1, "maxItems": 3, "items": {"type": "string"}},
-            "stale_session_ids": {"type": "array", "maxItems": 3, "items": {"type": "string"}},
-            "distractor_session_ids": {"type": "array", "minItems": int(blind["minimum_distractor_sessions_per_question"]), "maxItems": 5, "items": {"type": "string"}},
-            "sessions": {"type": "array", "minItems": int(blind["minimum_sessions_per_question"]), "maxItems": 8, "items": session},
-        },
+        "required": required,
+        "properties": properties,
     }
     return {"type": "object", "additionalProperties": False, "required": ["case"], "properties": {"case": case}}
 
@@ -1906,12 +2047,86 @@ def _validate_generated_case(output: dict[str, Any], case_id: str, coverage: str
     case = output.get("case")
     _require(isinstance(case, dict), "盲测生成器没有返回单题案例")
     case = dict(case)
+    temporal_binding = case.get("temporal_binding")
+    distractor_binding = case.get("distractor_binding")
     case["truth_claims"] = _derive_truth_claims(case)
     projected = _case_projection(case)
     _require(projected["case_id"] == case_id and projected["coverage"] == coverage, "盲测生成器案例身份或覆盖错绑")
     blind = _mapping(validation, "blind")
     _require(len(projected["sessions"]) >= int(blind["minimum_sessions_per_question"]), "盲测生成器会话不足冻结难度下限")
     _require(len(set(projected["distractor_session_ids"])) >= int(blind["minimum_distractor_sessions_per_question"]), "盲测生成器干扰证据不足冻结难度下限")
+    normalized_answer = _normalize(str(projected["answer"]))
+    normalized_question = _normalize(str(projected["question"]))
+    _require(normalized_answer and normalized_answer not in normalized_question, "盲测生成器问题包含答案表面捷径")
+    session_by_id = {session["session_id"]: session for session in projected["sessions"]}
+    distractor_text = " ".join(
+        turn["content"]
+        for session_id in projected["distractor_session_ids"]
+        for turn in session_by_id[session_id]["turns"]
+    )
+    _require(normalized_answer not in _normalize(distractor_text), "盲测生成器干扰证据泄露正确答案")
+    if coverage in {"temporal-order", "multi-session-relation", "multi-session-distractor"}:
+        _require(len(set(projected["answer_session_ids"])) >= 2, "盲测生成器多证据覆盖缺少两个独立答案会话")
+    if coverage == "temporal-order":
+        answer_dates = {session_by_id[session_id]["date"] for session_id in projected["answer_session_ids"]}
+        _require(len(answer_dates) >= 2, "盲测生成器时间顺序证据没有独立日期锚点")
+        _require(isinstance(temporal_binding, dict), "盲测生成器时间顺序缺少机械双跳绑定")
+        link_key = _normalize(str(temporal_binding.get("link_key", "")))
+        value_session_id = temporal_binding.get("value_session_id")
+        temporal_session_id = temporal_binding.get("temporal_session_id")
+        anchors = temporal_binding.get("question_anchor_terms")
+        _require(
+            link_key
+            and isinstance(value_session_id, str)
+            and isinstance(temporal_session_id, str)
+            and value_session_id != temporal_session_id
+            and set(projected["answer_session_ids"]) == {value_session_id, temporal_session_id},
+            "盲测生成器时间顺序双跳证据身份错绑",
+        )
+        value_text = _normalize(" ".join(turn["content"] for turn in session_by_id[value_session_id]["turns"]))
+        temporal_text = _normalize(" ".join(turn["content"] for turn in session_by_id[temporal_session_id]["turns"]))
+        _require(link_key in value_text and link_key in temporal_text and link_key not in normalized_question, "盲测生成器时间顺序缺少隐藏连接键")
+        _require(normalized_answer in value_text and normalized_answer not in temporal_text, "盲测生成器时间顺序值与顺序证据未分离")
+        _require(isinstance(anchors, list) and len(anchors) == 2 and len({_normalize(str(item)) for item in anchors}) == 2, "盲测生成器时间顺序锚点无效")
+        for anchor in anchors:
+            normalized_anchor = _normalize(str(anchor))
+            _require(normalized_anchor in normalized_question and normalized_anchor in temporal_text and normalized_anchor not in value_text, "盲测生成器时间顺序锚点未强制双跳")
+        for session_id, session in session_by_id.items():
+            if session_id in {value_session_id, temporal_session_id}:
+                continue
+            other_text = _normalize(" ".join(turn["content"] for turn in session["turns"]))
+            _require(link_key not in other_text, "盲测生成器时间顺序连接键存在第二条路径")
+            anchor_matches = sum(_normalize(str(anchor)) in other_text for anchor in anchors)
+            _require(anchor_matches < 2, "盲测生成器时间顺序双锚点存在第二条路径")
+    if coverage == "multi-session-distractor":
+        _require(isinstance(distractor_binding, dict), "盲测生成器多干扰覆盖缺少机械双跳绑定")
+        link_key = _normalize(str(distractor_binding.get("link_key", "")))
+        value_session_id = distractor_binding.get("value_session_id")
+        selector_session_id = distractor_binding.get("selector_session_id")
+        qualifiers = distractor_binding.get("question_qualifier_terms")
+        _require(
+            link_key
+            and isinstance(value_session_id, str)
+            and isinstance(selector_session_id, str)
+            and value_session_id != selector_session_id
+            and set(projected["answer_session_ids"]) == {value_session_id, selector_session_id},
+            "盲测生成器多干扰双跳证据身份错绑",
+        )
+        value_text = _normalize(" ".join(turn["content"] for turn in session_by_id[value_session_id]["turns"]))
+        selector_text = _normalize(" ".join(turn["content"] for turn in session_by_id[selector_session_id]["turns"]))
+        _require(link_key in value_text and link_key in selector_text and link_key not in normalized_question, "盲测生成器多干扰覆盖缺少隐藏连接键")
+        _require(normalized_answer in value_text and normalized_answer not in selector_text, "盲测生成器多干扰值与选择证据未分离")
+        _require(isinstance(qualifiers, list) and len(qualifiers) == 2 and len({_normalize(str(item)) for item in qualifiers}) == 2, "盲测生成器多干扰限定条件无效")
+        for qualifier in qualifiers:
+            normalized_qualifier = _normalize(str(qualifier))
+            _require(normalized_qualifier in normalized_question and normalized_qualifier in selector_text and normalized_qualifier not in value_text, "盲测生成器多干扰限定条件未强制双跳")
+        for session_id, session in session_by_id.items():
+            if session_id in {value_session_id, selector_session_id}:
+                continue
+            other_text = _normalize(" ".join(turn["content"] for turn in session["turns"]))
+            _require(link_key not in other_text, "盲测生成器多干扰连接键存在第二条路径")
+            qualifier_matches = sum(_normalize(str(item)) in other_text for item in qualifiers)
+            _require(qualifier_matches < 2, "盲测生成器多干扰双限定存在第二条路径")
     content = {
         "schema": MATERIALS_SCHEMA,
         "contains_formal_questions_answers_gold_or_content": False,

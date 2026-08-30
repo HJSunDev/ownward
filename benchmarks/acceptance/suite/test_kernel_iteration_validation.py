@@ -16,6 +16,7 @@ sys.path.insert(0, str(HERE))
 
 import kernel_iteration_evidence as iteration  # noqa: E402
 import kernel_iteration_validation as validation  # noqa: E402
+import kernel_iteration_admission_reliability as reliability  # noqa: E402
 
 
 class KernelIterationValidationTests(unittest.TestCase):
@@ -41,67 +42,70 @@ class KernelIterationValidationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=REPOSITORY) as temporary:
             output = Path(temporary)
             dependencies = {
-                "binary": "1" * 64,
-                "comparison-contract": "2" * 64,
-                "controller": "3" * 64,
-                "embedding": "4" * 64,
-                "environment": "5" * 64,
-                "executor": "6" * 64,
-                "generator": "7" * 64,
-                "model-profile": "8" * 64,
-                "observer": "9" * 64,
-                "quality-admission": "a" * 64,
-                "runtime-calibration": "b" * 64,
-                "subject": "c" * 64,
+                "contract": "1" * 64,
                 "validation-contract": self.validation["identity"],
+                "controller": "3" * 64,
+                "controller-entry": "4" * 64,
+                "generator": "5" * 64,
+                "quality-admission": "6" * 64,
+                "codex-executor": "7" * 64,
+                "codex-auth-location": "8" * 64,
+                "runs-root": "9" * 64,
             }
             plan_content = {
-                "schema": validation.BLIND_PLAN_SCHEMA,
-                "comparison_contract_identity": "2" * 64,
+                "schema": reliability.PLAN_SCHEMA,
+                "purpose": "non-candidate-15-question-generation-admission-reliability",
+                "mode": "qualification",
+                "batches": 2,
+                "questions_per_batch": 15,
+                "contract_identity": "1" * 64,
                 "validation_contract_identity": self.validation["identity"],
-                "subject_identity": "c" * 64,
-                "purpose": "non-candidate-five-question-calibration",
                 "candidate_decision": None,
                 "seed_sha256": "d" * 64,
                 "direct_dependencies": dependencies,
+                "product_execution_forbidden": True,
                 "formal": False,
             }
             plan_identity = iteration.canonical_sha256(plan_content)
             plan = {**plan_content, "identity": plan_identity}
-            root = output / "blind-calibration" / plan_identity
+            root = output / "stage2-admission-reliability" / "admission-reliability" / plan_identity
             self._write_json(root / "plan.json", plan)
-            result = validation._blind_terminal(
-                plan_identity, self.validation, status="quality-rejected", passed=False,
-                generator_usage=self._usage(1), admission_usage=self._usage(1),
-                admission={"passed": False, "questions": 5, "passed_counts": {}, "rejected_count": 5},
-                controls={"passed": True, "outcomes": []}, executions=[], resume_proof=None,
-                total_wall_seconds=2,
-            )
-            self._write_json(root / "result.json", result)
-            verifier_identity = validation._blind_current_verifier_identity()
-            locator_content = {
-                "schema": validation.BLIND_DEPENDENCY_LOCATOR_SCHEMA,
+            result_content = {
+                "schema": reliability.RESULT_SCHEMA,
                 "plan_identity": plan_identity,
+                "passed": True,
+                "raw_materials_destroyed": True,
+                "contains_reversible_question_answer_evidence_or_case_identifiers": False,
+                "candidate_executions": 0,
+                "baseline_executions": 0,
+                "formal_state_written": False,
+            }
+            result = {**result_content, "identity": iteration.canonical_sha256(result_content)}
+            self._write_json(root / "result.json", result)
+            locator_content = {
+                "schema": reliability.LOCATOR_SCHEMA,
+                "plan_identity": plan_identity,
+                "mode": "qualification",
                 "execution_config": str((output / "execution.json").resolve()),
                 "formal_state": str((output / "state.json").resolve()),
-                "current_verifier_identity": verifier_identity,
+                "output_root": str(output.resolve()),
             }
             locator = {**locator_content, "identity": iteration.canonical_sha256(locator_content)}
-            self._write_json(root / "dependency-locator.json", locator)
+            self._write_json(root / "locator.json", locator)
             budget = {
-                "calibration": {
-                    "plan_identity": plan_identity,
-                    "result_identity": result["identity"],
-                    "current_verifier_identity": verifier_identity,
+                "migration_receipt": {
+                    "qualification_plan_identity": plan_identity,
+                    "qualification_result_identity": result["identity"],
+                    "qualification_plan_direct_dependencies": dependencies,
                 }
             }
-            with mock.patch.object(validation, "load_blind_budget_archive", return_value=budget), mock.patch.object(validation, "_blind_current_verifier_identity", return_value=verifier_identity), mock.patch.object(validation, "_current_blind_dependencies", return_value=dependencies):
+            with mock.patch.object(validation, "load_blind_budget_archive", return_value=budget), mock.patch.object(reliability, "_current_dependencies", return_value=dependencies):
                 self.assertTrue(validation.load_blind_budget(HERE, output)["current_valid"])
 
             drifted = dict(dependencies)
-            drifted["environment"] = "e" * 64
-            with mock.patch.object(validation, "load_blind_budget_archive", return_value=budget), mock.patch.object(validation, "_blind_current_verifier_identity", return_value=verifier_identity), mock.patch.object(validation, "_current_blind_dependencies", return_value=drifted):
-                with self.assertRaisesRegex(validation.KernelIterationValidationError, "当前直接依赖已漂移"):
+            drifted["codex-executor"] = "e" * 64
+            with mock.patch.object(validation, "load_blind_budget_archive", return_value=budget), mock.patch.object(reliability, "_current_dependencies", return_value=drifted):
+                with self.assertRaisesRegex(validation.KernelIterationValidationError, "资格当前直接依赖已漂移"):
                     validation.load_blind_budget(HERE, output)
 
     def test_blind_role_identities_ignore_unrelated_budget_loading_but_scope_real_prompt_changes(self) -> None:
@@ -667,12 +671,7 @@ class KernelIterationValidationTests(unittest.TestCase):
                 if role == "generator":
                     return self._generated_case(kwargs), self._usage(2.2)
                 checks = self.validation["blind"]["quality_admission"]["required_checks"]
-                return {
-                    "assessments": [
-                        {"case_id": case["case_id"], "checks": {name: True for name in checks}}
-                        for case in self._materials(5)["cases"]
-                    ]
-                }, self._usage(7.0)
+                return self._admission_for_prompt(kwargs, checks), self._usage(7.0)
 
             def runner(**kwargs: object) -> dict[str, object]:
                 run_dir = Path(kwargs["output_dir"])
@@ -752,13 +751,7 @@ class KernelIterationValidationTests(unittest.TestCase):
                 if kwargs["role"] == "generator":
                     return self._generated_case(kwargs), self._usage(1)
                 checks = self.validation["blind"]["quality_admission"]["required_checks"]
-                assessments = []
-                for index, case in enumerate(self._materials(5)["cases"]):
-                    values = {name: True for name in checks}
-                    if index == 0:
-                        values["unique_answer"] = False
-                    assessments.append({"case_id": case["case_id"], "checks": values})
-                return {"assessments": assessments}, self._usage(1)
+                return self._admission_for_prompt(kwargs, checks, reject_index=0), self._usage(1)
 
             patches = self._blind_patches(runtime)
             with patches[0], patches[1], patches[2]:
@@ -806,7 +799,7 @@ class KernelIterationValidationTests(unittest.TestCase):
                 if kwargs["role"] == "generator":
                     return self._generated_case(kwargs), self._usage(1)
                 checks = self.validation["blind"]["quality_admission"]["required_checks"]
-                return {"assessments": [{"case_id": case["case_id"], "checks": {name: True for name in checks}} for case in self._materials(5)["cases"]]}, self._usage(1)
+                return self._admission_for_prompt(kwargs, checks), self._usage(1)
 
             patches = self._blind_patches(runtime)
             with patches[0], patches[1], patches[2], self.assertRaises(InterruptedError):
@@ -983,8 +976,54 @@ class KernelIterationValidationTests(unittest.TestCase):
 
     def _generated_case(self, kwargs: dict[str, object]) -> dict[str, object]:
         case_id = Path(kwargs["stage"]).name
-        index = int(case_id[1:]) - 1
-        return {"case": self._materials(5)["cases"][index]}
+        index = int(case_id.rsplit("-c", 1)[1] if "-c" in case_id else case_id[1:]) - 1
+        case = json.loads(json.dumps(self._materials(5)["cases"][index]))
+        case["case_id"] = case_id
+        coverage = case["coverage"]
+        session_prefix = f"c{index + 1:02d}"
+        if coverage == "temporal-order":
+            link_key = f"KEY-{index + 1:02d}-ZX"
+            anchor_one = f"Anchor Alder {index + 1:02d}"
+            anchor_two = f"Anchor Cedar {index + 1:02d}"
+            case["sessions"][0]["turns"][0]["content"] = f"Opaque record {link_key} stores the value sapphire."
+            case["sessions"][1]["turns"][0]["content"] = f"Opaque record {link_key} occurred between {anchor_one} and {anchor_two}."
+            case["question"] = f"Which value belongs to the opaque record that occurred between {anchor_one} and {anchor_two}?"
+            case["temporal_binding"] = {
+                "link_key": link_key,
+                "value_session_id": f"{session_prefix}-s01",
+                "temporal_session_id": f"{session_prefix}-s02",
+                "question_anchor_terms": [anchor_one, anchor_two],
+            }
+        if coverage == "multi-session-distractor":
+            link_key = f"KEY-{index + 1:02d}-QD"
+            qualifier_one = f"Unit Indigo {index + 1:02d}"
+            qualifier_two = f"Window Quartz {index + 1:02d}"
+            case["sessions"][0]["turns"][0]["content"] = f"Opaque record {link_key} stores the value sapphire."
+            case["sessions"][1]["turns"][0]["content"] = f"Opaque record {link_key} belongs to {qualifier_one} during {qualifier_two}."
+            case["question"] = f"Which value belongs to the record for {qualifier_one} during {qualifier_two}?"
+            case["distractor_binding"] = {
+                "link_key": link_key,
+                "value_session_id": f"{session_prefix}-s01",
+                "selector_session_id": f"{session_prefix}-s02",
+                "question_qualifier_terms": [qualifier_one, qualifier_two],
+            }
+        return {"case": case}
+
+    @staticmethod
+    def _admission_for_prompt(
+        kwargs: dict[str, object],
+        checks: list[str],
+        *,
+        reject_index: int | None = None,
+    ) -> dict[str, object]:
+        materials = json.loads(str(kwargs["prompt"]).split("\n\n", 1)[1])
+        assessments = []
+        for index, case in enumerate(materials["cases"]):
+            values = {name: True for name in checks}
+            if index == reject_index:
+                values["unique_answer"] = False
+            assessments.append({"case_id": case["case_id"], "checks": values})
+        return {"assessments": assessments}
 
     @staticmethod
     def _usage(wall: float) -> dict[str, object]:

@@ -1,0 +1,75 @@
+{
+  "schema": "ownward.kernel-iteration-stage3-stage6-wall-attribution-contract/v1",
+  "purpose": "independent-attribution-and-repair-of-the-stage6-level-wall-failure",
+  "frozen_before_implementation": true,
+  "formal": false,
+  "blind_content_access_forbidden": true,
+  "same_blind_plan_rerun_forbidden": true,
+  "sources": {
+    "failed_gate": {
+      "plan_identity": "c74ed5634a86d787cf7323084a981ec30d8b45909813691a9ff767a1d3c552f5",
+      "result_identity": "3ce4bb4e6191981ee58a02ed79171fcb8fafea6287abeda7559a24c29dceb1f7",
+      "result_sha256": "1273d47baa4fb8f78dcf142b3adbf681e25611eccee48e73a4197929de086b21"
+    },
+    "independent_generation_admission_qualification": {
+      "plan_identity": "24e70a5c52c61d8f00f8b8454bb7f2aa8704214010fd65e870364900ddc941ac",
+      "result_identity": "8df3fee5ae3ccc0f9b052b03e366e355a1f1956030163b83d5f79e33fd99adb6",
+      "result_sha256": "d3918db7fddca1e810f8de7e40efd86af5d84c5a444fb8edf2ce1c22def8500a"
+    },
+    "budget": {
+      "identity": "a93059774c736586b2c3624aacbb0fc99826e70f172129ad737378c4ddb40619",
+      "sha256": "ea4975708caee7a8ce13ed655361b64e596a12f6c462034c7038f443b0ff6bef"
+    }
+  },
+  "attribution": {
+    "critical_path_is_wall_not_phase_sum": true,
+    "required_phases": [
+      "generation",
+      "quality-admission",
+      "candidate-complete-consumer",
+      "v0-complete-consumer",
+      "controller-and-resume-overhead"
+    ],
+    "candidate_controlled": [
+      "candidate-ownward-create-organize-retrieve-persist"
+    ],
+    "shared_evaluation_or_external": [
+      "blind-generation",
+      "quality-admission",
+      "semantic-model",
+      "reader-model",
+      "judge-model",
+      "v0-baseline",
+      "controller-process-start-and-scheduling"
+    ],
+    "candidate_failure_requires_candidate_controlled_cause": true,
+    "whole_level_efficiency_gate_remains_mandatory": true
+  },
+  "repair": {
+    "responsible_component": "stage6-evaluation-controller",
+    "mechanism": "bounded-independent-generation-lanes-with-deterministic-original-order-reassembly",
+    "generation_max_active": 4,
+    "per_worker_max_active_turns": 1,
+    "quality_admission_after_all_generation": true,
+    "model_prompt_schema_and_attempts_unchanged": true,
+    "candidate_and_v0_order_unchanged": true,
+    "no_call_or_quality_duty_removed": true,
+    "failure_open": true
+  },
+  "gates": {
+    "level_wall_seconds_maximum": 751,
+    "projection_must_include_independent_repeatability_error": true,
+    "projected_wall_plus_error_seconds_maximum": 751,
+    "generation_output_identity_and_order_unchanged": true,
+    "quality_and_resource_gates_unchanged": true,
+    "formal_state_byte_identical": true,
+    "terminal_resume_zero_model_zero_product": true
+  },
+  "stage_impact": {
+    "stage3": "reclose-after-independent-receipt-attribution",
+    "stage4_candidate": "unchanged-unless-product-or-kernel-direct-dependency-changes",
+    "stage5": "reuse-if-candidate-and-freeze-direct-dependencies-remain-identical",
+    "stage6": "all-prior-gates-invalidated-by-controller-identity-change-and-must-restart-from-fresh-5"
+  },
+  "identity": "0015fcc670052988a98fa6e044d363d57fb8a5f98e342d08c944da86971023b1"
+}

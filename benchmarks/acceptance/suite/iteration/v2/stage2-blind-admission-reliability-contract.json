@@ -1,0 +1,62 @@
+{
+  "schema": "ownward.kernel-iteration-stage2-admission-reliability-contract/v1",
+  "frozen_before_diagnosis": true,
+  "candidate_results_seen": false,
+  "formal": false,
+  "purpose": "non-candidate-15-question-generation-admission-reliability",
+  "questions_per_batch": 15,
+  "coverage_counts": {
+    "knowledge-update-conflict": 3,
+    "temporal-order": 3,
+    "multi-session-relation": 3,
+    "single-session-assistant-fact": 3,
+    "multi-session-distractor": 3
+  },
+  "modes": {
+    "diagnosis": {
+      "batches": 1,
+      "requires_all_pass": false
+    },
+    "qualification": {
+      "batches": 2,
+      "requires_all_pass": true
+    }
+  },
+  "quality": {
+    "required_checks_from_validation_contract": true,
+    "passing_questions_per_batch": 15,
+    "quality_threshold_changes_forbidden": true,
+    "candidate_or_baseline_execution_forbidden": true
+  },
+  "evidence": {
+    "persistent_failure_aggregates": [
+      "rejected-by-coverage",
+      "failed-by-check",
+      "failed-by-coverage-and-check",
+      "failed-check-combinations"
+    ],
+    "forbidden_persistent_content": [
+      "question",
+      "answer",
+      "evidence",
+      "sessions",
+      "truth-claims",
+      "case-id",
+      "per-case-output"
+    ],
+    "terminal_raw_policy": "destroy-all-reversible-content",
+    "terminal_reuse": "plan-identity-read-only-zero-model-zero-product"
+  },
+  "budget": {
+    "source": "stage2-five-question-calibration-frozen-level-budgets",
+    "per_batch_wall_seconds_maximum": 492,
+    "qualification_total_wall_seconds_maximum": 984,
+    "bounded_infrastructure_retries_only": true
+  },
+  "next_actions": {
+    "diagnosis": "fix-first-aggregated-generation-admission-root-cause",
+    "qualification_passed": "restart-stage6-from-fresh-5-question-gate",
+    "qualification_failed": "continue-same-stage2-root-cause"
+  },
+  "identity": "fe2bd18db572b1071911fb236acfc7274bea097ff0d4aea27ba43b5ecc45bdaa"
+}

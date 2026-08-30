@@ -61,14 +61,14 @@
       "reasoning_effort": "medium",
       "timeout_seconds": 240,
       "attempts": 2,
-      "prompt_version": "ownward.kernel-iteration-blind-generator/v7"
+      "prompt_version": "ownward.kernel-iteration-blind-generator/v12"
     },
     "quality_admission": {
       "model": "gpt-5.6-terra",
       "reasoning_effort": "medium",
       "timeout_seconds": 240,
       "attempts": 2,
-      "prompt_version": "ownward.kernel-iteration-blind-admission/v3",
+      "prompt_version": "ownward.kernel-iteration-blind-admission/v4",
       "required_checks": [
         "plausible",
         "difficulty_sufficient",
@@ -112,5 +112,5 @@
     "failure_rule": "candidate-side-only-plus-generation-admission-and-level-recovery",
     "resume_requires_byte_identical_terminal_result": true
   },
-  "identity": "a511498187990d0831272ed2ab162c7bc94987b861a72ae1b37e7ed301994a02"
+  "identity": "75b06118a96e4d160fcfdec8e68b66fff400401a9a8a3a124799ab3253fee2df"
 }

@@ -1,0 +1,27 @@
+{
+  "schema": "ownward.kernel-iteration-direct-dependency-migration/v1",
+  "contract_identity": "125278c6aa9d6a34dc91bfe1ced32b22b93dad60ce6b5bc34aa14c3c2561abb7",
+  "reason": "stage2-adds-an-unrelated-blind-admission-reliability-command-without-changing-the-frozen-stage4-audit-or-its-result",
+  "changes": [
+    {
+      "path": "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_raw_vector_lifecycle.py",
+      "frozen_sha256": "00acaf4cf0a92ef909f50812df708f340d7854ee86c3314279eac843da934e8f",
+      "current_sha256": "4400fa59783a5e8d759e4b9b4dc824f96a7db6e923e25b285c40aa642f28605d",
+      "classification": "dependency-receipt-validation-only"
+    },
+    {
+      "path": "benchmarks/acceptance/suite/kernel_iteration_run.py",
+      "frozen_sha256": "3a6ec83cc197d71b8594814cff7000d7face183a8e316e5d0c409f2e19eddc53",
+      "current_sha256": "82f5708b908931af82420a9179d152eaf1626f9f448de55f3f36fa22805ce127",
+      "classification": "additive-stage2-blind-admission-reliability-dispatch-only"
+    }
+  ],
+  "preserved": {
+    "contract_identity": true,
+    "source_files": true,
+    "thresholds": true,
+    "evidence_identities": true,
+    "formal_state_sha256": true
+  },
+  "identity": "6ea61581a8d176ccff452b85a070dcac63edf329a879edbba5478f307697ce57"
+}

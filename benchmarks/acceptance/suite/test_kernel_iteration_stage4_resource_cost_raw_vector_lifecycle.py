@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import copy
+import json
 from pathlib import Path
 import unittest
+from unittest import mock
 
 import kernel_iteration_evidence as evidence
 import kernel_iteration_stage4_resource_cost_raw_vector_lifecycle as lifecycle
@@ -95,6 +97,48 @@ class RawVectorLifecycleTests(unittest.TestCase):
                 self.non_create,
                 self.contract["formal_state"]["sha256"],
             )
+
+    def test_dependency_migration_receipt_rejects_any_unlisted_drift(self) -> None:
+        original = evidence.file_sha256
+
+        def drift(path: Path) -> str:
+            if Path(path).name == "kernel_iteration_run.py":
+                return "f" * 64
+            return original(path)
+
+        with mock.patch.object(evidence, "file_sha256", side_effect=drift):
+            with self.assertRaisesRegex(validation.KernelIterationValidationError, "不在精确迁移收据内"):
+                lifecycle.load_contract(self.suite_root)
+
+    def test_dependency_migration_is_exactly_stage2_cli_addition(self) -> None:
+        receipt = json.loads((self.suite_root / lifecycle.DEPENDENCY_MIGRATION_PATH).read_text(encoding="utf-8"))
+        changes = {item["path"]: item for item in receipt["changes"]}
+        run_path = "benchmarks/acceptance/suite/kernel_iteration_run.py"
+        validator_path = "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_raw_vector_lifecycle.py"
+        self.assertEqual(
+            "stage2-adds-an-unrelated-blind-admission-reliability-command-without-changing-the-frozen-stage4-audit-or-its-result",
+            receipt["reason"],
+        )
+        self.assertEqual(
+            "additive-stage2-blind-admission-reliability-dispatch-only",
+            changes[run_path]["classification"],
+        )
+        self.assertEqual("dependency-receipt-validation-only", changes[validator_path]["classification"])
+        self.assertEqual(evidence.file_sha256(self.repository / run_path), changes[run_path]["current_sha256"])
+        self.assertEqual(evidence.file_sha256(self.repository / validator_path), changes[validator_path]["current_sha256"])
+        self.assertEqual(
+            {
+                "contract_identity": True,
+                "source_files": True,
+                "thresholds": True,
+                "evidence_identities": True,
+                "formal_state_sha256": True,
+            },
+            receipt["preserved"],
+        )
+        self.assertEqual("125278c6aa9d6a34dc91bfe1ced32b22b93dad60ce6b5bc34aa14c3c2561abb7", self.contract["identity"])
+        self.assertAlmostEqual(6.711906625000376, self.contract["active_gate"]["controlled_half_maximum_seconds"])
+        self.assertEqual("3c7826e0ef86a82ddfab676886e384e2674a23dc80f6df3612d4443be00ffcdc", self.contract["formal_state"]["sha256"])
 
 
 if __name__ == "__main__":

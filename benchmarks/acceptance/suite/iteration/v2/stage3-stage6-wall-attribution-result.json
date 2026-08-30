@@ -1,0 +1,108 @@
+{
+  "schema": "ownward.kernel-iteration-stage3-stage6-wall-attribution-result/v1",
+  "contract_identity": "0015fcc670052988a98fa6e044d363d57fb8a5f98e342d08c944da86971023b1",
+  "formal": false,
+  "blind_content_read_or_reconstructed": false,
+  "model_calls": 0,
+  "product_executions": 0,
+  "failed_gate": {
+    "plan_identity": "c74ed5634a86d787cf7323084a981ec30d8b45909813691a9ff767a1d3c552f5",
+    "result_identity": "3ce4bb4e6191981ee58a02ed79171fcb8fafea6287abeda7559a24c29dceb1f7",
+    "result_sha256": "1273d47baa4fb8f78dcf142b3adbf681e25611eccee48e73a4197929de086b21",
+    "recorded_level_wall_seconds": 833.2785687,
+    "level_wall_seconds_maximum": 751,
+    "candidate_quality": {
+      "absolute_gate_passed": true,
+      "relative_gate_failures_excluding_level_wall": 0,
+      "final_answer_accuracy": 1.0,
+      "fact_delivery_missing": 0,
+      "temporal_correctness": 1.0,
+      "conflict_correctness": 1.0,
+      "complete_consumer_retrieval_p95_ms": 140.99999999598367
+    }
+  },
+  "critical_path_attribution": {
+    "generation_wall_seconds": 474.9139305,
+    "quality_admission_wall_seconds": 35.66730179999996,
+    "candidate_complete_consumer_wall_seconds": 135.31199999999808,
+    "v0_complete_consumer_wall_seconds": 149.82799999999406,
+    "controller_start_resume_and_unattributed_wall_seconds": 37.557336400007955,
+    "closed_total_wall_seconds": 833.2785687,
+    "phase_sum_not_used": true,
+    "candidate_ownward_retrieval_p95_ms": 140.99999999598367,
+    "generation_and_admission_share_of_level_wall": 0.6127377463896125,
+    "candidate_complete_consumer_share_of_level_wall": 0.1623850715506804,
+    "v0_and_shared_evaluation_are_not_candidate_kernel_cost": true
+  },
+  "independent_nonoverlapping_evidence": {
+    "qualification_plan_identity": "24e70a5c52c61d8f00f8b8454bb7f2aa8704214010fd65e870364900ddc941ac",
+    "qualification_result_identity": "8df3fee5ae3ccc0f9b052b03e366e355a1f1956030163b83d5f79e33fd99adb6",
+    "qualification_result_sha256": "d3918db7fddca1e810f8de7e40efd86af5d84c5a444fb8edf2ce1c22def8500a",
+    "questions_per_batch": 15,
+    "batches": 2,
+    "candidate_executions": 0,
+    "baseline_executions": 0,
+    "batch_wall_seconds": [409.9744977, 426.6836531],
+    "generator_wall_seconds": [382.3071427000001, 394.92087350000025],
+    "admission_wall_seconds": [27.418844799999988, 31.53433760000007],
+    "repeatability_error_seconds": 16.7091554,
+    "same_transport_four_worker_realized_parallelism": {
+      "candidate_codex_aggregate_wall_seconds": 461.9582301999999,
+      "candidate_consumer_wall_seconds": 135.31199999999808,
+      "candidate_ratio": 3.4140226306610386,
+      "v0_codex_aggregate_wall_seconds": 421.8071422,
+      "v0_consumer_wall_seconds": 149.82799999999406,
+      "v0_ratio": 2.815275797581338,
+      "conservative_projection_floor": 2
+    },
+    "raw_materials_destroyed": true
+  },
+  "root_cause": {
+    "first_controllable_mechanism": "stage6-issued-independent-generator-requests-through-one-new-app-server-per-call-in-serial-order",
+    "responsible_component": "stage6-evaluation-controller",
+    "candidate_kernel_failed": false,
+    "whole_level_process_efficiency_failed": true,
+    "old_result_reclassification": "invalid-evaluation-process-failure-not-candidate-failure"
+  },
+  "repair": {
+    "old_controller_identity": "9198e903e6cd3a69a09279c4b4da19b2aae8401d0232cdd6894751a9b176411c",
+    "new_controller_identity": "bdbcc3e4dd2e1581d09d08a9c652016de9b4a55ded5d9ae6111da9f0c274b222",
+    "policy": "bounded-independent-lanes-original-order/v1",
+    "generation_max_active": 4,
+    "per_worker_max_active_turns": 1,
+    "deterministic_original_order_reassembly": true,
+    "admission_starts_after_all_generation": true,
+    "models_prompts_schemas_attempts_and_quality_unchanged": true,
+    "candidate_then_v0_order_unchanged": true,
+    "failure_open": true
+  },
+  "conservative_projection": {
+    "method": "retain-all-non-generation-wall-and-assume-only-two-effective-lanes-despite-four-bounded-workers",
+    "retained_non_generation_and_admission_wall_seconds": 322.6973364,
+    "independent_worst_generator_wall_seconds": 394.92087350000025,
+    "minimum_effective_parallelism": 2,
+    "independent_worst_admission_wall_seconds": 31.53433760000007,
+    "projected_level_wall_seconds": 551.69211075,
+    "repeatability_error_seconds": 16.7091554,
+    "projected_wall_plus_error_seconds": 568.40126615,
+    "level_wall_seconds_maximum": 751,
+    "remaining_margin_seconds": 182.59873385,
+    "passed": true
+  },
+  "stage_impact": {
+    "stage3_reclosed": true,
+    "stage4_candidate_identity_changed": false,
+    "stage4_evidence_reused": true,
+    "stage5_candidate_or_freeze_dependency_changed": false,
+    "stage5_checkpoints_reused": true,
+    "stage6_prior_results_valid_for_current_controller": false,
+    "next_action": "restart-stage6-from-a-fresh-five-question-gate"
+  },
+  "formal_state": {
+    "sha256": "0587d7f9f147bcb2ae0e4ca70afe1ca051e4dbe6b2b0e34af2e2174fcc82da01",
+    "written": false,
+    "active_checkpoints": ["core", "frontier", "full", "qualification"],
+    "baseline_history_count": 3
+  },
+  "identity": "72d6f045c9b9ad383caf92436afb5c6b975850d22975acbae5cd38fc2525aaef"
+}
