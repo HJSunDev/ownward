@@ -328,6 +328,14 @@ def validate_config(config: dict[str, Any]) -> None:
         candidate = _mapping(config, "candidate")
         for name in ("binary", "embedding_bundle_dir"):
             _require(isinstance(candidate.get(name), str) and candidate[name].strip(), f"执行配置缺少 candidate.{name}")
+        representation = candidate.get("semantic_representation")
+        if representation is not None:
+            _require(isinstance(representation, dict), "候选语义表示声明无效")
+            _require(set(representation) == {"manifest", "identity", "composition_identity", "semantic_component_identity"}, "候选语义表示声明字段漂移")
+            representation_path = Path(str(representation["manifest"])).resolve()
+            _require(representation_path.is_file(), "候选语义表示清单不存在")
+            representation_value = load_json(representation_path)
+            _require(representation_value.get("identity") == representation["identity"], "候选语义表示清单身份错绑")
     if "product" in enabled:
         product = _mapping(config, "product")
         for name in ("package", "production_storage_report", "codex_binary", "codex_auth_file", "codex_model", "codex_reasoning_effort"):
@@ -425,6 +433,14 @@ def _input_manifest(suite_root: Path, config: dict[str, Any], scope: str) -> dic
             {"id": "longmemeval_s.data", "name": data.name, "sha256": sha256(data)},
             {"id": "longmemeval_s.protocol", "name": protocol_path.name, "sha256": sha256(protocol_path)},
         ]
+        representation = _mapping(config, "candidate").get("semantic_representation")
+        if isinstance(representation, dict):
+            representation_path = Path(str(representation["manifest"])).resolve()
+            result["external_files"].append({
+                "id": "longmemeval_s.semantic_representation",
+                "name": representation_path.name,
+                "sha256": sha256(representation_path),
+            })
         result["protocol"] = {
             "official_code_revision": LONGMEMEVAL_S_CODE_REVISION,
             "official_data_revision": LONGMEMEVAL_S_DATA_REVISION,
@@ -464,7 +480,7 @@ def _tool_manifest(suite_root: Path, scope: str) -> dict[str, Any]:
         "frontier": [suite_root / "execution_frontier.py", suite_root / "frontier.py", repository / "cmd" / "ownward-frontier" / "main.go"],
         "core": [suite_root / "execution_core.py", suite_root / "adapters" / "core" / "verify.py", repository / "benchmarks" / "support" / "ownward_mcp.py"],
         "product": [suite_root / "execution_core.py", suite_root / "execution_product.py", suite_root / "product.py", suite_root / "product_scoring.py", suite_root / "resource_environment.py", responsibility_path, *sorted(path for path in (suite_root / "adapters" / "product").glob("*.py") if not path.name.startswith("test_")), *sorted(path for path in (suite_root / "adapters" / "product_resource").glob("*.py") if not path.name.startswith("test_")), repository / "benchmarks" / "support" / "ownward_mcp.py"],
-        "community": [suite_root / "execution_community.py", suite_root / "community.py", suite_root / "process_control.py", suite_root / "adapters" / "product" / "codex_session.py", suite_root / "adapters" / "product" / "codex_transport.py", repository / "benchmarks" / "longmemeval_s" / "run.py", repository / "benchmarks" / "longmemeval_s" / "codex_app_server.py", repository / "benchmarks" / "longmemeval_s" / "environment.py", repository / "benchmarks" / "longmemeval_s" / "protocol.json", repository / "benchmarks" / "longmemeval_s" / "constraints.txt", repository / "benchmarks" / "support" / "ownward_mcp.py"],
+        "community": [suite_root / "execution_community.py", suite_root / "community.py", suite_root / "process_control.py", suite_root / "adapters" / "product" / "codex_session.py", suite_root / "adapters" / "product" / "codex_transport.py", repository / "benchmarks" / "longmemeval_s" / "run.py", repository / "benchmarks" / "longmemeval_s" / "semantic_representation.py", repository / "benchmarks" / "longmemeval_s" / "codex_app_server.py", repository / "benchmarks" / "longmemeval_s" / "environment.py", repository / "benchmarks" / "longmemeval_s" / "protocol.json", repository / "benchmarks" / "longmemeval_s" / "constraints.txt", repository / "benchmarks" / "support" / "ownward_mcp.py"],
     }[scope]
     files = _files(repository, shared + scoped)
     if scope == "product":

@@ -1,0 +1,148 @@
+{
+  "schema": "ownward.kernel-iteration-stage4-resource-cost-matched-calibration-contract/v1",
+  "frozen_before_calibration": true,
+  "calibration_results_seen": false,
+  "purpose": "Measure native aggregate-usage deltas under exactly matched Codex host, model, effort, fresh-thread, cache and output-schema conditions; never claim server-internal token categories.",
+  "execution_config": {
+    "path": ".tmp/kernel-v2-major-iteration/candidates/end-to-end-resource-cost-compacted/execution.json",
+    "sha256": "079b1cf81bc473506054b6d758acd44d8690caf7eae02b64ee5e35344f262600"
+  },
+  "model_profile": {
+    "transport": "codex-app-server-pool-stdio",
+    "model": "gpt-5.6-luna",
+    "reasoning_effort": "low",
+    "codex_binary_sha256": "0c149db80ed0bf442c810146b0ad0163b74982fe4542d673f56c354d7b8229cb",
+    "fresh_ephemeral_thread_per_request": true,
+    "sandbox": "read-only",
+    "tools": "disabled",
+    "cached_input_tokens_required": 0,
+    "external_api_or_key_allowed": false
+  },
+  "request_shapes": {
+    "minimum_prompt": ".",
+    "semantic_instruction_identity": "492d77c3e380866fa08a0871d4241397c79061af7505b9280b1f8d1e8edb65ea",
+    "same_exact_output_schema_per_source_receipt": true,
+    "minimum_then_instruction_usage_delta_only": true,
+    "full_request_usage_source": "immutable-existing-receipts",
+    "server_internal_token_category_claim_allowed": false,
+    "calibration_outputs_may_not_enter-product-or-quality-evidence": true
+  },
+  "execution": {
+    "app_server_pool_size": 8,
+    "question_workers": 4,
+    "max_concurrent_turns": 4,
+    "successful_calibration_requests": 48,
+    "one_minimum_and_one-instruction-request-per-exact-schema": true,
+    "balanced_shape_order": true,
+    "bounded_attempts": 3,
+    "maximum_wall_seconds": 600
+  },
+  "sources": {
+    "v0": {
+      "calls": 12,
+      "input_tokens": 57466,
+      "cached_input_tokens": 0,
+      "plans": {
+        "development": {
+          "plan_identity": "d5201f766cc244297f3ab7e47287c9a8026f3894c8545c170ac6bd24c1ba28c6",
+          "run_root_sha256": "992fccc4dfc6e9635454af6095b67bb1eb95aa04adc87b1f0ef372c32f6478bf"
+        },
+        "regression": {
+          "plan_identity": "bf0f13c3c23afb1d6dcf5e9242ca7e9812877013ee98604383cb54dd4bd7be6c",
+          "run_root_sha256": "a147ebe723922c3c70040f9ad349dc89c0ea42ade4db3a64c6a2d19608fc026a"
+        }
+      }
+    },
+    "v2": {
+      "calls": 12,
+      "input_tokens": 57373,
+      "cached_input_tokens": 0,
+      "plans": {
+        "development": {
+          "plan_identity": "87eab9edbc87ae7980de9c0a59895490a3694ce44bacb5a4b4726bf65313361b",
+          "run_root_sha256": "0694e4676ef18918ddb6d9e39db4829323585236ec09347c8beec07908ab98a6"
+        },
+        "regression": {
+          "plan_identity": "7d4ee10cdbaac277c2be7880d1d2b79a42e5bcbc08dcc3ff78eb4b9d59de960a",
+          "run_root_sha256": "f1b7ba45b19d9f1c3d605a6aa9b77e26a8b73d8c27362ab087d5961df8e2d5f1"
+        }
+      }
+    }
+  },
+  "existing_global_gates": {
+    "v0_semantic_input_tokens": 57466,
+    "semantic_input_maximum_ratio": 0.5,
+    "v0_end_to_end_wall_seconds": 112.51499999999942,
+    "end_to_end_wall_maximum_ratio": 0.5,
+    "preserved_as_diagnostic_if-fixed-floor-makes-half-unreachable": true
+  },
+  "gate_migration_policy": {
+    "thresholds_frozen_before-v2-calibration-results": true,
+    "component_baseline_must-come-from-v0": true,
+    "candidate_component_maximum_ratio": 0.5,
+    "migration_requires-mathematical-unreachability-of-global-half-gate": true,
+    "native-request-differences-only": true,
+    "byte-estimates-or-third-party-tokenizers-forbidden": true,
+    "formal_acceptance-contract-may-not-change": true,
+    "quality-or-storage-may-not-compensate": true
+  },
+  "closed_storage_dimension": {
+    "evidence_path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/storage-final-v1/storage-result.json",
+    "evidence_sha256": "f645acc7b14ac392dfe3dd1b30fda130ebef1fb189fb269eef66ca960d0c6c9c",
+    "evidence_identity": "f66a03baa00b38d8ad56d7a81b40dd07ca2222a57ad07c46311ac993dd6eea18",
+    "candidate_ratio": 0.40725864152383373,
+    "maximum_ratio": 0.5,
+    "passed": true
+  },
+  "existing_evidence": {
+    "paired": {
+      "path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/paired-v1/result.json",
+      "sha256": "f8e4d67d66ddde4cca89f4790522223520706230dc97ca9c381ff9c4b491131e",
+      "identity": "fdae96be6fa33cac9d58f07c2abbcd78bc50f6e3dd980dd8a84a062d3ab2ca73"
+    },
+    "controllability_audit": {
+      "path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/controllability-audit-v1/audit.json",
+      "sha256": "e6702b25083cce7b2fe095c6e05bca8995a5869b125313dff902bc62a580bb1d",
+      "identity": "ea214c6264809a789dd9386dd497aa414b9b1b9cff3cb86a8a0f631c285e719e"
+    }
+  },
+  "formal_state": {
+    "path": ".tmp/first-kernel-baseline-v1/acceptance/state.json",
+    "sha256": "3c7826e0ef86a82ddfab676886e384e2674a23dc80f6df3612d4443be00ffcdc"
+  },
+  "direct_dependencies": [
+    {
+      "path": "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_matched_calibration.py",
+      "sha256": "df74471a49a81bb88327f85cfc7e435e701001c43df218cceb8324d032dca446"
+    },
+    {
+      "path": "benchmarks/acceptance/suite/kernel_iteration_validation.py",
+      "sha256": "a1267ee7e10439f6f4dbee87fac8a0edf6e0dce3a486d4545631802b825ad88c"
+    },
+    {
+      "path": "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost.py",
+      "sha256": "6d2e467389306aadb82b6018a5c9e21944d158e82ae10227fac5871011b23526"
+    },
+    {
+      "path": "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_audit.py",
+      "sha256": "6df41b4a42251bcffe8ce92bed57a4cfafd3ba80ebddf6373215ce61609fb84a"
+    },
+    {
+      "path": "benchmarks/longmemeval_s/run.py",
+      "sha256": "f85430ab86a43fd88368e0d5f283fa71abc5ea45021585faa2826320f481819d"
+    },
+    {
+      "path": "benchmarks/longmemeval_s/codex_app_server.py",
+      "sha256": "dcb38eb9a5be0824f9465ee901e1232fcaccb52f3932b8cf415ec36de6e6fe1e"
+    },
+    {
+      "path": "benchmarks/acceptance/suite/adapters/product/codex_session.py",
+      "sha256": "9e87f4ad9ac7c9db28213f4a01dbaddb62dbf5bd1ad6e5f2d9df150b10f8cebd"
+    },
+    {
+      "path": "benchmarks/longmemeval_s/protocol.json",
+      "sha256": "898a0ebe943e99ca2357723f328668afaee09c5f4c5cd99c50417571b252a123"
+    }
+  ],
+  "identity": "72fbe01f3671408df23c0c9f93906022aab1046ac7ec49ecfc457daeadff2677"
+}

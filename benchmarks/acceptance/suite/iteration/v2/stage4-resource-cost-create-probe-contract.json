@@ -1,0 +1,104 @@
+{
+  "schema": "ownward.kernel-iteration-stage4-resource-cost-create-probe-contract/v2",
+  "supersedes_incomparable_sequential_contract_identity": "239b5d606817fe14db72ef6a981bb689caca1979ed2a23c4afa6679368ea2693",
+  "frozen_before_results": true,
+  "results_seen": false,
+  "purpose": "close-the-current-candidate-create-batch-envelope-before-authorizing-one-resource-cost-route",
+  "formal": false,
+  "model_execution_allowed": false,
+  "source_candidate": {
+    "root": ".tmp/kernel-v2-major-iteration/candidates/end-to-end-resource-cost-real-capability-v5",
+    "subject_identity": "a6b545a43ae7cda19facbb1f9ef0169497374701afdf29d796af50345b8ed86a",
+    "receipt": {
+      "path": ".tmp/kernel-v2-major-iteration/candidates/end-to-end-resource-cost-real-capability-v5/candidate-receipt.json",
+      "sha256": "377b659aff60f794753b6744cdaa700915f744bc5edde06bbee2ee391af0524f",
+      "identity": "ebff6613ae5225e03295de7490037db08cf0bb82648c624fc2387dcb692f8c72"
+    }
+  },
+  "prior_wall_audit": {
+    "path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/real-capability-wall-audit-v1/result.json",
+    "sha256": "07da31c5fbd7fcf1220f3fb2a2441d1a7f4dfab8058959c75699d071ea5deb76",
+    "identity": "c7480729170c671dcbfc1c441abb7a708c3378f2285f29a8c6ab79e77b215a1b"
+  },
+  "materials": [
+    {
+      "path": "benchmarks/acceptance/suite/iteration/v2/stage3-development-materials.json",
+      "sha256": "b4165589cb4dc6ab8ea853a456a68502bcb28c3f68d643cdc3fa6899467b8b98"
+    },
+    {
+      "path": "benchmarks/acceptance/suite/iteration/v2/stage3-regression-materials.json",
+      "sha256": "fcf483821f2a62f2e6f4149d7b091a1c8a09858503f435e66d53c2577979b1b1"
+    }
+  ],
+  "measurement": {
+    "question_ids": [
+      "v2d-long-multifact",
+      "v2r-user",
+      "v2r-short-structure"
+    ],
+    "expected_assets": 13,
+    "expected_short_documents": 12,
+    "expected_long_documents": 1,
+    "repetitions": 2,
+    "concurrent_workers": 3,
+    "runtime_startup_excluded_from_create_component": true,
+    "balanced_order": [
+      ["v2d-long-multifact", "v2r-user", "v2r-short-structure"],
+      ["v2r-short-structure", "v2r-user", "v2d-long-multifact"]
+    ],
+    "same_model": "EmbeddingGemma",
+    "same_space": true,
+    "same_document_prefix": true,
+    "maximum_inputs_per_request": 32,
+    "per_item_byte_maximum": 320
+  },
+  "instrumentation": {
+    "boundary": "candidate-overlay-stderr-only",
+    "candidate_identity": false,
+    "timing_overhead_reported": true,
+    "required_phases": [
+      "create.envelope",
+      "authority.create_batch",
+      "lexical.memory_index",
+      "embedding.ensure_running",
+      "embedding.documents",
+      "pending-records-and-staged-index",
+      "derived.put_batch",
+      "derived.durability_barrier",
+      "semantic.memory_index"
+    ],
+    "non_overlapping_create_subphases": [
+      "authority.create_batch",
+      "lexical.memory_index",
+      "embedding.documents",
+      "pending-records-and-staged-index",
+      "derived.put_batch",
+      "semantic.memory_index"
+    ]
+  },
+  "route_authorization": {
+    "candidate_component_seconds": 15.84647810000152,
+    "candidate_component_maximum_seconds": 9.880944000000376,
+    "minimum_improvement_seconds": 5.965534100001143,
+    "frozen_repeatability_error_seconds": 0.9999999999990905,
+    "minimum_conservative_route_improvement_seconds": 6.965534100000234,
+    "single_route_only": true,
+    "no_phase_sum_as_wall": true,
+    "no_result_selected_threshold": true
+  },
+  "formal_state": {
+    "path": ".tmp/first-kernel-baseline-v1/acceptance/state.json",
+    "sha256": "3c7826e0ef86a82ddfab676886e384e2674a23dc80f6df3612d4443be00ffcdc"
+  },
+  "direct_dependencies": [
+    {
+      "path": "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_create_probe.py",
+      "sha256": "f29d22c8d081c9257d6d5d8bafef508b1f2e18f30ce07c1f3f6595baeb433461"
+    },
+    {
+      "path": "benchmarks/support/ownward_mcp.py",
+      "sha256": "fbca3e4f15afbd0e8409c043fc5742c5b4aeec72dbaa79d66be550f10b6f1a86"
+    }
+  ],
+  "identity": "6a56da47ce372c382c43f85da546ff7bdb31ec2d319e8fbf7a4c647297a77fed"
+}

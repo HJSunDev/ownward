@@ -1,0 +1,98 @@
+package core
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/HJSunDev/ownward/internal/assetlog"
+	"github.com/HJSunDev/ownward/internal/derived"
+	"github.com/HJSunDev/ownward/internal/embedding"
+	"github.com/HJSunDev/ownward/internal/semantics"
+)
+
+func TestV2CandidateCompactsOnlyAtSemanticQuiescence(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	assets, err := assetlog.Open(filepath.Join(root, "assets"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := derived.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := newTestCollaborative(t, assets, state, embedding.HashForTesting{Dimensions: 64})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer service.Close()
+	for _, content := range []string{"first durable fact", "second durable fact"} {
+		if _, err := service.Create(ctx, CreateInput{Content: content}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	work, err := service.SemanticWork(ctx, 2)
+	if err != nil || len(work) != 2 {
+		t.Fatalf("semantic work incomplete: %#v %v", work, err)
+	}
+	first := semanticSubmission(work[0], semantics.Analysis{Summary: "first fact"})
+	second := semanticSubmission(work[1], semantics.Analysis{Summary: "second fact"})
+	if results, err := service.SubmitSemanticBatch(ctx, []semantics.Submission{first}); err != nil || len(results) != 1 || results[0].Error != "" {
+		t.Fatalf("partial semantic submission failed: %#v %v", results, err)
+	}
+	logPath := filepath.Join(root, "state", derived.LogFileName)
+	partial, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	latest, err := state.AllWithEmbeddings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	liveBytes := 0
+	for _, record := range latest {
+		encoded, err := derived.EncodeRecord(record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		liveBytes += len(encoded)
+	}
+	if len(partial) <= liveBytes {
+		t.Fatalf("partial work compacted before quiescence: current=%d live=%d", len(partial), liveBytes)
+	}
+	if results, err := service.SubmitSemanticBatch(ctx, []semantics.Submission{second}); err != nil || len(results) != 1 || results[0].Error != "" {
+		t.Fatalf("final semantic submission failed: %#v %v", results, err)
+	}
+	compacted, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	latest, err = state.AllWithEmbeddings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	liveBytes = 0
+	for _, record := range latest {
+		encoded, err := derived.EncodeRecord(record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		liveBytes += len(encoded)
+	}
+	if len(compacted) != liveBytes {
+		t.Fatalf("quiescent log is not exactly the current durable state: current=%d live=%d", len(compacted), liveBytes)
+	}
+	beforeRetry := append([]byte(nil), compacted...)
+	if results, err := service.SubmitSemanticBatch(ctx, []semantics.Submission{first, second}); err != nil || len(results) != 2 {
+		t.Fatalf("idempotent semantic retry failed: %#v %v", results, err)
+	}
+	afterRetry, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(afterRetry) != string(beforeRetry) {
+		t.Fatal("idempotent retry changed compacted durable bytes")
+	}
+}

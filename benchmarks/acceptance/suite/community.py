@@ -180,6 +180,10 @@ def execute(
             "--candidate", binding["candidate"], "--environment-sha256", binding["environment_sha256"],
             "--input-manifest-sha256", binding["input_manifest_sha256"], "--tool-sha256", binding["tool_sha256"],
         ]
+        representation = config.get("semantic_representation")
+        if representation is not None:
+            _require(isinstance(representation, dict) and isinstance(representation.get("manifest"), str), "community semantic representation declaration is invalid")
+            command.extend(["--semantic-representation-manifest", str(Path(representation["manifest"]).resolve())])
         if resume:
             command.append("--resume")
         maximum = float(contract["evidence_layers"]["community"]["expected_wall_seconds"]["max"])

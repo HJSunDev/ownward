@@ -166,8 +166,15 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
     python = python_root / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     data = Path(layout["data"]).resolve()
     runs = Path(layout["runs"]).resolve()
+    representation_arguments: list[str] = []
+    representation = config.get("candidate", {}).get("semantic_representation")
+    if representation is not None:
+        _require(isinstance(representation, dict) and isinstance(representation.get("manifest"), str), "候选语义表示声明无效")
+        representation_path = Path(representation["manifest"]).resolve()
+        _require(representation_path.is_file(), "候选语义表示清单不存在")
+        representation_arguments = ["--semantic-representation-manifest", str(representation_path)]
     check = subprocess.run(
-        [str(python), str(adapter), "check", "--environment-manifest", str(manifest_path), "--protocol", str(protocol_path)],
+        [str(python), str(adapter), "check", "--environment-manifest", str(manifest_path), "--protocol", str(protocol_path), *representation_arguments],
         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180, check=False,
     )
     _require(check.returncode == 0, f"LongMemEval-S 离线环境检查失败: {check.stderr[-2000:]}")
@@ -183,6 +190,9 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
     transport_path = adapter.with_name("codex_app_server.py")
     _require(transport_path.is_file(), "LongMemEval-S Codex App Server transport is missing")
     community_tool_sha256 = hashlib.sha256(adapter.read_bytes() + transport_path.read_bytes() + protocol_path.read_bytes()).hexdigest()
+    if representation_arguments:
+        representation_runtime = adapter.with_name("semantic_representation.py")
+        community_tool_sha256 = hashlib.sha256(bytes.fromhex(community_tool_sha256) + representation_runtime.read_bytes() + Path(representation_arguments[1]).read_bytes()).hexdigest()
     dry_plan_token = hashlib.sha256(json.dumps({
         "transport": "ownward.longmemeval-s-semantic-transport/v2",
         "memory": protocol["memory"],
@@ -221,6 +231,7 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
         "--dataset", str(data), "--output-dir", str(dry_plan_output), "--ownward-binary", str(config["candidate"]["binary"]),
         "--embedding-bundle-dir", str(config["candidate"]["embedding_bundle_dir"]), "--candidate", calibration_candidate,
         "--environment-sha256", binding.sha256(manifest_path), "--input-manifest-sha256", binding.sha256(data),
+        *representation_arguments,
     ]
     if not dry_plan_reused:
         if dry_plan_output.exists():
@@ -254,6 +265,7 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
         "--codex-binary", str(codex), "--codex-auth-file", str(auth),
         "--environment-sha256", binding.sha256(manifest_path), "--input-manifest-sha256", binding.sha256(data),
         "--tool-sha256", community_tool_sha256,
+        *representation_arguments,
     ]
     if output.exists():
         command.append("--resume")

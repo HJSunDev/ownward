@@ -1,0 +1,60 @@
+{
+  "schema": "ownward.kernel-candidate-source-transform/v1",
+  "source": "generated-resource-cost-collaboration",
+  "replacements": [
+    {
+      "name": "start-background-representation-for-ordered-work",
+      "count": 1,
+      "before": "\t\trecord, exists := s.derivedStore.Get(asset.ID)\n\t\tif !exists || record.AssetRevision != asset.Revision || !record.HasPendingSemanticWork() {\n\t\t\tcontinue\n\t\t}\n\t\twork, err := s.resolveSemanticWork(record)",
+      "after": "\t\trecord, exists := s.derivedStore.Get(asset.ID)\n\t\tif !exists || record.AssetRevision != asset.Revision || !record.HasPendingSemanticWork() {\n\t\t\tcontinue\n\t\t}\n\t\t_ = s.startPendingRepresentation(asset)\n\t\twork, err := s.resolveSemanticWork(record)"
+    },
+    {
+      "name": "start-background-representation-for-directed-work",
+      "count": 1,
+      "before": "\t\trecord, exists := s.derivedStore.Get(id)\n\t\tif !exists || record.AssetRevision != asset.Revision || !record.HasPendingSemanticWork() {\n\t\t\tcontinue\n\t\t}\n\t\twork, err := s.resolveSemanticWork(record)",
+      "after": "\t\trecord, exists := s.derivedStore.Get(id)\n\t\tif !exists || record.AssetRevision != asset.Revision || !record.HasPendingSemanticWork() {\n\t\t\tcontinue\n\t\t}\n\t\t_ = s.startPendingRepresentation(asset)\n\t\twork, err := s.resolveSemanticWork(record)"
+    },
+    {
+      "name": "join-current-raw-representation-before-analysis-fallback",
+      "count": 1,
+      "before": "\t\tif record.SemanticReceipt != nil && !record.SemanticReceipt.Matches(normalized) {\n\t\t\tresult[index].err = ErrSemanticConflict\n\t\t\tcontinue\n\t\t}\n\t\tparts := semanticEmbeddingChunks(normalized.Analysis)",
+      "after": "\t\tif record.SemanticReceipt != nil && !record.SemanticReceipt.Matches(normalized) {\n\t\t\tresult[index].err = ErrSemanticConflict\n\t\t\tcontinue\n\t\t}\n\t\tif len([]byte(asset.Content)) <= semanticEmbeddingChunkBytes && s.representations != nil {\n\t\t\tresult[index].vector, result[index].err = s.representations.Ensure(ctx, asset)\n\t\t\tcontinue\n\t\t}\n\t\tparts := semanticEmbeddingChunks(normalized.Analysis)"
+    },
+    {
+      "name": "release-existing-receipt-representation-after-durable-index",
+      "count": 1,
+      "before": "\t\tif err := s.derivedStore.Put(record); err != nil {\n\t\t\treturn OrganizationState{}, err\n\t\t}\n\t\ts.semantic.Upsert(record)\n\t\treturn organizationState(record), nil",
+      "after": "\t\tif err := s.derivedStore.Put(record); err != nil {\n\t\t\treturn OrganizationState{}, err\n\t\t}\n\t\ts.semantic.Upsert(record)\n\t\t_ = s.representations.Commit(record.AssetID, record.AssetRevision)\n\t\treturn organizationState(record), nil"
+    },
+    {
+      "name": "release-accepted-representation-after-durable-index",
+      "count": 1,
+      "before": "\ts.semantic.Upsert(record)\n\tif err := s.applyIncomingRelationsLocked(asset, previousDependents, incoming); err != nil {",
+      "after": "\ts.semantic.Upsert(record)\n\t_ = s.representations.Commit(record.AssetID, record.AssetRevision)\n\tif err := s.applyIncomingRelationsLocked(asset, previousDependents, incoming); err != nil {"
+    },
+    {
+      "name": "seal-single-pending-representation-without-blocking-create",
+      "count": 1,
+      "before": "func (s *Service) prepareSemanticWork(ctx context.Context, value domain.Information) OrganizationState {\n\tif !s.collaborative || s.derivedStore == nil || s.semantic == nil || s.embedder == nil {\n\t\treturn OrganizationState{Status: \"unavailable\"}\n\t}\n\tif len([]byte(value.Content)) > semanticEmbeddingChunkBytes {\n\t\treturn s.prepareSemanticWorkWithVector(value, nil, errors.New(\"长信息等待语义结果生成检索表示\"))\n\t}\n\tvectors, embeddingErr := s.embedder.EmbedDocuments(ctx, []string{value.Content})\n\tvar vector []float32\n\tif len(vectors) == 1 {\n\t\tvector = vectors[0]\n\t} else if embeddingErr == nil {\n\t\tembeddingErr = errors.New(\"本地向量能力返回数量无效\")\n\t}\n\treturn s.prepareSemanticWorkWithVector(value, vector, embeddingErr)\n}",
+      "after": "func (s *Service) prepareSemanticWork(_ context.Context, value domain.Information) OrganizationState {\n\tif !s.collaborative || s.derivedStore == nil || s.semantic == nil || s.embedder == nil {\n\t\treturn OrganizationState{Status: \"unavailable\"}\n\t}\n\treason := errors.New(\"当前版本原始检索表示已经封存并等待生成\")\n\tif len([]byte(value.Content)) > semanticEmbeddingChunkBytes {\n\t\treason = errors.New(\"长信息等待语义结果生成检索表示\")\n\t}\n\tstate := s.prepareSemanticWorkWithVector(value, nil, reason)\n\tif err := s.startPendingRepresentation(value); err != nil {\n\t\tstate.Error = strings.Trim(strings.Join([]string{state.Error, err.Error()}, \"; \"), \"; \")\n\t}\n\treturn state\n}"
+    },
+    {
+      "name": "seal-batch-pending-representations-without-blocking-create",
+      "count": 1,
+      "before": "\tvectors := make([][]float32, len(values))\n\tembeddingErrors := make([]error, len(values))\n\tcontents := make([]string, 0, len(values))\n\tpositions := make([]int, 0, len(values))\n\tfor index, value := range values {\n\t\tif len([]byte(value.Content)) > semanticEmbeddingChunkBytes {\n\t\t\tembeddingErrors[index] = errors.New(\"长信息等待语义结果生成检索表示\")\n\t\t\tcontinue\n\t\t}\n\t\tcontents = append(contents, value.Content)\n\t\tpositions = append(positions, index)\n\t}\n\tfor offset := 0; offset < len(contents); {\n\t\tend := boundedEmbeddingBatchEnd(contents, offset)\n\t\tgenerated, embeddingErr := s.embedder.EmbedDocuments(ctx, contents[offset:end])\n\t\tif len(generated) != end-offset && embeddingErr == nil {\n\t\t\tembeddingErr = errors.New(\"本地向量能力返回数量无效\")\n\t\t}\n\t\tfor batchIndex, position := range positions[offset:end] {\n\t\t\tif embeddingErr != nil {\n\t\t\t\tembeddingErrors[position] = embeddingErr\n\t\t\t\tcontinue\n\t\t\t}\n\t\t\tvectors[position] = generated[batchIndex]\n\t\t}\n\t\toffset = end\n\t}",
+      "after": "\t_ = ctx\n\tvectors := make([][]float32, len(values))\n\tembeddingErrors := make([]error, len(values))\n\tfor index, value := range values {\n\t\tif len([]byte(value.Content)) > semanticEmbeddingChunkBytes {\n\t\t\tembeddingErrors[index] = errors.New(\"长信息等待语义结果生成检索表示\")\n\t\t\tcontinue\n\t\t}\n\t\tembeddingErrors[index] = errors.New(\"当前版本原始检索表示已经封存并等待生成\")\n\t}"
+    },
+    {
+      "name": "start-sealed-jobs-after-batch-record-commit",
+      "count": 1,
+      "before": "\tfor _, record := range records {\n\t\ts.semantic.Upsert(record)\n\t}\n\treturn states\n}",
+      "after": "\tfor recordIndex, record := range records {\n\t\ts.semantic.Upsert(record)\n\t\tposition := positionsByRecord[recordIndex]\n\t\tif err := s.startPendingRepresentation(values[position]); err != nil {\n\t\t\tstates[position].Error = strings.Trim(strings.Join([]string{states[position].Error, err.Error()}, \"; \"), \"; \")\n\t\t}\n\t}\n\treturn states\n}"
+    },
+    {
+      "name": "current-revision-representation-lifecycle-helpers",
+      "count": 1,
+      "before": "func organizationState(record derived.Record) OrganizationState {",
+      "after": "func (s *Service) startPendingRepresentation(value domain.Information) error {\n\tif s.representations == nil || len([]byte(value.Content)) > semanticEmbeddingChunkBytes {\n\t\treturn nil\n\t}\n\treturn s.representations.Start(value)\n}\n\nfunc (s *Service) ensurePendingRepresentations(ctx context.Context) {\n\tif s.representations == nil || s.derivedStore == nil || s.semantic == nil {\n\t\treturn\n\t}\n\tfor _, asset := range s.authority.ListCurrent() {\n\t\tif len([]byte(asset.Content)) > semanticEmbeddingChunkBytes {\n\t\t\tcontinue\n\t\t}\n\t\trecord, exists := s.derivedStore.GetWithEmbedding(asset.ID)\n\t\tif !exists || record.AssetRevision != asset.Revision || len(record.Embedding) > 0 {\n\t\t\tcontinue\n\t\t}\n\t\tvector, err := s.representations.Ensure(ctx, asset)\n\t\tif err != nil || len(vector) == 0 {\n\t\t\tcontinue\n\t\t}\n\t\tunlock := s.lockMutation(asset.ID)\n\t\tcurrent, currentExists := s.authority.ReadCurrent(asset.ID)\n\t\tlatest, recordExists := s.derivedStore.GetWithEmbedding(asset.ID)\n\t\tif !currentExists || !recordExists || current.Revision != asset.Revision || latest.AssetRevision != asset.Revision {\n\t\t\ts.representations.Invalidate(asset.ID, asset.Revision+1)\n\t\t\tunlock()\n\t\t\tcontinue\n\t\t}\n\t\tlatest.Embedding = append([]float32(nil), vector...)\n\t\tlatest.EmbeddingSpace = s.embedder.Space().ID\n\t\tif latest.SemanticReceipt != nil {\n\t\t\tlatest.Status = \"ready\"\n\t\t\tlatest.Error = \"\"\n\t\t\tif latest.SemanticReceipt.Status == semantics.SubmissionUncertain {\n\t\t\t\tlatest.Status = \"uncertain\"\n\t\t\t\tlatest.Error = latest.SemanticReceipt.Uncertainty\n\t\t\t}\n\t\t}\n\t\ts.graphMu.Lock()\n\t\tputErr := s.derivedStore.Put(latest)\n\t\tif putErr == nil {\n\t\t\ts.semantic.Upsert(latest)\n\t\t\t_ = s.representations.Commit(latest.AssetID, latest.AssetRevision)\n\t\t}\n\t\ts.graphMu.Unlock()\n\t\tunlock()\n\t}\n}\n\nfunc organizationState(record derived.Record) OrganizationState {"
+    }
+  ]
+}

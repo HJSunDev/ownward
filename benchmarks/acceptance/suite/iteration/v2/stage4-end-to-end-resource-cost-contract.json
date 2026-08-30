@@ -1,0 +1,87 @@
+{
+  "schema": "ownward.kernel-iteration-stage4-resource-cost-contract/v1",
+  "frozen_before_measurement": true,
+  "resource_results_seen": false,
+  "candidate_quality_results_are_frozen_inputs": true,
+  "formal_isolation": {
+    "formal_contract_mode": false,
+    "formal_evidence_layer": false,
+    "may_write_acceptance_state": false,
+    "may_promote_or_switch_kernel": false
+  },
+  "candidate": {
+    "subject_identity": "208982be002df5cae85e5f9fd6b3d9c4fcc0bf143db50a799b27fa5cb006517f",
+    "subject_manifest": {
+      "path": ".tmp/kernel-v2-major-iteration/candidates/retrieval-latency-system-budget-2-1/subject.json",
+      "sha256": "c9c3d99dd6eb681457918813effcb262f65289b97949556574bdeb12f8eecd64"
+    },
+    "execution_config": {
+      "path": ".tmp/kernel-v2-major-iteration/candidates/retrieval-latency-system-budget-2-1/execution.json",
+      "sha256": "0115833a430836ae26fede71b953d7d8d3c813c3496306b114adc98e0013c107"
+    },
+    "evidence_output": ".tmp/kernel-v2-major-iteration/stage4-retrieval-latency/system-budget-quality-v1"
+  },
+  "v0": {
+    "subject_role": "evaluation-baseline",
+    "binary_sha256": "77600820a450b0931b9e63595b8564be757825000af16f9c2f0a028c69e81d2b",
+    "embedding_manifest_sha256": "fc2e4a1aa7d09fc64789618259a1bbedce2a18d00bd1abd81d13a16dfb78c0da"
+  },
+  "materials": {
+    "development": {
+      "input_manifest_path": "benchmarks/acceptance/suite/iteration/v2/stage4-latency-development-input-v2.json",
+      "input_manifest_sha256": "f84ba8fbfcbdbd73b4364747880a2ce907d933e4d387e73fd0bca75706f56c6f",
+      "candidate_result_path": ".tmp/kernel-v2-major-iteration/stage4-retrieval-latency/system-budget-quality-v1/subjects/v2-candidate/208982be002df5cae85e5f9fd6b3d9c4fcc0bf143db50a799b27fa5cb006517f/development/2debfc6c1626b53c9aa42d128806fad2ad66419c0b5ea9b9c67afb33d423e910/execution-result.json",
+      "candidate_result_sha256": "cc163fd698473f0d88937d3d087b65c616345ff76261d9f37b9842a574ebdc85"
+    },
+    "regression": {
+      "input_manifest_path": "benchmarks/acceptance/suite/iteration/v2/stage4-latency-regression-input-v2.json",
+      "input_manifest_sha256": "740d62cd5dea0f617970997255bb793d7ec5ca5995989593436c6ce67c175475",
+      "candidate_result_path": ".tmp/kernel-v2-major-iteration/stage4-retrieval-latency/system-budget-quality-v1/subjects/v2-candidate/208982be002df5cae85e5f9fd6b3d9c4fcc0bf143db50a799b27fa5cb006517f/regression/f6dc817779efbd734cb8a11d04be335d7437de2d2a47353bea3966e8364462d4/execution-result.json",
+      "candidate_result_sha256": "6c04e25c953f9c39f182c3b75973bf166fbb8bbb4805f5027c198b9f7812642b"
+    }
+  },
+  "shared_measurement": {
+    "execution_order": ["v2-candidate", "v0"],
+    "materials_reused_without_regeneration": true,
+    "same_semantic_reader_judge_profile": true,
+    "same_tool_prompt_schema_scorer_environment": true,
+    "maximum_wall_seconds": 600
+  },
+  "classification": {
+    "ownward_data_bytes": ["questions/*/ownward-data/assets/** except .ownward.lock", "questions/*/ownward-data/authority/**", "questions/*/ownward-data/state/**"],
+    "authority_asset_bytes": "assets/** except runtime lock",
+    "control_state_bytes": "authority/**",
+    "derived_index_state_bytes": "state/**",
+    "excluded_but_reported": ["runtime locks", "test clones outside ownward-data", "materials", "logs", "reports", "nonformal plans and checkpoints"],
+    "reclassification_may_not_reduce_metric": true
+  },
+  "gates": {
+    "semantic_input_tokens": {"maximum_ratio": 0.5},
+    "end_to_end_wall_seconds": {"maximum_ratio": 0.5},
+    "ownward_data_bytes": {"maximum_ratio": 0.5}
+  },
+  "quality_protection": {
+    "development_accuracy": "4/4",
+    "long_multifact_delivery": "5/5",
+    "fixed_regression_accuracy": "8/8",
+    "long_asset_semantic_recall": 1.0,
+    "complete_consumer_p95_ms_maximum": 553,
+    "read_units_maximum": 8,
+    "context_chars_maximum": 24000,
+    "system_budget_final_identity": "10b84de7eb5c9006eadc08d05c4d5bfa0cda95b48b7e35ee55d03dd79e5e4caa"
+  },
+  "formal_state": {
+    "path": ".tmp/first-kernel-baseline-v1/acceptance/state.json",
+    "sha256": "3c7826e0ef86a82ddfab676886e384e2674a23dc80f6df3612d4443be00ffcdc"
+  },
+  "direct_dependencies": [
+    {"path": "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost.py", "sha256": "6d2e467389306aadb82b6018a5c9e21944d158e82ae10227fac5871011b23526"},
+    {"path": "benchmarks/acceptance/suite/kernel_iteration_validation.py", "sha256": "a1267ee7e10439f6f4dbee87fac8a0edf6e0dce3a486d4545631802b825ad88c"},
+    {"path": "benchmarks/acceptance/suite/kernel_iteration_longmemeval.py", "sha256": "627e1548c98185ae359793dbadaa6ea5ae3aeb9fdf0cf6447fcfc31cbc8ff895"},
+    {"path": "benchmarks/longmemeval_s/run.py", "sha256": "f85430ab86a43fd88368e0d5f283fa71abc5ea45021585faa2826320f481819d"},
+    {"path": "benchmarks/longmemeval_s/protocol.json", "sha256": "898a0ebe943e99ca2357723f328668afaee09c5f4c5cd99c50417571b252a123"},
+    {"path": "benchmarks/support/ownward_mcp.py", "sha256": "fbca3e4f15afbd0e8409c043fc5742c5b4aeec72dbaa79d66be550f10b6f1a86"},
+    {"path": ".tmp/kernel-v2-major-iteration/stage4-retrieval-latency/system-budget-final-v1/result.json", "sha256": "77166f0af6c9b1a4d821a385e3a97303dbe4d85ba7308ea2eb42739a80485f78"}
+  ],
+  "identity": "7fce2ebc96b84bd94e45df19c7bcfb23562d6a29a9858ae790110218e4aa9bc0"
+}

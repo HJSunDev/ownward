@@ -1,0 +1,36 @@
+{
+  "schema": "ownward.kernel-candidate-source-transform/v1",
+  "source": "generated-resource-cost-service",
+  "replacements": [
+    {
+      "name": "representation-lifecycle-state",
+      "count": 1,
+      "before": "\tevidencePlans *kernelv2candidate.EvidencePlans\n}",
+      "after": "\tevidencePlans  *kernelv2candidate.EvidencePlans\n\trepresentations *kernelv2candidate.RepresentationLifecycle\n}"
+    },
+    {
+      "name": "collaborative-representation-lifecycle",
+      "count": 1,
+      "before": "\t\tevidencePlans: kernelv2candidate.NewEvidencePlans(),\n\t}, nil\n}\n\nfunc (s *Service) Create",
+      "after": "\t\tevidencePlans: kernelv2candidate.NewEvidencePlans(),\n\t\trepresentations: kernelv2candidate.NewRepresentationLifecycle(embedder, semanticEmbeddingChunkBytes),\n\t}, nil\n}\n\nfunc (s *Service) Create"
+    },
+    {
+      "name": "pending-query-joins-current-representations",
+      "count": 1,
+      "before": "func (s *Service) Search(ctx context.Context, input SearchInput) ([]SearchResult, error) {\n\ts.stateMu.RLock()",
+      "after": "func (s *Service) Search(ctx context.Context, input SearchInput) ([]SearchResult, error) {\n\ts.ensurePendingRepresentations(ctx)\n\ts.stateMu.RLock()"
+    },
+    {
+      "name": "accepted-update-invalidates-older-representation-job",
+      "count": 1,
+      "before": "\tif _, err := s.authority.UpdateAsset(updated, input.ExpectedRevision); err != nil {\n\t\treturn MutationResult{}, err\n\t}\n\ts.index.Upsert(updated)",
+      "after": "\tif _, err := s.authority.UpdateAsset(updated, input.ExpectedRevision); err != nil {\n\t\treturn MutationResult{}, err\n\t}\n\tif s.representations != nil {\n\t\ts.representations.Invalidate(updated.ID, updated.Revision)\n\t}\n\ts.index.Upsert(updated)"
+    },
+    {
+      "name": "close-representation-lifecycle-before-vector-capability",
+      "count": 1,
+      "before": "\tvar first error\n\tif s.embedder != nil {",
+      "after": "\tvar first error\n\tif s.representations != nil {\n\t\tfirst = s.representations.Close()\n\t}\n\tif s.embedder != nil {"
+    }
+  ]
+}

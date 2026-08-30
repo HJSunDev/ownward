@@ -1,0 +1,18 @@
+{
+  "schema": "ownward.kernel-candidate-source-transform/v1",
+  "source": "internal/core/generation.go",
+  "replacements": [
+    {
+      "name": "rebuild-short-current-revision-from-authority-body",
+      "count": 1,
+      "before": "\t\tvar inputs []string\n\t\tif exists && previous.AssetRevision == asset.Revision && previous.HasSemanticResult() {\n\t\t\tinputs = semanticEmbeddingChunks(previous.Analysis)\n\t\t} else if len([]byte(asset.Content)) <= semanticEmbeddingChunkBytes {\n\t\t\tinputs = []string{asset.Content}\n\t\t} else {",
+      "after": "\t\tvar inputs []string\n\t\tif len([]byte(asset.Content)) <= semanticEmbeddingChunkBytes {\n\t\t\tinputs = []string{asset.Content}\n\t\t} else if exists && previous.AssetRevision == asset.Revision && previous.HasSemanticResult() {\n\t\t\tinputs = semanticEmbeddingChunks(previous.Analysis)\n\t\t} else {"
+    },
+    {
+      "name": "rebuild-pending-work-uses-stable-explicit-and-lexical-candidates",
+      "count": 1,
+      "before": "\t\t\tcandidates := generationCandidates(asset, records[index].Embedding, lexical, stagedIndex, assetsByID)",
+      "after": "\t\t\tcandidates := generationCandidates(asset, nil, lexical, stagedIndex, assetsByID)"
+    }
+  ]
+}

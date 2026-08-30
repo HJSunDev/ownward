@@ -1,0 +1,146 @@
+{
+  "schema": "ownward.kernel-iteration-stage4-resource-cost-real-capability-wall-contract/v1",
+  "frozen_before_candidate_wall_change": true,
+  "purpose": "Bind the already-authorized lossless semantic representation to a real composition-declared capability, then audit the existing local create critical path without model or product re-execution before authorizing any wall optimization.",
+  "problem": {
+    "semantic_token_value_evidence": "3e5e7236d30094c5b6f61d92170a2d70ff055493d5e754c842740a7eafd0215b",
+    "invalid_runtime_claim": "candidate-only-wrapper-and-monkeypatch",
+    "superseded_subject": "13fe830977e99f79013fd24d8578ea8f1d02e649fd3c241f2bf34438db209b59",
+    "superseded_final_decision": "df837e92a1770c3d4e37363715cdb5bfed9dae64c061677638025af5e9cd6700"
+  },
+  "semantic_capability": {
+    "required_discovery": "candidate-composition-declared-content-identity",
+    "required_executor": "shared-longmemeval-s-entry",
+    "forbidden": ["candidate-name-branch", "compact-only-wrapper", "runtime-monkeypatch", "hidden-cli-selection"],
+    "unchanged": ["official-data", "semantic-model-and-effort", "semantic-output-schema", "reader-and-judge", "scoring", "natural-work-batches", "semantic-submit-contract"],
+    "subject_identity": "a6b545a43ae7cda19facbb1f9ef0169497374701afdf29d796af50345b8ed86a",
+    "instruction_identity": "6a2be2aeaab8b9fd0c2c052cd499fed2ee6484acda643c3a7f5a88d64d3b8f63",
+    "source_calls": 12,
+    "component_token_maximum": 10247.5,
+    "protocol_path": "benchmarks/longmemeval_s/protocol.json",
+    "execution_config_path": ".tmp/kernel-v2-major-iteration/candidates/end-to-end-resource-cost-real-capability-v5/execution.json",
+    "quality_root": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/real-capability-quality-v1",
+    "input_manifests": {
+      "development": ".tmp/kernel-v2-major-iteration/stage3-inputs/development-input-real-capability.json",
+      "regression": ".tmp/kernel-v2-major-iteration/stage3-inputs/regression-input-real-capability.json"
+    },
+    "balanced_source_plans": {
+      "development": {"plan_identity": "87eab9edbc87ae7980de9c0a59895490a3694ce44bacb5a4b4726bf65313361b", "run_root_sha256": "0694e4676ef18918ddb6d9e39db4829323585236ec09347c8beec07908ab98a6"},
+      "regression": {"plan_identity": "7d4ee10cdbaac277c2be7880d1d2b79a42e5bcbc08dcc3ff78eb4b9d59de960a", "run_root_sha256": "f1b7ba45b19d9f1c3d605a6aa9b77e26a8b73d8c27362ab087d5961df8e2d5f1"}
+    },
+    "quality": {
+      "development_correct": 4,
+      "development_questions": 4,
+      "long_multifact_delivered": 5,
+      "long_multifact_required": 5,
+      "regression_correct": 8,
+      "regression_questions": 8,
+      "resume_model_executions": 0,
+      "resume_product_executions": 0
+    },
+    "sources": {
+      "balanced_review": {
+        "path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/compact-balanced-v1/balanced-result.json",
+        "request_root": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/compact-balanced-v1/requests/repeat-01/compact",
+        "sha256": "4e5a6efafe4be39a2128656096c06857312688cef12f77e5df657ef12ebfad6c",
+        "identity": "3e5e7236d30094c5b6f61d92170a2d70ff055493d5e754c842740a7eafd0215b"
+      },
+      "representation_manifest": {
+        "path": "manifests/kernel-candidates/v2/resource-cost/semantic-representation.json",
+        "sha256": "26249b0bd61898d363096389de29066912f70bdec39fb31b888b4d0d84c0706e",
+        "identity": "fe1b97771c1023ee7cc7963bd3e4804faf279b136db6ff99703962606ec97442"
+      },
+      "candidate_receipt": {
+        "path": ".tmp/kernel-v2-major-iteration/candidates/end-to-end-resource-cost-real-capability-v5/candidate-receipt.json",
+        "sha256": "377b659aff60f794753b6744cdaa700915f744bc5edde06bbee2ee391af0524f",
+        "identity": "ebff6613ae5225e03295de7490037db08cf0bb82648c624fc2387dcb692f8c72"
+      },
+      "candidate_composition": {
+        "path": ".tmp/kernel-v2-major-iteration/candidates/end-to-end-resource-cost-real-capability-v5/composition.json",
+        "sha256": "f9939eba0097e30d56571b46215fc55392c76a15aea56ab900943efa3cf4e986",
+        "identity": "48a113a84644efec751f4ecb3428ca7deda506782dc1daffaabced70901dfed0"
+      },
+      "candidate_subject": {
+        "path": ".tmp/kernel-v2-major-iteration/candidates/end-to-end-resource-cost-real-capability-v5/subject.json",
+        "sha256": "dfb8018afdc493986c1afb9933f596d19b345ab381e04dcd6ac7159f367d4044",
+        "identity": "a6b545a43ae7cda19facbb1f9ef0169497374701afdf29d796af50345b8ed86a"
+      },
+      "development_result": {
+        "path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/real-capability-quality-v1/subjects/v2-candidate/a6b545a43ae7cda19facbb1f9ef0169497374701afdf29d796af50345b8ed86a/development/6428c1b9702e004e41b0240e00a61f00a8d6dc2ff8b59e819d2201c24a405a86/execution-result.json",
+        "sha256": "ce067b058325e66494632f8a5d3b5dec2d19718003e5cfb7fbb91cae199d9448",
+        "identity": "3c66aa50cd6c56222727f1f423c4ac2e74398f8d9ab754c6168e265eb732f653",
+        "run_root_sha256": "654d47d47e3d39eb77eae0d404c08f293bd941a61996c76f681a5678a4c8d55f"
+      },
+      "regression_result": {
+        "path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/real-capability-quality-v1/subjects/v2-candidate/a6b545a43ae7cda19facbb1f9ef0169497374701afdf29d796af50345b8ed86a/regression/3f8adbd10813c5fb5134e5d1f23493221b1856b8a9a3a05ff77b6dbdefd93662/execution-result.json",
+        "sha256": "6d97e8d285ec4e543a21470888db2ea3f7bf9ecb1ddf9ee11f546705a409f4bd",
+        "identity": "d845b416f8df25723b8db7e533a6e94b12979594258a7d3047894778cf5695fb",
+        "run_root_sha256": "78c307b18d0132e7ae7ed4b8b21de5a381040e288d6a4cc896a0c57f9dfd4857"
+      }
+    }
+  },
+  "wall": {
+    "v0_candidate_component_baseline_seconds": 19.761888000000752,
+    "candidate_component_maximum_seconds": 9.880944000000376,
+    "current_candidate_component_seconds": 15.84647810000152,
+    "minimum_improvement_seconds": 5.965534100001143,
+    "current_create_seconds": 14.96799999999348,
+    "frozen_repeatability_error_seconds": 1.0,
+    "semantic_embedding_chunk_bytes": 384,
+    "input_manifest_sha256": {
+      "development": "48837d4903cc734f7a834315ade6da38e090e8a855d201f1dbb5d6d404ab407b",
+      "regression": "363f762606b87140e18d122b3456dfda499c60e79b5964b81585a0f26c16bf18"
+    },
+    "protocol_sha256": "898a0ebe943e99ca2357723f328668afaee09c5f4c5cd99c50417571b252a123",
+    "critical_question_ids": {
+      "development": ["v2d-long-multifact"],
+      "regression": ["v2r-user", "v2r-short-structure"]
+    },
+    "same_binary_repeats": [
+      {
+        "name": "storage-quality-v1",
+        "product_binary_sha256": "fe49383acaaed6b0b4c9aef1bfe0789c34594487d9fcb1e4e0cdd865d5aa401a",
+        "plans": {
+          "development": {"plan_identity": "87eab9edbc87ae7980de9c0a59895490a3694ce44bacb5a4b4726bf65313361b", "run_root_sha256": "0694e4676ef18918ddb6d9e39db4829323585236ec09347c8beec07908ab98a6"},
+          "regression": {"plan_identity": "7d4ee10cdbaac277c2be7880d1d2b79a42e5bcbc08dcc3ff78eb4b9d59de960a", "run_root_sha256": "f1b7ba45b19d9f1c3d605a6aa9b77e26a8b73d8c27362ab087d5961df8e2d5f1"}
+        }
+      },
+      {
+        "name": "compact-quality-v3",
+        "product_binary_sha256": "fe49383acaaed6b0b4c9aef1bfe0789c34594487d9fcb1e4e0cdd865d5aa401a",
+        "plans": {
+          "development": {"plan_identity": "8eeb3e075b22c20b2d8776bb7cd16cffcec9a67df32732f95733a1994712581e", "run_root_sha256": "79b1069e943beabb52539bef99528b49b13b5528171e84844213e81fb3650661"},
+          "regression": {"plan_identity": "98d79d788242ad93fc03ee57709eebe821bbf4b50846361d9f8cc943cb1bd127", "run_root_sha256": "471c4738a6c341fdc1dcab5b947af54341c57b9fbb92f95161c6a2ce8c540c62"}
+        }
+      },
+      {
+        "name": "compact-quality-v4",
+        "product_binary_sha256": "fe49383acaaed6b0b4c9aef1bfe0789c34594487d9fcb1e4e0cdd865d5aa401a",
+        "plans": {
+          "development": {"plan_identity": "22ccd6d8898019c0a8d43b23f06c2dff5d2db29911677a1f3a7eb7f2c9c7fda3", "run_root_sha256": "dfb4be0814b823661a1baa4158ccff21991e2a843bb8605f056aacf8e8519776"},
+          "regression": {"plan_identity": "a821700b7acfe5184e4863f75a40926cc4cbf96dca94729b519dd9b40f71517b", "run_root_sha256": "52bf503866febe31e2f58ebf13069bbe2441dc4a73b8c30f4a8fd8a1baf8a601"}
+        }
+      }
+    ],
+    "vector_runtime_calibration": {
+      "path": ".tmp/kernel-v2-major-iteration/stage4-retrieval-latency/vector-runtime-calibration-v1.json",
+      "sha256": "5a670e2ac8197cf0f9edd71ea2005dcd20604ed507a0858a06c48636d4241521",
+      "identity": "20c20331b287eb47dbe03a0cd3be1032783e7dab8d8900ba0312847ee37613ff"
+    },
+    "required_sequence": ["read-only-same-request-critical-path-decomposition", "freeze-controllable-subcomponent-and-repeatability", "prove-mathematical-margin-before-implementation", "implement-no-more-than-one-candidate-owned-route", "rerun-only-invalidated-evidence"]
+  },
+  "closed_dimensions": {
+    "ownward_data_bytes": {"v0_baseline": 503152, "candidate": 203992, "candidate_ratio": 0.4054281807485611, "maximum_ratio": 0.5, "passed": true}
+  },
+  "runtime": {"runs_root": "E:/Ownward/acceptance/longmemeval-s/runs"},
+  "constraints": {
+    "formal_acceptance_contract_changed": false,
+    "cross_dimension_compensation": false,
+    "formal_state_path": ".tmp/first-kernel-baseline-v1/acceptance/state.json",
+    "formal_state_sha256": "3c7826e0ef86a82ddfab676886e384e2674a23dc80f6df3612d4443be00ffcdc",
+    "model_or_product_reexecution_allowed": false,
+    "stage5_allowed": false
+  },
+  "controller": {"path": "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_real_capability.py", "sha256": "341d2e7a46fcb4cb2d8e2335cf9c20c6719aef5e737a36fba306330d71f18466"},
+  "identity": "40f44ae017e19108f53d1957504dda576c15232dca0a3a27360c38e027c5a252"
+}

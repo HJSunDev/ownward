@@ -1,0 +1,12 @@
+{
+  "schema": "ownward.kernel-candidate-source-transform/v1",
+  "source": "internal/core/collaboration.go",
+  "replacements": [
+    {
+      "name": "compact-derived-log-at-semantic-quiescence",
+      "count": 1,
+      "before": "func (s *Service) SubmitSemanticBatch(ctx context.Context, inputs []semantics.Submission) ([]SemanticSubmissionResult, error) {\n\tif len(inputs) == 0 || len(inputs) > 20 {\n\t\treturn nil, errors.New(\"批量语义结果数量必须介于一和二十之间\")\n\t}\n\trecoveries := s.prepareSemanticVectorRecoveries(ctx, inputs)\n\tresults := make([]SemanticSubmissionResult, len(inputs))\n\tfor index, input := range inputs {\n\t\tstate, err := s.submitSemanticWithRecovery(input, recoveries[index])\n\t\tresults[index] = SemanticSubmissionResult{WorkID: input.WorkID, Organization: state}\n\t\tif err != nil {\n\t\t\tresults[index].Error = err.Error()\n\t\t}\n\t}\n\treturn results, nil\n}",
+      "after": "func (s *Service) SubmitSemanticBatch(ctx context.Context, inputs []semantics.Submission) ([]SemanticSubmissionResult, error) {\n\tif len(inputs) == 0 || len(inputs) > 20 {\n\t\treturn nil, errors.New(\"批量语义结果数量必须介于一和二十之间\")\n\t}\n\trecoveries := s.prepareSemanticVectorRecoveries(ctx, inputs)\n\tresults := make([]SemanticSubmissionResult, len(inputs))\n\tfor index, input := range inputs {\n\t\tstate, err := s.submitSemanticWithRecovery(input, recoveries[index])\n\t\tresults[index] = SemanticSubmissionResult{WorkID: input.WorkID, Organization: state}\n\t\tif err != nil {\n\t\t\tresults[index].Error = err.Error()\n\t\t}\n\t}\n\tremaining, err := s.SemanticWork(ctx, 1)\n\tif err != nil {\n\t\treturn results, err\n\t}\n\tif len(remaining) == 0 {\n\t\tif err := s.derivedStore.Compact(); err != nil {\n\t\t\treturn results, err\n\t\t}\n\t}\n\treturn results, nil\n}"
+    }
+  ]
+}

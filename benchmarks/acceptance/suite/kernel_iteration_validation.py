@@ -17,6 +17,12 @@ from typing import Any, Callable
 import kernel_iteration_evidence as evidence
 
 
+LONGMEM_ROOT = Path(__file__).resolve().parents[2] / "longmemeval_s"
+if str(LONGMEM_ROOT) not in sys.path:
+    sys.path.insert(0, str(LONGMEM_ROOT))
+import semantic_representation  # noqa: E402
+
+
 class KernelIterationValidationError(ValueError):
     pass
 
@@ -377,6 +383,29 @@ def validate_execution_config(suite_root: Path, path: Path) -> dict[str, Any]:
     _require(embedding.is_dir() and (embedding / "manifest.json").is_file(), "非正式执行缺少向量制品")
     _require(environment_manifest.is_file() and protocol.is_file(), "非正式执行缺少持久环境或协议")
     _require(codex_binary.is_file() and codex_auth_file.is_file(), "Codex 原生能力不可用")
+    representation_path: Path | None = None
+    representation = candidate.get("semantic_representation")
+    if representation is not None:
+        _require(isinstance(representation, dict), "候选语义表示声明无效")
+        _require(set(representation) == {"manifest", "identity", "composition_identity", "semantic_component_identity"}, "候选语义表示声明字段漂移")
+        representation_path = Path(str(representation["manifest"])).resolve()
+        try:
+            representation_contract = semantic_representation.load_contract(representation_path)
+        except (OSError, ValueError, json.JSONDecodeError, semantic_representation.SemanticRepresentationError) as error:
+            raise KernelIterationValidationError(f"候选语义表示清单无效: {error}") from error
+        _require(representation_contract.manifest_identity == representation["identity"], "候选语义表示身份错绑")
+        composition_path = binary.parent / "composition.json"
+        _require(composition_path.is_file(), "候选语义表示缺少同制品组合清单")
+        composition = _load_json(composition_path)
+        _require(composition.get("identity") == representation["composition_identity"], "候选语义表示组合身份错绑")
+        semantic_component = next((item for item in composition.get("components", []) if item.get("role") == "semantic"), None)
+        _require(isinstance(semantic_component, dict) and semantic_component.get("identity") == representation["semantic_component_identity"], "候选语义表示组件身份错绑")
+        semantic_config = _mapping(semantic_component, "config")
+        _require(
+            semantic_config.get("input_representation") == representation_contract.representation
+            and semantic_config.get("input_representation_manifest_identity") == representation_contract.manifest_identity,
+            "候选组合没有声明封存语义表示",
+        )
     protocol_value = _load_json(protocol)
     validation = load_validation_contract(suite_root)
     blind = _mapping(validation, "blind")
@@ -403,6 +432,11 @@ def validate_execution_config(suite_root: Path, path: Path) -> dict[str, Any]:
         "codex_binary": codex_binary,
         "codex_auth_file": codex_auth_file,
         "runs": runs,
+        "semantic_representation_manifest": representation_path,
+        "semantic_representation_identity": (
+            semantic_representation.load_contract(representation_path).manifest_identity
+            if representation_path is not None else semantic_representation.load_contract(None).manifest_identity
+        ),
     }
 
 
@@ -421,6 +455,7 @@ def execution_identities(
         for name in ("run.py", "codex_app_server.py", "protocol.json")
     }
     implementation["ownward-mcp-transport"] = evidence.file_sha256(repository / "benchmarks" / "support" / "ownward_mcp.py")
+    implementation["semantic-representation-runtime"] = evidence.file_sha256(long_root / "semantic_representation.py")
     implementation["iteration-validation"] = evidence.file_sha256(Path(__file__).resolve())
     implementation["iteration-longmemeval"] = evidence.file_sha256(Path(__file__).with_name("kernel_iteration_longmemeval.py"))
     protocol = runtime["protocol_value"]
@@ -1774,6 +1809,9 @@ def _run_longmemeval(
         "--input-manifest-sha256", evidence.file_sha256(dataset_path),
         "--tool-sha256", evidence.canonical_sha256({"validation": evidence.file_sha256(Path(__file__).resolve()), "adapter": evidence.file_sha256(adapter)}),
     ]
+    representation_manifest = runtime.get("semantic_representation_manifest")
+    if isinstance(representation_manifest, Path):
+        arguments.extend(["--semantic-representation-manifest", str(representation_manifest)])
     if resume:
         arguments.append("--resume")
     completed = subprocess.run(

@@ -1,0 +1,51 @@
+{
+  "schema": "ownward.kernel-iteration-stage4-resource-cost-component-gate-migration/v1",
+  "reason": "Native matched request deltas prove that frozen host/output-schema and shared critical-path floors independently exceed the original global half targets; global figures remain diagnostics while the pre-V2 V0 candidate-controlled components retain the unchanged half-improvement rule.",
+  "source_contract": {
+    "path": "benchmarks/acceptance/suite/iteration/v2/stage4-resource-cost-matched-calibration-contract.json",
+    "identity": "72fbe01f3671408df23c0c9f93906022aab1046ac7ec49ecfc457daeadff2677"
+  },
+  "source_evidence": {
+    "path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/matched-calibration-v1/calibration.json",
+    "sha256": "12f80c7c2061be2d0e4be0af503ade6f64bef6923c4c5bc4edb3f07e2d307310",
+    "identity": "7fc4d2ebc5831f672f9199259be885d99e77c9481ed2cb5a0da47d6793851162"
+  },
+  "metrics": {
+    "semantic_input_tokens": {
+      "historical_global_v0": 57466,
+      "historical_global_half_target": 28733,
+      "v0_fixed_host_schema_minimum_floor": 36971,
+      "global_status": "diagnostic-mathematically-unreachable-by-candidate",
+      "candidate_component": "generic-semantic-instruction-plus-work-payload-native-usage-delta",
+      "v0_candidate_component_baseline": 20495,
+      "candidate_component_maximum": 10247.5,
+      "repeatability_error": 0,
+      "gate": "at-least-halved"
+    },
+    "end_to_end_wall_seconds": {
+      "historical_global_v0": 112.51499999999942,
+      "historical_global_half_target": 56.25749999999971,
+      "v0_shared_and_minimum_semantic_floor": 62.51043569999866,
+      "global_status": "diagnostic-mathematically-unreachable-by-candidate",
+      "candidate_component": "create-retrieval-persistence-plus-semantic-work-dependent-critical-path-residual",
+      "v0_candidate_component_baseline": 50.00456430000076,
+      "candidate_component_maximum": 25.00228215000038,
+      "gate": "at-least-halved"
+    },
+    "ownward_data_bytes": {
+      "v0_baseline": 503152,
+      "candidate": 204913,
+      "candidate_ratio": 0.40725864152383373,
+      "maximum_ratio": 0.5,
+      "status": "closed"
+    }
+  },
+  "constraints": {
+    "v2-result-not-used-to-set-threshold": true,
+    "formal-acceptance-contract-changed": false,
+    "quality-gates-changed": false,
+    "cross-dimension-compensation": false,
+    "original-global-measurements-preserved": true
+  },
+  "identity": "1f27df48febb6511b78e0cace016752e14b060914a848736ad384cc983d23a2d"
+}

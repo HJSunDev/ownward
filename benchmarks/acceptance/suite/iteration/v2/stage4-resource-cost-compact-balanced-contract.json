@@ -1,0 +1,116 @@
+{
+  "schema": "ownward.kernel-iteration-stage4-resource-cost-compact-balanced-contract/v2",
+  "frozen_before_balanced_results": true,
+  "balanced_results_seen": false,
+  "purpose": "Compare current and lossless compact semantic representations in the same App Server pool and time window, with AB/BA order and bounded repeats, before deciding whether compact wall time materially regresses.",
+  "v1_correction": {
+    "contract_identity": "53f8fdb53e4316e5080868a7dc49031928a5c181f4eb6c8b360df94dfcbd1054",
+    "contract_sha256": "ba35721891d8514e4504c5d4137d60cb46e6017d0f32c31484dff27b380339dc",
+    "outcome_before_correction": "no-result-token-host-context-assertion-failed",
+    "reason": "The frozen v1 run completed all AB/BA requests but failed before producing a decision because it incorrectly required repeated aggregate native usage tokens to be identical. The user contract requires the already-established exact token result only once. Wall receipts remain valid paired samples; v2 changes no quality, model, order, threshold or wall observation and only makes request-level paired wall and repeat error the durable decision statistic.",
+    "candidate_decision_seen_before_correction": false,
+    "threshold_changed_after_results": false
+  },
+  "execution_config": {
+    "path": ".tmp/kernel-v2-major-iteration/candidates/end-to-end-resource-cost-compacted/execution.json",
+    "sha256": "079b1cf81bc473506054b6d758acd44d8690caf7eae02b64ee5e35344f262600"
+  },
+  "historical_compact_diagnostic": {
+    "path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/compact-feasibility-v1/feasibility.json",
+    "sha256": "0ff7a3d85445855ef0f60a246987020a8f029bf06f3e7b89422c5c280c948317",
+    "identity": "93c5b99936bf39d9785b388fc1593664b1fe2ac13492e89500d6152a12aa6585",
+    "status": "historical-single-arm-diagnostic-only"
+  },
+  "model_profile": {
+    "transport": "codex-app-server-pool-stdio",
+    "model": "gpt-5.6-luna",
+    "reasoning_effort": "low",
+    "fresh_ephemeral_thread_per_request": true,
+    "cached_input_tokens_required": 0,
+    "tools": "disabled",
+    "sandbox": "read-only"
+  },
+  "protocol": {
+    "current_representation": "ownward.semantic-deduplicated-body-table/v1",
+    "compact_representation": "ownward.semantic-indexed-body-context-table/v2",
+    "current_instruction_identity": "492d77c3e380866fa08a0871d4241397c79061af7505b9280b1f8d1e8edb65ea",
+    "compact_instruction_identity": "6a2be2aeaab8b9fd0c2c052cd499fed2ee6484acda643c3a7f5a88d64d3b8f63",
+    "only_representation_may_change": true,
+    "unique_body_content_preserved": true,
+    "work_asset_revision_preserved": true,
+    "source_time_context_preserved": true,
+    "candidate_similarity-and-relation-metadata-preserved": true,
+    "work_order_preserved": true,
+    "output_schema_identical": true,
+    "existing_submission_preflight_required": true,
+    "cross-question-or-user-batching": false,
+    "model-role-changed": false
+  },
+  "source_plans": {
+    "development": {
+      "plan_identity": "87eab9edbc87ae7980de9c0a59895490a3694ce44bacb5a4b4726bf65313361b",
+      "run_root_sha256": "0694e4676ef18918ddb6d9e39db4829323585236ec09347c8beec07908ab98a6"
+    },
+    "regression": {
+      "plan_identity": "7d4ee10cdbaac277c2be7880d1d2b79a42e5bcbc08dcc3ff78eb4b9d59de960a",
+      "run_root_sha256": "f1b7ba45b19d9f1c3d605a6aa9b77e26a8b73d8c27362ab087d5961df8e2d5f1"
+    }
+  },
+  "token_gate": {
+    "current_full_input_tokens": 57373,
+    "compact_full_input_tokens": 46680,
+    "matched_minimum_tokens": 37006,
+    "candidate_component_maximum": 10247.5,
+    "repeatability_error_tokens": 0,
+    "balanced_native_usage_totals_are_diagnostic": true,
+    "must_pass_before_implementation": true
+  },
+  "wall_gate": {
+    "minimum_paired_requests": 24,
+    "repeatability_error": "maximum absolute same-request within-variant repeat difference",
+    "effect": "mean of 24 same-request compact-minus-current paired wall differences",
+    "non_degradation_rule": "compact-minus-current-paired-mean<=maximum-same-request-within-variant-repeat-difference",
+    "single_historical_observation_may_not_decide": true,
+    "must_pass_before_implementation": true
+  },
+  "execution": {
+    "source_calls": 12,
+    "work_items_per_variant_repeat": 46,
+    "app_server_pool_size": 8,
+    "max_concurrent_turns": 4,
+    "balanced_order": [
+      ["current", "compact"],
+      ["compact", "current"]
+    ],
+    "bounded_attempts": 3,
+    "stop_when_mathematically_irreversible": true,
+    "maximum_wall_seconds": 600
+  },
+  "formal_state": {
+    "path": ".tmp/first-kernel-baseline-v1/acceptance/state.json",
+    "sha256": "3c7826e0ef86a82ddfab676886e384e2674a23dc80f6df3612d4443be00ffcdc"
+  },
+  "direct_dependencies": [
+    {
+      "path": "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_compact_feasibility.py",
+      "sha256": "e1b1d4ee22b24edcd3a6cc34209c4730b9f0856cd93476fdcd5d01c2947d67fb"
+    },
+    {
+      "path": "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_matched_calibration.py",
+      "sha256": "df74471a49a81bb88327f85cfc7e435e701001c43df218cceb8324d032dca446"
+    },
+    {
+      "path": "benchmarks/longmemeval_s/run.py",
+      "sha256": "f85430ab86a43fd88368e0d5f283fa71abc5ea45021585faa2826320f481819d"
+    },
+    {
+      "path": "benchmarks/longmemeval_s/codex_app_server.py",
+      "sha256": "dcb38eb9a5be0824f9465ee901e1232fcaccb52f3932b8cf415ec36de6e6fe1e"
+    },
+    {
+      "path": "benchmarks/acceptance/suite/adapters/product/codex_session.py",
+      "sha256": "9e87f4ad9ac7c9db28213f4a01dbaddb62dbf5bd1ad6e5f2d9df150b10f8cebd"
+    }
+  ],
+  "identity": "2ef1d281196a8b110a8e33d531a1629512dd7757cb8037f70a8154973b772562"
+}

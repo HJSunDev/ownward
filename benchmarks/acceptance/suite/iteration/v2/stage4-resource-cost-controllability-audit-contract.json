@@ -1,0 +1,83 @@
+{
+  "schema": "ownward.kernel-iteration-stage4-resource-cost-controllability-audit-contract/v1",
+  "frozen_before_new_analysis": true,
+  "candidate_results_are_existing_read_only_inputs": true,
+  "model_or_product_execution_allowed": false,
+  "purpose": "Separate comparable candidate-controlled resource cost from fixed evaluation and host cost without weakening any existing gate.",
+  "paired_result": {
+    "path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/paired-v1/result.json",
+    "sha256": "f8e4d67d66ddde4cca89f4790522223520706230dc97ca9c381ff9c4b491131e",
+    "identity": "fdae96be6fa33cac9d58f07c2abbcd78bc50f6e3dd980dd8a84a062d3ab2ca73"
+  },
+  "semantic_input_attribution": {
+    "required_categories": [
+      "unique-authority-content",
+      "ownward-variable-semantic-protocol-and-work-metadata",
+      "codex-fixed-system-tool-app-thread-context",
+      "shared-evaluation-overhead-outside-candidate-dependencies"
+    ],
+    "aggregate_usage_must_close_exactly": true,
+    "byte_ratio_may_not_be_used_as_token_ratio": true,
+    "missing_category_token_counters_fail_closed": true,
+    "candidate_gate_may_not_migrate_without_dominance_and-mathematical-headroom": true
+  },
+  "wall_attribution": {
+    "measurement": "report-wall-with-question-interval-critical-chain",
+    "phase_sum_may_not_substitute_for_wall": true,
+    "preserve_concurrency_overlap": true,
+    "candidate_controlled_phases": ["create", "semantic", "retrieval"],
+    "shared_fixed_phases": ["reader", "judge"],
+    "unclassified_cost_may_not_be-assigned-to-candidate": true
+  },
+  "storage_attribution": {
+    "authority_and-control-remain-product-bytes": true,
+    "derived-log-obsolete-records-are-candidate-controlled": true,
+    "existing-lossless-compaction-may-be-evaluated-read-only": true,
+    "reclassification-may-not-reduce-the-gate": true
+  },
+  "gate_policy": {
+    "existing_ratios_preserved": {
+      "semantic_input_tokens": 0.5,
+      "end_to_end_wall_seconds": 0.5,
+      "ownward_data_bytes": 0.5
+    },
+    "migration_requires-pre-v2-component-authority": true,
+    "v2-results-may-not-set-a-new-threshold": true,
+    "formal-acceptance-contract-may-not-change": true,
+    "independent-dimensions-may-not-compensate": true
+  },
+  "superseded_diagnostic": {
+    "path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/root-diagnosis-v1/diagnosis.json",
+    "sha256": "9e6a2997eb162ded3de90615a5eaa4475f182f317f68c10419f1219d7f0bbb1c",
+    "identity": "bd7a720f0f6de0186677a7d1d54df6ee3e03a8d71374716286361178c85c0895",
+    "status": "historical-diagnostic-only",
+    "reason": "It proved body deduplication but did not separate aggregate Codex input tokens or reconstruct wall concurrency."
+  },
+  "formal_state": {
+    "path": ".tmp/first-kernel-baseline-v1/acceptance/state.json",
+    "sha256": "3c7826e0ef86a82ddfab676886e384e2674a23dc80f6df3612d4443be00ffcdc"
+  },
+  "direct_dependencies": [
+    {
+      "path": "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_audit.py",
+      "sha256": "6df41b4a42251bcffe8ce92bed57a4cfafd3ba80ebddf6373215ce61609fb84a"
+    },
+    {
+      "path": "benchmarks/acceptance/suite/kernel_iteration_validation.py",
+      "sha256": "a1267ee7e10439f6f4dbee87fac8a0edf6e0dce3a486d4545631802b825ad88c"
+    },
+    {
+      "path": "benchmarks/longmemeval_s/run.py",
+      "sha256": "f85430ab86a43fd88368e0d5f283fa71abc5ea45021585faa2826320f481819d"
+    },
+    {
+      "path": "internal/derived/store.go",
+      "sha256": "90482a26b332eabda6dcc391a60460cff622b044c4d0e6799490ebfe70a2579e"
+    },
+    {
+      "path": "benchmarks/acceptance/suite/iteration/v2/stage4-end-to-end-resource-cost-contract.json",
+      "sha256": "3cb12cad99523b0ccd5d5affd2f60b96477ca971693466ff4863fe34d8067d74"
+    }
+  ],
+  "identity": "84d30456e65da337f32d73769deafb26bf8f61f4a82053d87cd14e19843887bb"
+}

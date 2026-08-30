@@ -1,0 +1,190 @@
+{
+  "schema": "ownward.kernel-iteration-stage4-resource-cost-final-decision/v5",
+  "reason": "Native matched calibration proves that the original global token and wall half-gates include dominant shared evaluation cost. A composition-declared semantic representation passes the migrated token component gate and product data also passes. The unique active wall gate is the frozen symmetric V0/current-V2 CreateBatch gate: 13.423813 seconds baseline, 6.711907 seconds half maximum and 3.796497 seconds current shortfall after error. The same-observation path contains only 0.878478 seconds outside CreateBatch. The remaining 4.952907 second post-startup raw-document embedding envelope has gross margin, but a source-bound lifecycle audit proves those vectors seal semantic-work candidates, remain the ready retrieval representation, and are reused on restart/rebuild. Moving them to semantic_work preserves behavior only by moving the same critical work and saves zero end-to-end seconds; omitting or replacing them changes semantic candidates or ready ranking. The deferral route is therefore rejected before candidate implementation or new execution.",
+  "sources": {
+    "matched_calibration": {
+      "path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/matched-calibration-v1/calibration.json",
+      "sha256": "12f80c7c2061be2d0e4be0af503ade6f64bef6923c4c5bc4edb3f07e2d307310",
+      "identity": "7fc4d2ebc5831f672f9199259be885d99e77c9481ed2cb5a0da47d6793851162"
+    },
+    "component_migration": {
+      "path": "benchmarks/acceptance/suite/iteration/v2/stage4-resource-cost-component-gate-migration.json",
+      "sha256": "2375c30caba1431f2966b1d3e624fe5d115bae0cc7df4be61f4c17e7f682324d",
+      "identity": "1f27df48febb6511b78e0cace016752e14b060914a848736ad384cc983d23a2d"
+    },
+    "balanced_review": {
+      "path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/compact-balanced-v1/balanced-result.json",
+      "sha256": "4e5a6efafe4be39a2128656096c06857312688cef12f77e5df657ef12ebfad6c",
+      "identity": "3e5e7236d30094c5b6f61d92170a2d70ff055493d5e754c842740a7eafd0215b"
+    },
+    "real_capability_candidate": {
+      "receipt_path": ".tmp/kernel-v2-major-iteration/candidates/end-to-end-resource-cost-real-capability-v5/candidate-receipt.json",
+      "receipt_identity": "ebff6613ae5225e03295de7490037db08cf0bb82648c624fc2387dcb692f8c72",
+      "subject_identity": "a6b545a43ae7cda19facbb1f9ef0169497374701afdf29d796af50345b8ed86a",
+      "kernel_generation_identity": "5299e5a52466c38565138146aceb7e7661397349abe1cb340d8562ec9c6c3734",
+      "composition_identity": "48a113a84644efec751f4ecb3428ca7deda506782dc1daffaabced70901dfed0",
+      "representation_manifest_identity": "fe1b97771c1023ee7cc7963bd3e4804faf279b136db6ff99703962606ec97442",
+      "development_result_path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/real-capability-quality-v1/subjects/v2-candidate/a6b545a43ae7cda19facbb1f9ef0169497374701afdf29d796af50345b8ed86a/development/6428c1b9702e004e41b0240e00a61f00a8d6dc2ff8b59e819d2201c24a405a86/execution-result.json",
+      "development_result_sha256": "ce067b058325e66494632f8a5d3b5dec2d19718003e5cfb7fbb91cae199d9448",
+      "development_result_identity": "3c66aa50cd6c56222727f1f423c4ac2e74398f8d9ab754c6168e265eb732f653",
+      "regression_result_path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/real-capability-quality-v1/subjects/v2-candidate/a6b545a43ae7cda19facbb1f9ef0169497374701afdf29d796af50345b8ed86a/regression/3f8adbd10813c5fb5134e5d1f23493221b1856b8a9a3a05ff77b6dbdefd93662/execution-result.json",
+      "regression_result_sha256": "6d97e8d285ec4e543a21470888db2ea3f7bf9ecb1ddf9ee11f546705a409f4bd",
+      "regression_result_identity": "d845b416f8df25723b8db7e533a6e94b12979594258a7d3047894778cf5695fb"
+    },
+    "real_capability_wall_audit": {
+      "contract_path": "benchmarks/acceptance/suite/iteration/v2/stage4-resource-cost-real-capability-wall-contract.json",
+      "contract_identity": "40f44ae017e19108f53d1957504dda576c15232dca0a3a27360c38e027c5a252",
+      "result_path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/real-capability-wall-audit-v1/result.json",
+      "result_identity": "c7480729170c671dcbfc1c441abb7a708c3378f2285f29a8c6ab79e77b215a1b"
+    },
+    "local_wall_component_migration": {
+      "path": "benchmarks/acceptance/suite/iteration/v2/stage4-resource-cost-local-wall-component-migration.json",
+      "sha256": "06ec4358be44255da2980b3c588f091bd33ac3752614edac501cb3cb41ca093c",
+      "identity": "325409de42e8a82dd0fde68be742da0980abe1d064a43bee94ec995cd303a1a2"
+    },
+    "create_subphase_probe": {
+      "contract_path": "benchmarks/acceptance/suite/iteration/v2/stage4-resource-cost-create-probe-contract.json",
+      "contract_identity": "6a56da47ce372c382c43f85da546ff7bdb31ec2d319e8fbf7a4c647297a77fed",
+      "result_path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/create-probe-concurrent-v1/result.json",
+      "result_sha256": "ed6cb485209280453c527c51c2acb6200887a9cce6615dedc872b41799f67672",
+      "result_identity": "b034f0bc231ccab055605968469d8e1060f45e6ed4357763bceacb80c420aba5"
+    },
+    "document_batch_feasibility": {
+      "contract_path": "benchmarks/acceptance/suite/iteration/v2/stage4-resource-cost-batch-feasibility-contract.json",
+      "contract_identity": "8395c3a342d4484e473b647953f9cb4fc92ebaf9c8cfd5d06b3b47f0c4a7c067",
+      "result_path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/document-batch-feasibility-v1/result.json",
+      "result_sha256": "838ea79461fc433b096d70d247d960f3f9c2045aff979d38c092cb990773acf5",
+      "result_identity": "e00d32ff3fecb338cea7d26aff083507b0268b8204bdd7c74b7f259143c8be6e"
+    },
+    "matched_v0_v2_create": {
+      "contract_path": "benchmarks/acceptance/suite/iteration/v2/stage4-resource-cost-matched-create-contract.json",
+      "contract_identity": "e385a47530f6989a5830164894d620d84906110ccfe64f460dfef4b5b9956d83",
+      "result_path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/matched-create-v3/result.json",
+      "result_sha256": "398996babe5e50d4fe3483bdf765a25e0f77b7e9083154def8c731db515e0692",
+      "result_identity": "30375b31790b5fb70266dae436e8e8ada3283ea069e0920ca51bdbe52399e554"
+    },
+    "non_create_decomposition": {
+      "contract_path": "benchmarks/acceptance/suite/iteration/v2/stage4-resource-cost-non-create-decomposition-contract.json",
+      "contract_sha256": "ebcd6dcd083ead8531e0619cb1237efb8eb638bafc1c51a5c0fbbaa842403843",
+      "contract_identity": "872961f05481b53c2860bc2ab20f39bb5b6f1292105815ee23be54d90274c3ca",
+      "result_path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/non-create-decomposition-v1/result.json",
+      "result_sha256": "4dfc4c18f386f1098415a8787dee24a25fa08c3004ec65aa918dcb29235dc207",
+      "result_identity": "1f949ae4e534f79766dfd958c264f4db768325c5ccb06c502cd2891c62447520"
+    },
+    "raw_vector_lifecycle_audit": {
+      "contract_path": "benchmarks/acceptance/suite/iteration/v2/stage4-resource-cost-raw-vector-lifecycle-contract.json",
+      "contract_identity": "125278c6aa9d6a34dc91bfe1ced32b22b93dad60ce6b5bc34aa14c3c2561abb7",
+      "result_path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/raw-vector-lifecycle-v1/result.json",
+      "result_sha256": "9e222e874ba4e16e38303e9996369f86f4907cb4ec58bd114fbe7381e0b30595",
+      "result_identity": "553029aec0e1ec664ef8f27a8736c1d9ef0cf4dc3d0342e84980ffe858b042d6"
+    }
+  },
+  "decisions": {
+    "semantic_input_tokens": {
+      "historical_global_v0": 57466,
+      "historical_global_half_target": 28733,
+      "v0_fixed_host_schema_floor": 36971,
+      "global_status": "diagnostic-mathematically-unreachable-by-candidate",
+      "candidate_component": "generic-semantic-instruction-plus-work-payload-native-usage-delta",
+      "v0_candidate_component_baseline": 20495,
+      "candidate_component_maximum": 10247.5,
+      "current_v2_candidate_component": 9674,
+      "implemented_v2_subject": "a6b545a43ae7cda19facbb1f9ef0169497374701afdf29d796af50345b8ed86a",
+      "selection": "candidate-composition-declared",
+      "frozen_request_prompt_and_schema_matches": 12,
+      "implementation_quality": "development-4/4-long-multifact-5/5-regression-8/8-fact-delivery-complete",
+      "implementation_resume": "byte-identical-zero-model-zero-product-execution",
+      "current_status": "closed"
+    },
+    "end_to_end_wall_seconds": {
+      "historical_global_v0": 112.51499999999942,
+      "historical_global_half_target": 56.25749999999971,
+      "global_status": "diagnostic-mathematically-unreachable-by-candidate",
+      "candidate_component": "local-create-retrieval-and-semantic-submit-critical-path",
+      "dominant_current_phase": "create",
+      "dominant_current_phase_seconds": 14.96799999999348,
+      "historical_pre_matched_migrations": {
+        "status": "superseded-diagnostic-only",
+        "v0_candidate_component_baseline": 19.761888000000752,
+        "candidate_component_maximum": 9.880944000000376,
+        "current_v2_candidate_component": 15.84647810000152,
+        "pre_v2_shared_startup_floor_seconds": 4.2656031,
+        "v0_candidate_controlled_baseline_seconds": 15.496284900000752,
+        "candidate_controlled_maximum_seconds": 7.748142450000376,
+        "current_candidate_controlled_seconds": 11.58087500000152,
+        "candidate_controlled_route_authorization_minimum_seconds": 4.832732550001143,
+        "document_batch_calls_before_after": "8-to-3-per-repeat",
+        "document_batch_exact_vector_identity": true,
+        "document_batch_paired_improvements_seconds": [0.38846999999999987, -1.359152599999998],
+        "document_batch_conservative_improvement_seconds": -1.359152599999998,
+        "document_batch_status": "rejected-below-pre-frozen-candidate-controlled-margin"
+      },
+      "active_matched_gate": {
+        "v0_controlled_baseline_seconds": 13.423813250000752,
+        "controlled_half_maximum_seconds": 6.711906625000376,
+        "current_v2_controlled_seconds": 9.508403350001519,
+        "repeatability_error_seconds": 1.0,
+        "current_plus_error_seconds": 10.508403350001519,
+        "required_improvement_seconds": 3.796496725001143,
+        "single_active_gate": true
+      },
+      "matched_create_evidence": {
+        "v0_create_envelope_seconds": 12.48591655,
+        "v2_create_envelope_seconds": 11.310521999999999,
+        "v0_embedding_seconds": 12.4451937,
+        "v2_embedding_seconds": 11.290981949999999,
+        "paired_common_ensure_running_seconds": 6.3380747500000005,
+        "status": "v2-faster-than-v0-and-no-createbatch-route-authorized"
+      },
+      "same_observation_non_create_decomposition": {
+        "candidate_local_seconds": 15.84647810000152,
+        "create_batch_seconds": 14.96799999999348,
+        "semantic_submission_and_product_execution_seconds": 0.6134781000086207,
+        "retrieval_and_evidence_loading_seconds": 0.2649999999994179,
+        "non_create_seconds": 0.8784781000080386,
+        "maximum_evidenced_improvement_seconds": 0.8784781000080386,
+        "margin_against_required_improvement_seconds": -2.9180186249931044
+      },
+      "raw_vector_lifecycle_audit": {
+        "observed_short_raw_embedding_after_common_startup_seconds": 4.9529071999999985,
+        "gross_opportunity_margin_seconds": 1.1564104749988555,
+        "proven_net_removable_lower_bound_seconds": 0.0,
+        "proven_net_removable_upper_bound_under_exact_work_identity_seconds": 0.0,
+        "current_duties": [
+          "semantic-work-candidate-selection",
+          "pending-and-ready-semantic-query",
+          "restart-and-rebuild-recovery"
+        ],
+        "implementation_authorized": false,
+        "status": "rejected-before-candidate-because-deferral-only-moves-work-or-changes-semantics"
+      },
+      "cross_observation_diagnostic": {
+        "mixed_residual_seconds": 4.53595610000152,
+        "cross_observation_create_delta_seconds": 3.657477999993482,
+        "status": "not-an-observed-critical-path-and-not-route-headroom"
+      },
+      "matched_create_status": "v2-faster-than-v0-but-controlled-half-gate-still-fails",
+      "authorized_routes": [],
+      "current_status": "open-raw-vector-deferral-rejected-no-equivalent-net-headroom"
+    },
+    "ownward_data_bytes": {
+      "v0_baseline": 503152,
+      "candidate": 203992,
+      "candidate_ratio": 0.4054281807485611,
+      "maximum_ratio": 0.5,
+      "status": "closed"
+    }
+  },
+  "constraints": {
+    "v2_result_used_to_set_threshold": false,
+    "formal_acceptance_contract_changed": false,
+    "quality_gates_changed": false,
+    "cross_dimension_compensation": false,
+    "test_only_wrapper_or_monkeypatch": false,
+    "further_product_implementation_performed": false,
+    "formal_state_sha256": "3c7826e0ef86a82ddfab676886e384e2674a23dc80f6df3612d4443be00ffcdc"
+  },
+  "stage4_complete": false,
+  "next_validation": "freeze-and-prove-a-versioned-pending-versus-ready-retrieval-representation-lifecycle-on-independent-materials-before-revisiting-cost; preserve-semantic-work-candidates-immediate-pending-query-ready-ranking-restart-rebuild-and-failure-recovery",
+  "identity": "468fbb03a5e11d5a73644cc6122e71ce76a3eae6a32dda92da0813aa53001d94"
+}

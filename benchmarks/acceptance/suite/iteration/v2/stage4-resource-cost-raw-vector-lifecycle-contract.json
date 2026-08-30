@@ -1,0 +1,107 @@
+{
+  "schema": "ownward.kernel-iteration-stage4-resource-cost-raw-vector-lifecycle-contract/v1",
+  "frozen_before_implementation": true,
+  "frozen_before_new_measurement": true,
+  "candidate_results_seen": false,
+  "purpose": "audit-whether-short-raw-document-embeddings-can-leave-the-synchronous-create-path-without-moving-cost-or-changing-product-semantics",
+  "formal": false,
+  "model_execution_allowed": false,
+  "product_execution_allowed": false,
+  "candidate_build_allowed": false,
+  "active_gate": {
+    "source": "matched-v0-v2-create/v2",
+    "v0_controlled_baseline_seconds": 13.423813250000752,
+    "controlled_half_maximum_seconds": 6.711906625000376,
+    "current_v2_controlled_seconds": 9.508403350001519,
+    "repeatability_error_seconds": 1.0,
+    "current_plus_error_seconds": 10.508403350001519,
+    "required_improvement_seconds": 3.796496725001143,
+    "single_active_gate": true
+  },
+  "audit_contract": {
+    "required_lifecycle_stages": [
+      "create-or-update-authority",
+      "pending-preparation",
+      "semantic-work-freeze",
+      "semantic-submit",
+      "ready-query",
+      "restart-and-rebuild",
+      "embedding-failure"
+    ],
+    "must_preserve": [
+      "public-mutation-success-and-failure-semantics",
+      "immediate-post-write-query-results-and-bounded-latency",
+      "semantic-work-identity-order-candidates-similarity-and-relations",
+      "semantic-delay-and-semantic-failure-degradation",
+      "ready-query-source-ranking-and-evidence",
+      "restart-concurrent-read-write-rebuild-rollback-and-batch-durability",
+      "authority-identities-revisions-contexts-time-relations-and-source",
+      "embedding-model-space-prefix-pooling-normalization-and-truncation"
+    ],
+    "forbidden": [
+      "move-identical-work-from-create-to-semantic-work-and-count-it-as-end-to-end-saving",
+      "background-or-uncheckpointed-debt",
+      "first-query-quality-or-latency-sacrifice",
+      "replace-raw-ready-vector-with-semantic-analysis-vector-without-a-separate-representation-proof",
+      "change-semantic-work-candidates-or-ranking",
+      "benchmark-only-deferral-or-uncounted-cache"
+    ],
+    "authorization_rule": "implementation requires both a mechanically complete lifecycle and a conservative net removable lower bound of at least active_gate.required_improvement_seconds on the same full critical path"
+  },
+  "source_files": {
+    "service": {
+      "path": "internal/core/service.go",
+      "sha256": "c1ff24050194826fc5ec6db5c46681bbf780a8d6e0a514a73fcd81dfe9b045ae"
+    },
+    "collaboration": {
+      "path": "internal/core/collaboration.go",
+      "sha256": "7e3b685601eaf7c7989b9f0cfb5d7ec2f37c49561f5587ad4d32009d4e6db9ad"
+    },
+    "generation": {
+      "path": "internal/core/generation.go",
+      "sha256": "d0576e2519cd1c3ba207e2480e15304247e5720b79056f3daa05e3fc9e15a35c"
+    },
+    "derived_store": {
+      "path": "internal/derived/store.go",
+      "sha256": "90482a26b332eabda6dcc391a60460cff622b044c4d0e6799490ebfe70a2579e"
+    },
+    "longmemeval_runner": {
+      "path": "benchmarks/longmemeval_s/run.py",
+      "sha256": "dbd90d7b4cc3578b7bae2623d3a1f715bfeea9787bdb9c3bb7d5cb5511f36c24"
+    }
+  },
+  "evidence": {
+    "matched_create": {
+      "path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/matched-create-v3/result.json",
+      "sha256": "398996babe5e50d4fe3483bdf765a25e0f77b7e9083154def8c731db515e0692",
+      "identity": "30375b31790b5fb70266dae436e8e8ada3283ea069e0920ca51bdbe52399e554"
+    },
+    "non_create_decomposition": {
+      "path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/non-create-decomposition-v1/result.json",
+      "sha256": "4dfc4c18f386f1098415a8787dee24a25fa08c3004ec65aa918dcb29235dc207",
+      "identity": "1f949ae4e534f79766dfd958c264f4db768325c5ccb06c502cd2891c62447520"
+    }
+  },
+  "formal_state": {
+    "path": ".tmp/first-kernel-baseline-v1/acceptance/state.json",
+    "sha256": "3c7826e0ef86a82ddfab676886e384e2674a23dc80f6df3612d4443be00ffcdc"
+  },
+  "direct_dependencies": [
+    {
+      "path": "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_raw_vector_lifecycle.py",
+      "sha256": "00acaf4cf0a92ef909f50812df708f340d7854ee86c3314279eac843da934e8f"
+    },
+    {
+      "path": "benchmarks/acceptance/suite/kernel_iteration_run.py",
+      "sha256": "3a6ec83cc197d71b8594814cff7000d7face183a8e316e5d0c409f2e19eddc53"
+    }
+  ],
+  "constraints": {
+    "formal_acceptance_contract_changed": false,
+    "model_or_embedding_semantics_changed": false,
+    "token_data_or_non_create_gate_reopened": false,
+    "candidate_result_used_to_set_threshold": false,
+    "stage5_allowed": false
+  },
+  "identity": "125278c6aa9d6a34dc91bfe1ced32b22b93dad60ce6b5bc34aa14c3c2561abb7"
+}

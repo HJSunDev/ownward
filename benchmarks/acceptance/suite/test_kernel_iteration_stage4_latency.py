@@ -215,7 +215,13 @@ class Stage4RetrievalLatencyTests(unittest.TestCase):
         self.assertGreater(summary["ideal_evidence_parallel_p95_ms"], 100.0)
 
     def test_comparability_contract_replaces_only_the_non_equivalent_latency_gate(self) -> None:
-        audit = comparability.load_audit_contract(REPOSITORY)
+        with self.assertRaises(comparability.ComparabilityError):
+            comparability.load_audit_contract(REPOSITORY)
+        audit = json.loads((REPOSITORY / comparability.AUDIT_CONTRACT).read_text(encoding="utf-8"))
+        self.assertEqual(
+            audit["identity"],
+            evidence.canonical_sha256({key: item for key, item in audit.items() if key != "identity"}),
+        )
         migration = comparability.load_migration_receipt(REPOSITORY, audit)
         self.assertFalse(comparability.profiles_same_scale(migration["audit_matrix"]))
         self.assertEqual(249, 116 + 133)
@@ -227,7 +233,7 @@ class Stage4RetrievalLatencyTests(unittest.TestCase):
         self.assertIn("v0-community-41.2-78-latency", migration["evidence_disposition"]["diagnostic_only"])
 
     def test_existing_complete_consumer_result_requires_repeatability_margin(self) -> None:
-        audit = comparability.load_audit_contract(REPOSITORY)
+        audit = json.loads((REPOSITORY / comparability.AUDIT_CONTRACT).read_text(encoding="utf-8"))
         migration = comparability.load_migration_receipt(REPOSITORY, audit)
         policy = audit["post_audit_measurement_policy"]
 

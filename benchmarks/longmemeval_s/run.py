@@ -32,6 +32,7 @@ for dependency_root in (SUITE_ROOT, PRODUCT_ADAPTER_ROOT):
 
 from ownward_mcp import MCPError, OwnwardRuntime  # noqa: E402
 import codex_session  # noqa: E402
+import semantic_representation  # noqa: E402
 from codex_app_server import AppServerError, AppServerTimeout, CodexAppServer, CodexAppServerPool, isolated_runtime_root, remove_runtime_root  # noqa: E402
 
 
@@ -333,6 +334,11 @@ def semantic_analysis_units(
     settings: dict[str, Any],
     capability: "CodexCapability",
 ) -> list[dict[str, Any]]:
+    semantic_contract = (
+        capability.semantic_contract
+        if isinstance(capability, CodexCapability)
+        else semantic_representation.load_contract(None)
+    )
     frozen_batches = [frozen] if isinstance(frozen, dict) else list(frozen)
     require(frozen_batches, "semantic analysis requires frozen work")
     question_identity = frozen_batches[0]["question_identity"]
@@ -370,15 +376,21 @@ def semantic_analysis_units(
     scope_id = canonical_sha256({
         "question_identity": question_identity,
         "batches": [{"batch_id": item["batch_id"], "work_sha256": item["work_sha256"]} for item in frozen_batches],
-        "representation": "ownward.semantic-deduplicated-body-table/v1",
+        "representation": semantic_contract.representation,
         "model": settings["semantic_model"],
         "effort": settings["semantic_reasoning_effort"],
     })[:20]
     for index, group in enumerate(groups):
         work = [item["work"] for item in group]
         prompt, schema, work_ids = capability.semantic_request(work, settings)
-        semantic_input = CodexCapability.semantic_input(work)
-        equivalence = CodexCapability.validate_semantic_input(work, semantic_input)
+        if isinstance(capability, CodexCapability):
+            semantic_input = capability.encoded_semantic_input(work)
+            equivalence = capability.validate_encoded_semantic_input(work, semantic_input)
+            fact_equivalence_sha256 = capability.semantic_fact_identity(work)
+        else:
+            semantic_input = CodexCapability.semantic_input(work)
+            equivalence = CodexCapability.validate_semantic_input(work, semantic_input)
+            fact_equivalence_sha256 = CodexCapability.semantic_fact_equivalence_sha256(work)
         input_bytes = len(prompt.encode("utf-8"))
         output_upper_bound = CodexCapability.semantic_output_upper_bound(work_ids)
         require(input_bytes <= input_maximum, f"one semantic work item exceeds the frozen Codex input token upper bound: {work_ids[0]}")
@@ -401,9 +413,9 @@ def semantic_analysis_units(
             "input_utf8_bytes": input_bytes,
             "output_token_upper_bound": output_upper_bound,
             "body_count": len(semantic_input["bodies"]),
-            "body_chars": sum(len(item["content"]) for item in semantic_input["bodies"]),
+            "body_chars": semantic_contract.body_chars(semantic_input),
             "equivalence_sha256": canonical_sha256(equivalence),
-            "fact_equivalence_sha256": CodexCapability.semantic_fact_equivalence_sha256(work),
+            "fact_equivalence_sha256": fact_equivalence_sha256,
             "legacy_input_utf8_bytes": CodexCapability.legacy_semantic_input_chars(work),
         }
         unit["identity"] = canonical_sha256(unit)
@@ -433,10 +445,15 @@ def analyze_semantic_unit(
             f"semantic analysis unit checkpoint identity changed: {unit_label}",
         )
         return existing
+    encoded_input = (
+        capability.encoded_semantic_input(unit["work"])
+        if isinstance(capability, CodexCapability)
+        else CodexCapability.semantic_input(unit["work"])
+    )
     write_json(unit_root / "input.json", {
         "schema": "ownward.longmemeval-s-semantic-analysis-input/v2",
         "identity": unit["identity"],
-        "representation": CodexCapability.semantic_input(unit["work"]),
+        "representation": encoded_input,
         "work_ids": unit["work_ids"],
         "batch_indexes": unit["batch_indexes"],
         "prompt_sha256": unit["prompt_sha256"],
@@ -607,8 +624,31 @@ def _answer_prompt(question: dict[str, Any], evidence: list[dict[str, Any]]) -> 
 
 
 class CodexCapability:
-    def __init__(self, transport: CodexAppServer) -> None:
+    def __init__(self, transport: CodexAppServer, semantic_contract: semantic_representation.SemanticInputContract | None = None) -> None:
         self.transport = transport
+        self._semantic_contract = semantic_contract or semantic_representation.load_contract(None)
+
+    @property
+    def semantic_contract(self) -> semantic_representation.SemanticInputContract:
+        return getattr(self, "_semantic_contract", None) or semantic_representation.load_contract(None)
+
+    def encoded_semantic_input(self, work: list[dict[str, Any]]) -> dict[str, Any]:
+        try:
+            return self.semantic_contract.encode(work)
+        except semantic_representation.SemanticRepresentationError as error:
+            raise AdapterError(str(error)) from error
+
+    def validate_encoded_semantic_input(self, work: list[dict[str, Any]], value: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return self.semantic_contract.validate(work, value)
+        except semantic_representation.SemanticRepresentationError as error:
+            raise AdapterError(str(error)) from error
+
+    def semantic_fact_identity(self, work: list[dict[str, Any]]) -> str:
+        return self.semantic_contract.fact_identity(work)
+
+    def semantic_instruction_text(self) -> str:
+        return self.semantic_contract.instruction()
 
     @staticmethod
     def _is_rate_limit(value: str) -> bool:
@@ -722,132 +762,18 @@ class CodexCapability:
 
     @staticmethod
     def semantic_input(work: list[dict[str, Any]]) -> dict[str, Any]:
-        bodies: list[dict[str, Any]] = []
-        body_refs: dict[tuple[str, int, str], str] = {}
-
-        def body_reference(value: dict[str, Any]) -> str:
-            content = value.get("content")
-            identifier = value.get("id")
-            revision = value.get("revision")
-            require(isinstance(content, str) and isinstance(identifier, str) and isinstance(revision, int), "semantic body identity is invalid")
-            digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
-            key = (identifier, revision, digest)
-            if key not in body_refs:
-                reference = f"body-{len(bodies):05d}-{digest[:16]}"
-                body_refs[key] = reference
-                bodies.append({"body_ref": reference, "id": identifier, "revision": revision, "content": content})
-            return body_refs[key]
-
-        items = []
-        for item in work:
-            asset = item.get("asset") if isinstance(item, dict) else None
-            require(isinstance(asset, dict), "semantic work asset is invalid")
-            candidates = []
-            for candidate in item.get("candidates", [])[:2]:
-                if not isinstance(candidate, dict):
-                    continue
-                metadata = {key: value for key, value in candidate.items() if key not in {"content", "id", "revision"}}
-                candidates.append({
-                    "body_ref": body_reference(candidate),
-                    "id": candidate["id"],
-                    "revision": candidate["revision"],
-                    **metadata,
-                })
-            items.append({
-                "work_id": item["id"],
-                "asset": {
-                    "body_ref": body_reference(asset),
-                    "id": asset["id"],
-                    "revision": asset["revision"],
-                    "explicit_contexts": asset.get("contexts", []),
-                },
-                "candidates": candidates,
-            })
-        return {"representation": "ownward.semantic-deduplicated-body-table/v1", "bodies": bodies, "work": items}
+        return semantic_representation.default_semantic_input(work)
 
     @staticmethod
     def validate_semantic_input(work: list[dict[str, Any]], value: dict[str, Any]) -> dict[str, Any]:
-        require(value.get("representation") == "ownward.semantic-deduplicated-body-table/v1", "semantic input representation changed")
-        bodies = value.get("bodies")
-        items = value.get("work")
-        require(isinstance(bodies, list) and isinstance(items, list) and len(items) == len(work), "semantic input is incomplete")
-        by_ref = {item.get("body_ref"): item for item in bodies if isinstance(item, dict)}
-        require(len(by_ref) == len(bodies) and None not in by_ref, "semantic bodies are duplicated")
-        reconstructed = []
-        for source, encoded in zip(work, items):
-            require(isinstance(encoded, dict) and encoded.get("work_id") == source.get("id"), "semantic work identity changed")
-            asset = source.get("asset") if isinstance(source.get("asset"), dict) else {}
-            encoded_asset = encoded.get("asset") if isinstance(encoded.get("asset"), dict) else {}
-            body = by_ref.get(encoded_asset.get("body_ref"))
-            require(
-                isinstance(body, dict)
-                and body.get("id") == asset.get("id")
-                and body.get("revision") == asset.get("revision")
-                and body.get("content") == asset.get("content")
-                and encoded_asset.get("explicit_contexts") == asset.get("contexts", []),
-                "semantic asset content or context changed",
-            )
-            encoded_candidates = encoded.get("candidates") if isinstance(encoded.get("candidates"), list) else []
-            source_candidates = [item for item in source.get("candidates", [])[:2] if isinstance(item, dict)]
-            require(len(encoded_candidates) == len(source_candidates), "semantic candidate count changed")
-            for source_candidate, encoded_candidate in zip(source_candidates, encoded_candidates):
-                candidate_body = by_ref.get(encoded_candidate.get("body_ref")) if isinstance(encoded_candidate, dict) else None
-                require(
-                    isinstance(candidate_body, dict)
-                    and candidate_body.get("id") == source_candidate.get("id")
-                    and candidate_body.get("revision") == source_candidate.get("revision")
-                    and candidate_body.get("content") == source_candidate.get("content"),
-                    "semantic candidate content changed",
-                )
-                metadata = {key: item for key, item in source_candidate.items() if key not in {"content", "id", "revision"}}
-                require(
-                    {key: item for key, item in encoded_candidate.items() if key not in {"body_ref", "id", "revision"}} == metadata,
-                    "semantic candidate metadata or relations changed",
-                )
-            reconstructed.append(str(source["id"]))
-        return {
-            "equivalent": True,
-            "work_ids": reconstructed,
-            "body_count": len(bodies),
-            "body_identity_sha256": canonical_sha256([
-                {"body_ref": item["body_ref"], "id": item["id"], "revision": item["revision"], "content_sha256": hashlib.sha256(item["content"].encode("utf-8")).hexdigest()}
-                for item in bodies
-            ]),
-        }
+        try:
+            return semantic_representation.validate_default_input(work, value)
+        except semantic_representation.SemanticRepresentationError as error:
+            raise AdapterError(str(error)) from error
 
     @staticmethod
     def semantic_fact_equivalence_sha256(work: list[dict[str, Any]]) -> str:
-        """Hash facts and relation topology while treating generated Ownward identities as opaque."""
-        value = CodexCapability.semantic_input(work)
-        bodies = value["bodies"]
-        ref_map = {body["body_ref"]: f"fact-{index:05d}" for index, body in enumerate(bodies)}
-        id_map = {body["id"]: ref_map[body["body_ref"]] for body in bodies}
-
-        def normalize(item: Any) -> Any:
-            if isinstance(item, str):
-                return id_map.get(item, item)
-            if isinstance(item, list):
-                return [normalize(child) for child in item]
-            if isinstance(item, dict):
-                return {
-                    key: normalize(ref_map.get(child, child) if key == "body_ref" else child)
-                    for key, child in sorted(item.items())
-                    if key not in {"id", "work_id"}
-                }
-            return item
-
-        normalized = {
-            "bodies": [
-                {
-                    "body_ref": ref_map[body["body_ref"]],
-                    "revision": body["revision"],
-                    "content_sha256": hashlib.sha256(body["content"].encode("utf-8")).hexdigest(),
-                }
-                for body in bodies
-            ],
-            "work": [normalize(item) for item in value["work"]],
-        }
-        return canonical_sha256(normalized)
+        return semantic_representation.fact_equivalence_sha256(work)
 
     @staticmethod
     def legacy_semantic_input_chars(work: list[dict[str, Any]]) -> int:
@@ -893,17 +819,7 @@ class CodexCapability:
 
     @staticmethod
     def semantic_instruction() -> str:
-        return (
-            "Act only as Ownward's external semantic capability. Analyze every supplied semantic work item exactly once. "
-            "The items came from Ownward's public semantic_work path; the host will validate and submit your result through "
-            "the public semantic_submit path. No query, expected answer, answer-session label, question type, or evaluator "
-            "signal is available. Preserve meaning, use only explicit content and candidate evidence, and do not invent "
-            "relationships. Bodies are listed once and work items reference them by stable body_ref, id, and revision; "
-            "candidate metadata contains every similarity, context, and relation field exposed by semantic_work. Return one "
-            "analysis per work_id in the supplied order. Use one short sentence per summary, at most 4 short topics, and at "
-            "most 4 cues only for durable answer-bearing facts, entities, preferences, events or decisions. Do not turn "
-            "source IDs, conversation dates or acknowledgements into cues.\n\nSemantic input:\n"
-        )
+        return semantic_representation.default_instruction()
 
     @staticmethod
     def semantic_output_upper_bound(work_ids: list[str]) -> int:
@@ -912,9 +828,9 @@ class CodexCapability:
         return 64 + sum(per_item_fixed + len(work_id.encode("utf-8")) for work_id in work_ids)
 
     def semantic_request(self, work: list[dict[str, Any]], settings: dict[str, Any]) -> tuple[str, dict[str, Any], list[str]]:
-        semantic_input = self.semantic_input(work)
+        semantic_input = self.encoded_semantic_input(work)
         work_ids = [str(item["id"]) for item in work]
-        prompt = self.semantic_instruction() + json.dumps(semantic_input, ensure_ascii=False, separators=(",", ":"))
+        prompt = self.semantic_instruction_text() + json.dumps(semantic_input, ensure_ascii=False, separators=(",", ":"))
         schema = {
             "type": "object", "additionalProperties": False, "required": ["analyses"],
             "properties": {
@@ -1180,7 +1096,9 @@ def _question_identity(question: dict[str, Any], run_identity: str) -> str:
 def stage_dependency_identities(
     *, protocol: dict[str, Any], candidate: str, binary_sha256: str, environment_sha256: str,
     input_manifest_sha256: str, dataset_sha256: str, formal: bool, evaluator_sha256: str,
+    semantic_contract: semantic_representation.SemanticInputContract | None = None,
 ) -> dict[str, str]:
+    semantic_contract = semantic_contract or semantic_representation.load_contract(None)
     transport_sha256 = sha256(Path(__file__).with_name("codex_app_server.py"))
     implementation = {
         "semantic": canonical_sha256({
@@ -1193,6 +1111,7 @@ def stage_dependency_identities(
             "analysis": inspect.getsource(analyze_semantic_unit),
             "combine": inspect.getsource(combine_semantic_batch),
             "submit": inspect.getsource(submit_semantic_batch),
+            "representation_runtime": sha256(Path(semantic_representation.__file__).resolve()),
         }),
         "retrieval": canonical_sha256({"retrieve": inspect.getsource(retrieve)}),
         "reader": canonical_sha256({
@@ -1218,7 +1137,14 @@ def stage_dependency_identities(
         "formal": formal,
         "profile": PRODUCTION_PROFILE,
     }
-    semantic = canonical_sha256({**common, "version": SEMANTIC_TRANSPORT_VERSION, "implementation": implementation["semantic"], "memory": protocol["memory"]})
+    semantic = canonical_sha256({
+        **common,
+        "version": SEMANTIC_TRANSPORT_VERSION,
+        "implementation": implementation["semantic"],
+        "memory": protocol["memory"],
+        "input_representation": semantic_contract.representation,
+        "input_representation_manifest": semantic_contract.manifest_identity,
+    })
     retrieval = canonical_sha256({"semantic": semantic, "version": RETRIEVAL_STAGE_VERSION, "implementation": implementation["retrieval"], "retrieval": protocol["retrieval"]})
     reader = canonical_sha256({"retrieval": retrieval, "version": READER_STAGE_VERSION, "implementation": implementation["reader"], "reader": protocol["reader"]})
     judge = canonical_sha256({"reader": reader, "version": JUDGE_STAGE_VERSION, "implementation": implementation["judge"], "judge": protocol["judge"], "evaluator_sha256": evaluator_sha256})
@@ -1470,6 +1396,11 @@ def process_question(
     semantic_usage = _empty_usage()
     _add_usage(semantic_usage, stored_usage)
     capability = capability_factory()
+    semantic_contract = (
+        capability.semantic_contract
+        if isinstance(capability, CodexCapability)
+        else semantic_representation.load_contract(None)
+    )
     with OwnwardRuntime(binary, data_dir, environment, startup_seconds=60, operation_seconds=float(protocol["retrieval"]["query_timeout_seconds"])) as runtime:
         require(runtime.client is not None, "Ownward client is unavailable")
         sessions = [session_content(str(sid), str(date), turns) for sid, date, turns in zip(question["haystack_session_ids"], question["haystack_dates"], question["haystack_sessions"])]
@@ -1536,7 +1467,8 @@ def process_question(
             "batch_size": semantic_size,
             "batches": request_plan,
             "transport": {
-                "representation": protocol["memory"]["semantic_input_representation"],
+                "representation": semantic_contract.representation,
+                "representation_manifest_identity": semantic_contract.manifest_identity,
                 "context_window_tokens": protocol["memory"]["semantic_context_window_tokens"],
                 "input_token_upper_bound": protocol["memory"]["semantic_analysis_input_token_upper_bound"],
                 "output_token_upper_bound": protocol["memory"]["semantic_analysis_output_token_upper_bound"],
@@ -1759,7 +1691,8 @@ def process_question(
             "analysis_units": len(units),
             "analysis_input_token_upper_bound": protocol["memory"]["semantic_analysis_input_token_upper_bound"],
             "analysis_output_token_upper_bound": protocol["memory"]["semantic_analysis_output_token_upper_bound"],
-            "input_representation": protocol["memory"]["semantic_input_representation"],
+            "input_representation": semantic_contract.representation,
+            "input_representation_manifest_identity": semantic_contract.manifest_identity,
             "all_analyses_complete_before_submission": True,
         },
         "phase_seconds": phase_seconds,
@@ -1770,19 +1703,30 @@ def process_question(
     return result
 
 
-def write_dry_plan_input_manifest(path: Path, units: list[dict[str, Any]]) -> None:
+def write_dry_plan_input_manifest(path: Path, units: list[dict[str, Any]], capability: CodexCapability | None = None) -> None:
+    capability = capability or CodexCapability(object())
     manifest_units = []
     for unit in units:
-        value = CodexCapability.semantic_input(unit["work"])
-        equivalence = CodexCapability.validate_semantic_input(unit["work"], value)
-        bodies = [{
-            "body_ref": item["body_ref"],
-            "id": item["id"],
-            "revision": item["revision"],
-            "content_chars": len(item["content"]),
-            "content_utf8_bytes": len(item["content"].encode("utf-8")),
-            "content_sha256": hashlib.sha256(item["content"].encode("utf-8")).hexdigest(),
-        } for item in value["bodies"]]
+        value = capability.encoded_semantic_input(unit["work"])
+        equivalence = capability.validate_encoded_semantic_input(unit["work"], value)
+        if capability.semantic_contract.representation == semantic_representation.COMPACT_REPRESENTATION:
+            bodies = [{
+                "body_index": index,
+                "id": item[0],
+                "revision": item[1],
+                "content_chars": len(item[2]),
+                "content_utf8_bytes": len(item[2].encode("utf-8")),
+                "content_sha256": hashlib.sha256(item[2].encode("utf-8")).hexdigest(),
+            } for index, item in enumerate(value["bodies"])]
+        else:
+            bodies = [{
+                "body_ref": item["body_ref"],
+                "id": item["id"],
+                "revision": item["revision"],
+                "content_chars": len(item["content"]),
+                "content_utf8_bytes": len(item["content"].encode("utf-8")),
+                "content_sha256": hashlib.sha256(item["content"].encode("utf-8")).hexdigest(),
+            } for item in value["bodies"]]
         manifest_units.append({
             "identity": unit["identity"],
             "unit_index": unit["unit_index"],
@@ -1809,7 +1753,9 @@ def write_dry_plan_input_manifest(path: Path, units: list[dict[str, Any]]) -> No
 def dry_plan_question(
     question: dict[str, Any], output_root: Path, plan_identity: str,
     binary: Path, embedding: Path, protocol: dict[str, Any],
+    semantic_contract: semantic_representation.SemanticInputContract | None = None,
 ) -> dict[str, Any]:
+    semantic_contract = semantic_contract or semantic_representation.load_contract(None)
     question = _product_question(question)
     identifier = str(question["question_id"])
     root = output_root / "questions" / identifier
@@ -1826,8 +1772,9 @@ def dry_plan_question(
                 key=lambda value: int(value["batch_index"]),
             )
             require(frozen_batches, f"dry-plan input evidence is missing: {identifier}")
-            units = semantic_analysis_units(frozen_batches, protocol["memory"], object.__new__(CodexCapability))
-            write_dry_plan_input_manifest(input_manifest_path, units)
+            capability = CodexCapability(object(), semantic_contract)
+            units = semantic_analysis_units(frozen_batches, protocol["memory"], capability)
+            write_dry_plan_input_manifest(input_manifest_path, units, capability)
         if result.get("input_manifest_sha256") != sha256(input_manifest_path):
             result["input_manifest_sha256"] = sha256(input_manifest_path)
             write_json(result_path, result)
@@ -1846,7 +1793,7 @@ def dry_plan_question(
     data_dir = root / "ownward-data"
     environment = os.environ.copy()
     environment["OWNWARD_EMBEDDING_BUNDLE_DIR"] = str(embedding)
-    capability = object.__new__(CodexCapability)
+    capability = CodexCapability(object(), semantic_contract)
     with OwnwardRuntime(binary, data_dir, environment, startup_seconds=60, operation_seconds=float(protocol["retrieval"]["query_timeout_seconds"])) as runtime:
         require(runtime.client is not None, "Ownward client is unavailable")
         sessions = [
@@ -1887,7 +1834,7 @@ def dry_plan_question(
         ]
         units = semantic_analysis_units(frozen_batches, protocol["memory"], capability)
     input_manifest_path = root / "input-manifest.json"
-    write_dry_plan_input_manifest(input_manifest_path, units)
+    write_dry_plan_input_manifest(input_manifest_path, units, capability)
     old_sizes = [size for batch in frozen_batches for size in CodexCapability.legacy_semantic_request_sizes(batch["work"])]
     source_body_chars = sum(len(session) for session in sessions)
     result = {
@@ -1926,7 +1873,7 @@ def dry_plan_question(
 def execute_dry_plan(
     *, environment_manifest: Path, protocol_path: Path, dataset_path: Path, output_dir: Path,
     binary: Path, embedding: Path, candidate: str, environment_sha256: str,
-    input_manifest_sha256: str, resume: bool,
+    input_manifest_sha256: str, resume: bool, semantic_representation_manifest: Path | None = None,
 ) -> dict[str, Any]:
     environment = validate_environment(environment_manifest, smoke=False)
     protocol = load_json(protocol_path)
@@ -1934,6 +1881,10 @@ def execute_dry_plan(
     validate_protocol(protocol)
     questions = validate_dataset(dataset_path.resolve(), formal=True)
     require(binary.resolve().is_file() and embedding.resolve().is_dir(), "candidate artifacts are incomplete")
+    try:
+        semantic_contract = semantic_representation.load_contract(semantic_representation_manifest)
+    except (OSError, ValueError, json.JSONDecodeError, semantic_representation.SemanticRepresentationError) as error:
+        raise AdapterError(f"semantic representation contract is invalid: {error}") from error
     output_dir = output_dir.resolve()
     require(output_dir.is_relative_to(Path(environment["value"]["layout"]["runs"]).resolve()), "dry-plan must stay under persistent runs root")
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1942,6 +1893,8 @@ def execute_dry_plan(
     semantic_protocol = {
         "transport_version": SEMANTIC_TRANSPORT_VERSION,
         "memory": protocol["memory"],
+        "input_representation": semantic_contract.representation,
+        "input_representation_manifest_identity": semantic_contract.manifest_identity,
         "create_context": {"key": "source", "value": "LongMemEval-S"},
     }
     identity_value = {
@@ -1970,7 +1923,7 @@ def execute_dry_plan(
         futures = {
             pool.submit(
                 dry_plan_question, question, output_dir, identity_value["sha256"],
-                binary.resolve(), embedding.resolve(), protocol,
+                binary.resolve(), embedding.resolve(), protocol, semantic_contract,
             ): question
             for question in questions
         }
@@ -2192,7 +2145,7 @@ def execute(
     *, environment_manifest: Path, protocol_path: Path, dataset_path: Path, output_dir: Path,
     binary: Path, embedding: Path, codex_binary: Path, codex_auth_file: Path,
     candidate: str, environment_sha256: str, input_manifest_sha256: str, tool_sha256: str,
-    formal: bool, resume: bool,
+    formal: bool, resume: bool, semantic_representation_manifest: Path | None = None,
 ) -> dict[str, Any]:
     environment = validate_environment(environment_manifest, smoke=False)
     protocol = load_json(protocol_path)
@@ -2201,6 +2154,10 @@ def execute(
     questions = validate_dataset(dataset_path.resolve(), formal=formal)
     require(binary.resolve().is_file() and embedding.resolve().is_dir(), "candidate artifacts are incomplete")
     require(codex_binary.resolve().is_file() and codex_auth_file.resolve().is_file(), "Codex capability is incomplete")
+    try:
+        semantic_contract = semantic_representation.load_contract(semantic_representation_manifest)
+    except (OSError, ValueError, json.JSONDecodeError, semantic_representation.SemanticRepresentationError) as error:
+        raise AdapterError(f"semantic representation contract is invalid: {error}") from error
     output_dir = output_dir.resolve()
     require(output_dir.is_relative_to(Path(environment["value"]["layout"]["runs"]).resolve()), "community run must stay under persistent runs root")
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -2215,6 +2172,7 @@ def execute(
         dataset_sha256=dataset_digest,
         formal=formal,
         evaluator_sha256=sha256(environment["evaluator"]),
+        semantic_contract=semantic_contract,
     )
     run_identity_value = {
         "schema": RUN_SCHEMA, "candidate": candidate, "binary_sha256": binary_digest, "environment_sha256": environment_sha256,
@@ -2222,7 +2180,13 @@ def execute(
         "dataset_sha256": dataset_digest, "formal": formal, "profile": PRODUCTION_PROFILE,
         "stage_dependencies": stage_dependencies,
         "capabilities": {
-            "semantic": {"source": "codex", "model": protocol["memory"]["semantic_model"], "reasoning_effort": protocol["memory"]["semantic_reasoning_effort"]},
+            "semantic": {
+                "source": "codex",
+                "model": protocol["memory"]["semantic_model"],
+                "reasoning_effort": protocol["memory"]["semantic_reasoning_effort"],
+                "input_representation": semantic_contract.representation,
+                "input_representation_manifest_identity": semantic_contract.manifest_identity,
+            },
             "reader": {"source": "codex", "model": protocol["reader"]["model"], "reasoning_effort": protocol["reader"]["reasoning_effort"]},
             "judge": {"source": "codex", "model": protocol["judge"]["model"], "reasoning_effort": protocol["judge"]["reasoning_effort"]},
         },
@@ -2260,7 +2224,7 @@ def execute(
         pool_size = int(protocol["execution"]["codex_max_active"])
         with CodexScheduler(pool_size) as codex_scheduler:
             with CodexAppServerPool(pool_size, app_server_factory) as transport:
-                capability_factory = lambda: CodexCapability(transport)
+                capability_factory = lambda: CodexCapability(transport, semantic_contract)
                 with PersistentWallClock(output_dir / "wall-clock.json") as clock:
                     pool = ThreadPoolExecutor(max_workers=int(protocol["execution"]["max_workers"]), thread_name_prefix="longmemeval-question")
                     try:
@@ -2407,6 +2371,7 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--environment-sha256")
     parser.add_argument("--input-manifest-sha256")
     parser.add_argument("--tool-sha256")
+    parser.add_argument("--semantic-representation-manifest", type=Path)
     parser.add_argument("--codex-binary", type=Path)
     parser.add_argument("--codex-auth-file", type=Path)
     parser.add_argument("--non-formal", action="store_true")
@@ -2422,7 +2387,15 @@ def main() -> int:
             protocol = load_json(arguments.protocol)
             require(isinstance(protocol, dict), "protocol is not an object")
             validate_protocol(protocol)
-            result = {"schema": "ownward.longmemeval-s-check/v1", "passed": True, "environment": str(environment["manifest"]), "protocol_sha256": sha256(arguments.protocol)}
+            semantic_contract = semantic_representation.load_contract(arguments.semantic_representation_manifest)
+            result = {
+                "schema": "ownward.longmemeval-s-check/v1",
+                "passed": True,
+                "environment": str(environment["manifest"]),
+                "protocol_sha256": sha256(arguments.protocol),
+                "semantic_input_representation": semantic_contract.representation,
+                "semantic_input_representation_manifest_identity": semantic_contract.manifest_identity,
+            }
         elif arguments.action == "dry-plan":
             required = (
                 arguments.dataset, arguments.output_dir, arguments.ownward_binary, arguments.embedding_bundle_dir,
@@ -2435,6 +2408,7 @@ def main() -> int:
                 binary=arguments.ownward_binary, embedding=arguments.embedding_bundle_dir,
                 candidate=arguments.candidate, environment_sha256=arguments.environment_sha256,
                 input_manifest_sha256=arguments.input_manifest_sha256, resume=arguments.resume,
+                semantic_representation_manifest=arguments.semantic_representation_manifest,
             )
         else:
             required = (
@@ -2451,6 +2425,7 @@ def main() -> int:
                 environment_sha256=arguments.environment_sha256, input_manifest_sha256=arguments.input_manifest_sha256,
                 tool_sha256=arguments.tool_sha256,
                 formal=not arguments.non_formal, resume=arguments.resume,
+                semantic_representation_manifest=arguments.semantic_representation_manifest,
             )
     except (AdapterError, MCPError, OSError, ValueError, subprocess.SubprocessError, json.JSONDecodeError) as error:
         print(f"LongMemEval-S adapter error: {error}", file=sys.stderr)

@@ -1,0 +1,72 @@
+{
+  "schema": "ownward.kernel-iteration-stage4-resource-cost-non-create-decomposition-contract/v1",
+  "frozen_before_new_observation": true,
+  "new_results_seen": false,
+  "purpose": "symmetrically-close-the-current-non-create-critical-path-before-authorizing-any-product-change",
+  "formal": false,
+  "model_execution_allowed": false,
+  "product_execution_allowed": false,
+  "active_gate": {
+    "source": "matched-v0-v2-create/v2",
+    "v0_controlled_baseline_seconds": 13.423813250000752,
+    "controlled_half_maximum_seconds": 6.711906625000376,
+    "current_v2_controlled_seconds": 9.508403350001519,
+    "repeatability_error_seconds": 1.0,
+    "current_plus_error_seconds": 10.508403350001519,
+    "required_improvement_seconds": 3.796496725001143,
+    "single_active_gate": true
+  },
+  "decomposition": {
+    "critical_path_rule": "all-subtracted-phases-must-come-from-the-same-observation-and-preserve-concurrency",
+    "forbidden": [
+      "subtract-a-phase-mean-from-another-observation-and-name-the-residual-a-critical-path",
+      "sum-independent-phase-p95-values",
+      "treat-shared-reader-judge-or-runner-boundaries-as-candidate-benefit",
+      "run-model-reader-judge-or-product-before-mathematical-headroom-is-proven"
+    ],
+    "required_categories": [
+      "semantic-submission-and-product-execution",
+      "retrieval-and-evidence-loading",
+      "local-scheduling",
+      "process-and-ipc",
+      "durability-and-recovery"
+    ],
+    "maximum_closure_error_seconds": 0.000001,
+    "route_authorization_rule": "one-pre-result-route-must-conservatively-remove-at-least-active-gate.required_improvement_seconds"
+  },
+  "sources": {
+    "real_capability_wall_audit": {
+      "path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/real-capability-wall-audit-v1/result.json",
+      "sha256": "07da31c5fbd7fcf1220f3fb2a2441d1a7f4dfab8058959c75699d071ea5deb76",
+      "identity": "c7480729170c671dcbfc1c441abb7a708c3378f2285f29a8c6ab79e77b215a1b"
+    },
+    "matched_calibration": {
+      "path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/matched-calibration-v1/calibration.json",
+      "sha256": "12f80c7c2061be2d0e4be0af503ade6f64bef6923c4c5bc4edb3f07e2d307310",
+      "identity": "7fc4d2ebc5831f672f9199259be885d99e77c9481ed2cb5a0da47d6793851162"
+    },
+    "matched_create": {
+      "path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/matched-create-v3/result.json",
+      "sha256": "398996babe5e50d4fe3483bdf765a25e0f77b7e9083154def8c731db515e0692",
+      "identity": "30375b31790b5fb70266dae436e8e8ada3283ea069e0920ca51bdbe52399e554"
+    }
+  },
+  "formal_state": {
+    "path": ".tmp/first-kernel-baseline-v1/acceptance/state.json",
+    "sha256": "3c7826e0ef86a82ddfab676886e384e2674a23dc80f6df3612d4443be00ffcdc"
+  },
+  "direct_dependencies": [
+    {
+      "path": "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_non_create_decomposition.py",
+      "sha256": "0b7fd8fced2da2be7d0c9e0d2657c9b44e9a2d2456f0a0c00ddc6491c423fb1c"
+    }
+  ],
+  "constraints": {
+    "formal_acceptance_contract_changed": false,
+    "token_or_data_gate_reopened": false,
+    "createbatch_route_reopened": false,
+    "stage5_allowed": false,
+    "candidate_result_used_to_set_threshold": false
+  },
+  "identity": "872961f05481b53c2860bc2ab20f39bb5b6f1292105815ee23be54d90274c3ca"
+}

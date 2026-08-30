@@ -1,0 +1,82 @@
+{
+  "schema": "ownward.kernel-iteration-stage4-resource-cost-representation-final-contract/v1",
+  "frozen_before_results": true,
+  "results_seen": false,
+  "formal": false,
+  "purpose": "paired-ab-ba-proof-that-the-sealed-current-revision-representation-lifecycle-removes-raw-vector-inference-from-the-candidate-controlled-critical-path-without-changing-external-quality",
+  "subjects": {
+    "v0": {
+      "role": "formal-v0-baseline",
+      "kernel_generation_identity": "1952f4b869e49c4aaf2fbac8139fd0a0c25e4331e18ef559a14faf1db7ed7b77",
+      "binary_path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-99f5190/ownward-windows-amd64/bin/ownward.exe",
+      "binary_sha256": "77600820a450b0931b9e63595b8564be757825000af16f9c2f0a028c69e81d2b",
+      "embedding_root": ".tmp/first-kernel-baseline-v1/candidate-artifacts-99f5190/ownward-windows-amd64/bin/embedding",
+      "embedding_manifest_sha256": "fc2e4a1aa7d09fc64789618259a1bbedce2a18d00bd1abd81d13a16dfb78c0da"
+    },
+    "v2": {
+      "role": "independent-v2-representation-lifecycle-candidate",
+      "subject_identity": "834e204c89623bf1bdf6c9b5c5b49589b49f22137ae1ef31c58201ff6ff9f17c",
+      "kernel_generation_identity": "66a6e827841c09279dec99d53cc7e5db04a879c94da14cbd3355419029bfa2db",
+      "binary_path": ".tmp/kernel-v2-major-iteration/candidates/end-to-end-resource-cost-representation-lifecycle-v5/ownward.exe",
+      "binary_sha256": "b3221ebbf14119806be3238a3d009112fd00c3e7e407f5ab20674e020d26fd89",
+      "embedding_root": ".tmp/kernel-v2-major-iteration/candidates/end-to-end-resource-cost-representation-lifecycle-v5/embedding",
+      "embedding_manifest_sha256": "fc2e4a1aa7d09fc64789618259a1bbedce2a18d00bd1abd81d13a16dfb78c0da"
+    }
+  },
+  "measurement": {
+    "question_order": ["v2d-long-multifact", "v2r-user", "v2r-short-structure"],
+    "expected_assets": 13,
+    "expected_short_documents": 12,
+    "expected_long_documents": 1,
+    "subject_order": [["v0", "v2"], ["v2", "v0"]],
+    "concurrent_questions": 3,
+    "fixed_external_semantic_wall_seconds": 12.7,
+    "model_execution_allowed": false,
+    "candidate_controlled_stages": ["create", "semantic_work", "semantic_submit", "ready_query"],
+    "excluded_shared_stage": "fixed-external-semantic-analysis-wall"
+  },
+  "gate": {
+    "v0_controlled_baseline_seconds": 13.42381325,
+    "controlled_half_maximum_seconds": 6.711906625,
+    "repeatability_error_seconds": 1.0,
+    "candidate_plus_error_maximum_seconds": 6.711906625
+  },
+  "closed_dimensions": {
+    "v0_ownward_data_bytes": 503152,
+    "previous_candidate_semantic_input_tokens": 48465,
+    "retrieval_p95_maximum_ms": 553.0
+  },
+  "quality_results": {
+    "development": {
+      "path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/representation-lifecycle-quality-v3/subjects/v2-candidate/834e204c89623bf1bdf6c9b5c5b49589b49f22137ae1ef31c58201ff6ff9f17c/development/4deb70c77738714a84582c361ccee659065fc5555d9033c884530e187c64eb7c/execution-result.json",
+      "sha256": "f43dfb4758ea79dcc90678b254649d34db24c7ac9d78cedbd76bda35e259dadc",
+      "identity": "c1609a82e7c908cca2da950b793bf16fe75bbaba4a9ad170d76ae54b8003cbb3"
+    },
+    "regression": {
+      "path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/representation-lifecycle-quality-v3/subjects/v2-candidate/834e204c89623bf1bdf6c9b5c5b49589b49f22137ae1ef31c58201ff6ff9f17c/regression/c711fb9d1f4ae375ee19fcf24025729634dbcdcc5f51c81bd64552b8cee92d0d/execution-result.json",
+      "sha256": "b632ebd71b4d5a9f113a2c633ad3d231be18ead84cdb8a4cd60efe8ad610c8b5",
+      "identity": "afc337b799533aa90f685c17c0f7fe78abda56b7a40ae4391b8cd3aa28159215"
+    }
+  },
+  "formal_state": {
+    "path": ".tmp/first-kernel-baseline-v1/acceptance/state.json",
+    "sha256": "3c7826e0ef86a82ddfab676886e384e2674a23dc80f6df3612d4443be00ffcdc"
+  },
+  "direct_dependencies": [
+    {"path": "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_representation_finalize.py", "sha256": "2fbbebf747c8064d62fcdfc3bbe6779eafddb7e49c2e5aa8b567935045c7e7d9"},
+    {"path": ".tmp/kernel-v2-major-iteration/candidates/end-to-end-resource-cost-representation-lifecycle-v5/candidate-receipt.json", "sha256": "57b177429df235fbd5e2442c5c55eae1d27ec9db39a47a954424edc1f878ee77", "identity": "35c2d250135896669c5d3ae32100bbc9c62edbe6e7221a15a5a696d4edeeecc2"},
+    {"path": "benchmarks/acceptance/suite/kernel_iteration_candidate_resource_cost.py", "sha256": "1b531a61c7200df8ec34058a93bb0f18f922140d1b4a307a6ba0db627c98f12a"},
+    {"path": "internal/kernelv2candidate/representation.go", "sha256": "d552342ebcac6580bd11349fd3cda5ec509479656cb6dc318d733d0f75674907"},
+    {"path": "manifests/kernel-candidates/v2/resource-cost/representation-service-transform.json", "sha256": "62ab5d249a053fde44cd020a691cb9c7a89cbe7833d32ad4347f40d97659f04b"},
+    {"path": "manifests/kernel-candidates/v2/resource-cost/representation-collaboration-transform.json", "sha256": "a3850201af2497ba4a612b7bad0de758491cd5075418167818d00e123e0c9183"},
+    {"path": "manifests/kernel-candidates/v2/resource-cost/representation-generation-transform.json", "sha256": "79eeb73b367004955a23ae938af8329d4ae09b6ab6acd84fc3f79dab6bafd48d"},
+    {"path": "benchmarks/acceptance/suite/iteration/v2/stage4-resource-cost-representation-lifecycle-contract.json", "sha256": "6087b9b4fb6c3ffbcc92d08040fea74ee3e8c8e1cfafcaab21edbdb0ecfba708", "identity": "e39272da7f832ed8275f99284aa03ad8fdf1b68b7833a368b9bece116ef93ce8"},
+    {"path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/representation-lifecycle-feasibility-v1/result.json", "sha256": "b9dfc4652e8b118f8f012ac03f3a3421418da48ad1e67f19867fbc1eda5c2ca6", "identity": "fa20e1bf041683473a35aca3b5d175d5befafb0b07ceaca91a4b50b4fe2cfd38"},
+    {"path": "benchmarks/acceptance/suite/iteration/v2/stage4-resource-cost-matched-create-contract.json", "sha256": "f766fcfcb5ad334028e24341619e66fa7ef3e1da3deb3d4d1628906a73a8efe2", "identity": "e385a47530f6989a5830164894d620d84906110ccfe64f460dfef4b5b9956d83"},
+    {"path": "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_matched_create.py", "sha256": "5b9be4f507b0819c77bdc19171bfe99ae20091b73f653b505cf540c4c9633ac8"},
+    {"path": "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_create_probe.py", "sha256": "ce49fdca394889c8fb23ff5f36d64d4f3acc9cc1b8f57ee78bb85c02fd151b7e"},
+    {"path": "benchmarks/support/ownward_mcp.py", "sha256": "fbca3e4f15afbd0e8409c043fc5742c5b4aeec72dbaa79d66be550f10b6f1a86"},
+    {"path": "benchmarks/longmemeval_s/run.py", "sha256": "dbd90d7b4cc3578b7bae2623d3a1f715bfeea9787bdb9c3bb7d5cb5511f36c24"}
+  ],
+  "identity": "db0de5be1d737ea23e9fd6a14ee1e8288b7fc1fac6bef905e66adfb52e71a927"
+}

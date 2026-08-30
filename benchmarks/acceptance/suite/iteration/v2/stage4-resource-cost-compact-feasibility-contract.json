@@ -1,0 +1,102 @@
+{
+  "schema": "ownward.kernel-iteration-stage4-resource-cost-compact-feasibility-contract/v1",
+  "frozen_before_compact_results": true,
+  "compact_results_seen": false,
+  "purpose": "Prove with native usage and critical-path substitution that one lossless indexed body/context representation can pass both migrated candidate-component gates before any candidate implementation changes.",
+  "execution_config": {
+    "path": ".tmp/kernel-v2-major-iteration/candidates/end-to-end-resource-cost-compacted/execution.json",
+    "sha256": "079b1cf81bc473506054b6d758acd44d8690caf7eae02b64ee5e35344f262600"
+  },
+  "matched_calibration": {
+    "path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/matched-calibration-v1/calibration.json",
+    "sha256": "12f80c7c2061be2d0e4be0af503ade6f64bef6923c4c5bc4edb3f07e2d307310",
+    "identity": "7fc4d2ebc5831f672f9199259be885d99e77c9481ed2cb5a0da47d6793851162"
+  },
+  "component_gate_migration": {
+    "path": "benchmarks/acceptance/suite/iteration/v2/stage4-resource-cost-component-gate-migration.json",
+    "sha256": "2375c30caba1431f2966b1d3e624fe5d115bae0cc7df4be61f4c17e7f682324d",
+    "identity": "1f27df48febb6511b78e0cace016752e14b060914a848736ad384cc983d23a2d"
+  },
+  "model_profile": {
+    "transport": "codex-app-server-pool-stdio",
+    "model": "gpt-5.6-luna",
+    "reasoning_effort": "low",
+    "fresh_ephemeral_thread_per_request": true,
+    "cached_input_tokens_required": 0,
+    "tools": "disabled",
+    "sandbox": "read-only"
+  },
+  "protocol": {
+    "representation": "ownward.semantic-indexed-body-context-table/v2",
+    "instruction_identity": "6a2be2aeaab8b9fd0c2c052cd499fed2ee6484acda643c3a7f5a88d64d3b8f63",
+    "output_schema_changed": false,
+    "unique_body_content_preserved": true,
+    "body_id_and_revision_preserved": true,
+    "work_id_and_order_preserved": true,
+    "explicit_contexts_preserved": true,
+    "candidate_similarity-and-relation-metadata-preserved": true,
+    "cross-question-or-user-batching": false,
+    "model-role-changed": false
+  },
+  "source_plans": {
+    "development": {
+      "plan_identity": "87eab9edbc87ae7980de9c0a59895490a3694ce44bacb5a4b4726bf65313361b",
+      "run_root_sha256": "0694e4676ef18918ddb6d9e39db4829323585236ec09347c8beec07908ab98a6"
+    },
+    "regression": {
+      "plan_identity": "7d4ee10cdbaac277c2be7880d1d2b79a42e5bcbc08dcc3ff78eb4b9d59de960a",
+      "run_root_sha256": "f1b7ba45b19d9f1c3d605a6aa9b77e26a8b73d8c27362ab087d5961df8e2d5f1"
+    }
+  },
+  "component_gates": {
+    "semantic_input_tokens_maximum": 10247.5,
+    "end_to_end_wall_seconds_maximum": 25.00228215000038,
+    "both-must-pass-before-implementation": true,
+    "current-v2-result-may-not-set-gates": true
+  },
+  "wall_projection": {
+    "replace-only-critical-semantic-request-wall": true,
+    "preserve-local-semantic-submit-overhead": true,
+    "preserve-reader-judge-runner-and-unclassified": true,
+    "preserve-concurrency-critical-chain": true,
+    "phase-sum-forbidden": true
+  },
+  "execution": {
+    "app_server_pool_size": 8,
+    "max_concurrent_turns": 4,
+    "successful_requests": 12,
+    "bounded_attempts": 3,
+    "maximum_wall_seconds": 600
+  },
+  "formal_state": {
+    "path": ".tmp/first-kernel-baseline-v1/acceptance/state.json",
+    "sha256": "3c7826e0ef86a82ddfab676886e384e2674a23dc80f6df3612d4443be00ffcdc"
+  },
+  "direct_dependencies": [
+    {
+      "path": "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_compact_feasibility.py",
+      "sha256": "efc7f52f13ab532ee40848df263e535b0cb5eb768642708d7a107aa315906301"
+    },
+    {
+      "path": "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_matched_calibration.py",
+      "sha256": "df74471a49a81bb88327f85cfc7e435e701001c43df218cceb8324d032dca446"
+    },
+    {
+      "path": "benchmarks/acceptance/suite/iteration/v2/stage4-resource-cost-component-gate-migration.json",
+      "sha256": "2375c30caba1431f2966b1d3e624fe5d115bae0cc7df4be61f4c17e7f682324d"
+    },
+    {
+      "path": "benchmarks/longmemeval_s/run.py",
+      "sha256": "f85430ab86a43fd88368e0d5f283fa71abc5ea45021585faa2826320f481819d"
+    },
+    {
+      "path": "benchmarks/longmemeval_s/codex_app_server.py",
+      "sha256": "dcb38eb9a5be0824f9465ee901e1232fcaccb52f3932b8cf415ec36de6e6fe1e"
+    },
+    {
+      "path": "benchmarks/acceptance/suite/adapters/product/codex_session.py",
+      "sha256": "9e87f4ad9ac7c9db28213f4a01dbaddb62dbf5bd1ad6e5f2d9df150b10f8cebd"
+    }
+  ],
+  "identity": "fcd3c92099a90ea7fdb994344b5abb3fe6cdc5398e2c469de573470fdd5396d2"
+}

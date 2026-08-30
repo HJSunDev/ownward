@@ -1,0 +1,102 @@
+{
+  "schema": "ownward.kernel-iteration-stage4-resource-cost-matched-create-contract/v2",
+  "supersedes_rejected_contract_identity": "b4d0d5e603f499205d63e73e4bcc9d785dd7dcfac78c1dcb13eb13a4e82cde36",
+  "supersession_reason": "The rejected v1 contract required identical complete embedding inputs even though frozen V0 embeds the long document and current V2 deliberately defers it. No result was sealed. V2 conservatively subtracts only the mechanically common ensure-running floor and leaves all inference/scheduling work candidate-controlled.",
+  "frozen_before_results": true,
+  "results_seen": false,
+  "purpose": "symmetrically-separate-the-shared-exact-document-embedding-duty-from-v0-and-current-v2-create-batch-cost",
+  "formal": false,
+  "model_execution_allowed": false,
+  "subjects": {
+    "v0": {
+      "role": "formal-v0-baseline",
+      "kernel_generation_identity": "1952f4b869e49c4aaf2fbac8139fd0a0c25e4331e18ef559a14faf1db7ed7b77",
+      "audit_commit": "99f519018df99bd5202b0c571b8e43481cd1b80e",
+      "binary_path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-99f5190/ownward-windows-amd64/bin/ownward.exe",
+      "binary_sha256": "77600820a450b0931b9e63595b8564be757825000af16f9c2f0a028c69e81d2b",
+      "embedding_root": ".tmp/first-kernel-baseline-v1/candidate-artifacts-99f5190/ownward-windows-amd64/bin/embedding",
+      "release_embedding_root": ".tmp/first-kernel-baseline-v1/candidate-artifacts-99f5190/ownward-windows-amd64/bin/embedding",
+      "embedding_manifest_sha256": "fc2e4a1aa7d09fc64789618259a1bbedce2a18d00bd1abd81d13a16dfb78c0da"
+    },
+    "v2": {
+      "role": "current-independent-v2-subject",
+      "subject_identity": "a6b545a43ae7cda19facbb1f9ef0169497374701afdf29d796af50345b8ed86a",
+      "binary_path": ".tmp/kernel-v2-major-iteration/candidates/end-to-end-resource-cost-real-capability-v5/ownward.exe",
+      "binary_sha256": "69c8554b5c897f714b173dc20e5b1f53536203ca9c599ded65a0a1cc37ec6bbe",
+      "embedding_root": ".tmp/kernel-v2-major-iteration/candidates/end-to-end-resource-cost-real-capability-v5/embedding",
+      "embedding_manifest_sha256": "fc2e4a1aa7d09fc64789618259a1bbedce2a18d00bd1abd81d13a16dfb78c0da"
+    }
+  },
+  "source_candidate": {
+    "root": ".tmp/kernel-v2-major-iteration/candidates/end-to-end-resource-cost-real-capability-v5",
+    "subject_identity": "a6b545a43ae7cda19facbb1f9ef0169497374701afdf29d796af50345b8ed86a",
+    "receipt": {
+      "path": ".tmp/kernel-v2-major-iteration/candidates/end-to-end-resource-cost-real-capability-v5/candidate-receipt.json",
+      "sha256": "377b659aff60f794753b6744cdaa700915f744bc5edde06bbee2ee391af0524f",
+      "identity": "ebff6613ae5225e03295de7490037db08cf0bb82648c624fc2387dcb692f8c72"
+    }
+  },
+  "materials": [
+    {
+      "path": "benchmarks/acceptance/suite/iteration/v2/stage3-development-materials.json",
+      "sha256": "b4165589cb4dc6ab8ea853a456a68502bcb28c3f68d643cdc3fa6899467b8b98"
+    },
+    {
+      "path": "benchmarks/acceptance/suite/iteration/v2/stage3-regression-materials.json",
+      "sha256": "fcf483821f2a62f2e6f4149d7b091a1c8a09858503f435e66d53c2577979b1b1"
+    }
+  ],
+  "measurement": {
+    "question_order": ["v2d-long-multifact", "v2r-user", "v2r-short-structure"],
+    "question_ids": ["v2d-long-multifact", "v2r-user", "v2r-short-structure"],
+    "expected_assets": 13,
+    "expected_short_documents": 12,
+    "expected_long_documents": 1,
+    "shared_short_document_maximum_bytes": 320,
+    "concurrent_questions": 3,
+    "subject_order": [["v0", "v2"], ["v2", "v0"]],
+    "same_embedding_model": "EmbeddingGemma",
+    "same_runtime_configuration": {"threads": 2, "threads_batch": 2, "parallel": 1},
+    "same_space_prefix_pooling_normalization_truncation": true,
+    "observer_control_equivalence_required": true,
+    "same_short_input_bytes_and_exact_vectors_required": true,
+    "known_v0_long_document_embedding_is_not_shared": true
+  },
+  "cost_classification": {
+    "shared_required_runtime_floor": "minimum-paired-subject-embedding.ensure_running-mean",
+    "rationale": "Both subjects open the same native vector runtime under the same three-question process shape. Their complete document inference sets differ because V0 also embeds the long asset, so no inference time is subtracted: all inference, batching, queueing and request amplification remains charged to each subject.",
+    "embedding_ensure_running_is_nested": true,
+    "embedding_ensure_running_must_be_reported": true,
+    "do_not_double_subtract_nested_ensure_running": true,
+    "authority_derived_index_and_candidate_scheduling_remain_candidate_controlled": true,
+    "reader_judge_codex_excluded": true,
+    "phase_sums_are_not_end_to_end_wall": true
+  },
+  "candidate_controlled_gate": {
+    "historical_v0_local_seconds": 19.761888000000752,
+    "current_v2_local_seconds": 15.84647810000152,
+    "relative_maximum": 0.5,
+    "repeatability_error_seconds": 1.0,
+    "pass_formula": "current-v2-local-common-ensure-floor+repeatability-error <= (historical-v0-local-common-ensure-floor)*0.5",
+    "candidate_result_used_to_set_threshold": false
+  },
+  "formal_state": {
+    "path": ".tmp/first-kernel-baseline-v1/acceptance/state.json",
+    "sha256": "3c7826e0ef86a82ddfab676886e384e2674a23dc80f6df3612d4443be00ffcdc"
+  },
+  "direct_dependencies": [
+    {
+      "path": "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_matched_create.py",
+      "sha256": "5b9be4f507b0819c77bdc19171bfe99ae20091b73f653b505cf540c4c9633ac8"
+    },
+    {
+      "path": "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_create_probe.py",
+      "sha256": "ce49fdca394889c8fb23ff5f36d64d4f3acc9cc1b8f57ee78bb85c02fd151b7e"
+    },
+    {
+      "path": "benchmarks/support/ownward_mcp.py",
+      "sha256": "fbca3e4f15afbd0e8409c043fc5742c5b4aeec72dbaa79d66be550f10b6f1a86"
+    }
+  ],
+  "identity": "e385a47530f6989a5830164894d620d84906110ccfe64f460dfef4b5b9956d83"
+}

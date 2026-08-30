@@ -1,0 +1,152 @@
+{
+  "schema": "ownward.kernel-iteration-stage4-resource-cost-representation-lifecycle-contract/v1",
+  "frozen_before_candidate_implementation": true,
+  "frozen_before_candidate_measurement": true,
+  "candidate_results_seen": false,
+  "formal": false,
+  "purpose": "Prove whether a versioned pending-to-ready retrieval representation can remove synchronous raw-document inference from the create-to-semantic-to-query critical path without changing external product semantics or moving unsealed work outside accounting.",
+  "external_product_contract": {
+    "preserve": [
+      "authority fact and revision identity",
+      "explicit contexts and relations",
+      "semantic work count and per-work authoritative body",
+      "public semantic submission validation",
+      "required fact delivery and final answers",
+      "time and conflict behavior",
+      "search, evidence and read limits",
+      "failure-open lexical degradation",
+      "durability, rebuild and restart recovery"
+    ],
+    "not_frozen_internal_details": [
+      "semantic candidate membership and order",
+      "WorkReference byte identity",
+      "pending derived representation byte identity",
+      "internal timing of sealed vector generation"
+    ],
+    "identity_rule": "Any change to an internal candidate set, WorkReference or representation creates a new V2 subject and invalidates only that subject's dependent evidence."
+  },
+  "representation_lifecycle": {
+    "schema": "ownward.pending-ready-retrieval-representation/v1",
+    "pending": {
+      "provenance_type": "current-authority-body",
+      "producer": "v2-candidate-representation-lifecycle",
+      "model": "EmbeddingGemma",
+      "space": "resolved-from-sealed-vector-capability",
+      "revision": "exact-current-authority-revision",
+      "semantic_work_source": "explicit-relations-plus-current-authority-lexical-candidates",
+      "vector_generation": "sealed-one-per-current-revision-background-job",
+      "query_behavior": "join-the-current-revision-job-before-exact-semantic-search; on verified generation failure preserve existing lexical failure-open behavior"
+    },
+    "ready": {
+      "provenance_type": "accepted-semantic-receipt-plus-current-authority-body-vector",
+      "producer": "v2-candidate-representation-lifecycle",
+      "model": "semantic-capability-from-validated-submission plus EmbeddingGemma",
+      "space": "same-sealed-vector-space-as-current-product",
+      "revision": "exact-current-authority-revision",
+      "promotion": "atomic-derived-record-write-after-both-validated-semantic-receipt-and-current-revision-vector-are-complete",
+      "query_behavior": "same-exact-query-vector-and-document-vector-ranking-as-the-current-ready-path"
+    },
+    "unique_valid_rule": "For one asset revision there is one durable current representation state. A pending job is subordinate to that record, and only the matching current revision may promote it to ready.",
+    "transitions": [
+      "create-or-update-authority -> durable-pending-record -> sealed-vector-job",
+      "pending-query -> join-matching-job -> exact-semantic-query-or-existing-lexical-failure-open",
+      "semantic-work -> immutable-explicit-plus-lexical-WorkReference",
+      "semantic-submit -> validate-receipt -> join-matching-vector -> atomic-ready-record",
+      "concurrent-update -> invalidate-old-job-result -> new-revision-pending",
+      "generation-failure -> durable-pending-error-with-no-false-ready-state",
+      "restart -> recover-pending-from-record-and-regenerate-on-demand",
+      "rebuild -> rebuild-one-current-revision-job-without-reading-stale-derived-results",
+      "rollback -> generation-level-pointer-rollback-without-second-authority",
+      "stale-cleanup -> discard-job-result-and-obsolete-record-for-noncurrent-revision"
+    ],
+    "forbidden": [
+      "second-authority-or-parallel-ready-truth",
+      "ranking-a-stale-revision-vector",
+      "unsealed-background-debt",
+      "moving-work-outside-the-create-to-semantic-to-query-accounting-window",
+      "candidate-name-or-test-wrapper-behavior",
+      "benchmark-only-cache-or-runner-only-scheduling"
+    ]
+  },
+  "quality_feasibility": {
+    "materials": [
+      {
+        "name": "development",
+        "path": "benchmarks/acceptance/suite/iteration/v2/stage3-development-materials.json",
+        "sha256": "b4165589cb4dc6ab8ea853a456a68502bcb28c3f68d643cdc3fa6899467b8b98",
+        "plan_identity": "2debfc6c1626b53c9aa42d128806fad2ad66419c0b5ea9b9c67afb33d423e910",
+        "execution_result_identity": "2fec27968179aa145da52a7ca01d8e3b1af30fe9b03fb38d41f61157c57930f8"
+      },
+      {
+        "name": "regression",
+        "path": "benchmarks/acceptance/suite/iteration/v2/stage3-regression-materials.json",
+        "sha256": "fcf483821f2a62f2e6f4149d7b091a1c8a09858503f435e66d53c2577979b1b1",
+        "plan_identity": "f6dc817779efbd734cb8a11d04be335d7437de2d2a47353bea3966e8364462d4",
+        "execution_result_identity": "7b0f890f6deae435a50efbb6bca16617cd1345e3091a8f65349e105ad93cf28d"
+      },
+      {
+        "name": "multisource",
+        "path": "benchmarks/acceptance/suite/iteration/v2/stage4-multisource-materials.json",
+        "sha256": "61aeb05afe8d4fb7eb279880ec29aa5e96ab926594c0766363b8b55711bc4d12",
+        "plan_identity": "e34a2de183939ef9c431ff5bf94c9d784df89e443c22ded792dadeb06c3701cf",
+        "execution_result_identity": "cc551acd9ac6f4e0d873c59304262115d21ca7e98f795b8d6fee1b84d3bae3d9"
+      },
+      {
+        "name": "semantic-paraphrase",
+        "path": "benchmarks/acceptance/suite/iteration/v2/stage4-retrieval-semantic-protection-materials-v3.json",
+        "sha256": "79ff9656c97a345289e6dfb8bc3cd29fc55dafcdc0beb64750cc8e527b16f198",
+        "plan_identity": "968ec8ed23e872fbf0982d4c76ad7b6842b73abdabdde7807c36cef6219a97b4",
+        "execution_result_identity": "fd8695bf0425a371179d8eba2ed3d15c27dd7606c04c84ae29fcfe09a794ae42"
+      }
+    ],
+    "pending_work_gate": "Every required truth is present in the work asset's own current authority body; changing auxiliary candidates is allowed but must be revalidated by candidate execution.",
+    "pending_query_gate": "A query may not observe a false ready state. It either joins the exact current-revision vector job or follows the existing explicit lexical degradation after a recorded vector failure.",
+    "ready_query_gate": "The exact current-revision document vector, query vector, space and fusion contract remain byte and behavior equivalent.",
+    "candidate_execution_required_after_feasibility": true
+  },
+  "cost_gate": {
+    "v0_controlled_baseline_seconds": 13.423813250000752,
+    "controlled_half_maximum_seconds": 6.711906625000376,
+    "current_v2_controlled_seconds": 9.508403350001519,
+    "repeatability_error_seconds": 1.0,
+    "current_plus_error_seconds": 10.508403350001519,
+    "required_net_improvement_seconds": 3.796496725001143,
+    "observed_short_raw_inference_after_common_startup_seconds": 4.9529071999999985,
+    "overlap_question_ids": ["v2d-long-multifact", "v2r-user", "v2r-short-structure"],
+    "minimum_existing_semantic_request_wall_seconds": 12.7,
+    "maximum_existing_create_call_critical_path_seconds": 4.6449012,
+    "maximum_new_lifecycle_bookkeeping_seconds": 0.1,
+    "pass_formula": "max(0, vector-job-critical-wall - external-semantic-request-wall) + existing-non-create-wall + lifecycle-bookkeeping + repeatability-error <= controlled-half-maximum",
+    "all_generation_migration_first-query-failure-recovery-and-durability-costs_must_be_accounted": true
+  },
+  "evidence": {
+    "matched_create": {
+      "path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/matched-create-v3/result.json",
+      "sha256": "398996babe5e50d4fe3483bdf765a25e0f77b7e9083154def8c731db515e0692",
+      "identity": "30375b31790b5fb70266dae436e8e8ada3283ea069e0920ca51bdbe52399e554"
+    },
+    "non_create": {
+      "path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/non-create-decomposition-v1/result.json",
+      "sha256": "4dfc4c18f386f1098415a8787dee24a25fa08c3004ec65aa918dcb29235dc207",
+      "identity": "1f949ae4e534f79766dfd958c264f4db768325c5ccb06c502cd2891c62447520"
+    },
+    "simple_deferral_audit": {
+      "path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/raw-vector-lifecycle-v1/result.json",
+      "sha256": "9e222e874ba4e16e38303e9996369f86f4907cb4ec58bd114fbe7381e0b30595",
+      "identity": "553029aec0e1ec664ef8f27a8736c1d9ef0cf4dc3d0342e84980ffe858b042d6",
+      "preserved_conclusion": "Exact-WorkReference simple deferral has zero net removal; this does not decide a new-subject lifecycle with externally revalidated WorkReference semantics."
+    }
+  },
+  "source_files": {
+    "service": {"path": "internal/core/service.go", "sha256": "c1ff24050194826fc5ec6db5c46681bbf780a8d6e0a514a73fcd81dfe9b045ae"},
+    "collaboration": {"path": "internal/core/collaboration.go", "sha256": "7e3b685601eaf7c7989b9f0cfb5d7ec2f37c49561f5587ad4d32009d4e6db9ad"},
+    "generation": {"path": "internal/core/generation.go", "sha256": "d0576e2519cd1c3ba207e2480e15304247e5720b79056f3daa05e3fc9e15a35c"},
+    "derived_store": {"path": "internal/derived/store.go", "sha256": "90482a26b332eabda6dcc391a60460cff622b044c4d0e6799490ebfe70a2579e"},
+    "runner": {"path": "benchmarks/longmemeval_s/run.py", "sha256": "dbd90d7b4cc3578b7bae2623d3a1f715bfeea9787bdb9c3bb7d5cb5511f36c24"}
+  },
+  "formal_state": {
+    "path": ".tmp/first-kernel-baseline-v1/acceptance/state.json",
+    "sha256": "3c7826e0ef86a82ddfab676886e384e2674a23dc80f6df3612d4443be00ffcdc"
+  },
+  "identity": "e39272da7f832ed8275f99284aa03ad8fdf1b68b7833a368b9bece116ef93ce8"
+}

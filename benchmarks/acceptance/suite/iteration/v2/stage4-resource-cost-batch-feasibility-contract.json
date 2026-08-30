@@ -1,0 +1,130 @@
+{
+  "schema": "ownward.kernel-iteration-stage4-resource-cost-batch-feasibility-contract/v1",
+  "frozen_before_results": true,
+  "results_seen": false,
+  "purpose": "authorize-or-reject-one-lossless-per-item-bounded-document-batching-route-after-migrating-the-wall-gate-only-by-the-pre-v2-shared-startup-floor",
+  "formal": false,
+  "model_execution_allowed": false,
+  "source_candidate": {
+    "root": ".tmp/kernel-v2-major-iteration/candidates/end-to-end-resource-cost-real-capability-v5",
+    "subject_identity": "a6b545a43ae7cda19facbb1f9ef0169497374701afdf29d796af50345b8ed86a",
+    "receipt": {
+      "path": ".tmp/kernel-v2-major-iteration/candidates/end-to-end-resource-cost-real-capability-v5/candidate-receipt.json",
+      "sha256": "377b659aff60f794753b6744cdaa700915f744bc5edde06bbee2ee391af0524f",
+      "identity": "ebff6613ae5225e03295de7490037db08cf0bb82648c624fc2387dcb692f8c72"
+    }
+  },
+  "sources": {
+    "local_wall_component_migration": {
+      "path": "benchmarks/acceptance/suite/iteration/v2/stage4-resource-cost-local-wall-component-migration.json",
+      "sha256": "06ec4358be44255da2980b3c588f091bd33ac3752614edac501cb3cb41ca093c",
+      "identity": "325409de42e8a82dd0fde68be742da0980abe1d064a43bee94ec995cd303a1a2"
+    },
+    "create_subphase_probe": {
+      "path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/create-probe-concurrent-v1/result.json",
+      "sha256": "ed6cb485209280453c527c51c2acb6200887a9cce6615dedc872b41799f67672",
+      "identity": "b034f0bc231ccab055605968469d8e1060f45e6ed4357763bceacb80c420aba5"
+    }
+  },
+  "materials": [
+    {
+      "path": "benchmarks/acceptance/suite/iteration/v2/stage3-development-materials.json",
+      "sha256": "b4165589cb4dc6ab8ea853a456a68502bcb28c3f68d643cdc3fa6899467b8b98"
+    },
+    {
+      "path": "benchmarks/acceptance/suite/iteration/v2/stage3-regression-materials.json",
+      "sha256": "fcf483821f2a62f2e6f4149d7b091a1c8a09858503f435e66d53c2577979b1b1"
+    }
+  ],
+  "measurement": {
+    "question_ids": [
+      "v2d-long-multifact",
+      "v2r-user",
+      "v2r-short-structure"
+    ],
+    "expected_assets": 13,
+    "expected_short_documents": 12,
+    "expected_long_documents": 1,
+    "repetitions": 2,
+    "concurrent_workers": 3,
+    "balanced_variant_order": [
+      ["baseline", "batch"],
+      ["batch", "baseline"]
+    ],
+    "balanced_question_order": [
+      ["v2d-long-multifact", "v2r-user", "v2r-short-structure"],
+      ["v2r-short-structure", "v2r-user", "v2d-long-multifact"]
+    ],
+    "maximum_wall_seconds": 180,
+    "same_model": "EmbeddingGemma",
+    "same_space": true,
+    "same_document_prefix": true,
+    "same_pooling_normalization_and_truncation": true,
+    "maximum_inputs_per_request": 32,
+    "per_item_byte_maximum": 320,
+    "long_document_behavior": "unchanged-single-input-request",
+    "vector_maximum_component_drift": 0.0000001
+  },
+  "instrumentation": {
+    "boundary": "candidate-overlay-stderr-only",
+    "candidate_identity": false,
+    "timing_overhead_reported": true,
+    "required_phases": [
+      "create.envelope",
+      "authority.create_batch",
+      "lexical.memory_index",
+      "embedding.ensure_running",
+      "embedding.documents",
+      "pending-records-and-staged-index",
+      "derived.put_batch",
+      "derived.durability_barrier",
+      "semantic.memory_index"
+    ],
+    "non_overlapping_create_subphases": [
+      "authority.create_batch",
+      "lexical.memory_index",
+      "embedding.documents",
+      "pending-records-and-staged-index",
+      "derived.put_batch",
+      "semantic.memory_index"
+    ]
+  },
+  "route_authorization": {
+    "historical_local_component_seconds": 19.761888000000752,
+    "pre_v2_shared_startup_floor_seconds": 4.2656031,
+    "v0_candidate_controlled_baseline_seconds": 15.496284900000752,
+    "candidate_controlled_maximum_seconds": 7.748142450000376,
+    "current_candidate_controlled_seconds": 11.58087500000152,
+    "minimum_improvement_seconds": 3.8327325500011433,
+    "frozen_repeatability_error_seconds": 1.0,
+    "minimum_conservative_route_improvement_seconds": 4.832732550001143,
+    "conservative_statistic": "minimum-of-two-balanced-paired-envelope-improvements",
+    "exact_vector_identity_required": true,
+    "input_count_and_order_exact_required": true,
+    "single_route_only": true,
+    "no_result_selected_threshold": true
+  },
+  "formal_state": {
+    "path": ".tmp/first-kernel-baseline-v1/acceptance/state.json",
+    "sha256": "3c7826e0ef86a82ddfab676886e384e2674a23dc80f6df3612d4443be00ffcdc"
+  },
+  "direct_dependencies": [
+    {
+      "path": "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_batch_feasibility.py",
+      "sha256": "8daeaaeb3804d335db1a18cb0760ea11e4292edb7a826ff7fbe1189f23baa06d"
+    },
+    {
+      "path": "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_create_probe.py",
+      "sha256": "ce49fdca394889c8fb23ff5f36d64d4f3acc9cc1b8f57ee78bb85c02fd151b7e"
+    },
+    {
+      "path": "benchmarks/longmemeval_s/run.py",
+      "sha256": "dbd90d7b4cc3578b7bae2623d3a1f715bfeea9787bdb9c3bb7d5cb5511f36c24"
+    },
+    {
+      "path": "benchmarks/support/ownward_mcp.py",
+      "sha256": "fbca3e4f15afbd0e8409c043fc5742c5b4aeec72dbaa79d66be550f10b6f1a86"
+    }
+  ],
+  "identity": "8395c3a342d4484e473b647953f9cb4fc92ebaf9c8cfd5d06b3b47f0c4a7c067"
+}

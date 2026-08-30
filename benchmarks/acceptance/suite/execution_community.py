@@ -19,6 +19,8 @@ def execute_community(
     section = dict(config["community"])
     section["binary"] = config["candidate"]["binary"]
     section["embedding_bundle_dir"] = config["candidate"]["embedding_bundle_dir"]
+    if "semantic_representation" in config["candidate"]:
+        section["semantic_representation"] = config["candidate"]["semantic_representation"]
     section["_workspace"] = str(workspace)
     report = community.execute(suite_root, contract, binding, section, resume=resume)
     validate_layer_report(contract, "community", report, expected_binding=binding)

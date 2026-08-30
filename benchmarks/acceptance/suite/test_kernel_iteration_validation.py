@@ -209,6 +209,76 @@ class KernelIterationValidationTests(unittest.TestCase):
             self.assertEqual(baseline["model-profile"], changed["model-profile"])
             self.assertEqual(baseline["prompt-and-schema"], changed["prompt-and-schema"])
 
+    def test_composition_declared_semantic_representation_is_the_only_generic_selection_source(self) -> None:
+        with tempfile.TemporaryDirectory(dir=REPOSITORY) as temporary:
+            root = Path(temporary)
+            config_path, _runtime = self._runtime_fixture(root)
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            manifest_source = REPOSITORY / "manifests" / "kernel-candidates" / "v2" / "resource-cost" / "semantic-representation.json"
+            manifest = json.loads(manifest_source.read_text(encoding="utf-8"))
+            manifest_path = root / "semantic-representation.json"
+            self._write_json(manifest_path, manifest)
+            semantic_identity = "d" * 64
+            composition_identity = "e" * 64
+            self._write_json(root / "composition.json", {
+                "identity": composition_identity,
+                "components": [{
+                    "role": "semantic",
+                    "identity": semantic_identity,
+                    "config": {
+                        "input_representation": manifest["representation"],
+                        "input_representation_manifest_identity": manifest["identity"],
+                    },
+                }],
+            })
+            config["candidate"]["semantic_representation"] = {
+                "manifest": str(manifest_path),
+                "identity": manifest["identity"],
+                "composition_identity": composition_identity,
+                "semantic_component_identity": semantic_identity,
+            }
+            self._write_json(config_path, config)
+            runtime = validation.validate_execution_config(HERE, config_path)
+            self.assertEqual(manifest_path.resolve(), runtime["semantic_representation_manifest"])
+            self.assertEqual(manifest["identity"], runtime["semantic_representation_identity"])
+
+            composition = json.loads((root / "composition.json").read_text(encoding="utf-8"))
+            composition["components"][0]["config"]["input_representation_manifest_identity"] = "f" * 64
+            self._write_json(root / "composition.json", composition)
+            with self.assertRaisesRegex(validation.KernelIterationValidationError, "候选组合没有声明封存语义表示"):
+                validation.validate_execution_config(HERE, config_path)
+
+    def test_generic_runner_passes_the_composition_declared_representation_without_special_flags(self) -> None:
+        with tempfile.TemporaryDirectory(dir=REPOSITORY) as temporary:
+            root = Path(temporary)
+            config_path, runtime = self._runtime_fixture(root)
+            del config_path
+            manifest_path = REPOSITORY / "manifests" / "kernel-candidates" / "v2" / "resource-cost" / "semantic-representation.json"
+            runtime["semantic_representation_manifest"] = manifest_path
+            dataset = root / "dataset.json"
+            self._write_json(dataset, {"fixture": True})
+            output = root / "output"
+            output.mkdir()
+            self._write_json(output / "report.json", {"formal": False})
+            captured: list[str] = []
+
+            def execute(arguments: list[str], **_kwargs: object) -> object:
+                captured.extend(arguments)
+                return mock.Mock(returncode=0, stderr="", stdout="")
+
+            with mock.patch.object(validation.subprocess, "run", side_effect=execute):
+                validation._run_longmemeval(
+                    suite_root=HERE,
+                    runtime=runtime,
+                    dataset_path=dataset,
+                    output_dir=output,
+                    subject_identity="1" * 64,
+                    resume=False,
+                )
+            self.assertIn("--semantic-representation-manifest", captured)
+            self.assertEqual(str(manifest_path), captured[captured.index("--semantic-representation-manifest") + 1])
+            self.assertNotIn("--candidate-semantic-compact", captured)
+
     def test_end_to_end_evidence_executes_observes_and_resumes_without_formal_state(self) -> None:
         with tempfile.TemporaryDirectory(dir=REPOSITORY) as temporary:
             root = Path(temporary)

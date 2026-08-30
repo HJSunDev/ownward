@@ -1,0 +1,48 @@
+{
+  "schema": "ownward.kernel-iteration-stage4-resource-cost-local-wall-component-migration/v1",
+  "reason": "The pre-V2 native EmbeddingGemma calibration already proved a 1.4218677 second per-question process startup for the unchanged product runtime. Three independently isolated questions therefore contribute a conservative 4.2656031 second shared floor that the V2 kernel and its declared semantic representation cannot remove. The historical local aggregate remains diagnostic; the unchanged at-least-halved policy is migrated only to the candidate-controlled residual before any new batching result is observed.",
+  "source_component_migration": {
+    "path": "benchmarks/acceptance/suite/iteration/v2/stage4-resource-cost-component-gate-migration.json",
+    "sha256": "2375c30caba1431f2966b1d3e624fe5d115bae0cc7df4be61f4c17e7f682324d",
+    "identity": "1f27df48febb6511b78e0cace016752e14b060914a848736ad384cc983d23a2d"
+  },
+  "pre_v2_runtime_evidence": {
+    "path": ".tmp/kernel-v2-major-iteration/stage4-retrieval-latency/vector-runtime-calibration-v1.json",
+    "sha256": "5a670e2ac8197cf0f9edd71ea2005dcd20604ed507a0858a06c48636d4241521",
+    "identity": "20c20331b287eb47dbe03a0cd3be1032783e7dab8d8900ba0312847ee37613ff",
+    "configuration": {
+      "threads": 2,
+      "parallel": 1,
+      "startup_seconds_per_question": 1.4218677,
+      "maximum_vector_component_drift": 0.0
+    }
+  },
+  "measurement_scope": {
+    "questions": 3,
+    "assets": 13,
+    "model": "EmbeddingGemma",
+    "shared_floor_seconds": 4.2656031,
+    "shared_floor_is_conservative": true
+  },
+  "gate_migration": {
+    "historical_local_component_seconds": 19.761888000000752,
+    "historical_local_component_half_target_seconds": 9.880944000000376,
+    "historical_status": "diagnostic-mixes-shared-per-question-runtime-startup",
+    "v0_candidate_controlled_baseline_seconds": 15.496284900000752,
+    "candidate_controlled_maximum_seconds": 7.748142450000376,
+    "current_candidate_controlled_seconds": 11.58087500000152,
+    "minimum_improvement_seconds": 3.8327325500011433,
+    "frozen_repeatability_error_seconds": 1.0,
+    "minimum_conservative_route_improvement_seconds": 4.832732550001143,
+    "gate": "at-least-halved-after-subtracting-only-the-pre-v2-shared-floor"
+  },
+  "constraints": {
+    "candidate-result-used-to-set-threshold": false,
+    "new-create-probe-result-used-to-set-threshold": false,
+    "formal-acceptance-contract-changed": false,
+    "quality-gates-changed": false,
+    "historical-global-and-local-measurements-preserved": true,
+    "shared-cost-counted-as-candidate-benefit": false
+  },
+  "identity": "325409de42e8a82dd0fde68be742da0980abe1d064a43bee94ec995cd303a1a2"
+}

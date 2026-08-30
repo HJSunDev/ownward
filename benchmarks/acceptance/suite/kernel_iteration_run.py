@@ -14,6 +14,7 @@ import kernel_iteration_candidate
 import kernel_iteration_candidate_multisource
 import kernel_iteration_candidate_latency
 import kernel_iteration_candidate_system_budget
+import kernel_iteration_candidate_resource_cost
 import kernel_iteration_validation
 import kernel_iteration_stage4
 import kernel_iteration_stage4_multisource
@@ -37,6 +38,13 @@ import kernel_iteration_stage4_hierarchical_feasibility
 import kernel_iteration_stage4_latency_comparability
 import kernel_iteration_stage4_system_budget
 import kernel_iteration_stage4_system_budget_finalize
+import kernel_iteration_stage4_resource_cost
+import kernel_iteration_stage4_resource_cost_diagnosis
+import kernel_iteration_stage4_resource_cost_audit
+import kernel_iteration_stage4_resource_cost_storage_finalize
+import kernel_iteration_stage4_resource_cost_matched_calibration
+import kernel_iteration_stage4_resource_cost_compact_feasibility
+import kernel_iteration_stage4_resource_cost_raw_vector_lifecycle
 
 
 def parse_args() -> argparse.Namespace:
@@ -54,6 +62,7 @@ def parse_args() -> argparse.Namespace:
     selection.add_argument("--prepare-v2-multisource-candidate", action="store_true")
     selection.add_argument("--prepare-v2-latency-candidate", action="store_true")
     selection.add_argument("--prepare-v2-system-budget-candidate", action="store_true")
+    selection.add_argument("--prepare-v2-resource-cost-candidate", action="store_true")
     parser.add_argument("--stage4-finalize", action="store_true")
     parser.add_argument("--stage4-multisource-diagnose", action="store_true")
     parser.add_argument("--stage4-multisource-performance", action="store_true")
@@ -76,6 +85,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--stage4-latency-comparability-audit", action="store_true")
     parser.add_argument("--stage4-latency-system-budget", action="store_true")
     parser.add_argument("--stage4-latency-system-budget-finalize", action="store_true")
+    parser.add_argument("--stage4-resource-cost", action="store_true")
+    parser.add_argument("--stage4-resource-cost-diagnose", action="store_true")
+    parser.add_argument("--stage4-resource-cost-audit", action="store_true")
+    parser.add_argument("--stage4-resource-cost-storage-finalize", action="store_true")
+    parser.add_argument("--stage4-resource-cost-matched-calibration", action="store_true")
+    parser.add_argument("--stage4-resource-cost-compact-feasibility", action="store_true")
+    parser.add_argument("--stage4-resource-cost-compact-balanced", action="store_true")
+    parser.add_argument("--stage4-resource-cost-raw-vector-lifecycle", action="store_true")
     parser.add_argument("--evidence-type", default="identity-calibration")
     parser.add_argument("--input-manifest", type=Path)
     parser.add_argument("--execution-config", type=Path)
@@ -136,7 +153,72 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    if args.stage4_latency_system_budget_finalize:
+    if args.stage4_resource_cost_raw_vector_lifecycle:
+        if args.formal_state is None:
+            raise SystemExit("原始正文向量生命周期审计必须提供正式 state")
+        result = kernel_iteration_stage4_resource_cost_raw_vector_lifecycle.run(
+            HERE, args.output, args.formal_state, resume=args.resume,
+        )
+    elif args.stage4_resource_cost_compact_balanced:
+        required = (args.execution_config, args.formal_state)
+        if any(path is None for path in required):
+            raise SystemExit("紧凑协议平衡复核必须提供执行配置与正式 state")
+        result = kernel_iteration_stage4_resource_cost_compact_feasibility.run_balanced(
+            HERE, args.output, args.execution_config, args.formal_state, resume=args.resume,
+        )
+    elif args.stage4_resource_cost_compact_feasibility:
+        required = (args.execution_config, args.formal_state)
+        if any(path is None for path in required):
+            raise SystemExit("紧凑协议可行性必须提供执行配置与正式 state")
+        result = kernel_iteration_stage4_resource_cost_compact_feasibility.run(
+            HERE, args.output, args.execution_config, args.formal_state, resume=args.resume,
+        )
+    elif args.stage4_resource_cost_matched_calibration:
+        required = (args.execution_config, args.formal_state)
+        if any(path is None for path in required):
+            raise SystemExit("匹配差分校准必须提供执行配置与正式 state")
+        result = kernel_iteration_stage4_resource_cost_matched_calibration.run(
+            HERE, args.output, args.execution_config, args.formal_state, resume=args.resume,
+        )
+    elif args.stage4_resource_cost_storage_finalize:
+        required = (
+            args.performance_result, args.preparation_receipt, args.subject_manifest,
+            args.execution_config, args.development_result, args.regression_result, args.formal_state,
+        )
+        if any(path is None for path in required):
+            raise SystemExit("存储成本终态必须提供审计、候选收据、subject、执行配置、开发/回归结果与正式 state")
+        result = kernel_iteration_stage4_resource_cost_storage_finalize.finalize(
+            HERE, args.output, args.performance_result, args.preparation_receipt,
+            args.subject_manifest, args.execution_config, args.development_result,
+            args.regression_result, args.formal_state, resume=args.resume,
+        )
+    elif args.stage4_resource_cost_audit:
+        if args.performance_result is None or args.execution_config is None or args.formal_state is None:
+            raise SystemExit("资源同尺审计必须提供成对结果、执行配置与正式 state")
+        result = kernel_iteration_stage4_resource_cost_audit.run(
+            HERE, args.output, args.performance_result, args.execution_config,
+            args.formal_state, resume=args.resume,
+        )
+    elif args.stage4_resource_cost_diagnose:
+        if args.performance_result is None or args.execution_config is None or args.formal_state is None:
+            raise SystemExit("资源成本诊断必须提供成对结果、执行配置与正式 state")
+        result = kernel_iteration_stage4_resource_cost_diagnosis.diagnose(
+            HERE, args.output, args.performance_result, args.execution_config,
+            args.formal_state, resume=args.resume,
+        )
+    elif args.stage4_resource_cost:
+        required = (
+            args.subject_manifest, args.execution_config, args.baseline_binary,
+            args.baseline_embedding, args.formal_state,
+        )
+        if any(path is None for path in required):
+            raise SystemExit("端到端资源成本测量必须提供 V2 subject/配置、V0 二进制/向量与正式 state")
+        result = kernel_iteration_stage4_resource_cost.run(
+            HERE, args.output, args.subject_manifest, args.execution_config,
+            args.baseline_binary, args.baseline_embedding, args.formal_state,
+            resume=args.resume,
+        )
+    elif args.stage4_latency_system_budget_finalize:
         required = (
             args.subject_manifest, args.execution_config, args.performance_result,
             args.development_result, args.multisource_result, args.regression_result, args.formal_state,
@@ -364,6 +446,12 @@ def main() -> None:
             raise SystemExit("阶段 3 准备必须提供开发/回归输入与正式 state 只读基线")
         result = kernel_iteration_validation.prepare_stage3(
             HERE, args.output, args.development_input, args.regression_input, args.formal_state, resume=args.resume,
+        )
+    elif args.prepare_v2_resource_cost_candidate:
+        if args.execution_config is None:
+            raise SystemExit("V2 资源成本候选准备必须提供当前非正式 --execution-config")
+        result = kernel_iteration_candidate_resource_cost.prepare(
+            HERE, args.output, args.execution_config, resume=args.resume,
         )
     elif args.prepare_v2_system_budget_candidate:
         if args.execution_config is None:
