@@ -1,0 +1,177 @@
+{
+  "schema": "ownward.kernel-iteration-stage6-oracle-reader-qualification-material/v1",
+  "purpose": "independent-noncandidate-oracle-reader-reliability-qualification",
+  "formal": false,
+  "blind_gate_material": false,
+  "candidate_decision": false,
+  "contains_formal_or_blind_content": false,
+  "cases": [
+    {
+      "case_id": "stage6-oracle-reader-temporal",
+      "coverage": "temporal-order",
+      "question_type": "temporal-reasoning",
+      "question_date": "2026-07-12",
+      "question": "As of July 12, which seal and dock were the final recorded settings for the Caldera relay?",
+      "answer": "The cobalt seal at dock 9.",
+      "answer_session_ids": [
+        "oracle-temporal-01",
+        "oracle-temporal-02"
+      ],
+      "stale_session_ids": [
+        "oracle-temporal-01"
+      ],
+      "distractor_session_ids": [
+        "oracle-temporal-03"
+      ],
+      "truth_claims": [
+        {
+          "claim": "The final Caldera relay setting was the cobalt seal at dock 9."
+        }
+      ],
+      "sessions": [
+        {
+          "session_id": "oracle-temporal-01",
+          "date": "2026-07-01",
+          "turns": [
+            {
+              "role": "user",
+              "content": "The initial Caldera relay sheet lists an amber seal and dock 4."
+            }
+          ]
+        },
+        {
+          "session_id": "oracle-temporal-02",
+          "date": "2026-07-11",
+          "turns": [
+            {
+              "role": "user",
+              "content": "The completed inspection supersedes the initial Caldera entry. Its final settings are a cobalt seal and dock 9."
+            }
+          ]
+        },
+        {
+          "session_id": "oracle-temporal-03",
+          "date": "2026-07-10",
+          "turns": [
+            {
+              "role": "assistant",
+              "content": "The unrelated Ember relay uses a silver seal at dock 2."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "stage6-oracle-reader-conflict",
+      "coverage": "knowledge-update-conflict",
+      "question_type": "knowledge-update",
+      "question_date": "2026-07-12",
+      "question": "Which specimen code should the official courier manifest use for the Lattice parcel?",
+      "answer": "Q-42.",
+      "answer_session_ids": [
+        "oracle-conflict-01",
+        "oracle-conflict-02"
+      ],
+      "stale_session_ids": [
+        "oracle-conflict-01"
+      ],
+      "distractor_session_ids": [
+        "oracle-conflict-03"
+      ],
+      "truth_claims": [
+        {
+          "claim": "The official courier manifest must use specimen code Q-42 for the Lattice parcel."
+        }
+      ],
+      "sessions": [
+        {
+          "session_id": "oracle-conflict-01",
+          "date": "2026-07-04",
+          "turns": [
+            {
+              "role": "assistant",
+              "content": "A workshop draft labels the Lattice parcel K-17, but that draft has not been approved for courier use."
+            }
+          ]
+        },
+        {
+          "session_id": "oracle-conflict-02",
+          "date": "2026-07-09",
+          "turns": [
+            {
+              "role": "user",
+              "content": "The custodian's signed registry is authoritative for the official courier manifest. It assigns the Lattice parcel code Q-42 and explicitly rejects the workshop draft code."
+            }
+          ]
+        },
+        {
+          "session_id": "oracle-conflict-03",
+          "date": "2026-07-08",
+          "turns": [
+            {
+              "role": "user",
+              "content": "The Mosaic parcel is filed under code B-08."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "stage6-oracle-reader-cross-evidence",
+      "coverage": "multi-session-relation",
+      "question_type": "multi-session",
+      "question_date": "2026-07-12",
+      "question": "What dispatch phrase applies to the Meridian parcel?",
+      "answer": "north glass.",
+      "answer_session_ids": [
+        "oracle-cross-01",
+        "oracle-cross-02"
+      ],
+      "stale_session_ids": [],
+      "distractor_session_ids": [
+        "oracle-cross-03"
+      ],
+      "truth_claims": [
+        {
+          "claim": "The Meridian parcel uses route code R7."
+        },
+        {
+          "claim": "Route code R7 maps to the dispatch phrase north glass."
+        }
+      ],
+      "sessions": [
+        {
+          "session_id": "oracle-cross-01",
+          "date": "2026-07-03",
+          "turns": [
+            {
+              "role": "user",
+              "content": "The Meridian parcel's route code is R7."
+            }
+          ]
+        },
+        {
+          "session_id": "oracle-cross-02",
+          "date": "2026-07-06",
+          "turns": [
+            {
+              "role": "assistant",
+              "content": "Dispatch table: R6 means amber bridge; R7 means north glass; R8 means coral field."
+            }
+          ]
+        },
+        {
+          "session_id": "oracle-cross-03",
+          "date": "2026-07-07",
+          "turns": [
+            {
+              "role": "user",
+              "content": "The Horizon parcel follows route code R8."
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "identity": "76de133f9a6bc461499335007fed511299554716194da3e076a9a7444984d538"
+}

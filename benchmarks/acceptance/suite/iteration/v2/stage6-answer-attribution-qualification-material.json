@@ -1,0 +1,53 @@
+{
+  "schema": "ownward.kernel-iteration-stage6-answer-attribution-qualification-material/v1",
+  "purpose": "independent-noncandidate-single-case-answer-attribution-qualification",
+  "formal": false,
+  "blind_gate_material": false,
+  "candidate_decision": false,
+  "contains_formal_or_blind_content": false,
+  "cases": [
+    {
+      "case_id": "stage6-attribution-qualification-case",
+      "coverage": "single-session-user-fact",
+      "question_type": "single-session-user",
+      "question_date": "2026-07-02",
+      "question": "Which color was recorded for the independent archive beacon?",
+      "answer": "violet",
+      "answer_session_ids": [
+        "qualification-session-01"
+      ],
+      "stale_session_ids": [],
+      "distractor_session_ids": [
+        "qualification-session-02"
+      ],
+      "truth_claims": [
+        {
+          "claim": "The independent archive beacon was recorded as violet."
+        }
+      ],
+      "sessions": [
+        {
+          "session_id": "qualification-session-01",
+          "date": "2026-07-01",
+          "turns": [
+            {
+              "role": "user",
+              "content": "For the independent archive record, I logged the beacon color as violet."
+            }
+          ]
+        },
+        {
+          "session_id": "qualification-session-02",
+          "date": "2026-06-30",
+          "turns": [
+            {
+              "role": "user",
+              "content": "A separate workshop label used the color copper."
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "identity": "8ee8d351878d1bf7febcdd0028ab22856251e65f0a0af285767d49174886162f"
+}

@@ -92,7 +92,7 @@ def append_jsonl(path: Path, value: dict[str, Any]) -> None:
         os.fsync(stream.fileno())
 
 
-def validate_protocol(value: dict[str, Any]) -> None:
+def validate_protocol(value: dict[str, Any], *, formal: bool | None = None) -> None:
     require(value.get("schema") == PROTOCOL_SCHEMA, "LongMemEval-S protocol schema changed")
     official = value.get("official")
     require(isinstance(official, dict), "LongMemEval-S official protocol is missing")
@@ -133,7 +133,15 @@ def validate_protocol(value: dict[str, Any]) -> None:
         "retrieval protocol is invalid",
     )
     require(memory.get("semantic_model") == "gpt-5.6-luna" and memory.get("semantic_reasoning_effort") == "low", "semantic capability identity changed")
-    require(reader.get("capability_source") == "codex" and reader["model"] == "gpt-5.6-luna" and reader["reasoning_effort"] == "medium", "Reader identity changed")
+    require(
+        reader.get("capability_source") == "codex"
+        and reader["model"] == "gpt-5.6-luna"
+        and reader.get("reasoning_effort") == "xhigh"
+        and reader.get("selection_profile_identity") == "401aa7962b5ecd3d283093a2d5eee0fe76da941d20ce4aa317ef21216d55c83c"
+        and reader.get("selection_contract_identity") == "841ab01d016bf0c987527061dad95e2ba23e069f4b32642c7a3276b7cff75805"
+        and reader.get("selection_result_identity") == "25f4954169249c92af6001813dca81ac04c0e70a75499bd1e1bcf9dc45ae5824",
+        "Reader identity changed",
+    )
     require(judge.get("capability_source") == "codex" and judge["model"] == "gpt-5.6-terra" and judge["reasoning_effort"] == "medium", "judge identity changed")
     require(
         execution["max_workers"] == 4
@@ -154,14 +162,14 @@ def validate_protocol(value: dict[str, Any]) -> None:
         and execution["semantic_work_requests"] == 1498,
         "dataset cost inventory changed",
     )
-    require(
+    production_acceptance = (
         acceptance.get("profile") == PRODUCTION_PROFILE
         and acceptance.get("requires_complete_official_questions") is True
         and acceptance.get("direct_comparison_requires_equivalent_profile") is True
         and acceptance.get("quality_assessment_status") == "not_determined"
-        and acceptance.get("quality_assessment_basis") == "no-equivalent-production-profile-reference",
-        "production profile is invalid",
+        and acceptance.get("quality_assessment_basis") == "no-equivalent-production-profile-reference"
     )
+    require(production_acceptance, "production profile is invalid")
     require("minimum_accuracy" not in acceptance, "production profile cannot use a cross-profile accuracy threshold")
 
 
@@ -1878,7 +1886,7 @@ def execute_dry_plan(
     environment = validate_environment(environment_manifest, smoke=False)
     protocol = load_json(protocol_path)
     require(isinstance(protocol, dict), "protocol is not an object")
-    validate_protocol(protocol)
+    validate_protocol(protocol, formal=True)
     questions = validate_dataset(dataset_path.resolve(), formal=True)
     require(binary.resolve().is_file() and embedding.resolve().is_dir(), "candidate artifacts are incomplete")
     try:
@@ -2150,7 +2158,7 @@ def execute(
     environment = validate_environment(environment_manifest, smoke=False)
     protocol = load_json(protocol_path)
     require(isinstance(protocol, dict), "protocol is not an object")
-    validate_protocol(protocol)
+    validate_protocol(protocol, formal=formal)
     questions = validate_dataset(dataset_path.resolve(), formal=formal)
     require(binary.resolve().is_file() and embedding.resolve().is_dir(), "candidate artifacts are incomplete")
     require(codex_binary.resolve().is_file() and codex_auth_file.resolve().is_file(), "Codex capability is incomplete")

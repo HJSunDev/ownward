@@ -1,5 +1,5 @@
 {
-  "schema": "ownward.kernel-iteration-stage2-admission-reliability-contract/v1",
+  "schema": "ownward.kernel-iteration-stage2-admission-reliability-contract/v2",
   "frozen_before_diagnosis": true,
   "candidate_results_seen": false,
   "formal": false,
@@ -28,6 +28,14 @@
     "quality_threshold_changes_forbidden": true,
     "candidate_or_baseline_execution_forbidden": true
   },
+  "execution": {
+    "generation_max_active": 8,
+    "generation_worker_active_turns_maximum": 1,
+    "generation_result_order": "frozen-coverage-order",
+    "rejection_replacement": "rejected-cases-only",
+    "full_set_readmission_after_replacement": true,
+    "maximum_replacement_rounds": 3
+  },
   "evidence": {
     "persistent_failure_aggregates": [
       "rejected-by-coverage",
@@ -55,8 +63,8 @@
   },
   "next_actions": {
     "diagnosis": "fix-first-aggregated-generation-admission-root-cause",
-    "qualification_passed": "restart-stage6-from-fresh-5-question-gate",
+    "qualification_passed": "qualify-stage6-25-predecessor-for-fresh-50-question-gate",
     "qualification_failed": "continue-same-stage2-root-cause"
   },
-  "identity": "fe2bd18db572b1071911fb236acfc7274bea097ff0d4aea27ba43b5ecc45bdaa"
+  "identity": "fd1b44039a2a5451389954e0a0ba7728e6279c93c4557ab57d6f4744127a2c6a"
 }

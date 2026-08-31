@@ -21,8 +21,11 @@ class BlindGateTests(unittest.TestCase):
                 value = gate.load_contract(self.suite_root, level)
                 self.assertTrue(value["frozen_before_generation"])
                 self.assertEqual(value["execution"]["order"], ["v2-candidate", "v0-baseline"])
-                self.assertEqual(value["execution"]["generation_max_active"], 4)
+                self.assertEqual(value["execution"]["generation_max_active"], 8 if level == 50 else 4)
                 self.assertEqual(value["execution"]["generation_worker_active_turns_maximum"], 1)
+                if level == 50:
+                    self.assertEqual(value["execution"]["rejection_replacement"], "rejected-cases-only")
+                    self.assertTrue(value["execution"]["full_set_readmission_after_replacement"])
                 self.assertEqual(value["absolute_gate"]["questions"], level)
                 self.assertEqual(value["absolute_gate"]["final_answer_accuracy_minimum"], 1.0)
                 self.assertEqual(value["absolute_gate"]["level_total_wall_seconds_maximum"], gate.LEVEL_BUDGETS[level])
@@ -41,6 +44,178 @@ class BlindGateTests(unittest.TestCase):
             self.assertFalse(any(fixture.scratch_root.iterdir()))
             self.assertEqual(fixture.state_path.read_bytes(), fixture.state_bytes)
 
+    def test_post_candidate_evaluator_exception_is_fail_closed_and_durable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = self._fixture(Path(directory), candidate_pass=False)
+            with mock.patch.object(gate, "_attribute_first_answer_failure", side_effect=ModuleNotFoundError("fixture dependency")):
+                reference = fixture.run()
+            self.assertEqual(reference["status"], "evaluation-process-error")
+            self.assertIsNone(reference["candidate_decision"])
+            self.assertEqual(fixture.execution_order, ["candidate"])
+            root = fixture.output_root / "blind-gate" / reference["plan_identity"]
+            observation = json.loads((root / "candidate-observation.json").read_text(encoding="utf-8"))
+            terminal = json.loads((root / "result.json").read_text(encoding="utf-8"))
+            self.assertEqual(observation["execution"], terminal["executions"]["candidate"])
+            self.assertEqual(observation["absolute_decision"], terminal["absolute_decision"])
+            self.assertFalse(terminal["failure_transition"]["candidate_failed"])
+            self.assertEqual(terminal["failure_transition"]["return_to_stage"], 2)
+            self.assertTrue(terminal["evaluation_process_decision"]["fail_closed"])
+            self.assertEqual(terminal["evaluation_process_decision"]["stage"], "answer-failure-attribution")
+            failure = terminal["evaluation_process_decision"]["failures"][0]
+            self.assertEqual(failure["category"], "evaluation-controller")
+            self.assertEqual(failure["error_type"], "ModuleNotFoundError")
+            self.assertEqual(len(failure["message_sha256"]), 64)
+            self.assertNotIn("fixture dependency", json.dumps(terminal))
+            self.assertTrue(terminal["raw_materials_destroyed"])
+            self.assertFalse(any(fixture.scratch_root.iterdir()))
+            with mock.patch.object(gate, "_current_dependencies", return_value=fixture.dependencies):
+                reused = gate.resume_by_plan_identity(self.suite_root, fixture.output_root, reference["plan_identity"])
+            self.assertTrue(reused["reused"])
+            self.assertEqual(reused["model_calls"], 0)
+            self.assertEqual(reused["product_executions"], 0)
+            self.assertEqual(fixture.state_path.read_bytes(), fixture.state_bytes)
+
+    def test_post_candidate_attribution_rejection_is_fail_closed_and_durable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = self._fixture(Path(directory), candidate_pass=False)
+            attribution = {
+                "classification": "evaluation-process-failure",
+                "reason": "oracle-context-failed-or-mechanically-unstable",
+                "first_answer_failure_remains_failure": True,
+            }
+            with mock.patch.object(gate, "_attribute_first_answer_failure", return_value=attribution):
+                reference = fixture.run()
+            terminal = json.loads(Path(reference["result"]).read_text(encoding="utf-8"))
+            self.assertEqual(reference["status"], "evaluation-process-error")
+            self.assertIsNone(reference["candidate_decision"])
+            self.assertTrue(terminal["evaluation_process_decision"]["fail_closed"])
+            self.assertFalse(terminal["failure_transition"]["candidate_failed"])
+            self.assertIsNotNone(terminal["executions"]["candidate"])
+            self.assertIsNone(terminal["executions"]["v0"])
+            with mock.patch.object(gate, "_current_dependencies", return_value=fixture.dependencies):
+                reused = gate.resume_by_plan_identity(self.suite_root, fixture.output_root, reference["plan_identity"])
+            self.assertTrue(reused["reused"])
+            self.assertEqual(reused["model_calls"], 0)
+            self.assertEqual(reused["product_executions"], 0)
+
+    def test_answer_attribution_selects_only_first_actual_failure_in_material_order(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cases = [self._minimal_case(name) for name in ("first", "second", "third")]
+            run_root = root / "run"
+            for case, correct in zip(cases, (True, False, False)):
+                question_root = run_root / "questions" / case["case_id"]
+                question_root.mkdir(parents=True)
+                (question_root / "diagnostic.json").write_text(
+                    json.dumps({"question_id": case["case_id"], "correct": correct}) + "\n",
+                    encoding="utf-8",
+                )
+            (run_root / "diagnostic-summary.json").write_text(
+                json.dumps({"questions": 3, "correct": 1}) + "\n", encoding="utf-8",
+            )
+            observation = {
+                "questions": 3,
+                "final_answer_accuracy": 1 / 3,
+                "fact_delivery": {"complete": True, "missing_questions": 0},
+            }
+            selected, receipt = gate._first_failed_answer_material({"cases": cases}, run_root, observation)
+            self.assertEqual([item["case_id"] for item in selected["cases"]], ["second"])
+            self.assertEqual(receipt["selected_material_order"], 2)
+            self.assertEqual(receipt["candidate_failed_questions"], 2)
+            self.assertEqual(receipt["diagnosed_questions"], 1)
+            self.assertFalse(receipt["selection_uses_expected_answer"])
+
+    def test_answer_attribution_closes_fractional_accuracy_without_truncating_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cases = [self._minimal_case(f"case-{index:02d}") for index in range(15)]
+            run_root = root / "run"
+            for index, case in enumerate(cases):
+                question_root = run_root / "questions" / case["case_id"]
+                question_root.mkdir(parents=True)
+                (question_root / "diagnostic.json").write_text(
+                    json.dumps({"question_id": case["case_id"], "correct": index != 14}) + "\n",
+                    encoding="utf-8",
+                )
+            (run_root / "diagnostic-summary.json").write_text(
+                json.dumps({"questions": 15, "correct": 14}) + "\n", encoding="utf-8",
+            )
+            selected, receipt = gate._first_failed_answer_material(
+                {"cases": cases},
+                run_root,
+                {"questions": 15, "final_answer_accuracy": 14 / 15},
+            )
+            self.assertEqual([item["case_id"] for item in selected["cases"]], ["case-14"])
+            self.assertEqual(receipt["candidate_failed_questions"], 1)
+
+    def test_answer_attribution_passes_only_selected_case_to_reader_and_judge_chain(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cases = [self._minimal_case(name) for name in ("first", "second", "third")]
+            run_root = root / "run"
+            for case, correct in zip(cases, (True, False, True)):
+                question_root = run_root / "questions" / case["case_id"]
+                question_root.mkdir(parents=True)
+                (question_root / "diagnostic.json").write_text(
+                    json.dumps({"question_id": case["case_id"], "correct": correct}) + "\n",
+                    encoding="utf-8",
+                )
+            (run_root / "diagnostic-summary.json").write_text(
+                json.dumps({"questions": 3, "correct": 2}) + "\n", encoding="utf-8",
+            )
+            captured: list[list[str]] = []
+            diagnostic = {
+                "reader": {
+                    "settings": {"model": "gpt-5.6-terra", "reasoning_effort": "high"},
+                    "records": [
+                        {"context": "product", "observations": 3, "correct": 0},
+                        {"context": "oracle", "observations": 3, "correct": 3},
+                    ],
+                    "product_context_failures": 3,
+                    "oracle_context_failures": 0,
+                    "product_context_variations": 0,
+                    "oracle_context_variations": 0,
+                },
+                "judge": {
+                    "controls_passed": True,
+                    "correct_controls": {"passed": 1, "total": 1},
+                    "wrong_controls": {"passed": 1, "total": 1},
+                },
+                "cost": {"observed_wall_seconds": 1.0},
+                "transport": {"calls": 13},
+            }
+
+            def diagnose(_suite: Path, _stage: Path, _runtime: dict[str, object], materials: dict[str, object], _run: Path, **kwargs: object) -> dict[str, object]:
+                captured.append([str(item["case_id"]) for item in materials["cases"]])
+                self.assertEqual(kwargs["reader_settings"]["model"], "gpt-5.6-terra")
+                self.assertEqual(kwargs["reader_settings"]["reasoning_effort"], "high")
+                return diagnostic
+
+            execution = {"run_root": str(run_root), "observation": {
+                "questions": 3, "final_answer_accuracy": 2 / 3,
+                "fact_delivery": {"complete": True, "missing_questions": 0},
+            }}
+            runtime = {"protocol_value": {"reader": {"model": "reader"}}}
+            with mock.patch.object(gate.answer_sufficiency, "_diagnose_codex_boundaries", side_effect=diagnose):
+                result = gate._attribute_first_answer_failure(
+                    self.suite_root, root, runtime, {"cases": cases}, execution,
+                    {"failures": [{"metric": "final_answer_accuracy"}]},
+                )
+            self.assertEqual(captured, [["second"]])
+            self.assertEqual(result["selection"]["diagnosed_questions"], 1)
+            self.assertEqual(result["diagnostic_reader"]["model"], "gpt-5.6-terra")
+            self.assertEqual(result["diagnostic_reader"]["reasoning_effort"], "high")
+
+    def test_invalid_evaluator_qualification_fails_before_material_or_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = self._fixture(Path(directory), qualification_error=True)
+            with self.assertRaisesRegex(RuntimeError, "qualification drift"):
+                fixture.run()
+            self.assertEqual(fixture.generator_calls, 0)
+            self.assertEqual(fixture.admission_calls, 0)
+            self.assertEqual(fixture.execution_order, [])
+            self.assertEqual(fixture.state_path.read_bytes(), fixture.state_bytes)
+
     def test_admission_rejection_regenerates_then_runs_candidate_before_v0(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             fixture = self._fixture(Path(directory), first_admission_rejected=True)
@@ -51,6 +226,12 @@ class BlindGateTests(unittest.TestCase):
             terminal = json.loads(Path(result["result"]).read_text(encoding="utf-8"))
             self.assertEqual(terminal["admitted_attempt"], 2)
             self.assertEqual(len(terminal["rejected_batches"]), 1)
+            aggregate = terminal["rejected_batches"][0]["failure_aggregate"]
+            self.assertEqual(set(aggregate), {
+                "rejected_by_coverage", "failed_by_check",
+                "failed_by_coverage_and_check", "failed_check_combinations",
+            })
+            self.assertNotIn("g01-c", json.dumps(aggregate, ensure_ascii=False))
             self.assertEqual(terminal["next_level"], 15)
             self.assertTrue(terminal["cost_and_recovery"]["admission_rejection_not_candidate_failure"])
             self.assertGreater(terminal["cost_and_recovery"]["admission_rejection_wall_seconds"], 0.0)
@@ -124,6 +305,21 @@ class BlindGateTests(unittest.TestCase):
             self.assertEqual(maximum, 4)
             self.assertEqual(scheduler["submitted"], 15)
 
+    def test_fifty_question_gate_replaces_only_rejected_case_and_readmits_full_set(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = self._fixture(Path(directory), level=50, first_rejected_case_only=True)
+            result = fixture.run()
+            self.assertTrue(result["passed"])
+            terminal = json.loads(Path(result["result"]).read_text(encoding="utf-8"))
+            rounds = terminal["replacement_rounds"]
+            self.assertEqual([item["generated_count"] for item in rounds], [50, 1])
+            self.assertEqual([item["preserved_count"] for item in rounds], [0, 49])
+            self.assertEqual([item["full_admission_questions"] for item in rounds], [50, 50])
+            self.assertEqual(fixture.generated_case_ids.count("g01-c01"), 2)
+            self.assertEqual(fixture.generated_case_ids.count("g01-c02"), 1)
+            self.assertEqual(fixture.generator_calls, 51)
+            self.assertEqual(fixture.admission_calls, 2)
+
     def test_level_wall_failure_is_evaluation_process_failure_not_candidate_failure(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             fixture = self._fixture(Path(directory))
@@ -148,7 +344,9 @@ class BlindGateTests(unittest.TestCase):
             self.assertTrue(reused["reused"])
             self.assertEqual(reused["model_calls"], 0)
             self.assertEqual(reused["product_executions"], 0)
-            with mock.patch.object(gate, "_current_dependencies", return_value={**fixture.dependencies, "executor": "f" * 64}):
+            with mock.patch.object(gate, "_current_dependencies", return_value={**fixture.dependencies, "executor": "f" * 64}), \
+                    mock.patch.object(gate, "_load_scheduling_migration", side_effect=OSError("no applicable migration")), \
+                    mock.patch.object(gate, "_load_evaluator_reliability_migration", side_effect=OSError("no applicable migration")):
                 with self.assertRaisesRegex(gate.BlindGateError, "直接依赖已漂移"):
                     gate.resume_by_plan_identity(self.suite_root, fixture.output_root, result["plan_identity"])
 
@@ -160,6 +358,33 @@ class BlindGateTests(unittest.TestCase):
         result = gate._relative_decision(candidate, baseline)
         self.assertFalse(result["passed"])
         self.assertEqual(result["failures"][0]["metric"], "semantic_input_tokens")
+
+    def test_answer_attribution_never_uses_wording_variation_as_failure(self) -> None:
+        def diagnostic(product: tuple[int, int], oracle: tuple[int, int], *, controls: bool = True, variations: int = 5) -> dict[str, object]:
+            product_correct, product_total = product
+            oracle_correct, oracle_total = oracle
+            return {
+                "reader": {
+                    "product_context_failures": product_total - product_correct,
+                    "oracle_context_failures": oracle_total - oracle_correct,
+                    "product_context_variations": variations,
+                    "oracle_context_variations": variations,
+                    "records": [
+                        {"context": "product", "correct": product_correct, "observations": product_total},
+                        {"context": "oracle", "correct": oracle_correct, "observations": oracle_total},
+                    ],
+                },
+                "judge": {"controls_passed": controls},
+            }
+
+        stable_context_failure = gate._classify_answer_diagnostic(diagnostic((0, 3), (3, 3)))
+        self.assertEqual(stable_context_failure["classification"], "candidate-context-failure")
+        unstable_prompt = gate._classify_answer_diagnostic(diagnostic((2, 3), (3, 3)))
+        self.assertEqual(unstable_prompt["classification"], "evaluation-process-failure")
+        unstable_oracle = gate._classify_answer_diagnostic(diagnostic((0, 3), (2, 3)))
+        self.assertEqual(unstable_oracle["classification"], "evaluation-process-failure")
+        judge_failure = gate._classify_answer_diagnostic(diagnostic((0, 3), (3, 3), controls=False))
+        self.assertEqual(judge_failure["classification"], "evaluation-process-failure")
 
     def test_level_contracts_have_local_identity_and_terminal_transition(self) -> None:
         contracts = {level: gate.load_contract(self.suite_root, level) for level in gate.GATE_LEVELS}
@@ -223,26 +448,83 @@ class BlindGateTests(unittest.TestCase):
             with self.assertRaisesRegex(gate.BlindGateError, "缺少有效前级计划身份"):
                 gate._previous_gate_dependency(self.suite_root, fixture.output_root, contract, None)
 
-    def test_gate_history_reclassifies_old_wall_failure_and_requires_fresh_five(self) -> None:
+    def test_gate_history_records_fail_closed_current_attempt_and_preserves_prior_failure(self) -> None:
         path = self.suite_root / "iteration" / "v2" / "stage6-blind-gate-history.json"
         history = json.loads(path.read_text(encoding="utf-8"))
         content = {key: value for key, value in history.items() if key != "identity"}
         self.assertEqual(history["identity"], gate.evidence.canonical_sha256(content))
         self.assertEqual(history["controller_identity"], gate._implementation_identity()["controller"])
         previous = history["last_passed_gate"]
-        self.assertEqual(previous["level"], 5)
-        self.assertEqual(previous["plan_identity"], "82cfab1b381cb5405ef503f309604a366b519e631b4ecacb33592f008f16c2b9")
-        self.assertEqual(previous["result_identity"], "b13bf7c136fb6963d8ec9f2f33b8659566913e9408e2e6d9fc13dc045b6160bd")
+        self.assertEqual(previous["level"], 15)
+        self.assertEqual(previous["plan_identity"], "bf9d6e6efc896e67b3158ca52ce3bd796b20d68ac057a7682c8943bfef2c5b1e")
+        self.assertEqual(previous["result_identity"], "f05272eeb997e22a0aa6b7a05b8aa8642cf03cf6c780ae5184b4a7338396f5b4")
         self.assertTrue(previous["passed"])
-        self.assertEqual(previous["next_level"], 15)
+        self.assertEqual(previous["next_level"], 25)
         self.assertTrue(previous["raw_materials_destroyed"])
-        self.assertFalse(previous["valid_for_current_controller"])
-        self.assertIsNone(history["current"])
-        self.assertEqual(history["next_action"], "restart-stage6-from-fresh-5-question-gate")
-        self.assertEqual(len(history["invalidated_diagnostics"]), 5)
+        self.assertTrue(previous["valid_for_current_controller"])
+        current = history["current"]
+        self.assertEqual(current["level"], 25)
+        self.assertEqual(current["plan_identity"], "c9b4b1891e2131ac70128dbe62f3b2a454061b930386066435fe9d3acee0c5a1")
+        self.assertEqual(current["result_identity"], "d7071af7190c84310b66d3ebfa72c37ab00209c49aa7e35557dd323cbe5129dc")
+        self.assertEqual(current["result_sha256"], "c6d1055ed9725340db4d9a6fc48e18c94ea6b7aed9c9f8b3672beda91afbf294")
+        self.assertEqual(current["status"], "evaluation-process-rejected")
+        self.assertTrue(current["candidate_decision"])
+        self.assertTrue(current["candidate_absolute_passed"])
+        self.assertTrue(current["candidate_relative_v0_passed"])
+        self.assertFalse(current["candidate_failed"])
+        self.assertTrue(current["evaluation_process_failed"])
+        self.assertTrue(current["evaluation_process_requalified_without_candidate_rerun"])
+        self.assertEqual(current["admitted_attempt"], 3)
+        self.assertEqual(current["rejected_batches"], 2)
+        self.assertEqual(current["generation_calls"], 75)
+        self.assertEqual(current["quality_admission_calls"], 3)
+        self.assertEqual(current["retries"], 0)
+        self.assertEqual(current["rate_limit_events"], 0)
+        self.assertEqual(current["interruptions"], 0)
+        self.assertEqual(current["generation_max_active_observed"], 4)
+        self.assertGreater(current["candidate_decision_wall_seconds"], current["level_budget_seconds"])
+        self.assertFalse(current["level_budget_passed"])
+        self.assertTrue(current["candidate_executed"])
+        self.assertTrue(current["v0_executed"])
+        self.assertTrue(current["raw_materials_destroyed"])
+        self.assertFalse(current["contains_reversible_question_answer_or_evidence"])
+        self.assertTrue(current["same_blind_content_rerun_forbidden"])
+        self.assertTrue(current["valid_for_current_controller"])
+        self.assertEqual(current["candidate_final_answer_accuracy"], 1.0)
+        self.assertEqual(current["baseline_final_answer_accuracy"], 0.96)
+        self.assertTrue(current["candidate_fact_delivery_complete"])
+        self.assertTrue(current["baseline_fact_delivery_complete"])
+        self.assertEqual(current["resume_model_calls"], 0)
+        self.assertEqual(current["resume_product_executions"], 0)
+        self.assertEqual(current["qualified_predecessor_for_level"], 50)
+        gates = history["historical_controller_gates"]
+        self.assertEqual([item["level"] for item in gates], [5, 15, 25])
+        self.assertEqual([item["status"] for item in gates], ["passed", "passed", "candidate-rejected"])
+        self.assertTrue(all(item["raw_materials_destroyed"] for item in gates))
+        self.assertTrue(all(item["resume_model_calls"] == 0 for item in gates))
+        self.assertTrue(all(item["resume_product_executions"] == 0 for item in gates))
+        self.assertEqual(
+            history["next_action"],
+            "coordinator-review-and-commit-oracle-reader-repair-before-fresh-50-question-gate",
+        )
+        repair = history["answer_failure_attribution_repair"]
+        self.assertEqual(repair["status"], "repaired-and-oracle-reader-independently-qualified")
+        self.assertEqual(repair["selected_questions_per_attribution"], 1)
+        self.assertEqual(repair["candidate_first_answer_reader"], "gpt-5.6-luna/xhigh")
+        self.assertEqual(repair["post_failure_diagnostic_reader"], "gpt-5.6-terra/high")
+        self.assertEqual(repair["qualification_questions"], 3)
+        self.assertEqual(repair["reader_calls"], 15)
+        self.assertEqual(repair["judge_calls"], 24)
+        self.assertEqual(repair["product_context_failures"], 0)
+        self.assertEqual(repair["oracle_context_failures"], 0)
+        self.assertLessEqual(repair["projected_level_wall_seconds"], repair["level_total_wall_seconds_maximum"])
+        self.assertEqual(repair["terminal_resume_model_calls"], 0)
+        self.assertEqual(repair["terminal_resume_product_executions"], 0)
+        self.assertEqual(len(history["invalidated_diagnostics"]), 6)
         invalidated = {item["result_identity"]: item for item in history["invalidated_diagnostics"]}
         self.assertIn("851f80be476d5e55718d0cc5d3b1732bb8d163ad3862bd74d80d64e4c7da2bb2", invalidated)
         self.assertIn("b90d36ce3cacbc2756a233c19cb091dc5e8ae406cdf8ef82c7933d9911b8981d", invalidated)
+        self.assertIn("743c43f53629087355570b8861749afd10588a0309d14692ce442d1563189707", invalidated)
         wall = invalidated["3ce4bb4e6191981ee58a02ed79171fcb8fafea6287abeda7559a24c29dceb1f7"]
         self.assertTrue(wall["candidate_quality_passed"])
         self.assertFalse(wall["candidate_failure"])
@@ -250,13 +532,27 @@ class BlindGateTests(unittest.TestCase):
         attribution = history["stage3_wall_attribution"]
         self.assertTrue(attribution["passed"])
         self.assertLess(attribution["projected_wall_plus_repeatability_error_seconds"], attribution["level_wall_seconds_maximum"])
+        diagnosis = history["stage3_answer_sufficiency"]
+        self.assertEqual(diagnosis["responsible_component"], "reader")
+        self.assertFalse(diagnosis["kernel_change_required"])
+        self.assertTrue(diagnosis["stage3_reclosed"])
         self.assertTrue(history["stage4_stage5_revalidation"]["ready_for_fresh_stage6"])
         qualification = history["stage2_reliability_qualification"]
+        self.assertEqual(
+            qualification["validation_contract_identity"],
+            "059ea0abc8f0f1b9cfec3a780c9493829e05129c8c6f9cf4ade9980eafbaccb6",
+        )
+        self.assertEqual(qualification["plan_identity"], "953ec78955f4ce4ffcc8dd7878493dfc3b8b485a548e3989436d3003a07ceab6")
+        self.assertEqual(qualification["result_identity"], "a3e2ceb071a931e12583671898212a2a48c49f41f6048b6c2f90bba621887990")
         self.assertEqual(qualification["admitted_questions"], 30)
+        self.assertEqual(qualification["passed_per_batch"], [15, 15])
+        self.assertEqual(qualification["generator"], "gpt-5.6-terra/xhigh")
         self.assertEqual(qualification["candidate_executions"], 0)
         self.assertEqual(qualification["baseline_executions"], 0)
+        self.assertEqual(qualification["generation_max_active_observed"], 8)
+        self.assertTrue(qualification["local_replacement_qualified"])
         invalidated = history["invalidated_incomplete_plans"]
-        self.assertEqual(len(invalidated), 1)
+        self.assertEqual(len(invalidated), 2)
         attempt = invalidated[0]
         self.assertEqual(attempt["plan_identity"], "ac540d1423fe1535ee2adfdc95150f77b9d6a1f84edcab9ef2288ede1c253b6c")
         self.assertEqual(attempt["completed_rejected_attempts"], [1])
@@ -269,6 +565,62 @@ class BlindGateTests(unittest.TestCase):
         self.assertFalse(attempt["classification"]["terminal"])
         self.assertFalse(attempt["counts_toward_stage6"])
         self.assertFalse(attempt["current_gate"])
+        leaked = invalidated[1]
+        self.assertEqual(leaked["plan_identity"], "5c5f2bff48669b71449166519393ef94ca86c506f454601211160b3b8d1f2300")
+        self.assertEqual(leaked["status"], "invalidated-operator-diagnostic-exposed-recovery-seed")
+        self.assertEqual(leaked["candidate_executions"], 0)
+        self.assertEqual(leaked["baseline_executions"], 0)
+        self.assertTrue(leaked["raw_materials_destroyed"])
+        self.assertFalse(leaked["counts_toward_stage6"])
+        historical_failures = history["historical_failed_50_attempts"]
+        self.assertEqual(len(historical_failures), 2)
+        self.assertEqual(
+            historical_failures[0]["plan_identity"],
+            "0f80dc78d2a210242d792f0ef0dc1dad09208b8e65c24c435aea8998d4df670a",
+        )
+        self.assertFalse(historical_failures[0]["candidate_failure"])
+        self.assertTrue(historical_failures[0]["same_content_rerun_forbidden"])
+        self.assertEqual(
+            historical_failures[1]["plan_identity"],
+            "dd4afa9b487c70a5bef365247dfcc62bfd5122034199ba20bb70ac58b56f0050",
+        )
+        self.assertFalse(historical_failures[1]["candidate_failure"])
+        self.assertTrue(historical_failures[1]["same_content_rerun_forbidden"])
+        latest_failure = history["latest_failed_50_attempt"]
+        self.assertEqual(
+            latest_failure["plan_identity"],
+            "c45a62f195552071aff23a136f4c1f244468f967952d1d1f4019c05269215e90",
+        )
+        self.assertEqual(latest_failure["status"], "evaluation-process-error")
+        self.assertEqual(latest_failure["failure_stage"], "answer-failure-attribution")
+        self.assertEqual(latest_failure["first_observed_gap"], "evidence_read_answer_incorrect")
+        self.assertEqual(latest_failure["attribution_classification"], "evaluation-process-failure")
+        self.assertEqual(latest_failure["attribution_reason"], "oracle-context-failed-or-mechanically-unstable")
+        self.assertEqual(latest_failure["attribution_selected_material_order"], 37)
+        self.assertEqual(latest_failure["attribution_diagnosed_questions"], 1)
+        self.assertEqual(latest_failure["attribution_product_failures"], 3)
+        self.assertEqual(latest_failure["attribution_oracle_failures"], 3)
+        self.assertTrue(latest_failure["attribution_judge_controls_passed"])
+        self.assertTrue(latest_failure["candidate_execution_completed"])
+        self.assertEqual(latest_failure["candidate_questions"], 50)
+        self.assertEqual(latest_failure["candidate_final_answer_accuracy"], 0.98)
+        self.assertTrue(latest_failure["candidate_fact_delivery_complete"])
+        self.assertEqual(latest_failure["candidate_temporal_correctness"], 0.9)
+        self.assertEqual(latest_failure["candidate_conflict_correctness"], 1.0)
+        self.assertEqual(latest_failure["candidate_retrieval_p95_ms"], 375.0)
+        self.assertFalse(latest_failure["candidate_absolute_passed"])
+        self.assertIsNone(latest_failure["candidate_decision"])
+        self.assertFalse(latest_failure["candidate_failure"])
+        self.assertFalse(latest_failure["baseline_executed"])
+        self.assertTrue(latest_failure["raw_materials_destroyed"])
+        self.assertFalse(latest_failure["contains_reversible_question_answer_or_evidence"])
+        self.assertFalse(latest_failure["formal_state_written"])
+        self.assertEqual(latest_failure["resume_model_calls"], 0)
+        self.assertEqual(latest_failure["resume_product_executions"], 0)
+        self.assertTrue(latest_failure["resume_dependencies_valid"])
+        self.assertTrue(latest_failure["terminal_fail_closed"])
+        self.assertTrue(latest_failure["same_content_rerun_forbidden"])
+        self.assertEqual(latest_failure["return_to_stage"], 2)
 
     def test_wall_attribution_contract_and_result_are_content_addressed_and_closed(self) -> None:
         root = self.suite_root / "iteration" / "v2"
@@ -288,7 +640,9 @@ class BlindGateTests(unittest.TestCase):
         self.assertAlmostEqual(closed, attribution["closed_total_wall_seconds"])
         self.assertFalse(result["root_cause"]["candidate_kernel_failed"])
         self.assertTrue(result["root_cause"]["whole_level_process_efficiency_failed"])
-        self.assertEqual(result["repair"]["new_controller_identity"], gate._implementation_identity()["controller"])
+        history = json.loads((root / "stage6-blind-gate-history.json").read_text(encoding="utf-8"))
+        self.assertEqual(result["repair"]["new_controller_identity"], history["historical_controller_identity"])
+        self.assertNotEqual(result["repair"]["new_controller_identity"], gate._implementation_identity()["controller"])
         projection = result["conservative_projection"]
         self.assertAlmostEqual(
             projection["projected_wall_plus_error_seconds"],
@@ -300,6 +654,43 @@ class BlindGateTests(unittest.TestCase):
         self.assertFalse(result["stage_impact"]["stage4_candidate_identity_changed"])
         self.assertTrue(result["stage_impact"]["stage5_checkpoints_reused"])
 
+    def test_scheduling_migration_preserves_only_current_gate_controller_dependency(self) -> None:
+        migration = gate._load_scheduling_migration(self.suite_root)
+        self.assertEqual(migration["future_gate_level"], 50)
+        self.assertTrue(migration["effect_scope"]["historical_5_15_25_materials_outputs_scores_and_decisions_unchanged"])
+        self.assertEqual(migration["noncandidate_qualification"]["passed_per_batch"], [15, 15])
+        self.assertEqual(migration["noncandidate_qualification"]["candidate_executions"], 0)
+        planned = {"controller": migration["source_controller_identity"], "executor": "a" * 64}
+        current = {"controller": migration["target_controller_identity"], "executor": "a" * 64}
+        plan_identity = migration["preserved_current_chain"][1]["plan_identity"]
+        self.assertTrue(gate._dependencies_current_or_scheduling_migrated(self.suite_root, plan_identity, planned, current))
+        self.assertFalse(gate._dependencies_current_or_scheduling_migrated(
+            self.suite_root, plan_identity, planned, {**current, "executor": "b" * 64},
+        ))
+
+    def test_oracle_reader_migration_preserves_prior_gate_facts_only_for_declared_dependencies(self) -> None:
+        migration = gate._load_evaluator_reliability_migration(self.suite_root)
+        self.assertEqual(migration["oracle_reader_repair"]["source_reader"], "gpt-5.6-luna/xhigh")
+        self.assertEqual(migration["oracle_reader_repair"]["target_reader"], "gpt-5.6-terra/high")
+        self.assertTrue(migration["oracle_reader_repair"]["candidate_first_answer_reader_unchanged"])
+        planned = {
+            "controller": migration["source_controller_identity"],
+            "answer-attribution-controller": migration["dependency_changes"]["answer-attribution-controller"]["target"],
+            "reader-reliability-selection": migration["dependency_changes"]["reader-reliability-selection"]["target"],
+            "evaluator-environment-qualification": "ce0340f8aa62743990240807c033daba7ac6713a8d70d4f03b829efb7ee9f4a7",
+            "candidate-subject": "a" * 64,
+        }
+        current = {
+            **planned,
+            "controller": migration["target_controller_identity"],
+            "evaluator-environment-qualification": migration["qualification_receipt_identity"],
+        }
+        plan_identity = "c45a62f195552071aff23a136f4c1f244468f967952d1d1f4019c05269215e90"
+        self.assertTrue(gate._dependencies_current_or_scheduling_migrated(self.suite_root, plan_identity, planned, current))
+        self.assertFalse(gate._dependencies_current_or_scheduling_migrated(
+            self.suite_root, plan_identity, planned, {**current, "candidate-subject": "b" * 64},
+        ))
+
     def _fixture(
         self,
         root: Path,
@@ -308,6 +699,8 @@ class BlindGateTests(unittest.TestCase):
         first_admission_rejected: bool = False,
         all_admissions_rejected: bool = False,
         level: int = 5,
+        first_rejected_case_only: bool = False,
+        qualification_error: bool = False,
     ) -> "GateFixture":
         return GateFixture(
             self.suite_root,
@@ -316,6 +709,8 @@ class BlindGateTests(unittest.TestCase):
             first_admission_rejected=first_admission_rejected,
             all_admissions_rejected=all_admissions_rejected,
             level=level,
+            first_rejected_case_only=first_rejected_case_only,
+            qualification_error=qualification_error,
         )
 
     @staticmethod
@@ -329,6 +724,17 @@ class BlindGateTests(unittest.TestCase):
             "latency": {"retrieval_mean_ms": 100.0, "retrieval_p95_ms": 150.0, "wall_seconds": 30.0},
             "resources": {"semantic_input_tokens": 100, "reader_input_tokens": 100, "judge_input_tokens": 100, "ownward_data_bytes": 100},
             "codex": {"calls": 10, "attempts": 10, "retries": 0},
+        }
+
+    @staticmethod
+    def _minimal_case(case_id: str) -> dict[str, object]:
+        return {
+            "case_id": case_id,
+            "coverage": "fixture",
+            "question": f"Question {case_id}",
+            "answer": f"Answer {case_id}",
+            "truth_claims": [{"claim": f"Claim {case_id}"}],
+            "sessions": [{"date": "2026-01-01", "turns": [{"role": "user", "content": f"Fact {case_id}"}]}],
         }
 
     @staticmethod
@@ -351,6 +757,8 @@ class GateFixture:
         first_admission_rejected: bool,
         all_admissions_rejected: bool,
         level: int = 5,
+        first_rejected_case_only: bool = False,
+        qualification_error: bool = False,
     ) -> None:
         self.suite_root = suite_root
         self.output_root = root / "evidence"
@@ -367,13 +775,18 @@ class GateFixture:
         self.candidate_pass = candidate_pass
         self.first_admission_rejected = first_admission_rejected
         self.all_admissions_rejected = all_admissions_rejected
+        self.first_rejected_case_only = first_rejected_case_only
+        self.qualification_error = qualification_error
         self.level = level
         self.admission_calls = 0
+        self.generator_calls = 0
+        self.generated_case_ids: list[str] = []
         self.execution_order: list[str] = []
         self.dependencies = {
             "controller": "1" * 64,
             "executor": "2" * 64,
             "gate-contract": gate.load_contract(self.suite_root, level)["identity"],
+            "evaluator-environment-qualification": "3" * 64,
         }
         self.scratch_root = self.runs_root / "kernel-v2-blind-gate"
 
@@ -404,20 +817,27 @@ class GateFixture:
         def invoke(**kwargs: object) -> tuple[dict[str, object], dict[str, object]]:
             role = kwargs["role"]
             if role == "generator":
+                self.generator_calls += 1
                 schema = kwargs["schema"]
                 case_id = schema["properties"]["case"]["properties"]["case_id"]["enum"][0]
                 coverage = schema["properties"]["case"]["properties"]["coverage"]["enum"][0]
+                self.generated_case_ids.append(case_id)
                 case = self._case(case_id, coverage)
                 return {"case": case}, {"calls": 1, "attempts": 1, "wall_seconds": 0.1}
             self.admission_calls += 1
             materials_path = kwargs["prompt"]
             del materials_path
             case_ids = kwargs["schema"]["properties"]["assessments"]["items"]["properties"]["case_id"]["enum"]
-            passed = not self.all_admissions_rejected and not (
-                self.first_admission_rejected and self.admission_calls == 1
-            )
-            checks = {name: passed for name in ("plausible", "difficulty_sufficient", "unique_answer", "evidence_sufficient", "no_surface_shortcut", "scoring_discriminative")}
-            return {"assessments": [{"case_id": case_id, "checks": checks} for case_id in case_ids]}, {"calls": 1, "attempts": 1, "wall_seconds": 0.1}
+            assessments = []
+            for case_id in case_ids:
+                rejected = self.all_admissions_rejected or (
+                    self.first_admission_rejected and self.admission_calls == 1
+                ) or (
+                    self.first_rejected_case_only and self.admission_calls == 1 and case_id == case_ids[0]
+                )
+                checks = {name: not rejected for name in ("plausible", "difficulty_sufficient", "unique_answer", "evidence_sufficient", "no_surface_shortcut", "scoring_discriminative")}
+                assessments.append({"case_id": case_id, "checks": checks})
+            return {"assessments": assessments}, {"calls": 1, "attempts": 1, "wall_seconds": 0.1}
 
         def runner(**kwargs: object) -> dict[str, object]:
             output = Path(kwargs["output_dir"])
@@ -445,7 +865,14 @@ class GateFixture:
             mock.patch.object(gate.evidence, "load_contract", return_value={"identity": "e" * 64}),
             mock.patch.object(gate.validation, "load_validation_contract", return_value=self._validation_contract()),
             mock.patch.object(gate.validation, "load_blind_budget_archive", return_value={"identity": "f" * 64}),
+            mock.patch.object(gate.reader_reliability, "load_selection", return_value={"identity": "7" * 64, "selected_reasoning_effort": "xhigh"}),
             mock.patch.object(gate.validation, "validate_execution_config", return_value=runtime),
+            mock.patch.object(
+                gate.evaluator_reliability,
+                "load_current_qualification",
+                return_value={"identity": "3" * 64},
+                side_effect=RuntimeError("qualification drift") if self.qualification_error else None,
+            ),
             mock.patch.object(gate.evidence, "select_subject", side_effect=select),
             mock.patch.object(gate, "_validate_subjects"),
             mock.patch.object(gate, "_shared_conditions", return_value={"shared": "0" * 64}),
@@ -455,7 +882,7 @@ class GateFixture:
             mock.patch.object(gate, "_validate_material_isolation"),
             mock.patch.object(gate.validation, "observe_report", side_effect=observe),
         )
-        with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9], patches[10], patches[11]:
+        with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9], patches[10], patches[11], patches[12], patches[13]:
             return gate.run(
                 self.suite_root, self.output_root, self.candidate_config, self.baseline_config,
                 self.subject_manifest, self.state_path, seed="fixture-seed-0001",
@@ -495,6 +922,7 @@ class GateFixture:
                 "temporal_session_id": answer_ids[1],
                 "question_anchor_terms": [anchor_one, anchor_two],
             }
+            sessions[4]["turns"][0]["content"] += f" It also mentions {anchor_one}."
         if coverage == "multi-session-distractor":
             link_key = f"KEY-{case_number:02d}-QD"
             qualifier_one = f"Unit Indigo {case_number:02d}"
@@ -508,6 +936,26 @@ class GateFixture:
                 "selector_session_id": answer_ids[1],
                 "question_qualifier_terms": [qualifier_one, qualifier_two],
             }
+            sessions[4]["turns"][0]["content"] += f" It also mentions {qualifier_one}."
+        evidence_bindings = [
+            {"session_id": session_id, "quote": sessions[int(session_id.rsplit("s", 1)[1]) - 1]["turns"][0]["content"]}
+            for session_id in answer_ids
+        ]
+        if coverage == "temporal-order":
+            question_clues = [
+                {"clue": "value", "support_session_id": answer_ids[0], "distractor_session_id": f"{session_prefix}-s04"},
+                {"clue": anchor_one, "support_session_id": answer_ids[1], "distractor_session_id": f"{session_prefix}-s05"},
+            ]
+        elif coverage == "multi-session-distractor":
+            question_clues = [
+                {"clue": "value", "support_session_id": answer_ids[0], "distractor_session_id": f"{session_prefix}-s04"},
+                {"clue": qualifier_one, "support_session_id": answer_ids[1], "distractor_session_id": f"{session_prefix}-s05"},
+            ]
+        else:
+            question_clues = [
+                {"clue": "evidence", "support_session_id": answer_ids[0], "distractor_session_id": f"{session_prefix}-s04"},
+                {"clue": "value", "support_session_id": answer_ids[-1], "distractor_session_id": f"{session_prefix}-s04"},
+            ]
         result = {
             "case_id": case_id,
             "coverage": coverage,
@@ -519,6 +967,13 @@ class GateFixture:
             "stale_session_ids": [f"{session_prefix}-s01"] if coverage == "knowledge-update-conflict" else [],
             "distractor_session_ids": [f"{session_prefix}-s03", f"{session_prefix}-s04"] if coverage == "knowledge-update-conflict" else [f"{session_prefix}-s04", f"{session_prefix}-s05"],
             "sessions": sessions,
+            "evidence_bindings": evidence_bindings,
+            "control_binding": {
+                "plausible_wrong_answer": "beta",
+                "wrong_answer_session_id": f"{session_prefix}-s04",
+                "missing_evidence_session_id": answer_ids[0],
+            },
+            "surface_shortcut_proof": {"question_clues": question_clues},
         }
         if temporal_binding is not None:
             result["temporal_binding"] = temporal_binding

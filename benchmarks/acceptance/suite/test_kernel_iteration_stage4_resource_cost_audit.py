@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 import zlib
+from unittest import mock
 
 
 HERE = Path(__file__).resolve().parent
@@ -16,6 +17,20 @@ import kernel_iteration_stage4_resource_cost_audit as audit  # noqa: E402
 
 
 class Stage4ResourceCostAuditTests(unittest.TestCase):
+    def test_frozen_contract_accepts_only_exact_non_stage4_dependency_migration(self) -> None:
+        contract = audit.load_contract(HERE)
+        self.assertEqual("84d30456e65da337f32d73769deafb26bf8f61f4a82053d87cd14e19843887bb", contract["identity"])
+        original = audit.evidence.file_sha256
+
+        def drift(path: Path) -> str:
+            if Path(path).name == "kernel_iteration_validation.py":
+                return "f" * 64
+            return original(path)
+
+        with mock.patch.object(audit.evidence, "file_sha256", side_effect=drift):
+            with self.assertRaisesRegex(audit.validation.KernelIterationValidationError, "不在精确迁移收据内"):
+                audit.load_contract(HERE)
+
     def test_semantic_token_ownership_fails_closed_while_total_closes(self) -> None:
         semantic = {
             "v0": {"observed_input_tokens": 100, "attribution_status": "not-identifiable-from-existing-aggregate-usage-receipts"},

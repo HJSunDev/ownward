@@ -35,7 +35,10 @@
   "reader": {
     "capability_source": "codex",
     "model": "gpt-5.6-luna",
-    "reasoning_effort": "medium",
+    "reasoning_effort": "xhigh",
+    "selection_profile_identity": "401aa7962b5ecd3d283093a2d5eee0fe76da941d20ce4aa317ef21216d55c83c",
+    "selection_contract_identity": "841ab01d016bf0c987527061dad95e2ba23e069f4b32642c7a3276b7cff75805",
+    "selection_result_identity": "25f4954169249c92af6001813dca81ac04c0e70a75499bd1e1bcf9dc45ae5824",
     "max_output_tokens": 1024,
     "timeout_seconds": 240,
     "attempts": 3

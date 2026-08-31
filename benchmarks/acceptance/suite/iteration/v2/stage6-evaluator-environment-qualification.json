@@ -1,0 +1,43 @@
+{
+  "schema": "ownward.kernel-iteration-stage6-evaluator-environment-receipt/v3",
+  "contract_identity": "fd036e2ec50490008d7765520d6be5ae5f7a8e53d2a695c60fc1f0df1fe3e62a",
+  "plan_identity": "be30d6a0c0806f9066cb25c658f2258d172b0e8daeea93d3a64008bbc65128f3",
+  "result_identity": "885192c91ecd7f5b7a88bd23a2ce217d607c5f3fd62359f0df48af49ed871284",
+  "result_sha256": "1e8817134283164cbdfc494a8951975ae336f8f3ae277d8569392fb769d26947",
+  "result": "E:\\Dev\\ownward\\.tmp\\kernel-v2-major-iteration\\stage6\\evaluator-reliability\\evaluator-qualification\\be30d6a0c0806f9066cb25c658f2258d172b0e8daeea93d3a64008bbc65128f3\\result.json",
+  "passed": true,
+  "candidate_executions": 0,
+  "product_executions": 0,
+  "attribution_qualification": {
+    "questions": 3,
+    "reader_calls": 15,
+    "judge_calls": 24,
+    "reader_model": "gpt-5.6-terra",
+    "reader_reasoning_effort": "high",
+    "product_context_failures": 0,
+    "oracle_context_failures": 0,
+    "judge_correct_controls": "3/3",
+    "judge_wrong_controls": "3/3",
+    "judge_model": "gpt-5.6-terra",
+    "judge_reasoning_effort": "medium",
+    "observed_wall_seconds": 64.3318731,
+    "projected_level_wall_seconds": 1751.0563078999999,
+    "level_total_wall_seconds_maximum": 1961,
+    "worker_restarts": 0,
+    "rate_limit_observed": false
+  },
+  "scope": {
+    "candidate_first_answer_reader_unchanged": "gpt-5.6-luna/xhigh",
+    "post_failure_diagnostic_reader": "gpt-5.6-terra/high",
+    "prompt_renderer_schema_unchanged": true,
+    "prior_blind_content_recovered_or_rerun": false
+  },
+  "resume": {
+    "model_calls": 0,
+    "product_executions": 0,
+    "result_byte_reused": true
+  },
+  "formal_state_sha256": "0587d7f9f147bcb2ae0e4ca70afe1ca051e4dbe6b2b0e34af2e2174fcc82da01",
+  "next_action": "coordinator-review-and-commit-before-fresh-50-question-gate",
+  "identity": "02200ade9038b327148768c4620f9c981cf80523c3e8fa9a9f0cbc28426bbf14"
+}

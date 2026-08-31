@@ -13,6 +13,7 @@ RESULT_SCHEMA = "ownward.kernel-iteration-stage4-resource-cost-raw-vector-lifecy
 CONTRACT_PATH = Path("iteration/v2/stage4-resource-cost-raw-vector-lifecycle-contract.json")
 DEPENDENCY_MIGRATION_SCHEMA = "ownward.kernel-iteration-direct-dependency-migration/v1"
 DEPENDENCY_MIGRATION_PATH = Path("iteration/v2/stage4-resource-cost-raw-vector-lifecycle-dependency-migration.json")
+DEPENDENCY_MIGRATION_REASON = "non-stage4-diagnostic-maintenance-changes-only-explicitly-listed-callers-without-changing-frozen-stage4-contracts-or-results"
 
 
 def run(suite_root: Path, output_root: Path, formal_state: Path, *, resume: bool) -> dict[str, Any]:
@@ -235,11 +236,7 @@ def load_contract(suite_root: Path) -> dict[str, Any]:
         migration = _load_json(suite_root / DEPENDENCY_MIGRATION_PATH)
         _validate_identity(migration, DEPENDENCY_MIGRATION_SCHEMA, "生命周期直接依赖迁移收据")
         _require(migration.get("contract_identity") == value["identity"], "生命周期直接依赖迁移合同错绑")
-        _require(
-            migration.get("reason")
-            == "stage2-adds-an-unrelated-blind-admission-reliability-command-without-changing-the-frozen-stage4-audit-or-its-result",
-            "生命周期直接依赖迁移原因漂移",
-        )
+        _require(migration.get("reason") == DEPENDENCY_MIGRATION_REASON, "生命周期直接依赖迁移原因漂移")
         changes = {
             item["path"]: {"frozen": item["frozen_sha256"], "current": item["current_sha256"]}
             for item in migration.get("changes", [])
@@ -253,7 +250,7 @@ def load_contract(suite_root: Path) -> dict[str, Any]:
             classifications
             == {
                 "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_raw_vector_lifecycle.py": "dependency-receipt-validation-only",
-                "benchmarks/acceptance/suite/kernel_iteration_run.py": "additive-stage2-blind-admission-reliability-dispatch-only",
+                "benchmarks/acceptance/suite/kernel_iteration_run.py": "additive-non-stage4-cli-dispatch-only",
             },
             "生命周期直接依赖迁移分类漂移",
         )
@@ -306,11 +303,38 @@ def _verify_source_lifecycle(sources: dict[str, str]) -> None:
 
 def _verified_text(repository: Path, item: dict[str, Any], name: str) -> str:
     path = repository / item["path"]
-    _require(path.is_file() and evidence.file_sha256(path) == item["sha256"], f"{name} 源码漂移")
+    current = evidence.file_sha256(path) if path.is_file() else None
+    if current != item["sha256"]:
+        _verify_related_source_migration(
+            repository / "benchmarks" / "acceptance" / "suite",
+            "125278c6aa9d6a34dc91bfe1ced32b22b93dad60ce6b5bc34aa14c3c2561abb7",
+            {item["path"]: {"frozen": item["sha256"], "current": current}},
+        )
     try:
         return path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as error:
         raise validation.KernelIterationValidationError(f"无法读取{name}源码 {path}: {error}") from error
+
+
+def _verify_related_source_migration(
+    suite_root: Path,
+    contract_identity: str,
+    drifted: dict[str, dict[str, str | None]],
+) -> None:
+    migration = _load_json(suite_root / DEPENDENCY_MIGRATION_PATH)
+    _validate_identity(migration, DEPENDENCY_MIGRATION_SCHEMA, "Stage 4 精确依赖迁移收据")
+    _require(migration.get("reason") == DEPENDENCY_MIGRATION_REASON, "Stage 4 精确依赖迁移原因漂移")
+    related = migration.get("related_contract_migrations", {}).get(contract_identity, {})
+    changes = {
+        item["path"]: {"frozen": item["frozen_sha256"], "current": item["current_sha256"]}
+        for item in related.get("changes", [])
+    }
+    _require(changes == drifted, "生命周期源码漂移不在精确迁移收据内")
+    _require(
+        {item["path"]: item.get("classification") for item in related.get("changes", [])}
+        == {"benchmarks/longmemeval_s/run.py": "reader-profile-validation-and-formal-protocol-unification-only"},
+        "生命周期源码迁移分类漂移",
+    )
 
 
 def _verified_json(repository: Path, item: dict[str, Any], name: str) -> dict[str, Any]:

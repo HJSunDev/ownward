@@ -13,7 +13,13 @@ from contextlib import ExitStack, contextmanager
 from typing import Any, Callable
 
 import kernel_iteration_evidence as evidence
+import kernel_iteration_admission_reliability as admission_reliability
+import kernel_iteration_material_scheduler as material_scheduler
 import kernel_iteration_validation as validation
+import kernel_iteration_answer_sufficiency as answer_sufficiency
+import kernel_iteration_official_evaluator as official_evaluator
+import kernel_iteration_reader_reliability as reader_reliability
+import kernel_iteration_evaluator_reliability as evaluator_reliability
 
 
 class BlindGateError(ValueError):
@@ -35,6 +41,8 @@ RECOVERY_SCHEMA = "ownward.kernel-iteration-stage6-blind-recovery/v2"
 SECRET_SCHEMA = "ownward.kernel-iteration-stage6-blind-secret/v2"
 LOCATOR_SCHEMA = "ownward.kernel-iteration-stage6-blind-locator/v2"
 STAGE5_FREEZE_RELATIVE = Path(".tmp/kernel-v2-major-iteration/stage5/freeze.json")
+SCHEDULING_MIGRATION_RELATIVE = Path("iteration/v2/stage6-material-scheduling-migration.json")
+EVALUATOR_RELIABILITY_MIGRATION_RELATIVE = Path("iteration/v2/stage6-evaluator-reliability-migration.json")
 
 
 def load_contract(suite_root: Path, level: int) -> dict[str, Any]:
@@ -54,13 +62,26 @@ def load_contract(suite_root: Path, level: int) -> dict[str, Any]:
     _require(int(data.get("maximum_admission_batches", 0)) >= 2, "质量准入失败后没有冻结重新生成边界")
     execution = _mapping(value, "execution")
     _require(execution.get("order") == ["v2-candidate", "v0-baseline"] and execution.get("v0_requires_candidate_absolute_pass") is True, "候选与 V0 执行顺序漂移")
+    expected_generation_max_active = 8 if level == 50 else 4
     _require(
-        execution.get("generation_max_active") == 4
+        execution.get("generation_max_active") == expected_generation_max_active
         and execution.get("generation_worker_active_turns_maximum") == 1
         and execution.get("generation_result_order") == "frozen-coverage-order"
         and execution.get("quality_admission_after_all_generation") is True,
         "阶段 6 生成调度合同漂移",
     )
+    if level == 50:
+        _require(
+            execution.get("rejection_replacement") == "rejected-cases-only"
+            and execution.get("full_set_readmission_after_replacement") is True
+            and execution.get("maximum_replacement_rounds") == int(data["maximum_admission_batches"]),
+            "阶段 6 50 题局部替换合同漂移",
+        )
+    else:
+        _require(
+            not any(name in execution for name in ("rejection_replacement", "full_set_readmission_after_replacement", "maximum_replacement_rounds")),
+            "历史 5/15/25 合同不得被未来材料调度改写",
+        )
     gate = _mapping(value, "absolute_gate")
     _require(gate == {
         "questions": level,
@@ -76,10 +97,18 @@ def load_contract(suite_root: Path, level: int) -> dict[str, Any]:
     relative = _mapping(value, "relative_v0_gate")
     _require(relative.get("gate_role") == "sequential-early-rejection-not-standalone-overall-uplift-proof", "单级盲测不得冒充整体跃升证明")
     failure = _mapping(value, "failure")
+    attribution = _mapping(failure, "answer_failure_attribution")
     _require(
         failure.get("evaluation_process_failure_is_candidate_failure") is False
         and failure.get("whole_level_efficiency_gate_remains_mandatory") is True,
         "阶段 6 评测流程失败归属合同漂移",
+    )
+    _require(
+        attribution.get("reader_profile_identity") == "401aa7962b5ecd3d283093a2d5eee0fe76da941d20ce4aa317ef21216d55c83c"
+        and attribution.get("first_answer_accuracy_required") == 1.0
+        and attribution.get("repetitions_cannot_convert_failure_to_pass") is True
+        and attribution.get("wording_or_hash_variation_is_diagnostic_only") is True,
+        "阶段 6 答案失败归因合同漂移",
     )
     previous, following = LEVEL_SEQUENCE[level]
     sequence = _mapping(value, "sequence")
@@ -116,8 +145,14 @@ def run(
     comparison = evidence.load_contract(suite_root)
     validation_contract = validation.load_validation_contract(suite_root)
     budget = validation.load_blind_budget_archive(suite_root)
-    candidate_runtime = validation.validate_execution_config(suite_root, candidate_execution_config.resolve())
-    baseline_runtime = validation.validate_execution_config(suite_root, baseline_execution_config.resolve())
+    reader_selection = reader_reliability.load_selection(suite_root)
+    candidate_runtime = validation.validate_execution_config(
+        suite_root, candidate_execution_config.resolve(), expected_reader_effort=reader_selection["selected_reasoning_effort"],
+    )
+    baseline_runtime = validation.validate_execution_config(
+        suite_root, baseline_execution_config.resolve(), expected_reader_effort=reader_selection["selected_reasoning_effort"],
+    )
+    evaluator_qualification = evaluator_reliability.load_current_qualification(suite_root, candidate_execution_config.resolve())
     candidate = evidence.select_subject(comparison, None, candidate_subject_manifest.resolve())
     baseline = evidence.select_subject(comparison, "v0")
     _validate_subjects(contract, candidate, baseline, candidate_runtime, baseline_runtime)
@@ -153,8 +188,9 @@ def run(
 
     dependencies = _direct_dependencies(
         suite_root, contract, comparison, validation_contract, budget, candidate, baseline,
-        candidate_runtime, baseline_runtime, runtime_calibration, shared_conditions,
+        candidate_runtime, baseline_runtime, runtime_calibration, shared_conditions, reader_selection,
     )
+    dependencies["evaluator-environment-qualification"] = str(evaluator_qualification["identity"])
     if previous_result_identity is not None:
         dependencies["previous-gate-result"] = previous_result_identity
     plan_content = {
@@ -211,7 +247,7 @@ def run(
     rejection_state = _load_json(rejection_path) if rejection_path.is_file() else {"schema": "ownward.kernel-iteration-stage6-admission-rejections/v1", "plan_identity": plan_identity, "batches": []}
     _require(rejection_state.get("schema") == "ownward.kernel-iteration-stage6-admission-rejections/v1" and rejection_state.get("plan_identity") == plan_identity, "阶段 6 候选盲测准入拒绝恢复状态错绑")
     rejected_batches = list(rejection_state.get("batches", []))
-    _require(all(isinstance(item, dict) and isinstance(item.get("attempt"), int) for item in rejected_batches), "阶段 6 候选盲测准入拒绝恢复状态无效")
+    _require(all(_valid_rejection_receipt(item) for item in rejected_batches), "阶段 6 候选盲测准入拒绝恢复状态无效")
     generation_usages.extend(dict(item.get("generation_usage", {})) for item in rejected_batches)
     admission_usages.extend(dict(item.get("admission_usage", {})) for item in rejected_batches)
     generation_scheduler = {
@@ -225,6 +261,7 @@ def run(
     materials: dict[str, Any] | None = None
     admission: dict[str, Any] | None = None
     admitted_attempt = 0
+    replacement_rounds: list[dict[str, Any]] = []
     try:
         with ExitStack() as invocation_stack:
             lane_invokers = (
@@ -237,7 +274,34 @@ def run(
                     generation_scheduler["max_active_limit"],
                 ))
             )
-            for attempt in range(1, int(_mapping(contract, "data")["maximum_admission_batches"]) + 1):
+            if level == 50:
+                prepared = _prepare_locally_replaced_materials(
+                    suite_root, output_root, candidate_runtime, validation_contract, contract, scratch,
+                    gate_seed, lane_invokers,
+                )
+                materials = prepared["materials"]
+                admission = prepared["admission"]
+                admitted_attempt = len(prepared["rounds"]) if prepared["passed"] else 0
+                replacement_rounds = prepared["rounds"]
+                generation_usages.extend(prepared["generation_usages"])
+                admission_usages.extend(prepared["admission_usages"])
+                generation_scheduler = prepared["scheduler"]
+                if prepared["passed"]:
+                    controls = validation.score_controls(materials)
+                    _require(controls["passed"], "阶段 6 候选盲测评分控制不能区分关键错误")
+                    admitted_content = {
+                        "schema": ADMISSION_SCHEMA,
+                        "plan_identity": plan_identity,
+                        "attempt": admitted_attempt,
+                        "material_identity": materials["identity"],
+                        "case_fact_identities": [validation._case_fact_identity(case) for case in materials["cases"]],
+                        "coverage_counts": {name: sum(case["coverage"] == name for case in materials["cases"]) for name in validation.BLIND_COVERAGE},
+                        "quality_admission": admission,
+                        "control_discrimination": controls,
+                        "candidate_has_not_run": True,
+                    }
+                    evidence.atomic_json(root / "admission.json", {**admitted_content, "identity": evidence.canonical_sha256(admitted_content)})
+            for attempt in ([] if level == 50 else range(1, int(_mapping(contract, "data")["maximum_admission_batches"]) + 1)):
                 if any(item["attempt"] == attempt for item in rejected_batches):
                     continue
                 attempt_started = time.perf_counter()
@@ -260,7 +324,10 @@ def run(
                     runtime=candidate_runtime,
                     stage=attempt_root / "quality-admission",
                     role="quality-admission",
-                    prompt=validation._admission_prompt(validation_contract, candidate_materials),
+                    prompt=validation._admission_prompt(
+                        validation_contract,
+                        validation._admission_review_materials(candidate_materials, generated),
+                    ),
                     schema=validation._admission_schema([case["case_id"] for case in candidate_materials["cases"]]),
                     settings=_mapping(_mapping(validation_contract, "blind"), "quality_admission"),
                     validate=lambda value: validation.validate_admission(value, candidate_materials, validation_contract),
@@ -276,6 +343,7 @@ def run(
                         "attempt": attempt,
                         "material_identity": candidate_materials["identity"],
                         "rejected_count": candidate_admission["rejected_count"],
+                        "failure_aggregate": candidate_admission["failure_aggregate"],
                         "generation_usage": validation._sanitize_usage(generation_usages[-1]),
                         "admission_usage": validation._sanitize_usage(admission_usages[-1]),
                         "generation_scheduler": attempt_scheduler,
@@ -312,8 +380,9 @@ def run(
                 generation_usage=validation._combine_usages(generation_usages), admission_usage=validation._combine_usages(admission_usages),
                 generation_scheduler=generation_scheduler, evaluation_process_decision=None,
                 candidate_execution=None, baseline_execution=None, absolute=None, relative=None,
-                resume_proof=None, general_root_cause=None, started=started,
+                resume_proof=None, general_root_cause=None, answer_failure_attribution=None, started=started,
                 excluded_rejection_wall_seconds=excluded_rejection_wall_seconds,
+                replacement_rounds=replacement_rounds,
             )
 
         dataset_path = scratch / f"batch-{admitted_attempt:02d}" / "dataset.json"
@@ -323,61 +392,115 @@ def run(
             resume=resume, runner=execute,
         )
         absolute = _absolute_decision(candidate_execution["observation"], contract)
-        if not absolute["passed"]:
-            root_cause = _general_root_cause(candidate_execution["observation"], absolute["failures"])
+        _persist_candidate_observation(root, plan, candidate_execution, absolute)
+        post_candidate_stage = "answer-failure-attribution"
+        baseline_execution = None
+        relative = None
+        resume_proof = None
+        try:
+            if not absolute["passed"]:
+                attribution = _attribute_first_answer_failure(
+                    suite_root, root, candidate_runtime, materials, candidate_execution, absolute,
+                )
+                root_cause = _general_root_cause(candidate_execution["observation"], absolute["failures"])
+                if attribution is not None:
+                    root_cause = {**root_cause, "answer_failure_attribution": attribution["classification"]}
+                evaluation_failed = attribution is not None and attribution["classification"] == "evaluation-process-failure"
+                return _finish(
+                    root, scratch, candidate_runtime["runs"], state_path, state_before, plan, contract,
+                    status="evaluation-process-error" if evaluation_failed else "candidate-rejected",
+                    passed=False, candidate_decision=None if evaluation_failed else False,
+                    admitted_attempt=admitted_attempt, materials=materials, admission=admission, rejected_batches=rejected_batches,
+                    generation_usage=validation._combine_usages(generation_usages), admission_usage=validation._combine_usages(admission_usages),
+                    generation_scheduler=generation_scheduler,
+                    evaluation_process_decision=({
+                        "passed": False,
+                        "candidate_failure": False,
+                        "stage": post_candidate_stage,
+                        "failures": [{"metric": "evaluation_process_attribution"}],
+                        "fail_closed": True,
+                    } if evaluation_failed else None),
+                    candidate_execution=candidate_execution, baseline_execution=None, absolute=absolute, relative=None,
+                    resume_proof=None, general_root_cause=root_cause, answer_failure_attribution=attribution, started=started,
+                    excluded_rejection_wall_seconds=excluded_rejection_wall_seconds,
+                    replacement_rounds=replacement_rounds,
+                )
+
+            post_candidate_stage = "v0-baseline-execution"
+            baseline_execution = _execute(
+                suite_root, baseline_runtime, dataset_path, scratch / "baseline", baseline["identity"], materials,
+                resume=resume, runner=execute,
+            )
+            post_candidate_stage = "relative-decision"
+            relative = _relative_decision(candidate_execution["observation"], baseline_execution["observation"])
+            post_candidate_stage = "resume-proof"
+            resume_proof = _resume_proof(
+                suite_root, candidate_runtime, baseline_runtime, dataset_path, scratch,
+                candidate["identity"], baseline["identity"], execute,
+            )
+            total = _decision_wall_seconds(started, excluded_rejection_wall_seconds)
+            wall_limit = float(_mapping(contract, "absolute_gate")["level_total_wall_seconds_maximum"])
+            candidate_decision = bool(relative["passed"])
+            evaluation_process_decision = {
+                "passed": total <= wall_limit,
+                "failures": [] if total <= wall_limit else [{"metric": "level_total_wall_seconds", "actual": total, "maximum": wall_limit}],
+                "candidate_failure": False,
+            }
+            passed = bool(candidate_decision and evaluation_process_decision["passed"])
+            if passed:
+                status = "passed"
+                root_cause = None
+            elif not candidate_decision:
+                status = "relative-rejected"
+                root_cause = _general_root_cause(candidate_execution["observation"], relative["failures"])
+            else:
+                status = "evaluation-process-rejected"
+                root_cause = {
+                    "first_observed_gap": None,
+                    "responsible_direction": "stage6-evaluation-controller",
+                    "mechanism_status": "requires-independent-process-attribution-and-repair",
+                    "failure_metrics": ["level_total_wall_seconds"],
+                }
             return _finish(
                 root, scratch, candidate_runtime["runs"], state_path, state_before, plan, contract,
-                status="candidate-rejected", passed=False, candidate_decision=False,
+                status=status, passed=passed, candidate_decision=candidate_decision,
                 admitted_attempt=admitted_attempt, materials=materials, admission=admission, rejected_batches=rejected_batches,
                 generation_usage=validation._combine_usages(generation_usages), admission_usage=validation._combine_usages(admission_usages),
-                generation_scheduler=generation_scheduler, evaluation_process_decision=None,
-                candidate_execution=candidate_execution, baseline_execution=None, absolute=absolute, relative=None,
-                resume_proof=None, general_root_cause=root_cause, started=started,
+                generation_scheduler=generation_scheduler, evaluation_process_decision=evaluation_process_decision,
+                candidate_execution=candidate_execution, baseline_execution=baseline_execution, absolute=absolute, relative=relative,
+                resume_proof=resume_proof, general_root_cause=root_cause, started=started,
+                answer_failure_attribution=None,
                 excluded_rejection_wall_seconds=excluded_rejection_wall_seconds,
+                replacement_rounds=replacement_rounds,
             )
-
-        baseline_execution = _execute(
-            suite_root, baseline_runtime, dataset_path, scratch / "baseline", baseline["identity"], materials,
-            resume=resume, runner=execute,
-        )
-        relative = _relative_decision(candidate_execution["observation"], baseline_execution["observation"])
-        resume_proof = _resume_proof(
-            suite_root, candidate_runtime, baseline_runtime, dataset_path, scratch,
-            candidate["identity"], baseline["identity"], execute,
-        )
-        total = _decision_wall_seconds(started, excluded_rejection_wall_seconds)
-        wall_limit = float(_mapping(contract, "absolute_gate")["level_total_wall_seconds_maximum"])
-        candidate_decision = bool(relative["passed"])
-        evaluation_process_decision = {
-            "passed": total <= wall_limit,
-            "failures": [] if total <= wall_limit else [{"metric": "level_total_wall_seconds", "actual": total, "maximum": wall_limit}],
-            "candidate_failure": False,
-        }
-        passed = bool(candidate_decision and evaluation_process_decision["passed"])
-        if passed:
-            status = "passed"
-            root_cause = None
-        elif not candidate_decision:
-            status = "relative-rejected"
-            root_cause = _general_root_cause(candidate_execution["observation"], relative["failures"])
-        else:
-            status = "evaluation-process-rejected"
+        except Exception as error:
+            exception = answer_sufficiency.safe_attribution_exception(error, post_candidate_stage)
+            process_failure = {
+                "passed": False,
+                "candidate_failure": False,
+                "stage": post_candidate_stage,
+                "failures": [{"metric": "evaluation_process_exception", **exception}],
+                "fail_closed": True,
+            }
             root_cause = {
                 "first_observed_gap": None,
                 "responsible_direction": "stage6-evaluation-controller",
-                "mechanism_status": "requires-independent-process-attribution-and-repair",
-                "failure_metrics": ["level_total_wall_seconds"],
+                "mechanism_status": "evaluation-process-exception-requires-repair-and-requalification",
+                "failure_metrics": ["evaluation_process_exception"],
+                "stage": post_candidate_stage,
+                "exception": exception,
             }
-        return _finish(
-            root, scratch, candidate_runtime["runs"], state_path, state_before, plan, contract,
-            status=status, passed=passed, candidate_decision=candidate_decision,
-            admitted_attempt=admitted_attempt, materials=materials, admission=admission, rejected_batches=rejected_batches,
-            generation_usage=validation._combine_usages(generation_usages), admission_usage=validation._combine_usages(admission_usages),
-            generation_scheduler=generation_scheduler, evaluation_process_decision=evaluation_process_decision,
-            candidate_execution=candidate_execution, baseline_execution=baseline_execution, absolute=absolute, relative=relative,
-            resume_proof=resume_proof, general_root_cause=root_cause, started=started,
-            excluded_rejection_wall_seconds=excluded_rejection_wall_seconds,
-        )
+            return _finish(
+                root, scratch, candidate_runtime["runs"], state_path, state_before, plan, contract,
+                status="evaluation-process-error", passed=False, candidate_decision=None,
+                admitted_attempt=admitted_attempt, materials=materials, admission=admission, rejected_batches=rejected_batches,
+                generation_usage=validation._combine_usages(generation_usages), admission_usage=validation._combine_usages(admission_usages),
+                generation_scheduler=generation_scheduler, evaluation_process_decision=process_failure,
+                candidate_execution=candidate_execution, baseline_execution=baseline_execution, absolute=absolute, relative=relative,
+                resume_proof=resume_proof, general_root_cause=root_cause, answer_failure_attribution=None, started=started,
+                excluded_rejection_wall_seconds=excluded_rejection_wall_seconds,
+                replacement_rounds=replacement_rounds,
+            )
     except (KeyboardInterrupt, InterruptedError):
         _require(state_path.read_bytes() == state_before, "阶段 6 候选盲测中断路径改写了正式 state")
         raise
@@ -404,7 +527,12 @@ def resume_by_plan_identity(
     result_path = root / "result.json"
     if result_path.is_file():
         current = _current_dependencies(suite_root, locator)
-        _require(current == dict(_mapping(plan, "direct_dependencies")), "阶段 6 候选盲测终态直接依赖已漂移")
+        _require(
+            _dependencies_current_or_scheduling_migrated(
+                suite_root, plan_identity, dict(_mapping(plan, "direct_dependencies")), current,
+            ),
+            "阶段 6 候选盲测终态直接依赖已漂移",
+        )
         result = _load_json(result_path)
         _validate_result(result, plan_identity)
         _require(not (root / "active.json").exists(), "阶段 6 候选盲测终态仍有活动恢复文件")
@@ -442,6 +570,7 @@ def _execute(
         "checkpoint_sha256": evidence.file_sha256(output_dir / "checkpoint-manifest.json"),
         "diagnostic_summary_sha256": evidence.file_sha256(summary_path),
         "observation": observation,
+        "run_root": str(output_dir.resolve()),
     }
 
 
@@ -461,6 +590,139 @@ def _absolute_decision(observation: dict[str, Any], contract: dict[str, Any]) ->
         for name, actual, expected, predicate in checks if actual is None or not predicate(actual, expected)
     ]
     return {"passed": not failures, "failures": failures}
+
+
+def _attribute_first_answer_failure(
+    suite_root: Path,
+    root: Path,
+    runtime: dict[str, Any],
+    materials: dict[str, Any],
+    candidate_execution: dict[str, Any],
+    absolute: dict[str, Any],
+) -> dict[str, Any] | None:
+    failed_metrics = {str(item.get("metric")) for item in absolute["failures"]}
+    if "final_answer_accuracy" not in failed_metrics:
+        return None
+    observation = candidate_execution["observation"]
+    missing = int(_mapping(observation, "fact_delivery")["missing_questions"])
+    if missing > 0:
+        return {
+            "classification": "candidate-failure",
+            "reason": "first-answer-wrong-with-incomplete-evidence",
+            "first_answer_failure_remains_failure": True,
+            "diagnostic_repetitions_changed_candidate_decision": False,
+            "reader_profile_identity": "401aa7962b5ecd3d283093a2d5eee0fe76da941d20ce4aa317ef21216d55c83c",
+            "model_calls": 0,
+        }
+    selected_materials, selection = _first_failed_answer_material(
+        materials, Path(candidate_execution["run_root"]), observation,
+    )
+    diagnostic = answer_sufficiency._diagnose_codex_boundaries(
+        suite_root,
+        Path(candidate_execution["run_root"]).parent / "answer-attribution-codex",
+        runtime,
+        selected_materials,
+        Path(candidate_execution["run_root"]),
+        reader_settings=evaluator_reliability.attribution_reader_settings(suite_root),
+        include_original_product_answer=True,
+        product_repeats=(2, 3),
+        oracle_repeats=(1, 2, 3),
+        settings_label="stage6-first-answer-attribution",
+        run_judge=True,
+        correctness_source="judge",
+        prompt_renderer_factory=official_evaluator.PromptRenderer,
+    )
+    classified = _classify_answer_diagnostic(diagnostic)
+    reader = _mapping(diagnostic, "reader")
+    judge = _mapping(diagnostic, "judge")
+    product_records = [item for item in reader["records"] if item["context"] == "product"]
+    oracle_records = [item for item in reader["records"] if item["context"] == "oracle"]
+    product_failures = int(reader["product_context_failures"])
+    oracle_failures = int(reader["oracle_context_failures"])
+    return {
+        "classification": classified["classification"],
+        "reason": classified["reason"],
+        "first_answer_failure_remains_failure": True,
+        "diagnostic_repetitions_changed_candidate_decision": False,
+        "reader_profile_identity": "401aa7962b5ecd3d283093a2d5eee0fe76da941d20ce4aa317ef21216d55c83c",
+        "diagnostic_reader": dict(reader["settings"]),
+        "selection": selection,
+        "product_context": {
+            "observations": sum(int(item["observations"]) for item in product_records),
+            "mechanical_failures": product_failures,
+            "mechanically_unstable_cases": sum(0 < int(item["correct"]) < int(item["observations"]) for item in product_records),
+            "answer_hash_variation_cases": int(reader["product_context_variations"]),
+        },
+        "oracle_context": {
+            "observations": sum(int(item["observations"]) for item in oracle_records),
+            "mechanical_failures": oracle_failures,
+            "mechanically_unstable_cases": sum(0 < int(item["correct"]) < int(item["observations"]) for item in oracle_records),
+            "answer_hash_variation_cases": int(reader["oracle_context_variations"]),
+        },
+        "judge_controls": {
+            "passed": bool(judge["controls_passed"]),
+            "correct": judge["correct_controls"],
+            "wrong": judge["wrong_controls"],
+        },
+        "wording_or_hash_variation_is_failure": False,
+        "raw_answers_persisted": False,
+        "cost": diagnostic["cost"],
+        "transport": diagnostic["transport"],
+    }
+
+
+def _first_failed_answer_material(
+    materials: dict[str, Any],
+    run_root: Path,
+    observation: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    cases = materials.get("cases")
+    _require(isinstance(cases, list) and cases, "首答归因缺少冻结原序材料")
+    summary = _load_json(run_root / "diagnostic-summary.json")
+    _require(summary.get("questions") == len(cases), "首答归因诊断题数与材料不一致")
+    failures: list[tuple[int, dict[str, Any]]] = []
+    for index, case in enumerate(cases):
+        _require(isinstance(case, dict) and isinstance(case.get("case_id"), str), "首答归因材料身份无效")
+        diagnostic = _load_json(run_root / "questions" / str(case["case_id"]) / "diagnostic.json")
+        _require(diagnostic.get("question_id") == case["case_id"], "首答归因逐题诊断错绑")
+        _require(isinstance(diagnostic.get("correct"), bool), "首答归因逐题正确性缺失")
+        if diagnostic["correct"] is False:
+            failures.append((index, case))
+    summary_failures = int(summary["questions"]) - int(summary["correct"])
+    observed_failures = round(observation["questions"] * (1.0 - float(observation["final_answer_accuracy"])))
+    _require(summary_failures == len(failures) and observed_failures == len(failures), "首答归因失败计数与候选报告不一致")
+    _require(bool(failures), "首答归因没有找到实际首答失败题")
+    index, selected = failures[0]
+    selection = {
+        "policy": "first-actual-answer-failure-in-frozen-material-order/v1",
+        "selected_material_order": index + 1,
+        "selected_case_identity": validation._case_fact_identity(selected),
+        "candidate_failed_questions": len(failures),
+        "diagnosed_questions": 1,
+        "selection_uses_expected_answer": False,
+    }
+    return {"cases": [selected]}, selection
+
+
+def _classify_answer_diagnostic(diagnostic: dict[str, Any]) -> dict[str, str]:
+    reader = _mapping(diagnostic, "reader")
+    judge = _mapping(diagnostic, "judge")
+    product_records = [item for item in reader["records"] if item["context"] == "product"]
+    oracle_records = [item for item in reader["records"] if item["context"] == "oracle"]
+    product_unstable = any(0 < int(item["correct"]) < int(item["observations"]) for item in product_records)
+    oracle_unstable = any(0 < int(item["correct"]) < int(item["observations"]) for item in oracle_records)
+    product_failures = int(reader["product_context_failures"])
+    oracle_failures = int(reader["oracle_context_failures"])
+    if not bool(judge["controls_passed"]):
+        return {"classification": "evaluation-process-failure", "reason": "judge-controls-failed"}
+    if oracle_failures > 0 or oracle_unstable:
+        return {"classification": "evaluation-process-failure", "reason": "oracle-context-failed-or-mechanically-unstable"}
+    if product_unstable or product_failures == 0:
+        return {
+            "classification": "evaluation-process-failure",
+            "reason": "byte-identical-product-prompt-mechanically-unstable-or-disagrees-with-first-score",
+        }
+    return {"classification": "candidate-context-failure", "reason": "candidate-context-stably-fails-while-oracle-is-stable"}
 
 
 def _relative_decision(candidate: dict[str, Any], baseline: dict[str, Any]) -> dict[str, Any]:
@@ -515,6 +777,66 @@ def _native_generation_invokers(
         yield invokers
 
 
+def _prepare_locally_replaced_materials(
+    suite_root: Path,
+    output_root: Path,
+    runtime: dict[str, Any],
+    validation_contract: dict[str, Any],
+    contract: dict[str, Any],
+    scratch: Path,
+    gate_seed: str,
+    invokers: list[Callable[..., tuple[dict[str, Any], dict[str, Any]]]],
+) -> dict[str, Any]:
+    work = [
+        (index, coverage, f"g01-c{index:02d}")
+        for index, coverage in enumerate(_coverage_schedule(contract), start=1)
+    ]
+
+    def generate(selected: list[tuple[int, str, str]], round_index: int):
+        seed = hashlib.sha256(f"{gate_seed}:replacement:{round_index}".encode("utf-8")).hexdigest()
+        cases, usages, scheduler = _generate_cases(
+            suite_root, runtime, validation_contract, contract,
+            scratch / f"material-round-{round_index:02d}", seed, invokers,
+            work=selected,
+        )
+        return [
+            (selected[index][0], case, usages[index])
+            for index, case in enumerate(cases)
+        ], scheduler
+
+    def admit(generated: list[dict[str, Any]], round_index: int):
+        materials = _materials_from_generated(generated, contract)
+        validation.validate_materials(materials, expected_questions=int(_mapping(contract, "data")["questions"]))
+        _validate_material_isolation(suite_root, output_root, materials)
+        output, usage = invokers[0](
+            suite_root=suite_root,
+            runtime=runtime,
+            stage=scratch / f"quality-admission-round-{round_index:02d}",
+            role="quality-admission",
+            prompt=validation._admission_prompt(
+                validation_contract,
+                validation._admission_review_materials(materials, generated),
+            ),
+            schema=validation._admission_schema([case["case_id"] for case in materials["cases"]]),
+            settings=_mapping(_mapping(validation_contract, "blind"), "quality_admission"),
+            validate=lambda value: validation.validate_admission(value, materials, validation_contract),
+        )
+        admission = validation.validate_admission(output, materials, validation_contract)
+        rejected = _rejected_case_ids(output, materials, validation_contract)
+        return admission, usage, rejected
+
+    result = material_scheduler.run_local_replacement(
+        work,
+        int(_mapping(contract, "execution")["maximum_replacement_rounds"]),
+        scratch / "material-replacement-checkpoint.json",
+        generate=generate,
+        admit=admit,
+    )
+    result["scheduler"]["max_active_limit"] = int(_mapping(contract, "execution")["generation_max_active"])
+    materials = _materials_from_generated(result["cases"], contract)
+    return {**result, "materials": materials}
+
+
 def _generate_cases(
     suite_root: Path,
     runtime: dict[str, Any],
@@ -523,12 +845,15 @@ def _generate_cases(
     attempt_root: Path,
     attempt_seed: str,
     invokers: list[Callable[..., tuple[dict[str, Any], dict[str, Any]]]],
+    *,
+    work: list[tuple[int, str, str]] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
     _require(bool(invokers), "阶段 6 生成调度缺少 worker")
-    work = [
-        (index, coverage, f"g{attempt_root.name.rsplit('-', 1)[-1]}-c{index:02d}")
-        for index, coverage in enumerate(_coverage_schedule(contract), start=1)
-    ]
+    if work is None:
+        work = [
+            (index, coverage, f"g{attempt_root.name.rsplit('-', 1)[-1]}-c{index:02d}")
+            for index, coverage in enumerate(_coverage_schedule(contract), start=1)
+        ]
     lanes: list[list[tuple[int, str, str]]] = [[] for _ in invokers]
     for index, item in enumerate(work):
         lanes[index % len(lanes)].append(item)
@@ -573,7 +898,7 @@ def _generate_cases(
         for future in futures:
             completed.extend(future.result())
     completed.sort(key=lambda item: item[0])
-    _require([item[0] for item in completed] == list(range(1, len(work) + 1)), "阶段 6 生成结果没有按冻结原序重组")
+    _require([item[0] for item in completed] == [item[0] for item in work], "阶段 6 生成结果没有按冻结原序重组")
     return (
         [item[1] for item in completed],
         [item[2] for item in completed],
@@ -586,6 +911,22 @@ def _generate_cases(
             "result_order": "frozen-coverage-order",
         },
     )
+
+
+def _rejected_case_ids(output: dict[str, Any], materials: dict[str, Any], validation_contract: dict[str, Any]) -> list[str]:
+    required = list(_mapping(_mapping(validation_contract, "blind"), "quality_admission")["required_checks"])
+    assessments = output.get("assessments")
+    _require(isinstance(assessments, list), "阶段 6 质量准入缺少逐题判定")
+    by_id = {str(item.get("case_id")): item for item in assessments if isinstance(item, dict)}
+    rejected = []
+    for case in materials["cases"]:
+        item = by_id.get(str(case["case_id"]))
+        _require(isinstance(item, dict), "阶段 6 质量准入拒绝集合缺少案例")
+        checks = item.get("checks")
+        _require(isinstance(checks, dict) and set(checks) == set(required), "阶段 6 质量准入拒绝集合检查漂移")
+        if any(checks[name] is not True for name in required):
+            rejected.append(str(case["case_id"]))
+    return rejected
 
 
 def _materials_from_generated(cases: list[dict[str, Any]], contract: dict[str, Any]) -> dict[str, Any]:
@@ -617,12 +958,116 @@ def _previous_gate_dependency(
     _validate_plan(plan, str(previous_plan_identity))
     _require(plan.get("level") == previous_level, "前级盲测计划级别错绑")
     locator = _load_locator(root / "locator.json", str(previous_plan_identity))
-    _require(_current_dependencies(suite_root, locator) == dict(_mapping(plan, "direct_dependencies")), "前级盲测直接依赖已漂移")
+    current_dependencies = _current_dependencies(suite_root, locator)
+    _require(
+        _dependencies_current_or_scheduling_migrated(
+            suite_root, str(previous_plan_identity), dict(_mapping(plan, "direct_dependencies")), current_dependencies,
+        ),
+        "前级盲测直接依赖已漂移",
+    )
     result = _load_json(root / "result.json")
     _validate_result(result, str(previous_plan_identity))
-    _require(result.get("passed") is True and result.get("candidate_decision") is True, "前级盲测没有通过")
-    _require(result.get("next_level") == contract["level"], "前级盲测没有授权当前级别")
-    return str(result["identity"])
+    if result.get("passed") is True:
+        _require(result.get("candidate_decision") is True, "前级盲测候选裁决没有通过")
+        _require(result.get("next_level") == contract["level"], "前级盲测没有授权当前级别")
+        return str(result["identity"])
+    migration = _load_scheduling_migration(suite_root)
+    preserved = _mapping(migration, "preserved_25_candidate_decision")
+    _require(
+        previous_level == 25
+        and contract["level"] == 50
+        and preserved.get("plan_identity") == previous_plan_identity
+        and preserved.get("result_identity") == result.get("identity")
+        and preserved.get("result_sha256") == evidence.file_sha256(root / "result.json")
+        and result.get("candidate_decision") is True
+        and result.get("status") == "evaluation-process-rejected"
+        and _mapping(result, "evaluation_process_decision").get("candidate_failure") is False,
+        "25 题候选通过证据没有被精确保留",
+    )
+    qualification = _mapping(migration, "noncandidate_qualification")
+    qualification_result_path = (suite_root.parents[2] / str(qualification["result_relative"])).resolve()
+    _require(qualification_result_path.is_file(), "50 题前级缺少材料调度资格结果")
+    qualification_result = _load_json(qualification_result_path)
+    _require(
+        qualification_result.get("identity") == qualification.get("result_identity")
+        and evidence.file_sha256(qualification_result_path) == qualification.get("result_sha256")
+        and qualification_result.get("passed") is True
+        and qualification_result.get("status") == "qualified"
+        and qualification_result.get("candidate_executions") == qualification_result.get("baseline_executions") == 0,
+        "50 题前级材料调度资格无效",
+    )
+    resumed = admission_reliability.resume_by_plan_identity(
+        suite_root,
+        qualification_result_path.parents[2],
+        str(qualification["plan_identity"]),
+    )
+    _require(resumed.get("reused") is True and resumed.get("model_calls") == resumed.get("product_executions") == 0, "材料调度资格不能零执行恢复")
+    return evidence.canonical_sha256({
+        "schema": "ownward.kernel-iteration-stage6-qualified-predecessor/v1",
+        "candidate_result": result["identity"],
+        "scheduling_migration": migration["identity"],
+        "noncandidate_qualification": qualification_result["identity"],
+    })
+
+
+def _load_scheduling_migration(suite_root: Path) -> dict[str, Any]:
+    value = _load_json(suite_root.resolve() / SCHEDULING_MIGRATION_RELATIVE)
+    content = {key: item for key, item in value.items() if key != "identity"}
+    _require(value.get("schema") == "ownward.kernel-iteration-stage6-material-scheduling-migration/v1", "阶段 6 材料调度迁移 schema 无效")
+    _require(value.get("identity") == evidence.canonical_sha256(content), "阶段 6 材料调度迁移身份漂移")
+    _require(value.get("target_controller_identity") == "0f56c23cd26360d4276da13b4e673099f645f92ccc4f3cb59c048ddd5f02fea3", "阶段 6 材料调度迁移历史目标漂移")
+    _require(value.get("future_gate_level") == 50, "阶段 6 材料调度迁移越过未来 50 题边界")
+    return value
+
+
+def _load_evaluator_reliability_migration(suite_root: Path) -> dict[str, Any]:
+    value = _load_json(suite_root.resolve() / EVALUATOR_RELIABILITY_MIGRATION_RELATIVE)
+    content = {key: item for key, item in value.items() if key != "identity"}
+    _require(value.get("schema") == "ownward.kernel-iteration-stage6-evaluator-reliability-migration/v4", "阶段 6 官方评测器可靠性迁移 schema 无效")
+    _require(value.get("identity") == evidence.canonical_sha256(content), "阶段 6 官方评测器可靠性迁移身份漂移")
+    _require(value.get("target_controller_identity") == _implementation_identity()["controller"], "阶段 6 官方评测器可靠性迁移没有绑定当前控制器")
+    _require(value.get("candidate_results_rewritten") is False and value.get("model_or_product_execution") is False, "阶段 6 官方评测器可靠性迁移越权")
+    return value
+
+
+def _dependencies_current_or_scheduling_migrated(
+    suite_root: Path,
+    plan_identity: str,
+    planned: dict[str, Any],
+    current: dict[str, str],
+) -> bool:
+    if current == planned:
+        return True
+    expected = dict(planned)
+    try:
+        migration = _load_scheduling_migration(suite_root)
+    except (OSError, ValueError, KeyError, json.JSONDecodeError):
+        migration = None
+    if migration is not None:
+        preserved = {str(item.get("plan_identity")) for item in migration.get("preserved_current_chain", []) if isinstance(item, dict)}
+        if plan_identity in preserved and expected.get("controller") == migration.get("source_controller_identity"):
+            expected["controller"] = str(migration.get("target_controller_identity"))
+    if current == expected:
+        return True
+    try:
+        evaluator_migration = _load_evaluator_reliability_migration(suite_root)
+    except (OSError, ValueError, KeyError, json.JSONDecodeError):
+        return False
+    preserved = {str(item.get("plan_identity")) for item in evaluator_migration.get("preserved_plans", []) if isinstance(item, dict)}
+    if plan_identity not in preserved:
+        return False
+    for name, transition in _mapping(evaluator_migration, "dependency_changes").items():
+        _require(isinstance(transition, dict), "阶段 6 官方评测器依赖迁移项无效")
+        target = str(transition.get("target"))
+        if expected.get(name) == target:
+            continue
+        source = transition.get("source")
+        accepted_sources = transition.get("accepted_sources", [source])
+        _require(isinstance(accepted_sources, list), "阶段 6 官方评测器迁移源集合无效")
+        if expected.get(name) not in accepted_sources:
+            return False
+        expected[name] = target
+    return current == expected
 
 
 def _failure_transition(
@@ -634,6 +1079,19 @@ def _failure_transition(
 ) -> dict[str, Any] | None:
     if passed:
         return None
+    if status == "evaluation-process-error":
+        return {
+            "candidate_failed": False,
+            "reason": status,
+            "general_root_cause": root_cause,
+            "return_to_stage": 2,
+            "same_blind_content_rerun_forbidden": True,
+            "required_loop": [
+                "destroy-current-blind-content",
+                "repair-and-requalify-stage6-evaluation-process",
+                "restart-stage6-from-a-fresh-same-level-gate",
+            ],
+        }
     if candidate_decision is None:
         return {
             "candidate_failed": False,
@@ -676,6 +1134,8 @@ def _next_action(contract: dict[str, Any], status: str, passed: bool, candidate_
     if passed:
         following = _mapping(contract, "sequence")["next_level"]
         return "stage7-final-handoff" if following is None else f"run-fresh-{following}-question-gate"
+    if status == "evaluation-process-error":
+        return "repair-and-requalify-stage6-evaluation-process-before-fresh-same-level-gate"
     if candidate_decision is None:
         return "generate-a-fresh-plan-after-quality-admission-exhaustion"
     if candidate_decision is True:
@@ -716,6 +1176,31 @@ def _resume_proof(
     return {"subjects": proofs, "passed": True}
 
 
+def _persist_candidate_observation(
+    root: Path,
+    plan: dict[str, Any],
+    candidate_execution: dict[str, Any],
+    absolute: dict[str, Any],
+) -> dict[str, Any]:
+    content = {
+        "schema": "ownward.kernel-iteration-stage6-candidate-observation/v1",
+        "plan_identity": plan["identity"],
+        "candidate_subject_identity": candidate_execution["subject_identity"],
+        "execution": _execution_aggregate(candidate_execution),
+        "absolute_decision": absolute,
+        "contains_reversible_question_answer_or_evidence": False,
+        "candidate_decision": None,
+        "purpose": "durable-pre-attribution-evaluation-fact",
+    }
+    value = {**content, "identity": evidence.canonical_sha256(content)}
+    path = root / "candidate-observation.json"
+    if path.is_file():
+        _require(_load_json(path) == value, "阶段 6 候选观察检查点身份漂移")
+    else:
+        evidence.atomic_json(path, value)
+    return value
+
+
 def _finish(
     root: Path,
     scratch: Path,
@@ -742,8 +1227,10 @@ def _finish(
     relative: dict[str, Any] | None,
     resume_proof: dict[str, Any] | None,
     general_root_cause: dict[str, Any] | None,
+    answer_failure_attribution: dict[str, Any] | None,
     started: float,
     excluded_rejection_wall_seconds: float,
+    replacement_rounds: list[dict[str, Any]],
 ) -> dict[str, Any]:
     decision_wall = _decision_wall_seconds(started, excluded_rejection_wall_seconds)
     rejected_wall = sum(float(item.get("wall_seconds", 0.0)) for item in rejected_batches)
@@ -775,6 +1262,7 @@ def _finish(
         "coverage_counts": ({name: sum(case["coverage"] == name for case in materials["cases"]) for name in validation.BLIND_COVERAGE} if materials is not None else {}),
         "quality_admission": admission,
         "rejected_batches": rejected_batches,
+        "replacement_rounds": replacement_rounds,
         "generation_usage": validation._sanitize_usage(generation_usage),
         "admission_usage": validation._sanitize_usage(admission_usage),
         "generation_scheduler": generation_scheduler,
@@ -784,6 +1272,7 @@ def _finish(
         "evaluation_process_decision": evaluation_process_decision,
         "resume_proof": resume_proof,
         "general_root_cause": general_root_cause,
+        "answer_failure_attribution": answer_failure_attribution,
         "failure_transition": _failure_transition(contract, status, passed, candidate_decision, general_root_cause),
         "cost_and_recovery": {
             "candidate_decision_wall_seconds": decision_wall,
@@ -899,6 +1388,7 @@ def _direct_dependencies(
     baseline_runtime: dict[str, Any],
     runtime_calibration: dict[str, Any],
     shared_conditions: dict[str, str],
+    reader_selection: dict[str, Any],
 ) -> dict[str, str]:
     repository = suite_root.parents[2]
     stage5_freeze = _load_json(repository / STAGE5_FREEZE_RELATIVE)
@@ -924,6 +1414,10 @@ def _direct_dependencies(
         "comparison-contract": comparison["identity"],
         "validation-contract": validation_contract["identity"],
         "blind-budget": budget["identity"],
+        "reader-reliability-contract": reader_selection["contract_identity"],
+        "reader-reliability-selection": reader_selection["identity"],
+        "reader-profile": reader_selection["selected_reader_profile_identity"],
+        "answer-attribution-controller": evidence.file_sha256(Path(answer_sufficiency.__file__).resolve()),
         "stage5-freeze": stage5_freeze["identity"],
         "candidate-subject": candidate["identity"],
         "baseline-subject": baseline["identity"],
@@ -950,8 +1444,13 @@ def _current_dependencies(suite_root: Path, locator: dict[str, Any]) -> dict[str
     comparison = evidence.load_contract(suite_root)
     validation_contract = validation.load_validation_contract(suite_root)
     budget = validation.load_blind_budget_archive(suite_root)
-    candidate_runtime = validation.validate_execution_config(suite_root, Path(locator["candidate_execution_config"]))
-    baseline_runtime = validation.validate_execution_config(suite_root, Path(locator["baseline_execution_config"]))
+    reader_selection = reader_reliability.load_selection(suite_root)
+    candidate_runtime = validation.validate_execution_config(
+        suite_root, Path(locator["candidate_execution_config"]), expected_reader_effort=reader_selection["selected_reasoning_effort"],
+    )
+    baseline_runtime = validation.validate_execution_config(
+        suite_root, Path(locator["baseline_execution_config"]), expected_reader_effort=reader_selection["selected_reasoning_effort"],
+    )
     candidate = evidence.select_subject(comparison, None, Path(locator["candidate_subject_manifest"]))
     baseline = evidence.select_subject(comparison, "v0")
     _validate_subjects(contract, candidate, baseline, candidate_runtime, baseline_runtime)
@@ -959,7 +1458,10 @@ def _current_dependencies(suite_root: Path, locator: dict[str, Any]) -> dict[str
     runtime_calibration = evidence.inspect_runtime_calibration(suite_root, Path(locator["formal_state"]))
     dependencies = _direct_dependencies(
         suite_root, contract, comparison, validation_contract, budget, candidate, baseline,
-        candidate_runtime, baseline_runtime, runtime_calibration, shared,
+        candidate_runtime, baseline_runtime, runtime_calibration, shared, reader_selection,
+    )
+    dependencies["evaluator-environment-qualification"] = str(
+        evaluator_reliability.load_current_qualification(suite_root, Path(locator["candidate_execution_config"]))["identity"]
     )
     previous = _previous_gate_dependency(
         suite_root, Path(locator["output_root"]), contract, locator.get("previous_plan_identity"),
@@ -976,11 +1478,18 @@ def _implementation_identity() -> dict[str, str]:
         "observer-and-scorer": (validation.observe_report, _absolute_decision, _relative_decision, _general_root_cause),
         "controller": (
             load_contract, run, resume_by_plan_identity, _coverage_schedule,
-            _decision_wall_seconds, _native_generation_invokers, _generate_cases, _materials_from_generated,
-            _previous_gate_dependency, _execute, _resume_proof, _finish,
+            _decision_wall_seconds, _native_generation_invokers, _prepare_locally_replaced_materials,
+            _generate_cases, _rejected_case_ids, _materials_from_generated,
+            _previous_gate_dependency, _load_scheduling_migration, _load_evaluator_reliability_migration,
+            _dependencies_current_or_scheduling_migrated, _execute, _resume_proof, _finish,
             _failure_transition, _next_action, _validate_material_isolation,
+            _attribute_first_answer_failure, _first_failed_answer_material, _classify_answer_diagnostic,
             _initialize_recovery, _current_dependencies, _validate_plan,
             _validate_result, _destroy_scratch,
+            material_scheduler.run_local_replacement,
+            material_scheduler._merge_scheduler,
+            material_scheduler._write_checkpoint,
+            material_scheduler._load_checkpoint,
         ),
     }
     return {
@@ -1097,14 +1606,25 @@ def _validate_result(value: dict[str, Any], plan_identity: str) -> None:
     _require(cost.get("admission_rejection_not_candidate_failure") is True, "阶段 6 候选盲测错误地把准入拒绝计为候选失败")
     _require(float(cost.get("candidate_decision_wall_seconds", -1)) >= 0.0, "阶段 6 候选判定墙钟无效")
     scheduler = _mapping(value, "generation_scheduler")
+    level = int(value["level"])
+    expected_limit = 8 if level == 50 else 4
+    expected_policy = (
+        "bounded-independent-lanes-rejected-only-original-order/v1"
+        if level == 50
+        else "bounded-independent-lanes-original-order/v1"
+    )
     _require(
-        scheduler.get("policy") == "bounded-independent-lanes-original-order/v1"
-        and int(scheduler.get("max_active_limit", 0)) == 4
-        and 0 <= int(scheduler.get("max_active_observed", -1)) <= 4
+        scheduler.get("policy") == expected_policy
+        and int(scheduler.get("max_active_limit", 0)) == expected_limit
+        and 0 <= int(scheduler.get("max_active_observed", -1)) <= expected_limit
         and scheduler.get("per_worker_max_active_turns") == 1
         and scheduler.get("result_order") == "frozen-coverage-order",
         "阶段 6 生成调度终态无效",
     )
+    if level == 50:
+        rounds = value.get("replacement_rounds")
+        _require(isinstance(rounds, list) and 1 <= len(rounds) <= 3, "阶段 6 50 题缺少局部替换终态")
+        _require(all(int(item.get("full_admission_questions", 0)) == 50 for item in rounds if isinstance(item, dict)), "阶段 6 50 题替换后没有整集复审")
     process = value.get("evaluation_process_decision")
     if value.get("status") == "evaluation-process-rejected":
         _require(
@@ -1115,6 +1635,19 @@ def _validate_result(value: dict[str, Any], plan_identity: str) -> None:
             and process.get("candidate_failure") is False
             and _mapping(value, "failure_transition").get("candidate_failed") is False,
             "阶段 6 评测流程超时被错误归为候选失败",
+        )
+    if value.get("status") == "evaluation-process-error":
+        _require(
+            value.get("passed") is False
+            and value.get("candidate_decision") is None
+            and isinstance(process, dict)
+            and process.get("passed") is False
+            and process.get("candidate_failure") is False
+            and process.get("fail_closed") is True
+            and _mapping(value, "failure_transition").get("candidate_failed") is False
+            and isinstance(value.get("executions"), dict)
+            and _mapping(value, "executions").get("candidate") is not None,
+            "阶段 6 评测流程异常没有 fail-closed 保留候选观察",
         )
 
 
@@ -1146,6 +1679,18 @@ def _terminal_reference(path: Path, result: dict[str, Any], *, reused: bool) -> 
         "next_level": result.get("next_level"),
         "stage6_complete": result.get("stage6_complete", False),
         "next_action": result.get("next_action"),
+    }
+
+
+def _valid_rejection_receipt(value: Any) -> bool:
+    if not isinstance(value, dict) or not isinstance(value.get("attempt"), int):
+        return False
+    aggregate = value.get("failure_aggregate")
+    if not isinstance(aggregate, dict):
+        return False
+    return set(aggregate) == {
+        "rejected_by_coverage", "failed_by_check",
+        "failed_by_coverage_and_check", "failed_check_combinations",
     }
 
 

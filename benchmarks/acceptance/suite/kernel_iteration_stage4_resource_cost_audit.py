@@ -15,6 +15,9 @@ import kernel_iteration_validation as validation
 SCHEMA = "ownward.kernel-iteration-stage4-resource-cost-controllability-audit/v1"
 CONTRACT_SCHEMA = "ownward.kernel-iteration-stage4-resource-cost-controllability-audit-contract/v1"
 CONTRACT_PATH = Path("iteration/v2/stage4-resource-cost-controllability-audit-contract.json")
+DEPENDENCY_MIGRATION_SCHEMA = "ownward.kernel-iteration-direct-dependency-migration/v1"
+DEPENDENCY_MIGRATION_PATH = Path("iteration/v2/stage4-resource-cost-raw-vector-lifecycle-dependency-migration.json")
+DEPENDENCY_MIGRATION_REASON = "non-stage4-diagnostic-maintenance-changes-only-explicitly-listed-callers-without-changing-frozen-stage4-contracts-or-results"
 SEMANTIC_INSTRUCTION = (
     "Act only as Ownward's external semantic capability. Analyze every supplied semantic work item exactly once. "
     "The items came from Ownward's public semantic_work path; the host will validate and submit your result through "
@@ -95,11 +98,43 @@ def load_contract(suite_root: Path) -> dict[str, Any]:
     value = _load_json(path)
     _validate_identity(value, CONTRACT_SCHEMA, "资源同尺审计合同")
     repository = suite_root.parents[2]
+    drifted = {}
     for item in value["direct_dependencies"]:
         dependency = repository / item["path"]
-        _require(dependency.is_file(), f"资源同尺审计依赖缺失: {dependency}")
-        _require(evidence.file_sha256(dependency) == item["sha256"], f"资源同尺审计依赖漂移: {dependency}")
+        current = evidence.file_sha256(dependency) if dependency.is_file() else None
+        if current != item["sha256"]:
+            drifted[item["path"]] = {"frozen": item["sha256"], "current": current}
+    if drifted:
+        _verify_dependency_migration(suite_root, value["identity"], drifted)
     return value
+
+
+def _verify_dependency_migration(
+    suite_root: Path,
+    contract_identity: str,
+    drifted: dict[str, dict[str, str | None]],
+) -> None:
+    migration = _load_json(suite_root / DEPENDENCY_MIGRATION_PATH)
+    _validate_identity(migration, DEPENDENCY_MIGRATION_SCHEMA, "Stage 4 精确依赖迁移收据")
+    _require(migration.get("reason") == DEPENDENCY_MIGRATION_REASON, "Stage 4 精确依赖迁移原因漂移")
+    related = migration.get("related_contract_migrations", {}).get(contract_identity, {})
+    changes = {
+        item["path"]: {"frozen": item["frozen_sha256"], "current": item["current_sha256"]}
+        for item in related.get("changes", [])
+    }
+    classifications = {item["path"]: item.get("classification") for item in related.get("changes", [])}
+    _require(changes == drifted, "资源同尺审计依赖漂移不在精确迁移收据内")
+    _require(classifications == {
+        "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_audit.py": "dependency-receipt-validation-only",
+        "benchmarks/acceptance/suite/kernel_iteration_validation.py": "non-stage4-reader-profile-and-cost-proof-validation-only",
+        "benchmarks/longmemeval_s/run.py": "reader-profile-validation-and-formal-protocol-unification-only",
+    }, "资源同尺审计依赖迁移分类漂移")
+    _require(related.get("preserved") == {
+        "contract_identity": True,
+        "thresholds": True,
+        "evidence_identities": True,
+        "formal_state_sha256": True,
+    }, "资源同尺审计依赖迁移保护边界漂移")
 
 
 def audit_semantic_inputs(runs: Path, plans: dict[str, Any]) -> dict[str, Any]:

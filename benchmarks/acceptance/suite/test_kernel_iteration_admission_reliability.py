@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import inspect
 from pathlib import Path
 import tempfile
 import unittest
@@ -31,6 +32,27 @@ class AdmissionReliabilityTests(unittest.TestCase):
         self.assertEqual(contract["modes"]["qualification"]["batches"], 2)
         self.assertTrue(contract["quality"]["candidate_or_baseline_execution_forbidden"])
         self.assertEqual(contract["budget"]["per_batch_wall_seconds_maximum"], 492)
+        self.assertEqual(contract["execution"]["generation_max_active"], 8)
+        self.assertEqual(contract["execution"]["rejection_replacement"], "rejected-cases-only")
+        self.assertTrue(contract["execution"]["full_set_readmission_after_replacement"])
+
+    def test_cli_entry_identity_is_role_owned_and_scopes_real_dispatch(self) -> None:
+        identity = reliability.cli_entry_identity()
+        self.assertEqual(len(identity), 64)
+        sources = "\n".join(inspect.getsource(callback) for callback in (
+            reliability.add_cli_arguments, reliability.cli_selected, reliability.dispatch_cli,
+        ))
+        self.assertIn("--blind-admission-reliability-config", sources)
+        self.assertIn("resume_by_plan_identity", sources)
+        self.assertIn("return run(", sources)
+        original = reliability.inspect.getsource
+
+        def changed_dispatch(callback):
+            source = original(callback)
+            return source + "\n# changed\n" if callback is reliability.dispatch_cli else source
+
+        with mock.patch.object(reliability.inspect, "getsource", side_effect=changed_dispatch):
+            self.assertNotEqual(identity, reliability.cli_entry_identity())
 
     def test_admission_aggregate_has_coverage_check_and_combination_without_case_ids(self) -> None:
         materials = self._materials()
@@ -48,9 +70,31 @@ class AdmissionReliabilityTests(unittest.TestCase):
         self.assertNotIn("b01-c01", json.dumps(aggregate, ensure_ascii=False))
 
     def test_fifteen_case_admission_prompt_uses_actual_batch_size(self) -> None:
-        prompt = validation._admission_prompt(self._validation_contract(), self._materials())
+        generated = [
+            validation._validate_generated_case({"case": ReliabilityFixture.case(f"b01-c{index:02d}", validation.BLIND_COVERAGE[(index - 1) % 5])}, f"b01-c{index:02d}", validation.BLIND_COVERAGE[(index - 1) % 5], self._validation_contract())
+            for index in range(1, 16)
+        ]
+        materials = reliability._materials(generated)
+        prompt = validation._admission_prompt(
+            self._validation_contract(), validation._admission_review_materials(materials, generated),
+        )
         self.assertIn("Assess all 15 cases independently", prompt)
         self.assertNotIn("five-case batch", prompt)
+
+    def test_mechanical_admission_proof_rejects_unbound_quotes_controls_and_shortcuts(self) -> None:
+        contract = self._validation_contract()
+        case = ReliabilityFixture.case("b01-c05", "multi-session-distractor")
+        case["evidence_bindings"][0]["quote"] = "not present in the declared source"
+        with self.assertRaisesRegex(validation.KernelIterationValidationError, "引文不在声明会话"):
+            validation._validate_generated_case({"case": case}, "b01-c05", "multi-session-distractor", contract)
+        case = ReliabilityFixture.case("b01-c05", "multi-session-distractor")
+        case["control_binding"]["wrong_answer_session_id"] = case["answer_session_ids"][0]
+        with self.assertRaisesRegex(validation.KernelIterationValidationError, "错误答案没有绑定声明干扰证据"):
+            validation._validate_generated_case({"case": case}, "b01-c05", "multi-session-distractor", contract)
+        case = ReliabilityFixture.case("b01-c05", "multi-session-distractor")
+        case["surface_shortcut_proof"]["question_clues"][1]["distractor_session_id"] = f"c05-s04"
+        with self.assertRaisesRegex(validation.KernelIterationValidationError, "问题线索没有干扰项镜像"):
+            validation._validate_generated_case({"case": case}, "b01-c05", "multi-session-distractor", contract)
 
     def test_generated_case_mechanical_guards_reject_surface_and_temporal_shortcuts(self) -> None:
         contract = self._validation_contract()
@@ -64,7 +108,7 @@ class AdmissionReliabilityTests(unittest.TestCase):
             validation._validate_generated_case({"case": case}, "b01-c01", "temporal-order", contract)
         case = ReliabilityFixture.case("b01-c01", "temporal-order")
         case["sessions"][3]["turns"][0]["content"] += " alpha"
-        with self.assertRaisesRegex(validation.KernelIterationValidationError, "干扰证据泄露"):
+        with self.assertRaisesRegex(validation.KernelIterationValidationError, "非答案会话泄露"):
             validation._validate_generated_case({"case": case}, "b01-c01", "temporal-order", contract)
 
     def test_generator_schema_binds_every_reference_to_the_case_local_session_set(self) -> None:
@@ -99,14 +143,14 @@ class AdmissionReliabilityTests(unittest.TestCase):
         with self.assertRaisesRegex(validation.KernelIterationValidationError, "双锚点存在第二条路径"):
             validation._validate_generated_case({"case": case}, "b01-c02", "temporal-order", contract)
 
-    def test_default_controller_reuses_one_single_turn_server_per_batch(self) -> None:
+    def test_default_controller_uses_bounded_independent_single_turn_workers_per_batch(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             fixture = ReliabilityFixture(self.suite_root, Path(directory))
             opened: list[str] = []
 
             @contextmanager
             def batch_invoker(_suite_root: Path, _runtime: dict[str, object], transport_parent: Path):
-                opened.append(transport_parent.parent.name)
+                opened.append(transport_parent.name)
                 yield fixture.invoke
 
             with fixture.patches(), mock.patch.object(validation, "_native_codex_batch_invoker", side_effect=batch_invoker):
@@ -119,7 +163,7 @@ class AdmissionReliabilityTests(unittest.TestCase):
                     seed="reliability-fixture-seed-0002",
                 )
             self.assertTrue(result["passed"])
-            self.assertEqual(opened, ["batch-01", "batch-02"])
+            self.assertEqual(opened, [f"worker-{index:02d}" for index in range(1, 9)] * 2)
             self.assertEqual(fixture.generator_calls, 30)
             self.assertEqual(fixture.admission_calls, 2)
 
@@ -150,15 +194,34 @@ class AdmissionReliabilityTests(unittest.TestCase):
             self.assertFalse(fixture.scratch_root.exists())
             self.assertEqual(fixture.state_path.read_bytes(), fixture.state_bytes)
 
-    def test_qualification_failure_stops_without_extra_batch_and_preserves_aggregate(self) -> None:
+    def test_rejected_case_only_is_replaced_then_full_set_is_readmitted_in_original_order(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             fixture = ReliabilityFixture(self.suite_root, Path(directory), rejected_batches={1: {"b01-c01": ("unique_answer",)}})
+            result = fixture.run("qualification")
+            self.assertTrue(result["passed"])
+            terminal = json.loads(Path(result["result"]).read_text(encoding="utf-8"))
+            first = terminal["batches"][0]
+            self.assertEqual([item["generated_count"] for item in first["replacement_rounds"]], [15, 1])
+            self.assertEqual([item["preserved_count"] for item in first["replacement_rounds"]], [0, 14])
+            self.assertEqual([item["full_admission_questions"] for item in first["replacement_rounds"]], [15, 15])
+            self.assertEqual(fixture.generated_case_ids.count("b01-c01"), 2)
+            self.assertEqual(fixture.generated_case_ids.count("b01-c02"), 1)
+            self.assertEqual(fixture.generator_calls, 31)
+            self.assertEqual(fixture.admission_calls, 3)
+
+    def test_replacement_exhaustion_fails_open_without_starting_second_batch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            failures = {index: {"b01-c01": ("unique_answer",)} for index in (1, 2, 3)}
+            fixture = ReliabilityFixture(self.suite_root, Path(directory), rejected_batches=failures)
             result = fixture.run("qualification")
             self.assertFalse(result["passed"])
             terminal = json.loads(Path(result["result"]).read_text(encoding="utf-8"))
             self.assertEqual(len(terminal["batches"]), 1)
+            self.assertEqual(len(terminal["batches"][0]["replacement_rounds"]), 3)
             self.assertEqual(terminal["aggregate_diagnostics"]["failed_by_check"]["unique_answer"], 1)
             self.assertEqual(terminal["next_action"], "continue-same-stage2-root-cause")
+            self.assertEqual(fixture.generator_calls, 17)
+            self.assertEqual(fixture.admission_calls, 3)
 
     def test_interrupted_second_batch_resumes_from_aggregate_progress(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -176,6 +239,28 @@ class AdmissionReliabilityTests(unittest.TestCase):
             self.assertTrue(resumed["passed"])
             self.assertEqual(fixture.generator_calls, 31)
             self.assertEqual(fixture.admission_calls, 2)
+            self.assertFalse(fixture.scratch_root.exists())
+
+    def test_interrupted_replacement_resumes_from_atomic_round_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = ReliabilityFixture(
+                self.suite_root,
+                Path(directory),
+                rejected_batches={1: {"b01-c01": ("unique_answer",)}},
+                interrupt_on_second_batch=True,
+            )
+            with self.assertRaises(InterruptedError):
+                fixture.run("qualification")
+            checkpoint = fixture.scratch_root / "batch-01" / "replacement-checkpoint.json"
+            self.assertTrue(checkpoint.is_file())
+            fixture.interrupt_on_second_batch = False
+            with fixture.patches():
+                resumed = reliability.resume_by_plan_identity(
+                    self.suite_root, fixture.output_root, str(fixture.plan_identity), invoker=fixture.invoke,
+                )
+            self.assertTrue(resumed["passed"])
+            self.assertEqual(fixture.generated_case_ids.count("b01-c01"), 2)
+            self.assertEqual(fixture.generated_case_ids.count("b01-c02"), 1)
             self.assertFalse(fixture.scratch_root.exists())
 
     def test_terminal_resume_is_zero_execution_and_dependency_drift_fails(self) -> None:
@@ -242,6 +327,7 @@ class ReliabilityFixture:
         self.rejected_batches = rejected_batches or {}
         self.interrupt_on_second_batch = interrupt_on_second_batch
         self.generator_calls = 0
+        self.generated_case_ids: list[str] = []
         self.admission_calls = 0
         self.plan_identity: str | None = None
 
@@ -286,6 +372,7 @@ class ReliabilityFixture:
             properties = schema["properties"]["case"]["properties"]
             case_id = properties["case_id"]["enum"][0]
             coverage = properties["coverage"]["enum"][0]
+            self.generated_case_ids.append(case_id)
             return {"case": self.case(case_id, coverage)}, {"calls": 1, "attempts": 1, "wall_seconds": 0.1, "retries": 0, "rate_limit_events": 0}
         self.admission_calls += 1
         batch = self.admission_calls
@@ -334,6 +421,7 @@ class ReliabilityFixture:
                 "temporal_session_id": answer_ids[1],
                 "question_anchor_terms": [anchor_one, anchor_two],
             }
+            sessions[4]["turns"][0]["content"] += f" It also mentions {anchor_one}."
         if coverage == "multi-session-distractor":
             link_key = f"KEY-{case_number:02d}-QD"
             qualifier_one = f"Unit Indigo {case_number:02d}"
@@ -347,6 +435,26 @@ class ReliabilityFixture:
                 "selector_session_id": answer_ids[1],
                 "question_qualifier_terms": [qualifier_one, qualifier_two],
             }
+            sessions[4]["turns"][0]["content"] += f" It also mentions {qualifier_one}."
+        evidence_bindings = [
+            {"session_id": session_id, "quote": sessions[int(session_id.rsplit("s", 1)[1]) - 1]["turns"][0]["content"]}
+            for session_id in answer_ids
+        ]
+        if coverage == "temporal-order":
+            question_clues = [
+                {"clue": "value", "support_session_id": answer_ids[0], "distractor_session_id": f"{session_prefix}-s04"},
+                {"clue": anchor_one, "support_session_id": answer_ids[1], "distractor_session_id": f"{session_prefix}-s05"},
+            ]
+        elif coverage == "multi-session-distractor":
+            question_clues = [
+                {"clue": "value", "support_session_id": answer_ids[0], "distractor_session_id": f"{session_prefix}-s04"},
+                {"clue": qualifier_one, "support_session_id": answer_ids[1], "distractor_session_id": f"{session_prefix}-s05"},
+            ]
+        else:
+            question_clues = [
+                {"clue": prefix, "support_session_id": answer_ids[0], "distractor_session_id": f"{session_prefix}-s04"},
+                {"clue": "value", "support_session_id": answer_ids[-1], "distractor_session_id": f"{session_prefix}-s04"},
+            ]
         result = {
             "case_id": case_id,
             "coverage": coverage,
@@ -359,6 +467,13 @@ class ReliabilityFixture:
             "distractor_session_ids": [f"{session_prefix}-s03", f"{session_prefix}-s04"] if coverage == "knowledge-update-conflict" else [f"{session_prefix}-s04", f"{session_prefix}-s05"],
             "truth_claims": [{"claim": f"{prefix} independent evidence statement", "evidence_session_ids": [session_id]} for session_id in answer_ids],
             "sessions": sessions,
+            "evidence_bindings": evidence_bindings,
+            "control_binding": {
+                "plausible_wrong_answer": "beta",
+                "wrong_answer_session_id": f"{session_prefix}-s04",
+                "missing_evidence_session_id": answer_ids[0],
+            },
+            "surface_shortcut_proof": {"question_clues": question_clues},
         }
         if temporal_binding is not None:
             result["temporal_binding"] = temporal_binding
@@ -371,7 +486,10 @@ class ReliabilityFixture:
         return {
             "identity": "a" * 64,
             "blind": {
-                "generation": {"model": "generator", "reasoning_effort": "medium", "timeout_seconds": 1, "attempts": 1},
+                "generation": {
+                    "model": "generator", "reasoning_effort": "xhigh", "timeout_seconds": 1, "attempts": 1,
+                    "max_active": 4, "worker_active_turns_maximum": 1, "result_order": "frozen-coverage-order",
+                },
                 "quality_admission": {
                     "model": "admission", "reasoning_effort": "medium", "timeout_seconds": 1, "attempts": 1,
                     "required_checks": list(CHECKS),

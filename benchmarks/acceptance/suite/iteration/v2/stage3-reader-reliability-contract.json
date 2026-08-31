@@ -1,0 +1,76 @@
+{
+  "schema": "ownward.kernel-iteration-stage3-reader-reliability-contract/v1",
+  "purpose": "select-the-lowest-stable-luna-reader-effort-and-freeze-stage6-answer-failure-attribution-before-any-new-blind-result",
+  "frozen_before_new_reader_results": true,
+  "formal": false,
+  "blind_gate_execution": false,
+  "contains_blind_or_formal_question_answer_gold_content_outputs_or_case_ids": false,
+  "sources": {
+    "materials": {
+      "path": "iteration/v2/stage3-answer-sufficiency-materials.json",
+      "sha256": "dcf317714c99f1d6b68917eecc63c848504d4e1338616a3ebf65f2a9ada9a6f2",
+      "identity": "6aa0b7d7c7258570b9a233fe6ad3bc1cd6617915ae1259e8954ac0e81a5a1234"
+    },
+    "medium_diagnosis": {
+      "plan_identity": "cf56072f089cf5511d8d8825c2e87adf94ed936f3aeb7511bcdc529d92b387ff",
+      "result_identity": "767654c6b4c75eac31539f12e949726841a9114f10ef5556d1990d17cd1d0fad",
+      "sha256": "5081f1a185613233d8a4d633c7258a3aa7870244c9183d1e824b1ba52947981a",
+      "reader_model": "gpt-5.6-luna",
+      "reader_reasoning_effort": "medium",
+      "product_context_mechanical_failures": 0,
+      "oracle_context_mechanical_failures": 2,
+      "judge_correct_controls": "5/5",
+      "judge_wrong_controls": "5/5"
+    },
+    "wall_attribution": {
+      "result_identity": "72d6f045c9b9ad383caf92436afb5c6b975850d22975acbae5cd38fc2525aaef",
+      "repeatability_error_seconds": 16.7091554
+    },
+    "historical_gate_walls": {
+      "5": 236.1462292,
+      "15": 473.7782448
+    }
+  },
+  "reader_selection": {
+    "model": "gpt-5.6-luna",
+    "ordered_efforts": ["medium", "high", "xhigh", "max"],
+    "current_effort": "medium",
+    "stop_at_first_passing_effort": true,
+    "only_reasoning_effort_may_change": true,
+    "product_context_repetitions_per_case": 3,
+    "oracle_context_repetitions_per_case": 3,
+    "mechanical_correctness_required": 1.0,
+    "semantic_or_wording_variation_is_not_failure": true,
+    "answer_hash_variation_is_diagnostic_only": true,
+    "judge_model_and_effort_unchanged": "gpt-5.6-terra/medium",
+    "judge_correct_controls_required": "5/5",
+    "judge_wrong_controls_required": "5/5",
+    "prompt_schema_material_and_context_byte_identity_required": true
+  },
+  "stage6_failure_attribution": {
+    "first_answer_is_immutable_gate_decision": true,
+    "diagnostic_repetitions_can_never_convert_a_failed_first_answer_to_pass": true,
+    "same_blind_content_rerun_forbidden": true,
+    "evidence_missing_after_first_answer_error": "candidate-failure",
+    "complete_evidence_product_context_mechanical_failure_or_instability_with_stable_oracle": "candidate-context-failure",
+    "complete_evidence_oracle_mechanical_failure_or_instability": "evaluation-process-failure",
+    "judge_control_failure": "evaluation-process-failure",
+    "evaluation_process_failure_is_candidate_failure": false,
+    "evaluation_process_failure_stops_all_following_levels": true,
+    "raw_materials_destroyed_after_attribution": true
+  },
+  "budget": {
+    "level_hard_seconds": {"5": 406, "15": 751, "25": 1097, "50": 1961},
+    "historical_medium_wall_linear_projection": {
+      "fixed_seconds": 117.3302214,
+      "per_question_seconds": 23.76360156,
+      "source_levels": [5, 15]
+    },
+    "reader_calls_per_question": 2,
+    "reader_parallelism": 4,
+    "repeatability_error_seconds": 16.7091554,
+    "selected_effort_projection_plus_error_must_not_exceed_each_hard_level": true,
+    "quality_or_time_gate_relaxation_forbidden": true
+  },
+  "identity": "841ab01d016bf0c987527061dad95e2ba23e069f4b32642c7a3276b7cff75805"
+}

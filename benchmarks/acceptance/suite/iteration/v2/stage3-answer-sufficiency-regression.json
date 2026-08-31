@@ -1,0 +1,82 @@
+{
+  "schema": "ownward.kernel-iteration-materials/v2",
+  "contains_formal_questions_answers_gold_or_content": false,
+  "cases": [
+    {
+      "case_id": "v2asr-user-fact",
+      "coverage": "answer-sufficiency-regression-user",
+      "question_type": "single-session-user",
+      "question_date": "2027-01-10",
+      "question": "What binding color did the user choose for the field notebook?",
+      "answer": "The user chose copper binding.",
+      "answer_session_ids": ["v2asr01-s01"],
+      "stale_session_ids": [],
+      "distractor_session_ids": ["v2asr01-s02", "v2asr01-s03"],
+      "truth_claims": [{"claim": "I chose copper binding for the field notebook.", "evidence_session_ids": ["v2asr01-s01"]}],
+      "sessions": [
+        {"session_id": "v2asr01-s01", "date": "2027-01-02", "turns": [{"role": "user", "content": "I chose copper binding for the field notebook."}]},
+        {"session_id": "v2asr01-s02", "date": "2027-01-03", "turns": [{"role": "assistant", "content": "The photo album uses silver binding."}]},
+        {"session_id": "v2asr01-s03", "date": "2027-01-04", "turns": [{"role": "user", "content": "The spare notebook has no binding selected."}]}
+      ]
+    },
+    {
+      "case_id": "v2asr-assistant-fact",
+      "coverage": "answer-sufficiency-regression-assistant",
+      "question_type": "single-session-assistant",
+      "question_date": "2027-02-10",
+      "question": "Which cabinet code did the assistant assign to the microscope slides?",
+      "answer": "The cabinet code is Vega-31.",
+      "answer_session_ids": ["v2asr02-s01"],
+      "stale_session_ids": [],
+      "distractor_session_ids": ["v2asr02-s02", "v2asr02-s03"],
+      "truth_claims": [{"claim": "I assigned cabinet code Vega-31 to the microscope slides.", "evidence_session_ids": ["v2asr02-s01"]}],
+      "sessions": [
+        {"session_id": "v2asr02-s01", "date": "2027-02-01", "turns": [{"role": "assistant", "content": "I assigned cabinet code Vega-31 to the microscope slides."}]},
+        {"session_id": "v2asr02-s02", "date": "2027-02-02", "turns": [{"role": "user", "content": "Vega-13 labels the lens case."}]},
+        {"session_id": "v2asr02-s03", "date": "2027-02-03", "turns": [{"role": "assistant", "content": "The specimen jars use cabinet code Lyra-04."}]}
+      ]
+    },
+    {
+      "case_id": "v2asr-preference",
+      "coverage": "answer-sufficiency-regression-preference",
+      "question_type": "single-session-preference",
+      "question_date": "2027-03-10",
+      "question": "How should the user's reading chair be lit?",
+      "answer": "Use a low amber side lamp with no ceiling light.",
+      "answer_session_ids": ["v2asr03-s01"],
+      "stale_session_ids": [],
+      "distractor_session_ids": ["v2asr03-s02", "v2asr03-s03"],
+      "truth_claims": [{"claim": "For my reading chair, I prefer a low amber side lamp with no ceiling light.", "evidence_session_ids": ["v2asr03-s01"]}],
+      "sessions": [
+        {"session_id": "v2asr03-s01", "date": "2027-03-01", "turns": [{"role": "user", "content": "For my reading chair, I prefer a low amber side lamp with no ceiling light."}]},
+        {"session_id": "v2asr03-s02", "date": "2027-03-02", "turns": [{"role": "assistant", "content": "The craft table needs a bright white task lamp."}]},
+        {"session_id": "v2asr03-s03", "date": "2027-03-03", "turns": [{"role": "user", "content": "The hallway ceiling light remains on during deliveries."}]}
+      ]
+    },
+    {
+      "case_id": "v2asr-update",
+      "coverage": "answer-sufficiency-regression-update",
+      "question_type": "knowledge-update",
+      "question_date": "2027-04-10",
+      "question": "What is the current parcel collection point after the notice changed?",
+      "answer": "The current collection point is Fern Arch.",
+      "answer_session_ids": ["v2asr04-s02"],
+      "stale_session_ids": ["v2asr04-s01"],
+      "distractor_session_ids": ["v2asr04-s03"],
+      "truth_claims": [{"claim": "The current parcel collection point is Fern Arch.", "evidence_session_ids": ["v2asr04-s02"]}],
+      "sessions": [
+        {"session_id": "v2asr04-s01", "date": "2027-04-01", "turns": [{"role": "user", "content": "The initial parcel notice named Moss Bridge."}]},
+        {"session_id": "v2asr04-s02", "date": "2027-04-06", "turns": [{"role": "assistant", "content": "The new notice supersedes Moss Bridge. The current parcel collection point is Fern Arch."}]},
+        {"session_id": "v2asr04-s03", "date": "2027-04-07", "turns": [{"role": "user", "content": "Pine Door is used only for freight returns."}]}
+      ]
+    }
+  ],
+  "criteria": {
+    "minimum_accuracy": 1.0,
+    "require_complete_fact_delivery": true,
+    "category_minimums": {"knowledge-update": 1.0},
+    "maximum_wall_seconds": 240,
+    "provenance": {"origin": "independent-stage3-answer-sufficiency-handcrafted", "stage2_calibration_reuse": false, "formal_source_access": false, "blind_gate_reuse": false}
+  },
+  "identity": "978ee8479844fddf8412df027648b6807fc283e65ed7fdb01e32b0c1cee3759a"
+}

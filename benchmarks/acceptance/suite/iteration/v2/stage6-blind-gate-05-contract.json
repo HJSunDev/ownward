@@ -1,6 +1,6 @@
 {
   "schema": "ownward.kernel-iteration-stage6-blind-gate-contract/v3",
-  "identity": "1a59fde32af919090b084f8ccc7cffce6dedbbd5962edd53ec0313998a20e9d9",
+  "identity": "1f1a8a726b69f68977429dc4b4bc023d96a33c8d1853022ce3a4a8925a2b6ea5",
   "frozen_before_generation": true,
   "formal": false,
   "level": 5,
@@ -92,6 +92,18 @@
     "terminal": false
   },
   "failure": {
+    "answer_failure_attribution": {
+      "reader_profile_identity": "401aa7962b5ecd3d283093a2d5eee0fe76da941d20ce4aa317ef21216d55c83c",
+      "reader_selection_identity": "44098db2a12ae3a2b467b9ceda1b793ae26f83053c136297b04e40297d9e1e8d",
+      "first_answer_accuracy_required": 1.0,
+      "first_correct_proceeds": true,
+      "first_wrong_incomplete_evidence": "candidate-failure",
+      "first_wrong_complete_evidence_candidate_context_fails_oracle_stable": "candidate-context-failure",
+      "oracle_or_identical_prompt_mechanical_instability": "evaluation-process-failure",
+      "judge_control_failure": "evaluation-process-failure",
+      "repetitions_cannot_convert_failure_to_pass": true,
+      "wording_or_hash_variation_is_diagnostic_only": true
+    },
     "candidate_failure_stops_before_v0": true,
     "evaluation_process_failure_is_candidate_failure": false,
     "whole_level_efficiency_gate_remains_mandatory": true,

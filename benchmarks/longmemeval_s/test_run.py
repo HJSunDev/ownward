@@ -143,6 +143,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
         self.assertEqual(adapter.OFFICIAL_DATA_SHA256, self.protocol["official"]["data_sha256"])
         self.assertEqual("gpt-5.6-luna", self.protocol["memory"]["semantic_model"])
         self.assertEqual("gpt-5.6-luna", self.protocol["reader"]["model"])
+        self.assertEqual("xhigh", self.protocol["reader"]["reasoning_effort"])
         self.assertEqual("gpt-5.6-terra", self.protocol["judge"]["model"])
         self.assertEqual("codex", self.protocol["memory"]["capability_source"])
         self.assertEqual("codex", self.protocol["reader"]["capability_source"])
@@ -165,6 +166,16 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             "rank-depth-diagonal-budget-fit/v1",
             self.protocol["retrieval"]["evidence_selection_policy"],
         )
+
+    def test_stage6_and_formal_share_the_same_xhigh_reader_identity(self) -> None:
+        adapter.validate_protocol(self.protocol, formal=False)
+        adapter.validate_protocol(self.protocol, formal=True)
+        medium = json.loads(json.dumps(self.protocol))
+        medium["reader"]["reasoning_effort"] = "medium"
+        with self.assertRaisesRegex(adapter.AdapterError, "Reader identity changed"):
+            adapter.validate_protocol(medium, formal=False)
+        with self.assertRaisesRegex(adapter.AdapterError, "Reader identity changed"):
+            adapter.validate_protocol(medium, formal=True)
 
     def test_official_answer_labels_are_validated_but_never_enter_memory_content(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

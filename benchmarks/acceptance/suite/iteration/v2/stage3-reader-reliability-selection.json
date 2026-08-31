@@ -1,0 +1,47 @@
+{
+  "schema": "ownward.kernel-iteration-stage3-reader-reliability-selection/v1",
+  "contract_identity": "841ab01d016bf0c987527061dad95e2ba23e069f4b32642c7a3276b7cff75805",
+  "plan_identity": "268576e324bed9a36dd442f9dcda519d96177c285bc99a9a373b7b00d2e8063e",
+  "result_identity": "25f4954169249c92af6001813dca81ac04c0e70a75499bd1e1bcf9dc45ae5824",
+  "result_sha256": "0f7cc4e245f5c8dffd0d1e25b932c556b9d07c5f6e019d432fd013949a919515",
+  "result_relative_path": ".tmp/kernel-v2-major-iteration/stage3-reader-reliability/reader-reliability/268576e324bed9a36dd442f9dcda519d96177c285bc99a9a373b7b00d2e8063e/result.json",
+  "selected_reader_profile_identity": "401aa7962b5ecd3d283093a2d5eee0fe76da941d20ce4aa317ef21216d55c83c",
+  "model": "gpt-5.6-luna",
+  "selected_reasoning_effort": "xhigh",
+  "controller_identity_migration": {
+    "schema": "ownward.kernel-iteration-stage3-reader-reliability-controller-migration/v1",
+    "source_plan_controller_identity": "a05326f0e09817981227007f2b3e9de3aaa234c23b29ea64751214c7f630955b",
+    "target_controller_identity": "293deb7cf900136d15253eed8eff85d935fd983a81cde3245293fbf2822dfa61",
+    "source_answer_diagnostic_identity": "a0fec1e8525a3c7450ab2b855124a72d3229abe65a89763a59e4240f156cf3c2",
+    "target_answer_diagnostic_identity": "605c805b65b1cbddc2b274953c7e436cbae8a68210bb781ef332fd0c19e3ef26",
+    "reason": "preserve-the-frozen-reader-selection-while-binding-the-safe-single-case-stage6-answer-attribution-controller",
+    "calibration_result_rewritten": false,
+    "model_or_product_execution": false
+  },
+  "selection": {
+    "medium": "failed-2-of-10-oracle-mechanical-observations",
+    "high": "failed-1-of-15-oracle-mechanical-observations",
+    "xhigh": "passed-30-of-30-product-and-oracle-mechanical-observations",
+    "max": "not-run-lowest-stable-already-selected"
+  },
+  "semantic_or_wording_variation_is_failure": false,
+  "judge": {
+    "model": "gpt-5.6-terra",
+    "reasoning_effort": "medium",
+    "correct_controls": "5/5",
+    "wrong_controls": "5/5",
+    "source_result_identity": "767654c6b4c75eac31539f12e949726841a9114f10ef5556d1990d17cd1d0fad"
+  },
+  "budget": {
+    "hard_seconds": {"5": 406, "15": 751, "25": 1097, "50": 1961},
+    "projected_plus_error_seconds": {"5": 278.1984038, "15": 558.0694514, "25": 837.9404990000002, "50": 1533.3946148000005},
+    "all_levels_pass": true,
+    "quality_or_time_gate_relaxed": false
+  },
+  "protocol_relative_path": "../../longmemeval_s/protocol.json",
+  "protocol_sha256": "6a52f479858b8a057a10e94dea38b7dd74bff4d8ee021a2abe693574bf98657f",
+  "formal_cost_migration_relative_path": "iteration/v2/stage6-formal-reader-cost-migration.json",
+  "formal_cost_migration_identity": "8ec2dc562df78d8f9be646e55d6759f5c10601c81299550bc1748af25fc75e96",
+  "formal_handoff_status": "community-binding-and-preflight-pending-rebuild",
+  "identity": "df8ca830bc3a60847f4e5cb52f159f5e1f96e861756c2ee034e8f0dd7d975750"
+}

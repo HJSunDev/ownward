@@ -79,7 +79,7 @@ go build -trimpath -o <frontier-binary> ./cmd/ownward-frontier
 
 ## 候选绑定
 
-复制 `execution.example.json` 并填写当前阶段需要的真实路径。配置通过 `enabled_scopes` 显式选择本次要预检、绑定和执行的范围：`frontier` 只需要观察器，`core` 只需要候选二进制及其相邻向量能力包，`product` 才增加发布包、生产规模报告和 Codex；`community` 增加持久环境清单、冻结协议、候选运行目录以及现有 Codex 程序与认证文件路径。未启用范围不得被探测、下载、校验或写入绑定。Ownward 专项集仍固定使用 `gpt-5.4-mini` / `xhigh`；LongMemEval‑S 的语义组织固定使用 Codex `gpt-5.6-luna` / `low`，Reader 固定使用 Codex `gpt-5.6-luna` / `medium`，裁判固定使用 Codex `gpt-5.6-terra` / `medium`。三者只复用现有 Codex 原生认证，不要求或探测额外 API Key；隔离预检真实调用三个冻结模型，但子集结果不形成正式成绩。最多使用 24 条搜索线索和 8 条完整读取证据，具体机器值只以 `benchmarks/longmemeval_s/protocol.json` 为准。配置文件不进入仓库，不得把认证内容写入配置。候选代码稳定后，由唯一入口只生成当前启用范围的环境、输入、工具和候选执行制品绑定，再初始化或重新绑定状态：
+复制 `execution.example.json` 并填写当前阶段需要的真实路径。配置通过 `enabled_scopes` 显式选择本次要预检、绑定和执行的范围：`frontier` 只需要观察器，`core` 只需要候选二进制及其相邻向量能力包，`product` 才增加发布包、生产规模报告和 Codex；`community` 增加持久环境清单、冻结协议、候选运行目录以及现有 Codex 程序与认证文件路径。未启用范围不得被探测、下载、校验或写入绑定。Ownward 专项集仍固定使用 `gpt-5.4-mini` / `xhigh`；LongMemEval‑S 的语义组织固定使用 Codex `gpt-5.6-luna` / `low`，Reader 固定使用 Codex `gpt-5.6-luna` / `xhigh`，并与 Stage 6 绑定同一冻结 Reader 选择身份；裁判固定使用 Codex `gpt-5.6-terra` / `medium`。三者只复用现有 Codex 原生认证，不要求或探测额外 API Key；隔离预检真实调用三个冻结模型，但子集结果不形成正式成绩。当前 Reader 身份变化使 community binding 与 preflight 待重建，成本迁移收据不能替代它们。最多使用 24 条搜索线索和 8 条完整读取证据，具体机器值只以 `benchmarks/longmemeval_s/protocol.json` 为准。配置文件不进入仓库，不得把认证内容写入配置。候选代码稳定后，由唯一入口只生成当前启用范围的环境、输入、工具和候选执行制品绑定，再初始化或重新绑定状态：
 
 ```powershell
 python benchmarks/acceptance/suite/run.py bind --config <execution.json> --output <binding-directory>

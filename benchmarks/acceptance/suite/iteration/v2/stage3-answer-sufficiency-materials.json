@@ -1,0 +1,137 @@
+{
+  "schema": "ownward.kernel-iteration-materials/v2",
+  "contains_formal_questions_answers_gold_or_content": false,
+  "cases": [
+    {
+      "case_id": "v2as-composed-route",
+      "coverage": "answer-sufficiency-multi-source",
+      "question_type": "multi-session",
+      "question_date": "2026-08-20",
+      "question": "Give the final night survey plan: the assigned team, access point, instrument package, and post-run custody step.",
+      "answer": "Team Sable uses the North Orchard gate with the Helix-4 package, then transfers the sealed media case to Rhea Moon before noon.",
+      "answer_session_ids": ["v2as01-s01", "v2as01-s03", "v2as01-s05"],
+      "stale_session_ids": [],
+      "distractor_session_ids": ["v2as01-s02", "v2as01-s04", "v2as01-s06"],
+      "truth_claims": [
+        {"claim": "The assigned night survey team is Team Sable.", "evidence_session_ids": ["v2as01-s01"]},
+        {"claim": "The approved access point is the North Orchard gate.", "evidence_session_ids": ["v2as01-s01"]},
+        {"claim": "The selected instrument package is Helix-4.", "evidence_session_ids": ["v2as01-s03"]},
+        {"claim": "The sealed media case is transferred to Rhea Moon before noon after the run.", "evidence_session_ids": ["v2as01-s05"]}
+      ],
+      "sessions": [
+        {"session_id": "v2as01-s01", "date": "2026-08-11", "turns": [{"role": "user", "content": "The final staffing sheet says: The assigned night survey team is Team Sable. It also records that the approved access point is the North Orchard gate. The east service door is for daytime deliveries only."}]},
+        {"session_id": "v2as01-s02", "date": "2026-08-12", "turns": [{"role": "assistant", "content": "Team Umber rehearses at the East Orchard gate with daylight cameras; that exercise is separate from the night survey."}]},
+        {"session_id": "v2as01-s03", "date": "2026-08-14", "turns": [{"role": "assistant", "content": "The signed equipment row states: The selected instrument package is Helix-4. Helix-2 remains the backup bench unit."}]},
+        {"session_id": "v2as01-s04", "date": "2026-08-15", "turns": [{"role": "user", "content": "An older checklist pairs Team Sable with Helix-2 for a calibration drill, not the approved survey."}]},
+        {"session_id": "v2as01-s05", "date": "2026-08-17", "turns": [{"role": "assistant", "content": "The custody instruction is final: The sealed media case is transferred to Rhea Moon before noon after the run. The empty equipment case returns to storage."}]},
+        {"session_id": "v2as01-s06", "date": "2026-08-18", "turns": [{"role": "user", "content": "Rhea Moon receives an unrelated battery crate in the afternoon through the loading dock."}]}
+      ]
+    },
+    {
+      "case_id": "v2as-precision-distractors",
+      "coverage": "answer-sufficiency-similar-distractors",
+      "question_type": "multi-session",
+      "question_date": "2026-09-20",
+      "question": "For the coastal archive request identified by its amber seal and second-quarter window, what collection and delivery desk were selected?",
+      "answer": "The request selects the Larkspur charts and delivery to Desk 7B.",
+      "answer_session_ids": ["v2as02-s01", "v2as02-s02"],
+      "stale_session_ids": [],
+      "distractor_session_ids": ["v2as02-s03", "v2as02-s04", "v2as02-s05", "v2as02-s06"],
+      "truth_claims": [
+        {"claim": "Request key AX-42 maps to the Larkspur charts.", "evidence_session_ids": ["v2as02-s01"]},
+        {"claim": "The amber-seal second-quarter selector maps request key AX-42 to delivery Desk 7B.", "evidence_session_ids": ["v2as02-s02"]}
+      ],
+      "sessions": [
+        {"session_id": "v2as02-s01", "date": "2026-09-02", "turns": [{"role": "assistant", "content": "Request key AX-42 maps to the Larkspur charts. The key is an internal cross-reference and does not describe the seal or quarter."}]},
+        {"session_id": "v2as02-s02", "date": "2026-09-04", "turns": [{"role": "user", "content": "The amber-seal second-quarter selector maps request key AX-42 to delivery Desk 7B. No collection name appears on this selector sheet."}]},
+        {"session_id": "v2as02-s03", "date": "2026-09-05", "turns": [{"role": "assistant", "content": "Request key AX-24 maps to the Marigold charts and an amber seal, but it belongs to the first-quarter window."}]},
+        {"session_id": "v2as02-s04", "date": "2026-09-06", "turns": [{"role": "user", "content": "The second-quarter blue-seal request uses key BX-42 and Desk 7A."}]},
+        {"session_id": "v2as02-s05", "date": "2026-09-07", "turns": [{"role": "assistant", "content": "Desk 7B also handles a third-quarter amber request for the Sorrel maps under key CZ-11."}]},
+        {"session_id": "v2as02-s06", "date": "2026-09-08", "turns": [{"role": "user", "content": "Larkspur photographs are stored at Desk 8C and are not part of the chart request."}]}
+      ]
+    },
+    {
+      "case_id": "v2as-current-revision",
+      "coverage": "answer-sufficiency-conflict",
+      "question_type": "knowledge-update",
+      "question_date": "2026-10-20",
+      "question": "After all revisions, where and when is the volunteer briefing, and who now leads it?",
+      "answer": "The briefing is in Willow Room at 16:20 and is led by Oren Vale.",
+      "answer_session_ids": ["v2as03-s04"],
+      "stale_session_ids": ["v2as03-s01", "v2as03-s02"],
+      "distractor_session_ids": ["v2as03-s03", "v2as03-s05", "v2as03-s06"],
+      "truth_claims": [
+        {"claim": "The current briefing venue is Willow Room.", "evidence_session_ids": ["v2as03-s04"]},
+        {"claim": "The current briefing time is 16:20.", "evidence_session_ids": ["v2as03-s04"]},
+        {"claim": "The current briefing lead is Oren Vale.", "evidence_session_ids": ["v2as03-s04"]}
+      ],
+      "sessions": [
+        {"session_id": "v2as03-s01", "date": "2026-10-01", "turns": [{"role": "user", "content": "The first draft scheduled the volunteer briefing in Cedar Room at 15:30 with Ada Linn."}]},
+        {"session_id": "v2as03-s02", "date": "2026-10-06", "turns": [{"role": "assistant", "content": "A provisional notice moved the briefing to Willow Annex at 16:00 while keeping Ada Linn as lead."}]},
+        {"session_id": "v2as03-s03", "date": "2026-10-10", "turns": [{"role": "user", "content": "Oren Vale leads the equipment handoff in Cedar Room at 14:00; this is not the volunteer briefing."}]},
+        {"session_id": "v2as03-s04", "date": "2026-10-16", "turns": [{"role": "assistant", "content": "The signed revision supersedes both earlier notices. The current briefing venue is Willow Room. The current briefing time is 16:20. The current briefing lead is Oren Vale."}]},
+        {"session_id": "v2as03-s05", "date": "2026-10-17", "turns": [{"role": "user", "content": "Ada Linn remains the lead for the morning orientation in Willow Annex."}]},
+        {"session_id": "v2as03-s06", "date": "2026-10-18", "turns": [{"role": "assistant", "content": "A room inspection begins in Willow Room at 15:30 but does not alter the briefing schedule."}]}
+      ]
+    },
+    {
+      "case_id": "v2as-temporal-composition",
+      "coverage": "answer-sufficiency-temporal-order",
+      "question_type": "temporal-reasoning",
+      "question_date": "2026-11-20",
+      "question": "Which occurred first, the kiln inspection or the glaze shipment, and how many days separated them?",
+      "answer": "The kiln inspection occurred first, three days before the glaze shipment.",
+      "answer_session_ids": ["v2as04-s01", "v2as04-s03"],
+      "stale_session_ids": [],
+      "distractor_session_ids": ["v2as04-s02", "v2as04-s04", "v2as04-s05", "v2as04-s06"],
+      "truth_claims": [
+        {"claim": "The kiln inspection was completed on November 8.", "evidence_session_ids": ["v2as04-s01"]},
+        {"claim": "The glaze shipment arrived on November 11.", "evidence_session_ids": ["v2as04-s03"]}
+      ],
+      "sessions": [
+        {"session_id": "v2as04-s01", "date": "2026-11-08", "turns": [{"role": "assistant", "content": "The kiln inspection was completed on November 8. The inspector's report was signed that evening."}]},
+        {"session_id": "v2as04-s02", "date": "2026-11-09", "turns": [{"role": "user", "content": "Empty shipment pallets were counted on November 9, unrelated to glaze delivery."}]},
+        {"session_id": "v2as04-s03", "date": "2026-11-11", "turns": [{"role": "user", "content": "The glaze shipment arrived on November 11. Inventory entry followed the same day."}]},
+        {"session_id": "v2as04-s04", "date": "2026-11-06", "turns": [{"role": "assistant", "content": "A kiln cleaning finished on November 6, but it was not the inspection."}]},
+        {"session_id": "v2as04-s05", "date": "2026-11-12", "turns": [{"role": "user", "content": "A clay shipment arrived on November 12."}]},
+        {"session_id": "v2as04-s06", "date": "2026-11-13", "turns": [{"role": "assistant", "content": "The glaze invoice was archived on November 13."}]}
+      ]
+    },
+    {
+      "case_id": "v2as-ordered-ledger",
+      "coverage": "answer-sufficiency-structured-order",
+      "question_type": "single-session-assistant",
+      "question_date": "2026-12-20",
+      "question": "For row Q9 in the final seed ledger, report its bed, strain, watering cadence, and primary steward.",
+      "answer": "Q9 is in Bed Delta, uses strain Nimbus, is watered every 28 hours, and is stewarded by Inez Quill.",
+      "answer_session_ids": ["v2as05-s01"],
+      "stale_session_ids": [],
+      "distractor_session_ids": ["v2as05-s02", "v2as05-s03", "v2as05-s04"],
+      "truth_claims": [
+        {"claim": "Q9 is assigned to Bed Delta.", "evidence_session_ids": ["v2as05-s01"]},
+        {"claim": "Q9 uses strain Nimbus.", "evidence_session_ids": ["v2as05-s01"]},
+        {"claim": "Q9 is watered every 28 hours.", "evidence_session_ids": ["v2as05-s01"]},
+        {"claim": "Q9 has primary steward Inez Quill.", "evidence_session_ids": ["v2as05-s01"]}
+      ],
+      "sessions": [
+        {"session_id": "v2as05-s01", "date": "2026-12-12", "turns": [
+          {"role": "assistant", "content": "Final ledger location rows:\nQ8 | Bed Alpha\nQ9 | Bed Delta\nQ10 | Bed Gamma\nThe signed row meaning is: Q9 is assigned to Bed Delta."},
+          {"role": "assistant", "content": "Strain rows list Q8 as Cirrus, Q9 as Nimbus, and Q10 as Mistral. The controlling statement is: Q9 uses strain Nimbus."},
+          {"role": "assistant", "content": "Watering rows list 20, 28, and 36 hours for Q8, Q9, and Q10 respectively. Q9 is watered every 28 hours."},
+          {"role": "assistant", "content": "Steward rows name Sol Reed for Q8, Inez Quill for Q9, and Bo Chen for Q10. Q9 has primary steward Inez Quill."}
+        ]},
+        {"session_id": "v2as05-s02", "date": "2026-12-10", "turns": [{"role": "user", "content": "A draft ledger put Q9 in Bed Gamma with strain Cirrus; the draft was rejected."}]},
+        {"session_id": "v2as05-s03", "date": "2026-12-13", "turns": [{"role": "assistant", "content": "Inez Quill is backup steward for Q10, which remains on a 36-hour cadence."}]},
+        {"session_id": "v2as05-s04", "date": "2026-12-14", "turns": [{"role": "user", "content": "Bed Delta irrigation hardware is inspected every 20 hours; that is not the seed watering cadence."}]}
+      ]
+    }
+  ],
+  "criteria": {
+    "minimum_accuracy": 1.0,
+    "require_complete_fact_delivery": true,
+    "category_minimums": {"temporal-reasoning": 1.0, "knowledge-update": 1.0},
+    "maximum_wall_seconds": 300,
+    "provenance": {"origin": "independent-stage3-answer-sufficiency-handcrafted", "stage2_calibration_reuse": false, "formal_source_access": false, "blind_gate_reuse": false}
+  },
+  "identity": "6aa0b7d7c7258570b9a233fe6ad3bc1cd6617915ae1259e8954ac0e81a5a1234"
+}

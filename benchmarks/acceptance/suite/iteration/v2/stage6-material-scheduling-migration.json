@@ -1,0 +1,77 @@
+{
+  "schema": "ownward.kernel-iteration-stage6-material-scheduling-migration/v1",
+  "purpose": "preserve-the-existing-25-question-candidate-decision-while-qualifying-future-material-scheduling",
+  "source_controller_identity": "d1c168f9c52ebc4bb8ea07596af23e256b988aa1b58492a4c55029f3a15c1ec0",
+  "target_controller_identity": "0f56c23cd26360d4276da13b4e673099f645f92ccc4f3cb59c048ddd5f02fea3",
+  "future_gate_level": 50,
+  "historical_contracts_unchanged": {
+    "5": "1f1a8a726b69f68977429dc4b4bc023d96a33c8d1853022ce3a4a8925a2b6ea5",
+    "15": "efaa7f290483c636d25db0ff9b574e5d60e741b746a6bc1923ac4c49baba1869",
+    "25": "c35970781da16d9646993bd5d3a389c7573805a29547163a6b9ca528c86a97b6"
+  },
+  "future_50_contract_identity": "823558848a5a4a790dff6b9cf266ccc38139aeb025d9b8341b9dff103a00c9b6",
+  "preserved_current_chain": [
+    {
+      "level": 5,
+      "plan_identity": "d6ae3689f270c49e69ec2def6d07e999c1e55b37973f71bcd39bcc41447f3f94",
+      "result_identity": "af5680c0535dca6f972e6a0e39629ebb6eeed7589e5aafa9a4a3ba4b8779a9b4",
+      "result_sha256": "291751a73af41e479ef10b9f2c3b73026a408f14403b223c67120333d25db6ca"
+    },
+    {
+      "level": 15,
+      "plan_identity": "bf9d6e6efc896e67b3158ca52ce3bd796b20d68ac057a7682c8943bfef2c5b1e",
+      "result_identity": "f05272eeb997e22a0aa6b7a05b8aa8642cf03cf6c780ae5184b4a7338396f5b4",
+      "result_sha256": "63d444cab96ebaaa3caf0084e7485a18d38d856b71234e0b498c2898a0b88e03"
+    },
+    {
+      "level": 25,
+      "plan_identity": "c9b4b1891e2131ac70128dbe62f3b2a454061b930386066435fe9d3acee0c5a1",
+      "result_identity": "d7071af7190c84310b66d3ebfa72c37ab00209c49aa7e35557dd323cbe5129dc",
+      "result_sha256": "c6d1055ed9725340db4d9a6fc48e18c94ea6b7aed9c9f8b3672beda91afbf294"
+    }
+  ],
+  "preserved_25_candidate_decision": {
+    "plan_identity": "c9b4b1891e2131ac70128dbe62f3b2a454061b930386066435fe9d3acee0c5a1",
+    "result_identity": "d7071af7190c84310b66d3ebfa72c37ab00209c49aa7e35557dd323cbe5129dc",
+    "result_sha256": "c6d1055ed9725340db4d9a6fc48e18c94ea6b7aed9c9f8b3672beda91afbf294",
+    "absolute_gate_passed": true,
+    "relative_v0_gate_passed": true,
+    "candidate_decision": true,
+    "candidate_failed": false,
+    "evaluation_process_failed": true,
+    "candidate_final_answer_accuracy": 1.0,
+    "baseline_final_answer_accuracy": 0.96,
+    "candidate_retrieval_p95_ms": 187.0,
+    "raw_materials_destroyed": true,
+    "report_or_decision_rewritten": false
+  },
+  "noncandidate_qualification": {
+    "contract_identity": "fd1b44039a2a5451389954e0a0ba7728e6279c93c4557ab57d6f4744127a2c6a",
+    "controller_identity": "5be34a3c651f6dd6255ea1968abeb14dff92769ff9adfc04fc9943cf6a2945bb",
+    "plan_identity": "953ec78955f4ce4ffcc8dd7878493dfc3b8b485a548e3989436d3003a07ceab6",
+    "result_identity": "a3e2ceb071a931e12583671898212a2a48c49f41f6048b6c2f90bba621887990",
+    "result_sha256": "8bbb348f301b60879e1e34f3f00466c1d2d0d1b6727a7c9981f8eb71f2fbe6cc",
+    "result_relative": ".tmp/kernel-v2-major-iteration/stage6-material-scheduling-qualification/admission-reliability/953ec78955f4ce4ffcc8dd7878493dfc3b8b485a548e3989436d3003a07ceab6/result.json",
+    "passed_per_batch": [15, 15],
+    "batch_wall_seconds": [301.52541390000005, 258.2949089],
+    "total_wall_seconds": 559.8203228,
+    "generation_max_active": 8,
+    "generation_max_active_observed": [8, 8],
+    "worker_active_turns_maximum": 1,
+    "candidate_executions": 0,
+    "baseline_executions": 0,
+    "terminal_resume_model_calls": 0,
+    "terminal_resume_product_executions": 0,
+    "formal_state_sha256": "0587d7f9f147bcb2ae0e4ca70afe1ca051e4dbe6b2b0e34af2e2174fcc82da01"
+  },
+  "effect_scope": {
+    "changes_only_future_material_generation_scheduling": true,
+    "rejected_cases_only_are_regenerated": true,
+    "full_set_is_readmitted_after_replacement": true,
+    "models_prompts_schemas_quality_checks_scoring_and_candidate_execution_unchanged": true,
+    "historical_5_15_25_materials_outputs_scores_and_decisions_unchanged": true,
+    "formal_state_written": false
+  },
+  "next_action": "run-fresh-50-question-gate",
+  "identity": "3d1bc41e759dc69e74b35da6fb2cf62d8fe0018bbea4fbfa83115bf0f22a5fa2"
+}

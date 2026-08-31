@@ -188,10 +188,14 @@ def load_blind_budget_archive(suite_root: Path) -> dict[str, Any]:
     qualification_dependencies = _mapping(receipt, "qualification_plan_direct_dependencies")
     _require(qualification_dependencies and all(evidence.is_sha256(item) for item in qualification_dependencies.values()), "阶段 2 资格直接依赖无效")
     _require(qualification_dependencies.get("validation-contract") == validation["identity"] and qualification_dependencies.get("contract") == receipt["qualification_contract_identity"], "阶段 2 资格证据与当前合同错绑")
-    _require(receipt.get("changed_shared_direct_dependencies") == ["validation-contract", "controller-entry", "generator", "quality-admission"], "共享盲测依赖失效图漂移")
+    _require(receipt.get("qualification_identity_migration") is None, "当前 Stage 2 资格必须直接绑定当前实现，不得依赖旧身份迁移")
+    _require(receipt.get("changed_shared_direct_dependencies") == [
+        "generator", "quality-admission", "stage2-controller", "stage6-controller", "validation-contract",
+    ], "共享盲测依赖失效图漂移")
     _require(receipt.get("invalidated_blind_gate_results") == [
         "851f80be476d5e55718d0cc5d3b1732bb8d163ad3862bd74d80d64e4c7da2bb2",
         "b90d36ce3cacbc2756a233c19cb091dc5e8ae406cdf8ef82c7933d9911b8981d",
+        "743c43f53629087355570b8861749afd10588a0309d14692ce442d1563189707",
     ], "旧五题或十五题关卡没有精确降为历史诊断")
     qualification = _mapping(receipt, "qualification")
     walls = qualification.get("batch_wall_seconds")
@@ -207,7 +211,34 @@ def load_blind_budget_archive(suite_root: Path) -> dict[str, Any]:
         and float(qualification.get("total_wall_seconds", 0)) <= 984,
         "阶段 2 双批资格或预算证据不完整",
     )
-    _require(qualification.get("raw_materials_destroyed") is True and qualification.get("terminal_resume_zero_model_zero_product") is True, "阶段 2 资格缺少销毁或终态复用证明")
+    _require(
+        qualification.get("generator") == "gpt-5.6-terra/xhigh"
+        and qualification.get("quality_admission") == "gpt-5.6-terra/medium"
+        and qualification.get("generation_max_active") == 4
+        and qualification.get("worker_active_turns_maximum") == 1
+        and qualification.get("raw_materials_destroyed") is True
+        and qualification.get("terminal_resume_zero_model_zero_product") is True,
+        "阶段 2 资格模型、调度、销毁或终态复用证明不完整",
+    )
+    reader = _mapping(receipt, "stage6_reader_reliability")
+    _require(
+        reader.get("contract_identity") == "841ab01d016bf0c987527061dad95e2ba23e069f4b32642c7a3276b7cff75805"
+        and reader.get("selection_identity") == "44098db2a12ae3a2b467b9ceda1b793ae26f83053c136297b04e40297d9e1e8d"
+        and reader.get("shared_formal_protocol_sha256") == "6a52f479858b8a057a10e94dea38b7dd74bff4d8ee021a2abe693574bf98657f"
+        and reader.get("formal_cost_migration_identity") == "8ec2dc562df78d8f9be646e55d6759f5c10601c81299550bc1748af25fc75e96"
+        and reader.get("formal_handoff_status") == "community-binding-and-preflight-pending-rebuild"
+        and reader.get("reader_profile_identity") == "401aa7962b5ecd3d283093a2d5eee0fe76da941d20ce4aa317ef21216d55c83c"
+        and reader.get("selected_reasoning_effort") == "xhigh"
+        and reader.get("lowest_stable") is True
+        and reader.get("mechanical_observations") == "30/30"
+        and reader.get("budgets_relaxed") is False
+        and reader.get("model_or_product_execution_on_terminal_resume") is False,
+        "Stage 6 Reader 可靠性选择或预算证明无效",
+    )
+    _require(
+        all(float(reader["projected_plus_error_seconds"][level]) <= float(reader["hard_seconds"][level]) for level in ("5", "15", "25", "50")),
+        "Stage 6 Reader 选择超过原冻结预算",
+    )
     _require(receipt.get("budgets_reused_without_relaxation") is True and receipt.get("next_action") == "restart-stage6-from-fresh-5-question-gate", "预算迁移放宽了原门槛或下一动作漂移")
     levels = _mapping(value, "budgets")
     _require(set(levels) == {"5", "15", "25", "50"}, "五题校准没有冻结四级预算")
@@ -242,7 +273,17 @@ def load_blind_budget(suite_root: Path, output_root: Path) -> dict[str, Any]:
     )
     locator = reliability._load_locator(root / "locator.json", plan_identity)
     current = reliability._current_dependencies(suite_root, locator)
-    _require(current == _mapping(plan, "direct_dependencies"), "阶段 2 资格当前直接依赖已漂移")
+    expected = dict(_mapping(plan, "direct_dependencies"))
+    identity_migration = receipt.get("qualification_identity_migration")
+    if isinstance(identity_migration, dict):
+        _require(
+            expected.get("controller") == identity_migration.get("source_controller_identity")
+            and expected.get("controller-entry") == identity_migration.get("source_controller_entry_identity"),
+            "阶段 2 资格计划不匹配身份迁移来源",
+        )
+        expected["controller"] = str(identity_migration.get("target_controller_identity"))
+        expected["controller-entry"] = str(identity_migration.get("target_controller_entry_identity"))
+    _require(current == expected, "阶段 2 资格当前直接依赖已漂移")
     return {**value, "current_valid": True}
 
 
@@ -411,7 +452,12 @@ def build_input_manifest(
     return manifest
 
 
-def validate_execution_config(suite_root: Path, path: Path) -> dict[str, Any]:
+def validate_execution_config(
+    suite_root: Path,
+    path: Path,
+    *,
+    expected_reader_effort: str = "xhigh",
+) -> dict[str, Any]:
     value = _load_json(path)
     _require(value.get("schema") == "ownward.acceptance-execution/v3", "执行配置 schema 无效")
     candidate = _mapping(value, "candidate")
@@ -455,9 +501,17 @@ def validate_execution_config(suite_root: Path, path: Path) -> dict[str, Any]:
     expected_roles = _mapping(blind, "production_roles")
     _require(
         f"{protocol_value['memory']['semantic_model']}/{protocol_value['memory']['semantic_reasoning_effort']}" == expected_roles["semantic"]
-        and f"{protocol_value['reader']['model']}/{protocol_value['reader']['reasoning_effort']}" == expected_roles["reader"]
+        and protocol_value["reader"]["model"] == "gpt-5.6-luna"
+        and protocol_value["reader"]["reasoning_effort"] == expected_reader_effort
         and f"{protocol_value['judge']['model']}/{protocol_value['judge']['reasoning_effort']}" == expected_roles["judge"],
         "执行配置没有使用冻结的 Luna/Luna/Terra 角色",
+    )
+    _require(
+        expected_reader_effort == "xhigh"
+        and protocol_value["reader"].get("selection_profile_identity") == "401aa7962b5ecd3d283093a2d5eee0fe76da941d20ce4aa317ef21216d55c83c"
+        and protocol_value["reader"].get("selection_contract_identity") == "841ab01d016bf0c987527061dad95e2ba23e069f4b32642c7a3276b7cff75805"
+        and protocol_value["reader"].get("selection_result_identity") == "25f4954169249c92af6001813dca81ac04c0e70a75499bd1e1bcf9dc45ae5824",
+        "Reader 配置没有绑定正式与 Stage 6 共用的冻结选择证据",
     )
     _require(protocol_value.get("execution", {}).get("codex_max_active") == 8, "Codex 并发不是冻结值 8")
     manifest = _load_json(environment_manifest)
@@ -1263,7 +1317,7 @@ def calibrate_blind(
             runtime=runtime,
             stage=scratch / "quality-admission",
             role="quality-admission",
-            prompt=_admission_prompt(validation, materials),
+            prompt=_admission_prompt(validation, _admission_review_materials(materials, generated_cases)),
             schema=_admission_schema([case["case_id"] for case in materials["cases"]]),
             settings=_mapping(_mapping(validation, "blind"), "quality_admission"),
             validate=lambda value: validate_admission(value, materials, validation),
@@ -1794,9 +1848,10 @@ def _blind_implementation_identities() -> dict[str, str]:
     roles = {
         "generator": (
             _generator_prompt, _generator_case_schema, _validate_generated_case, _derive_truth_claims,
+            _validate_admission_proof, _mechanical_admission_proof,
             validate_materials, _materials_from_generated, _case_projection, _normalize,
         ),
-        "quality-admission": (_admission_prompt, _admission_schema, validate_admission),
+        "quality-admission": (_admission_prompt, _admission_review_materials, _admission_schema, validate_admission),
         "observer": (observe_report, evaluate_observation, score_controls, _sanitize_usage, _sanitize_codex),
         "controller": (
             calibrate_blind, resume_blind_by_plan_identity, derive_blind_budgets,
@@ -1956,8 +2011,11 @@ def _generator_prompt(validation: dict[str, Any], seed: str, case_id: str, cover
         "For temporal-order, use exactly two answer sessions with distinct dates and emit temporal_binding. The value session must map an opaque link_key to the verbatim answer but contain neither ordering anchor; the temporal session must map that same link_key to the relative order between exactly two question_anchor_terms but must not contain the answer. The question must ask for the value using both anchor terms while containing neither link_key nor answer, so the value and temporal sessions are jointly necessary. No other session may contain link_key or both anchor terms together. Relevant distractors must use different opaque keys and plausible wrong values or orders, and each may reuse at most one anchor term. "
         "For multi-session-relation, make one session establish an entity/key relation and another map that key to the requested fact. "
         "For multi-session-distractor, use exactly two answer sessions and emit distractor_binding. The value session must map an opaque link_key to the verbatim answer but contain neither question qualifier; the selector session must map the same key to exactly two question_qualifier_terms but must not contain the answer. The question must ask for the value using both qualifiers while containing neither link_key nor answer. No other session may contain link_key or both qualifiers together; similarly worded distractors must use different opaque keys and may match at most one qualifier. "
-        "Before returning, mechanically check that the complete answer string appears verbatim in at least one turn named by answer_session_ids, never in a distractor turn, and never in the question. The system derives immutable truth-claim bindings from those declared source turns; do not emit a duplicate truth_claims field. "
-        "Removing necessary answer evidence, supplying only distractor evidence, supplying an outdated value, or changing the answer must each make the case incorrect. "
+        "Emit evidence_bindings with one exact verbatim quote from every answer session; each quote must carry a necessary fact, not filler. "
+        "Emit control_binding with one plausible wrong answer copied verbatim from a declared distractor, the distractor session that supports it, and one answer session whose removal makes the complete answer unsupported. "
+        "Emit surface_shortcut_proof with at least two distinct non-answer clues copied verbatim from the question. Each clue must occur in a named answer-or-selector session and also in a named declared distractor, so no individual surface clue uniquely selects the correct evidence. The complete evidence relation, not a question phrase, must determine the answer. "
+        "Before returning, mechanically check that the complete answer string appears verbatim in at least one turn named by answer_session_ids, never in any non-answer turn, and never in the question. The plausible wrong answer must not appear in the question or any answer session. The system derives immutable truth-claim bindings from evidence_bindings; do not emit a duplicate truth_claims field. "
+        "Removing the declared necessary answer evidence, supplying only declared distractor evidence, supplying an outdated value, or changing the answer to the declared plausible wrong answer must each make the case incorrect. "
         "For knowledge-update-conflict, provide an older plausible stale session and a later answer session that explicitly supersedes it. Produce only the requested structured object."
     )
 
@@ -1965,6 +2023,14 @@ def _generator_prompt(validation: dict[str, Any], seed: str, case_id: str, cover
 def _admission_prompt(validation: dict[str, Any], materials: dict[str, Any]) -> str:
     checks = _mapping(_mapping(validation, "blind"), "quality_admission")["required_checks"]
     batch_size = len(materials["cases"])
+    _require(
+        all(
+            isinstance(case.get("mechanical_admission_proof"), dict)
+            and case["mechanical_admission_proof"].get("schema") == "ownward.kernel-iteration-blind-mechanical-admission-proof/v1"
+            for case in materials["cases"]
+        ),
+        "质量准入提示缺少逐题机械证明",
+    )
     coverage_counts = {name: sum(case["coverage"] == name for case in materials["cases"]) for name in BLIND_COVERAGE}
     return (
         "Act as an independent pre-output quality admission reviewer. You have no candidate implementation or candidate output. "
@@ -1974,7 +2040,7 @@ def _admission_prompt(validation: dict[str, Any], materials: dict[str, Any]) -> 
         "use only declared distractor evidence, or keep correct evidence but change the answer. The stale-evidence control applies only to knowledge-update-conflict; do not fail other coverage labels merely because they have no stale evidence. "
         f"Assess all {batch_size} cases independently; repeated coverage labels do not let one strong case compensate for another. The frozen coverage counts are {json.dumps(coverage_counts, sort_keys=True)}. "
         "Across the complete batch, the controls must collectively cover known-correct, missing-evidence, wrong-evidence, stale-evidence, and wrong-answer. "
-        "Relevant-entity distractors and paraphrased questions are required; unrelated filler or direct keyword-copy questions fail. "
+        "Relevant-entity distractors and paraphrased questions are required; unrelated filler or direct keyword-copy questions fail. Mechanical admission proofs were validated before this review: evidence quotes bind every required answer session, the wrong-answer control is grounded only in distractors, removing the declared necessary evidence fails, and every declared question clue also occurs in a distractor. Treat those proofs as evidence, but still reject any semantically implausible, ambiguous, insufficient, shortcut-shaped, or non-discriminative case. "
         "Return only the requested structured object.\n\n"
         + json.dumps(materials, ensure_ascii=False, separators=(",", ":"))
     )
@@ -1996,7 +2062,23 @@ def _generator_case_schema(case_id: str, coverage: str, validation: dict[str, An
             "turns": {"type": "array", "minItems": 1, "maxItems": 6, "items": turn},
         },
     }
-    required = ["case_id", "coverage", "question_type", "question_date", "question", "answer", "answer_session_ids", "stale_session_ids", "distractor_session_ids", "sessions"]
+    evidence_binding = {
+        "type": "object", "additionalProperties": False, "required": ["session_id", "quote"],
+        "properties": {
+            "session_id": {"type": "string", "enum": session_ids},
+            "quote": {"type": "string", "minLength": 8, "maxLength": 300},
+        },
+    }
+    shortcut_clue = {
+        "type": "object", "additionalProperties": False,
+        "required": ["clue", "support_session_id", "distractor_session_id"],
+        "properties": {
+            "clue": {"type": "string", "minLength": 2, "maxLength": 80},
+            "support_session_id": {"type": "string", "enum": session_ids},
+            "distractor_session_id": {"type": "string", "enum": session_ids},
+        },
+    }
+    required = ["case_id", "coverage", "question_type", "question_date", "question", "answer", "answer_session_ids", "stale_session_ids", "distractor_session_ids", "sessions", "evidence_bindings", "control_binding", "surface_shortcut_proof"]
     properties: dict[str, Any] = {
         "case_id": {"type": "string", "enum": [case_id]},
         "coverage": {"type": "string", "enum": [coverage]},
@@ -2008,6 +2090,20 @@ def _generator_case_schema(case_id: str, coverage: str, validation: dict[str, An
         "stale_session_ids": {"type": "array", "maxItems": 3, "items": {"type": "string", "enum": session_ids}},
         "distractor_session_ids": {"type": "array", "minItems": int(blind["minimum_distractor_sessions_per_question"]), "maxItems": 5, "items": {"type": "string", "enum": session_ids}},
         "sessions": {"type": "array", "minItems": 6, "maxItems": 6, "items": session},
+        "evidence_bindings": {"type": "array", "minItems": 1, "maxItems": 3, "items": evidence_binding},
+        "control_binding": {
+            "type": "object", "additionalProperties": False,
+            "required": ["plausible_wrong_answer", "wrong_answer_session_id", "missing_evidence_session_id"],
+            "properties": {
+                "plausible_wrong_answer": {"type": "string", "minLength": 1, "maxLength": 300},
+                "wrong_answer_session_id": {"type": "string", "enum": session_ids},
+                "missing_evidence_session_id": {"type": "string", "enum": session_ids},
+            },
+        },
+        "surface_shortcut_proof": {
+            "type": "object", "additionalProperties": False, "required": ["question_clues"],
+            "properties": {"question_clues": {"type": "array", "minItems": 2, "maxItems": 4, "items": shortcut_clue}},
+        },
     }
     if coverage == "temporal-order":
         required.append("temporal_binding")
@@ -2049,6 +2145,9 @@ def _validate_generated_case(output: dict[str, Any], case_id: str, coverage: str
     case = dict(case)
     temporal_binding = case.get("temporal_binding")
     distractor_binding = case.get("distractor_binding")
+    if coverage in {"temporal-order", "multi-session-relation", "multi-session-distractor"}:
+        answer_ids = case.get("answer_session_ids")
+        _require(isinstance(answer_ids, list) and len(set(answer_ids)) >= 2, "盲测生成器多证据覆盖缺少两个独立答案会话")
     case["truth_claims"] = _derive_truth_claims(case)
     projected = _case_projection(case)
     _require(projected["case_id"] == case_id and projected["coverage"] == coverage, "盲测生成器案例身份或覆盖错绑")
@@ -2059,6 +2158,7 @@ def _validate_generated_case(output: dict[str, Any], case_id: str, coverage: str
     normalized_question = _normalize(str(projected["question"]))
     _require(normalized_answer and normalized_answer not in normalized_question, "盲测生成器问题包含答案表面捷径")
     session_by_id = {session["session_id"]: session for session in projected["sessions"]}
+    _validate_admission_proof(case, projected, session_by_id)
     distractor_text = " ".join(
         turn["content"]
         for session_id in projected["distractor_session_ids"]
@@ -2134,7 +2234,7 @@ def _validate_generated_case(output: dict[str, Any], case_id: str, coverage: str
         "criteria": {"minimum_accuracy": 0.0, "require_complete_fact_delivery": True, "category_minimums": {}},
     }
     validate_materials({**content, "identity": evidence.canonical_sha256(content)}, expected_questions=1)
-    return projected
+    return {**projected, "_mechanical_admission_proof": _mechanical_admission_proof(case)}
 
 
 def _derive_truth_claims(case: dict[str, Any]) -> list[dict[str, Any]]:
@@ -2142,15 +2242,82 @@ def _derive_truth_claims(case: dict[str, Any]) -> list[dict[str, Any]]:
     sessions = case.get("sessions")
     _require(isinstance(answer_ids, list) and answer_ids and isinstance(sessions, list), "盲测生成器缺少答案证据绑定")
     session_by_id = {session.get("session_id"): session for session in sessions if isinstance(session, dict)}
+    bindings = case.get("evidence_bindings")
+    _require(isinstance(bindings, list) and bindings, "盲测生成器缺少逐答案会话证据绑定")
+    binding_by_id = {
+        binding.get("session_id"): binding
+        for binding in bindings
+        if isinstance(binding, dict) and isinstance(binding.get("session_id"), str)
+    }
+    _require(set(binding_by_id) == set(answer_ids) and len(binding_by_id) == len(bindings), "盲测生成器证据绑定没有逐一覆盖答案会话")
     claims: list[dict[str, Any]] = []
     for session_id in answer_ids:
         session = session_by_id.get(session_id)
         _require(isinstance(session, dict) and isinstance(session.get("turns"), list) and session["turns"], "盲测生成器答案证据身份错绑")
-        contents = [turn.get("content") for turn in session["turns"] if isinstance(turn, dict) and isinstance(turn.get("content"), str) and turn["content"].strip()]
-        _require(contents, "盲测生成器答案证据缺少正文")
-        source = min(contents, key=len).strip()
-        claims.append({"claim": source[:300].strip(), "evidence_session_ids": [session_id]})
+        quote = binding_by_id[session_id].get("quote")
+        _require(isinstance(quote, str) and quote.strip(), "盲测生成器证据绑定缺少逐字引文")
+        combined = " ".join(str(turn.get("content", "")) for turn in session["turns"] if isinstance(turn, dict))
+        _require(_normalize(quote) in _normalize(combined), "盲测生成器证据绑定引文不在声明会话")
+        claims.append({"claim": quote.strip(), "evidence_session_ids": [session_id]})
     return claims
+
+
+def _validate_admission_proof(case: dict[str, Any], projected: dict[str, Any], session_by_id: dict[str, dict[str, Any]]) -> None:
+    answer = _normalize(str(projected["answer"]))
+    question = _normalize(str(projected["question"]))
+    answer_ids = set(projected["answer_session_ids"])
+    distractor_ids = set(projected["distractor_session_ids"])
+    texts = {
+        session_id: _normalize(" ".join(turn["content"] for turn in session["turns"]))
+        for session_id, session in session_by_id.items()
+    }
+    _require(all(answer not in text for session_id, text in texts.items() if session_id not in answer_ids), "盲测生成器非答案会话泄露正确答案")
+    control = case.get("control_binding")
+    _require(isinstance(control, dict), "盲测生成器缺少评分控制绑定")
+    wrong = _normalize(str(control.get("plausible_wrong_answer", "")))
+    wrong_session = control.get("wrong_answer_session_id")
+    missing_session = control.get("missing_evidence_session_id")
+    _require(wrong and wrong != answer and wrong not in question, "盲测生成器错误答案控制无效")
+    _require(wrong_session in distractor_ids and wrong in texts[str(wrong_session)], "盲测生成器错误答案没有绑定声明干扰证据")
+    _require(all(wrong not in texts[session_id] for session_id in answer_ids), "盲测生成器答案证据泄露错误答案控制")
+    _require(missing_session in answer_ids, "盲测生成器缺证控制没有绑定必要答案会话")
+    proof = case.get("surface_shortcut_proof")
+    clues = proof.get("question_clues") if isinstance(proof, dict) else None
+    _require(isinstance(clues, list) and 2 <= len(clues) <= 4, "盲测生成器缺少表面捷径反证")
+    normalized_clues: set[str] = set()
+    for item in clues:
+        _require(isinstance(item, dict), "盲测生成器表面捷径反证项无效")
+        clue = _normalize(str(item.get("clue", "")))
+        support = item.get("support_session_id")
+        distractor = item.get("distractor_session_id")
+        _require(clue and clue != answer and clue in question and clue not in normalized_clues, "盲测生成器问题线索无效或重复")
+        _require(support in answer_ids and clue in texts[str(support)], "盲测生成器问题线索没有绑定必要证据")
+        _require(distractor in distractor_ids and clue in texts[str(distractor)], "盲测生成器问题线索没有干扰项镜像")
+        normalized_clues.add(clue)
+
+
+def _mechanical_admission_proof(case: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "schema": "ownward.kernel-iteration-blind-mechanical-admission-proof/v1",
+        "evidence_session_ids": sorted(str(item["session_id"]) for item in case["evidence_bindings"]),
+        "missing_evidence_session_id": str(case["control_binding"]["missing_evidence_session_id"]),
+        "wrong_answer_session_id": str(case["control_binding"]["wrong_answer_session_id"]),
+        "question_clue_count": len(case["surface_shortcut_proof"]["question_clues"]),
+        "every_question_clue_has_distractor_mirror": True,
+        "answer_absent_from_question_and_non_answer_sessions": True,
+        "wrong_answer_absent_from_question_and_answer_sessions": True,
+    }
+
+
+def _admission_review_materials(materials: dict[str, Any], generated_cases: list[dict[str, Any]]) -> dict[str, Any]:
+    by_id = {str(case["case_id"]): case.get("_mechanical_admission_proof") for case in generated_cases}
+    _require(set(by_id) == {str(case["case_id"]) for case in materials["cases"]}, "质量准入机械证明与材料错绑")
+    cases = []
+    for case in materials["cases"]:
+        proof = by_id[str(case["case_id"])]
+        _require(isinstance(proof, dict), "质量准入缺少机械证明")
+        cases.append({**case, "mechanical_admission_proof": proof})
+    return {**materials, "cases": cases}
 
 
 def _admission_schema(case_ids: list[str]) -> dict[str, Any]:

@@ -58,10 +58,13 @@
     "mechanical_truth": "answer-verbatim-in-declared-evidence-and-derived-claim-bindings",
     "generation": {
       "model": "gpt-5.6-terra",
-      "reasoning_effort": "medium",
+      "reasoning_effort": "xhigh",
       "timeout_seconds": 240,
       "attempts": 2,
-      "prompt_version": "ownward.kernel-iteration-blind-generator/v12"
+      "prompt_version": "ownward.kernel-iteration-blind-generator/v13",
+      "max_active": 4,
+      "worker_active_turns_maximum": 1,
+      "result_order": "frozen-coverage-order"
     },
     "quality_admission": {
       "model": "gpt-5.6-terra",
@@ -80,7 +83,7 @@
     },
     "production_roles": {
       "semantic": "gpt-5.6-luna/low",
-      "reader": "gpt-5.6-luna/medium",
+      "reader": "gpt-5.6-luna/xhigh",
       "judge": "gpt-5.6-terra/medium"
     },
     "controls": [
@@ -112,5 +115,5 @@
     "failure_rule": "candidate-side-only-plus-generation-admission-and-level-recovery",
     "resume_requires_byte_identical_terminal_result": true
   },
-  "identity": "75b06118a96e4d160fcfdec8e68b66fff400401a9a8a3a124799ab3253fee2df"
+  "identity": "059ea0abc8f0f1b9cfec3a780c9493829e05129c8c6f9cf4ade9980eafbaccb6"
 }

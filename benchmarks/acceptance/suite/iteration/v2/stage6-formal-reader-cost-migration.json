@@ -1,0 +1,73 @@
+{
+  "schema": "ownward.kernel-iteration-stage6-formal-reader-cost-migration/v1",
+  "purpose": "conservatively-prove-the-shared-luna-xhigh-reader-fits-the-existing-20400-second-formal-ceiling-before-community-rebind-and-preflight",
+  "source_formal_projection": {
+    "reader": "gpt-5.6-luna/medium",
+    "protocol_sha256": "898a0ebe943e99ca2357723f328668afaee09c5f4c5cd99c50417571b252a123",
+    "acceptance_contract_sha256": "9bfb85c3f428998fa0a0e5b56b5f46f5f37718ef2d0c62e7ae343a1cc863e569",
+    "projected_wall_seconds": 12775.987,
+    "normal_variation_reserve_seconds": 2555.1974,
+    "bounded_retry_reserve_seconds": 1122.7176,
+    "checkpoint_recovery_reserve_seconds": 3600.0,
+    "required_ceiling_wall_seconds": 20053.902
+  },
+  "target_formal_protocol": {
+    "path": "benchmarks/longmemeval_s/protocol.json",
+    "sha256": "6a52f479858b8a057a10e94dea38b7dd74bff4d8ee021a2abe693574bf98657f",
+    "profile": "Ownward LongMemEval-S Production Profile",
+    "reader": "gpt-5.6-luna/xhigh"
+  },
+  "reader_selection": {
+    "model": "gpt-5.6-luna",
+    "reasoning_effort": "xhigh",
+    "profile_identity": "401aa7962b5ecd3d283093a2d5eee0fe76da941d20ce4aa317ef21216d55c83c",
+    "contract_identity": "841ab01d016bf0c987527061dad95e2ba23e069f4b32642c7a3276b7cff75805",
+    "result_identity": "25f4954169249c92af6001813dca81ac04c0e70a75499bd1e1bcf9dc45ae5824",
+    "result_sha256": "0f7cc4e245f5c8dffd0d1e25b932c556b9d07c5f6e019d432fd013949a919515",
+    "p95_wall_seconds": 8.4470064,
+    "formal_reader_requests": 500,
+    "formal_question_workers": 4,
+    "parallel_groups": 125,
+    "entire_p95_treated_as_incremental_seconds": 1055.8758
+  },
+  "candidate_local_critical_path": {
+    "contract_identity": "db0de5be1d737ea23e9fd6a14ee1e8288b7fc1fac6bef905e66adfb52e71a927",
+    "contract_sha256": "9560e2d0f3f7ad127526b8459c87dd8cb90059e4eddb76a83e6ddd6c7b0a6c20",
+    "result_identity": "3e06bfd3f7c8d235eab8f5d436825ee3210794527744bb558e63ae24cb9fff72",
+    "result_sha256": "a4a720b93738a40ce6115074e44d39f58497cac4638d8a53fe09a7e89af17b3a",
+    "concurrent_questions": 3,
+    "v0_controlled_baseline_seconds": 13.42381325,
+    "v2_candidate_plus_repeatability_error_seconds": 1.4858774,
+    "conservative_saving_per_formal_group_seconds": 11.93793585,
+    "formal_question_groups": 125,
+    "conservative_projected_saving_seconds": 1492.24198125,
+    "applies_only_to_projected_wall_and_normal_variation_reserve": true,
+    "bounded_retry_reserve_reduction_seconds": 0.0
+  },
+  "reserves": {
+    "normal_variation_ratio": 0.2,
+    "bounded_retry_ratio": 0.1,
+    "checkpoint_recovery_seconds": 3600.0
+  },
+  "migrated_projection": {
+    "projected_wall_seconds": 12339.62081875,
+    "normal_variation_reserve_seconds": 2467.92416375,
+    "bounded_retry_reserve_seconds": 1228.30518,
+    "checkpoint_recovery_reserve_seconds": 3600.0,
+    "required_ceiling_wall_seconds": 19635.8501625,
+    "hard_ceiling_wall_seconds": 20400.0,
+    "margin_seconds": 764.1498375,
+    "passed": true
+  },
+  "policy": {
+    "reader_quality_relaxed": false,
+    "time_ceiling_relaxed": false,
+    "semantic_judge_retrieval_or_scoring_changed": false,
+    "model_or_product_execution": false,
+    "formal_state_written": false,
+    "community_binding_and_preflight_status": "pending-rebuild-before-formal-handoff",
+    "internal_stage4_stage5_evidence_invalidated": false,
+    "this_receipt_is_not_a_formal_preflight": true
+  },
+  "identity": "8ec2dc562df78d8f9be646e55d6759f5c10601c81299550bc1748af25fc75e96"
+}

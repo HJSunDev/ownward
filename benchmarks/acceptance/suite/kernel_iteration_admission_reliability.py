@@ -7,10 +7,14 @@ import json
 from pathlib import Path
 import secrets
 import shutil
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack, contextmanager
 from typing import Any, Callable
 
 import kernel_iteration_evidence as evidence
+import kernel_iteration_material_scheduler as material_scheduler
 import kernel_iteration_validation as validation
 
 
@@ -18,15 +22,56 @@ class AdmissionReliabilityError(ValueError):
     pass
 
 
-CONTRACT_SCHEMA = "ownward.kernel-iteration-stage2-admission-reliability-contract/v1"
-PLAN_SCHEMA = "ownward.kernel-iteration-stage2-admission-reliability-plan/v1"
-RESULT_SCHEMA = "ownward.kernel-iteration-stage2-admission-reliability-result/v1"
+CONTRACT_SCHEMA = "ownward.kernel-iteration-stage2-admission-reliability-contract/v2"
+PLAN_SCHEMA = "ownward.kernel-iteration-stage2-admission-reliability-plan/v2"
+RESULT_SCHEMA = "ownward.kernel-iteration-stage2-admission-reliability-result/v2"
 LOCATOR_SCHEMA = "ownward.kernel-iteration-stage2-admission-reliability-locator/v1"
 SECRET_SCHEMA = "ownward.kernel-iteration-stage2-admission-reliability-secret/v1"
 ACTIVE_SCHEMA = "ownward.kernel-iteration-stage2-admission-reliability-active/v1"
 PROGRESS_SCHEMA = "ownward.kernel-iteration-stage2-admission-reliability-progress/v1"
 CONTRACT_RELATIVE = Path("iteration/v2/stage2-blind-admission-reliability-contract.json")
 MODES = ("diagnosis", "qualification")
+CLI_ENTRY_SCHEMA = "ownward.kernel-iteration-stage2-admission-reliability-cli-entry/v1"
+
+
+def add_cli_arguments(selection: Any, parser: Any) -> None:
+    """Own the complete public CLI surface for this lifecycle role."""
+    selection.add_argument("--blind-admission-reliability-config", type=Path)
+    selection.add_argument("--blind-admission-reliability-plan-identity")
+    parser.add_argument("--blind-admission-reliability-mode", choices=MODES)
+
+
+def cli_selected(args: Any) -> bool:
+    return args.blind_admission_reliability_plan_identity is not None or args.blind_admission_reliability_config is not None
+
+
+def dispatch_cli(args: Any, suite_root: Path) -> dict[str, Any]:
+    """Validate and execute the sole scriptable admission-reliability entry."""
+    if args.blind_admission_reliability_plan_identity is not None:
+        if not args.resume:
+            raise SystemExit("按 plan identity 恢复阶段 2 准入可靠性必须提供 --resume")
+        if any(value is not None for value in (
+            args.gate_seed, args.formal_state, args.execution_config,
+            args.blind_admission_reliability_config, args.blind_admission_reliability_mode,
+        )):
+            raise SystemExit("按 plan identity 恢复阶段 2 准入可靠性只读取封存定位")
+        return resume_by_plan_identity(
+            suite_root, args.output, args.blind_admission_reliability_plan_identity,
+        )
+    if args.formal_state is None or args.blind_admission_reliability_mode is None:
+        raise SystemExit("阶段 2 准入可靠性必须提供模式、执行配置和正式 state")
+    return run(
+        suite_root, args.output, args.blind_admission_reliability_config, args.formal_state,
+        mode=args.blind_admission_reliability_mode,
+        seed=args.gate_seed, resume=args.resume,
+    )
+
+
+def cli_entry_identity() -> str:
+    return evidence.canonical_sha256({
+        "schema": CLI_ENTRY_SCHEMA,
+        "sources": [inspect.getsource(callback) for callback in (add_cli_arguments, cli_selected, dispatch_cli)],
+    })
 
 
 def load_contract(suite_root: Path) -> dict[str, Any]:
@@ -45,6 +90,18 @@ def load_contract(suite_root: Path) -> dict[str, Any]:
     }, "阶段 2 准入可靠性批次合同漂移")
     budget = _mapping(value, "budget")
     _require(budget.get("per_batch_wall_seconds_maximum") == 492 and budget.get("qualification_total_wall_seconds_maximum") == 984, "阶段 2 准入可靠性预算漂移")
+    execution = _mapping(value, "execution")
+    _require(
+        execution == {
+            "generation_max_active": 8,
+            "generation_worker_active_turns_maximum": 1,
+            "generation_result_order": "frozen-coverage-order",
+            "rejection_replacement": "rejected-cases-only",
+            "full_set_readmission_after_replacement": True,
+            "maximum_replacement_rounds": 3,
+        },
+        "阶段 2 准入可靠性调度合同漂移",
+    )
     _require(_mapping(value, "evidence").get("terminal_raw_policy") == "destroy-all-reversible-content", "阶段 2 准入可靠性原始内容策略无效")
     return value
 
@@ -114,7 +171,8 @@ def run(
         _require(resume and plan_path.is_file() and _load_json(plan_path) == plan, "阶段 2 准入可靠性终态只能由同一计划恢复")
         result = _load_json(result_path)
         _validate_result(result, plan_identity)
-        _require(_current_dependencies(suite_root, _load_locator(root / "locator.json", plan_identity)) == dependencies, "阶段 2 准入可靠性终态直接依赖漂移")
+        current = _current_dependencies(suite_root, _load_locator(root / "locator.json", plan_identity))
+        _require(_dependencies_current_or_migrated(suite_root, plan_identity, dependencies, current), "阶段 2 准入可靠性终态直接依赖漂移")
         _require(state_path.read_bytes() == state_before, "阶段 2 准入可靠性终态复用改写正式 state")
         return _terminal_reference(result_path, result, reused=True)
     if plan_path.is_file():
@@ -172,7 +230,10 @@ def resume_by_plan_identity(
     result_path = root / "result.json"
     if result_path.is_file():
         current = _current_dependencies(suite_root, locator)
-        _require(current == _mapping(plan, "direct_dependencies"), "阶段 2 准入可靠性终态直接依赖漂移")
+        _require(
+            _dependencies_current_or_migrated(suite_root, plan_identity, _mapping(plan, "direct_dependencies"), current),
+            "阶段 2 准入可靠性终态直接依赖漂移",
+        )
         result = _load_json(result_path)
         _validate_result(result, plan_identity)
         _require(not (root / "active.json").exists(), "阶段 2 准入可靠性终态仍有活动指针")
@@ -181,6 +242,35 @@ def resume_by_plan_identity(
         suite_root, output_root, Path(locator["execution_config"]), Path(locator["formal_state"]),
         mode=str(locator["mode"]), plan_identity=plan_identity, resume=True, invoker=invoker,
     )
+
+
+def _dependencies_current_or_migrated(
+    suite_root: Path,
+    plan_identity: str,
+    planned: dict[str, Any],
+    current: dict[str, str],
+) -> bool:
+    if current == planned:
+        return True
+    try:
+        budget = validation.load_blind_budget_archive(suite_root)
+    except (OSError, ValueError, KeyError, json.JSONDecodeError):
+        return False
+    receipt = budget.get("migration_receipt")
+    if not isinstance(receipt, dict) or receipt.get("qualification_plan_identity") != plan_identity:
+        return False
+    migration = receipt.get("qualification_identity_migration")
+    if not isinstance(migration, dict):
+        return False
+    expected = dict(planned)
+    if (
+        expected.get("controller") != migration.get("source_controller_identity")
+        or expected.get("controller-entry") != migration.get("source_controller_entry_identity")
+    ):
+        return False
+    expected["controller"] = str(migration.get("target_controller_identity"))
+    expected["controller-entry"] = str(migration.get("target_controller_entry_identity"))
+    return current == expected
 
 
 def _run_batch(
@@ -193,51 +283,67 @@ def _run_batch(
     gate_seed: str,
     batch_index: int,
     completed: list[dict[str, Any]],
-    invoke: Callable[..., tuple[dict[str, Any], dict[str, Any]]] | None,
+    invoke: Callable[..., tuple[dict[str, Any], dict[str, Any]]] | list[Callable[..., tuple[dict[str, Any], dict[str, Any]]]] | None,
 ) -> dict[str, Any]:
     started = time.perf_counter()
     batch_root = scratch / f"batch-{batch_index:02d}"
     if invoke is None:
-        with validation._native_codex_batch_invoker(suite_root, runtime, batch_root / ".codex-runtime") as batch_invoke:
+        max_active = int(_mapping(contract, "execution")["generation_max_active"])
+        with _native_generation_invokers(suite_root, runtime, batch_root / ".codex-runtime", max_active) as batch_invokers:
             return _run_batch(
                 suite_root, runtime, validation_contract, contract, scratch,
-                plan_identity, gate_seed, batch_index, completed, batch_invoke,
+                plan_identity, gate_seed, batch_index, completed, batch_invokers,
             )
     batch_seed = hashlib.sha256(f"{gate_seed}:{batch_index}".encode("utf-8")).hexdigest()
-    generated: list[dict[str, Any]] = []
-    usages: list[dict[str, Any]] = []
-    for index, coverage in enumerate(_coverage_schedule(contract), start=1):
-        case_id = f"b{batch_index:02d}-c{index:02d}"
-        value, usage = invoke(
+    invokers = invoke if isinstance(invoke, list) else [invoke]
+    work = [
+        (index, coverage, f"b{batch_index:02d}-c{index:02d}")
+        for index, coverage in enumerate(_coverage_schedule(contract), start=1)
+    ]
+
+    def generate(selected: list[tuple[int, str, str]], round_index: int):
+        round_seed = hashlib.sha256(f"{batch_seed}:replacement:{round_index}".encode("utf-8")).hexdigest()
+        return _generate_cases(
+            suite_root, runtime, validation_contract,
+            batch_root / f"generation-round-{round_index:02d}", round_seed, invokers, selected,
+        )
+
+    def admit(generated: list[dict[str, Any]], round_index: int):
+        materials = _materials(generated)
+        validation.validate_materials(materials, expected_questions=15)
+        controls = validation.score_controls(materials)
+        _require(controls["passed"], "阶段 2 准入可靠性评分控制无法区分关键错误")
+        admission_value, usage = invokers[0](
             suite_root=suite_root,
             runtime=runtime,
-            stage=batch_root / "generator" / case_id,
-            role="generator",
-            prompt=validation._generator_prompt(validation_contract, batch_seed, case_id, coverage),
-            schema=validation._generator_case_schema(case_id, coverage, validation_contract),
-            settings=_mapping(_mapping(validation_contract, "blind"), "generation"),
-            validate=lambda output, expected_id=case_id, expected_coverage=coverage: validation._validate_generated_case(output, expected_id, expected_coverage, validation_contract),
+            stage=batch_root / f"quality-admission-round-{round_index:02d}",
+            role="quality-admission",
+            prompt=validation._admission_prompt(
+                validation_contract,
+                validation._admission_review_materials(materials, generated),
+            ),
+            schema=validation._admission_schema([case["case_id"] for case in materials["cases"]]),
+            settings=_mapping(_mapping(validation_contract, "blind"), "quality_admission"),
+            validate=lambda output: validation.validate_admission(output, materials, validation_contract),
         )
-        generated.append(validation._validate_generated_case(value, case_id, coverage, validation_contract))
-        usages.append(usage)
+        admission = validation.validate_admission(admission_value, materials, validation_contract)
+        rejected = _rejected_case_ids(admission_value, materials, validation_contract)
+        return admission, usage, rejected
+
+    replacement = material_scheduler.run_local_replacement(
+        work,
+        int(_mapping(contract, "execution")["maximum_replacement_rounds"]),
+        batch_root / "replacement-checkpoint.json",
+        generate=generate,
+        admit=admit,
+    )
+    generated = replacement["cases"]
     materials = _materials(generated)
-    validation.validate_materials(materials, expected_questions=15)
+    admission = replacement["admission"]
     controls = validation.score_controls(materials)
-    _require(controls["passed"], "阶段 2 准入可靠性评分控制无法区分关键错误")
     tags = _case_tags(plan_identity, gate_seed, materials)
     prior_tags = {tag for item in completed for tag in item.get("active_case_tags", [])}
     _require(prior_tags.isdisjoint(tags), "阶段 2 准入可靠性批次事实重合")
-    admission_value, admission_usage = invoke(
-        suite_root=suite_root,
-        runtime=runtime,
-        stage=batch_root / "quality-admission",
-        role="quality-admission",
-        prompt=validation._admission_prompt(validation_contract, materials),
-        schema=validation._admission_schema([case["case_id"] for case in materials["cases"]]),
-        settings=_mapping(_mapping(validation_contract, "blind"), "quality_admission"),
-        validate=lambda output: validation.validate_admission(output, materials, validation_contract),
-    )
-    admission = validation.validate_admission(admission_value, materials, validation_contract)
     wall = time.perf_counter() - started
     return {
         "batch": batch_index,
@@ -245,11 +351,115 @@ def _run_batch(
         "coverage_counts": {name: sum(case["coverage"] == name for case in materials["cases"]) for name in validation.BLIND_COVERAGE},
         "admission": admission,
         "control_discrimination_passed": True,
-        "generator_usage": validation._sanitize_usage(validation._combine_usages(usages)),
-        "admission_usage": validation._sanitize_usage(admission_usage),
+        "generator_usage": validation._sanitize_usage(validation._combine_usages(replacement["generation_usages"])),
+        "admission_usage": validation._sanitize_usage(validation._combine_usages(replacement["admission_usages"])),
+        "generation_scheduler": replacement["scheduler"],
+        "replacement_rounds": replacement["rounds"],
         "wall_seconds": wall,
         "active_case_tags": sorted(tags),
     }
+
+
+@contextmanager
+def _native_generation_invokers(
+    suite_root: Path,
+    runtime: dict[str, Any],
+    transport_parent: Path,
+    max_active: int,
+) -> Any:
+    _require(1 <= max_active <= 8, "阶段 2 生成并发必须在 1..8 的冻结边界内")
+    with ExitStack() as stack:
+        invokers = [
+            stack.enter_context(validation._native_codex_batch_invoker(
+                suite_root, runtime, transport_parent / f"worker-{index + 1:02d}",
+            ))
+            for index in range(max_active)
+        ]
+        yield invokers
+
+
+def _generate_cases(
+    suite_root: Path,
+    runtime: dict[str, Any],
+    validation_contract: dict[str, Any],
+    generation_root: Path,
+    batch_seed: str,
+    invokers: list[Callable[..., tuple[dict[str, Any], dict[str, Any]]]],
+    work: list[tuple[int, str, str]],
+) -> tuple[list[tuple[int, dict[str, Any], dict[str, Any]]], dict[str, Any]]:
+    _require(bool(invokers), "阶段 2 生成调度缺少 worker")
+    lanes: list[list[tuple[int, str, str]]] = [[] for _ in invokers]
+    for index, item in enumerate(work):
+        lanes[index % len(lanes)].append(item)
+    activity_lock = threading.Lock()
+    active = 0
+    maximum = 0
+
+    def run_lane(
+        lane_invoke: Callable[..., tuple[dict[str, Any], dict[str, Any]]],
+        items: list[tuple[int, str, str]],
+    ) -> list[tuple[int, dict[str, Any], dict[str, Any]]]:
+        nonlocal active, maximum
+        lane_results: list[tuple[int, dict[str, Any], dict[str, Any]]] = []
+        for index, coverage, case_id in items:
+            with activity_lock:
+                active += 1
+                maximum = max(maximum, active)
+            try:
+                value, usage = lane_invoke(
+                    suite_root=suite_root,
+                    runtime=runtime,
+                    stage=generation_root / case_id,
+                    role="generator",
+                    prompt=validation._generator_prompt(validation_contract, batch_seed, case_id, coverage),
+                    schema=validation._generator_case_schema(case_id, coverage, validation_contract),
+                    settings=_mapping(_mapping(validation_contract, "blind"), "generation"),
+                    validate=lambda output, expected_id=case_id, expected_coverage=coverage: validation._validate_generated_case(output, expected_id, expected_coverage, validation_contract),
+                )
+            finally:
+                with activity_lock:
+                    active -= 1
+            lane_results.append((
+                index,
+                validation._validate_generated_case(value, case_id, coverage, validation_contract),
+                usage,
+            ))
+        return lane_results
+
+    completed: list[tuple[int, dict[str, Any], dict[str, Any]]] = []
+    with ThreadPoolExecutor(max_workers=len(invokers), thread_name_prefix="stage2-generator") as pool:
+        futures = [pool.submit(run_lane, invokers[index], lane) for index, lane in enumerate(lanes) if lane]
+        for future in futures:
+            completed.extend(future.result())
+    completed.sort(key=lambda item: item[0])
+    _require([item[0] for item in completed] == list(range(1, len(work) + 1)), "阶段 2 生成结果没有按冻结原序重组")
+    return (
+        completed,
+        {
+            "policy": "bounded-independent-lanes-original-order/v1",
+            "max_active_limit": len(invokers),
+            "max_active_observed": maximum,
+            "submitted": len(work),
+            "per_worker_max_active_turns": 1,
+            "result_order": "frozen-coverage-order",
+        },
+    )
+
+
+def _rejected_case_ids(output: dict[str, Any], materials: dict[str, Any], validation_contract: dict[str, Any]) -> list[str]:
+    required = list(_mapping(_mapping(validation_contract, "blind"), "quality_admission")["required_checks"])
+    assessments = output.get("assessments")
+    _require(isinstance(assessments, list), "质量准入缺少逐题判定")
+    by_id = {str(item.get("case_id")): item for item in assessments if isinstance(item, dict)}
+    ordered = []
+    for case in materials["cases"]:
+        item = by_id.get(str(case["case_id"]))
+        _require(isinstance(item, dict), "质量准入拒绝集合缺少案例")
+        checks = item.get("checks")
+        _require(isinstance(checks, dict) and set(checks) == set(required), "质量准入拒绝集合检查漂移")
+        if any(checks[name] is not True for name in required):
+            ordered.append(str(case["case_id"]))
+    return ordered
 
 
 def _finish(
@@ -345,7 +555,7 @@ def _materials(cases: list[dict[str, Any]]) -> dict[str, Any]:
     content = {
         "schema": validation.MATERIALS_SCHEMA,
         "contains_formal_questions_answers_gold_or_content": False,
-        "cases": cases,
+        "cases": [validation._case_projection(case) for case in cases],
         "criteria": {"minimum_accuracy": 0.0, "require_complete_fact_delivery": True, "category_minimums": {}},
     }
     return {**content, "identity": evidence.canonical_sha256(content)}
@@ -378,7 +588,7 @@ def _direct_dependencies(suite_root: Path, contract: dict[str, Any], validation_
         "contract": contract["identity"],
         "validation-contract": validation_contract["identity"],
         "controller": implementation["controller"],
-        "controller-entry": evidence.file_sha256(suite_root / "kernel_iteration_run.py"),
+        "controller-entry": cli_entry_identity(),
         "generator": evidence.canonical_sha256({"settings": blind["generation"], "implementation": implementation["generator"]}),
         "quality-admission": evidence.canonical_sha256({"settings": blind["quality_admission"], "implementation": implementation["quality-admission"]}),
         "codex-executor": evidence.file_sha256(runtime["codex_binary"]),
@@ -396,14 +606,27 @@ def _current_dependencies(suite_root: Path, locator: dict[str, Any]) -> dict[str
 
 def _implementation_identity() -> dict[str, str]:
     roles = {
-        "generator": (validation._generator_prompt, validation._generator_case_schema, validation._validate_generated_case, validation._derive_truth_claims),
-        "quality-admission": (validation._admission_prompt, validation._admission_schema, validation.validate_admission),
+        "generator": (
+            validation._generator_prompt, validation._generator_case_schema,
+            validation._validate_generated_case, validation._derive_truth_claims,
+            validation._validate_admission_proof, validation._mechanical_admission_proof,
+        ),
+        "quality-admission": (
+            validation._admission_prompt, validation._admission_review_materials,
+            validation._admission_schema, validation.validate_admission,
+        ),
         "controller": (
             load_contract, run, resume_by_plan_identity, _run_batch, _finish,
+            _native_generation_invokers, _generate_cases,
+            _rejected_case_ids,
             _aggregate_diagnostics, _materials, _coverage_schedule, _case_tags,
-            _direct_dependencies, _current_dependencies, _initialize_recovery,
+            _dependencies_current_or_migrated, _initialize_recovery,
             _validate_plan, _validate_result, _validate_progress,
             _destroy_batch, _destroy_scratch, validation._native_codex_batch_invoker,
+            material_scheduler.run_local_replacement,
+            material_scheduler._merge_scheduler,
+            material_scheduler._write_checkpoint,
+            material_scheduler._load_checkpoint,
         ),
     }
     return {

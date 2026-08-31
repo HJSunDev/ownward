@@ -1,0 +1,108 @@
+{
+  "schema": "ownward.kernel-iteration-stage6-evaluator-environment-contract/v3",
+  "purpose": "noncandidate-post-failure-oracle-reader-reliability-qualification",
+  "formal": false,
+  "root_cause_boundary": {
+    "source_plan_identity": "c45a62f195552071aff23a136f4c1f244468f967952d1d1f4019c05269215e90",
+    "source_result_identity": "0fdfe34e2ae5462d3124519e53f6d56279e872bf5deffe798ac608421b6cf468",
+    "product_context_failures": 3,
+    "oracle_context_failures": 3,
+    "judge_correct_controls_passed": 1,
+    "judge_wrong_controls_passed": 1,
+    "transport_timeouts": 0,
+    "worker_restarts": 0,
+    "rate_limit_events": 0,
+    "schema_validated_outputs": 6,
+    "first_proven_boundary": "luna-xhigh-reader-semantic-decision-under-complete-oracle-evidence",
+    "candidate_failure": false,
+    "raw_blind_material_recovery_forbidden": true
+  },
+  "official_evaluator": {
+    "sha256": "5085eb9ae08b91c6c4f97c6bea9b8c2d6e55f9ec72c27734cafa0a04f00a430a",
+    "requirements_lock_sha256": "f6f6ac60a3a5ca50d337cbaf252d2697a9609aba0b8fa6cafb919ff82a474fc4",
+    "python_version": "3.9.7",
+    "required_import": "backoff",
+    "required_import_version": "2.2.1"
+  },
+  "product_reader_unchanged": {
+    "model": "gpt-5.6-luna",
+    "reasoning_effort": "xhigh",
+    "scope": "candidate-first-answer-only"
+  },
+  "attribution_reader": {
+    "capability_source": "codex",
+    "model": "gpt-5.6-terra",
+    "reasoning_effort": "high",
+    "max_output_tokens": 1024,
+    "timeout_seconds": 240,
+    "attempts": 3,
+    "scope": "post-failure-diagnostic-only",
+    "low_reasoning_forbidden": true,
+    "sol_model_forbidden": true
+  },
+  "judge": {
+    "model": "gpt-5.6-terra",
+    "reasoning_effort": "medium",
+    "correct_label": "yes",
+    "wrong_label": "no"
+  },
+  "prompt_boundary": {
+    "reader_prompt": "longmemeval_s.run._answer_prompt-unchanged",
+    "judge_prompt_renderer": "official-longmemeval-evaluator-unchanged",
+    "schema": "longmemeval-runtime-answer-and-judge-schema-unchanged",
+    "prompt_or_renderer_change_authorized": false
+  },
+  "material": {
+    "path": "iteration/v2/stage6-oracle-reader-qualification-material.json",
+    "sha256": "52e8ee15fefe09e1369089ca26422c983ee91ca2fac8679dea0fbbe3ba5bd776",
+    "identity": "76de133f9a6bc461499335007fed511299554716194da3e076a9a7444984d538",
+    "questions": 3,
+    "coverages": [
+      "temporal-order",
+      "knowledge-update-conflict",
+      "multi-session-relation"
+    ],
+    "independent_of_stage6_blind_material": true,
+    "independent_of_formal_and_candidate_development_material": true,
+    "candidate_decision": false
+  },
+  "attribution_qualification": {
+    "questions": 3,
+    "reader_settings": "frozen-terra-high-post-failure-diagnostic",
+    "product_repeats": [2, 3],
+    "oracle_repeats": [1, 2, 3],
+    "reader_calls": 15,
+    "judge_calls": 24,
+    "product_context_failures_maximum": 0,
+    "oracle_context_failures_maximum": 0,
+    "judge_controls_required": "3/3-correct-and-3/3-wrong",
+    "prompt_renderer": "official-longmemeval-evaluator",
+    "correctness_source": "judge"
+  },
+  "cost_bound": {
+    "source_plan_identity": "dd4afa9b487c70a5bef365247dfcc62bfd5122034199ba20bb70ac58b56f0050",
+    "source_plan_sha256": "8802f937e79d6ba0166f049544d0cb8f37524450a4d4005ce566303b408fe113",
+    "source_candidate_observation_sha256": "9a237ed9e140d4dee632b6f1ac4fbe50f4dc5b37df329e467e67215afa467071",
+    "source_terminal_result_sha256": "92c0af3cb1c812d3a33cbe6c22afa864514951731ae5a4151983025a43694bc6",
+    "pre_attribution_observed_upper_seconds": 1686.7244348,
+    "qualification_maximum_seconds": 274.2755652,
+    "future_single_case_attribution_maximum_seconds": 274.2755652,
+    "level_total_wall_seconds_maximum": 1961,
+    "phase_overlap_preserved": true,
+    "full_set_attribution_forbidden": true
+  },
+  "failure_semantics": {
+    "fail_closed": true,
+    "candidate_failure": false,
+    "candidate_execution_allowed_before_qualification": false,
+    "silent_degradation_forbidden": true,
+    "safe_exception_categories": [
+      "reader",
+      "judge",
+      "official-prompt-renderer",
+      "schema-validation",
+      "transport"
+    ]
+  },
+  "identity": "fd036e2ec50490008d7765520d6be5ae5f7a8e53d2a695c60fc1f0df1fe3e62a"
+}

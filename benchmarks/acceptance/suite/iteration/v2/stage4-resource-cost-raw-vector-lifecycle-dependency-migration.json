@@ -1,21 +1,99 @@
 {
   "schema": "ownward.kernel-iteration-direct-dependency-migration/v1",
   "contract_identity": "125278c6aa9d6a34dc91bfe1ced32b22b93dad60ce6b5bc34aa14c3c2561abb7",
-  "reason": "stage2-adds-an-unrelated-blind-admission-reliability-command-without-changing-the-frozen-stage4-audit-or-its-result",
+  "reason": "non-stage4-diagnostic-maintenance-changes-only-explicitly-listed-callers-without-changing-frozen-stage4-contracts-or-results",
   "changes": [
     {
       "path": "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_raw_vector_lifecycle.py",
       "frozen_sha256": "00acaf4cf0a92ef909f50812df708f340d7854ee86c3314279eac843da934e8f",
-      "current_sha256": "4400fa59783a5e8d759e4b9b4dc824f96a7db6e923e25b285c40aa642f28605d",
+      "current_sha256": "173375caedd08912f602551238bc2b7a8b3b101975bb9ac19455ccbe6520602c",
       "classification": "dependency-receipt-validation-only"
     },
     {
       "path": "benchmarks/acceptance/suite/kernel_iteration_run.py",
       "frozen_sha256": "3a6ec83cc197d71b8594814cff7000d7face183a8e316e5d0c409f2e19eddc53",
-      "current_sha256": "82f5708b908931af82420a9179d152eaf1626f9f448de55f3f36fa22805ce127",
-      "classification": "additive-stage2-blind-admission-reliability-dispatch-only"
+      "current_sha256": "64a7119397384eafbce84d3d958fcd70c308a4e188694a2c68ead3f69afbab09",
+      "classification": "additive-non-stage4-cli-dispatch-only"
     }
   ],
+  "related_contract_migrations": {
+    "84d30456e65da337f32d73769deafb26bf8f61f4a82053d87cd14e19843887bb": {
+      "changes": [
+        {
+          "path": "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_audit.py",
+          "frozen_sha256": "6df41b4a42251bcffe8ce92bed57a4cfafd3ba80ebddf6373215ce61609fb84a",
+          "current_sha256": "b4d40744e2155bd33e4d25827479fe44cb088fd47bd7a1dc3284758b39949633",
+          "classification": "dependency-receipt-validation-only"
+        },
+        {
+          "path": "benchmarks/acceptance/suite/kernel_iteration_validation.py",
+          "frozen_sha256": "a1267ee7e10439f6f4dbee87fac8a0edf6e0dce3a486d4545631802b825ad88c",
+          "current_sha256": "3c89f95a01fc8513e6d223714f697b9af5b201f24490d7ed66c92629e2368fd4",
+          "classification": "non-stage4-reader-profile-and-cost-proof-validation-only"
+        },
+        {
+          "path": "benchmarks/longmemeval_s/run.py",
+          "frozen_sha256": "f85430ab86a43fd88368e0d5f283fa71abc5ea45021585faa2826320f481819d",
+          "current_sha256": "0577f32a1fe087ef331dca592389a7473129218cb2716d56fc2794f441b2e976",
+          "classification": "reader-profile-validation-and-formal-protocol-unification-only"
+        }
+      ],
+      "preserved": {
+        "contract_identity": true,
+        "thresholds": true,
+        "evidence_identities": true,
+        "formal_state_sha256": true
+      }
+    },
+    "125278c6aa9d6a34dc91bfe1ced32b22b93dad60ce6b5bc34aa14c3c2561abb7": {
+      "changes": [
+        {
+          "path": "benchmarks/longmemeval_s/run.py",
+          "frozen_sha256": "dbd90d7b4cc3578b7bae2623d3a1f715bfeea9787bdb9c3bb7d5cb5511f36c24",
+          "current_sha256": "0577f32a1fe087ef331dca592389a7473129218cb2716d56fc2794f441b2e976",
+          "classification": "reader-profile-validation-and-formal-protocol-unification-only"
+        }
+      ]
+    },
+    "e39272da7f832ed8275f99284aa03ad8fdf1b68b7833a368b9bece116ef93ce8": {
+      "changes": [
+        {
+          "path": "benchmarks/longmemeval_s/run.py",
+          "frozen_sha256": "dbd90d7b4cc3578b7bae2623d3a1f715bfeea9787bdb9c3bb7d5cb5511f36c24",
+          "current_sha256": "0577f32a1fe087ef331dca592389a7473129218cb2716d56fc2794f441b2e976",
+          "classification": "reader-profile-validation-and-formal-protocol-unification-only"
+        }
+      ],
+      "preserved": {
+        "contract_identity": true,
+        "thresholds": true,
+        "evidence_identities": true,
+        "formal_state_sha256": true
+      }
+    },
+    "db0de5be1d737ea23e9fd6a14ee1e8288b7fc1fac6bef905e66adfb52e71a927": {
+      "changes": [
+        {
+          "path": "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_representation_finalize.py",
+          "frozen_sha256": "2fbbebf747c8064d62fcdfc3bbe6779eafddb7e49c2e5aa8b567935045c7e7d9",
+          "current_sha256": "707c9b12d2c68de17b454c106b6657cc07a96e6507d6b45f3fa300b03713b7f2",
+          "classification": "dependency-receipt-validation-only"
+        },
+        {
+          "path": "benchmarks/longmemeval_s/run.py",
+          "frozen_sha256": "dbd90d7b4cc3578b7bae2623d3a1f715bfeea9787bdb9c3bb7d5cb5511f36c24",
+          "current_sha256": "0577f32a1fe087ef331dca592389a7473129218cb2716d56fc2794f441b2e976",
+          "classification": "reader-profile-validation-and-formal-protocol-unification-only"
+        }
+      ],
+      "preserved": {
+        "contract_identity": true,
+        "thresholds": true,
+        "evidence_identities": true,
+        "formal_state_sha256": true
+      }
+    }
+  },
   "preserved": {
     "contract_identity": true,
     "source_files": true,
@@ -23,5 +101,5 @@
     "evidence_identities": true,
     "formal_state_sha256": true
   },
-  "identity": "6ea61581a8d176ccff452b85a070dcac63edf329a879edbba5478f307697ce57"
+  "identity": "3f904c3dc2ec898c0bad37d713d270d6473d091fcc9c52ff32086c8321084094"
 }

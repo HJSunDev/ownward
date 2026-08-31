@@ -1,6 +1,6 @@
 {
   "schema": "ownward.kernel-iteration-stage6-blind-gate-contract/v3",
-  "identity": "9b2eb0024a9a9a8b35273130064575cd26442b60e90f9d26407f1d608f27fce8",
+  "identity": "c35970781da16d9646993bd5d3a389c7573805a29547163a6b9ca528c86a97b6",
   "frozen_before_generation": true,
   "formal": false,
   "level": 25,
@@ -19,5 +19,5 @@
   "absolute_gate": {"questions": 25, "final_answer_accuracy_minimum": 1.0, "fact_delivery_missing_maximum": 0, "temporal_correctness_minimum": 1.0, "conflict_correctness_minimum": 1.0, "complete_consumer_retrieval_p95_ms_maximum": 553.0, "level_total_wall_seconds_maximum": 1097, "read_limit": 8, "context_chars_maximum": 24000},
   "relative_v0_gate": {"final_answer_accuracy": "candidate-greater-than-or-equal-to-v0", "fact_delivery_missing": "candidate-less-than-or-equal-to-v0", "temporal_correctness": "candidate-greater-than-or-equal-to-v0-when-applicable", "conflict_correctness": "candidate-greater-than-or-equal-to-v0-when-applicable", "semantic_input_tokens": "candidate-less-than-or-equal-to-v0", "ownward_data_bytes": "candidate-less-than-or-equal-to-v0", "retrieval_latency": "absolute-complete-consumer-gate-only-because-v0-community-latency-is-not-same-duty", "gate_role": "sequential-early-rejection-not-standalone-overall-uplift-proof"},
   "sequence": {"previous_level": 15, "previous_pass_required": true, "next_level": 50, "terminal": false},
-  "failure": {"candidate_failure_stops_before_v0": true, "evaluation_process_failure_is_candidate_failure": false, "whole_level_efficiency_gate_remains_mandatory": true, "persist_only_general_root_cause": true, "return_to_stage": 3, "independent_nonoverlapping_reproduction_required": true, "same_blind_content_rerun_forbidden": true}
+  "failure": {"answer_failure_attribution": {"reader_profile_identity": "401aa7962b5ecd3d283093a2d5eee0fe76da941d20ce4aa317ef21216d55c83c", "reader_selection_identity": "44098db2a12ae3a2b467b9ceda1b793ae26f83053c136297b04e40297d9e1e8d", "first_answer_accuracy_required": 1.0, "first_correct_proceeds": true, "first_wrong_incomplete_evidence": "candidate-failure", "first_wrong_complete_evidence_candidate_context_fails_oracle_stable": "candidate-context-failure", "oracle_or_identical_prompt_mechanical_instability": "evaluation-process-failure", "judge_control_failure": "evaluation-process-failure", "repetitions_cannot_convert_failure_to_pass": true, "wording_or_hash_variation_is_diagnostic_only": true}, "candidate_failure_stops_before_v0": true, "evaluation_process_failure_is_candidate_failure": false, "whole_level_efficiency_gate_remains_mandatory": true, "persist_only_general_root_cause": true, "return_to_stage": 3, "independent_nonoverlapping_reproduction_required": true, "same_blind_content_rerun_forbidden": true}
 }

@@ -18,6 +18,8 @@ import kernel_iteration_candidate_resource_cost
 import kernel_iteration_validation
 import kernel_iteration_blind_gate
 import kernel_iteration_admission_reliability
+import kernel_iteration_answer_sufficiency
+import kernel_iteration_reader_reliability
 import kernel_iteration_stage4
 import kernel_iteration_stage4_multisource
 import kernel_iteration_stage4_performance
@@ -60,10 +62,11 @@ def parse_args() -> argparse.Namespace:
     selection.add_argument("--blind-plan-identity")
     selection.add_argument("--blind-gate-config", type=Path)
     selection.add_argument("--blind-gate-plan-identity")
-    selection.add_argument("--blind-admission-reliability-config", type=Path)
-    selection.add_argument("--blind-admission-reliability-plan-identity")
+    kernel_iteration_admission_reliability.add_cli_arguments(selection, parser)
     selection.add_argument("--stage3-prepare", action="store_true")
     selection.add_argument("--stage3-finalize", action="store_true")
+    selection.add_argument("--stage3-answer-sufficiency", action="store_true")
+    selection.add_argument("--stage3-reader-reliability", action="store_true")
     selection.add_argument("--prepare-v2-candidate", action="store_true")
     selection.add_argument("--prepare-v2-multisource-candidate", action="store_true")
     selection.add_argument("--prepare-v2-latency-candidate", action="store_true")
@@ -106,9 +109,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--write-input", type=Path)
     parser.add_argument("--formal-state", type=Path)
     parser.add_argument("--blind-gate-subject-manifest", type=Path)
+    parser.add_argument("--answer-sufficiency-subject-manifest", type=Path)
+    parser.add_argument("--reader-reliability-source-result", type=Path)
+    parser.add_argument("--reader-reliability-run-root", type=Path)
     parser.add_argument("--blind-gate-level", type=int, choices=kernel_iteration_blind_gate.GATE_LEVELS)
     parser.add_argument("--blind-gate-previous-plan-identity")
-    parser.add_argument("--blind-admission-reliability-mode", choices=kernel_iteration_admission_reliability.MODES)
     parser.add_argument("--gate-seed")
     parser.add_argument("--compare-left", type=Path)
     parser.add_argument("--compare-right", type=Path)
@@ -163,7 +168,29 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    if args.stage4_resource_cost_raw_vector_lifecycle:
+    if args.stage3_reader_reliability:
+        required = (
+            args.execution_config, args.reader_reliability_source_result,
+            args.reader_reliability_run_root, args.formal_state,
+        )
+        if any(path is None for path in required):
+            raise SystemExit("Reader 可靠性校准必须提供执行配置、medium 诊断、冻结运行根与正式 state")
+        result = kernel_iteration_reader_reliability.run(
+            HERE, args.output, args.execution_config, args.reader_reliability_source_result,
+            args.reader_reliability_run_root, args.formal_state, resume=args.resume,
+        )
+    elif args.stage3_answer_sufficiency:
+        required = (
+            args.execution_config, args.baseline_execution_config,
+            args.answer_sufficiency_subject_manifest, args.formal_state,
+        )
+        if any(path is None for path in required):
+            raise SystemExit("最终回答充分性诊断必须提供候选/V0 执行配置、候选 subject 与正式 state")
+        result = kernel_iteration_answer_sufficiency.run(
+            HERE, args.output, args.execution_config, args.baseline_execution_config,
+            args.answer_sufficiency_subject_manifest, args.formal_state, resume=args.resume,
+        )
+    elif args.stage4_resource_cost_raw_vector_lifecycle:
         if args.formal_state is None:
             raise SystemExit("原始正文向量生命周期审计必须提供正式 state")
         result = kernel_iteration_stage4_resource_cost_raw_vector_lifecycle.run(
@@ -530,25 +557,8 @@ def main() -> None:
                 args.output,
                 args.blind_plan_identity,
             )
-    elif args.blind_admission_reliability_plan_identity is not None:
-        if not args.resume:
-            raise SystemExit("按 plan identity 恢复阶段 2 准入可靠性必须提供 --resume")
-        if any(value is not None for value in (
-            args.gate_seed, args.formal_state, args.execution_config,
-            args.blind_admission_reliability_config, args.blind_admission_reliability_mode,
-        )):
-            raise SystemExit("按 plan identity 恢复阶段 2 准入可靠性只读取封存定位")
-        result = kernel_iteration_admission_reliability.resume_by_plan_identity(
-            HERE, args.output, args.blind_admission_reliability_plan_identity,
-        )
-    elif args.blind_admission_reliability_config is not None:
-        if args.formal_state is None or args.blind_admission_reliability_mode is None:
-            raise SystemExit("阶段 2 准入可靠性必须提供模式、执行配置和正式 state")
-        result = kernel_iteration_admission_reliability.run(
-            HERE, args.output, args.blind_admission_reliability_config, args.formal_state,
-            mode=args.blind_admission_reliability_mode,
-            seed=args.gate_seed, resume=args.resume,
-        )
+    elif kernel_iteration_admission_reliability.cli_selected(args):
+        result = kernel_iteration_admission_reliability.dispatch_cli(args, HERE)
     elif args.blind_gate_plan_identity is not None:
         if not args.resume:
             raise SystemExit("按 plan identity 恢复阶段 6 候选盲测必须提供 --resume")

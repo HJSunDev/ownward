@@ -16,6 +16,9 @@ import kernel_iteration_validation as validation
 CONTRACT_SCHEMA = "ownward.kernel-iteration-stage4-resource-cost-representation-final-contract/v1"
 RESULT_SCHEMA = "ownward.kernel-iteration-stage4-resource-cost-representation-final/v1"
 CONTRACT_PATH = Path("iteration/v2/stage4-resource-cost-representation-final-contract.json")
+DEPENDENCY_MIGRATION_SCHEMA = "ownward.kernel-iteration-direct-dependency-migration/v1"
+DEPENDENCY_MIGRATION_PATH = Path("iteration/v2/stage4-resource-cost-raw-vector-lifecycle-dependency-migration.json")
+DEPENDENCY_MIGRATION_REASON = "non-stage4-diagnostic-maintenance-changes-only-explicitly-listed-callers-without-changing-frozen-stage4-contracts-or-results"
 
 
 def run(suite_root: Path, output_root: Path, formal_state: Path, *, resume: bool) -> dict[str, Any]:
@@ -68,8 +71,16 @@ def load_contract(suite_root: Path) -> dict[str, Any]:
     value = _load_json(suite_root / CONTRACT_PATH)
     _validate_identity(value, CONTRACT_SCHEMA, "表示生命周期终测合同")
     _require(value.get("frozen_before_results") is True and value.get("results_seen") is False, "表示生命周期终测合同未在结果前冻结")
+    drifted = {}
     for item in value["direct_dependencies"]:
-        _verified(repository, item, "表示生命周期终测直接依赖")
+        path = repository / item["path"]
+        current = evidence.file_sha256(path) if path.is_file() else None
+        if current != item["sha256"]:
+            drifted[item["path"]] = {"frozen": item["sha256"], "current": current}
+        elif "identity" in item:
+            _verified(repository, item, "表示生命周期终测直接依赖")
+    if drifted:
+        _verify_dependency_migration(suite_root, value["identity"], drifted)
     _require(value["gate"] == {
         "v0_controlled_baseline_seconds": 13.42381325,
         "controlled_half_maximum_seconds": 6.711906625,
@@ -77,6 +88,33 @@ def load_contract(suite_root: Path) -> dict[str, Any]:
         "candidate_plus_error_maximum_seconds": 6.711906625,
     }, "表示生命周期活动墙钟门漂移")
     return value
+
+
+def _verify_dependency_migration(
+    suite_root: Path,
+    contract_identity: str,
+    drifted: dict[str, dict[str, str | None]],
+) -> None:
+    migration = _load_json(suite_root / DEPENDENCY_MIGRATION_PATH)
+    _validate_identity(migration, DEPENDENCY_MIGRATION_SCHEMA, "Stage 4 精确依赖迁移收据")
+    _require(migration.get("reason") == DEPENDENCY_MIGRATION_REASON, "Stage 4 精确依赖迁移原因漂移")
+    related = migration.get("related_contract_migrations", {}).get(contract_identity, {})
+    changes = {
+        item["path"]: {"frozen": item["frozen_sha256"], "current": item["current_sha256"]}
+        for item in related.get("changes", [])
+    }
+    classifications = {item["path"]: item.get("classification") for item in related.get("changes", [])}
+    _require(changes == drifted, "表示生命周期终测依赖漂移不在精确迁移收据内")
+    _require(classifications == {
+        "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_representation_finalize.py": "dependency-receipt-validation-only",
+        "benchmarks/longmemeval_s/run.py": "reader-profile-validation-and-formal-protocol-unification-only",
+    }, "表示生命周期终测依赖迁移分类漂移")
+    _require(related.get("preserved") == {
+        "contract_identity": True,
+        "thresholds": True,
+        "evidence_identities": True,
+        "formal_state_sha256": True,
+    }, "表示生命周期终测依赖迁移保护边界漂移")
 
 
 def _subject(repository: Path, item: dict[str, Any]) -> dict[str, Any]:

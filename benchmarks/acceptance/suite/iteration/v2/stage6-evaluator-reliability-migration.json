@@ -1,0 +1,88 @@
+{
+  "schema": "ownward.kernel-iteration-stage6-evaluator-reliability-migration/v4",
+  "purpose": "preserve-completed-stage6-results-while-requalifying-only-the-post-failure-oracle-reader",
+  "source_migration_identity": "f49134debe8ee95ada288027ea908a31bc2e21c48406a250f43726f88e501d76",
+  "source_controller_identity": "fff3dc2c5ead1527a999e27dcef37a8be956232bc8d8f802f1f996247cf4f3df",
+  "target_controller_identity": "f6883beb469ac2376535e4d401af7c1425a53f17d29be1834c377ff4f0372ea0",
+  "dependency_changes": {
+    "controller": {
+      "source": "fff3dc2c5ead1527a999e27dcef37a8be956232bc8d8f802f1f996247cf4f3df",
+      "target": "f6883beb469ac2376535e4d401af7c1425a53f17d29be1834c377ff4f0372ea0",
+      "accepted_sources": [
+        "fff3dc2c5ead1527a999e27dcef37a8be956232bc8d8f802f1f996247cf4f3df",
+        "0f56c23cd26360d4276da13b4e673099f645f92ccc4f3cb59c048ddd5f02fea3",
+        "0f0eff0710edcb4065375628efe5fa4bce8141acfae79ffce2eefc08af5a67fe"
+      ]
+    },
+    "answer-attribution-controller": {
+      "source": "d3957c58fdda0947c76854c3e11a5879d42cebc1370309f453a666e2b682bd18",
+      "target": "605c805b65b1cbddc2b274953c7e436cbae8a68210bb781ef332fd0c19e3ef26"
+    },
+    "reader-reliability-selection": {
+      "source": "44098db2a12ae3a2b467b9ceda1b793ae26f83053c136297b04e40297d9e1e8d",
+      "target": "df8ca830bc3a60847f4e5cb52f159f5e1f96e861756c2ee034e8f0dd7d975750"
+    },
+    "evaluator-environment-qualification": {
+      "source": null,
+      "target": "02200ade9038b327148768c4620f9c981cf80523c3e8fa9a9f0cbc28426bbf14",
+      "accepted_sources": [
+        null,
+        "ce0340f8aa62743990240807c033daba7ac6713a8d70d4f03b829efb7ee9f4a7"
+      ]
+    }
+  },
+  "preserved_plans": [
+    {"level": 5, "plan_identity": "d6ae3689f270c49e69ec2def6d07e999c1e55b37973f71bcd39bcc41447f3f94"},
+    {"level": 15, "plan_identity": "bf9d6e6efc896e67b3158ca52ce3bd796b20d68ac057a7682c8943bfef2c5b1e"},
+    {"level": 25, "plan_identity": "c9b4b1891e2131ac70128dbe62f3b2a454061b930386066435fe9d3acee0c5a1"},
+    {"level": 50, "plan_identity": "0f80dc78d2a210242d792f0ef0dc1dad09208b8e65c24c435aea8998d4df670a", "status": "historical-evaluation-process-failure-without-terminal-result"},
+    {"level": 50, "plan_identity": "c45a62f195552071aff23a136f4c1f244468f967952d1d1f4019c05269215e90", "status": "evaluation-process-error-with-durable-single-case-attribution"}
+  ],
+  "qualification_receipt_identity": "02200ade9038b327148768c4620f9c981cf80523c3e8fa9a9f0cbc28426bbf14",
+  "oracle_reader_repair": {
+    "source_failure_plan_identity": "c45a62f195552071aff23a136f4c1f244468f967952d1d1f4019c05269215e90",
+    "source_failure_result_identity": "0fdfe34e2ae5462d3124519e53f6d56279e872bf5deffe798ac608421b6cf468",
+    "source_reader": "gpt-5.6-luna/xhigh",
+    "target_reader": "gpt-5.6-terra/high",
+    "scope": "post-failure-diagnostic-only",
+    "candidate_first_answer_reader_unchanged": true,
+    "prompt_renderer_schema_unchanged": true,
+    "qualification_contract_identity": "fd036e2ec50490008d7765520d6be5ae5f7a8e53d2a695c60fc1f0df1fe3e62a",
+    "qualification_plan_identity": "be30d6a0c0806f9066cb25c658f2258d172b0e8daeea93d3a64008bbc65128f3",
+    "qualification_result_identity": "885192c91ecd7f5b7a88bd23a2ce217d607c5f3fd62359f0df48af49ed871284",
+    "qualification_model_calls": 39,
+    "qualification_product_executions": 0,
+    "qualification_observed_wall_seconds": 64.3318731,
+    "qualification_product_context_failures": 0,
+    "qualification_oracle_context_failures": 0,
+    "qualification_judge_correct_controls": "3/3",
+    "qualification_judge_wrong_controls": "3/3",
+    "worker_restarts": 0,
+    "rate_limit_observed": false,
+    "projected_level_wall_seconds": 1751.0563078999999,
+    "level_total_wall_seconds_maximum": 1961,
+    "resume_model_calls": 0,
+    "resume_product_executions": 0
+  },
+  "terminal_fail_closed_repair": {
+    "plan_identity": "c45a62f195552071aff23a136f4c1f244468f967952d1d1f4019c05269215e90",
+    "source_result_identity": "36cfb478d86e4088fd0e5de824301a4c2e1817aebef222320e226183ad0a609b",
+    "source_result_sha256": "d0b2128ac9aef3015dba2cad6138e9bf1d69e6a3150b82b5c85e7c1d300f56f1",
+    "target_result_identity": "0fdfe34e2ae5462d3124519e53f6d56279e872bf5deffe798ac608421b6cf468",
+    "target_result_sha256": "1ed51f1c1736bbfe7e6d5b30baec96c815ef1b211600308cf76eb41d1fa82255",
+    "candidate_observation_identity": "aeb6fe931cedae48f7760108a8f665cbaef02a2c7bdbfc5401757783351e530f",
+    "candidate_observation_sha256": "72e744dc3e4dd60f161c885fa5f54f56ec01fca89f65c9bb45c7bd0b7ada22e1",
+    "candidate_or_baseline_execution": false,
+    "candidate_observation_rewritten": false,
+    "model_or_product_execution": false,
+    "formal_state_written": false
+  },
+  "candidate_results_rewritten": false,
+  "candidate_or_baseline_execution": false,
+  "model_or_product_execution": false,
+  "formal_state_written": false,
+  "old_50_result_invented": false,
+  "same_blind_content_rerun_forbidden": true,
+  "next_action": "coordinator-review-and-commit-oracle-reader-repair-before-fresh-50-question-gate",
+  "identity": "311cce099899da923900de389ac44430dad2a3323497efb0337a8096aec06dc3"
+}

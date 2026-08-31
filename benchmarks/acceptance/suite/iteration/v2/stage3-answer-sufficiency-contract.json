@@ -1,0 +1,101 @@
+{
+  "schema": "ownward.kernel-iteration-stage3-answer-sufficiency-contract/v1",
+  "frozen_before_diagnostic_results": true,
+  "contains_blind_or_formal_question_answer_gold_content_outputs_or_case_ids": false,
+  "aggregate_trigger": {
+    "stage6_result_identity": "c4e64c748b670adbad64c0891f85b1f7517cb0c400068ef854542764c6f53723",
+    "stage6_result_sha256": "44b3b2c6e5fa38ed21120fbd8620a369fdb839b79980145e8de9f3a4c671b36e",
+    "questions": 25,
+    "correct": 24,
+    "first_observed_gaps": {"evidence_read_answer_incorrect": 1, "none": 24},
+    "fact_delivery_missing": 0,
+    "temporal_correctness": 1.0,
+    "conflict_correctness": 1.0,
+    "raw_content_destroyed": true,
+    "same_content_rerun_forbidden": true
+  },
+  "subject": {
+    "identity": "bb71c8343ab48bca82a58630e4c247eb10aa27dcff57d3280f99ce994c309150",
+    "kernel_generation_identity": "66a6e827841c09279dec99d53cc7e5db04a879c94da14cbd3355419029bfa2db",
+    "kernel_effect_identity": "a2ad626f00e3806599f625c07d4df4a6430c23c27b3e996c50bd75a9e5fef922",
+    "candidate_code_change_authorized_before_root_proven": false
+  },
+  "sources": {
+    "diagnosis_materials": {
+      "path": "iteration/v2/stage3-answer-sufficiency-materials.json",
+      "sha256": "dcf317714c99f1d6b68917eecc63c848504d4e1338616a3ebf65f2a9ada9a6f2",
+      "identity": "6aa0b7d7c7258570b9a233fe6ad3bc1cd6617915ae1259e8954ac0e81a5a1234"
+    },
+    "regression_materials": {
+      "path": "iteration/v2/stage3-answer-sufficiency-regression.json",
+      "sha256": "aad780072f1511271516572ffd516dd26d299d251dd1b616e62a88940e8ca82b",
+      "identity": "978ee8479844fddf8412df027648b6807fc283e65ed7fdb01e32b0c1cee3759a"
+    }
+  },
+  "coverage": {
+    "diagnosis_required": [
+      "answer-sufficiency-multi-source",
+      "answer-sufficiency-similar-distractors",
+      "answer-sufficiency-conflict",
+      "answer-sufficiency-temporal-order",
+      "answer-sufficiency-structured-order"
+    ],
+    "regression_required": [
+      "answer-sufficiency-regression-user",
+      "answer-sufficiency-regression-assistant",
+      "answer-sufficiency-regression-preference",
+      "answer-sufficiency-regression-update"
+    ],
+    "all_facts_independent_of_stage2_stage3_existing_blind_and_formal_materials": true
+  },
+  "diagnostic_order": [
+    "product-context-truth-claim-delivery",
+    "byte-identical-product-context-reader-repetitions",
+    "authority-bound-oracle-context-reader-repetitions",
+    "official-judge-correct-and-wrong-answer-controls",
+    "observer-replay"
+  ],
+  "repetitions": {
+    "product_context_total_per_case_including_original": 3,
+    "oracle_context_per_case": 2,
+    "identical_prompt_required": true,
+    "model_and_effort_unchanged": true
+  },
+  "mechanical_answer_atoms": {
+    "answer-sufficiency-multi-source": [["team sable"], ["north orchard"], ["helix-4"], ["rhea moon"], ["before noon"]],
+    "answer-sufficiency-similar-distractors": [["larkspur"], ["7b"]],
+    "answer-sufficiency-conflict": [["willow room"], ["16:20", "4:20"], ["oren vale"]],
+    "answer-sufficiency-temporal-order": [["inspection"], ["first", "before"], ["three days", "3 days"]],
+    "answer-sufficiency-structured-order": [["bed delta"], ["nimbus"], ["28 hours", "28-hour"], ["inez quill"]]
+  },
+  "gates": {
+    "diagnosis_cases": 5,
+    "regression_cases": 4,
+    "truth_claim_delivery_ratio": 1.0,
+    "product_execution_accuracy": 1.0,
+    "regression_accuracy": 1.0,
+    "reader_product_context_accuracy": 1.0,
+    "reader_oracle_context_accuracy": 1.0,
+    "judge_correct_control_accuracy": 1.0,
+    "judge_wrong_control_accuracy": 1.0,
+    "observer_replay_exact": true,
+    "maximum_total_wall_seconds": 600,
+    "formal_state_writes": 0
+  },
+  "root_classification": {
+    "kernel-context": "any truth claim is absent from the product context, or the product context fails while the authority-bound oracle context remains stable",
+    "reader": "truth claims are complete and byte-identical product or oracle prompts produce an incorrect or non-repeatable answer before judging",
+    "judge-or-scorer": "the mechanically correct Reader answer is rejected, a known-wrong answer is accepted, or control outcomes are non-repeatable",
+    "executor-or-observer": "raw Reader and Judge artifacts are correct but deterministic replay changes the reported first gap or final label",
+    "not-reproduced": "all independent diagnosis and regression gates pass; preserve the aggregate failure as a protected external-answer boundary rather than altering the kernel"
+  },
+  "failure_policy": {
+    "stop_at_first_proven_stage": true,
+    "no_cross_stage_compensation": true,
+    "no_candidate_change_without_kernel_root": true,
+    "no_model_prompt_schema_or_judge_change": true,
+    "no_blind_gate_execution": true,
+    "no_formal_state_write": true
+  },
+  "identity": "9be7e22d707a08cf19d4eff0340fa59472bb2cc4d248fd360f59a4299636bffd"
+}

@@ -13,6 +13,9 @@ import kernel_iteration_validation as validation
 CONTRACT_SCHEMA = "ownward.kernel-iteration-stage4-resource-cost-representation-lifecycle-contract/v1"
 RESULT_SCHEMA = "ownward.kernel-iteration-stage4-resource-cost-representation-lifecycle-feasibility/v1"
 CONTRACT_PATH = Path("iteration/v2/stage4-resource-cost-representation-lifecycle-contract.json")
+DEPENDENCY_MIGRATION_SCHEMA = "ownward.kernel-iteration-direct-dependency-migration/v1"
+DEPENDENCY_MIGRATION_PATH = Path("iteration/v2/stage4-resource-cost-raw-vector-lifecycle-dependency-migration.json")
+DEPENDENCY_MIGRATION_REASON = "non-stage4-diagnostic-maintenance-changes-only-explicitly-listed-callers-without-changing-frozen-stage4-contracts-or-results"
 SOURCE_SESSION = re.compile(r"(?:^|\n)Source session: ([^\n]+)")
 
 
@@ -200,10 +203,43 @@ def load_contract(suite_root: Path) -> dict[str, Any]:
     _require(value.get("frozen_before_candidate_implementation") is True, "表示生命周期合同未在候选实现前冻结")
     _require(value.get("frozen_before_candidate_measurement") is True, "表示生命周期合同未在候选测量前冻结")
     _require(value.get("candidate_results_seen") is False, "表示生命周期合同错误声明已看到候选结果")
+    drifted = {}
     for item in value["source_files"].values():
         path = repository / item["path"]
-        _require(path.is_file() and evidence.file_sha256(path) == item["sha256"], f"表示生命周期源码漂移: {item['path']}")
+        current = evidence.file_sha256(path) if path.is_file() else None
+        if current != item["sha256"]:
+            drifted[item["path"]] = {"frozen": item["sha256"], "current": current}
+    if drifted:
+        _verify_dependency_migration(
+            suite_root, value["identity"], drifted,
+            {"benchmarks/longmemeval_s/run.py": "reader-profile-validation-and-formal-protocol-unification-only"},
+        )
     return value
+
+
+def _verify_dependency_migration(
+    suite_root: Path,
+    contract_identity: str,
+    drifted: dict[str, dict[str, str | None]],
+    expected_classifications: dict[str, str],
+) -> None:
+    migration = _load_json(suite_root / DEPENDENCY_MIGRATION_PATH)
+    _validate_identity(migration, DEPENDENCY_MIGRATION_SCHEMA, "Stage 4 精确依赖迁移收据")
+    _require(migration.get("reason") == DEPENDENCY_MIGRATION_REASON, "Stage 4 精确依赖迁移原因漂移")
+    related = migration.get("related_contract_migrations", {}).get(contract_identity, {})
+    changes = {
+        item["path"]: {"frozen": item["frozen_sha256"], "current": item["current_sha256"]}
+        for item in related.get("changes", [])
+    }
+    classifications = {item["path"]: item.get("classification") for item in related.get("changes", [])}
+    _require(changes == drifted, "表示生命周期源码漂移不在精确迁移收据内")
+    _require(classifications == expected_classifications, "表示生命周期依赖迁移分类漂移")
+    _require(related.get("preserved") == {
+        "contract_identity": True,
+        "thresholds": True,
+        "evidence_identities": True,
+        "formal_state_sha256": True,
+    }, "表示生命周期依赖迁移保护边界漂移")
 
 
 def _audit_material(repository: Path, runs_root: Path, item: dict[str, Any]) -> dict[str, Any]:
@@ -325,7 +361,14 @@ def _verify_source_boundaries(sources: dict[str, str]) -> None:
 
 def _verified_text(repository: Path, item: dict[str, Any], name: str) -> str:
     path = repository / item["path"]
-    _require(path.is_file() and evidence.file_sha256(path) == item["sha256"], f"{name} 源码漂移")
+    current = evidence.file_sha256(path) if path.is_file() else None
+    if current != item["sha256"]:
+        _verify_dependency_migration(
+            repository / "benchmarks" / "acceptance" / "suite",
+            "e39272da7f832ed8275f99284aa03ad8fdf1b68b7833a368b9bece116ef93ce8",
+            {item["path"]: {"frozen": item["sha256"], "current": current}},
+            {"benchmarks/longmemeval_s/run.py": "reader-profile-validation-and-formal-protocol-unification-only"},
+        )
     return path.read_text(encoding="utf-8")
 
 

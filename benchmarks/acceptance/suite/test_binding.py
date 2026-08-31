@@ -366,7 +366,7 @@ class BindingManifestTests(unittest.TestCase):
                 "environment_manifest": str(manifest), "protocol": str(protocol), "output_dir": str(root / "runs"),
                 "codex_binary": str(codex), "codex_auth_file": str(auth),
                 "codex_semantic_model": "gpt-5.6-luna", "codex_semantic_reasoning_effort": "low",
-                "codex_reader_model": "gpt-5.6-luna", "codex_reader_reasoning_effort": "medium",
+                "codex_reader_model": "gpt-5.6-luna", "codex_reader_reasoning_effort": "xhigh",
                 "codex_judge_model": "gpt-5.6-terra", "codex_judge_reasoning_effort": "medium",
             }
             binding._validate_community_config(community)
@@ -374,6 +374,10 @@ class BindingManifestTests(unittest.TestCase):
             with self.assertRaisesRegex(binding.BindingError, "API Key"):
                 binding._validate_community_config(community)
             community.pop("judge_api_key_env")
+            community["codex_reader_reasoning_effort"] = "medium"
+            with self.assertRaisesRegex(binding.BindingError, "Reader"):
+                binding._validate_community_config(community)
+            community["codex_reader_reasoning_effort"] = "xhigh"
             community["codex_reader_model"] = "different"
             with self.assertRaisesRegex(binding.BindingError, "Reader"):
                 binding._validate_community_config(community)

@@ -37,6 +37,14 @@ class KernelIterationValidationTests(unittest.TestCase):
         self.assertEqual(4215, value["total_normal_seconds"])
         self.assertLessEqual(value["total_normal_seconds"], value["design_total_normal_seconds"])
         self.assertIsNone(value["calibration"]["candidate_decision"])
+        receipt = value["migration_receipt"]
+        self.assertNotIn("qualification_identity_migration", receipt)
+        self.assertEqual(
+            receipt["qualification_plan_direct_dependencies"]["controller-entry"],
+            reliability.cli_entry_identity(),
+        )
+        self.assertEqual(receipt["qualification"]["generator"], "gpt-5.6-terra/xhigh")
+        self.assertEqual(receipt["qualification"]["quality_admission"], "gpt-5.6-terra/medium")
 
     def test_current_blind_budget_rejects_non_controller_dependency_drift(self) -> None:
         with tempfile.TemporaryDirectory(dir=REPOSITORY) as temporary:
@@ -100,6 +108,18 @@ class KernelIterationValidationTests(unittest.TestCase):
                 }
             }
             with mock.patch.object(validation, "load_blind_budget_archive", return_value=budget), mock.patch.object(reliability, "_current_dependencies", return_value=dependencies):
+                self.assertTrue(validation.load_blind_budget(HERE, output)["current_valid"])
+
+            migrated = dict(dependencies)
+            migrated["controller"] = "a" * 64
+            migrated["controller-entry"] = "b" * 64
+            budget["migration_receipt"]["qualification_identity_migration"] = {
+                "source_controller_identity": dependencies["controller"],
+                "target_controller_identity": migrated["controller"],
+                "source_controller_entry_identity": dependencies["controller-entry"],
+                "target_controller_entry_identity": migrated["controller-entry"],
+            }
+            with mock.patch.object(validation, "load_blind_budget_archive", return_value=budget), mock.patch.object(reliability, "_current_dependencies", return_value=migrated):
                 self.assertTrue(validation.load_blind_budget(HERE, output)["current_valid"])
 
             drifted = dict(dependencies)
@@ -994,6 +1014,8 @@ class KernelIterationValidationTests(unittest.TestCase):
                 "temporal_session_id": f"{session_prefix}-s02",
                 "question_anchor_terms": [anchor_one, anchor_two],
             }
+            case["sessions"][3]["turns"][0]["content"] += " This is another value record."
+            case["sessions"][2]["turns"][0]["content"] += f" It also mentions {anchor_one}."
         if coverage == "multi-session-distractor":
             link_key = f"KEY-{index + 1:02d}-QD"
             qualifier_one = f"Unit Indigo {index + 1:02d}"
@@ -1007,6 +1029,40 @@ class KernelIterationValidationTests(unittest.TestCase):
                 "selector_session_id": f"{session_prefix}-s02",
                 "question_qualifier_terms": [qualifier_one, qualifier_two],
             }
+            case["sessions"][3]["turns"][0]["content"] += " This is another value record."
+            case["sessions"][2]["turns"][0]["content"] += f" It also mentions {qualifier_one}."
+        if coverage not in {"temporal-order", "multi-session-distractor"}:
+            for session in case["sessions"]:
+                session["turns"][0]["content"] += " The review records a durable result."
+        evidence_bindings = [
+            {
+                "session_id": session_id,
+                "quote": next(session for session in case["sessions"] if session["session_id"] == session_id)["turns"][0]["content"],
+            }
+            for session_id in case["answer_session_ids"]
+        ]
+        if coverage == "temporal-order":
+            question_clues = [
+                {"clue": "value", "support_session_id": case["answer_session_ids"][0], "distractor_session_id": f"{session_prefix}-s04"},
+                {"clue": anchor_one, "support_session_id": case["answer_session_ids"][1], "distractor_session_id": f"{session_prefix}-s03"},
+            ]
+        elif coverage == "multi-session-distractor":
+            question_clues = [
+                {"clue": "value", "support_session_id": case["answer_session_ids"][0], "distractor_session_id": f"{session_prefix}-s04"},
+                {"clue": qualifier_one, "support_session_id": case["answer_session_ids"][1], "distractor_session_id": f"{session_prefix}-s03"},
+            ]
+        else:
+            question_clues = [
+                {"clue": "review", "support_session_id": case["answer_session_ids"][0], "distractor_session_id": f"{session_prefix}-s03"},
+                {"clue": "result", "support_session_id": case["answer_session_ids"][-1], "distractor_session_id": f"{session_prefix}-s04"},
+            ]
+        case["evidence_bindings"] = evidence_bindings
+        case["control_binding"] = {
+            "plausible_wrong_answer": "topaz",
+            "wrong_answer_session_id": f"{session_prefix}-s04",
+            "missing_evidence_session_id": case["answer_session_ids"][0],
+        }
+        case["surface_shortcut_proof"] = {"question_clues": question_clues}
         return {"case": case}
 
     @staticmethod
