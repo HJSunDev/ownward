@@ -1,19 +1,19 @@
 {
   "schema": "ownward.kernel-iteration-direct-dependency-migration/v1",
   "contract_identity": "125278c6aa9d6a34dc91bfe1ced32b22b93dad60ce6b5bc34aa14c3c2561abb7",
-  "reason": "stage3-source-context-repair-preserves-frozen-stage4-cost-and-representation-only-current-consumer-quality-and-latency-revalidated",
+  "reason": "version-suite-cli-dispatch-preserves-frozen-stage4-cost-and-representation",
   "changes": [
     {
       "path": "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_raw_vector_lifecycle.py",
       "frozen_sha256": "00acaf4cf0a92ef909f50812df708f340d7854ee86c3314279eac843da934e8f",
-      "current_sha256": "41c15b91104337e3cbbe9af5186b6387e49c78600c19110b5cadada6157f03ba",
+      "current_sha256": "683198beb2b2a1ea0e71424b85c94321890da7ddfdd3043c525648063f6dbfac",
       "classification": "dependency-receipt-validation-only"
     },
     {
       "path": "benchmarks/acceptance/suite/kernel_iteration_run.py",
       "frozen_sha256": "3a6ec83cc197d71b8594814cff7000d7face183a8e316e5d0c409f2e19eddc53",
-      "current_sha256": "7123503f6c78b86e4bc4c450964aaeb0b16a19437ebf4d389bc5169b9f9f2247",
-      "classification": "stage3-source-context-cli-dispatch-only-frozen-stage4-cost-and-representation-unchanged"
+      "current_sha256": "d8f1ec0383d78905ebd8f63b9ec8f37c69ea2101bdc9bc1b4f805b0ad7ff7b4e",
+      "classification": "version-suite-cli-dispatch-only-frozen-stage4-cost-and-representation-unchanged"
     }
   ],
   "related_contract_migrations": {
@@ -22,7 +22,7 @@
         {
           "path": "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_audit.py",
           "frozen_sha256": "6df41b4a42251bcffe8ce92bed57a4cfafd3ba80ebddf6373215ce61609fb84a",
-          "current_sha256": "ffa30bbe4c37987b21d6ca6ee2aee263648fc51ff9af6695e048a9ac6a013e46",
+          "current_sha256": "896fa98d6fda5ef25e7bd1a64bb0f3b3a1c0e320d8db12018a676d05a73c04f7",
           "classification": "dependency-receipt-validation-only"
         },
         {
@@ -76,7 +76,7 @@
         {
           "path": "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_representation_finalize.py",
           "frozen_sha256": "2fbbebf747c8064d62fcdfc3bbe6779eafddb7e49c2e5aa8b567935045c7e7d9",
-          "current_sha256": "c50f6a76bcb0befb832b274735b0be45ece6cf7ba8b4fa169778172aeac06792",
+          "current_sha256": "56925306086c57264850e0922bca8d7339cf85f8bb992aaae81aa6b9a7ba7c54",
           "classification": "dependency-receipt-validation-only"
         },
         {
@@ -107,5 +107,5 @@
     "evidence_identities": true,
     "formal_state_sha256": true
   },
-  "identity": "fd82621e7c0eadf55cea262598baf940a3b0945ce799cb6882c54828c4fa3998"
+  "identity": "573f76d182c989556d93d4270395dc89b5b0ec44104e4712183ff4738adbf67a"
 }

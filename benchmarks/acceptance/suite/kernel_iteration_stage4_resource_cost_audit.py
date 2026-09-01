@@ -17,7 +17,7 @@ CONTRACT_SCHEMA = "ownward.kernel-iteration-stage4-resource-cost-controllability
 CONTRACT_PATH = Path("iteration/v2/stage4-resource-cost-controllability-audit-contract.json")
 DEPENDENCY_MIGRATION_SCHEMA = "ownward.kernel-iteration-direct-dependency-migration/v1"
 DEPENDENCY_MIGRATION_PATH = Path("iteration/v2/stage4-resource-cost-raw-vector-lifecycle-dependency-migration.json")
-DEPENDENCY_MIGRATION_REASON = "stage3-source-context-repair-preserves-frozen-stage4-cost-and-representation-only-current-consumer-quality-and-latency-revalidated"
+DEPENDENCY_MIGRATION_REASON = "version-suite-cli-dispatch-preserves-frozen-stage4-cost-and-representation"
 SEMANTIC_INSTRUCTION = (
     "Act only as Ownward's external semantic capability. Analyze every supplied semantic work item exactly once. "
     "The items came from Ownward's public semantic_work path; the host will validate and submit your result through "

@@ -16,7 +16,7 @@ import kernel_iteration_candidate_latency
 import kernel_iteration_candidate_system_budget
 import kernel_iteration_candidate_resource_cost
 import kernel_iteration_validation
-import kernel_iteration_blind_gate
+import kernel_iteration_blind_suite
 import kernel_iteration_admission_reliability
 import kernel_iteration_answer_sufficiency
 import kernel_iteration_reader_reliability
@@ -60,8 +60,13 @@ def parse_args() -> argparse.Namespace:
     selection.add_argument("--runtime-state", type=Path)
     selection.add_argument("--blind-calibration-config", type=Path)
     selection.add_argument("--blind-plan-identity")
-    selection.add_argument("--blind-gate-config", type=Path)
-    selection.add_argument("--blind-gate-plan-identity")
+    selection.add_argument("--blind-suite-prepare", action="store_true")
+    selection.add_argument("--blind-suite-qualify-admission", action="store_true")
+    selection.add_argument("--blind-suite-plan-identity")
+    selection.add_argument("--blind-suite-evaluation-batch", type=Path)
+    selection.add_argument("--blind-suite-run-plan-identity")
+    selection.add_argument("--blind-suite-inspect", action="store_true")
+    selection.add_argument("--blind-suite-retire", action="store_true")
     kernel_iteration_admission_reliability.add_cli_arguments(selection, parser)
     selection.add_argument("--stage3-prepare", action="store_true")
     selection.add_argument("--stage3-finalize", action="store_true")
@@ -108,14 +113,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--prepare-materials", type=Path)
     parser.add_argument("--write-input", type=Path)
     parser.add_argument("--formal-state", type=Path)
-    parser.add_argument("--blind-gate-subject-manifest", type=Path)
     parser.add_argument("--answer-sufficiency-subject-manifest", type=Path)
     parser.add_argument("--answer-sufficiency-phase", choices=["reproduction", "final"], default="final")
     parser.add_argument("--answer-sufficiency-reproduction-result", type=Path)
     parser.add_argument("--reader-reliability-source-result", type=Path)
     parser.add_argument("--reader-reliability-run-root", type=Path)
-    parser.add_argument("--blind-gate-level", type=int, choices=kernel_iteration_blind_gate.GATE_LEVELS)
-    parser.add_argument("--blind-gate-previous-plan-identity")
+    parser.add_argument("--blind-suite-vault", type=Path)
+    parser.add_argument("--blind-suite-version")
+    parser.add_argument("--blind-suite-identity")
+    parser.add_argument("--blind-suite-level", type=int, choices=(5, 15, 25, 50))
+    parser.add_argument("--blind-suite-previous-plan-identity")
     parser.add_argument("--gate-seed")
     parser.add_argument("--compare-left", type=Path)
     parser.add_argument("--compare-right", type=Path)
@@ -565,28 +572,80 @@ def main() -> None:
             )
     elif kernel_iteration_admission_reliability.cli_selected(args):
         result = kernel_iteration_admission_reliability.dispatch_cli(args, HERE)
-    elif args.blind_gate_plan_identity is not None:
+    elif args.blind_suite_qualify_admission:
+        if args.execution_config is None or args.formal_state is None:
+            raise SystemExit("版本级套题准入资格必须提供生成执行配置与正式 state 只读基线")
+        result = kernel_iteration_blind_suite.qualify_admission(
+            HERE, args.output, args.execution_config, args.formal_state,
+        )
+    elif args.blind_suite_plan_identity is not None:
         if not args.resume:
-            raise SystemExit("按 plan identity 恢复阶段 6 候选盲测必须提供 --resume")
+            raise SystemExit("按 plan identity 恢复版本级盲测套题准备必须提供 --resume")
         if any(value is not None for value in (
             args.gate_seed, args.formal_state, args.execution_config,
-            args.baseline_execution_config, args.blind_gate_subject_manifest,
-            args.blind_gate_level, args.blind_gate_previous_plan_identity,
+            args.blind_suite_vault, args.blind_suite_version,
         )):
-            raise SystemExit("按 plan identity 恢复阶段 6 候选盲测只读取封存定位，不得再次提供级别、前级、seed、配置、subject 或正式 state")
-        result = kernel_iteration_blind_gate.resume_by_plan_identity(
-            HERE, args.output, args.blind_gate_plan_identity,
+            raise SystemExit("按 plan identity 恢复版本级套题准备只读取封存定位，不得再次提供 seed、配置、版本、封存根或正式 state")
+        result = kernel_iteration_blind_suite.resume_by_plan_identity(
+            HERE, args.output, args.blind_suite_plan_identity,
         )
-    elif args.blind_gate_config is not None:
-        required = (args.baseline_execution_config, args.blind_gate_subject_manifest, args.formal_state, args.blind_gate_level)
-        if any(path is None for path in required):
-            raise SystemExit("阶段 6 候选盲测必须提供级别、候选/V0 执行配置、候选 subject 与正式 state")
-        result = kernel_iteration_blind_gate.run(
-            HERE, args.output, args.blind_gate_config, args.baseline_execution_config,
-            args.blind_gate_subject_manifest, args.formal_state,
-            level=args.blind_gate_level,
-            previous_plan_identity=args.blind_gate_previous_plan_identity,
-            seed=args.gate_seed, resume=args.resume,
+    elif args.blind_suite_prepare:
+        required = (args.blind_suite_vault, args.blind_suite_version, args.execution_config, args.formal_state)
+        if any(value is None for value in required):
+            raise SystemExit("版本级盲测套题准备必须提供版本、封存根、生成执行配置与正式 state 只读基线")
+        if any(value is not None for value in (
+            args.blind_suite_identity, args.blind_suite_evaluation_batch,
+            args.baseline_execution_config, args.blind_suite_level,
+            args.blind_suite_previous_plan_identity,
+        )):
+            raise SystemExit("版本级套题准备不得接收候选、基线或分区执行参数")
+        result = kernel_iteration_blind_suite.prepare(
+            HERE, args.output, args.blind_suite_vault, args.execution_config, args.formal_state,
+            major_version=args.blind_suite_version, seed=args.gate_seed, resume=args.resume,
+        )
+    elif args.blind_suite_run_plan_identity is not None:
+        if not args.resume:
+            raise SystemExit("按 plan identity 恢复版本级盲测分区必须提供 --resume")
+        if any(value is not None for value in (
+            args.formal_state, args.execution_config, args.baseline_execution_config,
+            args.blind_suite_vault, args.blind_suite_version, args.blind_suite_identity,
+            args.blind_suite_evaluation_batch, args.blind_suite_level,
+            args.blind_suite_previous_plan_identity, args.gate_seed,
+        )):
+            raise SystemExit("按 plan identity 恢复版本级盲测分区只读取已封存定位")
+        result = kernel_iteration_blind_suite.resume_partition_by_plan_identity(
+            HERE, args.output, args.blind_suite_run_plan_identity,
+        )
+    elif args.blind_suite_evaluation_batch is not None:
+        required = (
+            args.blind_suite_vault, args.blind_suite_version, args.blind_suite_identity,
+            args.blind_suite_level, args.formal_state,
+        )
+        if any(value is None for value in required):
+            raise SystemExit("版本级盲测分区必须提供版本、套题、封存根、级别、评测批次与正式 state")
+        if args.gate_seed is not None:
+            raise SystemExit("候选盲测只消费版本封存套题，不得再次提供生成 seed")
+        result = kernel_iteration_blind_suite.run_partition(
+            HERE, args.output, args.blind_suite_vault,
+            args.blind_suite_evaluation_batch, args.formal_state,
+            major_version=args.blind_suite_version, suite_identity=args.blind_suite_identity,
+            level=args.blind_suite_level,
+            previous_plan_identity=args.blind_suite_previous_plan_identity,
+            resume=args.resume,
+        )
+    elif args.blind_suite_inspect:
+        if args.blind_suite_vault is None or args.blind_suite_version is None:
+            raise SystemExit("检查版本级盲测套题必须提供版本与封存根")
+        result = kernel_iteration_blind_suite.inspect_suite(
+            HERE, args.output, args.blind_suite_vault,
+            major_version=args.blind_suite_version, suite_identity=args.blind_suite_identity,
+        )
+    elif args.blind_suite_retire:
+        if args.blind_suite_vault is None or args.blind_suite_version is None or args.blind_suite_identity is None:
+            raise SystemExit("退役版本级盲测套题必须提供版本、套题身份与封存根")
+        result = kernel_iteration_blind_suite.retire(
+            HERE, args.output, args.blind_suite_vault,
+            major_version=args.blind_suite_version, suite_identity=args.blind_suite_identity,
         )
     elif args.blind_calibration_config is not None:
         if args.formal_state is None:

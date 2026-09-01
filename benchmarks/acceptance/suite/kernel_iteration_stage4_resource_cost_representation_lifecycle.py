@@ -15,7 +15,7 @@ RESULT_SCHEMA = "ownward.kernel-iteration-stage4-resource-cost-representation-li
 CONTRACT_PATH = Path("iteration/v2/stage4-resource-cost-representation-lifecycle-contract.json")
 DEPENDENCY_MIGRATION_SCHEMA = "ownward.kernel-iteration-direct-dependency-migration/v1"
 DEPENDENCY_MIGRATION_PATH = Path("iteration/v2/stage4-resource-cost-raw-vector-lifecycle-dependency-migration.json")
-DEPENDENCY_MIGRATION_REASON = "stage3-source-context-repair-preserves-frozen-stage4-cost-and-representation-only-current-consumer-quality-and-latency-revalidated"
+DEPENDENCY_MIGRATION_REASON = "version-suite-cli-dispatch-preserves-frozen-stage4-cost-and-representation"
 SOURCE_SESSION = re.compile(r"(?:^|\n)Source session: ([^\n]+)")
 
 

@@ -116,11 +116,11 @@ class RawVectorLifecycleTests(unittest.TestCase):
         run_path = "benchmarks/acceptance/suite/kernel_iteration_run.py"
         validator_path = "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_raw_vector_lifecycle.py"
         self.assertEqual(
-            "stage3-source-context-repair-preserves-frozen-stage4-cost-and-representation-only-current-consumer-quality-and-latency-revalidated",
+            "version-suite-cli-dispatch-preserves-frozen-stage4-cost-and-representation",
             receipt["reason"],
         )
         self.assertEqual(
-            "stage3-source-context-cli-dispatch-only-frozen-stage4-cost-and-representation-unchanged",
+            "version-suite-cli-dispatch-only-frozen-stage4-cost-and-representation-unchanged",
             changes[run_path]["classification"],
         )
         self.assertEqual("dependency-receipt-validation-only", changes[validator_path]["classification"])

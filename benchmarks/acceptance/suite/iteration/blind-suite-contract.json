@@ -1,0 +1,131 @@
+{
+  "schema": "ownward.kernel-iteration-blind-suite-contract/v1",
+  "identity": "33a11353efcf0d07bc95e04592ba07057b31ac59414b40d6f4170e86ba8c100e",
+  "formal": false,
+  "frozen_before_generation": true,
+  "major_version_identity_rule": "normalized-major-version-plus-contract-and-preparation-direct-dependencies",
+  "suite_identity_rule": "major-version-plan-plus-complete-admitted-content",
+  "levels": [5, 15, 25, 50],
+  "questions_total": 95,
+  "partitions": {
+    "5": {"questions": 5, "previous": null, "next": 15, "terminal": false},
+    "15": {"questions": 15, "previous": 5, "next": 25, "terminal": false},
+    "25": {"questions": 25, "previous": 15, "next": 50, "terminal": false},
+    "50": {"questions": 50, "previous": 25, "next": null, "terminal": true}
+  },
+  "coverage_matrix": {
+    "primary": {
+      "knowledge-update-conflict": {"5": 1, "15": 3, "25": 5, "50": 10},
+      "temporal-order": {"5": 1, "15": 3, "25": 5, "50": 10},
+      "multi-session-relation": {"5": 1, "15": 3, "25": 5, "50": 10},
+      "single-session-assistant-fact": {"5": 1, "15": 3, "25": 5, "50": 10},
+      "multi-session-distractor": {"5": 1, "15": 3, "25": 5, "50": 10}
+    },
+    "answerability": {
+      "answerable": {"5": 5, "15": 13, "25": 21, "50": 41},
+      "insufficient-evidence": {"5": 0, "15": 2, "25": 4, "50": 9}
+    },
+    "session_scale": {
+      "small-6": {"5": 2, "15": 5, "25": 9, "50": 17},
+      "medium-10": {"5": 2, "15": 5, "25": 8, "50": 17},
+      "large-14": {"5": 1, "15": 5, "25": 8, "50": 16}
+    },
+    "fact_load": {
+      "single": {"5": 2, "15": 5, "25": 8, "50": 17},
+      "multiple": {"5": 3, "15": 10, "25": 17, "50": 33}
+    },
+    "relation_depth": {
+      "direct": {"5": 2, "15": 5, "25": 8, "50": 17},
+      "multi-hop": {"5": 3, "15": 10, "25": 17, "50": 33}
+    },
+    "interference": {
+      "medium": {"5": 2, "15": 5, "25": 9, "50": 17},
+      "high": {"5": 2, "15": 5, "25": 8, "50": 17},
+      "very-high": {"5": 1, "15": 5, "25": 8, "50": 16}
+    }
+  },
+  "generation": {
+    "model": "gpt-5.6-terra",
+    "reasoning_effort": "xhigh",
+    "timeout_seconds": 240,
+    "attempts": 2,
+    "prompt_version": "ownward.kernel-iteration-version-blind-suite-generator/v1",
+    "max_active": 8,
+    "worker_active_turns_maximum": 1,
+    "result_order": "frozen-suite-order"
+  },
+  "quality_admission": {
+    "model": "gpt-5.6-terra",
+    "reasoning_effort": "medium",
+    "timeout_seconds": 240,
+    "attempts": 2,
+    "prompt_version": "ownward.kernel-iteration-version-blind-suite-admission/v1",
+    "batch_questions_maximum": 15,
+    "max_active": 8,
+    "maximum_replacement_rounds_per_invocation": 3,
+    "rejection_replacement": "rejected-cases-only",
+    "unchanged_accepted_slot_reassessment": "forbidden",
+    "slot_certificate_binds": ["slot", "content", "profile", "admission-contract", "admission-qualification"],
+    "full_suite_admission": "deterministic-count-coverage-certificate-duplicate-conflict-and-leakage-validation",
+    "exhaustion": "retain-private-slots-certificates-and-checkpoint-for-rejected-only-resume",
+    "required_checks": [
+      "plausible",
+      "difficulty_sufficient",
+      "unique_answer",
+      "evidence_sufficient",
+      "no_surface_shortcut",
+      "scoring_discriminative"
+    ],
+    "qualification": {
+      "required_before_generation": true,
+      "positive_controls": 2,
+      "negative_controls": 6,
+      "negative_control_per_required_check": true,
+      "repeated_sampling_or_best_result_selection": "forbidden",
+      "reuse_when_model_effort_prompt_and_controls_unchanged": true
+    }
+  },
+  "execution": {
+    "order": ["candidate", "baseline"],
+    "baseline_requires_candidate_absolute_pass": true,
+    "candidate_change_invalidates": "execution-results-only",
+    "candidate_failure_restart_level": 5,
+    "same-suite-required-within-major-version": true,
+    "cross-major-version-reuse": "forbidden",
+    "formal_state_read_only": true,
+    "absolute_gate": {
+      "final_answer_accuracy_minimum": 1.0,
+      "fact_delivery_missing_maximum": 0,
+      "temporal_correctness_minimum": 1.0,
+      "conflict_correctness_minimum": 1.0,
+      "complete_consumer_retrieval_p95_ms_maximum": 553.0,
+      "read_limit": 8,
+      "context_chars_maximum": 24000
+    },
+    "level_total_wall_seconds_maximum": {"5": 406, "15": 751, "25": 1097, "50": 1961}
+  },
+  "isolation": {
+    "candidate_inputs_forbidden_during_preparation": true,
+    "forbidden_sources": [
+      "formal-longmemeval-s-content",
+      "stage2-calibration-content",
+      "stage3-development-content",
+      "stage3-regression-content",
+      "candidate-implementation",
+      "candidate-output",
+      "retired-major-version-suite-content"
+    ],
+    "reversible_content_location": "explicit-isolated-version-vault-only",
+    "ordinary_output_contains_reversible_content": false,
+    "formal_state_written": false,
+    "terminal_preparation_scratch_policy": "retain-on-interruption-error-or-incomplete-admission-destroy-only-after-atomic-freeze"
+  },
+  "lifecycle": {
+    "prepare": "one-complete-suite-before-any-candidate-execution",
+    "freeze": "atomic-directory-install-with-contract-snapshot-then-active-pointer",
+    "run": "read-one-frozen-partition-through-evaluator-only",
+    "candidate_retest": "reuse-suite-restart-results-from-level-5",
+    "retire": "make-suite-ineligible-for-all-future-major-versions",
+    "active_suites_per_major_version_maximum": 1
+  }
+}
