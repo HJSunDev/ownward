@@ -1,0 +1,89 @@
+{
+  "schema": "ownward.kernel-iteration-materials/v2",
+  "contains_formal_questions_answers_gold_or_content": false,
+  "cases": [
+    {
+      "case_id": "v2fasc-seed-vault",
+      "coverage": "final-answer-confirmation-source-local-legend",
+      "question_type": "single-session-assistant",
+      "question_date": "2032-02-28",
+      "question": "Decode vault accession AV-41's sealed record: which shelf, humidity interval, steward, intake desk, access phrase, and final witness apply?",
+      "answer": "AV-41 is on Shelf Linden with a 42–45% humidity interval, steward Priya Senn, intake Desk Marigold, access phrase quiet comet, and final witness Devan Roe.",
+      "answer_session_ids": ["v2fasc01-s04"],
+      "stale_session_ids": ["v2fasc01-s01"],
+      "distractor_session_ids": ["v2fasc01-s02", "v2fasc01-s03", "v2fasc01-s05"],
+      "truth_claims": [
+        {"claim": "SEALED ACCESSION ROW FOR AV-41 / L8 / U3 / P6", "evidence_session_ids": ["v2fasc01-s04"]},
+        {"claim": "the intake desk is Desk Marigold", "evidence_session_ids": ["v2fasc01-s04"]},
+        {"claim": "the access phrase is quiet comet", "evidence_session_ids": ["v2fasc01-s04"]},
+        {"claim": "the final witness is Devan Roe", "evidence_session_ids": ["v2fasc01-s04"]}
+      ],
+      "sessions": [
+        {"session_id": "v2fasc01-s01", "date": "2032-02-02", "turns": [{"role": "user", "content": "A retired accession card placed AV-41 on Shelf Alder at 38–40% humidity under steward Milo Renn."}]},
+        {"session_id": "v2fasc01-s02", "date": "2032-02-05", "turns": [{"role": "assistant", "content": "AV-14 is on Shelf Linden at 38–40% humidity under Milo Renn."}]},
+        {"session_id": "v2fasc01-s03", "date": "2032-02-08", "turns": [{"role": "user", "content": "A classroom exercise writes AV-41 / L2 / U7 / P1, but that exercise has no vault authority."}]},
+        {"session_id": "v2fasc01-s04", "date": "2032-02-18", "turns": [
+          {"role": "assistant", "content": "Sealed seed-vault accession ledger. The opening audit paragraphs describe envelope numbering, barcode parity, and witness signatures. They contain no accession placement. The notation guide and the SEALED row below must be interpreted together."},
+          {"role": "assistant", "content": "Notation guide: L8 means Shelf Linden. U3 means a 42–45% humidity interval. P6 means steward Priya Senn. Exercise and retired-card codes do not share this guide."},
+          {"role": "assistant", "content": "Interleaf preservation record. Vault archivists inspected cover fibers, binding cord, watermark placement, page-edge wear, folio sequence, ink oxidation, scanner focus, envelope wax, storage temperature, humidity tape, courier receipts, witness initials, duplication count, optical density, paper thickness, barcode alignment, cabinet marks, seal impressions, checksum typography, and staple holes. A second archivist repeated the inspection against the sealed duplicate and found every physical characteristic unchanged. This interleaf contains only document-condition observations and no accession identifier, encoded placement, field role, or operational value."},
+          {"role": "assistant", "content": "AV-41 audit marker north confirms the accession identifier. The vault log inventories envelope seals, barcode parity, witness initials, folio order, cabinet temperature, scanner alignment, duplicate signatures, paper stock, transfer receipts, checksum columns, optical density, and binding stitches. These administrative observations verify custody but deliberately omit all decoded placement values; they identify no shelf, humidity interval, or steward for AV-41."},
+          {"role": "assistant", "content": "AV-41 audit marker south confirms that the sealed row has exactly three encoded fields. Its verification sheet lists page impressions, seal colors, witness counts, archive humidity, receipt numbers, scanner calibration, folio edges, envelope numbering, duplicate-page checks, binding tension, paper grain, and barcode alignment. Classroom exercises remain excluded, and none of these audit details decodes the requested placement for AV-41."},
+          {"role": "assistant", "content": "AV-41 witness marker says that the controlling sealed accession row follows after this audit section. The witness trail records transfer envelopes, signature counts, cabinet moves, checksum witnesses, page sequence, optical alignment, seal impressions, duplicate comparisons, archive receipts, scanner density, folio condition, and paper stock. It does not repeat the notation guide or disclose the shelf, humidity interval, or steward for AV-41."},
+          {"role": "assistant", "content": "SEALED ACCESSION ROW FOR AV-41 / L8 / U3 / P6 | shelf, humidity, and steward fields use the earlier notation guide"},
+          {"role": "assistant", "content": "AV-41 supplemental current field: the intake desk is Desk Marigold."},
+          {"role": "assistant", "content": "Preservation interleaf between current fields. It records cover cloth, endpaper fibers, binding cord, watermark position, page-edge wear, folio sequence, ink oxidation, staple holes, scanner focus, envelope wax, storage temperature, humidity tape, courier receipts, witness initials, duplication count, optical density, paper thickness, barcode alignment, cabinet shelf marks, checksum typography, seal impressions, page curvature, archival sleeve condition, transfer stamps, imaging exposure, paper grain, binding tension, receipt sequence, and duplicate-page comparison. Two conservators independently found the physical record unchanged. This interleaf contains no accession identifier, current placement, requested field, or operational value."},
+          {"role": "assistant", "content": "AV-41 supplemental current field: the access phrase is quiet comet."},
+          {"role": "assistant", "content": "Preservation interleaf between current fields. It inventories envelope numbering, folio edges, seal colors, witness counts, cabinet temperatures, scanner alignment, duplicate signatures, paper stock, transfer receipts, checksum columns, optical density, binding stitches, watermark placement, page impressions, archive humidity, barcode parity, courier seals, imaging focus, paper thickness, sleeve condition, staple marks, storage labels, ink oxidation, receipt sequence, cover fibers, binding tension, and duplication checks. These observations establish only physical continuity and supply no accession identifier, current placement, requested field, or operational value."},
+          {"role": "assistant", "content": "AV-41 supplemental current field: the final witness is Devan Roe."}
+        ]},
+        {"session_id": "v2fasc01-s05", "date": "2032-02-21", "turns": [{"role": "assistant", "content": "Priya Senn inspects Shelf Alder during a separate 42–45% sensor trial; it does not amend AV-41."}]}
+      ]
+    },
+    {
+      "case_id": "v2fasc-river-lock",
+      "coverage": "final-answer-confirmation-source-local-schema",
+      "question_type": "single-session-user",
+      "question_date": "2032-06-30",
+      "question": "Interpret permit LP-6's ratified record: give the lock, opening window, pilot, registry counter, call phrase, and final inspector.",
+      "answer": "Permit LP-6 uses Lock Heron, the 11:20–11:40 window, pilot Kian Daro, registry Counter Saffron, call phrase calm harbor, and final inspector Lyra Penn.",
+      "answer_session_ids": ["v2fasc02-s05"],
+      "stale_session_ids": ["v2fasc02-s01"],
+      "distractor_session_ids": ["v2fasc02-s02", "v2fasc02-s03", "v2fasc02-s04", "v2fasc02-s06"],
+      "truth_claims": [
+        {"claim": "RATIFIED PERMIT ROW FOR LP-6 + H5 + W2 + K8", "evidence_session_ids": ["v2fasc02-s05"]},
+        {"claim": "the registry counter is Counter Saffron", "evidence_session_ids": ["v2fasc02-s05"]},
+        {"claim": "the call phrase is calm harbor", "evidence_session_ids": ["v2fasc02-s05"]},
+        {"claim": "the final inspector is Lyra Penn", "evidence_session_ids": ["v2fasc02-s05"]}
+      ],
+      "sessions": [
+        {"session_id": "v2fasc02-s01", "date": "2032-06-01", "turns": [{"role": "assistant", "content": "The superseded LP-6 permit named Lock Egret, a 10:50–11:10 window, and pilot Sana Yul."}]},
+        {"session_id": "v2fasc02-s02", "date": "2032-06-04", "turns": [{"role": "user", "content": "LP-9 uses Lock Heron at 10:50–11:10 with pilot Sana Yul."}]},
+        {"session_id": "v2fasc02-s03", "date": "2032-06-07", "turns": [{"role": "assistant", "content": "A drill sheet labels LP-6 with H1, W7, and K3; it is deliberately non-authoritative."}]},
+        {"session_id": "v2fasc02-s04", "date": "2032-06-10", "turns": [{"role": "user", "content": "Kian Daro pilots LP-9 through Lock Egret at 11:20 during a separate exercise."}]},
+        {"session_id": "v2fasc02-s05", "date": "2032-06-20", "turns": [
+          {"role": "user", "content": "Ratified river permit register. Initial paragraphs cover seal inspection, page numbering, and checksum witnesses. These paragraphs do not allocate a lock. The code legend and ratified row in this source jointly define each permit."},
+          {"role": "user", "content": "Legend: H5 means Lock Heron. W2 means the 11:20–11:40 opening window. K8 means pilot Kian Daro. Drill and superseded codes are outside this legend."},
+          {"role": "user", "content": "Interleaf preservation record. Registry archivists checked cover cloth, endpaper fibers, binding cord, watermark position, page-edge wear, folio sequence, ink oxidation, scanner focus, envelope wax, storage temperature, humidity tape, courier receipts, witness initials, duplication count, optical density, paper thickness, barcode alignment, cabinet marks, seal impressions, checksum typography, and staple holes. An independent archivist repeated the inspection against the sealed archive copy and found the physical record unchanged. This interleaf contains no permit identifier, encoded allocation, field role, or operational value."},
+          {"role": "user", "content": "LP-6 audit trace one confirms only the permit identifier and current register revision. The registry records seal impressions, folio order, witness initials, page counts, barcode parity, transfer receipts, scanner alignment, paper grain, duplicate signatures, checksum columns, binding stitches, and optical density. Those administrative facts verify the document but do not identify any lock, opening window, or pilot for LP-6."},
+          {"role": "user", "content": "LP-6 audit trace two confirms that exactly three encoded fields follow. Its worksheet inventories envelope numbers, signature counts, seal colors, archive humidity, scanner calibration, receipt numbers, folio edges, duplicate-page comparisons, cabinet moves, paper stock, binding tension, and checksum witnesses. None of these facts decodes the permit row or supplies the requested lock, opening window, or pilot for LP-6."},
+          {"role": "user", "content": "LP-6 audit trace three marks the next permit row as ratified and rejects all drill rows. The remaining trail lists courier receipts, witness counts, page impressions, optical alignment, seal checks, folio sequence, archive transfers, duplicate signatures, scanner density, paper condition, binding inspection, and checksum rotation. It deliberately omits the code legend and does not disclose the requested values for LP-6."},
+          {"role": "user", "content": "RATIFIED PERMIT ROW FOR LP-6 + H5 + W2 + K8 | lock, opening-window, and pilot fields use the earlier legend"},
+          {"role": "user", "content": "LP-6 supplemental current field: the registry counter is Counter Saffron."},
+          {"role": "user", "content": "Preservation interleaf between current fields. It records cover cloth, endpaper fibers, binding cord, watermark position, page-edge wear, folio sequence, ink oxidation, staple holes, scanner focus, envelope wax, storage temperature, humidity tape, courier receipts, witness initials, duplication count, optical density, paper thickness, barcode alignment, cabinet shelf marks, checksum typography, seal impressions, page curvature, archival sleeve condition, transfer stamps, imaging exposure, paper grain, binding tension, receipt sequence, and duplicate-page comparison. Two archivists independently found the physical record unchanged. This interleaf contains no permit identifier, current allocation, requested field, or operational value."},
+          {"role": "user", "content": "LP-6 supplemental current field: the call phrase is calm harbor."},
+          {"role": "user", "content": "Preservation interleaf between current fields. It inventories envelope numbering, folio edges, seal colors, witness counts, cabinet temperatures, scanner alignment, duplicate signatures, paper stock, transfer receipts, checksum columns, optical density, binding stitches, watermark placement, page impressions, archive humidity, barcode parity, courier seals, imaging focus, paper thickness, sleeve condition, staple marks, storage labels, ink oxidation, receipt sequence, cover fibers, binding tension, and duplication checks. The observations establish only physical continuity and supply no permit identifier, current allocation, requested field, or operational value."},
+          {"role": "user", "content": "LP-6 supplemental current field: the final inspector is Lyra Penn."}
+        ]},
+        {"session_id": "v2fasc02-s06", "date": "2032-06-23", "turns": [{"role": "assistant", "content": "Lock Heron hosts pilot Sana Yul in an unrelated 11:20–11:40 training slot."}]}
+      ]
+    }
+  ],
+  "criteria": {
+    "minimum_accuracy": 1.0,
+    "require_complete_fact_delivery": true,
+    "category_minimums": {},
+    "maximum_wall_seconds": 300,
+    "provenance": {"origin": "independent-stage3-final-answer-sufficiency-confirmation", "stage2_calibration_reuse": false, "formal_source_access": false, "blind_gate_reuse": false, "tuning_role": "sealed-confirmation-only"}
+  },
+  "identity": "590e8fc42aab4d5a86b85e80eeedcc4ab406eaec2756347be2a0063c2a0e9615"
+}

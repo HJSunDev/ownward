@@ -1,0 +1,120 @@
+{
+  "schema": "ownward.kernel-iteration-materials/v2",
+  "contains_formal_questions_answers_gold_or_content": false,
+  "cases": [
+    {
+      "case_id": "v2csd-beacon-revision",
+      "coverage": "context-sufficiency-temporal-update",
+      "question_type": "knowledge-update",
+      "question_date": "2028-02-20",
+      "question": "After the signed harbor revision, state the active beacon color, flash interval, and inspection lead.",
+      "answer": "The active beacon is violet, flashes every 19 seconds, and is inspected by Maren Sol.",
+      "answer_session_ids": ["v2csd01-s05"],
+      "stale_session_ids": ["v2csd01-s01", "v2csd01-s03"],
+      "distractor_session_ids": ["v2csd01-s02", "v2csd01-s04", "v2csd01-s06", "v2csd01-s07", "v2csd01-s08"],
+      "truth_claims": [
+        {"claim": "The active beacon color is violet.", "evidence_session_ids": ["v2csd01-s05"]},
+        {"claim": "The active flash interval is 19 seconds.", "evidence_session_ids": ["v2csd01-s05"]},
+        {"claim": "The current inspection lead is Maren Sol.", "evidence_session_ids": ["v2csd01-s05"]}
+      ],
+      "sessions": [
+        {"session_id": "v2csd01-s01", "date": "2028-02-01", "turns": [{"role": "user", "content": "The first beacon sheet specified an amber lamp, a 12-second flash interval, and inspector Niko Pell."}]},
+        {"session_id": "v2csd01-s02", "date": "2028-02-03", "turns": [{"role": "assistant", "content": "The west buoy remains amber and flashes every 12 seconds; Niko Pell checks that buoy, not the harbor beacon."}]},
+        {"session_id": "v2csd01-s03", "date": "2028-02-06", "turns": [{"role": "assistant", "content": "A provisional beacon notice changed the lamp to indigo, the interval to 17 seconds, and the lead to Tomas Venn."}]},
+        {"session_id": "v2csd01-s04", "date": "2028-02-09", "turns": [{"role": "user", "content": "A training card repeats amber, 12 seconds, and Niko Pell so crews can recognize the obsolete configuration."}]},
+        {"session_id": "v2csd01-s05", "date": "2028-02-14", "turns": [{"role": "assistant", "content": "The signed harbor revision supersedes every prior beacon sheet and provisional notice. The active beacon color is violet. The active flash interval is 19 seconds. The current inspection lead is Maren Sol."}]},
+        {"session_id": "v2csd01-s06", "date": "2028-02-15", "turns": [{"role": "user", "content": "Maren Sol also inspects an amber warehouse lamp on a 12-second cycle; that equipment is not the harbor beacon."}]},
+        {"session_id": "v2csd01-s07", "date": "2028-02-16", "turns": [{"role": "assistant", "content": "The archived provisional diagram still labels the beacon indigo with a 17-second interval and Tomas Venn."}]},
+        {"session_id": "v2csd01-s08", "date": "2028-02-17", "turns": [{"role": "user", "content": "A maintenance drill asks crews to compare amber at 12 seconds, indigo at 17 seconds, and violet at 19 seconds."}]}
+      ]
+    },
+    {
+      "case_id": "v2csd-conservatory-authority",
+      "coverage": "context-sufficiency-authority-conflict",
+      "question_type": "knowledge-update",
+      "question_date": "2028-04-30",
+      "question": "Under the controlling conservatory register, which orchid bay, mist cycle, and curator govern accession R-81?",
+      "answer": "Accession R-81 is assigned to Bay Cobalt, a 43-minute mist cycle, and curator Elia Norr.",
+      "answer_session_ids": ["v2csd02-s04", "v2csd02-s06"],
+      "stale_session_ids": ["v2csd02-s01"],
+      "distractor_session_ids": ["v2csd02-s02", "v2csd02-s03", "v2csd02-s05", "v2csd02-s07", "v2csd02-s08"],
+      "truth_claims": [
+        {"claim": "The controlling register assigns R-81 to Bay Cobalt.", "evidence_session_ids": ["v2csd02-s04"]},
+        {"claim": "The controlling register assigns R-81 a 43-minute mist cycle.", "evidence_session_ids": ["v2csd02-s04"]},
+        {"claim": "The signed custody leaf names Elia Norr as curator for R-81.", "evidence_session_ids": ["v2csd02-s06"]}
+      ],
+      "sessions": [
+        {"session_id": "v2csd02-s01", "date": "2028-04-01", "turns": [{"role": "assistant", "content": "A superseded intake draft placed accession R-81 in Bay Saffron on a 31-minute mist cycle under curator Jo Rell."}]},
+        {"session_id": "v2csd02-s02", "date": "2028-04-04", "turns": [{"role": "user", "content": "A volunteer worksheet copies Bay Saffron, 31 minutes, and Jo Rell for a mock accession labeled R-18."}]},
+        {"session_id": "v2csd02-s03", "date": "2028-04-08", "turns": [{"role": "assistant", "content": "Bay Cobalt normally runs a 31-minute cycle for fern trays, supervised by Jo Rell."}]},
+        {"session_id": "v2csd02-s04", "date": "2028-04-18", "turns": [{"role": "user", "content": "The controlling register assigns R-81 to Bay Cobalt. The controlling register assigns R-81 a 43-minute mist cycle. Earlier intake drafts have no authority."}]},
+        {"session_id": "v2csd02-s05", "date": "2028-04-19", "turns": [{"role": "assistant", "content": "Elia Norr curates accession R-18 in Bay Saffron and uses a 43-minute observation timer unrelated to misting."}]},
+        {"session_id": "v2csd02-s06", "date": "2028-04-22", "turns": [{"role": "assistant", "content": "The signed custody leaf names Elia Norr as curator for R-81. It incorporates the controlling register by reference."}]},
+        {"session_id": "v2csd02-s07", "date": "2028-04-24", "turns": [{"role": "user", "content": "Jo Rell remains curator for the Saffron fern trays, whose misting interval is 31 minutes."}]},
+        {"session_id": "v2csd02-s08", "date": "2028-04-25", "turns": [{"role": "assistant", "content": "A comparison worksheet lists both Cobalt and Saffron, and both 31-minute and 43-minute cycles, without assigning R-81."}]}
+      ]
+    },
+    {
+      "case_id": "v2csd-orchestra-custody",
+      "coverage": "context-sufficiency-cross-evidence",
+      "question_type": "multi-session",
+      "question_date": "2028-06-30",
+      "question": "For crate M7's approved concert transfer, give the departure gate, handoff time, carrier, and receiving custodian.",
+      "answer": "Crate M7 leaves through Gate Opal at 07:40 with carrier Sora Pike and is received by custodian Bren Ives.",
+      "answer_session_ids": ["v2csd03-s03", "v2csd03-s05", "v2csd03-s07"],
+      "stale_session_ids": [],
+      "distractor_session_ids": ["v2csd03-s01", "v2csd03-s02", "v2csd03-s04", "v2csd03-s06", "v2csd03-s08"],
+      "truth_claims": [
+        {"claim": "The approved route sheet sends crate M7 through Gate Opal.", "evidence_session_ids": ["v2csd03-s03"]},
+        {"claim": "The approved handoff time for crate M7 is 07:40.", "evidence_session_ids": ["v2csd03-s03"]},
+        {"claim": "Carrier Sora Pike holds the transport seal for crate M7.", "evidence_session_ids": ["v2csd03-s05"]},
+        {"claim": "Bren Ives is the receiving custodian for crate M7.", "evidence_session_ids": ["v2csd03-s07"]}
+      ],
+      "sessions": [
+        {"session_id": "v2csd03-s01", "date": "2028-06-02", "turns": [{"role": "user", "content": "Crate M2 leaves through Gate Pearl at 07:40 with carrier Bren Ives."}]},
+        {"session_id": "v2csd03-s02", "date": "2028-06-05", "turns": [{"role": "assistant", "content": "A rehearsal checklist sends a prop crate marked M7 through Gate Pearl at 07:10."}]},
+        {"session_id": "v2csd03-s03", "date": "2028-06-12", "turns": [{"role": "assistant", "content": "The approved route sheet sends crate M7 through Gate Opal. The approved handoff time for crate M7 is 07:40."}]},
+        {"session_id": "v2csd03-s04", "date": "2028-06-14", "turns": [{"role": "user", "content": "Sora Pike receives crate M5 at Gate Opal at 07:10."}]},
+        {"session_id": "v2csd03-s05", "date": "2028-06-16", "turns": [{"role": "user", "content": "Carrier Sora Pike holds the transport seal for crate M7. The seal is not transferable to another carrier."}]},
+        {"session_id": "v2csd03-s06", "date": "2028-06-18", "turns": [{"role": "assistant", "content": "Bren Ives carries crate M2 through Gate Pearl and hands it to Sora Pike."}]},
+        {"session_id": "v2csd03-s07", "date": "2028-06-20", "turns": [{"role": "assistant", "content": "Bren Ives is the receiving custodian for crate M7. Custody begins only after the approved concert transfer."}]},
+        {"session_id": "v2csd03-s08", "date": "2028-06-22", "turns": [{"role": "user", "content": "A training scenario combines Gate Opal, 07:10, Sora Pike, and crate M5."}]}
+      ]
+    },
+    {
+      "case_id": "v2csd-sonar-table",
+      "coverage": "context-sufficiency-structured-interference",
+      "question_type": "single-session-assistant",
+      "question_date": "2028-08-31",
+      "question": "From the ratified sonar table, report all four fields for channel K4: array, pulse spacing, filter, and analyst.",
+      "answer": "Channel K4 uses Array Juniper, 26-millisecond pulse spacing, Filter Quill, and analyst Dana Yew.",
+      "answer_session_ids": ["v2csd04-s05"],
+      "stale_session_ids": ["v2csd04-s01"],
+      "distractor_session_ids": ["v2csd04-s02", "v2csd04-s03", "v2csd04-s04", "v2csd04-s06", "v2csd04-s07", "v2csd04-s08"],
+      "truth_claims": [
+        {"claim": "K4 uses Array Juniper.", "evidence_session_ids": ["v2csd04-s05"]},
+        {"claim": "K4 uses 26-millisecond pulse spacing.", "evidence_session_ids": ["v2csd04-s05"]},
+        {"claim": "K4 uses Filter Quill.", "evidence_session_ids": ["v2csd04-s05"]},
+        {"claim": "K4 has analyst Dana Yew.", "evidence_session_ids": ["v2csd04-s05"]}
+      ],
+      "sessions": [
+        {"session_id": "v2csd04-s01", "date": "2028-08-02", "turns": [{"role": "assistant", "content": "Draft row K4 listed Array Maple, 18-millisecond pulse spacing, Filter Reed, and analyst Evan Lark."}]},
+        {"session_id": "v2csd04-s02", "date": "2028-08-05", "turns": [{"role": "user", "content": "Row K3 uses Array Juniper, 18-millisecond spacing, Filter Quill, and analyst Evan Lark."}]},
+        {"session_id": "v2csd04-s03", "date": "2028-08-08", "turns": [{"role": "assistant", "content": "Row K5 uses Array Maple, 26-millisecond spacing, Filter Reed, and analyst Dana Yew."}]},
+        {"session_id": "v2csd04-s04", "date": "2028-08-10", "turns": [{"role": "user", "content": "A simulator profile for K4 combines Array Juniper with 18 milliseconds and Filter Reed."}]},
+        {"session_id": "v2csd04-s05", "date": "2028-08-20", "turns": [{"role": "assistant", "content": "The ratified sonar table supersedes the draft. K4 uses Array Juniper. K4 uses 26-millisecond pulse spacing. K4 uses Filter Quill. K4 has analyst Dana Yew."}]},
+        {"session_id": "v2csd04-s06", "date": "2028-08-22", "turns": [{"role": "user", "content": "Dana Yew also reviews K3 after Evan Lark, but the K3 analyst field remains Evan Lark."}]},
+        {"session_id": "v2csd04-s07", "date": "2028-08-24", "turns": [{"role": "assistant", "content": "Filter Quill is tested on Array Maple at 18 milliseconds outside the ratified table."}]},
+        {"session_id": "v2csd04-s08", "date": "2028-08-26", "turns": [{"role": "user", "content": "A worksheet asks trainees to distinguish K3, K4, and K5 by array, pulse spacing, filter, and analyst."}]}
+      ]
+    }
+  ],
+  "criteria": {
+    "minimum_accuracy": 1.0,
+    "require_complete_fact_delivery": true,
+    "category_minimums": {"knowledge-update": 1.0},
+    "maximum_wall_seconds": 360,
+    "provenance": {"origin": "independent-stage3-context-sufficiency-diagnosis", "stage2_calibration_reuse": false, "formal_source_access": false, "blind_gate_reuse": false, "tuning_role": "diagnosis-only"}
+  },
+  "identity": "6fced50c0ecdb1174aa9ed1e6209f78db549b401034446086af9251bfde8c126"
+}

@@ -13,7 +13,7 @@ RESULT_SCHEMA = "ownward.kernel-iteration-stage4-resource-cost-raw-vector-lifecy
 CONTRACT_PATH = Path("iteration/v2/stage4-resource-cost-raw-vector-lifecycle-contract.json")
 DEPENDENCY_MIGRATION_SCHEMA = "ownward.kernel-iteration-direct-dependency-migration/v1"
 DEPENDENCY_MIGRATION_PATH = Path("iteration/v2/stage4-resource-cost-raw-vector-lifecycle-dependency-migration.json")
-DEPENDENCY_MIGRATION_REASON = "non-stage4-diagnostic-maintenance-changes-only-explicitly-listed-callers-without-changing-frozen-stage4-contracts-or-results"
+DEPENDENCY_MIGRATION_REASON = "stage3-source-context-repair-preserves-frozen-stage4-cost-and-representation-only-current-consumer-quality-and-latency-revalidated"
 
 
 def run(suite_root: Path, output_root: Path, formal_state: Path, *, resume: bool) -> dict[str, Any]:
@@ -250,7 +250,7 @@ def load_contract(suite_root: Path) -> dict[str, Any]:
             classifications
             == {
                 "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_raw_vector_lifecycle.py": "dependency-receipt-validation-only",
-                "benchmarks/acceptance/suite/kernel_iteration_run.py": "additive-non-stage4-cli-dispatch-only",
+                "benchmarks/acceptance/suite/kernel_iteration_run.py": "stage3-source-context-cli-dispatch-only-frozen-stage4-cost-and-representation-unchanged",
             },
             "生命周期直接依赖迁移分类漂移",
         )
@@ -332,7 +332,7 @@ def _verify_related_source_migration(
     _require(changes == drifted, "生命周期源码漂移不在精确迁移收据内")
     _require(
         {item["path"]: item.get("classification") for item in related.get("changes", [])}
-        == {"benchmarks/longmemeval_s/run.py": "reader-profile-validation-and-formal-protocol-unification-only"},
+        == {"benchmarks/longmemeval_s/run.py": "source-context-consumer-and-reader-profile-only-semantic-request-and-frozen-cost-unchanged"},
         "生命周期源码迁移分类漂移",
     )
 

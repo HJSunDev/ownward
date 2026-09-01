@@ -90,24 +90,63 @@ def freeze(
     _require(component_manifest.get("runtime_identity") == rebuilt_receipt["kernel_generation_identity"], "组件清单运行身份漂移")
     _require(component_manifest.get("kernel_effect_identity") == rebuilt_receipt["kernel_effect_identity"], "组件清单内核效果漂移")
     _require(component_manifest.get("sealed_composition_identity") == rebuilt_receipt["composition_identity"], "组件清单组合身份漂移")
-    _require(component_manifest.get("components") == {
-        "access": "bb88b75bd0c9c1999f3eec7f3ff1b42e03960e44baf528bc2d7fbeb8de45736c",
-        **rebuilt_subject["direct_dependencies"],
-    }, "组件清单直接依赖与封存候选不一致")
+    sealed_composition = _load(rebuilt_candidate_root / "composition.json")
+    sealed_components = {
+        item["role"]: item["identity"]
+        for item in sealed_composition.get("components", [])
+        if item.get("role") in {"access", *rebuilt_subject["direct_dependencies"]}
+    }
+    _require(component_manifest.get("components") == sealed_components, "组件清单直接依赖与封存候选不一致")
 
+    stage4: dict[str, dict[str, Any]] = {}
     for item in contract["stage4_evidence"]:
         path = (repository / item["path"]).resolve()
         _require(path.is_file() and _sha256(path) == item["sha256"], f"Stage 4 证据缺失或改变: {item['path']}")
-        _require(_load(path).get("identity") == item["identity"], f"Stage 4 证据身份错绑: {item['path']}")
-    final = _load((repository / contract["stage4_evidence"][1]["path"]).resolve())
-    semantic_gate = _load((repository / contract["stage4_evidence"][-1]["path"]).resolve())["semantic_input_tokens"]
+        value = _load(path)
+        _require(value.get("identity") == item["identity"], f"Stage 4 证据身份错绑: {item['path']}")
+        _require(item["role"] not in stage4, f"Stage 4 证据职责重复: {item['role']}")
+        stage4[item["role"]] = value
+    _require(set(stage4) == {
+        "cost-contract", "dependency-migration", "controlled-cost", "current-development",
+        "current-regression", "semantic-cost",
+    }, "Stage 4 证据职责不完整")
+    final = stage4["controlled-cost"]
+    semantic_gate = stage4["semantic-cost"]["semantic_input_tokens"]
+    development = stage4["current-development"]
+    regression = stage4["current-regression"]
+    for name, value in (("开发", development), ("回归", regression)):
+        _require(value.get("passed") is True and value.get("status") == "passed", f"当前{name}证据未通过")
+        _require(value.get("subject_identity") == source_subject["identity"], f"当前{name}证据未绑定当前 subject")
+        _require(value["observation"]["fact_delivery"]["complete"] is True, f"当前{name}事实交付不完整")
+    development_observation = development["observation"]
+    regression_observation = regression["observation"]
+    long_case = next(
+        (item for item in development_observation["case_evidence"] if item.get("coverage") == "long-session-multi-fact"),
+        None,
+    )
+    _require(
+        isinstance(long_case, dict)
+        and long_case.get("truth_claims") == 5
+        and long_case.get("delivered_truth_claims") == 5
+        and all(
+            expected.get("returned") is True
+            and expected.get("read") is True
+            and "semantic" in expected.get("channel_signals", [])
+            for expected in long_case.get("selection", {}).get("expected_sources", [])
+        ),
+        "长资产语义召回或 5/5 事实交付资格不成立",
+    )
     quality = final["quality_and_closed_dimensions"]
     gates = contract["eligibility"]
-    _require(quality["development_accuracy"] == gates["development_accuracy"], "开发质量资格不成立")
-    _require(quality["regression_accuracy"] == gates["regression_accuracy"], "固定回归资格不成立")
+    _require(development_observation["final_answer_accuracy"] == gates["development_accuracy"], "开发质量资格不成立")
+    _require(regression_observation["final_answer_accuracy"] == gates["regression_accuracy"], "固定回归资格不成立")
     _require(semantic_gate["candidate_component_tokens"] <= gates["maximum_semantic_component_tokens"], "语义组件成本资格不成立")
     _require(quality["ownward_data_ratio_to_v0"] <= gates["maximum_ownward_data_ratio_to_v0"], "产品数据成本资格不成立")
-    _require(quality["retrieval_p95_ms"] <= gates["maximum_consumer_p95_ms"], "完整消费者时延资格不成立")
+    _require(
+        max(development_observation["latency"]["retrieval_p95_ms"], regression_observation["latency"]["retrieval_p95_ms"])
+        <= gates["maximum_consumer_p95_ms"],
+        "完整消费者时延资格不成立",
+    )
     _require(final["candidate_controlled_gate"]["candidate_plus_error_seconds"] <= gates["maximum_controlled_wall_seconds"], "候选可控墙钟资格不成立")
     _require(final["resume"]["same_identity_is_byte_exact_and_zero_execution"] is True, "同身份恢复资格不成立")
 
@@ -129,7 +168,11 @@ def freeze(
     _require(production.get("candidate") == candidate["kernel_generation_identity"], "生产规模证据候选错绑")
     _require(production.get("release_binary_sha256") == rebuilt_receipt["binary_sha256"], "生产规模证据二进制错绑")
     frontier_build = _go_build(frontier_tool.resolve())
-    _require(frontier_build.get("vcs.revision") == contract["audit_source_git"] and frontier_build.get("vcs.modified") == "false", "前沿观察器不是同一干净源码构建")
+    _require(
+        frontier_build.get("vcs.revision") == contract["frontier_evidence_source_git"]
+        and frontier_build.get("vcs.modified") == "false",
+        "前沿观察器不是仍有效证据绑定的干净源码构建",
+    )
 
     formal_state = formal_state.resolve()
     formal_state_sha256 = _sha256(formal_state)
@@ -144,12 +187,16 @@ def freeze(
         "composition_identity": candidate["composition_identity"],
         "component_manifest_identity": candidate["component_manifest_identity"],
         "audit_source_git": contract["audit_source_git"],
+        "frontier_evidence_source_git": contract["frontier_evidence_source_git"],
         "binary_sha256": rebuilt_receipt["binary_sha256"],
         "frontier_sha256": _sha256(frontier_tool.resolve()),
         "release_manifest_sha256": _sha256(package / "manifest.json"),
         "production_storage_sha256": _sha256(production_storage_report),
         "formal_state_before_sha256": formal_state_sha256,
-        "stage4_evidence": [{"identity": item["identity"], "sha256": item["sha256"]} for item in contract["stage4_evidence"]],
+        "stage4_evidence": [
+            {"role": item["role"], "identity": item["identity"], "sha256": item["sha256"]}
+            for item in contract["stage4_evidence"]
+        ],
         "eligibility_passed": True,
         "packaging_drift": {
             "stage4_binary_was_dirty": True,

@@ -1,0 +1,90 @@
+{
+  "schema": "ownward.kernel-iteration-materials/v2",
+  "contains_formal_questions_answers_gold_or_content": false,
+  "cases": [
+    {
+      "case_id": "v2fasd-relay-ledger",
+      "coverage": "final-answer-sufficiency-source-local-legend",
+      "question_type": "single-session-assistant",
+      "question_date": "2031-04-30",
+      "question": "Decode the final routing record for relay RL-27: which port, custodian, launch time, registry desk, clearance phrase, and final verifier does it specify?",
+      "answer": "RL-27 specifies Port Meridian, custodian Talia Nox, a 05:35 launch, registry Desk Cobalt, clearance phrase silver dawn, and final verifier Edda Marr.",
+      "answer_session_ids": ["v2fasd01-s04"],
+      "stale_session_ids": ["v2fasd01-s01"],
+      "distractor_session_ids": ["v2fasd01-s02", "v2fasd01-s03", "v2fasd01-s05", "v2fasd01-s06"],
+      "truth_claims": [
+        {"claim": "FINAL ROUTING ROW FOR RL-27 | Q4 | N7 | H3", "evidence_session_ids": ["v2fasd01-s04"]},
+        {"claim": "the registry desk is Desk Cobalt", "evidence_session_ids": ["v2fasd01-s04"]},
+        {"claim": "the clearance phrase is silver dawn", "evidence_session_ids": ["v2fasd01-s04"]},
+        {"claim": "the final verifier is Edda Marr", "evidence_session_ids": ["v2fasd01-s04"]}
+      ],
+      "sessions": [
+        {"session_id": "v2fasd01-s01", "date": "2031-04-02", "turns": [{"role": "user", "content": "A superseded routing sheet wrote RL-27 in plain text as Port Auburn, custodian Jaro Wen, launch 04:10. It is retained only for audit comparison."}]},
+        {"session_id": "v2fasd01-s02", "date": "2031-04-05", "turns": [{"role": "assistant", "content": "Relay RL-72 uses Port Meridian for a 04:10 launch, but its custodian is Jaro Wen. RL-72 is unrelated to the requested row."}]},
+        {"session_id": "v2fasd01-s03", "date": "2031-04-08", "turns": [{"role": "user", "content": "A rehearsal card mentions RL-27 and asks trainees to compare Q2, N4, and H8. The card contains no authorized routing row."}]},
+        {"session_id": "v2fasd01-s04", "date": "2031-04-21", "turns": [
+          {"role": "assistant", "content": "Signed relay ledger, revision seven. This ledger is encoded to keep repeated routing rows compact. The preliminary notes below document checksum handling and do not assign a relay. Checksum groups are copied twice, separator bars have no semantic value, and rehearsal annotations are non-authoritative. Archive staff must use only the notation key and the row marked FINAL. The ledger remains controlling until a later signed revision is issued."},
+          {"role": "assistant", "content": "Notation key for this signed ledger: Q4 means Port Meridian. N7 means Talia Nox. H3 means 05:35. Other code families belong to unrelated ledgers and must not be imported."},
+          {"role": "assistant", "content": "Interleaf preservation record. Conservators inspected the cover cloth, endpaper fibers, binding cord, watermark position, page-edge wear, folio sequence, ink oxidation, staple holes, scanner focus, envelope wax, storage temperature, humidity tape, courier receipts, witness initials, duplication count, optical density, paper thickness, barcode alignment, cabinet shelf marks, and checksum typography. A second conservator repeated the inspection against the sealed archive copy and found every physical characteristic unchanged. This interleaf describes document condition only and contains no routing identifier, encoded assignment, field role, or operational value."},
+          {"role": "assistant", "content": "RL-27 audit marker alpha confirms that the relay identifier survived the checksum copy. It does not restate or decode the route fields. Archive verification records separator counts, envelope seals, witness initials, folio edges, scanner calibration, paper stock, duplicate signatures, ink density, receipt numbers, parity groups, and checksum rotation. Every listed item is administrative evidence only; none names a port, a custodian, or a launch time. This marker exists solely to make later corruption detectable for RL-27."},
+          {"role": "assistant", "content": "RL-27 audit marker beta confirms that three encoded fields follow the identifier. The verification worksheet inventories binding stitches, transfer receipts, page impressions, barcode parity, seal colors, cabinet temperatures, witness initials, duplicate folios, optical alignment, archive humidity, checksum columns, and paper grain. Those observations neither decode nor replace any field in the routing row. They certify only that the signed revision remained physically intact while RL-27 moved through the archive."},
+          {"role": "assistant", "content": "RL-27 audit marker gamma says that the controlling final routing row follows after this audit section. Its validation trail records courier receipts, signature counts, seal impressions, folio sequence, archive shelf moves, scanner density, binding tension, checksum witnesses, duplicate-page comparison, and envelope numbering. Training cards and the superseded plain-text sheet are excluded. None of these audit facts identifies the requested port, custodian, or launch time for RL-27."},
+          {"role": "assistant", "content": "FINAL ROUTING ROW FOR RL-27 | Q4 | N7 | H3 | port, custodian, and launch-time fields use the earlier notation key"},
+          {"role": "assistant", "content": "RL-27 supplemental current field: the registry desk is Desk Cobalt."},
+          {"role": "assistant", "content": "Preservation interleaf between current fields. It records cover cloth, endpaper fibers, binding cord, watermark position, page-edge wear, folio sequence, ink oxidation, staple holes, scanner focus, envelope wax, storage temperature, humidity tape, courier receipts, witness initials, duplication count, optical density, paper thickness, barcode alignment, cabinet shelf marks, checksum typography, seal impressions, page curvature, archival sleeve condition, transfer stamps, imaging exposure, paper grain, binding tension, receipt sequence, and duplicate-page comparison. Two conservators independently found the physical record unchanged. This interleaf contains no relay identifier, current assignment, requested field, or operational value."},
+          {"role": "assistant", "content": "RL-27 supplemental current field: the clearance phrase is silver dawn."},
+          {"role": "assistant", "content": "Preservation interleaf between current fields. It inventories envelope numbering, folio edges, seal colors, witness counts, cabinet temperatures, scanner alignment, duplicate signatures, paper stock, transfer receipts, checksum columns, optical density, binding stitches, watermark placement, page impressions, archive humidity, barcode parity, courier seals, imaging focus, paper thickness, sleeve condition, staple marks, storage labels, ink oxidation, receipt sequence, cover fibers, binding tension, and duplication checks. The observations establish only physical continuity and supply no relay identifier, current assignment, requested field, or operational value."},
+          {"role": "assistant", "content": "RL-27 supplemental current field: the final verifier is Edda Marr."}
+        ]},
+        {"session_id": "v2fasd01-s05", "date": "2031-04-23", "turns": [{"role": "assistant", "content": "Port Meridian also launches relay RL-18 at 05:35 under custodian Jaro Wen. This is a different relay."}]},
+        {"session_id": "v2fasd01-s06", "date": "2031-04-25", "turns": [{"role": "user", "content": "Talia Nox receives cargo at Port Auburn after 06:00; that delivery does not alter RL-27's signed routing ledger."}]}
+      ]
+    },
+    {
+      "case_id": "v2fasd-thermal-matrix",
+      "coverage": "final-answer-sufficiency-source-local-schema",
+      "question_type": "single-session-user",
+      "question_date": "2031-07-31",
+      "question": "Interpret the accepted matrix record for chamber CX-8: what coolant, duty cycle, reviewer, sensor band, restart key, and records custodian are assigned?",
+      "answer": "CX-8 uses coolant Selene, a 36-minute duty cycle, reviewer Omar Vey, sensor band Pine-4, restart key ember lattice, and records custodian Nira Sol.",
+      "answer_session_ids": ["v2fasd02-s05"],
+      "stale_session_ids": ["v2fasd02-s01"],
+      "distractor_session_ids": ["v2fasd02-s02", "v2fasd02-s03", "v2fasd02-s04", "v2fasd02-s06"],
+      "truth_claims": [
+        {"claim": "ACCEPTED MATRIX ROW FOR CX-8 :: S2 :: D6 :: R9", "evidence_session_ids": ["v2fasd02-s05"]},
+        {"claim": "the sensor band is Pine-4", "evidence_session_ids": ["v2fasd02-s05"]},
+        {"claim": "the restart key is ember lattice", "evidence_session_ids": ["v2fasd02-s05"]},
+        {"claim": "the records custodian is Nira Sol", "evidence_session_ids": ["v2fasd02-s05"]}
+      ],
+      "sessions": [
+        {"session_id": "v2fasd02-s01", "date": "2031-07-02", "turns": [{"role": "assistant", "content": "The obsolete CX-8 matrix used coolant Orin, a 24-minute duty cycle, and reviewer Mira Pell."}]},
+        {"session_id": "v2fasd02-s02", "date": "2031-07-05", "turns": [{"role": "user", "content": "Chamber CX-3 uses coolant Selene with a 24-minute duty cycle and reviewer Mira Pell."}]},
+        {"session_id": "v2fasd02-s03", "date": "2031-07-09", "turns": [{"role": "assistant", "content": "A simulator worksheet for CX-8 combines S5, D2, and R1. It is not an accepted chamber matrix."}]},
+        {"session_id": "v2fasd02-s04", "date": "2031-07-12", "turns": [{"role": "user", "content": "Reviewer Omar Vey observes CX-3 during a 36-minute stress test with coolant Orin; the test is not an assignment."}]},
+        {"session_id": "v2fasd02-s05", "date": "2031-07-22", "turns": [
+          {"role": "user", "content": "Accepted thermal matrix, calibration cycle eleven. Introductory calibration notes describe checksum columns, redundant delimiters, sensor tolerances, and audit signatures. None of those notes assign a chamber. Only the codebook in this source and the row marked ACCEPTED jointly determine the live assignment."},
+          {"role": "user", "content": "Codebook: S2 decodes to coolant Selene. D6 decodes to a 36-minute duty cycle. R9 decodes to reviewer Omar Vey. Codes from draft or simulator matrices are not compatible."},
+          {"role": "user", "content": "Interleaf preservation record. Calibration archivists checked cover fibers, binding cord, page-edge wear, watermark placement, folio sequence, ink oxidation, scanner focus, envelope wax, storage temperature, humidity tape, courier receipts, witness initials, duplication count, optical density, paper thickness, barcode alignment, cabinet shelf marks, seal impressions, checksum typography, and staple holes. An independent archivist repeated the inspection against the sealed duplicate and found the physical record unchanged. This interleaf contains only document-condition observations and no chamber identifier, encoded assignment, field role, or operational value."},
+          {"role": "user", "content": "CX-8 validation marker one confirms that its identifier belongs to calibration cycle eleven. The calibration archive records sensor serials, seal impressions, page counts, checksum columns, witness initials, cabinet humidity, paper grain, scanner alignment, duplicate signatures, transfer receipts, binding stitches, and optical density. These observations verify the matrix document but intentionally omit every decoded value; they assign no coolant, duty cycle, or reviewer to CX-8."},
+          {"role": "user", "content": "CX-8 validation marker two confirms that exactly three encoded fields follow. Its supporting worksheet inventories parity groups, instrument seals, barcode checks, folio order, cabinet temperatures, witness initials, duplicate pages, scanner calibration, receipt numbers, paper stock, binding tension, and archive shelf movements. This is a checksum statement rather than a chamber assignment, and none of those fields decodes the requested values for CX-8."},
+          {"role": "user", "content": "CX-8 validation marker three points to the accepted matrix row after this audit section. It records transfer envelopes, signature counts, sensor tolerances, seal colors, page impressions, checksum witnesses, folio edges, optical alignment, cabinet humidity, duplicate comparisons, scanner density, and archive receipts. The simulator worksheet is rejected. Nothing in this marker supplies the coolant, duty cycle, or reviewer for CX-8."},
+          {"role": "user", "content": "ACCEPTED MATRIX ROW FOR CX-8 :: S2 :: D6 :: R9 | coolant, duty-cycle, and reviewer fields use the earlier codebook"},
+          {"role": "user", "content": "CX-8 supplemental current field: the sensor band is Pine-4."},
+          {"role": "user", "content": "Preservation interleaf between current fields. It records cover fibers, binding cord, watermark placement, page-edge wear, folio sequence, ink oxidation, scanner focus, envelope wax, storage temperature, humidity tape, courier receipts, witness initials, duplication count, optical density, paper thickness, barcode alignment, cabinet shelf marks, seal impressions, checksum typography, staple holes, page curvature, archival sleeve condition, transfer stamps, imaging exposure, paper grain, binding tension, receipt sequence, and duplicate-page comparison. Two archivists independently found the physical record unchanged. This interleaf contains no chamber identifier, current assignment, requested field, or operational value."},
+          {"role": "user", "content": "CX-8 supplemental current field: the restart key is ember lattice."},
+          {"role": "user", "content": "Preservation interleaf between current fields. It inventories envelope numbering, folio edges, seal colors, witness counts, cabinet temperatures, scanner alignment, duplicate signatures, paper stock, transfer receipts, checksum columns, optical density, binding stitches, watermark position, page impressions, archive humidity, barcode parity, courier seals, imaging focus, paper thickness, sleeve condition, staple marks, storage labels, ink oxidation, receipt sequence, cover fibers, binding tension, and duplication checks. These observations establish only physical continuity and supply no chamber identifier, current assignment, requested field, or operational value."},
+          {"role": "user", "content": "CX-8 supplemental current field: the records custodian is Nira Sol."}
+        ]},
+        {"session_id": "v2fasd02-s06", "date": "2031-07-25", "turns": [{"role": "assistant", "content": "Coolant Selene is stored beside chamber CX-8, while reviewer Mira Pell signs a separate 36-minute inventory cycle."}]}
+      ]
+    }
+  ],
+  "criteria": {
+    "minimum_accuracy": 1.0,
+    "require_complete_fact_delivery": true,
+    "category_minimums": {},
+    "maximum_wall_seconds": 300,
+    "provenance": {"origin": "independent-stage3-final-answer-sufficiency-diagnosis", "stage2_calibration_reuse": false, "formal_source_access": false, "blind_gate_reuse": false, "tuning_role": "diagnosis-only"}
+  },
+  "identity": "7fa9792c383914bb31b10c1d82779be646dc83baf525bcccb7b68cf79c6de011"
+}

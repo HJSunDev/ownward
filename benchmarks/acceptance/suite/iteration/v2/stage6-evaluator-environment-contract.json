@@ -1,19 +1,19 @@
 {
-  "schema": "ownward.kernel-iteration-stage6-evaluator-environment-contract/v3",
+  "schema": "ownward.kernel-iteration-stage6-evaluator-environment-contract/v4",
   "purpose": "noncandidate-post-failure-oracle-reader-reliability-qualification",
   "formal": false,
   "root_cause_boundary": {
-    "source_plan_identity": "c45a62f195552071aff23a136f4c1f244468f967952d1d1f4019c05269215e90",
-    "source_result_identity": "0fdfe34e2ae5462d3124519e53f6d56279e872bf5deffe798ac608421b6cf468",
-    "product_context_failures": 3,
-    "oracle_context_failures": 3,
+    "source_plan_identity": "e0c18bb2625fcc6fd1e78557cdcc3a846927b3ab6178364f5e3e51735464b680",
+    "source_result_identity": "da47b42aa233ea91cb4b95709138abd5bf50962f7e7c26be7ceb3b0fd6dbdebb",
+    "product_context_failures": 1,
+    "oracle_context_failures": 2,
     "judge_correct_controls_passed": 1,
     "judge_wrong_controls_passed": 1,
     "transport_timeouts": 0,
     "worker_restarts": 0,
     "rate_limit_events": 0,
     "schema_validated_outputs": 6,
-    "first_proven_boundary": "luna-xhigh-reader-semantic-decision-under-complete-oracle-evidence",
+    "first_proven_boundary": "terra-high-reader-mechanical-instability-under-complete-oracle-evidence",
     "candidate_failure": false,
     "raw_blind_material_recovery_forbidden": true
   },
@@ -32,7 +32,7 @@
   "attribution_reader": {
     "capability_source": "codex",
     "model": "gpt-5.6-terra",
-    "reasoning_effort": "high",
+    "reasoning_effort": "xhigh",
     "max_output_tokens": 1024,
     "timeout_seconds": 240,
     "attempts": 3,
@@ -53,29 +53,31 @@
     "prompt_or_renderer_change_authorized": false
   },
   "material": {
-    "path": "iteration/v2/stage6-oracle-reader-qualification-material.json",
-    "sha256": "52e8ee15fefe09e1369089ca26422c983ee91ca2fac8679dea0fbbe3ba5bd776",
-    "identity": "76de133f9a6bc461499335007fed511299554716194da3e076a9a7444984d538",
-    "questions": 3,
+    "path": "iteration/v2/stage6-oracle-reader-qualification-material-v2.json",
+    "sha256": "dc8319b9f16ed65b244c37971d37bad9b56489d83ba3e6d2fc94f441c0885f98",
+    "identity": "cfc4440ef8a67f2c916a5580868363208d5b9267fe3af261c44b69e6d191cbe0",
+    "questions": 5,
     "coverages": [
-      "temporal-order",
-      "knowledge-update-conflict",
-      "multi-session-relation"
+      "temporal-authority-chain",
+      "multi-session-four-hop",
+      "structured-table-footnote",
+      "authority-over-recency",
+      "multi-fact-answer-sufficiency"
     ],
     "independent_of_stage6_blind_material": true,
     "independent_of_formal_and_candidate_development_material": true,
     "candidate_decision": false
   },
   "attribution_qualification": {
-    "questions": 3,
-    "reader_settings": "frozen-terra-high-post-failure-diagnostic",
+    "questions": 5,
+    "reader_settings": "frozen-terra-xhigh-post-failure-diagnostic",
     "product_repeats": [2, 3],
     "oracle_repeats": [1, 2, 3],
-    "reader_calls": 15,
-    "judge_calls": 24,
+    "reader_calls": 25,
+    "judge_calls": 40,
     "product_context_failures_maximum": 0,
     "oracle_context_failures_maximum": 0,
-    "judge_controls_required": "3/3-correct-and-3/3-wrong",
+    "judge_controls_required": "5/5-correct-and-5/5-wrong",
     "prompt_renderer": "official-longmemeval-evaluator",
     "correctness_source": "judge"
   },
@@ -104,5 +106,5 @@
       "transport"
     ]
   },
-  "identity": "fd036e2ec50490008d7765520d6be5ae5f7a8e53d2a695c60fc1f0df1fe3e62a"
+  "identity": "89fff13d313c22ac00cf21b590d4fb24955d50bc58baddf2a97accccc28ac155"
 }

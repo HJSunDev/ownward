@@ -18,7 +18,7 @@ RESULT_SCHEMA = "ownward.kernel-iteration-stage4-resource-cost-representation-fi
 CONTRACT_PATH = Path("iteration/v2/stage4-resource-cost-representation-final-contract.json")
 DEPENDENCY_MIGRATION_SCHEMA = "ownward.kernel-iteration-direct-dependency-migration/v1"
 DEPENDENCY_MIGRATION_PATH = Path("iteration/v2/stage4-resource-cost-raw-vector-lifecycle-dependency-migration.json")
-DEPENDENCY_MIGRATION_REASON = "non-stage4-diagnostic-maintenance-changes-only-explicitly-listed-callers-without-changing-frozen-stage4-contracts-or-results"
+DEPENDENCY_MIGRATION_REASON = "stage3-source-context-repair-preserves-frozen-stage4-cost-and-representation-only-current-consumer-quality-and-latency-revalidated"
 
 
 def run(suite_root: Path, output_root: Path, formal_state: Path, *, resume: bool) -> dict[str, Any]:
@@ -107,7 +107,8 @@ def _verify_dependency_migration(
     _require(changes == drifted, "表示生命周期终测依赖漂移不在精确迁移收据内")
     _require(classifications == {
         "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_representation_finalize.py": "dependency-receipt-validation-only",
-        "benchmarks/longmemeval_s/run.py": "reader-profile-validation-and-formal-protocol-unification-only",
+        "benchmarks/acceptance/suite/kernel_iteration_candidate_resource_cost.py": "candidate-packaging-access-overlay-only-representation-and-storage-unchanged",
+        "benchmarks/longmemeval_s/run.py": "source-context-consumer-and-reader-profile-only-semantic-request-and-frozen-cost-unchanged",
     }, "表示生命周期终测依赖迁移分类漂移")
     _require(related.get("preserved") == {
         "contract_identity": True,

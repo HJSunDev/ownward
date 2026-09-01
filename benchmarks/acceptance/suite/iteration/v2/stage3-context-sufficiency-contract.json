@@ -1,0 +1,94 @@
+{
+  "schema": "ownward.kernel-iteration-stage3-context-sufficiency-contract/v1",
+  "frozen_before_candidate_results": true,
+  "contains_blind_or_formal_question_answer_gold_content_outputs_or_case_ids": false,
+  "aggregate_trigger": {
+    "stage6_result_identity": "a4936f6d0b24e1ccf57304a414c8205f6e4782cbd6d8e132540f5d23b0ca750d",
+    "facts_delivered": true,
+    "product_context_correct": "0/3",
+    "authority_oracle_correct": "3/3",
+    "judge_correct_control": "1/1",
+    "judge_wrong_control": "1/1",
+    "boundary": "final-answer-sufficiency-boundary/evidence_read_answer_incorrect",
+    "raw_content_destroyed": true,
+    "raw_content_recovery_inference_or_reuse_forbidden": true
+  },
+  "subject": {
+    "identity": "bb71c8343ab48bca82a58630e4c247eb10aa27dcff57d3280f99ce994c309150",
+    "kernel_generation_identity": "66a6e827841c09279dec99d53cc7e5db04a879c94da14cbd3355419029bfa2db",
+    "kernel_effect_identity": "a2ad626f00e3806599f625c07d4df4a6430c23c27b3e996c50bd75a9e5fef922"
+  },
+  "sources": {
+    "diagnosis_materials": {
+      "path": "iteration/v2/stage3-context-sufficiency-diagnosis-materials.json",
+      "sha256": "c5c8686b6c49a176cc2993ad83e6d00497b4c5b84437536ad9e51bc1d69e7cd4",
+      "identity": "6fced50c0ecdb1174aa9ed1e6209f78db549b401034446086af9251bfde8c126",
+      "may_inform_implementation": true
+    },
+    "confirmation_materials": {
+      "path": "iteration/v2/stage3-context-sufficiency-confirmation-materials.json",
+      "sha256": "74cbc9dd4f6d5ef71a41bff5518a7b5d5c0c9aae68270fe0b88da531e9859166",
+      "identity": "0aa0a816246ba6d6c53413e230638a7c884bd46b2b255f9675d2d45f725327f6",
+      "may_inform_implementation": false,
+      "run_once_after_mechanism_frozen": true
+    },
+    "fixed_regression_materials": {
+      "path": "iteration/v2/stage3-answer-sufficiency-regression.json",
+      "sha256": "aad780072f1511271516572ffd516dd26d299d251dd1b616e62a88940e8ca82b",
+      "identity": "978ee8479844fddf8412df027648b6807fc283e65ed7fdb01e32b0c1cee3759a"
+    }
+  },
+  "coverage": {
+    "diagnosis": ["temporal-update", "authority-conflict", "cross-evidence", "structured-interference"],
+    "confirmation": ["authority-temporal", "cross-evidence", "structured-interference"],
+    "diagnosis_confirmation_and_existing_materials_fact_disjoint": true
+  },
+  "observability": {
+    "ordered_boundaries": [
+      "authority-source-and-revision",
+      "semantic-organization",
+      "search-rank-and-signals",
+      "evidence-source-depth-and-order",
+      "context-budget-and-final-order",
+      "reader-prompt-byte-identity",
+      "final-answer-verdict"
+    ],
+    "first_deviation_required_before_candidate_change": true,
+    "truth_or_expected_answer_excluded_from_product_execution": true
+  },
+  "mechanical_answer_atoms": {
+    "context-sufficiency-temporal-update": [["violet"], ["19 seconds", "19-second"], ["maren sol"]],
+    "context-sufficiency-authority-conflict": [["bay cobalt"], ["43-minute", "43 minute"], ["elia norr"]],
+    "context-sufficiency-cross-evidence": [["gate opal"], ["07:40", "7:40"], ["sora pike"], ["bren ives"]],
+    "context-sufficiency-structured-interference": [["array juniper"], ["26-millisecond", "26 millisecond"], ["filter quill"], ["dana yew"]],
+    "context-confirmation-authority-temporal": [["gallery umber"], ["44–46%", "44-46%", "44 to 46"], ["lio march"], ["february 18"]],
+    "context-confirmation-cross-evidence": [["cape iris"], ["37 meters", "37-metre", "37 metre"], ["zeta-s"], ["noor fenn"]],
+    "context-confirmation-structured-interference": [["linen stock"], ["ultramarine"], ["14-hour", "14 hour"], ["cato wynn"]]
+  },
+  "gates": {
+    "diagnosis_cases": 4,
+    "confirmation_cases": 3,
+    "fixed_regression_cases": 4,
+    "current_subject_reproduction_minimum_cases": 1,
+    "truth_claim_delivery_ratio": 1.0,
+    "final_candidate_diagnosis_accuracy": 1.0,
+    "final_candidate_confirmation_accuracy": 1.0,
+    "fixed_regression_accuracy": 1.0,
+    "reader_product_context_accuracy": 1.0,
+    "reader_oracle_context_accuracy": 1.0,
+    "maximum_read_units": 8,
+    "maximum_context_chars": 24000,
+    "maximum_affected_feedback_seconds": 600,
+    "retrieval_p95_regression_tolerance_ms": 47,
+    "formal_state_writes": 0
+  },
+  "candidate_constraints": {
+    "candidate_only": true,
+    "no_model_prompt_schema_scorer_or_threshold_change": true,
+    "no_context_read_or_persistent_state_growth": true,
+    "no_blind_or_formal_execution": true,
+    "confirmation_must_not_inform_implementation": true,
+    "same_identity_resume_zero_model_zero_product": true
+  },
+  "identity": "314c06af254abfc78e36283818db5b5d47480d16c7ee6c7b9ad72bc41452dded"
+}

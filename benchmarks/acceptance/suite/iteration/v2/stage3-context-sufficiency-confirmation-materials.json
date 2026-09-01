@@ -1,0 +1,95 @@
+{
+  "schema": "ownward.kernel-iteration-materials/v2",
+  "contains_formal_questions_answers_gold_or_content": false,
+  "cases": [
+    {
+      "case_id": "v2csc-museum-loan",
+      "coverage": "context-confirmation-authority-temporal",
+      "question_type": "knowledge-update",
+      "question_date": "2029-01-31",
+      "question": "Under the final museum loan addendum, give the gallery, humidity band, courier, and return date for vessel Pavo.",
+      "answer": "Vessel Pavo goes to Gallery Umber at 44–46% humidity with courier Lio March and returns on February 18.",
+      "answer_session_ids": ["v2csc01-s05", "v2csc01-s07"],
+      "stale_session_ids": ["v2csc01-s01", "v2csc01-s03"],
+      "distractor_session_ids": ["v2csc01-s02", "v2csc01-s04", "v2csc01-s06", "v2csc01-s08"],
+      "truth_claims": [
+        {"claim": "The final addendum assigns vessel Pavo to Gallery Umber.", "evidence_session_ids": ["v2csc01-s05"]},
+        {"claim": "The final humidity band is 44–46%.", "evidence_session_ids": ["v2csc01-s05"]},
+        {"claim": "The designated courier is Lio March.", "evidence_session_ids": ["v2csc01-s07"]},
+        {"claim": "The contractual return date is February 18.", "evidence_session_ids": ["v2csc01-s07"]}
+      ],
+      "sessions": [
+        {"session_id": "v2csc01-s01", "date": "2029-01-02", "turns": [{"role": "user", "content": "The draft loan placed vessel Pavo in Gallery Ochre at 48–50% humidity with courier Mina Holt and a February 12 return."}]},
+        {"session_id": "v2csc01-s02", "date": "2029-01-05", "turns": [{"role": "assistant", "content": "Vessel Corvus remains in Gallery Ochre at 48–50% humidity and returns February 12 with Mina Holt."}]},
+        {"session_id": "v2csc01-s03", "date": "2029-01-09", "turns": [{"role": "assistant", "content": "An unsigned addendum proposed Gallery Umber, 42–44% humidity, courier Mina Holt, and February 15."}]},
+        {"session_id": "v2csc01-s04", "date": "2029-01-12", "turns": [{"role": "user", "content": "Lio March escorts vessel Corvus to Gallery Umber on February 18 for a separate exhibit."}]},
+        {"session_id": "v2csc01-s05", "date": "2029-01-20", "turns": [{"role": "assistant", "content": "The final addendum assigns vessel Pavo to Gallery Umber. The final humidity band is 44–46%. Earlier drafts and unsigned addenda are superseded."}]},
+        {"session_id": "v2csc01-s06", "date": "2029-01-21", "turns": [{"role": "user", "content": "Gallery Ochre temporarily uses a 44–46% band during maintenance, unrelated to vessel Pavo."}]},
+        {"session_id": "v2csc01-s07", "date": "2029-01-23", "turns": [{"role": "user", "content": "The designated courier is Lio March. The contractual return date is February 18. These terms belong to vessel Pavo's final addendum."}]},
+        {"session_id": "v2csc01-s08", "date": "2029-01-25", "turns": [{"role": "assistant", "content": "A training ledger mixes Mina Holt, Lio March, February 12, February 15, and February 18 without controlling any loan."}]}
+      ]
+    },
+    {
+      "case_id": "v2csc-field-sampling",
+      "coverage": "context-confirmation-cross-evidence",
+      "question_type": "multi-session",
+      "question_date": "2029-03-31",
+      "question": "For transect T6's accepted sampling plan, state the launch site, depth, preservative, and archive owner.",
+      "answer": "Transect T6 launches from Cape Iris, samples at 37 meters, uses preservative Zeta-S, and is archived by Noor Fenn.",
+      "answer_session_ids": ["v2csc02-s03", "v2csc02-s05", "v2csc02-s07"],
+      "stale_session_ids": [],
+      "distractor_session_ids": ["v2csc02-s01", "v2csc02-s02", "v2csc02-s04", "v2csc02-s06", "v2csc02-s08"],
+      "truth_claims": [
+        {"claim": "Transect T6 launches from Cape Iris.", "evidence_session_ids": ["v2csc02-s03"]},
+        {"claim": "Transect T6 samples at 37 meters.", "evidence_session_ids": ["v2csc02-s03"]},
+        {"claim": "Transect T6 uses preservative Zeta-S.", "evidence_session_ids": ["v2csc02-s05"]},
+        {"claim": "Noor Fenn owns the archive record for T6.", "evidence_session_ids": ["v2csc02-s07"]}
+      ],
+      "sessions": [
+        {"session_id": "v2csc02-s01", "date": "2029-03-02", "turns": [{"role": "assistant", "content": "Transect T5 launches from Cape Jade and samples at 37 meters."}]},
+        {"session_id": "v2csc02-s02", "date": "2029-03-05", "turns": [{"role": "user", "content": "A practice plan puts T6 at Cape Jade and 27 meters."}]},
+        {"session_id": "v2csc02-s03", "date": "2029-03-12", "turns": [{"role": "assistant", "content": "The accepted sampling plan states that Transect T6 launches from Cape Iris. Transect T6 samples at 37 meters."}]},
+        {"session_id": "v2csc02-s04", "date": "2029-03-14", "turns": [{"role": "user", "content": "Noor Fenn samples T5 at Cape Jade using preservative Eta-R."}]},
+        {"session_id": "v2csc02-s05", "date": "2029-03-17", "turns": [{"role": "user", "content": "Transect T6 uses preservative Zeta-S. The field vial label is the controlling preservative record."}]},
+        {"session_id": "v2csc02-s06", "date": "2029-03-19", "turns": [{"role": "assistant", "content": "Preservative Zeta-S is also tested at 27 meters for T5, without changing T6."}]},
+        {"session_id": "v2csc02-s07", "date": "2029-03-22", "turns": [{"role": "assistant", "content": "Noor Fenn owns the archive record for T6. The field crew does not own the archive."}]},
+        {"session_id": "v2csc02-s08", "date": "2029-03-25", "turns": [{"role": "user", "content": "Cape Iris also hosts a 27-meter T4 sample archived by Remi Ash."}]}
+      ]
+    },
+    {
+      "case_id": "v2csc-print-workshop",
+      "coverage": "context-confirmation-structured-interference",
+      "question_type": "single-session-user",
+      "question_date": "2029-05-31",
+      "question": "From the approved print ledger, report stock, ink, drying interval, and finisher for batch W2.",
+      "answer": "Batch W2 uses linen stock, ultramarine ink, a 14-hour drying interval, and finisher Cato Wynn.",
+      "answer_session_ids": ["v2csc03-s05"],
+      "stale_session_ids": ["v2csc03-s01"],
+      "distractor_session_ids": ["v2csc03-s02", "v2csc03-s03", "v2csc03-s04", "v2csc03-s06", "v2csc03-s07", "v2csc03-s08"],
+      "truth_claims": [
+        {"claim": "W2 uses linen stock.", "evidence_session_ids": ["v2csc03-s05"]},
+        {"claim": "W2 uses ultramarine ink.", "evidence_session_ids": ["v2csc03-s05"]},
+        {"claim": "W2 has a 14-hour drying interval.", "evidence_session_ids": ["v2csc03-s05"]},
+        {"claim": "W2 has finisher Cato Wynn.", "evidence_session_ids": ["v2csc03-s05"]}
+      ],
+      "sessions": [
+        {"session_id": "v2csc03-s01", "date": "2029-05-01", "turns": [{"role": "user", "content": "The rejected W2 proof used cotton stock, carmine ink, eight hours of drying, and finisher Mira Doss."}]},
+        {"session_id": "v2csc03-s02", "date": "2029-05-04", "turns": [{"role": "assistant", "content": "W1 uses linen stock, carmine ink, fourteen hours of drying, and finisher Mira Doss."}]},
+        {"session_id": "v2csc03-s03", "date": "2029-05-07", "turns": [{"role": "user", "content": "W3 uses cotton stock, ultramarine ink, eight hours of drying, and finisher Cato Wynn."}]},
+        {"session_id": "v2csc03-s04", "date": "2029-05-09", "turns": [{"role": "assistant", "content": "A training sheet combines linen stock, ultramarine ink, eight hours, and Mira Doss for a fictitious W2."}]},
+        {"session_id": "v2csc03-s05", "date": "2029-05-18", "turns": [{"role": "user", "content": "The approved print ledger supersedes the proof. W2 uses linen stock. W2 uses ultramarine ink. W2 has a 14-hour drying interval. W2 has finisher Cato Wynn."}]},
+        {"session_id": "v2csc03-s06", "date": "2029-05-20", "turns": [{"role": "assistant", "content": "Cato Wynn finishes W1 only when Mira Doss is absent; the approved W1 row remains unchanged."}]},
+        {"session_id": "v2csc03-s07", "date": "2029-05-22", "turns": [{"role": "user", "content": "Ultramarine ink requires eight hours on cotton stock in a separate drying test."}]},
+        {"session_id": "v2csc03-s08", "date": "2029-05-24", "turns": [{"role": "assistant", "content": "The workshop comparison board lists W1, W2, and W3 with every stock, ink, interval, and finisher option."}]}
+      ]
+    }
+  ],
+  "criteria": {
+    "minimum_accuracy": 1.0,
+    "require_complete_fact_delivery": true,
+    "category_minimums": {"knowledge-update": 1.0},
+    "maximum_wall_seconds": 300,
+    "provenance": {"origin": "independent-stage3-context-sufficiency-confirmation", "stage2_calibration_reuse": false, "formal_source_access": false, "blind_gate_reuse": false, "tuning_role": "sealed-confirmation-only"}
+  },
+  "identity": "0aa0a816246ba6d6c53413e230638a7c884bd46b2b255f9675d2d45f725327f6"
+}

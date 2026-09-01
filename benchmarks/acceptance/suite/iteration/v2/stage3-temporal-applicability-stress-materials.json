@@ -1,0 +1,130 @@
+{
+  "schema": "ownward.kernel-iteration-materials/v2",
+  "contains_formal_questions_answers_gold_or_content": false,
+  "cases": [
+    {
+      "case_id": "v2tas-effective-exception-chain",
+      "coverage": "temporal-effective-exception-chain",
+      "question_type": "temporal-reasoning",
+      "question_date": "2027-09-20",
+      "question": "For the dispatch program, which path applies on September 12, September 13, and the one-day exception on September 15?",
+      "answer": "Path Amber applies September 12, Path Cobalt applies September 13, and Path Ivory applies only on September 15.",
+      "answer_session_ids": ["v2tas01-s01", "v2tas01-s04", "v2tas01-s07"],
+      "stale_session_ids": ["v2tas01-s01"],
+      "distractor_session_ids": ["v2tas01-s02", "v2tas01-s03", "v2tas01-s05", "v2tas01-s06", "v2tas01-s08", "v2tas01-s09", "v2tas01-s10"],
+      "truth_claims": [
+        {"claim": "Path Amber controls dispatch through September 12, including that day.", "evidence_session_ids": ["v2tas01-s01"]},
+        {"claim": "Path Cobalt controls dispatch beginning September 13.", "evidence_session_ids": ["v2tas01-s04"]},
+        {"claim": "Path Ivory replaces the ordinary dispatch path only on September 15.", "evidence_session_ids": ["v2tas01-s07"]}
+      ],
+      "sessions": [
+        {"session_id": "v2tas01-s01", "date": "2027-09-01", "turns": [{"role": "assistant", "content": "The signed dispatch baseline says: Path Amber controls dispatch through September 12, including that day."}]},
+        {"session_id": "v2tas01-s02", "date": "2027-09-02", "turns": [{"role": "user", "content": "Path Ivory is the standing route for the unrelated harbor cleanup program."}]},
+        {"session_id": "v2tas01-s03", "date": "2027-09-04", "turns": [{"role": "assistant", "content": "A training sheet demonstrates Path Cobalt on September 6 but explicitly has no operational effect."}]},
+        {"session_id": "v2tas01-s04", "date": "2027-09-08", "turns": [{"role": "user", "content": "The approved transition states: Path Cobalt controls dispatch beginning September 13. Publication does not shorten the Amber period."}]},
+        {"session_id": "v2tas01-s05", "date": "2027-09-09", "turns": [{"role": "assistant", "content": "Path Amber remains printed on archived dispatch forms for September 1 through September 12."}]},
+        {"session_id": "v2tas01-s06", "date": "2027-09-10", "turns": [{"role": "user", "content": "A vehicle inspection will temporarily close Path Cobalt on September 18, after the dates in question."}]},
+        {"session_id": "v2tas01-s07", "date": "2027-09-11", "turns": [{"role": "assistant", "content": "The signed one-day exception says: Path Ivory replaces the ordinary dispatch path only on September 15. Cobalt resumes after that date."}]},
+        {"session_id": "v2tas01-s08", "date": "2027-09-14", "turns": [{"role": "user", "content": "Path Ivory also serves a rehearsal on September 14, but that rehearsal is not a dispatch operation."}]},
+        {"session_id": "v2tas01-s09", "date": "2027-09-16", "turns": [{"role": "assistant", "content": "The September 15 exception report was filed on September 16 and confirms the exception ended that night."}]},
+        {"session_id": "v2tas01-s10", "date": "2027-09-17", "turns": [{"role": "user", "content": "A proposed October route would use Path Amber again, but it has not been approved."}]}
+      ]
+    },
+    {
+      "case_id": "v2tas-retroactive-and-prospective",
+      "coverage": "temporal-retroactive-and-prospective",
+      "question_type": "temporal-reasoning",
+      "question_date": "2027-10-20",
+      "question": "After all valid notices, which intake bay governs the October 3 shipment and which bay governs shipments from October 12 onward?",
+      "answer": "Bay Rowan governs the October 3 shipment, and Bay Cedar governs shipments from October 12 onward.",
+      "answer_session_ids": ["v2tas02-s01", "v2tas02-s05", "v2tas02-s08"],
+      "stale_session_ids": ["v2tas02-s01"],
+      "distractor_session_ids": ["v2tas02-s02", "v2tas02-s03", "v2tas02-s04", "v2tas02-s06", "v2tas02-s07", "v2tas02-s09", "v2tas02-s10"],
+      "truth_claims": [
+        {"claim": "The original October 3 intake record assigned the shipment to Bay Linden.", "evidence_session_ids": ["v2tas02-s01"]},
+        {"claim": "The signed correction retroactively replaces Bay Linden with Bay Rowan for the October 3 shipment.", "evidence_session_ids": ["v2tas02-s05"]},
+        {"claim": "Bay Cedar governs intake beginning October 12 and has no retroactive effect.", "evidence_session_ids": ["v2tas02-s08"]}
+      ],
+      "sessions": [
+        {"session_id": "v2tas02-s01", "date": "2027-10-03", "turns": [{"role": "user", "content": "The original October 3 intake record assigned the shipment to Bay Linden."}]},
+        {"session_id": "v2tas02-s02", "date": "2027-10-04", "turns": [{"role": "assistant", "content": "Bay Rowan received a different calibration crate on October 4."}]},
+        {"session_id": "v2tas02-s03", "date": "2027-10-05", "turns": [{"role": "user", "content": "A draft proposed Bay Cedar for all October shipments, but the draft was rejected."}]},
+        {"session_id": "v2tas02-s04", "date": "2027-10-06", "turns": [{"role": "assistant", "content": "Bay Linden remains available for parcel returns unrelated to intake shipments."}]},
+        {"session_id": "v2tas02-s05", "date": "2027-10-08", "turns": [{"role": "assistant", "content": "The signed correction retroactively replaces Bay Linden with Bay Rowan for the October 3 shipment. Filing on October 8 does not make Rowan prospective."}]},
+        {"session_id": "v2tas02-s06", "date": "2027-10-09", "turns": [{"role": "user", "content": "Bay Rowan hosts a safety inspection on October 9, separate from the corrected shipment record."}]},
+        {"session_id": "v2tas02-s07", "date": "2027-10-10", "turns": [{"role": "assistant", "content": "A training intake at Bay Cedar on October 10 does not activate the future policy."}]},
+        {"session_id": "v2tas02-s08", "date": "2027-10-11", "turns": [{"role": "user", "content": "The approved future notice states: Bay Cedar governs intake beginning October 12 and has no retroactive effect."}]},
+        {"session_id": "v2tas02-s09", "date": "2027-10-13", "turns": [{"role": "assistant", "content": "Bay Linden is being repainted after it ceased governing intake."}]},
+        {"session_id": "v2tas02-s10", "date": "2027-10-14", "turns": [{"role": "user", "content": "Bay Rowan continues to store the October 3 paperwork; storage location does not define current intake policy."}]}
+      ]
+    },
+    {
+      "case_id": "v2tas-scoped-overlapping-rules",
+      "coverage": "temporal-scoped-overlapping-rules",
+      "question_type": "temporal-reasoning",
+      "question_date": "2027-11-20",
+      "question": "Which inspection interval applies to Team Delta on November 9, to Team Echo on November 9, and to Team Delta on November 12?",
+      "answer": "Team Delta uses 14 hours on November 9, Team Echo uses 24 hours on November 9, and Team Delta uses 18 hours on November 12.",
+      "answer_session_ids": ["v2tas03-s01", "v2tas03-s04", "v2tas03-s07"],
+      "stale_session_ids": ["v2tas03-s01"],
+      "distractor_session_ids": ["v2tas03-s02", "v2tas03-s03", "v2tas03-s05", "v2tas03-s06", "v2tas03-s08", "v2tas03-s09", "v2tas03-s10"],
+      "truth_claims": [
+        {"claim": "The general inspection interval is 24 hours through November 10.", "evidence_session_ids": ["v2tas03-s01"]},
+        {"claim": "Team Delta alone uses a 14-hour interval on November 8 through November 10.", "evidence_session_ids": ["v2tas03-s04"]},
+        {"claim": "An 18-hour general interval begins November 11.", "evidence_session_ids": ["v2tas03-s07"]}
+      ],
+      "sessions": [
+        {"session_id": "v2tas03-s01", "date": "2027-11-01", "turns": [{"role": "assistant", "content": "The general inspection interval is 24 hours through November 10. It applies to all teams absent a scoped exception."}]},
+        {"session_id": "v2tas03-s02", "date": "2027-11-02", "turns": [{"role": "user", "content": "Team Echo tested an 18-hour interval on one device, but the test was not policy."}]},
+        {"session_id": "v2tas03-s03", "date": "2027-11-03", "turns": [{"role": "assistant", "content": "A draft would have given Team Delta a 12-hour interval for the entire month; it was rejected."}]},
+        {"session_id": "v2tas03-s04", "date": "2027-11-06", "turns": [{"role": "user", "content": "The approved scoped exception states: Team Delta alone uses a 14-hour interval on November 8 through November 10. Other teams keep the general interval."}]},
+        {"session_id": "v2tas03-s05", "date": "2027-11-07", "turns": [{"role": "assistant", "content": "Team Delta also uses a 14-hour battery charging cycle, which is separate from inspection."}]},
+        {"session_id": "v2tas03-s06", "date": "2027-11-08", "turns": [{"role": "user", "content": "Team Echo begins a three-day inventory count on November 8; inspection policy is unchanged."}]},
+        {"session_id": "v2tas03-s07", "date": "2027-11-09", "turns": [{"role": "assistant", "content": "The signed transition says: An 18-hour general interval begins November 11. The Delta exception ends before this general transition."}]},
+        {"session_id": "v2tas03-s08", "date": "2027-11-10", "turns": [{"role": "user", "content": "A 24-hour archive label remains on reports created under the old rule."}]},
+        {"session_id": "v2tas03-s09", "date": "2027-11-12", "turns": [{"role": "assistant", "content": "Team Delta completed an inspection under the new general interval on November 12."}]},
+        {"session_id": "v2tas03-s10", "date": "2027-11-13", "turns": [{"role": "user", "content": "Team Echo schedules an unrelated 14-hour maintenance window."}]}
+      ]
+    },
+    {
+      "case_id": "v2tas-event-time-correction-order",
+      "coverage": "temporal-event-time-correction-order",
+      "question_type": "temporal-reasoning",
+      "question_date": "2027-12-20",
+      "question": "After the corrected event record, which occurred first, the coral survey or the mooring repair, and by how many days?",
+      "answer": "The mooring repair occurred first, two days before the corrected coral survey date.",
+      "answer_session_ids": ["v2tas04-s02", "v2tas04-s07"],
+      "stale_session_ids": ["v2tas04-s01"],
+      "distractor_session_ids": ["v2tas04-s01", "v2tas04-s03", "v2tas04-s04", "v2tas04-s05", "v2tas04-s06", "v2tas04-s08", "v2tas04-s09", "v2tas04-s10"],
+      "truth_claims": [
+        {"claim": "The mooring repair occurred on December 7.", "evidence_session_ids": ["v2tas04-s02"]},
+        {"claim": "The signed correction establishes that the coral survey occurred on December 9, not December 5.", "evidence_session_ids": ["v2tas04-s07"]}
+      ],
+      "sessions": [
+        {"session_id": "v2tas04-s01", "date": "2027-12-06", "turns": [{"role": "user", "content": "The preliminary survey note listed the coral survey as December 5; that date was later found to be a transcription error."}]},
+        {"session_id": "v2tas04-s02", "date": "2027-12-08", "turns": [{"role": "assistant", "content": "The mooring repair occurred on December 7. Its report was filed the next day."}]},
+        {"session_id": "v2tas04-s03", "date": "2027-12-09", "turns": [{"role": "user", "content": "A buoy inspection occurred on December 4, but it was not the mooring repair."}]},
+        {"session_id": "v2tas04-s04", "date": "2027-12-10", "turns": [{"role": "assistant", "content": "A coral camera calibration occurred on December 6; it was not the survey."}]},
+        {"session_id": "v2tas04-s05", "date": "2027-12-11", "turns": [{"role": "user", "content": "The repair invoice was approved on December 11, which is not the repair date."}]},
+        {"session_id": "v2tas04-s06", "date": "2027-12-12", "turns": [{"role": "assistant", "content": "A draft chronology copied the preliminary December 5 survey date without checking the vessel log."}]},
+        {"session_id": "v2tas04-s07", "date": "2027-12-14", "turns": [{"role": "user", "content": "The signed correction establishes that the coral survey occurred on December 9, not December 5. The vessel log controls event time."}]},
+        {"session_id": "v2tas04-s08", "date": "2027-12-15", "turns": [{"role": "assistant", "content": "The coral samples entered storage on December 10, after the corrected survey date."}]},
+        {"session_id": "v2tas04-s09", "date": "2027-12-16", "turns": [{"role": "user", "content": "The repaired mooring was inspected on December 12; inspection is not repair."}]},
+        {"session_id": "v2tas04-s10", "date": "2027-12-17", "turns": [{"role": "assistant", "content": "An unrelated reef survey was scheduled for December 18."}]}
+      ]
+    }
+  ],
+  "criteria": {
+    "minimum_accuracy": 1.0,
+    "require_complete_fact_delivery": true,
+    "category_minimums": {"temporal-reasoning": 1.0},
+    "maximum_wall_seconds": 600,
+    "provenance": {
+      "origin": "independent-stage3-temporal-applicability-stress-handcrafted",
+      "stage2_calibration_reuse": false,
+      "formal_source_access": false,
+      "blind_gate_reuse": false
+    }
+  },
+  "identity": "88a95ddda50dc94d7cb78653b4ab06bf90c406b17147e28084d16b7c0a8cf6db"
+}

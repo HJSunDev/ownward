@@ -1,0 +1,124 @@
+{
+  "schema": "ownward.kernel-iteration-materials/v2",
+  "contains_formal_questions_answers_gold_or_content": false,
+  "cases": [
+    {
+      "case_id": "v2ta-future-effective-boundary",
+      "coverage": "temporal-future-effective-boundary",
+      "question_type": "temporal-reasoning",
+      "question_date": "2027-01-20",
+      "question": "Which loading route applies on January 25, and when does the announced replacement begin?",
+      "answer": "Route Jade applies on January 25; Route Quartz begins on February 1.",
+      "answer_session_ids": ["v2ta01-s01", "v2ta01-s03"],
+      "stale_session_ids": [],
+      "distractor_session_ids": ["v2ta01-s02", "v2ta01-s04"],
+      "truth_claims": [
+        {"claim": "Route Jade remains the controlling loading route through January 31.", "evidence_session_ids": ["v2ta01-s01"]},
+        {"claim": "Route Quartz becomes controlling on February 1.", "evidence_session_ids": ["v2ta01-s03"]}
+      ],
+      "sessions": [
+        {"session_id": "v2ta01-s01", "date": "2027-01-04", "turns": [{"role": "assistant", "content": "The signed winter routing notice states: Route Jade remains the controlling loading route through January 31. Its loading window is unchanged."}]},
+        {"session_id": "v2ta01-s02", "date": "2027-01-08", "turns": [{"role": "user", "content": "Route Quartz was used for a one-day emergency drill on January 8; the drill did not change the standing route."}]},
+        {"session_id": "v2ta01-s03", "date": "2027-01-16", "turns": [{"role": "user", "content": "The approved future-effective notice says: Route Quartz becomes controlling on February 1. Publication of this notice does not shorten the January Jade period."}]},
+        {"session_id": "v2ta01-s04", "date": "2027-01-18", "turns": [{"role": "assistant", "content": "A maintenance crew will inspect Route Jade on February 3, after it stops being the controlling loading route."}]}
+      ]
+    },
+    {
+      "case_id": "v2ta-retrospective-correction",
+      "coverage": "temporal-retrospective-correction",
+      "question_type": "temporal-reasoning",
+      "question_date": "2027-03-18",
+      "question": "After the correction, which intake gate is authoritative for the March 5 shipment, and which earlier entry was replaced?",
+      "answer": "Gate F is authoritative for the March 5 shipment; it replaces the earlier Gate C entry.",
+      "answer_session_ids": ["v2ta02-s01", "v2ta02-s03"],
+      "stale_session_ids": ["v2ta02-s01"],
+      "distractor_session_ids": ["v2ta02-s02", "v2ta02-s04"],
+      "truth_claims": [
+        {"claim": "The original March 5 intake entry named Gate C.", "evidence_session_ids": ["v2ta02-s01"]},
+        {"claim": "The signed correction replaces the March 5 Gate C entry with Gate F, effective for that shipment itself.", "evidence_session_ids": ["v2ta02-s03"]}
+      ],
+      "sessions": [
+        {"session_id": "v2ta02-s01", "date": "2027-03-05", "turns": [{"role": "user", "content": "The original March 5 intake entry named Gate C. It was copied from the first receiving sheet."}]},
+        {"session_id": "v2ta02-s02", "date": "2027-03-09", "turns": [{"role": "assistant", "content": "Gate F handled a different seed delivery on March 9; that delivery is not the March 5 shipment."}]},
+        {"session_id": "v2ta02-s03", "date": "2027-03-12", "turns": [{"role": "assistant", "content": "The signed correction replaces the March 5 Gate C entry with Gate F, effective for that shipment itself. This is a retrospective correction, not a new route beginning March 12."}]},
+        {"session_id": "v2ta02-s04", "date": "2027-03-14", "turns": [{"role": "user", "content": "Gate C remains open for ordinary parcel returns and that separate duty is unchanged."}]}
+      ]
+    },
+    {
+      "case_id": "v2ta-adjacent-validity-intervals",
+      "coverage": "temporal-adjacent-validity-intervals",
+      "question_type": "temporal-reasoning",
+      "question_date": "2027-04-20",
+      "question": "Which badge policy applies on April 14 and which applies on April 15?",
+      "answer": "Policy Alder applies on April 14, and Policy Birch applies on April 15.",
+      "answer_session_ids": ["v2ta03-s01", "v2ta03-s03"],
+      "stale_session_ids": [],
+      "distractor_session_ids": ["v2ta03-s02", "v2ta03-s04"],
+      "truth_claims": [
+        {"claim": "Policy Alder remains valid through April 14, including that day.", "evidence_session_ids": ["v2ta03-s01"]},
+        {"claim": "Policy Birch applies beginning April 15.", "evidence_session_ids": ["v2ta03-s03"]}
+      ],
+      "sessions": [
+        {"session_id": "v2ta03-s01", "date": "2027-04-02", "turns": [{"role": "assistant", "content": "The access ledger states: Policy Alder remains valid through April 14, including that day. It uses the blue visitor badge."}]},
+        {"session_id": "v2ta03-s02", "date": "2027-04-05", "turns": [{"role": "user", "content": "A Birch badge sample was printed on April 5 for training, but the sample did not activate the policy."}]},
+        {"session_id": "v2ta03-s03", "date": "2027-04-10", "turns": [{"role": "user", "content": "The transition notice states: Policy Birch applies beginning April 15. It uses the green visitor badge."}]},
+        {"session_id": "v2ta03-s04", "date": "2027-04-16", "turns": [{"role": "assistant", "content": "Policy Alder remains the label on archived April 14 records, but it does not govern visits after the transition."}]}
+      ]
+    },
+    {
+      "case_id": "v2ta-event-time-not-record-time",
+      "coverage": "temporal-event-time-versus-record-time",
+      "question_type": "temporal-reasoning",
+      "question_date": "2027-06-30",
+      "question": "Which happened first, the reef scan or the buoy repair, and by how many days?",
+      "answer": "The reef scan happened first, four days before the buoy repair.",
+      "answer_session_ids": ["v2ta04-s01", "v2ta04-s03"],
+      "stale_session_ids": [],
+      "distractor_session_ids": ["v2ta04-s02", "v2ta04-s04"],
+      "truth_claims": [
+        {"claim": "The late-filed scan report records that the reef scan occurred on June 6.", "evidence_session_ids": ["v2ta04-s03"]},
+        {"claim": "The buoy repair occurred on June 10.", "evidence_session_ids": ["v2ta04-s01"]}
+      ],
+      "sessions": [
+        {"session_id": "v2ta04-s01", "date": "2027-06-11", "turns": [{"role": "assistant", "content": "The buoy repair occurred on June 10. The repair log was filed the following morning."}]},
+        {"session_id": "v2ta04-s02", "date": "2027-06-12", "turns": [{"role": "user", "content": "A reef camera battery was replaced on June 12; that was not the reef scan."}]},
+        {"session_id": "v2ta04-s03", "date": "2027-06-18", "turns": [{"role": "user", "content": "The late-filed scan report records that the reef scan occurred on June 6. Filing was delayed and does not change the event date."}]},
+        {"session_id": "v2ta04-s04", "date": "2027-06-19", "turns": [{"role": "assistant", "content": "The buoy inspection occurred on June 5, but it was not the repair."}]}
+      ]
+    },
+    {
+      "case_id": "v2ta-as-of-supersession",
+      "coverage": "temporal-as-of-supersession",
+      "question_type": "temporal-reasoning",
+      "question_date": "2027-08-20",
+      "question": "What was the active sampling interval on August 9, and what interval applies from August 10 onward?",
+      "answer": "The active interval on August 9 was 30 minutes; from August 10 onward it is 18 minutes.",
+      "answer_session_ids": ["v2ta05-s01", "v2ta05-s03"],
+      "stale_session_ids": ["v2ta05-s01"],
+      "distractor_session_ids": ["v2ta05-s02", "v2ta05-s04"],
+      "truth_claims": [
+        {"claim": "The 30-minute interval remains active through August 9.", "evidence_session_ids": ["v2ta05-s01"]},
+        {"claim": "The 18-minute interval supersedes it starting August 10.", "evidence_session_ids": ["v2ta05-s03"]}
+      ],
+      "sessions": [
+        {"session_id": "v2ta05-s01", "date": "2027-08-01", "turns": [{"role": "user", "content": "The monitoring schedule states: The 30-minute interval remains active through August 9. Earlier drafts used 45 minutes."}]},
+        {"session_id": "v2ta05-s02", "date": "2027-08-04", "turns": [{"role": "assistant", "content": "An 18-minute bench trial ran on August 4, but it did not alter the active monitoring interval."}]},
+        {"session_id": "v2ta05-s03", "date": "2027-08-08", "turns": [{"role": "assistant", "content": "The approved schedule revision says: The 18-minute interval supersedes it starting August 10. The revision has no retroactive effect."}]},
+        {"session_id": "v2ta05-s04", "date": "2027-08-12", "turns": [{"role": "user", "content": "A separate calibration continues to use 30-minute blocks after August 10; it is not the monitoring schedule."}]}
+      ]
+    }
+  ],
+  "criteria": {
+    "minimum_accuracy": 1.0,
+    "require_complete_fact_delivery": true,
+    "category_minimums": {"temporal-reasoning": 1.0},
+    "maximum_wall_seconds": 600,
+    "provenance": {
+      "origin": "independent-stage3-temporal-applicability-handcrafted",
+      "stage2_calibration_reuse": false,
+      "formal_source_access": false,
+      "blind_gate_reuse": false
+    }
+  },
+  "identity": "7507f704f3a5a7cfb63e65d6d5537f935af41f073c789eeeb635f76e13c239b0"
+}

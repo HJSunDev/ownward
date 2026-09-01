@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import time
 from typing import Any, Callable
 
 import kernel_iteration_evidence as evidence
@@ -54,6 +55,7 @@ def run_local_replacement(
     by_id = {case_id: item for item in work for case_id in [item[2]]}
     final_admission: dict[str, Any] | None = None
     for round_index in range(next_round, maximum_rounds + 1):
+        round_started = time.perf_counter()
         selected = [by_id[case_id] for case_id in expected_ids if case_id in set(pending)]
         _require(bool(selected), "材料局部替换没有待生成项")
         generated, round_scheduler = generate(selected, round_index)
@@ -82,6 +84,7 @@ def run_local_replacement(
             "failure_aggregate": admission.get("failure_aggregate"),
             "material_identity": evidence.canonical_sha256(ordered),
             "rejected_case_set_identity": evidence.canonical_sha256(sorted(rejected_ids)),
+            "wall_seconds": time.perf_counter() - round_started,
         }
         rounds.append(receipt)
         final_admission = admission

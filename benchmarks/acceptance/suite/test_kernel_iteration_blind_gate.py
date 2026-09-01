@@ -23,9 +23,9 @@ class BlindGateTests(unittest.TestCase):
                 self.assertEqual(value["execution"]["order"], ["v2-candidate", "v0-baseline"])
                 self.assertEqual(value["execution"]["generation_max_active"], 8 if level == 50 else 4)
                 self.assertEqual(value["execution"]["generation_worker_active_turns_maximum"], 1)
-                if level == 50:
-                    self.assertEqual(value["execution"]["rejection_replacement"], "rejected-cases-only")
-                    self.assertTrue(value["execution"]["full_set_readmission_after_replacement"])
+                self.assertEqual(value["execution"]["rejection_replacement"], "rejected-cases-only")
+                self.assertTrue(value["execution"]["full_set_readmission_after_replacement"])
+                self.assertEqual(value["execution"]["maximum_replacement_rounds"], 3)
                 self.assertEqual(value["absolute_gate"]["questions"], level)
                 self.assertEqual(value["absolute_gate"]["final_answer_accuracy_minimum"], 1.0)
                 self.assertEqual(value["absolute_gate"]["level_total_wall_seconds_maximum"], gate.LEVEL_BUDGETS[level])
@@ -47,7 +47,8 @@ class BlindGateTests(unittest.TestCase):
     def test_post_candidate_evaluator_exception_is_fail_closed_and_durable(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             fixture = self._fixture(Path(directory), candidate_pass=False)
-            with mock.patch.object(gate, "_attribute_first_answer_failure", side_effect=ModuleNotFoundError("fixture dependency")):
+            with mock.patch.object(gate, "_independent_absolute_failures", return_value=[]), \
+                    mock.patch.object(gate, "_attribute_first_answer_failure", side_effect=ModuleNotFoundError("fixture dependency")):
                 reference = fixture.run()
             self.assertEqual(reference["status"], "evaluation-process-error")
             self.assertIsNone(reference["candidate_decision"])
@@ -83,7 +84,8 @@ class BlindGateTests(unittest.TestCase):
                 "reason": "oracle-context-failed-or-mechanically-unstable",
                 "first_answer_failure_remains_failure": True,
             }
-            with mock.patch.object(gate, "_attribute_first_answer_failure", return_value=attribution):
+            with mock.patch.object(gate, "_independent_absolute_failures", return_value=[]), \
+                    mock.patch.object(gate, "_attribute_first_answer_failure", return_value=attribution):
                 reference = fixture.run()
             terminal = json.loads(Path(reference["result"]).read_text(encoding="utf-8"))
             self.assertEqual(reference["status"], "evaluation-process-error")
@@ -166,7 +168,7 @@ class BlindGateTests(unittest.TestCase):
             captured: list[list[str]] = []
             diagnostic = {
                 "reader": {
-                    "settings": {"model": "gpt-5.6-terra", "reasoning_effort": "high"},
+                    "settings": {"model": "gpt-5.6-terra", "reasoning_effort": "xhigh"},
                     "records": [
                         {"context": "product", "observations": 3, "correct": 0},
                         {"context": "oracle", "observations": 3, "correct": 3},
@@ -188,7 +190,7 @@ class BlindGateTests(unittest.TestCase):
             def diagnose(_suite: Path, _stage: Path, _runtime: dict[str, object], materials: dict[str, object], _run: Path, **kwargs: object) -> dict[str, object]:
                 captured.append([str(item["case_id"]) for item in materials["cases"]])
                 self.assertEqual(kwargs["reader_settings"]["model"], "gpt-5.6-terra")
-                self.assertEqual(kwargs["reader_settings"]["reasoning_effort"], "high")
+                self.assertEqual(kwargs["reader_settings"]["reasoning_effort"], "xhigh")
                 return diagnostic
 
             execution = {"run_root": str(run_root), "observation": {
@@ -204,7 +206,7 @@ class BlindGateTests(unittest.TestCase):
             self.assertEqual(captured, [["second"]])
             self.assertEqual(result["selection"]["diagnosed_questions"], 1)
             self.assertEqual(result["diagnostic_reader"]["model"], "gpt-5.6-terra")
-            self.assertEqual(result["diagnostic_reader"]["reasoning_effort"], "high")
+            self.assertEqual(result["diagnostic_reader"]["reasoning_effort"], "xhigh")
 
     def test_invalid_evaluator_qualification_fails_before_material_or_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -216,17 +218,19 @@ class BlindGateTests(unittest.TestCase):
             self.assertEqual(fixture.execution_order, [])
             self.assertEqual(fixture.state_path.read_bytes(), fixture.state_bytes)
 
-    def test_admission_rejection_regenerates_then_runs_candidate_before_v0(self) -> None:
+    def test_admission_rejection_replaces_only_rejected_then_runs_candidate_before_v0(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            fixture = self._fixture(Path(directory), first_admission_rejected=True)
+            fixture = self._fixture(Path(directory), first_rejected_case_only=True)
             result = fixture.run()
             self.assertEqual(result["status"], "passed")
             self.assertTrue(result["candidate_decision"])
             self.assertEqual(fixture.execution_order, ["candidate", "baseline", "candidate", "baseline"])
             terminal = json.loads(Path(result["result"]).read_text(encoding="utf-8"))
             self.assertEqual(terminal["admitted_attempt"], 2)
-            self.assertEqual(len(terminal["rejected_batches"]), 1)
-            aggregate = terminal["rejected_batches"][0]["failure_aggregate"]
+            self.assertEqual(terminal["rejected_batches"], [])
+            self.assertEqual([item["generated_count"] for item in terminal["replacement_rounds"]], [5, 1])
+            self.assertEqual([item["full_admission_questions"] for item in terminal["replacement_rounds"]], [5, 5])
+            aggregate = terminal["replacement_rounds"][0]["failure_aggregate"]
             self.assertEqual(set(aggregate), {
                 "rejected_by_coverage", "failed_by_check",
                 "failed_by_coverage_and_check", "failed_check_combinations",
@@ -234,7 +238,7 @@ class BlindGateTests(unittest.TestCase):
             self.assertNotIn("g01-c", json.dumps(aggregate, ensure_ascii=False))
             self.assertEqual(terminal["next_level"], 15)
             self.assertTrue(terminal["cost_and_recovery"]["admission_rejection_not_candidate_failure"])
-            self.assertGreater(terminal["cost_and_recovery"]["admission_rejection_wall_seconds"], 0.0)
+            self.assertGreaterEqual(terminal["cost_and_recovery"]["admission_rejection_wall_seconds"], 0.0)
             self.assertFalse(self._contains_forbidden_raw_field(terminal))
             self.assertFalse(any(fixture.scratch_root.iterdir()))
 
@@ -246,7 +250,9 @@ class BlindGateTests(unittest.TestCase):
             self.assertIsNone(result["candidate_decision"])
             self.assertEqual(fixture.execution_order, [])
             terminal = json.loads(Path(result["result"]).read_text(encoding="utf-8"))
-            self.assertEqual([item["attempt"] for item in terminal["rejected_batches"]], [1, 2, 3])
+            self.assertEqual(terminal["rejected_batches"], [])
+            self.assertEqual([item["round"] for item in terminal["replacement_rounds"]], [1, 2, 3])
+            self.assertTrue(all(item["full_admission_questions"] == 5 for item in terminal["replacement_rounds"]))
             self.assertEqual(terminal["admitted_attempt"], 0)
             self.assertIsNone(terminal["executions"]["candidate"])
             self.assertIsNone(terminal["executions"]["v0"])
@@ -305,20 +311,110 @@ class BlindGateTests(unittest.TestCase):
             self.assertEqual(maximum, 4)
             self.assertEqual(scheduler["submitted"], 15)
 
-    def test_fifty_question_gate_replaces_only_rejected_case_and_readmits_full_set(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            fixture = self._fixture(Path(directory), level=50, first_rejected_case_only=True)
-            result = fixture.run()
-            self.assertTrue(result["passed"])
-            terminal = json.loads(Path(result["result"]).read_text(encoding="utf-8"))
-            rounds = terminal["replacement_rounds"]
-            self.assertEqual([item["generated_count"] for item in rounds], [50, 1])
-            self.assertEqual([item["preserved_count"] for item in rounds], [0, 49])
-            self.assertEqual([item["full_admission_questions"] for item in rounds], [50, 50])
-            self.assertEqual(fixture.generated_case_ids.count("g01-c01"), 2)
-            self.assertEqual(fixture.generated_case_ids.count("g01-c02"), 1)
-            self.assertEqual(fixture.generator_calls, 51)
-            self.assertEqual(fixture.admission_calls, 2)
+    def test_all_levels_replace_only_rejected_case_and_readmit_full_set(self) -> None:
+        for level in gate.GATE_LEVELS:
+            with self.subTest(level=level), tempfile.TemporaryDirectory() as directory:
+                fixture = self._fixture(Path(directory), level=level, first_rejected_case_only=True)
+                result = fixture.run()
+                self.assertTrue(result["passed"])
+                terminal = json.loads(Path(result["result"]).read_text(encoding="utf-8"))
+                rounds = terminal["replacement_rounds"]
+                self.assertEqual([item["generated_count"] for item in rounds], [level, 1])
+                self.assertEqual([item["preserved_count"] for item in rounds], [0, level - 1])
+                self.assertEqual([item["full_admission_questions"] for item in rounds], [level, level])
+                self.assertEqual(fixture.generated_case_ids.count("g01-c01"), 2)
+                self.assertEqual(fixture.generated_case_ids.count("g01-c02"), 1)
+                self.assertEqual(fixture.generator_calls, level + 1)
+                self.assertEqual(fixture.admission_calls, 2)
+
+    def test_attribution_failure_cannot_mask_independent_retrieval_failure(self) -> None:
+        absolute = {"passed": False, "failures": [
+            {"metric": "final_answer_accuracy", "actual": 14 / 15, "required": 1.0},
+            {"metric": "retrieval_p95_ms", "actual": 1000.0, "required": 553.0},
+        ]}
+        self.assertEqual(gate._independent_absolute_failures(absolute), [
+            {"metric": "retrieval_p95_ms", "actual": 1000.0, "required": 553.0},
+        ])
+
+    def test_small_sample_p95_outlier_requires_bounded_sufficient_confirmation(self) -> None:
+        pending = gate._adjudicate_retrieval_p95(samples=15, actual=1000.0, maximum=553.0)
+        self.assertEqual(pending["status"], "bounded-confirmation-required")
+        self.assertFalse(pending["candidate_failure"])
+        confirmed = gate._adjudicate_retrieval_p95(
+            samples=15,
+            actual=1000.0,
+            maximum=553.0,
+            confirmation={"samples": 60, "p95_ms": 533.5329, "direct_dependencies_match": True},
+        )
+        self.assertEqual(confirmed["status"], "confirmed-environment-outlier")
+        self.assertTrue(confirmed["passed"])
+        repeated = gate._adjudicate_retrieval_p95(samples=20, actual=600.0, maximum=553.0)
+        self.assertEqual(repeated["status"], "sufficient-distribution-failure")
+        self.assertTrue(repeated["candidate_failure"])
+        hard = gate._adjudicate_retrieval_p95(
+            samples=1, actual=1.0, maximum=553.0, hard_timeout_or_execution_error=True,
+        )
+        self.assertEqual(hard["status"], "hard-failure")
+        self.assertTrue(hard["candidate_failure"])
+
+    def test_current_fifteen_adjudication_preserves_source_and_uses_sufficient_distribution(self) -> None:
+        path = self.suite_root / "iteration" / "v2" / "stage6-candidate-decision-adjudication.json"
+        receipt = json.loads(path.read_text(encoding="utf-8"))
+        content = {key: value for key, value in receipt.items() if key != "identity"}
+        self.assertEqual(receipt["identity"], gate.evidence.canonical_sha256(content))
+        self.assertEqual(receipt["source_result"]["status"], "evaluation-process-error")
+        self.assertIsNone(receipt["source_result"]["candidate_decision"])
+        self.assertFalse(receipt["source_result_rewritten"])
+        decision = receipt["independent_candidate_adjudication"]
+        self.assertIsNone(decision["candidate_decision"])
+        self.assertTrue(decision["performance_passed"])
+        self.assertFalse(decision["answer_attribution_valid"])
+        self.assertEqual(decision["answer_root_cause"], "unknown")
+        self.assertEqual(decision["failures"], [])
+        audit = receipt["retrieval_root_audit"]
+        self.assertTrue(audit["measurement_semantics"]["blind_p95_is_sample_maximum"])
+        self.assertFalse(audit["measurement_semantics"]["timeout_rounding_or_sentinel"])
+        reproduction = audit["independent_nonblind_reproduction"]
+        self.assertEqual(reproduction["measured_requests"], 60)
+        self.assertLessEqual(reproduction["aggregate"]["p95_ms"], reproduction["aggregate_p95_gate_ms"])
+        self.assertEqual(reproduction["fifteen_sample_tail_gate_failures"], 2)
+        self.assertTrue(reproduction["aggregate"]["target_delivery_complete"])
+        self.assertTrue(reproduction["aggregate"]["stable_selection_trace_per_case"])
+        self.assertEqual(audit["first_provable_breakpoint"], "single-non-timeout-outlier-under-insufficient-sample")
+        self.assertEqual(audit["deeper_product_root"], "not-proven")
+        self.assertFalse(audit["candidate_change_authorized"])
+        boundary = receipt["answer_attribution_boundary_qualification"]
+        self.assertEqual(
+            [item["expected_classification"] for item in boundary["controls"]],
+            ["external-reader-random-failure", "candidate-context-failure"],
+        )
+        self.assertFalse(receipt["model_or_product_execution"])
+
+    def test_current_plan_migration_is_exact_for_contract_and_observer_changes(self) -> None:
+        migration = gate._load_evaluator_reliability_migration(self.suite_root)
+        plan_identity = "b07facf0c0727678f17dc534e5db4a4e53c8771cf54fd8e23cdc756062b504c7"
+        changes = migration["dependency_changes"]
+        planned = {
+            "controller": "d613154065d4b019a6bfc718941c5fcd91b6d7251224c9b69a5f6e0062678abc",
+            "answer-attribution-controller": changes["answer-attribution-controller"]["target"],
+            "reader-reliability-selection": changes["reader-reliability-selection"]["target"],
+            "evaluator-environment-qualification": changes["evaluator-environment-qualification"]["target"],
+            "gate-contract": migration["gate_contract_changes"]["5"]["source"],
+            "observer-and-scorer": migration["plan_dependency_changes"][plan_identity]["observer-and-scorer"]["source"],
+            "candidate-subject": "a" * 64,
+        }
+        current = {
+            **planned,
+            "controller": migration["target_controller_identity"],
+            "gate-contract": migration["gate_contract_changes"]["5"]["target"],
+            "observer-and-scorer": migration["plan_dependency_changes"][plan_identity]["observer-and-scorer"]["target"],
+        }
+        self.assertTrue(gate._dependencies_current_or_scheduling_migrated(
+            self.suite_root, plan_identity, planned, current,
+        ))
+        self.assertFalse(gate._dependencies_current_or_scheduling_migrated(
+            self.suite_root, plan_identity, planned, {**current, "observer-and-scorer": "b" * 64},
+        ))
 
     def test_level_wall_failure_is_evaluation_process_failure_not_candidate_failure(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -379,8 +475,21 @@ class BlindGateTests(unittest.TestCase):
 
         stable_context_failure = gate._classify_answer_diagnostic(diagnostic((0, 3), (3, 3)))
         self.assertEqual(stable_context_failure["classification"], "candidate-context-failure")
+        self.assertEqual(stable_context_failure["responsible_boundary"], "candidate-evidence-sufficiency")
         unstable_prompt = gate._classify_answer_diagnostic(diagnostic((2, 3), (3, 3)))
-        self.assertEqual(unstable_prompt["classification"], "evaluation-process-failure")
+        self.assertEqual(unstable_prompt["classification"], "external-reader-random-failure")
+        self.assertEqual(unstable_prompt["responsible_boundary"], "external-reader")
+        adjudicated = gate._adjudicate_external_reader_random_failure(
+            {
+                "passed": False,
+                "failures": [{"metric": "final_answer_accuracy", "actual": 14 / 15, "required": 1.0}],
+                "retrieval_distribution": {"status": "insufficient-sample-no-outlier"},
+            },
+            unstable_prompt,
+        )
+        self.assertTrue(adjudicated["passed"])
+        self.assertEqual(adjudicated["failures"], [])
+        self.assertFalse(adjudicated["external_reader_adjudication"]["candidate_report_rewritten"])
         unstable_oracle = gate._classify_answer_diagnostic(diagnostic((0, 3), (2, 3)))
         self.assertEqual(unstable_oracle["classification"], "evaluation-process-failure")
         judge_failure = gate._classify_answer_diagnostic(diagnostic((0, 3), (3, 3), controls=False))
@@ -456,47 +565,49 @@ class BlindGateTests(unittest.TestCase):
         self.assertEqual(history["controller_identity"], gate._implementation_identity()["controller"])
         previous = history["last_passed_gate"]
         self.assertEqual(previous["level"], 15)
-        self.assertEqual(previous["plan_identity"], "bf9d6e6efc896e67b3158ca52ce3bd796b20d68ac057a7682c8943bfef2c5b1e")
-        self.assertEqual(previous["result_identity"], "f05272eeb997e22a0aa6b7a05b8aa8642cf03cf6c780ae5184b4a7338396f5b4")
+        self.assertEqual(previous["plan_identity"], "4f65af5bb145b7643810be31c206b1ebe71c4b8e2ec5ae942873f3139d4c832d")
+        self.assertEqual(previous["result_identity"], "dfeeae6e1fda16772adabe562b3b0ac4f58b10223208ac697c5a2a7f3033f064")
         self.assertTrue(previous["passed"])
         self.assertEqual(previous["next_level"], 25)
         self.assertTrue(previous["raw_materials_destroyed"])
         self.assertTrue(previous["valid_for_current_controller"])
         current = history["current"]
         self.assertEqual(current["level"], 25)
-        self.assertEqual(current["plan_identity"], "c9b4b1891e2131ac70128dbe62f3b2a454061b930386066435fe9d3acee0c5a1")
-        self.assertEqual(current["result_identity"], "d7071af7190c84310b66d3ebfa72c37ab00209c49aa7e35557dd323cbe5129dc")
-        self.assertEqual(current["result_sha256"], "c6d1055ed9725340db4d9a6fc48e18c94ea6b7aed9c9f8b3672beda91afbf294")
-        self.assertEqual(current["status"], "evaluation-process-rejected")
-        self.assertTrue(current["candidate_decision"])
-        self.assertTrue(current["candidate_absolute_passed"])
-        self.assertTrue(current["candidate_relative_v0_passed"])
-        self.assertFalse(current["candidate_failed"])
+        self.assertEqual(current["plan_identity"], "c204269dfbeb47ab7932466834df4b71531f807fe0b485d9a5953a6f70a5fe91")
+        self.assertEqual(current["result_identity"], "fb212b7836e435fe87f5405c109b0ed3e267b0333f4b158b95454d083be039ef")
+        self.assertEqual(current["result_sha256"], "91781ece338efaa76ae2af60c02db54d35c2bf2a5eb0c48cd0c0e43aacbba2ec")
+        self.assertEqual(current["status"], "candidate-rejected")
+        self.assertFalse(current["candidate_decision"])
+        self.assertFalse(current["candidate_absolute_passed"])
+        self.assertIsNone(current["candidate_relative_v0_passed"])
+        self.assertTrue(current["candidate_failed"])
         self.assertTrue(current["evaluation_process_failed"])
-        self.assertTrue(current["evaluation_process_requalified_without_candidate_rerun"])
-        self.assertEqual(current["admitted_attempt"], 3)
-        self.assertEqual(current["rejected_batches"], 2)
-        self.assertEqual(current["generation_calls"], 75)
-        self.assertEqual(current["quality_admission_calls"], 3)
+        self.assertEqual(current["admitted_attempt"], 1)
+        self.assertEqual(current["rejected_batches"], 0)
+        self.assertEqual(current["generation_calls"], 25)
+        self.assertEqual(current["quality_admission_calls"], 1)
         self.assertEqual(current["retries"], 0)
         self.assertEqual(current["rate_limit_events"], 0)
         self.assertEqual(current["interruptions"], 0)
         self.assertEqual(current["generation_max_active_observed"], 4)
-        self.assertGreater(current["candidate_decision_wall_seconds"], current["level_budget_seconds"])
-        self.assertFalse(current["level_budget_passed"])
         self.assertTrue(current["candidate_executed"])
-        self.assertTrue(current["v0_executed"])
+        self.assertFalse(current["v0_executed"])
         self.assertTrue(current["raw_materials_destroyed"])
         self.assertFalse(current["contains_reversible_question_answer_or_evidence"])
         self.assertTrue(current["same_blind_content_rerun_forbidden"])
         self.assertTrue(current["valid_for_current_controller"])
-        self.assertEqual(current["candidate_final_answer_accuracy"], 1.0)
-        self.assertEqual(current["baseline_final_answer_accuracy"], 0.96)
+        self.assertEqual(current["candidate_final_answer_accuracy"], 0.96)
         self.assertTrue(current["candidate_fact_delivery_complete"])
-        self.assertTrue(current["baseline_fact_delivery_complete"])
+        self.assertEqual(current["candidate_temporal_correctness"], 0.8)
+        self.assertEqual(current["candidate_conflict_correctness"], 1.0)
+        self.assertEqual(current["first_observed_gap"], "evidence_read_answer_incorrect")
+        self.assertEqual(current["attribution_classification"], "evaluation-process-failure")
+        self.assertEqual(current["attribution_product_failures"], 3)
+        self.assertEqual(current["attribution_oracle_failures"], 3)
+        self.assertTrue(current["attribution_judge_controls_passed"])
+        self.assertEqual(current["independent_candidate_failure"]["metric"], "temporal_correctness")
         self.assertEqual(current["resume_model_calls"], 0)
         self.assertEqual(current["resume_product_executions"], 0)
-        self.assertEqual(current["qualified_predecessor_for_level"], 50)
         gates = history["historical_controller_gates"]
         self.assertEqual([item["level"] for item in gates], [5, 15, 25])
         self.assertEqual([item["status"] for item in gates], ["passed", "passed", "candidate-rejected"])
@@ -505,26 +616,44 @@ class BlindGateTests(unittest.TestCase):
         self.assertTrue(all(item["resume_product_executions"] == 0 for item in gates))
         self.assertEqual(
             history["next_action"],
-            "coordinator-review-and-commit-oracle-reader-repair-before-fresh-50-question-gate",
+            "return-to-stage3-and-reproduce-the-independent-temporal-correctness-failure-with-nonoverlapping-material",
         )
+        latest = history["latest_current_chain"]
+        self.assertEqual(latest["last_passed_gate"]["level"], 15)
+        self.assertEqual(
+            latest["last_passed_gate"]["plan_identity"],
+            "4f65af5bb145b7643810be31c206b1ebe71c4b8e2ec5ae942873f3139d4c832d",
+        )
+        self.assertEqual(latest["current_gate"]["level"], 25)
+        self.assertEqual(latest["current_gate"]["status"], "candidate-rejected")
+        self.assertFalse(latest["current_gate"]["candidate_decision"])
+        self.assertTrue(latest["current_gate"]["performance_decision"])
+        self.assertEqual(latest["current_gate"]["candidate_temporal_correctness"], 0.8)
+        self.assertEqual(latest["current_gate"]["independent_candidate_failure"]["metric"], "temporal_correctness")
+        self.assertFalse(latest["current_gate"]["candidate_change_authorized"])
+        self.assertEqual(latest["material_admission_policy"]["levels"], [5, 15, 25, 50])
+        self.assertEqual(latest["material_admission_policy"]["replacement_scope"], "rejected-cases-only")
+        self.assertTrue(latest["material_admission_policy"]["full_set_readmission_after_replacement"])
+        self.assertFalse(latest["material_admission_policy"]["whole_batch_regeneration"])
         repair = history["answer_failure_attribution_repair"]
         self.assertEqual(repair["status"], "repaired-and-oracle-reader-independently-qualified")
         self.assertEqual(repair["selected_questions_per_attribution"], 1)
         self.assertEqual(repair["candidate_first_answer_reader"], "gpt-5.6-luna/xhigh")
-        self.assertEqual(repair["post_failure_diagnostic_reader"], "gpt-5.6-terra/high")
-        self.assertEqual(repair["qualification_questions"], 3)
-        self.assertEqual(repair["reader_calls"], 15)
-        self.assertEqual(repair["judge_calls"], 24)
+        self.assertEqual(repair["post_failure_diagnostic_reader"], "gpt-5.6-terra/xhigh")
+        self.assertEqual(repair["qualification_questions"], 5)
+        self.assertEqual(repair["reader_calls"], 25)
+        self.assertEqual(repair["judge_calls"], 40)
         self.assertEqual(repair["product_context_failures"], 0)
         self.assertEqual(repair["oracle_context_failures"], 0)
         self.assertLessEqual(repair["projected_level_wall_seconds"], repair["level_total_wall_seconds_maximum"])
         self.assertEqual(repair["terminal_resume_model_calls"], 0)
         self.assertEqual(repair["terminal_resume_product_executions"], 0)
-        self.assertEqual(len(history["invalidated_diagnostics"]), 6)
+        self.assertEqual(len(history["invalidated_diagnostics"]), 7)
         invalidated = {item["result_identity"]: item for item in history["invalidated_diagnostics"]}
         self.assertIn("851f80be476d5e55718d0cc5d3b1732bb8d163ad3862bd74d80d64e4c7da2bb2", invalidated)
         self.assertIn("b90d36ce3cacbc2756a233c19cb091dc5e8ae406cdf8ef82c7933d9911b8981d", invalidated)
         self.assertIn("743c43f53629087355570b8861749afd10588a0309d14692ce442d1563189707", invalidated)
+        self.assertIn("da47b42aa233ea91cb4b95709138abd5bf50962f7e7c26be7ceb3b0fd6dbdebb", invalidated)
         wall = invalidated["3ce4bb4e6191981ee58a02ed79171fcb8fafea6287abeda7559a24c29dceb1f7"]
         self.assertTrue(wall["candidate_quality_passed"])
         self.assertFalse(wall["candidate_failure"])
@@ -573,7 +702,7 @@ class BlindGateTests(unittest.TestCase):
         self.assertTrue(leaked["raw_materials_destroyed"])
         self.assertFalse(leaked["counts_toward_stage6"])
         historical_failures = history["historical_failed_50_attempts"]
-        self.assertEqual(len(historical_failures), 2)
+        self.assertEqual(len(historical_failures), 3)
         self.assertEqual(
             historical_failures[0]["plan_identity"],
             "0f80dc78d2a210242d792f0ef0dc1dad09208b8e65c24c435aea8998d4df670a",
@@ -586,20 +715,27 @@ class BlindGateTests(unittest.TestCase):
         )
         self.assertFalse(historical_failures[1]["candidate_failure"])
         self.assertTrue(historical_failures[1]["same_content_rerun_forbidden"])
+        self.assertEqual(
+            historical_failures[2]["plan_identity"],
+            "c45a62f195552071aff23a136f4c1f244468f967952d1d1f4019c05269215e90",
+        )
+        self.assertEqual(historical_failures[2]["status"], "evaluation-process-error")
+        self.assertFalse(historical_failures[2]["candidate_failure"])
+        self.assertEqual(historical_failures[2]["attribution_oracle_failures"], 3)
         latest_failure = history["latest_failed_50_attempt"]
         self.assertEqual(
             latest_failure["plan_identity"],
-            "c45a62f195552071aff23a136f4c1f244468f967952d1d1f4019c05269215e90",
+            "58bdcf585c64450b8b4717f19ca5560e53a1a28aa41d42a8bdc28e677186cdc6",
         )
-        self.assertEqual(latest_failure["status"], "evaluation-process-error")
+        self.assertEqual(latest_failure["status"], "candidate-rejected")
         self.assertEqual(latest_failure["failure_stage"], "answer-failure-attribution")
         self.assertEqual(latest_failure["first_observed_gap"], "evidence_read_answer_incorrect")
-        self.assertEqual(latest_failure["attribution_classification"], "evaluation-process-failure")
-        self.assertEqual(latest_failure["attribution_reason"], "oracle-context-failed-or-mechanically-unstable")
+        self.assertEqual(latest_failure["attribution_classification"], "candidate-context-failure")
+        self.assertEqual(latest_failure["attribution_reason"], "candidate-context-stably-fails-while-oracle-is-stable")
         self.assertEqual(latest_failure["attribution_selected_material_order"], 37)
         self.assertEqual(latest_failure["attribution_diagnosed_questions"], 1)
         self.assertEqual(latest_failure["attribution_product_failures"], 3)
-        self.assertEqual(latest_failure["attribution_oracle_failures"], 3)
+        self.assertEqual(latest_failure["attribution_oracle_failures"], 0)
         self.assertTrue(latest_failure["attribution_judge_controls_passed"])
         self.assertTrue(latest_failure["candidate_execution_completed"])
         self.assertEqual(latest_failure["candidate_questions"], 50)
@@ -607,11 +743,14 @@ class BlindGateTests(unittest.TestCase):
         self.assertTrue(latest_failure["candidate_fact_delivery_complete"])
         self.assertEqual(latest_failure["candidate_temporal_correctness"], 0.9)
         self.assertEqual(latest_failure["candidate_conflict_correctness"], 1.0)
-        self.assertEqual(latest_failure["candidate_retrieval_p95_ms"], 375.0)
+        self.assertAlmostEqual(latest_failure["candidate_retrieval_p95_ms"], 359.0)
         self.assertFalse(latest_failure["candidate_absolute_passed"])
-        self.assertIsNone(latest_failure["candidate_decision"])
-        self.assertFalse(latest_failure["candidate_failure"])
+        self.assertFalse(latest_failure["candidate_decision"])
+        self.assertTrue(latest_failure["candidate_failure"])
         self.assertFalse(latest_failure["baseline_executed"])
+        self.assertTrue(latest_failure["level_budget_passed"])
+        self.assertLessEqual(latest_failure["candidate_decision_wall_seconds"], latest_failure["level_budget_seconds"])
+        self.assertEqual(latest_failure["material_replaced_questions"], 3)
         self.assertTrue(latest_failure["raw_materials_destroyed"])
         self.assertFalse(latest_failure["contains_reversible_question_answer_or_evidence"])
         self.assertFalse(latest_failure["formal_state_written"])
@@ -620,7 +759,7 @@ class BlindGateTests(unittest.TestCase):
         self.assertTrue(latest_failure["resume_dependencies_valid"])
         self.assertTrue(latest_failure["terminal_fail_closed"])
         self.assertTrue(latest_failure["same_content_rerun_forbidden"])
-        self.assertEqual(latest_failure["return_to_stage"], 2)
+        self.assertEqual(latest_failure["return_to_stage"], 3)
 
     def test_wall_attribution_contract_and_result_are_content_addressed_and_closed(self) -> None:
         root = self.suite_root / "iteration" / "v2"
@@ -670,9 +809,10 @@ class BlindGateTests(unittest.TestCase):
 
     def test_oracle_reader_migration_preserves_prior_gate_facts_only_for_declared_dependencies(self) -> None:
         migration = gate._load_evaluator_reliability_migration(self.suite_root)
-        self.assertEqual(migration["oracle_reader_repair"]["source_reader"], "gpt-5.6-luna/xhigh")
-        self.assertEqual(migration["oracle_reader_repair"]["target_reader"], "gpt-5.6-terra/high")
-        self.assertTrue(migration["oracle_reader_repair"]["candidate_first_answer_reader_unchanged"])
+        repair = migration["current_oracle_reader_repair"]
+        self.assertEqual(repair["source_reader"], "gpt-5.6-terra/high")
+        self.assertEqual(repair["target_reader"], "gpt-5.6-terra/xhigh")
+        self.assertTrue(repair["candidate_first_answer_reader_unchanged"])
         planned = {
             "controller": migration["source_controller_identity"],
             "answer-attribution-controller": migration["dependency_changes"]["answer-attribution-controller"]["target"],

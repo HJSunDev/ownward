@@ -963,8 +963,13 @@ def retrieve(runtime: OwnwardRuntime, question: str, protocol: dict[str, Any]) -
         depth: int,
         source_rank: int,
         priority_layer: int,
-    ) -> None:
+        source_complete_runes: int = 0,
+    ) -> bool:
         nonlocal read_ms, used_chars
+        request_complete_source = (
+            source_complete_runes > 0
+            and used_chars + source_complete_runes <= settings["context_max_chars"]
+        )
         step = {
             "source_id": source_id, "source_rank": source_rank, "mode": "evidence", "depth": depth,
             "priority_layer": priority_layer,
@@ -975,11 +980,14 @@ def retrieve(runtime: OwnwardRuntime, question: str, protocol: dict[str, Any]) -
             return
         before = time.monotonic()
         try:
-            read = runtime.client.call_tool("ownward_evidence_read", {"id": reference["id"]})
+            arguments = {"id": reference["id"]}
+            if request_complete_source:
+                arguments["source_context_limit"] = int(settings["context_max_chars"] - used_chars)
+            read = runtime.client.call_tool("ownward_evidence_read", arguments)
         except MCPError:
             read_ms += (time.monotonic() - before) * 1000
             selection_steps.append({**step, "selected": False, "reason": "unreadable"})
-            return
+            return False
         read_ms += (time.monotonic() - before) * 1000
         narrowed_evidence = read.get("evidence") if isinstance(read, dict) else None
         if not (
@@ -990,19 +998,64 @@ def retrieve(runtime: OwnwardRuntime, question: str, protocol: dict[str, Any]) -
             and len(narrowed_evidence["content"]) == reference["content_runes"]
         ):
             selection_steps.append({**step, "selected": False, "reason": "unreadable"})
-            return
+            return False
         content = narrowed_evidence["content"]
-        evidence.append({"id": source_id, "evidence_id": reference["id"], "content": content})
+        source_prelude = narrowed_evidence.get("source_prelude", "")
+        require(isinstance(source_prelude, str), "Ownward evidence returned an invalid source prelude")
+        if source_prelude:
+            require(
+                narrowed_evidence.get("source_prelude_start_rune") == 0
+                and isinstance(narrowed_evidence.get("source_prelude_end_rune"), int)
+                and narrowed_evidence["source_prelude_end_rune"] == len(source_prelude)
+                and narrowed_evidence["source_prelude_end_rune"] <= reference.get("start_rune", -1)
+                and narrowed_evidence.get("source_revision") == reference.get("source_revision"),
+                "Ownward evidence returned a non-source-bound prelude",
+            )
+        source_complete = narrowed_evidence.get("source_complete", "")
+        require(isinstance(source_complete, str), "Ownward evidence returned invalid complete source content")
+        if request_complete_source:
+            require(
+                len(source_complete) == source_complete_runes
+                and narrowed_evidence.get("source_complete_start_rune") == 0
+                and narrowed_evidence.get("source_complete_end_rune") == source_complete_runes
+                and narrowed_evidence.get("source_revision") == reference.get("source_revision"),
+                "Ownward evidence returned non-source-bound complete content",
+            )
+        else:
+            require(not source_complete, "Ownward evidence returned unrequested complete source content")
+        delivered_content = (
+            source_complete if request_complete_source
+            else source_prelude + ("\n\n" if source_prelude else "") + content
+        )
+        if used_chars + len(delivered_content) > settings["context_max_chars"]:
+            selection_steps.append({
+                **step, "selected": False, "reason": "context_budget",
+                "source_prelude_runes": len(source_prelude), "delivered_runes": len(delivered_content),
+            })
+            return False
+        evidence.append({
+            "id": source_id, "evidence_id": reference["id"], "content": delivered_content,
+            "source_prelude_runes": len(source_prelude),
+        })
         evidence_read_ids.append(reference["id"])
-        used_chars += len(content)
+        used_chars += len(delivered_content)
         path = path_by_source.get(source_id)
         if path is None:
-            path = {"source_id": source_id, "mode": "evidence", "evidence_ids": []}
+            path = {
+                "source_id": source_id,
+                "mode": "complete-source" if request_complete_source else "evidence",
+                "evidence_ids": [],
+            }
             path_by_source[source_id] = path
             read_paths.append(path)
             read_ids.append(source_id)
         path["evidence_ids"].append(reference["id"])
-        selection_steps.append({**step, "selected": True})
+        selection_steps.append({
+            **step, "mode": "complete-source" if request_complete_source else "evidence",
+            "selected": True, "source_prelude_runes": len(source_prelude),
+            "delivered_runes": len(delivered_content),
+        })
+        return request_complete_source
 
     def select_full(source_id: str, source_rank: int, priority_layer: int) -> None:
         nonlocal read_ms, used_chars
@@ -1067,7 +1120,20 @@ def retrieve(runtime: OwnwardRuntime, question: str, protocol: dict[str, Any]) -
                     and reference["content_runes"] > 0,
                     "Ownward evidence search returned an invalid source-bound reference",
                 )
-            lanes.append({"source_id": source_id, "references": references})
+            truncated = narrowed.get("truncated") is True if isinstance(narrowed, dict) else False
+            source_runes = narrowed.get("source_runes", 0) if isinstance(narrowed, dict) else 0
+            if truncated:
+                require(
+                    isinstance(source_runes, int) and source_runes > 0,
+                    "Ownward truncated evidence search omitted source size",
+                )
+            else:
+                require(source_runes in (0, None), "Ownward evidence search exposed unsolicited source size")
+                source_runes = 0
+            lanes.append({
+                "source_id": source_id, "references": references,
+                "truncated": truncated, "source_runes": source_runes, "complete_selected": False,
+            })
         for depth in range(min(priority_layer, maximum_depth - 1) + 1):
             if len(evidence) >= settings["read_limit"]:
                 break
@@ -1075,9 +1141,15 @@ def retrieve(runtime: OwnwardRuntime, question: str, protocol: dict[str, Any]) -
             if source_rank >= len(lanes):
                 continue
             lane = lanes[source_rank]
+            if lane["complete_selected"]:
+                continue
             references = lane["references"]
             if depth < len(references):
-                select_reference(lane["source_id"], references[depth], depth, source_rank, priority_layer)
+                complete_selected = select_reference(
+                    lane["source_id"], references[depth], depth, source_rank, priority_layer,
+                    lane["source_runes"] if depth == 0 and lane["truncated"] else 0,
+                )
+                lane["complete_selected"] = complete_selected
             elif depth == 0 and not references:
                 select_full(lane["source_id"], source_rank, priority_layer)
     require(evidence, "Ownward retrieval produced no readable evidence")

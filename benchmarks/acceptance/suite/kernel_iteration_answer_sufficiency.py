@@ -11,13 +11,15 @@ from pathlib import Path
 from typing import Any, Callable
 
 import kernel_iteration_evidence as evidence
+import kernel_iteration_official_evaluator as official_evaluator
 import kernel_iteration_validation as validation
 
 
-CONTRACT_SCHEMA = "ownward.kernel-iteration-stage3-answer-sufficiency-contract/v1"
-PLAN_SCHEMA = "ownward.kernel-iteration-stage3-answer-sufficiency-plan/v1"
-RESULT_SCHEMA = "ownward.kernel-iteration-stage3-answer-sufficiency-result/v1"
-CONTRACT_RELATIVE = Path("iteration/v2/stage3-answer-sufficiency-contract.json")
+CONTRACT_SCHEMA = "ownward.kernel-iteration-stage3-answer-sufficiency-contract/v2"
+PLAN_SCHEMA = "ownward.kernel-iteration-stage3-answer-sufficiency-plan/v2"
+LEGACY_RESULT_SCHEMA = "ownward.kernel-iteration-stage3-answer-sufficiency-result/v2"
+RESULT_SCHEMA = "ownward.kernel-iteration-stage3-answer-sufficiency-result/v3"
+CONTRACT_RELATIVE = Path("iteration/v2/stage3-final-answer-sufficiency-contract.json")
 
 
 class AnswerSufficiencyError(ValueError):
@@ -118,10 +120,11 @@ def load_contract(suite_root: Path) -> dict[str, Any]:
     _require(value.get("identity") == evidence.canonical_sha256(content), "最终回答充分性合同身份漂移")
     trigger = _mapping(value, "aggregate_trigger")
     _require(trigger.get("raw_content_destroyed") is True and trigger.get("same_content_rerun_forbidden") is True, "25 题盲测原始内容边界漂移")
-    _require(trigger.get("first_observed_gaps") == {"evidence_read_answer_incorrect": 1, "none": 24}, "25 题聚合首缺口漂移")
+    _require(trigger.get("first_observed_gaps") == {"evidence_read_answer_incorrect": 2, "none": 23}, "25 题聚合首缺口漂移")
+    _require(trigger.get("only_general_boundary_reused") == "final-answer-sufficiency-boundary", "盲测只允许复用通用边界")
     sources = _mapping(value, "sources")
     loaded: dict[str, dict[str, Any]] = {}
-    for name in ("diagnosis_materials", "regression_materials"):
+    for name in ("diagnosis_materials", "confirmation_materials", "regression_materials"):
         source = _mapping(sources, name)
         relative = Path(str(source.get("path", "")))
         _require(not relative.is_absolute() and ".." not in relative.parts, f"{name} 路径越界")
@@ -139,22 +142,30 @@ def load_contract(suite_root: Path) -> dict[str, Any]:
         )
         loaded[name] = materials
     diagnosis = loaded["diagnosis_materials"]
+    confirmation = loaded["confirmation_materials"]
     regression = loaded["regression_materials"]
     diagnosis_facts = {validation._case_fact_identity(case) for case in diagnosis["cases"]}
+    confirmation_facts = {validation._case_fact_identity(case) for case in confirmation["cases"]}
     regression_facts = {validation._case_fact_identity(case) for case in regression["cases"]}
-    _require(diagnosis_facts.isdisjoint(regression_facts), "诊断与正确能力回归事实重合")
+    _require(
+        diagnosis_facts.isdisjoint(confirmation_facts)
+        and diagnosis_facts.isdisjoint(regression_facts)
+        and confirmation_facts.isdisjoint(regression_facts),
+        "诊断、确认与正确能力回归事实重合",
+    )
     coverage = _mapping(value, "coverage")
     _require(set(coverage.get("diagnosis_required", [])) == {case["coverage"] for case in diagnosis["cases"]}, "诊断覆盖漂移")
+    _require(set(coverage.get("confirmation_required", [])) == {case["coverage"] for case in confirmation["cases"]}, "确认覆盖漂移")
     _require(set(coverage.get("regression_required", [])) == {case["coverage"] for case in regression["cases"]}, "回归覆盖漂移")
     repetitions = _mapping(value, "repetitions")
     _require(repetitions == {
         "product_context_total_per_case_including_original": 3,
-        "oracle_context_per_case": 2,
+        "oracle_context_per_case": 3,
         "identical_prompt_required": True,
         "model_and_effort_unchanged": True,
     }, "Reader 重复合同漂移")
     gates = _mapping(value, "gates")
-    _require(gates.get("maximum_total_wall_seconds") == 600 and gates.get("formal_state_writes") == 0, "诊断成本或正式状态边界漂移")
+    _require(gates.get("maximum_affected_feedback_seconds") == 600 and gates.get("formal_state_writes") == 0, "诊断成本或正式状态边界漂移")
     return {**value, "loaded": loaded}
 
 
@@ -162,10 +173,12 @@ def run(
     suite_root: Path,
     output_root: Path,
     candidate_execution_config: Path,
-    baseline_execution_config: Path,
+    baseline_execution_config: Path | None,
     candidate_subject_manifest: Path,
     formal_state: Path,
     *,
+    phase: str = "final",
+    reproduction_result_path: Path | None = None,
     resume: bool = False,
     execute: Callable[..., dict[str, Any]] | None = None,
     codex_diagnose: Callable[..., dict[str, Any]] | None = None,
@@ -174,29 +187,45 @@ def run(
     output_root = output_root.resolve()
     repository = suite_root.parents[2]
     evidence._validate_output_boundary(repository, output_root)
+    _require(phase in {"reproduction", "final"}, "最终回答充分性阶段无效")
     contract = load_contract(suite_root)
     state_path = formal_state.resolve()
     _require(state_path.is_file(), "最终回答充分性诊断缺少正式 state 只读基线")
     state_before = state_path.read_bytes()
     candidate_runtime = validation.validate_execution_config(suite_root, candidate_execution_config.resolve())
-    baseline_runtime = validation.validate_execution_config(suite_root, baseline_execution_config.resolve())
     subject = _load_json(candidate_subject_manifest.resolve())
-    _require(subject.get("identity") == _mapping(contract, "subject").get("identity"), "最终回答充分性诊断候选错绑")
+    phase_subject = _mapping(_mapping(contract, "subject"), phase)
+    _require(subject.get("identity") == phase_subject.get("identity"), "最终回答充分性诊断候选错绑")
     dependencies = {
         "contract": contract["identity"],
         "controller": evidence.file_sha256(Path(__file__).resolve()),
         "controller-entry": evidence.file_sha256(suite_root / "kernel_iteration_run.py"),
         "candidate-config": evidence.file_sha256(candidate_execution_config.resolve()),
-        "baseline-config": evidence.file_sha256(baseline_execution_config.resolve()),
         "candidate-subject": subject["identity"],
         "formal-state": evidence.file_sha256(state_path),
         "validation-contract": validation.load_validation_contract(suite_root)["identity"],
     }
+    reproduction_result: dict[str, Any] | None = None
+    if baseline_execution_config is not None:
+        validation.validate_execution_config(suite_root, baseline_execution_config.resolve())
+        dependencies["baseline-config"] = evidence.file_sha256(baseline_execution_config.resolve())
+    if phase == "final":
+        _require(reproduction_result_path is not None and reproduction_result_path.resolve().is_file(), "终态验证缺少已封存根因复现结果")
+        reproduction_result = _load_json(reproduction_result_path.resolve())
+        _validate_result(reproduction_result, str(reproduction_result.get("plan_identity", "")))
+        _require(
+            reproduction_result.get("phase") == "reproduction"
+            and _mapping(reproduction_result, "root_cause").get("responsible_component") == "kernel-context"
+            and reproduction_result.get("passed") is True,
+            "终态验证没有绑定已证明的内核上下文根因",
+        )
+        dependencies["reproduction-result"] = evidence.file_sha256(reproduction_result_path.resolve())
     content = {
         "schema": PLAN_SCHEMA,
         "purpose": "independent-answer-sufficiency-root-diagnosis",
         "contract_identity": contract["identity"],
         "subject_identity": subject["identity"],
+        "phase": phase,
         "direct_dependencies": dict(sorted(dependencies.items())),
         "formal": False,
         "candidate_decision": None,
@@ -209,7 +238,7 @@ def run(
     if result_path.is_file():
         _require(resume and plan_path.is_file() and _load_json(plan_path) == plan, "最终回答充分性终态只能由同一身份恢复")
         result = _load_json(result_path)
-        _validate_result(result, plan["identity"])
+        _validate_result(result, plan["identity"], reproduction_result)
         _require(state_path.read_bytes() == state_before, "最终回答充分性终态复用改写正式 state")
         return {**result, "result_path": str(result_path), "reused": True, "model_or_product_execution": False}
     if plan_path.is_file():
@@ -220,11 +249,18 @@ def run(
     started = time.perf_counter()
     input_root = root / "inputs"
     executions: dict[str, dict[str, Any]] = {}
+    product_execution_performed = False
     execution_callback = execute or validation.execute_prepared_evidence
-    for material_name, evidence_type in (("diagnosis_materials", "development"), ("regression_materials", "regression")):
+    material_runs = [("diagnosis_materials", "diagnosis", "development")]
+    if phase == "final":
+        material_runs.extend([
+            ("confirmation_materials", "confirmation", "development"),
+            ("regression_materials", "regression", "regression"),
+        ])
+    for material_name, label, evidence_type in material_runs:
         materials = contract["loaded"][material_name]
-        material_path = input_root / ("diagnosis.json" if evidence_type == "development" else "regression.json")
-        input_path = input_root / ("diagnosis-input.json" if evidence_type == "development" else "regression-input.json")
+        material_path = input_root / f"{label}.json"
+        input_path = input_root / f"{label}-input.json"
         evidence.atomic_json(material_path, materials)
         validation.build_input_manifest(suite_root, material_path, candidate_execution_config.resolve(), evidence_type, input_path)
         candidate = execution_callback(
@@ -232,68 +268,174 @@ def run(
             subject_manifest=candidate_subject_manifest.resolve(), evidence_type=evidence_type,
             input_manifest=input_path, resume=resume,
         )
+        product_execution_performed = product_execution_performed or candidate.get("reused_execution") is not True
         candidate_result = Path(str(candidate["execution_result"])).resolve()
-        executions[f"candidate-{evidence_type}"] = _load_json(candidate_result)
-        if executions[f"candidate-{evidence_type}"]["passed"]:
-            baseline = execution_callback(
-                suite_root, output_root / "answer-sufficiency-executions", baseline_execution_config.resolve(),
-                selector="v0", evidence_type=evidence_type, input_manifest=input_path,
-                candidate_result_path=candidate_result, resume=resume,
-            )
-            executions[f"v0-{evidence_type}"] = _load_json(Path(str(baseline["execution_result"])).resolve())
+        executions[f"candidate-{label}"] = _load_json(candidate_result)
 
-    diagnosis_execution = executions["candidate-development"]
+    diagnosis_execution = executions["candidate-diagnosis"]
     diagnosis_run_root = candidate_runtime["runs"] / "kernel-iteration" / diagnosis_execution["plan_identity"] / "run"
     _require(diagnosis_run_root.is_dir(), "最终回答充分性诊断缺少候选原始执行轨迹")
     codex_result = (codex_diagnose or _diagnose_codex_boundaries)(
-        suite_root, output_root / "answer-sufficiency-codex", candidate_runtime,
+        suite_root, output_root / "answer-sufficiency-attribution" / diagnosis_execution["plan_identity"], candidate_runtime,
         contract["loaded"]["diagnosis_materials"], diagnosis_run_root,
+        oracle_repeats=(1, 2, 3),
+        prompt_renderer_factory=official_evaluator.PromptRenderer,
     )
     observer_replay = _replay_observer(diagnosis_run_root, contract["loaded"]["diagnosis_materials"], diagnosis_execution)
-    classification = classify_root(contract, diagnosis_execution, executions.get("candidate-regression"), codex_result, observer_replay)
+    confirmation_execution = executions.get("candidate-confirmation")
+    regression_execution = executions.get("candidate-regression")
+    confirmation_codex: dict[str, Any] | None = None
+    confirmation_replay: dict[str, Any] | None = None
+    regression_replay: dict[str, Any] | None = None
+    if phase == "final":
+        _require(confirmation_execution is not None and regression_execution is not None, "终态确认或回归执行缺失")
+        confirmation_run_root = candidate_runtime["runs"] / "kernel-iteration" / confirmation_execution["plan_identity"] / "run"
+        confirmation_codex = (codex_diagnose or _diagnose_codex_boundaries)(
+            suite_root, output_root / "answer-sufficiency-attribution" / confirmation_execution["plan_identity"], candidate_runtime,
+            contract["loaded"]["confirmation_materials"], confirmation_run_root,
+            oracle_repeats=(1, 2, 3),
+            prompt_renderer_factory=official_evaluator.PromptRenderer,
+        )
+        confirmation_replay = _replay_observer(
+            confirmation_run_root, contract["loaded"]["confirmation_materials"], confirmation_execution,
+        )
+        regression_run_root = candidate_runtime["runs"] / "kernel-iteration" / regression_execution["plan_identity"] / "run"
+        regression_replay = _replay_observer(
+            regression_run_root, contract["loaded"]["regression_materials"], regression_execution,
+        )
+    classification = classify_root(contract, diagnosis_execution, regression_execution, codex_result, observer_replay)
+    root_cause, root_cause_evidence, repair_validation = _bind_root_semantics(
+        phase, reproduction_result, classification,
+    )
     elapsed = time.perf_counter() - started
     gates = _mapping(contract, "gates")
-    stage3_closed = classification["status"] in {"proven", "not-reproduced-with-counterevidence"}
-    stage4_unchanged = classification["responsible_component"] != "kernel-context"
-    # This diagnostic may identify a failure boundary without changing it.  A
-    # frozen Reader/Judge/executor identity therefore does not invalidate the
-    # already sealed Stage 5 evidence.  Only a kernel-context finding changes
-    # the candidate dependency that Stage 5 actually consumed.
-    stage5_unchanged = classification["responsible_component"] != "kernel-context"
+    reproduction_passed = phase == "reproduction" and classification["responsible_component"] == "kernel-context"
+    final_passed = phase == "final" and all(
+        item is not None and bool(item.get("passed"))
+        for item in (diagnosis_execution, confirmation_execution, regression_execution)
+    ) and classification["status"] == "not-reproduced-with-counterevidence" and all((
+        confirmation_codex is not None,
+        int(_mapping(confirmation_codex, "reader")["product_context_failures"]) == 0 if confirmation_codex else False,
+        int(_mapping(confirmation_codex, "reader")["oracle_context_failures"]) == 0 if confirmation_codex else False,
+        bool(_mapping(confirmation_codex, "judge")["controls_passed"]) if confirmation_codex else False,
+        bool(confirmation_replay and confirmation_replay["exact"]),
+        bool(regression_replay and regression_replay["exact"]),
+    ))
+    passed = (reproduction_passed or final_passed) and elapsed <= float(gates["maximum_affected_feedback_seconds"])
+    stage3_closed = phase == "final" and passed
+    execution_bindings = {
+        name: {"identity": item["identity"], "passed": item["passed"], "subject_identity": item["subject_identity"]}
+        for name, item in sorted(executions.items())
+    }
+    if repair_validation is not None:
+        _require(confirmation_codex is not None, "终态修复验证缺少独立确认边界")
+        repair_validation = {
+            **repair_validation,
+            "candidate_subject_identity": subject["identity"],
+            "evidence": {
+                "diagnosis_execution_identity": execution_bindings["candidate-diagnosis"]["identity"],
+                "confirmation_execution_identity": execution_bindings["candidate-confirmation"]["identity"],
+                "regression_execution_identity": execution_bindings["candidate-regression"]["identity"],
+                "diagnosis_passed": execution_bindings["candidate-diagnosis"]["passed"],
+                "confirmation_passed": execution_bindings["candidate-confirmation"]["passed"],
+                "regression_passed": execution_bindings["candidate-regression"]["passed"],
+                "diagnosis_reader_product_failures": int(_mapping(codex_result, "reader")["product_context_failures"]),
+                "diagnosis_reader_oracle_failures": int(_mapping(codex_result, "reader")["oracle_context_failures"]),
+                "diagnosis_judge_controls_passed": bool(_mapping(codex_result, "judge")["controls_passed"]),
+                "confirmation_reader_product_failures": int(_mapping(confirmation_codex, "reader")["product_context_failures"]),
+                "confirmation_reader_oracle_failures": int(_mapping(confirmation_codex, "reader")["oracle_context_failures"]),
+                "confirmation_judge_controls_passed": bool(_mapping(confirmation_codex, "judge")["controls_passed"]),
+                "diagnosis_replay_exact": bool(observer_replay["exact"]),
+                "confirmation_replay_exact": bool(confirmation_replay and confirmation_replay["exact"]),
+                "regression_replay_exact": bool(regression_replay and regression_replay["exact"]),
+            },
+        }
+    model_turn_performed = any(
+        int(_mapping(item, "transport").get("max_active", 0)) > 0
+        for item in (codex_result, confirmation_codex)
+        if item is not None
+    )
     result_content = {
         "schema": RESULT_SCHEMA,
         "plan_identity": plan["identity"],
         "contract_identity": contract["identity"],
-        "status": "passed" if stage3_closed and elapsed <= float(gates["maximum_total_wall_seconds"]) else "failed",
-        "passed": stage3_closed and elapsed <= float(gates["maximum_total_wall_seconds"]),
+        "phase": phase,
+        "status": "root-reproduced" if reproduction_passed and passed else ("passed" if final_passed and passed else "failed"),
+        "passed": passed,
         "formal": False,
         "formal_state_written": False,
         "blind_gate_executed": False,
         "candidate_decision": None,
-        "root_cause": classification,
-        "executions": {
-            name: {"identity": item["identity"], "passed": item["passed"], "subject_identity": item["subject_identity"]}
-            for name, item in sorted(executions.items())
-        },
+        "root_cause": root_cause,
+        "root_cause_evidence": root_cause_evidence,
+        "repair_validation": repair_validation,
+        "reproduction_result_identity": reproduction_result.get("identity") if reproduction_result else None,
+        "executions": execution_bindings,
         "codex_boundary_diagnosis": codex_result,
+        "confirmation_codex_boundary": confirmation_codex,
         "observer_replay": observer_replay,
+        "confirmation_observer_replay": confirmation_replay,
+        "regression_observer_replay": regression_replay,
         "stage_reclosure": {
             "stage3": "closed" if stage3_closed else "open",
-            "stage4": "unchanged-and-valid" if stage4_unchanged else "reopen",
-            "stage5": "unchanged-and-valid" if stage5_unchanged else "reopen",
+            "stage4": "requires-current-candidate-revalidation" if stage3_closed else "unchanged-until-candidate-change",
+            "stage5": "requires-current-candidate-revalidation" if stage3_closed else "unchanged-until-candidate-change",
             "candidate_subject_identity": subject["identity"],
             "kernel_generation_identity": subject["kernel_generation_identity"],
             "kernel_effect_identity": subject["kernel_effect_identity"],
         },
-        "cost": {"wall_seconds": elapsed, "maximum_wall_seconds": float(gates["maximum_total_wall_seconds"])},
+        "cost": {"wall_seconds": elapsed, "maximum_wall_seconds": float(gates["maximum_affected_feedback_seconds"])},
+        "regeneration": {
+            "product_execution_performed": product_execution_performed,
+            "model_turn_performed": model_turn_performed,
+            "source": "existing-checkpoints" if not product_execution_performed and not model_turn_performed else "new-execution",
+        },
         "formal_state_sha256": evidence.file_sha256(state_path),
-        "next_action": "restart-stage6-from-fresh-five-question-gate" if stage3_closed and stage4_unchanged and stage5_unchanged else "repair-proven-responsible-component-and-reclose-affected-stages",
+        "next_action": "proceed-to-stage4-current-candidate-validation" if stage3_closed else "repair-proven-source-local-context-mechanism",
     }
     result = {**result_content, "identity": evidence.canonical_sha256(result_content)}
     evidence.atomic_json(result_path, result)
     _require(state_path.read_bytes() == state_before, "最终回答充分性诊断改写正式 state")
-    _validate_result(result, plan["identity"])
-    return {**result, "result_path": str(result_path), "reused": False, "model_or_product_execution": True}
+    _validate_result(result, plan["identity"], reproduction_result)
+    return {
+        **result,
+        "result_path": str(result_path),
+        "reused": False,
+        "model_or_product_execution": product_execution_performed or model_turn_performed,
+    }
+
+
+def _bind_root_semantics(
+    phase: str,
+    reproduction_result: dict[str, Any] | None,
+    candidate_classification: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any] | None, dict[str, Any] | None]:
+    if phase == "reproduction":
+        return dict(candidate_classification), None, None
+    _require(reproduction_result is not None, "终态缺少根因复现结果")
+    proven_root = dict(_mapping(reproduction_result, "root_cause"))
+    _require(
+        proven_root.get("status") == "proven"
+        and proven_root.get("responsible_component") == "kernel-context",
+        "终态根因不是复现阶段已经证明的内核上下文根因",
+    )
+    _require(
+        candidate_classification.get("status") == "not-reproduced-with-counterevidence"
+        and candidate_classification.get("responsible_component") == "external-answer-boundary",
+        "当前候选没有形成独立的修复反证",
+    )
+    root_evidence = {
+        "schema": "ownward.kernel-iteration-stage3-root-cause-evidence/v1",
+        "reproduction_result_identity": reproduction_result.get("identity"),
+        "reproduction_plan_identity": reproduction_result.get("plan_identity"),
+        "root_cause_identity": evidence.canonical_sha256(proven_root),
+    }
+    repair = {
+        "schema": "ownward.kernel-iteration-stage3-repair-validation/v1",
+        "status": "repaired-not-reproduced",
+        "candidate_classification": dict(candidate_classification),
+    }
+    return proven_root, root_evidence, repair
 
 
 def classify_root(
@@ -303,8 +445,7 @@ def classify_root(
     codex_result: dict[str, Any],
     observer_replay: dict[str, Any],
 ) -> dict[str, Any]:
-    cases = diagnosis_execution["observation"].get("case_evidence", [])
-    missing_claims = sum(int(item["truth_claims"]) - int(item["delivered_truth_claims"]) for item in cases)
+    missing_questions = int(_mapping(diagnosis_execution["observation"], "fact_delivery")["missing_questions"])
     diagnosis_accuracy = float(diagnosis_execution["observation"]["final_answer_accuracy"])
     regression_accuracy = float(regression_execution["observation"]["final_answer_accuracy"]) if regression_execution else 0.0
     product_failures = int(codex_result["reader"]["product_context_failures"])
@@ -312,10 +453,14 @@ def classify_root(
     product_variations = int(codex_result["reader"]["product_context_variations"])
     oracle_variations = int(codex_result["reader"]["oracle_context_variations"])
     judge_failed = not bool(codex_result["judge"]["controls_passed"])
-    if missing_claims > 0 or (product_failures > 0 and oracle_failures == 0):
+    if product_failures > 0 and oracle_failures == 0 and missing_questions == 0:
         component = "kernel-context"
         status = "proven"
         mechanism = "required-truth-not-stably-usable-in-product-context"
+    elif missing_questions > 0:
+        component = "evidence-delivery"
+        status = "proven"
+        mechanism = "required-truth-not-delivered"
     elif product_failures > 0 or oracle_failures > 0:
         component = "reader"
         status = "proven"
@@ -331,8 +476,8 @@ def classify_root(
     else:
         gates = _mapping(contract, "gates")
         counterevidence = (
-            missing_claims == 0
-            and diagnosis_accuracy >= float(gates["product_execution_accuracy"])
+            missing_questions == 0
+            and diagnosis_accuracy >= float(gates["final_candidate_diagnosis_accuracy"])
             and regression_accuracy >= float(gates["regression_accuracy"])
             and product_failures == 0 and oracle_failures == 0
             and bool(codex_result["judge"]["controls_passed"])
@@ -408,8 +553,13 @@ def _diagnose_codex_boundaries_impl(
         runtime["codex_binary"], module.codex_session.command_prefix(runtime["codex_binary"]),
     )
 
+    runtime_parent = (
+        suite_root.parents[2] / ".tmp" / "kernel-v2-answer-runtime"
+        / evidence.canonical_sha256({"stage": str(stage_root.resolve())})[:16]
+    )
+
     def factory(_index: int, _generation: int) -> Any:
-        runtime_root = module.isolated_runtime_root(stage_root / ".codex-runtime")
+        runtime_root = module.isolated_runtime_root(runtime_parent)
         environment = module.codex_session.isolated_environment(runtime["codex_auth_file"], runtime_root / "codex-home")
         return module.CodexAppServer(runtime["codex_binary"], runtime["codex_auth_file"], runtime_root, command_prefix, environment)
 
@@ -479,7 +629,7 @@ def _diagnose_codex_boundaries_impl(
 
         judged: list[dict[str, Any]] = []
 
-        def run_judge(job: dict[str, Any]) -> dict[str, Any]:
+        def execute_judge(job: dict[str, Any]) -> dict[str, Any]:
             case = job["case"]
             evaluation_case = {**case, "question_id": case["case_id"]}
             prompt = _attribution_call(
@@ -509,7 +659,7 @@ def _diagnose_codex_boundaries_impl(
 
         if judge_jobs:
             with ThreadPoolExecutor(max_workers=4) as executor:
-                futures = [executor.submit(run_judge, job) for job in judge_jobs]
+                futures = [executor.submit(execute_judge, job) for job in judge_jobs]
                 for future in as_completed(futures):
                     judged.append(future.result())
         transport_diagnostics = transport.diagnostics()
@@ -592,8 +742,24 @@ def _diagnose_codex_boundaries_impl(
 
 def _answer_matches(answer: str, atom_groups: Any) -> bool:
     _require(isinstance(atom_groups, list) and atom_groups, "机械答案原子合同无效")
-    normalized = re.sub(r"\s+", " ", answer.casefold()).strip()
-    return all(isinstance(group, list) and group and any(str(atom).casefold() in normalized for atom in group) for group in atom_groups)
+
+    def normalize(value: str) -> str:
+        # The frozen Reader may serialize the same field/value pair as prose,
+        # JSON, or a labelled list. Structural punctuation is a word boundary;
+        # value-bearing punctuation for times, ranges, percentages, and
+        # hyphenated identifiers remains significant.
+        value = value.casefold().replace("_", " ")
+        value = re.sub(r"[^\w\s:%\-\u2013\u2014]", " ", value, flags=re.UNICODE)
+        value = re.sub(r"\s*:\s*", " ", value)
+        return re.sub(r"\s+", " ", value).strip()
+
+    normalized = normalize(answer)
+    return all(
+        isinstance(group, list)
+        and group
+        and any(normalize(str(atom)) in normalized for atom in group)
+        for group in atom_groups
+    )
 
 
 def _percentile(values: list[float], quantile: float) -> float:
@@ -616,8 +782,80 @@ def _replay_observer(run_root: Path, materials: dict[str, Any], execution: dict[
     }
 
 
-def _validate_result(result: dict[str, Any], plan_identity: str) -> None:
-    _require(result.get("schema") == RESULT_SCHEMA and result.get("plan_identity") == plan_identity, "最终回答充分性结果错绑")
+def _validate_result(
+    result: dict[str, Any],
+    plan_identity: str,
+    reproduction_result: dict[str, Any] | None = None,
+) -> None:
+    schema = result.get("schema")
+    _require(schema in {LEGACY_RESULT_SCHEMA, RESULT_SCHEMA} and result.get("plan_identity") == plan_identity, "最终回答充分性结果错绑")
     content = {key: item for key, item in result.items() if key != "identity"}
     _require(result.get("identity") == evidence.canonical_sha256(content), "最终回答充分性结果身份漂移")
     _require(result.get("formal") is False and result.get("formal_state_written") is False and result.get("blind_gate_executed") is False, "最终回答充分性结果越权")
+    phase = result.get("phase")
+    _require(phase in {"reproduction", "final"}, "最终回答充分性结果阶段无效")
+    if schema == LEGACY_RESULT_SCHEMA:
+        _require(phase == "reproduction", "旧 v2 终态会混淆已证根因与修复反证，禁止复用")
+        return
+    root = _mapping(result, "root_cause")
+    if phase == "reproduction":
+        _require(result.get("root_cause_evidence") is None and result.get("repair_validation") is None, "根因复现不得伪装成修复验证")
+        return
+    _require(root.get("status") == "proven" and root.get("responsible_component") == "kernel-context", "终态没有保留已证原始根因")
+    _require(reproduction_result is not None, "终态校验缺少原始根因复现证据")
+    root_evidence = _mapping(result, "root_cause_evidence")
+    _require(
+        root_evidence.get("schema") == "ownward.kernel-iteration-stage3-root-cause-evidence/v1"
+        and root_evidence.get("reproduction_result_identity") == result.get("reproduction_result_identity")
+        and root_evidence.get("reproduction_result_identity") == reproduction_result.get("identity")
+        and root_evidence.get("reproduction_plan_identity") == reproduction_result.get("plan_identity")
+        and root_evidence.get("root_cause_identity") == evidence.canonical_sha256(root)
+        and root == _mapping(reproduction_result, "root_cause")
+        and isinstance(root_evidence.get("reproduction_plan_identity"), str)
+        and len(str(root_evidence.get("reproduction_plan_identity"))) == 64,
+        "终态根因没有绑定原始复现证据",
+    )
+    repair = _mapping(result, "repair_validation")
+    candidate_classification = _mapping(repair, "candidate_classification")
+    _require(
+        repair.get("schema") == "ownward.kernel-iteration-stage3-repair-validation/v1"
+        and repair.get("status") == "repaired-not-reproduced"
+        and candidate_classification.get("status") == "not-reproduced-with-counterevidence"
+        and candidate_classification.get("responsible_component") == "external-answer-boundary",
+        "终态修复反证与已证根因没有分离",
+    )
+    executions = _mapping(result, "executions")
+    repair_evidence = _mapping(repair, "evidence")
+    for label in ("diagnosis", "confirmation", "regression"):
+        execution = _mapping(executions, f"candidate-{label}")
+        _require(
+            execution.get("identity") == repair_evidence.get(f"{label}_execution_identity")
+            and execution.get("passed") is True
+            and repair_evidence.get(f"{label}_passed") is True,
+            f"终态修复验证没有绑定通过的 {label} 证据",
+        )
+    _require(
+        repair.get("candidate_subject_identity") == _mapping(result, "stage_reclosure").get("candidate_subject_identity")
+        and all(repair_evidence.get(key) is True for key in (
+            "diagnosis_judge_controls_passed", "confirmation_judge_controls_passed",
+            "diagnosis_replay_exact", "confirmation_replay_exact", "regression_replay_exact",
+        ))
+        and all(int(repair_evidence.get(key, -1)) == 0 for key in (
+            "diagnosis_reader_product_failures", "diagnosis_reader_oracle_failures",
+            "confirmation_reader_product_failures", "confirmation_reader_oracle_failures",
+        )),
+        "终态修复验证的 Reader、Judge 或重放证据不完整",
+    )
+    stage = _mapping(result, "stage_reclosure")
+    _require(
+        stage.get("stage3") == "closed"
+        and stage.get("stage4") == "requires-current-candidate-revalidation"
+        and stage.get("stage5") == "requires-current-candidate-revalidation",
+        "终态阶段关闭或后续重证边界无效",
+    )
+    regeneration = _mapping(result, "regeneration")
+    _require(
+        isinstance(regeneration.get("product_execution_performed"), bool)
+        and isinstance(regeneration.get("model_turn_performed"), bool),
+        "终态重生成活动证据无效",
+    )

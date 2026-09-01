@@ -1,0 +1,123 @@
+{
+  "schema": "ownward.kernel-iteration-stage3-temporal-correctness-adjudication/v1",
+  "trigger": {
+    "blind_plan_identity": "c204269dfbeb47ab7932466834df4b71531f807fe0b485d9a5953a6f70a5fe91",
+    "blind_result_identity": "fb212b7836e435fe87f5405c109b0ed3e267b0333f4b158b95454d083be039ef",
+    "abstract_observation_only": true,
+    "questions": 25,
+    "fact_delivery_complete": true,
+    "conflict_correctness": 1.0,
+    "temporal_correctness": 0.8,
+    "retrieval_p95_ms": 500.0,
+    "raw_content_destroyed": true,
+    "raw_content_recovery_or_inference_forbidden": true
+  },
+  "subject": {
+    "identity": "a0a597710578a1c3442ff5e71cab41600ab7565178acf36d6f77deb41d658117",
+    "kernel_generation_identity": "75a460c2ff8d82c3be71f9abb00f3a6a30c0688b045d57975a7ee20e7f778aee",
+    "kernel_effect_identity": "a2ad626f00e3806599f625c07d4df4a6430c23c27b3e996c50bd75a9e5fef922",
+    "kernel_source_changed": false
+  },
+  "independent_materials": [
+    {
+      "path": "iteration/v2/stage3-temporal-applicability-materials.json",
+      "sha256": "c052e179a5ede9153e8bf3e7eb2ca3bfab0fb414eafec877ba4167f4ae1d6aa6",
+      "identity": "7507f704f3a5a7cfb63e65d6d5537f935af41f073c789eeeb635f76e13c239b0",
+      "cases": 5,
+      "authority_sources": 20,
+      "truth_claims": 10,
+      "coverages": [
+        "future-effective-boundary",
+        "retrospective-correction",
+        "adjacent-validity-intervals",
+        "event-time-versus-record-time",
+        "as-of-supersession"
+      ]
+    },
+    {
+      "path": "iteration/v2/stage3-temporal-applicability-stress-materials.json",
+      "sha256": "871f813e7f4909ae612f68b9a62272ef4d59d7a43b36cae0560daae8e176e722",
+      "identity": "88a95ddda50dc94d7cb78653b4ab06bf90c406b17147e28084d16b7c0a8cf6db",
+      "cases": 4,
+      "authority_sources": 40,
+      "truth_claims": 11,
+      "read_budget_competition": {"returned_sources_per_case": 10, "read_limit": 8},
+      "coverages": [
+        "effective-exception-chain",
+        "retroactive-and-prospective",
+        "scoped-overlapping-rules",
+        "event-time-correction-order"
+      ]
+    }
+  ],
+  "executions": [
+    {
+      "plan_identity": "2404299a88d8976e68639340a0f486eeba89e8b0a2ec55acc7562b9baf1262a5",
+      "result_identity": "80b61157c89eecf7f3165c81a0f73f28b38e7141eecd5d21b4f600083cdf8047",
+      "result_sha256": "8793ada420066c1fff37d52675a5d416601a8f3589e5217869f2e3fb8bb3f66d",
+      "questions": 5,
+      "final_answer_accuracy": 1.0,
+      "temporal_correctness": 1.0,
+      "fact_delivery_complete": true,
+      "retrieval_p95_ms": 264.9999999994179,
+      "wall_seconds": 60.89099999999962,
+      "codex_calls": 15,
+      "codex_retries_rate_limits_interruptions_worker_restarts": 0
+    },
+    {
+      "plan_identity": "f19b4059f0348981aaaca8c835b4ad9b76e1699d329c19398fc8e862bc59acf4",
+      "result_identity": "536834cf40306a9367d87539f226361ac7e0df69a64e7b45e818841852906d1b",
+      "result_sha256": "39740b968df8443ae7216a590ff9004b844c445db1e09fead87fe8a7288864c9",
+      "questions": 4,
+      "final_answer_accuracy": 1.0,
+      "temporal_correctness": 1.0,
+      "fact_delivery_complete": true,
+      "retrieval_p95_ms": 125.0,
+      "wall_seconds": 47.2970000000023,
+      "codex_calls": 12,
+      "codex_retries_rate_limits_interruptions_worker_restarts": 0
+    }
+  ],
+  "mechanical_trace": {
+    "authority_and_organization": {
+      "authority_sources_created": 60,
+      "semantic_submissions_complete": 60,
+      "authoritative_conversation_and_event_dates_preserved_in_source_content": true,
+      "first_class_event_or_applicability_time_metadata_present": false,
+      "observed_deviation": null
+    },
+    "query_and_ranking": {
+      "question_date_reaches_reader": true,
+      "question_date_is_not_a_separate_product_search_field": true,
+      "required_sources_search_returned": 21,
+      "required_sources_read": 21,
+      "maximum_required_source_rank_in_stress_materials": 6,
+      "observed_deviation": null
+    },
+    "temporal_applicability_and_delivery": {
+      "truth_claims_delivered": 21,
+      "truth_claims_expected": 21,
+      "final_answers_correct": 9,
+      "final_answers_expected": 9,
+      "first_observed_gaps": {"none": 9},
+      "observed_deviation": null
+    }
+  },
+  "adjudication": {
+    "status": "not-reproduced-with-independent-counterevidence",
+    "first_proven_kernel_root": null,
+    "responsible_component": null,
+    "kernel_change_authorized": false,
+    "reason": "Nine independent temporal applicability cases, including fixed read-budget competition, preserved every required fact and produced correct final answers; no organization, ranking, applicability, or delivery deviation was observed.",
+    "blind_candidate_failure_remains_valid": true,
+    "blind_failure_must_not_be_reclassified_as_kernel_root": true,
+    "stage3_stage4_stage5_evidence_status": "unchanged-valid-no-direct-dependency-change",
+    "next_action": "stop-for-coordinator-review-without-new-gate-or-kernel-change"
+  },
+  "recovery_and_isolation": {
+    "byte_identical_resume": true,
+    "resume_model_or_product_execution": false,
+    "formal_state_sha256_before_and_after": "b299ce4ffa1085ce9e58d5792558be037cc130d00322abe0626c399a4a251c6f"
+  },
+  "identity": "c64ccb9723e4e7c8c6440d95e8f832eaaddccb9062e71269acc032d2282291d7"
+}

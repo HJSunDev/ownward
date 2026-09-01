@@ -263,6 +263,154 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
         self.assertTrue(any("VIOLET-731" in item["content"] for item in evidence))
         self.assertTrue(trace["evidence_read_ids"])
 
+    def test_two_stage_retrieval_preserves_revision_bound_source_prelude(self) -> None:
+        class PreludeClient(FakeToolClient):
+            def call_tool(self, name: str, arguments: dict):
+                value = super().call_tool(name, arguments)
+                if name == "ownward_evidence_search":
+                    for reference in value["evidence"]:
+                        reference.update({"start_rune": 256, "source_revision": 1})
+                if name == "ownward_evidence_read":
+                    evidence = value["evidence"]
+                    prelude = "Conversation date: 2031-02-15\n\nSource session: independent"
+                    evidence.update({
+                        "start_rune": 256,
+                        "source_revision": 1,
+                        "source_prelude_start_rune": 0,
+                        "source_prelude_end_rune": len(prelude),
+                        "source_prelude": prelude,
+                    })
+                return value
+
+        class Runtime:
+            def __init__(self) -> None:
+                self.client = PreludeClient()
+
+        runtime = Runtime()
+        runtime.client.contents = {"info-1": "neutral detail. " * 40 + "the selected marker is IVORY-17"}
+        evidence, trace = adapter.retrieve(runtime, "What is the selected marker?", self.protocol)
+        self.assertTrue(evidence[0]["content"].startswith("Conversation date: 2031-02-15"))
+        self.assertEqual(sum(len(item["content"]) for item in evidence), trace["context_chars"])
+        selected = next(step for step in trace["selection_steps"] if step["selected"])
+        self.assertGreater(selected["source_prelude_runes"], 0)
+        self.assertEqual(len(evidence[0]["content"]), selected["delivered_runes"])
+
+    def test_two_stage_retrieval_rejects_unbound_source_prelude(self) -> None:
+        class PreludeClient(FakeToolClient):
+            def __init__(self, failure: str) -> None:
+                super().__init__()
+                self.failure = failure
+
+            def call_tool(self, name: str, arguments: dict):
+                value = super().call_tool(name, arguments)
+                if name == "ownward_evidence_search":
+                    for reference in value["evidence"]:
+                        reference.update({"start_rune": 256, "source_revision": 1})
+                if name == "ownward_evidence_read":
+                    evidence = value["evidence"]
+                    prelude = "Conversation date: 2031-02-15"
+                    evidence.update({
+                        "start_rune": 256,
+                        "source_revision": 2 if self.failure == "revision" else 1,
+                        "source_prelude_start_rune": 1 if self.failure == "origin" else 0,
+                        "source_prelude_end_rune": 300 if self.failure == "overlap" else len(prelude),
+                        "source_prelude": prelude,
+                    })
+                return value
+
+        class Runtime:
+            def __init__(self, failure: str) -> None:
+                self.client = PreludeClient(failure)
+                self.client.contents = {"info-1": "neutral detail. " * 40 + "the selected marker is IVORY-17"}
+
+        for failure in ("revision", "origin", "overlap"):
+            with self.subTest(failure=failure):
+                with self.assertRaisesRegex(adapter.AdapterError, "non-source-bound prelude"):
+                    adapter.retrieve(Runtime(failure), "What is the selected marker?", self.protocol)
+
+    def test_truncated_candidate_evidence_uses_one_revision_bound_budget_fit_complete_source(self) -> None:
+        source = "header " + ("neutral record. " * 80) + "FACT-A FACT-B FACT-C FACT-D"
+
+        class CompleteSourceClient:
+            def __init__(self) -> None:
+                self.read_arguments: list[dict] = []
+
+            def call_tool(self, name: str, arguments: dict):
+                if name == "ownward_search":
+                    return {"results": [{"id": "info-1", "score": 1.0, "signals": ["lexical"]}]}
+                if name == "ownward_evidence_search":
+                    return {
+                        "evidence": [
+                            {
+                                "id": f"evidence-{index}", "source_id": "info-1", "source_revision": 7,
+                                "start_rune": index * 100, "end_rune": index * 100 + 80, "content_runes": 80,
+                            }
+                            for index in range(3)
+                        ],
+                        "truncated": True,
+                        "source_runes": len(source),
+                    }
+                if name == "ownward_evidence_read":
+                    self.read_arguments.append(dict(arguments))
+                    return {"evidence": {
+                        "id": arguments["id"], "source_id": "info-1", "source_revision": 7,
+                        "start_rune": 0, "end_rune": 80, "content": source[:80],
+                        "source_complete_start_rune": 0,
+                        "source_complete_end_rune": len(source),
+                        "source_complete": source,
+                    }}
+                raise AssertionError(name)
+
+        client = CompleteSourceClient()
+        runtime = type("Runtime", (), {"client": client})()
+        evidence, trace = adapter.retrieve(runtime, "List FACT-A through FACT-D", self.protocol)
+
+        self.assertEqual(1, len(evidence))
+        self.assertEqual(source, evidence[0]["content"])
+        self.assertEqual("complete-source", trace["read_paths"][0]["mode"])
+        self.assertEqual(1, len(client.read_arguments))
+        self.assertEqual(self.protocol["retrieval"]["context_max_chars"], client.read_arguments[0]["source_context_limit"])
+        selected = [step for step in trace["selection_steps"] if step["selected"]]
+        self.assertEqual([("info-1", 0, "complete-source")], [
+            (step["source_id"], step["depth"], step["mode"]) for step in selected
+        ])
+
+    def test_truncated_source_that_does_not_fit_keeps_original_fragment_path(self) -> None:
+        class OversizedClient:
+            def __init__(self) -> None:
+                self.read_arguments: list[dict] = []
+
+            def call_tool(self, name: str, arguments: dict):
+                if name == "ownward_search":
+                    return {"results": [{"id": "info-1", "score": 1.0, "signals": ["lexical"]}]}
+                if name == "ownward_evidence_search":
+                    return {
+                        "evidence": [
+                            {
+                                "id": f"evidence-{index}", "source_id": "info-1", "source_revision": 3,
+                                "start_rune": index * 80, "end_rune": index * 80 + 80, "content_runes": 80,
+                            }
+                            for index in range(3)
+                        ],
+                        "truncated": True,
+                        "source_runes": 30000,
+                    }
+                if name == "ownward_evidence_read":
+                    self.read_arguments.append(dict(arguments))
+                    return {"evidence": {
+                        "id": arguments["id"], "source_id": "info-1", "source_revision": 3,
+                        "start_rune": 0, "end_rune": 80, "content": "x" * 80,
+                    }}
+                raise AssertionError(name)
+
+        client = OversizedClient()
+        runtime = type("Runtime", (), {"client": client})()
+        evidence, trace = adapter.retrieve(runtime, "x", self.protocol)
+
+        self.assertEqual(3, len(evidence))
+        self.assertTrue(all("source_context_limit" not in value for value in client.read_arguments))
+        self.assertTrue(all(path["mode"] == "evidence" for path in trace["read_paths"]))
+
     def test_budget_loading_uses_rank_depth_diagonal_order(self) -> None:
         runtime = FakeRuntime()
         assert runtime.client is not None

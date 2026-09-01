@@ -11,10 +11,10 @@
   "controller_identity_migration": {
     "schema": "ownward.kernel-iteration-stage3-reader-reliability-controller-migration/v1",
     "source_plan_controller_identity": "a05326f0e09817981227007f2b3e9de3aaa234c23b29ea64751214c7f630955b",
-    "target_controller_identity": "293deb7cf900136d15253eed8eff85d935fd983a81cde3245293fbf2822dfa61",
+    "target_controller_identity": "504bbf8456ad961cff4f099bac4472e499a9d917b95c89ce37d5e3b2a07c802d",
     "source_answer_diagnostic_identity": "a0fec1e8525a3c7450ab2b855124a72d3229abe65a89763a59e4240f156cf3c2",
-    "target_answer_diagnostic_identity": "605c805b65b1cbddc2b274953c7e436cbae8a68210bb781ef332fd0c19e3ef26",
-    "reason": "preserve-the-frozen-reader-selection-while-binding-the-safe-single-case-stage6-answer-attribution-controller",
+    "target_answer_diagnostic_identity": "95f83c6765e9bbfaea62c943f42d0ddc4ac0ec44e57a9af39819ea04839aa59f",
+    "reason": "preserve-the-frozen-reader-selection-after-the-stricter-source-result-passed-while-binding-the-current-isolated-answer-attribution-controller",
     "calibration_result_rewritten": false,
     "model_or_product_execution": false
   },
@@ -43,5 +43,5 @@
   "formal_cost_migration_relative_path": "iteration/v2/stage6-formal-reader-cost-migration.json",
   "formal_cost_migration_identity": "8ec2dc562df78d8f9be646e55d6759f5c10601c81299550bc1748af25fc75e96",
   "formal_handoff_status": "community-binding-and-preflight-pending-rebuild",
-  "identity": "df8ca830bc3a60847f4e5cb52f159f5e1f96e861756c2ee034e8f0dd7d975750"
+  "identity": "268023d6a4cab714d94d136c998cd20e3f3e9ad017cb3b5f49e783696c41f8fe"
 }

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 from pathlib import Path
 import shutil
@@ -14,9 +15,11 @@ import kernel_iteration_validation as validation
 
 CONTRACT_RELATIVE = Path("iteration/v2/stage6-evaluator-environment-contract.json")
 QUALIFICATION_RELATIVE = Path("iteration/v2/stage6-evaluator-environment-qualification.json")
-CONTRACT_SCHEMA = "ownward.kernel-iteration-stage6-evaluator-environment-contract/v3"
-RESULT_SCHEMA = "ownward.kernel-iteration-stage6-evaluator-environment-qualification/v3"
-RECEIPT_SCHEMA = "ownward.kernel-iteration-stage6-evaluator-environment-receipt/v3"
+DEPENDENCY_MIGRATION_RELATIVE = Path("iteration/v2/stage6-evaluator-environment-dependency-migration.json")
+CONTRACT_SCHEMA = "ownward.kernel-iteration-stage6-evaluator-environment-contract/v4"
+RESULT_SCHEMA = "ownward.kernel-iteration-stage6-evaluator-environment-qualification/v4"
+RECEIPT_SCHEMA = "ownward.kernel-iteration-stage6-evaluator-environment-receipt/v4"
+DEPENDENCY_MIGRATION_SCHEMA = "ownward.kernel-iteration-stage6-evaluator-environment-dependency-migration/v1"
 
 
 class EvaluatorReliabilityError(ValueError):
@@ -55,8 +58,8 @@ def load_contract(suite_root: Path) -> dict[str, Any]:
     )
     root_cause = _mapping(value, "root_cause_boundary")
     _require(
-        root_cause.get("product_context_failures") == 3
-        and root_cause.get("oracle_context_failures") == 3
+        root_cause.get("product_context_failures") == 1
+        and root_cause.get("oracle_context_failures") == 2
         and root_cause.get("judge_correct_controls_passed") == 1
         and root_cause.get("judge_wrong_controls_passed") == 1
         and root_cause.get("transport_timeouts") == 0
@@ -71,18 +74,18 @@ def load_contract(suite_root: Path) -> dict[str, Any]:
         product_reader.get("model") == "gpt-5.6-luna"
         and product_reader.get("reasoning_effort") == "xhigh"
         and attribution_reader.get("model") == "gpt-5.6-terra"
-        and attribution_reader.get("reasoning_effort") == "high"
+        and attribution_reader.get("reasoning_effort") == "xhigh"
         and attribution_reader.get("low_reasoning_forbidden") is True
         and attribution_reader.get("sol_model_forbidden") is True,
         "产品 Reader 或归因 Reader 边界漂移",
     )
     attribution = _mapping(value, "attribution_qualification")
     _require(
-        attribution.get("questions") == 3
+        attribution.get("questions") == 5
         and attribution.get("product_repeats") == [2, 3]
         and attribution.get("oracle_repeats") == [1, 2, 3]
-        and attribution.get("reader_calls") == 15
-        and attribution.get("judge_calls") == 24
+        and attribution.get("reader_calls") == 25
+        and attribution.get("judge_calls") == 40
         and attribution.get("product_context_failures_maximum") == 0
         and attribution.get("oracle_context_failures_maximum") == 0,
         "oracle Reader 资格调用合同漂移",
@@ -135,6 +138,24 @@ def _runtime_paths(runtime: dict[str, Any]) -> tuple[Path, Path, Path]:
     return python.resolve(), evaluator.resolve(), lock.resolve()
 
 
+def _qualification_controller_identity() -> str:
+    return evidence.canonical_sha256({
+        "schema": "ownward.kernel-iteration-stage6-evaluator-qualification-controller/v1",
+        "material": inspect.getsource(_load_material),
+        "runtime_paths": inspect.getsource(_runtime_paths),
+        "reader_settings": inspect.getsource(attribution_reader_settings),
+        "execution": inspect.getsource(run),
+    })
+
+
+def _longmemeval_qualification_surface_identity(module: Any) -> str:
+    return evidence.canonical_sha256({
+        "schema": "ownward.kernel-iteration-stage6-longmemeval-qualification-surface/v1",
+        "session_content": inspect.getsource(module.session_content),
+        "answer_prompt": inspect.getsource(module._answer_prompt),
+    })
+
+
 def current_dependencies(suite_root: Path, execution_config: Path) -> tuple[dict[str, str], dict[str, Any], dict[str, Any]]:
     contract = load_contract(suite_root)
     runtime = validation.validate_execution_config(suite_root, execution_config.resolve(), expected_reader_effort="xhigh")
@@ -151,11 +172,11 @@ def current_dependencies(suite_root: Path, execution_config: Path) -> tuple[dict
     _require(judge.get("model") == frozen_judge["model"] and judge.get("reasoning_effort") == frozen_judge["reasoning_effort"], "官方 Judge 身份漂移")
     dependencies = dict(sorted({
         "contract": contract["identity"],
-        "controller": evidence.file_sha256(Path(__file__).resolve()),
+        "controller": _qualification_controller_identity(),
         "qualification-entry": evidence.file_sha256(Path(__file__).with_name("kernel_iteration_evaluator_qualification.py")),
         "answer-attribution": evidence.file_sha256(Path(answer_sufficiency.__file__).resolve()),
         "qualification-material": _mapping(contract, "material")["sha256"],
-        "longmemeval-executor": evidence.file_sha256(Path(module.__file__).resolve()),
+        "longmemeval-executor": _longmemeval_qualification_surface_identity(module),
         "official-evaluator-adapter": evidence.file_sha256(Path(official_evaluator.__file__).resolve()),
         "official-evaluator-worker": evidence.file_sha256(official_evaluator.WORKER),
         "official-evaluator-source": evidence.file_sha256(evaluator),
@@ -233,7 +254,7 @@ def run(
             include_original_product_answer=True,
             product_repeats=tuple(attribution["product_repeats"]),
             oracle_repeats=tuple(attribution["oracle_repeats"]),
-            settings_label="stage6-oracle-reader-terra-high-qualification",
+            settings_label="stage6-oracle-reader-terra-xhigh-qualification",
             run_judge=True,
             correctness_source="judge",
             prompt_renderer_factory=official_evaluator.PromptRenderer,
@@ -313,16 +334,16 @@ def _validate_result(value: dict[str, Any], plan_identity: str, dependencies: di
     _require(value.get("formal_state_sha256_before") == value.get("formal_state_sha256_after"), "官方评测器资格改写正式 state")
     attribution = _mapping(value, "attribution")
     _require(
-        attribution.get("questions") == 3
-        and attribution.get("reader_calls") == 15
-        and attribution.get("judge_calls") == 24
+        attribution.get("questions") == 5
+        and attribution.get("reader_calls") == 25
+        and attribution.get("judge_calls") == 40
         and attribution.get("judge_controls_passed") is True,
         "oracle Reader 资格结果漂移",
     )
     reader_settings = _mapping(attribution, "reader_settings")
     _require(
         reader_settings.get("model") == "gpt-5.6-terra"
-        and reader_settings.get("reasoning_effort") == "high",
+        and reader_settings.get("reasoning_effort") == "xhigh",
         "oracle Reader 资格模型或推理强度漂移",
     )
     _require(float(attribution["projected_level_wall_seconds"]) <= float(attribution["level_total_wall_seconds_maximum"]), "oracle Reader 资格没有闭合 50 题墙钟")
@@ -335,8 +356,40 @@ def load_current_qualification(suite_root: Path, execution_config: Path) -> dict
     _require(receipt.get("identity") == evidence.canonical_sha256(content), "官方评测器资格收据身份漂移")
     result_path = Path(str(receipt["result"])).resolve()
     _require(result_path.is_file() and evidence.file_sha256(result_path) == receipt.get("result_sha256"), "官方评测器资格结果缺失或漂移")
-    dependencies, _runtime, _contract = current_dependencies(suite_root, execution_config)
     result = _load_json(result_path)
-    _validate_result(result, str(result["plan_identity"]), dependencies)
+    planned_dependencies = _mapping(result, "direct_dependencies")
+    _validate_result(result, str(result["plan_identity"]), planned_dependencies)
+    dependencies, _runtime, _contract = current_dependencies(suite_root, execution_config)
+    if planned_dependencies != dependencies:
+        migration = _load_json(suite_root.resolve() / DEPENDENCY_MIGRATION_RELATIVE)
+        migration_content = {key: item for key, item in migration.items() if key != "identity"}
+        _require(migration.get("schema") == DEPENDENCY_MIGRATION_SCHEMA, "官方评测器资格依赖迁移 schema 无效")
+        _require(migration.get("identity") == evidence.canonical_sha256(migration_content), "官方评测器资格依赖迁移身份漂移")
+        _require(
+            migration.get("qualification_result_identity") == result.get("identity")
+            and migration.get("qualification_result_sha256") == receipt.get("result_sha256"),
+            "官方评测器资格依赖迁移错绑结果",
+        )
+        _require(_mapping(migration, "source_dependencies") == planned_dependencies, "官方评测器资格依赖迁移源错绑")
+        _require(_mapping(migration, "target_dependencies") == dependencies, "官方评测器资格直接依赖漂移")
+        proof = _mapping(migration, "proof")
+        module = validation._load_longmemeval_module(suite_root)
+        _require(
+            proof.get("source_longmemeval_file_sha256") == planned_dependencies.get("longmemeval-executor")
+            and proof.get("target_longmemeval_file_sha256") == evidence.file_sha256(Path(module.__file__).resolve()),
+            "官方评测器资格 LongMemEval 源或目标执行器错绑",
+        )
+        _require(
+            proof.get("source_qualification_surface_identity") == proof.get("qualification_surface_identity")
+            and proof.get("qualification_surface_identity") == dependencies.get("longmemeval-executor")
+            and proof.get("qualification_surface_identity") == _longmemeval_qualification_surface_identity(module),
+            "官方评测器资格实际消费表面漂移",
+        )
+        _require(
+            migration.get("candidate_executions") == 0
+            and migration.get("product_executions") == 0
+            and migration.get("qualification_result_rewritten") is False,
+            "官方评测器资格依赖迁移越权",
+        )
     _require(result.get("identity") == receipt.get("result_identity"), "官方评测器资格结果身份错绑")
     return receipt

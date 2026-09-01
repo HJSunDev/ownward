@@ -17,8 +17,8 @@ import kernel_iteration_stage4_resource_cost as resource_cost
 import kernel_iteration_validation as validation
 
 
-CANDIDATE_RECEIPT_SCHEMA = "ownward.kernel-iteration-v2-candidate/v6"
-CANDIDATE_POLICY = "sealed-current-revision-raw-to-ready-formal-release-with-exact-query-vector-lazy-evidence-quiescent-compaction-and-compact-semantic-transport/v5"
+CANDIDATE_RECEIPT_SCHEMA = "ownward.kernel-iteration-v2-candidate/v7"
+CANDIDATE_POLICY = "sealed-current-revision-raw-to-ready-formal-release-with-exact-query-vector-lazy-evidence-budget-fit-complete-source-quiescent-compaction-and-compact-semantic-transport/v6"
 STORAGE_POLICY = "quiescent-lossless-derived-compaction/v1"
 SEMANTIC_REPRESENTATION = "ownward.semantic-indexed-body-context-table/v2"
 REPRESENTATION_LIFECYCLE = "sealed-current-revision-raw-to-ready-formal-release/v2"
@@ -45,10 +45,12 @@ def prepare(
     generated_service_path = output_root / "core-service.go.overlay"
     generated_collaboration_path = output_root / "core-collaboration.go.overlay"
     generated_generation_path = output_root / "core-generation.go.overlay"
+    generated_access_path = output_root / "mcpserver-server.go.overlay"
     semantic_manifest_path = output_root / "semantic-representation.json"
     paths = (
         receipt_path, subject_path, candidate_config_path, binary_path, composition_path,
-        overlay_path, generated_service_path, generated_collaboration_path, generated_generation_path, semantic_manifest_path,
+        overlay_path, generated_service_path, generated_collaboration_path, generated_generation_path,
+        generated_access_path, semantic_manifest_path,
     )
     if any(path.exists() for path in (*paths, embedding_path)):
         _require(resume and all(path.is_file() for path in paths) and embedding_path.is_dir(), "V2 资源成本候选现场不完整；禁止覆盖或宽松复用")
@@ -63,6 +65,7 @@ def prepare(
             "generated_service_sha256": evidence.file_sha256(generated_service_path),
             "generated_collaboration_sha256": evidence.file_sha256(generated_collaboration_path),
             "generated_generation_sha256": evidence.file_sha256(generated_generation_path),
+            "generated_access_sha256": evidence.file_sha256(generated_access_path),
             "semantic_manifest_sha256": evidence.file_sha256(semantic_manifest_path),
             "semantic_runtime_sha256": evidence.file_sha256(repository / "benchmarks/longmemeval_s/semantic_representation.py"),
             "semantic_executor_sha256": evidence.file_sha256(repository / "benchmarks/longmemeval_s/run.py"),
@@ -73,6 +76,7 @@ def prepare(
             "representation_collaboration_transform_sha256": evidence.file_sha256(repository / "manifests/kernel-candidates/v2/resource-cost/representation-collaboration-transform.json"),
             "representation_generation_transform_sha256": evidence.file_sha256(repository / "manifests/kernel-candidates/v2/resource-cost/representation-generation-transform.json"),
             "representation_lifecycle_source_sha256": evidence.file_sha256(repository / "internal/kernelv2candidate/representation.go"),
+            "access_source_transform_sha256": evidence.file_sha256(repository / "manifests/kernel-candidates/v2/final-answer-sufficiency/mcpserver-transform.json"),
         }
         for field, actual in checks.items():
             _require(receipt.get(field) == actual, f"V2 资源成本候选制品漂移: {field}")
@@ -84,6 +88,7 @@ def prepare(
     representation_service_transform_relative = "manifests/kernel-candidates/v2/resource-cost/representation-service-transform.json"
     representation_collaboration_transform_relative = "manifests/kernel-candidates/v2/resource-cost/representation-collaboration-transform.json"
     representation_generation_transform_relative = "manifests/kernel-candidates/v2/resource-cost/representation-generation-transform.json"
+    access_transform_relative = "manifests/kernel-candidates/v2/final-answer-sufficiency/mcpserver-transform.json"
     semantic_manifest_relative = "manifests/kernel-candidates/v2/resource-cost/semantic-representation.json"
     semantic_runtime_relative = "benchmarks/longmemeval_s/semantic_representation.py"
     semantic_executor_relative = "benchmarks/longmemeval_s/run.py"
@@ -101,6 +106,9 @@ def prepare(
         _render_transformed_input(stage_collaboration, repository / representation_collaboration_transform_relative, generated_collaboration_path)
     system_budget.latency_candidate._render_transformed_source(
         repository, repository / representation_generation_transform_relative, generated_generation_path,
+    )
+    system_budget.latency_candidate._render_transformed_source(
+        repository, repository / access_transform_relative, generated_access_path,
     )
 
     current_path = repository / "manifests" / "compositions" / "v1" / "current-collaborative.json"
@@ -141,6 +149,9 @@ def prepare(
     composition_embed = next((item for item in assembly_content if item.get("name") == "release-composition-embed"), None)
     _require(isinstance(composition_embed, dict), "当前装配组件缺少发布组合封存实现")
     composition_embed["path"] = composition_embed_relative
+    access = next((item for item in template.get("components", []) if item.get("role") == "access"), None)
+    _require(isinstance(access, dict) and isinstance(access.get("content"), list), "当前组合缺少接入组件")
+    access["content"].append({"name": "v2-revision-bound-source-context", "path": access_transform_relative, "sha256": ""})
     vector = next((item for item in template.get("components", []) if item.get("role") == "vector"), None)
     _require(isinstance(vector, dict), "当前组合缺少向量组件")
     _require(all(item.get("name") != "v2-managed-runtime-transform" for item in vector.get("content", [])), "资源成本候选不得恢复 6/2 runtime overlay")
@@ -183,6 +194,7 @@ def prepare(
         str((repository / "internal" / "core" / "service.go").resolve()): str(generated_service_path),
         str((repository / "internal" / "core" / "collaboration.go").resolve()): str(generated_collaboration_path),
         str((repository / "internal" / "core" / "generation.go").resolve()): str(generated_generation_path),
+        str((repository / "internal" / "adapter" / "mcpserver" / "server.go").resolve()): str(generated_access_path),
         str((repository / "manifests" / "compositions" / "v1" / "embed.go").resolve()): str((repository / composition_embed_relative).resolve()),
     }})
     # Windows CreateProcess has a short command-line ceiling. The sealed JSON
@@ -213,11 +225,13 @@ def prepare(
             "generated-service": evidence.file_sha256(generated_service_path),
             "generated-collaboration": evidence.file_sha256(generated_collaboration_path),
             "generated-generation": evidence.file_sha256(generated_generation_path),
+            "generated-access": evidence.file_sha256(generated_access_path),
             "service-source-transform": evidence.file_sha256(repository / service_transform_relative),
             "collaboration-source-transform": evidence.file_sha256(repository / collaboration_transform_relative),
             "representation-service-transform": evidence.file_sha256(repository / representation_service_transform_relative),
             "representation-collaboration-transform": evidence.file_sha256(repository / representation_collaboration_transform_relative),
             "representation-generation-transform": evidence.file_sha256(repository / representation_generation_transform_relative),
+            "access-source-transform": evidence.file_sha256(repository / access_transform_relative),
             "representation-lifecycle": evidence.file_sha256(repository / "internal/kernelv2candidate/representation.go"),
             "embedding-runtime-source": evidence.file_sha256(repository / "internal" / "embedding" / "llama.go"),
             "semantic-representation-manifest": evidence.file_sha256(repository / semantic_manifest_relative),
@@ -258,6 +272,7 @@ def prepare(
         "generated_service_sha256": evidence.file_sha256(generated_service_path),
         "generated_collaboration_sha256": evidence.file_sha256(generated_collaboration_path),
         "generated_generation_sha256": evidence.file_sha256(generated_generation_path),
+        "generated_access_sha256": evidence.file_sha256(generated_access_path),
         "semantic_manifest_sha256": evidence.file_sha256(semantic_manifest_path),
         "semantic_representation": SEMANTIC_REPRESENTATION,
         "semantic_runtime_sha256": evidence.file_sha256(repository / semantic_runtime_relative),
@@ -267,6 +282,7 @@ def prepare(
         "representation_service_transform_sha256": evidence.file_sha256(repository / representation_service_transform_relative),
         "representation_collaboration_transform_sha256": evidence.file_sha256(repository / representation_collaboration_transform_relative),
         "representation_generation_transform_sha256": evidence.file_sha256(repository / representation_generation_transform_relative),
+        "access_source_transform_sha256": evidence.file_sha256(repository / access_transform_relative),
         "representation_lifecycle_source_sha256": evidence.file_sha256(repository / "internal/kernelv2candidate/representation.go"),
         "embedding_runtime_configuration": dict(system_budget.SYSTEM_RUNTIME),
         "embedding_manifest_sha256": evidence.file_sha256(embedding_path / "manifest.json"),

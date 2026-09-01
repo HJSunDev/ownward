@@ -1,0 +1,24 @@
+{
+  "schema": "ownward.kernel-candidate-source-transform/v1",
+  "source": "internal/adapter/mcpserver/server.go",
+  "replacements": [
+    {
+      "name": "source-context-imports",
+      "count": 1,
+      "before": "import (\n\t\"context\"\n\t\"net/http\"\n\t\"reflect\"",
+      "after": "import (\n\t\"context\"\n\t\"errors\"\n\t\"net/http\"\n\t\"reflect\"\n\t\"unicode/utf8\""
+    },
+    {
+      "name": "revision-bound-source-context-output",
+      "count": 1,
+      "before": "type EvidenceReadOutput struct {\n\tEvidence domain.Evidence `json:\"evidence\"`\n}",
+      "after": "type candidateEvidenceRead struct {\n\tdomain.Evidence\n\tSourcePreludeStartRune int    `json:\"source_prelude_start_rune\"`\n\tSourcePreludeEndRune   int    `json:\"source_prelude_end_rune,omitempty\"`\n\tSourcePrelude          string `json:\"source_prelude,omitempty\"`\n}\n\ntype EvidenceReadOutput struct {\n\tEvidence candidateEvidenceRead `json:\"evidence\"`\n}"
+    },
+    {
+      "name": "bounded-source-context-read",
+      "count": 1,
+      "before": "func (s *Server) evidenceRead(ctx context.Context, _ *mcp.CallToolRequest, input EvidenceReadInput) (*mcp.CallToolResult, EvidenceReadOutput, error) {\n\tvalue, err := s.service.ReadEvidence(ctx, input.ID)\n\tif err != nil {\n\t\treturn nil, EvidenceReadOutput{}, err\n\t}\n\treturn nil, EvidenceReadOutput{Evidence: value}, nil\n}",
+      "after": "func (s *Server) evidenceRead(ctx context.Context, _ *mcp.CallToolRequest, input EvidenceReadInput) (*mcp.CallToolResult, EvidenceReadOutput, error) {\n\tvalue, err := s.service.ReadEvidence(ctx, input.ID)\n\tif err != nil {\n\t\treturn nil, EvidenceReadOutput{}, err\n\t}\n\tresult := candidateEvidenceRead{Evidence: value}\n\tif value.StartRune > 0 {\n\t\tsource, err := s.service.Read(ctx, value.SourceID)\n\t\tif err != nil {\n\t\t\treturn nil, EvidenceReadOutput{}, err\n\t\t}\n\t\tif source.ID != value.SourceID || source.Revision != value.SourceRevision {\n\t\t\treturn nil, EvidenceReadOutput{}, errors.New(\"证据来源版本已经变化\")\n\t\t}\n\t\tendRune := min(128, value.StartRune)\n\t\tendByte := 0\n\t\tfor count := 0; count < endRune && endByte < len(source.Content); count++ {\n\t\t\t_, size := utf8.DecodeRuneInString(source.Content[endByte:])\n\t\t\tif size <= 0 {\n\t\t\t\treturn nil, EvidenceReadOutput{}, errors.New(\"证据来源首部不是有效 UTF-8\")\n\t\t\t}\n\t\t\tendByte += size\n\t\t}\n\t\tif endRune <= 0 || endByte <= 0 || endByte > len(source.Content) {\n\t\t\treturn nil, EvidenceReadOutput{}, errors.New(\"证据来源首部区间无效\")\n\t\t}\n\t\tresult.SourcePreludeEndRune = endRune\n\t\tresult.SourcePrelude = source.Content[:endByte]\n\t}\n\treturn nil, EvidenceReadOutput{Evidence: result}, nil\n}"
+    }
+  ]
+}

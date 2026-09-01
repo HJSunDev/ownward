@@ -1,0 +1,147 @@
+{
+  "schema": "ownward.kernel-iteration-stage3-answer-sufficiency-contract/v2",
+  "frozen_before_diagnostic_results": true,
+  "confirmation_frozen_before_reproduction": true,
+  "contains_blind_or_formal_question_answer_gold_content_outputs_or_case_ids": false,
+  "aggregate_trigger": {
+    "stage6_result_identity": "44b2691c49109f17a2f1363309db427630162fa20739657dfd066b9be6d42821",
+    "stage6_plan_identity": "610b289f16e326570adc1d462121c457507aeffb78119626d74a0cc4f9530898",
+    "questions": 25,
+    "correct": 23,
+    "first_observed_gaps": {"evidence_read_answer_incorrect": 2, "none": 23},
+    "fact_delivery_missing": 0,
+    "temporal_correctness": 1.0,
+    "conflict_correctness": 1.0,
+    "raw_content_destroyed": true,
+    "same_content_rerun_forbidden": true,
+    "only_general_boundary_reused": "final-answer-sufficiency-boundary"
+  },
+  "rejected_material_probes": [
+    {
+      "plan_identity": "5a001746958a795b6c489b1b2b2fe0eca51d893a32352332b33b00f6c95b5236",
+      "result_identity": "3cc725f6e4dedc71bbb7a7b971e327644eadff4daaa47ca5a27c4888dd3d7e08",
+      "disposition": "diagnostic-only-not-root-proof",
+      "reason": "the selected product context already contained the source-local notation dependency and both answers were correct"
+    },
+    {
+      "plan_identity": "b222c5a3ac9f0fb78125e7d0f37bb715dd327d835671a18e4081ea3890280a5d",
+      "result_identity": "ceec4a006ff3a18410fb85bb7036eda270f9ca03b74342696849774d0ed3665b",
+      "disposition": "diagnostic-only-not-root-proof",
+      "reason": "fixed evidence windows still co-selected each notation dependency with the adjacent first audit marker and all Reader repetitions were correct"
+    }
+  ],
+  "subject": {
+    "reproduction": {
+      "identity": "2bb27cada07b13dbe6b91644962baac7f9efa23a88af98b274b55c6f1e3a8f52",
+      "source_subject_identity": "edfeb11b4a02405bc43ac0293db7ce186a41db80968503a166f1e892f64bd57d",
+      "kernel_generation_identity": "aa4be7b87e5e468dfab687363e311c22fe4bb82fed9f387a20f0d92e601477ea",
+      "kernel_effect_identity": "a2ad626f00e3806599f625c07d4df4a6430c23c27b3e996c50bd75a9e5fef922"
+    },
+    "final": {
+      "identity": "a0a597710578a1c3442ff5e71cab41600ab7565178acf36d6f77deb41d658117",
+      "kernel_generation_identity": "75a460c2ff8d82c3be71f9abb00f3a6a30c0688b045d57975a7ee20e7f778aee",
+      "kernel_effect_identity": "a2ad626f00e3806599f625c07d4df4a6430c23c27b3e996c50bd75a9e5fef922",
+      "candidate_receipt_identity": "fcbdb44e63b5ffc13248d7ca04fa6be5fe2e69a2bcf3ac378c4609421469dcad"
+    },
+    "candidate_code_change_authorized_before_root_proven": false,
+    "root_reproduction_result_identity": "bd602db334bdeef98f4d31f71952ada58b265fb8af2781da2408fe7b060b8653"
+  },
+  "frozen_mechanism": {
+    "name": "budget-fit-complete-authority-source-after-bounded-evidence-truncation",
+    "evidence_depth_unchanged": 3,
+    "read_limit_unchanged": 8,
+    "context_limit_unchanged": 24000,
+    "complete_source_requires_observed_fourth_relevant_range": true,
+    "complete_source_requires_current_revision_and_remaining_budget": true,
+    "oversized_or_unproven_sources_keep_original_evidence_path": true
+  },
+  "sources": {
+    "diagnosis_materials": {
+      "path": "iteration/v2/stage3-final-answer-sufficiency-diagnosis-materials.json",
+      "sha256": "6b8d2e51f41eac281640d962518c8cf78572fb2f2ba827d71253525101bbf545",
+      "identity": "7fa9792c383914bb31b10c1d82779be646dc83baf525bcccb7b68cf79c6de011",
+      "may_inform_implementation": true
+    },
+    "confirmation_materials": {
+      "path": "iteration/v2/stage3-final-answer-sufficiency-confirmation-materials.json",
+      "sha256": "851c00803d76cebd4ae7658d1093300e6f9a565bc8e80fdf10a9603a09f2f584",
+      "identity": "590e8fc42aab4d5a86b85e80eeedcc4ab406eaec2756347be2a0063c2a0e9615",
+      "may_inform_implementation": false,
+      "run_once_after_mechanism_frozen": true
+    },
+    "regression_materials": {
+      "path": "iteration/v2/stage3-answer-sufficiency-regression.json",
+      "sha256": "aad780072f1511271516572ffd516dd26d299d251dd1b616e62a88940e8ca82b",
+      "identity": "978ee8479844fddf8412df027648b6807fc283e65ed7fdb01e32b0c1cee3759a"
+    }
+  },
+  "coverage": {
+    "diagnosis_required": ["final-answer-sufficiency-source-local-legend", "final-answer-sufficiency-source-local-schema"],
+    "confirmation_required": ["final-answer-confirmation-source-local-legend", "final-answer-confirmation-source-local-schema"],
+    "regression_required": ["answer-sufficiency-regression-user", "answer-sufficiency-regression-assistant", "answer-sufficiency-regression-preference", "answer-sufficiency-regression-update"],
+    "diagnosis_confirmation_regression_and_prior_stage3_facts_disjoint": true
+  },
+  "diagnostic_order": [
+    "authority-source-and-revision",
+    "semantic-organization",
+    "search-rank-and-signals",
+    "evidence-source-depth-and-order",
+    "source-local-structural-context",
+    "context-budget-and-final-order",
+    "byte-identical-product-context-reader-repetitions",
+    "complete-source-oracle-reader-repetitions",
+    "official-judge-controls",
+    "observer-replay"
+  ],
+  "repetitions": {
+    "product_context_total_per_case_including_original": 3,
+    "oracle_context_per_case": 3,
+    "identical_prompt_required": true,
+    "model_and_effort_unchanged": true
+  },
+  "mechanical_answer_atoms": {
+    "final-answer-sufficiency-source-local-legend": [["port meridian"], ["talia nox"], ["05:35", "5:35"], ["desk cobalt"], ["silver dawn"], ["edda marr"]],
+    "final-answer-sufficiency-source-local-schema": [["selene"], ["36-minute", "36 minute"], ["omar vey"], ["pine-4", "pine 4"], ["ember lattice"], ["nira sol"]],
+    "final-answer-confirmation-source-local-legend": [["shelf linden"], ["42–45%", "42-45%", "42 to 45"], ["priya senn"], ["desk marigold"], ["quiet comet"], ["devan roe"]],
+    "final-answer-confirmation-source-local-schema": [["lock heron"], ["11:20–11:40", "11:20-11:40", "11:20 to 11:40"], ["kian daro"], ["counter saffron"], ["calm harbor"], ["lyra penn"]],
+    "answer-sufficiency-regression-user": [["copper"]],
+    "answer-sufficiency-regression-assistant": [["vega-31"]],
+    "answer-sufficiency-regression-preference": [["amber"], ["no ceiling"]],
+    "answer-sufficiency-regression-update": [["fern arch"]]
+  },
+  "gates": {
+    "diagnosis_cases": 2,
+    "confirmation_cases": 2,
+    "regression_cases": 4,
+    "current_subject_reproduction_minimum_cases": 1,
+    "truth_claim_delivery_ratio": 1.0,
+    "final_candidate_diagnosis_accuracy": 1.0,
+    "final_candidate_confirmation_accuracy": 1.0,
+    "regression_accuracy": 1.0,
+    "reader_product_context_accuracy": 1.0,
+    "reader_oracle_context_accuracy": 1.0,
+    "judge_correct_control_accuracy": 1.0,
+    "judge_wrong_control_accuracy": 1.0,
+    "observer_replay_exact": true,
+    "maximum_read_units": 8,
+    "maximum_context_chars": 24000,
+    "maximum_affected_feedback_seconds": 600,
+    "formal_state_writes": 0
+  },
+  "root_classification": {
+    "kernel-context": "raw evidence is delivered but a necessary authority-bound source-local structural dependency is absent from product context while complete-source oracle remains stable",
+    "reader": "the complete source oracle also fails or mechanically varies before judging",
+    "judge-or-scorer": "a mechanically correct Reader answer is rejected or a known-wrong answer is accepted",
+    "executor-or-observer": "raw Reader and Judge artifacts are correct but deterministic replay changes the label",
+    "not-reproduced": "all independent diagnosis gates pass; preserve the aggregate failure boundary without changing the candidate"
+  },
+  "candidate_constraints": {
+    "candidate_only": true,
+    "no_model_prompt_schema_scorer_or_threshold_change": true,
+    "no_unbounded_context_or_read_growth": true,
+    "no_blind_or_formal_execution": true,
+    "confirmation_must_not_inform_implementation": true,
+    "same_identity_resume_zero_model_zero_product": true
+  },
+  "identity": "8aac10afb83d4bf2ab01b9033fd39a9b3ef51887fd5acffb6d92183247653f11"
+}

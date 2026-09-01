@@ -1,0 +1,36 @@
+{
+  "schema": "ownward.kernel-candidate-source-transform/v1",
+  "source": "internal/adapter/mcpserver/server.go",
+  "replacements": [
+    {
+      "name": "source-context-imports",
+      "count": 1,
+      "before": "import (\n\t\"context\"\n\t\"net/http\"\n\t\"reflect\"",
+      "after": "import (\n\t\"context\"\n\t\"errors\"\n\t\"net/http\"\n\t\"reflect\"\n\t\"unicode/utf8\""
+    },
+    {
+      "name": "bounded-complete-source-read-contract",
+      "count": 1,
+      "before": "type EvidenceReadInput struct {\n\tID string `json:\"id\" jsonschema:\"从检索结果取得的细粒度证据引用标识\"`\n}\n\ntype EvidenceReadOutput struct {\n\tEvidence domain.Evidence `json:\"evidence\"`\n}",
+      "after": "type EvidenceReadInput struct {\n\tID                 string `json:\"id\" jsonschema:\"从检索结果取得的细粒度证据引用标识\"`\n\tSourceContextLimit int    `json:\"source_context_limit,omitempty\" jsonschema:\"仅在证据搜索已证明截断时，请求不超过剩余上下文预算的完整权威来源\"`\n}\n\ntype candidateEvidenceRead struct {\n\tdomain.Evidence\n\tSourcePreludeStartRune  int    `json:\"source_prelude_start_rune\"`\n\tSourcePreludeEndRune    int    `json:\"source_prelude_end_rune,omitempty\"`\n\tSourcePrelude           string `json:\"source_prelude,omitempty\"`\n\tSourceCompleteStartRune int    `json:\"source_complete_start_rune\"`\n\tSourceCompleteEndRune   int    `json:\"source_complete_end_rune,omitempty\"`\n\tSourceComplete          string `json:\"source_complete,omitempty\"`\n}\n\ntype EvidenceReadOutput struct {\n\tEvidence candidateEvidenceRead `json:\"evidence\"`\n}"
+    },
+    {
+      "name": "truncated-evidence-search-contract",
+      "count": 1,
+      "before": "type EvidenceSearchOutput struct {\n\tEvidence []domain.EvidenceReference `json:\"evidence\"`\n}",
+      "after": "type EvidenceSearchOutput struct {\n\tEvidence    []domain.EvidenceReference `json:\"evidence\"`\n\tTruncated   bool                       `json:\"truncated,omitempty\"`\n\tSourceRunes int                        `json:\"source_runes,omitempty\"`\n}"
+    },
+    {
+      "name": "revision-bound-budget-fit-complete-source-read",
+      "count": 1,
+      "before": "func (s *Server) evidenceRead(ctx context.Context, _ *mcp.CallToolRequest, input EvidenceReadInput) (*mcp.CallToolResult, EvidenceReadOutput, error) {\n\tvalue, err := s.service.ReadEvidence(ctx, input.ID)\n\tif err != nil {\n\t\treturn nil, EvidenceReadOutput{}, err\n\t}\n\treturn nil, EvidenceReadOutput{Evidence: value}, nil\n}",
+      "after": "func (s *Server) evidenceRead(ctx context.Context, _ *mcp.CallToolRequest, input EvidenceReadInput) (*mcp.CallToolResult, EvidenceReadOutput, error) {\n\tvalue, err := s.service.ReadEvidence(ctx, input.ID)\n\tif err != nil {\n\t\treturn nil, EvidenceReadOutput{}, err\n\t}\n\tresult := candidateEvidenceRead{Evidence: value}\n\tif value.StartRune <= 0 && input.SourceContextLimit <= 0 {\n\t\treturn nil, EvidenceReadOutput{Evidence: result}, nil\n\t}\n\tsource, err := s.service.Read(ctx, value.SourceID)\n\tif err != nil {\n\t\treturn nil, EvidenceReadOutput{}, err\n\t}\n\tif source.ID != value.SourceID || source.Revision != value.SourceRevision {\n\t\treturn nil, EvidenceReadOutput{}, errors.New(\"证据来源版本已经变化\")\n\t}\n\tsourceRunes := utf8.RuneCountInString(source.Content)\n\tif input.SourceContextLimit > 0 && sourceRunes <= input.SourceContextLimit {\n\t\tresult.SourceCompleteEndRune = sourceRunes\n\t\tresult.SourceComplete = source.Content\n\t\treturn nil, EvidenceReadOutput{Evidence: result}, nil\n\t}\n\tif value.StartRune > 0 {\n\t\tendRune := min(128, value.StartRune)\n\t\tendByte := 0\n\t\tfor count := 0; count < endRune && endByte < len(source.Content); count++ {\n\t\t\t_, size := utf8.DecodeRuneInString(source.Content[endByte:])\n\t\t\tif size <= 0 {\n\t\t\t\treturn nil, EvidenceReadOutput{}, errors.New(\"证据来源首部不是有效 UTF-8\")\n\t\t\t}\n\t\t\tendByte += size\n\t\t}\n\t\tif endRune <= 0 || endByte <= 0 || endByte > len(source.Content) {\n\t\t\treturn nil, EvidenceReadOutput{}, errors.New(\"证据来源首部区间无效\")\n\t\t}\n\t\tresult.SourcePreludeEndRune = endRune\n\t\tresult.SourcePrelude = source.Content[:endByte]\n\t}\n\treturn nil, EvidenceReadOutput{Evidence: result}, nil\n}"
+    },
+    {
+      "name": "bounded-truncation-proof",
+      "count": 1,
+      "before": "func (s *Server) evidenceSearch(ctx context.Context, _ *mcp.CallToolRequest, input EvidenceSearchInput) (*mcp.CallToolResult, EvidenceSearchOutput, error) {\n\tlimit := input.Limit\n\tif limit == 0 {\n\t\tlimit = 3\n\t}\n\tvalues, err := s.service.SearchEvidence(ctx, contract.EvidenceSearchInput{SourceID: input.SourceID, Query: input.Query, Limit: limit})\n\tif err != nil {\n\t\treturn nil, EvidenceSearchOutput{}, err\n\t}\n\treturn nil, EvidenceSearchOutput{Evidence: values}, nil\n}",
+      "after": "func (s *Server) evidenceSearch(ctx context.Context, _ *mcp.CallToolRequest, input EvidenceSearchInput) (*mcp.CallToolResult, EvidenceSearchOutput, error) {\n\tlimit := input.Limit\n\tif limit == 0 {\n\t\tlimit = 3\n\t}\n\tprobeLimit := min(limit+1, 8)\n\tvalues, err := s.service.SearchEvidence(ctx, contract.EvidenceSearchInput{SourceID: input.SourceID, Query: input.Query, Limit: probeLimit})\n\tif err != nil {\n\t\treturn nil, EvidenceSearchOutput{}, err\n\t}\n\ttruncated := len(values) > limit\n\tif truncated {\n\t\tvalues = values[:limit]\n\t}\n\tresult := EvidenceSearchOutput{Evidence: values, Truncated: truncated}\n\tif truncated {\n\t\tsource, err := s.service.Read(ctx, input.SourceID)\n\t\tif err != nil {\n\t\t\treturn nil, EvidenceSearchOutput{}, err\n\t\t}\n\t\tfor _, reference := range values {\n\t\t\tif reference.SourceID != source.ID || reference.SourceRevision != source.Revision {\n\t\t\t\treturn nil, EvidenceSearchOutput{}, errors.New(\"证据搜索来源版本已经变化\")\n\t\t\t}\n\t\t}\n\t\tresult.SourceRunes = utf8.RuneCountInString(source.Content)\n\t}\n\treturn nil, result, nil\n}"
+    }
+  ]
+}

@@ -1,18 +1,20 @@
 {
   "schema": "ownward.kernel-iteration-stage5-contract/v1",
-  "identity": "e7a27b75f7d94c4a9d8e18a8a271b59b6899f45a1da16fcbe04bba811cdcfa1e",
-  "audit_source_git": "572d5144ddd71837b73c1541d25aa71638d3083c",
+  "identity": "968f71eef276cbfd134994903fbaf238fc6574bdb3fc0ea7fa896a25215bc22d",
+  "audit_source_git": "a74a2e163dc6aaf6c868736bb5d4bb0e8dba65e9",
+  "frontier_evidence_source_git": "a74a2e163dc6aaf6c868736bb5d4bb0e8dba65e9",
   "candidate": {
-    "source_subject_identity": "834e204c89623bf1bdf6c9b5c5b49589b49f22137ae1ef31c58201ff6ff9f17c",
-    "kernel_generation_identity": "66a6e827841c09279dec99d53cc7e5db04a879c94da14cbd3355419029bfa2db",
+    "source_subject_identity": "a0a597710578a1c3442ff5e71cab41600ab7565178acf36d6f77deb41d658117",
+    "kernel_generation_identity": "75a460c2ff8d82c3be71f9abb00f3a6a30c0688b045d57975a7ee20e7f778aee",
     "kernel_effect_identity": "a2ad626f00e3806599f625c07d4df4a6430c23c27b3e996c50bd75a9e5fef922",
-    "composition_identity": "6768d65d12c4c539a01ef5e69a32428867012002f81bb0d68725a7aada2ed291",
+    "composition_identity": "19b9b25dbf737da636020101aa534030e46a3d565f464b74ab6659d3440885c3",
     "component_manifest": "manifests/kernel-candidates/v2/stage5-components.json",
-    "component_manifest_identity": "d7df5e202b71186b0a31ec633951e7999050e3fe777a1d7c32a9160037510bec"
+    "component_manifest_identity": "48d155facde7db624ef64b872b427315ad557b51f1015e8513500ce358296bd5"
   },
   "rebuild_equivalence": {
     "must_match": [
       "builder_sha256",
+      "access_source_transform_sha256",
       "collaboration_source_transform_sha256",
       "composition_identity",
       "composition_sha256",
@@ -20,6 +22,7 @@
       "embedding_runtime_configuration",
       "generated_collaboration_sha256",
       "generated_generation_sha256",
+      "generated_access_sha256",
       "generated_service_sha256",
       "kernel_effect_identity",
       "kernel_generation_identity",
@@ -46,26 +49,37 @@
   },
   "stage4_evidence": [
     {
+      "role": "cost-contract",
       "path": "benchmarks/acceptance/suite/iteration/v2/stage4-resource-cost-representation-final-contract.json",
       "sha256": "9560e2d0f3f7ad127526b8459c87dd8cb90059e4eddb76a83e6ddd6c7b0a6c20",
       "identity": "db0de5be1d737ea23e9fd6a14ee1e8288b7fc1fac6bef905e66adfb52e71a927"
     },
     {
+      "role": "dependency-migration",
+      "path": "benchmarks/acceptance/suite/iteration/v2/stage4-resource-cost-raw-vector-lifecycle-dependency-migration.json",
+      "sha256": "e6d00ceb0815af49510be70fc749bcc04363eff8a862e0f810566e86af85c5c5",
+      "identity": "fd82621e7c0eadf55cea262598baf940a3b0945ce799cb6882c54828c4fa3998"
+    },
+    {
+      "role": "controlled-cost",
       "path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/representation-lifecycle-final-v6/result.json",
       "sha256": "a4a720b93738a40ce6115074e44d39f58497cac4638d8a53fe09a7e89af17b3a",
       "identity": "3e06bfd3f7c8d235eab8f5d436825ee3210794527744bb558e63ae24cb9fff72"
     },
     {
-      "path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/representation-lifecycle-quality-v3/subjects/v2-candidate/834e204c89623bf1bdf6c9b5c5b49589b49f22137ae1ef31c58201ff6ff9f17c/development/4deb70c77738714a84582c361ccee659065fc5555d9033c884530e187c64eb7c/execution-result.json",
-      "sha256": "f43dfb4758ea79dcc90678b254649d34db24c7ac9d78cedbd76bda35e259dadc",
-      "identity": "c1609a82e7c908cca2da950b793bf16fe75bbaba4a9ad170d76ae54b8003cbb3"
+      "role": "current-development",
+      "path": ".tmp/kernel-v2-major-iteration/stage3-final-answer-sufficiency-v2/revalidation/subjects/v2-candidate/a0a597710578a1c3442ff5e71cab41600ab7565178acf36d6f77deb41d658117/development/926706fa871a3b5ac9e8c31f0f18c19c1e71375a85594c4a22c37dd660b7c0fc/execution-result.json",
+      "sha256": "943225c8d135e2875d105f5cc28c2902fe9436fed98cd9762dc375903365311d",
+      "identity": "e29d2b3fcc77825f07f734beb477b72e51dfa9dfd93326eb90ad2ad65345fd6a"
     },
     {
-      "path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/representation-lifecycle-quality-v3/subjects/v2-candidate/834e204c89623bf1bdf6c9b5c5b49589b49f22137ae1ef31c58201ff6ff9f17c/regression/c711fb9d1f4ae375ee19fcf24025729634dbcdcc5f51c81bd64552b8cee92d0d/execution-result.json",
-      "sha256": "b632ebd71b4d5a9f113a2c633ad3d231be18ead84cdb8a4cd60efe8ad610c8b5",
-      "identity": "afc337b799533aa90f685c17c0f7fe78abda56b7a40ae4391b8cd3aa28159215"
+      "role": "current-regression",
+      "path": ".tmp/kernel-v2-major-iteration/stage3-final-answer-sufficiency-v2/revalidation/subjects/v2-candidate/a0a597710578a1c3442ff5e71cab41600ab7565178acf36d6f77deb41d658117/regression/8b3c38a4a51d6352eeef9500b7bff188704a085bbcab24e69818944e5f05fd8f/execution-result.json",
+      "sha256": "b5433c435489a572f9e939fdc5c5cde3b1e18feb496447ddb574638ca7c55668",
+      "identity": "22a606b24a9fb9f6bbe60f7e80f1c76d7f833fb1e6c0e9ee59c8815601d33cde"
     },
     {
+      "role": "semantic-cost",
       "path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/real-capability-wall-audit-v1/result.json",
       "sha256": "07da31c5fbd7fcf1220f3fb2a2441d1a7f4dfab8058959c75699d071ea5deb76",
       "identity": "c7480729170c671dcbfc1c441abb7a708c3378f2285f29a8c6ab79e77b215a1b"

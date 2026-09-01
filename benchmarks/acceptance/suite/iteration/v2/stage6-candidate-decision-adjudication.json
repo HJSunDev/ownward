@@ -1,0 +1,189 @@
+{
+  "schema": "ownward.kernel-iteration-stage6-candidate-decision-adjudication/v1",
+  "purpose": "preserve-the-immutable-current-15-question-result-while-adjudicating-independent-candidate-metrics-separately-from-answer-root-attribution",
+  "source_result": {
+    "path": ".tmp/kernel-v2-major-iteration/stage6/evidence/blind-gate/3d418feba172d06678819372e1d17365b0989292c5359540dc13de4ffda26ad3/result.json",
+    "plan_identity": "3d418feba172d06678819372e1d17365b0989292c5359540dc13de4ffda26ad3",
+    "result_identity": "7d67ea03ed78c75962666b342f047cfa7edc177c8b90f49fc9a88e33d962e709",
+    "result_sha256": "0b508aa28f75e018c2106437eb59932e069468e386dd6d721f466191a63f10dd",
+    "status": "evaluation-process-error",
+    "candidate_decision": null
+  },
+  "independent_candidate_adjudication": {
+    "candidate_decision": null,
+    "failures": [],
+    "performance_passed": true,
+    "answer_attribution_valid": false,
+    "answer_root_cause": "unknown",
+    "answer_failure_is_not_used_for_candidate_rejection": true,
+    "v0_execution_required": false,
+    "next_stage": 6,
+    "next_action": "run-a-fresh-nonoverlapping-15-question-gate-from-the-valid-five-question-predecessor-after-the-general-attribution-boundary-is-qualified"
+  },
+  "performance_distribution_policy": {
+    "metric": "retrieval_p95_ms",
+    "estimator": "nearest-rank-ceil-n-times-0.95",
+    "minimum_samples": 20,
+    "single_non_timeout_outlier_is_candidate_failure": false,
+    "hard_timeout_or_execution_error_is_candidate_failure": true,
+    "insufficient_sample_outlier": "bounded-sufficient-sample-confirmation-required",
+    "same_dependency_confirmation_reused": true
+  },
+  "answer_attribution_boundary_qualification": {
+    "qualification_receipt_identity": "c58dd793db110f39dd5d64c1efaeeb5639eafd249d0a1ea6d7ada02503fefe5d",
+    "reader_profile_identity": "401aa7962b5ecd3d283093a2d5eee0fe76da941d20ce4aa317ef21216d55c83c",
+    "reader": "gpt-5.6-terra/xhigh",
+    "judge": "gpt-5.6-terra/medium",
+    "blind_or_formal_content_used": false,
+    "candidate_or_product_execution": false,
+    "model_calls": 0,
+    "controls": [
+      {
+        "name": "complete-evidence-first-reader-error",
+        "product_context_failures": 1,
+        "product_context_mechanically_unstable": true,
+        "oracle_context_failures": 0,
+        "oracle_context_mechanically_unstable": false,
+        "judge_controls_passed": true,
+        "expected_classification": "external-reader-random-failure",
+        "expected_responsible_boundary": "external-reader"
+      },
+      {
+        "name": "candidate-evidence-insufficient",
+        "product_context_failures": 3,
+        "product_context_mechanically_unstable": false,
+        "oracle_context_failures": 0,
+        "oracle_context_mechanically_unstable": false,
+        "judge_controls_passed": true,
+        "expected_classification": "candidate-context-failure",
+        "expected_responsible_boundary": "candidate-evidence-sufficiency"
+      }
+    ],
+    "same_identity_resume_model_calls": 0,
+    "same_identity_resume_product_executions": 0,
+    "formal_state_sha256_before": "b299ce4ffa1085ce9e58d5792558be037cc130d00322abe0626c399a4a251c6f",
+    "formal_state_sha256_after": "b299ce4ffa1085ce9e58d5792558be037cc130d00322abe0626c399a4a251c6f"
+  },
+  "retrieval_root_audit": {
+    "blind_measurement": {
+      "questions": 15,
+      "mean_ms": 420.99999999967014,
+      "p95_ms": 1000.0,
+      "metric_is_monotonic_elapsed_time_not_timeout_sentinel": true,
+      "candidate_codex_calls": 45,
+      "candidate_codex_retries": 0,
+      "candidate_codex_rate_limit_events": 0,
+      "candidate_codex_interruptions": 0,
+      "candidate_worker_restarts": 0
+    },
+    "measurement_semantics": {
+      "clock": "time.monotonic",
+      "retrieval_total": "search_ms+evidence_search_ms+read_ms",
+      "p95": "nearest-rank-ceil-n-times-0.95",
+      "blind_sample_count": 15,
+      "blind_p95_rank": 15,
+      "blind_p95_is_sample_maximum": true,
+      "timeout_rounding_or_sentinel": false
+    },
+    "independent_nonoverlapping_evidence": [
+      {
+        "path": ".tmp/kernel-v2-major-iteration/stage4-retrieval-latency/system-budget-2-1-v1/result.json",
+        "sha256": "7ca98be0e4ec4bca905bc95a1f4127b11bc449d92c57c329350b7c429b94e952",
+        "identity": "d4f859b8a85e482c48b11c5145419218b0901a1053490f303957aef306fc0436",
+        "samples": 36,
+        "assets": "38/46/54/62",
+        "four_workers": true,
+        "p95_ms": 356.67289999999593,
+        "max_ms": 363.4423999999967
+      },
+      {
+        "path": ".tmp/kernel-v2-major-iteration/stage45-current/development-evidence/subjects/v2-candidate/edfeb11b4a02405bc43ac0293db7ce186a41db80968503a166f1e892f64bd57d/development/e2d1c6169d4043e9100563f1ab7462e24c8c145d5106a4ee5a35be4146c32587/execution-result.json",
+        "sha256": "c846c3f0bcdb6a981ebf3546e57013d704d3a1fe903e5dcdf6bcefabc785ce16",
+        "identity": "a8246708e301a76276699f069a7a04509f8514edfe9ed7eeb904fc31bdce61f7",
+        "questions": 4,
+        "p95_ms": 514.9999999994179
+      },
+      {
+        "path": ".tmp/kernel-v2-major-iteration/stage45-current/regression-evidence/subjects/v2-candidate/edfeb11b4a02405bc43ac0293db7ce186a41db80968503a166f1e892f64bd57d/regression/3dca43ea2eecfea3c78127dd8dae473f6da14bce65335b7ee4b344fd4623e931/execution-result.json",
+        "sha256": "ef2c66d4787678f6ef2ac36e3d6313644942d3e04d13e35a14d1e78cbb194980",
+        "identity": "bbce8a0f0b109e1fc30a7379c4c971f7331db0e806d88d5a64d3f76af65ae668",
+        "questions": 8,
+        "p95_ms": 141.00000000325963
+      }
+    ],
+    "independent_nonblind_reproduction": {
+      "frozen_before_measurement": true,
+      "materials_identity": "e9ecd0befde7c3dfceb1424258fd37e274f1c4de4bb1a16dca7f88b66572a330",
+      "prepared_receipt_identity": "715331e21da1d8fa9455f77f9b37a76b78796b67a24110ac0634fb37d4f171b9",
+      "candidate_binary_sha256": "4004f63f38faa9ce034b4ee89901397a51d23b9e4ab851a3cf1610f8bc24b46a",
+      "embedding_manifest_sha256": "fc2e4a1aa7d09fc64789618259a1bbedce2a18d00bd1abd81d13a16dfb78c0da",
+      "protocol_sha256": "6a52f479858b8a057a10e94dea38b7dd74bff4d8ee021a2abe693574bf98657f",
+      "transport_sha256": "fbca3e4f15afbd0e8409c043fc5742c5b4aeec72dbaa79d66be550f10b6f1a86",
+      "measurement_controller_sha256": "4ed9c33c12576d897f8edb71ee52e2517f3798aeb99951e9f747e3a9053a8cc3",
+      "asset_count_range": [38, 62],
+      "search_limit": 24,
+      "read_limit": 8,
+      "context_max_chars": 24000,
+      "workers": 4,
+      "rounds": 3,
+      "warmups_per_round": 1,
+      "measured_repetitions_per_round": 5,
+      "measured_requests": 60,
+      "model_calls": 0,
+      "answer_generation_calls": 0,
+      "aggregate": {
+        "mean_ms": 397.1469183333335,
+        "p95_ms": 533.5328999999973,
+        "max_ms": 633.3007000000066,
+        "search_mean_ms": 335.4701416666666,
+        "search_p95_ms": 441.41270000000077,
+        "evidence_search_mean_ms": 31.81519333333309,
+        "evidence_search_p95_ms": 54.444999999986976,
+        "read_mean_ms": 29.861583333333762,
+        "read_p95_ms": 56.24670000000265,
+        "protocol_overhead_p95_ms": 1.0455999999976484,
+        "working_set_bytes_max": 247042048,
+        "target_delivery_complete": true,
+        "stable_selection_trace_per_case": true
+      },
+      "round_p95_ms": [443.7867000000075, 513.5042999999974, 569.4356999999997],
+      "fifteen_sample_case_p95_ms": {
+        "v2rl-meridian-54": 513.5042999999974,
+        "v2rl-northstar-46": 633.3007000000066,
+        "v2rl-oriole-38": 569.4356999999997,
+        "v2rl-polaris-62": 533.5328999999973
+      },
+      "highest_observed_tail": {
+        "retrieval_ms": 633.3007000000066,
+        "search_ms": 519.0083000000029,
+        "evidence_search_ms": 54.444999999986976,
+        "read_ms": 59.84740000001665,
+        "protocol_overhead_ms": 1.0731999999935624
+      },
+      "aggregate_p95_gate_ms": 553.0,
+      "aggregate_p95_passed": true,
+      "fifteen_sample_tail_gate_failures": 2,
+      "source_prepared_data_unchanged": true,
+      "isolated_measurement_read_only": true,
+      "scratch_destroyed": true,
+      "formal_state_sha256_before": "b299ce4ffa1085ce9e58d5792558be037cc130d00322abe0626c399a4a251c6f",
+      "formal_state_sha256_after": "b299ce4ffa1085ce9e58d5792558be037cc130d00322abe0626c399a4a251c6f"
+    },
+    "candidate_systematic_regression_reproduced": false,
+    "small-sample-nearest-rank-tail-reproduced": true,
+    "measurement_or_timeout_sentinel_proven": false,
+    "concurrency_tail_isolation_proven": false,
+    "evaluator_execution_error_caused_metric": false,
+    "first_provable_breakpoint": "single-non-timeout-outlier-under-insufficient-sample",
+    "deeper_product_root": "not-proven",
+    "evidence_search_read_or_protocol_is_dominant": false,
+    "conclusion": "the-blind-1000ms-value-is-a-single-non-timeout-outlier-and-the-same-dependency-60-request-distribution-passes-the-frozen-gate-with-stable-selection-and-delivery",
+    "next_action": "stop-performance-investigation-and-run-a-fresh-15-question-gate-after-the-general-answer-attribution-boundary-is-qualified",
+    "candidate_change_authorized": false
+  },
+  "source_result_rewritten": false,
+  "model_or_product_execution": false,
+  "formal_state_written": false,
+  "formal_state_sha256": "b299ce4ffa1085ce9e58d5792558be037cc130d00322abe0626c399a4a251c6f",
+  "identity": "4c34f5dcc2f62f378925ba446164629262025ed42f9cc0823c499cbafe65e3a1"
+}

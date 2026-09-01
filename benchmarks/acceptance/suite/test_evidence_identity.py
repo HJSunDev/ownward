@@ -190,11 +190,12 @@ class EvidenceIdentityTests(unittest.TestCase):
 
     def test_independent_generation_keeps_git_audit_separate_from_runtime_identity(self) -> None:
         component_manifest = self.repository / "manifests" / "kernel-candidates" / "v2" / "stage5-components.json"
+        sealed_manifest = json.loads(component_manifest.read_text(encoding="utf-8"))
         components = evidence_identity.build_candidate_components_from_manifest(
             component_manifest, "f" * 64, "e" * 64,
         )
         manifests, scopes = self._current_fixture()
-        runtime = "66a6e827841c09279dec99d53cc7e5db04a879c94da14cbd3355419029bfa2db"
+        runtime = sealed_manifest["runtime_identity"]
         value = evidence_identity.build_current_binding(
             candidate=self.candidate,
             suite_version="1.0.0",

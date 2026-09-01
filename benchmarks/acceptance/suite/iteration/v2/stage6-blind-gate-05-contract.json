@@ -1,6 +1,6 @@
 {
   "schema": "ownward.kernel-iteration-stage6-blind-gate-contract/v3",
-  "identity": "1f1a8a726b69f68977429dc4b4bc023d96a33c8d1853022ce3a4a8925a2b6ea5",
+  "identity": "9dea6f52081b326924b06bb6cdae87278dbf31b48399b54bf2ac10888dca40c5",
   "frozen_before_generation": true,
   "formal": false,
   "level": 5,
@@ -10,10 +10,10 @@
   },
   "candidate": {
     "role": "v2-candidate",
-    "source_subject_identity": "834e204c89623bf1bdf6c9b5c5b49589b49f22137ae1ef31c58201ff6ff9f17c",
-    "kernel_generation_identity": "66a6e827841c09279dec99d53cc7e5db04a879c94da14cbd3355419029bfa2db",
+    "source_subject_identity": "a0a597710578a1c3442ff5e71cab41600ab7565178acf36d6f77deb41d658117",
+    "kernel_generation_identity": "75a460c2ff8d82c3be71f9abb00f3a6a30c0688b045d57975a7ee20e7f778aee",
     "kernel_effect_identity": "a2ad626f00e3806599f625c07d4df4a6430c23c27b3e996c50bd75a9e5fef922",
-    "stage5_contract_identity": "e7a27b75f7d94c4a9d8e18a8a271b59b6899f45a1da16fcbe04bba811cdcfa1e"
+    "stage5_contract_identity": "968f71eef276cbfd134994903fbaf238fc6574bdb3fc0ea7fa896a25215bc22d"
   },
   "baseline": {
     "role": "evaluation-baseline",
@@ -49,6 +49,9 @@
     "generation_worker_active_turns_maximum": 1,
     "generation_result_order": "frozen-coverage-order",
     "quality_admission_after_all_generation": true,
+    "rejection_replacement": "rejected-cases-only",
+    "full_set_readmission_after_replacement": true,
+    "maximum_replacement_rounds": 3,
     "shared_conditions": [
       "dataset",
       "environment",
@@ -75,6 +78,7 @@
     "read_limit": 8,
     "context_chars_maximum": 24000
   },
+  "performance_distribution_adjudication": {"metric": "retrieval_p95_ms", "estimator": "nearest-rank-ceil-n-times-0.95", "minimum_samples": 20, "insufficient_sample_outlier": "bounded-sufficient-sample-confirmation-required", "single_non_timeout_outlier_is_candidate_failure": false, "hard_timeout_or_execution_error_is_candidate_failure": true, "valid_same-dependency-sufficient-evidence-is-reused": true},
   "relative_v0_gate": {
     "final_answer_accuracy": "candidate-greater-than-or-equal-to-v0",
     "fact_delivery_missing": "candidate-less-than-or-equal-to-v0",
@@ -94,14 +98,15 @@
   "failure": {
     "answer_failure_attribution": {
       "reader_profile_identity": "401aa7962b5ecd3d283093a2d5eee0fe76da941d20ce4aa317ef21216d55c83c",
-      "reader_selection_identity": "44098db2a12ae3a2b467b9ceda1b793ae26f83053c136297b04e40297d9e1e8d",
+      "reader_selection_identity": "268023d6a4cab714d94d136c998cd20e3f3e9ad017cb3b5f49e783696c41f8fe",
       "first_answer_accuracy_required": 1.0,
       "first_correct_proceeds": true,
       "first_wrong_incomplete_evidence": "candidate-failure",
       "first_wrong_complete_evidence_candidate_context_fails_oracle_stable": "candidate-context-failure",
       "oracle_or_identical_prompt_mechanical_instability": "evaluation-process-failure",
       "judge_control_failure": "evaluation-process-failure",
-      "repetitions_cannot_convert_failure_to_pass": true,
+      "qualified_reader_can_adjudicate_first_answer_random_failure": true,
+      "repetitions_cannot_convert_candidate_context_failure_to_pass": true,
       "wording_or_hash_variation_is_diagnostic_only": true
     },
     "candidate_failure_stops_before_v0": true,

@@ -1,0 +1,112 @@
+{
+  "schema": "ownward.kernel-iteration-stage6-oracle-reader-qualification-material/v2",
+  "purpose": "independent-hard-noncandidate-oracle-reader-reliability-qualification",
+  "formal": false,
+  "blind_gate_material": false,
+  "candidate_decision": false,
+  "contains_formal_or_blind_content": false,
+  "cases": [
+    {
+      "case_id": "stage6-oracle-reader-v2-temporal-authority",
+      "coverage": "temporal-authority-chain",
+      "question_type": "temporal-reasoning",
+      "question_date": "2026-08-18",
+      "question": "As of August 18, which lens and bay are the operative settings for the Selene array?",
+      "answer": "The quartz lens at bay 12.",
+      "answer_session_ids": ["v2-temporal-01", "v2-temporal-02", "v2-temporal-03"],
+      "stale_session_ids": ["v2-temporal-01", "v2-temporal-02"],
+      "distractor_session_ids": ["v2-temporal-04"],
+      "truth_claims": [{"claim": "The operative Selene array setting on August 18 is the quartz lens at bay 12."}],
+      "sessions": [
+        {"session_id": "v2-temporal-01", "date": "2026-08-02", "turns": [{"role": "user", "content": "The approved Selene baseline used a jade lens at bay 3."}]},
+        {"session_id": "v2-temporal-02", "date": "2026-08-11", "turns": [{"role": "assistant", "content": "A maintenance note temporarily moved Selene to bay 8 with an amber lens, pending the commissioning record."}]},
+        {"session_id": "v2-temporal-03", "date": "2026-08-17", "turns": [{"role": "user", "content": "The signed commissioning record supersedes both the baseline and temporary note. It sets Selene to a quartz lens at bay 12, effective immediately."}]},
+        {"session_id": "v2-temporal-04", "date": "2026-08-16", "turns": [{"role": "assistant", "content": "The unrelated Helios array uses a cobalt lens at bay 5."}]}
+      ]
+    },
+    {
+      "case_id": "stage6-oracle-reader-v2-multihop",
+      "coverage": "multi-session-four-hop",
+      "question_type": "multi-session",
+      "question_date": "2026-08-18",
+      "question": "What release phrase applies to the parcel assigned to Juniper's current route?",
+      "answer": "quiet harbor.",
+      "answer_session_ids": ["v2-hop-01", "v2-hop-02", "v2-hop-03", "v2-hop-04"],
+      "stale_session_ids": ["v2-hop-01"],
+      "distractor_session_ids": ["v2-hop-05"],
+      "truth_claims": [
+        {"claim": "Juniper's current route is M4."},
+        {"claim": "Route M4 is assigned to parcel Delta-6."},
+        {"claim": "Parcel Delta-6 uses release class C2."},
+        {"claim": "Release class C2 maps to quiet harbor."}
+      ],
+      "sessions": [
+        {"session_id": "v2-hop-01", "date": "2026-08-03", "turns": [{"role": "user", "content": "Juniper was provisionally assigned route M2."}]},
+        {"session_id": "v2-hop-02", "date": "2026-08-12", "turns": [{"role": "assistant", "content": "The final routing ledger replaces the provisional assignment: Juniper now uses M4. M4 is assigned to parcel Delta-6."}]},
+        {"session_id": "v2-hop-03", "date": "2026-08-13", "turns": [{"role": "user", "content": "The parcel register maps Delta-5 to class C1, Delta-6 to class C2, and Delta-7 to class C3."}]},
+        {"session_id": "v2-hop-04", "date": "2026-08-14", "turns": [{"role": "assistant", "content": "Release table: C1 means bright meadow; C2 means quiet harbor; C3 means copper rain."}]},
+        {"session_id": "v2-hop-05", "date": "2026-08-15", "turns": [{"role": "user", "content": "Rowan uses route M3 for parcel Echo-2."}]}
+      ]
+    },
+    {
+      "case_id": "stage6-oracle-reader-v2-structured",
+      "coverage": "structured-table-footnote",
+      "question_type": "knowledge-update",
+      "question_date": "2026-08-18",
+      "question": "Under the final table and its controlling footnote, which code and shelf should be used for the Oriole sample?",
+      "answer": "Code N-31 on shelf 7.",
+      "answer_session_ids": ["v2-table-01", "v2-table-02"],
+      "stale_session_ids": ["v2-table-01"],
+      "distractor_session_ids": ["v2-table-03"],
+      "truth_claims": [{"claim": "The final controlling entry for Oriole is code N-31 on shelf 7."}],
+      "sessions": [
+        {"session_id": "v2-table-01", "date": "2026-08-05", "turns": [{"role": "assistant", "content": "Draft inventory table:\n| Sample | Code | Shelf |\n| Oriole | N-13 | 2 |\n| Kestrel | K-04 | 6 |"}]},
+        {"session_id": "v2-table-02", "date": "2026-08-16", "turns": [{"role": "user", "content": "Final inventory table:\n| Sample | Code | Shelf |\n| Oriole | N-13 | 2 |\n| Oriole* | N-31 | 7 |\n| Kestrel | K-04 | 6 |\nFootnote *: the starred row is the signed replacement and controls over every unstarred Oriole row."}]},
+        {"session_id": "v2-table-03", "date": "2026-08-17", "turns": [{"role": "assistant", "content": "The Finch sample is code F-20 on shelf 4."}]}
+      ]
+    },
+    {
+      "case_id": "stage6-oracle-reader-v2-authority-over-recency",
+      "coverage": "authority-over-recency",
+      "question_type": "knowledge-update",
+      "question_date": "2026-08-18",
+      "question": "Which carrier and channel does the binding registry require for the Aster shipment?",
+      "answer": "Carrier Vale on channel 4.",
+      "answer_session_ids": ["v2-authority-01", "v2-authority-02", "v2-authority-03"],
+      "stale_session_ids": ["v2-authority-01", "v2-authority-03"],
+      "distractor_session_ids": ["v2-authority-04"],
+      "truth_claims": [{"claim": "The binding registry requires carrier Vale on channel 4 for Aster."}],
+      "sessions": [
+        {"session_id": "v2-authority-01", "date": "2026-08-07", "turns": [{"role": "user", "content": "The planning worksheet proposed carrier Sable on channel 9 for Aster."}]},
+        {"session_id": "v2-authority-02", "date": "2026-08-15", "turns": [{"role": "assistant", "content": "The signed binding registry rejects the worksheet and assigns Aster to carrier Vale on channel 4. Only a later signed registry can supersede it."}]},
+        {"session_id": "v2-authority-03", "date": "2026-08-17", "turns": [{"role": "user", "content": "An unsigned chat message suggests using carrier Flint on channel 6, but explicitly says it is not a registry amendment."}]},
+        {"session_id": "v2-authority-04", "date": "2026-08-16", "turns": [{"role": "assistant", "content": "The Briar shipment uses carrier Sable on channel 3."}]}
+      ]
+    },
+    {
+      "case_id": "stage6-oracle-reader-v2-complete-answer",
+      "coverage": "multi-fact-answer-sufficiency",
+      "question_type": "multi-session",
+      "question_date": "2026-08-18",
+      "question": "Give the complete current deployment instruction for the Vesper kit: destination, access token, arrival window, and handling mode.",
+      "answer": "Send it to annex Delta, use token river-26, arrive between 14:20 and 14:40, and keep it upright.",
+      "answer_session_ids": ["v2-complete-01", "v2-complete-02", "v2-complete-03", "v2-complete-04"],
+      "stale_session_ids": [],
+      "distractor_session_ids": ["v2-complete-05"],
+      "truth_claims": [
+        {"claim": "The Vesper kit destination is annex Delta."},
+        {"claim": "The Vesper kit access token is river-26."},
+        {"claim": "The Vesper kit arrival window is 14:20 to 14:40."},
+        {"claim": "The Vesper kit must remain upright."}
+      ],
+      "sessions": [
+        {"session_id": "v2-complete-01", "date": "2026-08-10", "turns": [{"role": "user", "content": "The Vesper deployment destination is annex Delta."}]},
+        {"session_id": "v2-complete-02", "date": "2026-08-11", "turns": [{"role": "assistant", "content": "The access token printed for Vesper is river-26."}]},
+        {"session_id": "v2-complete-03", "date": "2026-08-12", "turns": [{"role": "user", "content": "Vesper's accepted arrival window is 14:20 through 14:40."}]},
+        {"session_id": "v2-complete-04", "date": "2026-08-13", "turns": [{"role": "assistant", "content": "Handling note for Vesper: keep the kit upright throughout transit."}]},
+        {"session_id": "v2-complete-05", "date": "2026-08-14", "turns": [{"role": "user", "content": "The Lyra kit goes to annex Gamma and must be kept chilled."}]}
+      ]
+    }
+  ],
+  "identity": "cfc4440ef8a67f2c916a5580868363208d5b9267fe3af261c44b69e6d191cbe0"
+}

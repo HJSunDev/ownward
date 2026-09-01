@@ -110,6 +110,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--formal-state", type=Path)
     parser.add_argument("--blind-gate-subject-manifest", type=Path)
     parser.add_argument("--answer-sufficiency-subject-manifest", type=Path)
+    parser.add_argument("--answer-sufficiency-phase", choices=["reproduction", "final"], default="final")
+    parser.add_argument("--answer-sufficiency-reproduction-result", type=Path)
     parser.add_argument("--reader-reliability-source-result", type=Path)
     parser.add_argument("--reader-reliability-run-root", type=Path)
     parser.add_argument("--blind-gate-level", type=int, choices=kernel_iteration_blind_gate.GATE_LEVELS)
@@ -181,14 +183,18 @@ def main() -> None:
         )
     elif args.stage3_answer_sufficiency:
         required = (
-            args.execution_config, args.baseline_execution_config,
-            args.answer_sufficiency_subject_manifest, args.formal_state,
+            args.execution_config, args.answer_sufficiency_subject_manifest, args.formal_state,
         )
         if any(path is None for path in required):
-            raise SystemExit("最终回答充分性诊断必须提供候选/V0 执行配置、候选 subject 与正式 state")
+            raise SystemExit("最终回答充分性诊断必须提供候选执行配置、候选 subject 与正式 state")
+        if args.answer_sufficiency_phase == "final" and args.answer_sufficiency_reproduction_result is None:
+            raise SystemExit("最终回答充分性终态必须绑定已封存根因复现结果")
         result = kernel_iteration_answer_sufficiency.run(
             HERE, args.output, args.execution_config, args.baseline_execution_config,
-            args.answer_sufficiency_subject_manifest, args.formal_state, resume=args.resume,
+            args.answer_sufficiency_subject_manifest, args.formal_state,
+            phase=args.answer_sufficiency_phase,
+            reproduction_result_path=args.answer_sufficiency_reproduction_result,
+            resume=args.resume,
         )
     elif args.stage4_resource_cost_raw_vector_lifecycle:
         if args.formal_state is None:

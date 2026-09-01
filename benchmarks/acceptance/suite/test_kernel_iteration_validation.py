@@ -172,6 +172,36 @@ class KernelIterationValidationTests(unittest.TestCase):
         with self.assertRaises(validation.KernelIterationValidationError):
             validation.validate_materials(unbound)
 
+    def test_temporal_correctness_adjudication_is_independent_and_does_not_authorize_kernel_change(self) -> None:
+        iteration_root = HERE / "iteration" / "v2"
+        material_paths = [
+            iteration_root / "stage3-temporal-applicability-materials.json",
+            iteration_root / "stage3-temporal-applicability-stress-materials.json",
+        ]
+        materials = [
+            validation.validate_stage3_materials(json.loads(path.read_text(encoding="utf-8")))
+            for path in material_paths
+        ]
+        self.assertEqual([5, 4], [len(value["cases"]) for value in materials])
+        self.assertEqual(9, len({validation._case_fact_identity(case) for value in materials for case in value["cases"]}))
+        self.assertTrue(all(value["criteria"]["minimum_accuracy"] == 1.0 for value in materials))
+        self.assertTrue(all(value["criteria"]["require_complete_fact_delivery"] is True for value in materials))
+        self.assertTrue(all(value["criteria"]["category_minimums"] == {"temporal-reasoning": 1.0} for value in materials))
+
+        adjudication_path = iteration_root / "stage3-temporal-correctness-adjudication.json"
+        adjudication = json.loads(adjudication_path.read_text(encoding="utf-8"))
+        content = {key: item for key, item in adjudication.items() if key != "identity"}
+        self.assertEqual(iteration.canonical_sha256(content), adjudication["identity"])
+        for source, path, material in zip(adjudication["independent_materials"], material_paths, materials):
+            self.assertEqual(iteration.file_sha256(path), source["sha256"])
+            self.assertEqual(material["identity"], source["identity"])
+        self.assertEqual("not-reproduced-with-independent-counterevidence", adjudication["adjudication"]["status"])
+        self.assertIsNone(adjudication["adjudication"]["first_proven_kernel_root"])
+        self.assertFalse(adjudication["adjudication"]["kernel_change_authorized"])
+        self.assertTrue(adjudication["adjudication"]["blind_candidate_failure_remains_valid"])
+        self.assertEqual(21, adjudication["mechanical_trace"]["temporal_applicability_and_delivery"]["truth_claims_delivered"])
+        self.assertEqual(9, adjudication["mechanical_trace"]["temporal_applicability_and_delivery"]["final_answers_correct"])
+
     def test_multi_part_answer_binds_each_truth_claim_to_its_own_evidence(self) -> None:
         materials = self._materials(5)
         case = materials["cases"][1]

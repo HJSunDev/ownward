@@ -116,11 +116,11 @@ class RawVectorLifecycleTests(unittest.TestCase):
         run_path = "benchmarks/acceptance/suite/kernel_iteration_run.py"
         validator_path = "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_raw_vector_lifecycle.py"
         self.assertEqual(
-            "non-stage4-diagnostic-maintenance-changes-only-explicitly-listed-callers-without-changing-frozen-stage4-contracts-or-results",
+            "stage3-source-context-repair-preserves-frozen-stage4-cost-and-representation-only-current-consumer-quality-and-latency-revalidated",
             receipt["reason"],
         )
         self.assertEqual(
-            "additive-non-stage4-cli-dispatch-only",
+            "stage3-source-context-cli-dispatch-only-frozen-stage4-cost-and-representation-unchanged",
             changes[run_path]["classification"],
         )
         self.assertEqual("dependency-receipt-validation-only", changes[validator_path]["classification"])
@@ -141,7 +141,10 @@ class RawVectorLifecycleTests(unittest.TestCase):
                 item for item in related[contract_identity]["changes"]
                 if item["path"] == "benchmarks/longmemeval_s/run.py"
             )
-            self.assertEqual("reader-profile-validation-and-formal-protocol-unification-only", runner["classification"])
+            self.assertEqual(
+                "source-context-consumer-and-reader-profile-only-semantic-request-and-frozen-cost-unchanged",
+                runner["classification"],
+            )
             self.assertEqual(
                 evidence.file_sha256(self.repository / runner["path"]),
                 runner["current_sha256"],

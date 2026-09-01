@@ -166,8 +166,10 @@ class AnswerSufficiencyTests(unittest.TestCase):
     def test_contract_is_pre_result_frozen_disjoint_and_aggregate_only(self) -> None:
         contract = answer_sufficiency.load_contract(HERE)
         self.assertTrue(contract["frozen_before_diagnostic_results"])
+        self.assertTrue(contract["confirmation_frozen_before_reproduction"])
         self.assertTrue(contract["aggregate_trigger"]["raw_content_destroyed"])
-        self.assertEqual(len(contract["loaded"]["diagnosis_materials"]["cases"]), 5)
+        self.assertEqual(len(contract["loaded"]["diagnosis_materials"]["cases"]), 2)
+        self.assertEqual(len(contract["loaded"]["confirmation_materials"]["cases"]), 2)
         self.assertEqual(len(contract["loaded"]["regression_materials"]["cases"]), 4)
         self.assertNotIn("question", contract["aggregate_trigger"])
         self.assertNotIn("answer", contract["aggregate_trigger"])
@@ -177,6 +179,7 @@ class AnswerSufficiencyTests(unittest.TestCase):
         execution = {
             "observation": {
                 "final_answer_accuracy": 1.0,
+                "fact_delivery": {"missing_questions": 0},
                 "case_evidence": [{"truth_claims": 3, "delivered_truth_claims": 3}],
             }
         }
@@ -196,6 +199,16 @@ class AnswerSufficiencyTests(unittest.TestCase):
         missing = copy.deepcopy(execution)
         missing["observation"]["case_evidence"][0]["delivered_truth_claims"] = 2
         result = answer_sufficiency.classify_root(contract, missing, regression, stable, {"exact": True})
+        self.assertEqual(result["status"], "not-reproduced-with-counterevidence")
+
+        undelivered = copy.deepcopy(execution)
+        undelivered["observation"]["fact_delivery"]["missing_questions"] = 1
+        result = answer_sufficiency.classify_root(contract, undelivered, regression, stable, {"exact": True})
+        self.assertEqual(result["responsible_component"], "evidence-delivery")
+
+        context_failure = copy.deepcopy(stable)
+        context_failure["reader"]["product_context_failures"] = 1
+        result = answer_sufficiency.classify_root(contract, execution, regression, context_failure, {"exact": True})
         self.assertEqual(result["responsible_component"], "kernel-context")
 
         reader = copy.deepcopy(stable)
@@ -221,7 +234,116 @@ class AnswerSufficiencyTests(unittest.TestCase):
     def test_mechanical_answer_atoms_require_every_group(self) -> None:
         groups = [["alpha"], ["beta", "bravo"]]
         self.assertTrue(answer_sufficiency._answer_matches("Alpha and Bravo", groups))
+        self.assertTrue(answer_sufficiency._answer_matches('{"first":"Alpha","second":"Bravo"}', groups))
+        self.assertTrue(answer_sufficiency._answer_matches("First: Alpha; second: Bravo.", groups))
         self.assertFalse(answer_sufficiency._answer_matches("Alpha only", groups))
+
+    def test_final_root_is_immutable_reproduction_fact_and_repair_is_separate(self) -> None:
+        proven_root = {
+            "status": "proven",
+            "responsible_component": "kernel-context",
+            "mechanism": "required-truth-not-stably-usable-in-product-context",
+            "kernel_change_required": True,
+        }
+        reproduction = {
+            "identity": "a" * 64,
+            "plan_identity": "b" * 64,
+            "root_cause": proven_root,
+        }
+        repaired_classification = {
+            "status": "not-reproduced-with-counterevidence",
+            "responsible_component": "external-answer-boundary",
+            "mechanism": "reader-and-judge-stable-after-kernel-context-repair",
+            "kernel_change_required": False,
+        }
+        root, root_evidence, repair = answer_sufficiency._bind_root_semantics(
+            "final", reproduction, repaired_classification,
+        )
+        self.assertEqual(root, proven_root)
+        self.assertIsNot(root, proven_root)
+        self.assertEqual(root_evidence["reproduction_result_identity"], reproduction["identity"])
+        self.assertEqual(root_evidence["root_cause_identity"], answer_sufficiency.evidence.canonical_sha256(proven_root))
+        self.assertEqual(repair["candidate_classification"], repaired_classification)
+        self.assertNotEqual(root, repair["candidate_classification"])
+
+    def test_result_validation_rejects_root_overwrite_even_with_recomputed_identity(self) -> None:
+        proven_root = {
+            "status": "proven",
+            "responsible_component": "kernel-context",
+            "mechanism": "required-truth-not-stably-usable-in-product-context",
+        }
+        repaired = {
+            "status": "not-reproduced-with-counterevidence",
+            "responsible_component": "external-answer-boundary",
+            "mechanism": "stable-reader-and-judge-counterevidence",
+        }
+        reproduction = {
+            "identity": "a" * 64,
+            "plan_identity": "b" * 64,
+            "root_cause": proven_root,
+        }
+        executions = {
+            f"candidate-{label}": {"identity": label[0] * 64, "passed": True, "subject_identity": "s" * 64}
+            for label in ("diagnosis", "confirmation", "regression")
+        }
+        repair_evidence = {
+            f"{label}_execution_identity": executions[f"candidate-{label}"]["identity"]
+            for label in ("diagnosis", "confirmation", "regression")
+        }
+        repair_evidence.update({f"{label}_passed": True for label in ("diagnosis", "confirmation", "regression")})
+        repair_evidence.update({
+            "diagnosis_reader_product_failures": 0,
+            "diagnosis_reader_oracle_failures": 0,
+            "diagnosis_judge_controls_passed": True,
+            "confirmation_reader_product_failures": 0,
+            "confirmation_reader_oracle_failures": 0,
+            "confirmation_judge_controls_passed": True,
+            "diagnosis_replay_exact": True,
+            "confirmation_replay_exact": True,
+            "regression_replay_exact": True,
+        })
+        content = {
+            "schema": answer_sufficiency.RESULT_SCHEMA,
+            "plan_identity": "p" * 64,
+            "phase": "final",
+            "formal": False,
+            "formal_state_written": False,
+            "blind_gate_executed": False,
+            "root_cause": proven_root,
+            "root_cause_evidence": {
+                "schema": "ownward.kernel-iteration-stage3-root-cause-evidence/v1",
+                "reproduction_result_identity": reproduction["identity"],
+                "reproduction_plan_identity": reproduction["plan_identity"],
+                "root_cause_identity": answer_sufficiency.evidence.canonical_sha256(proven_root),
+            },
+            "repair_validation": {
+                "schema": "ownward.kernel-iteration-stage3-repair-validation/v1",
+                "status": "repaired-not-reproduced",
+                "candidate_subject_identity": "s" * 64,
+                "candidate_classification": repaired,
+                "evidence": repair_evidence,
+            },
+            "reproduction_result_identity": reproduction["identity"],
+            "executions": executions,
+            "stage_reclosure": {
+                "stage3": "closed",
+                "stage4": "requires-current-candidate-revalidation",
+                "stage5": "requires-current-candidate-revalidation",
+                "candidate_subject_identity": "s" * 64,
+            },
+            "regeneration": {"product_execution_performed": False, "model_turn_performed": False},
+        }
+        result = {**content, "identity": answer_sufficiency.evidence.canonical_sha256(content)}
+        answer_sufficiency._validate_result(result, content["plan_identity"], reproduction)
+
+        forged_content = {**content, "root_cause": repaired}
+        forged_content["root_cause_evidence"] = {
+            **content["root_cause_evidence"],
+            "root_cause_identity": answer_sufficiency.evidence.canonical_sha256(repaired),
+        }
+        forged = {**forged_content, "identity": answer_sufficiency.evidence.canonical_sha256(forged_content)}
+        with self.assertRaisesRegex(answer_sufficiency.AnswerSufficiencyError, "原始根因|已证"):
+            answer_sufficiency._validate_result(forged, content["plan_identity"], reproduction)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,61 @@
+{
+  "schema": "ownward.kernel-iteration-materials/v2",
+  "contains_formal_questions_answers_gold_or_content": false,
+  "cases": [
+    {
+      "case_id": "v2cslm-ice-core-order",
+      "coverage": "context-long-metadata-temporal-order",
+      "question_type": "temporal-reasoning",
+      "question_date": "2031-02-28",
+      "question": "Which occurred later, the ice-core sealing or the spectrometer alignment, and how many days separated them?",
+      "answer": "The spectrometer alignment occurred later, seven days after the ice-core sealing.",
+      "answer_session_ids": ["v2cslm01-s02", "v2cslm01-s05"],
+      "stale_session_ids": [],
+      "distractor_session_ids": ["v2cslm01-s01", "v2cslm01-s03", "v2cslm01-s04", "v2cslm01-s06"],
+      "truth_claims": [
+        {"claim": "The ice-core sealing was completed.", "evidence_session_ids": ["v2cslm01-s02"]},
+        {"claim": "The spectrometer alignment was completed.", "evidence_session_ids": ["v2cslm01-s05"]}
+      ],
+      "sessions": [
+        {"session_id": "v2cslm01-s01", "date": "2031-02-01", "turns": [{"role": "assistant", "content": "The facility checked spare gloves, empty labels, storage trays, and backup lamps. No scientific milestone was completed."}]},
+        {"session_id": "v2cslm01-s02", "date": "2031-02-08", "turns": [{"role": "user", "content": "Custody record preamble. The morning crew counted twelve unused sleeves, checked the hinge on each transport box, copied serial numbers from the thermometer rack, inspected two empty pallets, tested three radio batteries, replaced a cracked pencil tray, reconciled the locker key sheet, cleaned the outer bench, confirmed that the ventilation badge remained visible, folded spare insulating cloths, photographed the loading bay, examined the wheels on the sample cart, returned a borrowed ruler, restocked blank labels, signed the vehicle checklist, measured the corridor temperature, checked that every window latch was closed, inventoried extension leads, and filed the prior shift note. None of those procedural actions is a scientific milestone. The afternoon crew then counted unused tags, inspected cable ties, checked the lift call button, dried the outside of the cooler, returned spare masks, copied the cabinet index, photographed an empty rack, tested the desk clock, and closed the supply ledger. Those actions likewise do not name another milestone. The controlling scientific entry appears only here: The ice-core sealing was completed. This record contains no spectrometer milestone."}]},
+        {"session_id": "v2cslm01-s03", "date": "2031-02-10", "turns": [{"role": "assistant", "content": "A packing rehearsal used an empty ice-core sleeve. It was not a sealing event or an alignment event."}]},
+        {"session_id": "v2cslm01-s04", "date": "2031-02-12", "turns": [{"role": "user", "content": "Technicians cleaned the spectrometer cover without aligning the instrument."}]},
+        {"session_id": "v2cslm01-s05", "date": "2031-02-15", "turns": [{"role": "assistant", "content": "Calibration record preamble. The morning crew counted twelve unused sleeves, checked the hinge on each transport box, copied serial numbers from the thermometer rack, inspected two empty pallets, tested three radio batteries, replaced a cracked pencil tray, reconciled the locker key sheet, cleaned the outer bench, confirmed that the ventilation badge remained visible, folded spare insulating cloths, photographed the loading bay, examined the wheels on the sample cart, returned a borrowed ruler, restocked blank labels, signed the vehicle checklist, measured the corridor temperature, checked that every window latch was closed, inventoried extension leads, and filed the prior shift note. None of those procedural actions is a scientific milestone. The afternoon crew then counted unused tags, inspected cable ties, checked the lift call button, dried the outside of the cooler, returned spare masks, copied the cabinet index, photographed an empty rack, tested the desk clock, and closed the supply ledger. Those actions likewise do not name another milestone. The controlling scientific entry appears only here: The spectrometer alignment was completed. This record contains no ice-core milestone."}]},
+        {"session_id": "v2cslm01-s06", "date": "2031-02-20", "turns": [{"role": "user", "content": "Both records were copied into the archive. Copying them did not create a new sealing or alignment date."}]}
+      ]
+    },
+    {
+      "case_id": "v2cslm-aqueduct-revision",
+      "coverage": "context-long-metadata-current-revision",
+      "question_type": "knowledge-update",
+      "question_date": "2031-05-31",
+      "question": "Using the more recent dated engineering record, what conduit, pressure ceiling, and supervisor currently apply to aqueduct sector D8?",
+      "answer": "Sector D8 currently uses Conduit Rowan, a 91-kilopascal ceiling, and supervisor Tavi Orm.",
+      "answer_session_ids": ["v2cslm02-s05"],
+      "stale_session_ids": ["v2cslm02-s02"],
+      "distractor_session_ids": ["v2cslm02-s01", "v2cslm02-s03", "v2cslm02-s04", "v2cslm02-s06"],
+      "truth_claims": [
+        {"claim": "Sector D8 uses Conduit Rowan.", "evidence_session_ids": ["v2cslm02-s05"]},
+        {"claim": "Sector D8 has a 91-kilopascal ceiling.", "evidence_session_ids": ["v2cslm02-s05"]},
+        {"claim": "Sector D8 has supervisor Tavi Orm.", "evidence_session_ids": ["v2cslm02-s05"]}
+      ],
+      "sessions": [
+        {"session_id": "v2cslm02-s01", "date": "2031-05-01", "turns": [{"role": "assistant", "content": "The depot inventoried valves, washers, hoses, and warning boards. The inventory does not define sector D8."}]},
+        {"session_id": "v2cslm02-s02", "date": "2031-05-07", "turns": [{"role": "user", "content": "Engineering record preamble. Inspectors cleaned six gauges, photographed an empty trench, checked fence locks, counted spare gaskets, copied pump serials, measured the tool cabinet, tested handheld radios, returned two ladders, filed vehicle mileage, replaced a faded safety card, inspected drain covers, checked survey flags, reconciled fuel receipts, tested the depot alarm, washed protective glasses, inventoried blank permits, and closed the equipment register. These actions merely document custody. A second team checked pipe wrenches, counted cones, photographed the storage gate, measured hose reels, filed an empty incident form, checked the first-aid seal, tested a work light, and returned unused bolts. These actions also do not alter an aqueduct assignment. The dated engineering entry states: Sector D8 uses Conduit Elm. Sector D8 has an 83-kilopascal ceiling. Sector D8 has supervisor Rian Voss. No other D8 assignment appears in this record."}]},
+        {"session_id": "v2cslm02-s03", "date": "2031-05-09", "turns": [{"role": "assistant", "content": "Sector D7 uses Conduit Rowan at 83 kilopascals under Tavi Orm."}]},
+        {"session_id": "v2cslm02-s04", "date": "2031-05-12", "turns": [{"role": "user", "content": "A pressure rehearsal on Conduit Elm reached 91 kilopascals under Rian Voss but did not concern sector D8's assignment."}]},
+        {"session_id": "v2cslm02-s05", "date": "2031-05-21", "turns": [{"role": "assistant", "content": "Engineering record preamble. Inspectors cleaned six gauges, photographed an empty trench, checked fence locks, counted spare gaskets, copied pump serials, measured the tool cabinet, tested handheld radios, returned two ladders, filed vehicle mileage, replaced a faded safety card, inspected drain covers, checked survey flags, reconciled fuel receipts, tested the depot alarm, washed protective glasses, inventoried blank permits, and closed the equipment register. These actions merely document custody. A second team checked pipe wrenches, counted cones, photographed the storage gate, measured hose reels, filed an empty incident form, checked the first-aid seal, tested a work light, and returned unused bolts. These actions also do not alter an aqueduct assignment. The dated engineering entry states: Sector D8 uses Conduit Rowan. Sector D8 has a 91-kilopascal ceiling. Sector D8 has supervisor Tavi Orm. No other D8 assignment appears in this record."}]},
+        {"session_id": "v2cslm02-s06", "date": "2031-05-24", "turns": [{"role": "user", "content": "The depot copied both D8 records for retention without issuing a new engineering decision."}]}
+      ]
+    }
+  ],
+  "criteria": {
+    "minimum_accuracy": 1.0,
+    "require_complete_fact_delivery": true,
+    "category_minimums": {"temporal-reasoning": 1.0, "knowledge-update": 1.0},
+    "maximum_wall_seconds": 240,
+    "provenance": {"origin": "independent-stage3-long-context-metadata-diagnosis", "stage2_calibration_reuse": false, "formal_source_access": false, "blind_gate_reuse": false, "tuning_role": "diagnosis-expansion-v2"}
+  },
+  "identity": "34d8bb1fc4951604b72878535a06a715def7820e5bd4a6e8b26d822c2d4c6e2f"
+}

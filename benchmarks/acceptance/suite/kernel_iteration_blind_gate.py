@@ -40,9 +40,11 @@ RESULT_SCHEMA = "ownward.kernel-iteration-stage6-blind-result/v3"
 RECOVERY_SCHEMA = "ownward.kernel-iteration-stage6-blind-recovery/v2"
 SECRET_SCHEMA = "ownward.kernel-iteration-stage6-blind-secret/v2"
 LOCATOR_SCHEMA = "ownward.kernel-iteration-stage6-blind-locator/v2"
-STAGE5_FREEZE_RELATIVE = Path(".tmp/kernel-v2-major-iteration/stage5/freeze.json")
+STAGE5_FREEZE_RELATIVE = Path(".tmp/kernel-v2-major-iteration/stage45-current/stage5/freeze.json")
 SCHEDULING_MIGRATION_RELATIVE = Path("iteration/v2/stage6-material-scheduling-migration.json")
 EVALUATOR_RELIABILITY_MIGRATION_RELATIVE = Path("iteration/v2/stage6-evaluator-reliability-migration.json")
+DECISION_ADJUDICATION_RELATIVE = Path("iteration/v2/stage6-candidate-decision-adjudication.json")
+RETRIEVAL_P95_MINIMUM_SAMPLES = 20
 
 
 def load_contract(suite_root: Path, level: int) -> dict[str, Any]:
@@ -70,18 +72,12 @@ def load_contract(suite_root: Path, level: int) -> dict[str, Any]:
         and execution.get("quality_admission_after_all_generation") is True,
         "阶段 6 生成调度合同漂移",
     )
-    if level == 50:
-        _require(
-            execution.get("rejection_replacement") == "rejected-cases-only"
-            and execution.get("full_set_readmission_after_replacement") is True
-            and execution.get("maximum_replacement_rounds") == int(data["maximum_admission_batches"]),
-            "阶段 6 50 题局部替换合同漂移",
-        )
-    else:
-        _require(
-            not any(name in execution for name in ("rejection_replacement", "full_set_readmission_after_replacement", "maximum_replacement_rounds")),
-            "历史 5/15/25 合同不得被未来材料调度改写",
-        )
+    _require(
+        execution.get("rejection_replacement") == "rejected-cases-only"
+        and execution.get("full_set_readmission_after_replacement") is True
+        and execution.get("maximum_replacement_rounds") == int(data["maximum_admission_batches"]),
+        "阶段 6 局部替换合同漂移",
+    )
     gate = _mapping(value, "absolute_gate")
     _require(gate == {
         "questions": level,
@@ -94,6 +90,19 @@ def load_contract(suite_root: Path, level: int) -> dict[str, Any]:
         "read_limit": 8,
         "context_chars_maximum": 24000,
     }, "阶段 6 候选绝对门漂移")
+    distribution = _mapping(value, "performance_distribution_adjudication")
+    _require(
+        distribution == {
+            "metric": "retrieval_p95_ms",
+            "estimator": "nearest-rank-ceil-n-times-0.95",
+            "minimum_samples": RETRIEVAL_P95_MINIMUM_SAMPLES,
+            "insufficient_sample_outlier": "bounded-sufficient-sample-confirmation-required",
+            "single_non_timeout_outlier_is_candidate_failure": False,
+            "hard_timeout_or_execution_error_is_candidate_failure": True,
+            "valid_same-dependency-sufficient-evidence-is-reused": True,
+        },
+        "阶段 6 性能分布裁决合同漂移",
+    )
     relative = _mapping(value, "relative_v0_gate")
     _require(relative.get("gate_role") == "sequential-early-rejection-not-standalone-overall-uplift-proof", "单级盲测不得冒充整体跃升证明")
     failure = _mapping(value, "failure")
@@ -106,7 +115,8 @@ def load_contract(suite_root: Path, level: int) -> dict[str, Any]:
     _require(
         attribution.get("reader_profile_identity") == "401aa7962b5ecd3d283093a2d5eee0fe76da941d20ce4aa317ef21216d55c83c"
         and attribution.get("first_answer_accuracy_required") == 1.0
-        and attribution.get("repetitions_cannot_convert_failure_to_pass") is True
+        and attribution.get("qualified_reader_can_adjudicate_first_answer_random_failure") is True
+        and attribution.get("repetitions_cannot_convert_candidate_context_failure_to_pass") is True
         and attribution.get("wording_or_hash_variation_is_diagnostic_only") is True,
         "阶段 6 答案失败归因合同漂移",
     )
@@ -243,18 +253,12 @@ def run(
     generation_usages: list[dict[str, Any]] = []
     admission_usages: list[dict[str, Any]] = []
     excluded_rejection_wall_seconds = 0.0
-    rejection_path = root / "admission-rejections.json"
-    rejection_state = _load_json(rejection_path) if rejection_path.is_file() else {"schema": "ownward.kernel-iteration-stage6-admission-rejections/v1", "plan_identity": plan_identity, "batches": []}
-    _require(rejection_state.get("schema") == "ownward.kernel-iteration-stage6-admission-rejections/v1" and rejection_state.get("plan_identity") == plan_identity, "阶段 6 候选盲测准入拒绝恢复状态错绑")
-    rejected_batches = list(rejection_state.get("batches", []))
-    _require(all(_valid_rejection_receipt(item) for item in rejected_batches), "阶段 6 候选盲测准入拒绝恢复状态无效")
-    generation_usages.extend(dict(item.get("generation_usage", {})) for item in rejected_batches)
-    admission_usages.extend(dict(item.get("admission_usage", {})) for item in rejected_batches)
+    rejected_batches: list[dict[str, Any]] = []
     generation_scheduler = {
-        "policy": "bounded-independent-lanes-original-order/v1",
+        "policy": "bounded-independent-lanes-rejected-only-original-order/v1",
         "max_active_limit": int(_mapping(contract, "execution")["generation_max_active"]),
-        "max_active_observed": max((int(_mapping(item, "generation_scheduler").get("max_active_observed", 0)) for item in rejected_batches if isinstance(item.get("generation_scheduler"), dict)), default=0),
-        "submitted": sum(int(_mapping(item, "generation_scheduler").get("submitted", 0)) for item in rejected_batches if isinstance(item.get("generation_scheduler"), dict)),
+        "max_active_observed": 0,
+        "submitted": 0,
         "per_worker_max_active_turns": 1,
         "result_order": "frozen-coverage-order",
     }
@@ -274,95 +278,29 @@ def run(
                     generation_scheduler["max_active_limit"],
                 ))
             )
-            if level == 50:
-                prepared = _prepare_locally_replaced_materials(
-                    suite_root, output_root, candidate_runtime, validation_contract, contract, scratch,
-                    gate_seed, lane_invokers,
-                )
-                materials = prepared["materials"]
-                admission = prepared["admission"]
-                admitted_attempt = len(prepared["rounds"]) if prepared["passed"] else 0
-                replacement_rounds = prepared["rounds"]
-                generation_usages.extend(prepared["generation_usages"])
-                admission_usages.extend(prepared["admission_usages"])
-                generation_scheduler = prepared["scheduler"]
-                if prepared["passed"]:
-                    controls = validation.score_controls(materials)
-                    _require(controls["passed"], "阶段 6 候选盲测评分控制不能区分关键错误")
-                    admitted_content = {
-                        "schema": ADMISSION_SCHEMA,
-                        "plan_identity": plan_identity,
-                        "attempt": admitted_attempt,
-                        "material_identity": materials["identity"],
-                        "case_fact_identities": [validation._case_fact_identity(case) for case in materials["cases"]],
-                        "coverage_counts": {name: sum(case["coverage"] == name for case in materials["cases"]) for name in validation.BLIND_COVERAGE},
-                        "quality_admission": admission,
-                        "control_discrimination": controls,
-                        "candidate_has_not_run": True,
-                    }
-                    evidence.atomic_json(root / "admission.json", {**admitted_content, "identity": evidence.canonical_sha256(admitted_content)})
-            for attempt in ([] if level == 50 else range(1, int(_mapping(contract, "data")["maximum_admission_batches"]) + 1)):
-                if any(item["attempt"] == attempt for item in rejected_batches):
-                    continue
-                attempt_started = time.perf_counter()
-                attempt_root = scratch / f"batch-{attempt:02d}"
-                attempt_seed = hashlib.sha256(f"{gate_seed}:{attempt}".encode("utf-8")).hexdigest()
-                generated, usages, attempt_scheduler = _generate_cases(
-                    suite_root, candidate_runtime, validation_contract, contract,
-                    attempt_root, attempt_seed, lane_invokers,
-                )
-                generation_scheduler["max_active_observed"] = max(
-                    int(generation_scheduler["max_active_observed"]), int(attempt_scheduler["max_active_observed"]),
-                )
-                generation_scheduler["submitted"] = int(generation_scheduler["submitted"]) + int(attempt_scheduler["submitted"])
-                generation_usages.append(validation._combine_usages(usages))
-                candidate_materials = _materials_from_generated(generated, contract)
-                validation.validate_materials(candidate_materials, expected_questions=level)
-                _validate_material_isolation(suite_root, output_root, candidate_materials)
-                admission_output, admission_usage = lane_invokers[0](
-                    suite_root=suite_root,
-                    runtime=candidate_runtime,
-                    stage=attempt_root / "quality-admission",
-                    role="quality-admission",
-                    prompt=validation._admission_prompt(
-                        validation_contract,
-                        validation._admission_review_materials(candidate_materials, generated),
-                    ),
-                    schema=validation._admission_schema([case["case_id"] for case in candidate_materials["cases"]]),
-                    settings=_mapping(_mapping(validation_contract, "blind"), "quality_admission"),
-                    validate=lambda value: validation.validate_admission(value, candidate_materials, validation_contract),
-                )
-                admission_usages.append(admission_usage)
-                candidate_admission = validation.validate_admission(admission_output, candidate_materials, validation_contract)
-                controls = validation.score_controls(candidate_materials)
+            prepared = _prepare_locally_replaced_materials(
+                suite_root, output_root, candidate_runtime, validation_contract, contract, scratch,
+                gate_seed, lane_invokers,
+            )
+            materials = prepared["materials"] if prepared["passed"] else None
+            admission = prepared["admission"] if prepared["passed"] else None
+            admitted_attempt = len(prepared["rounds"]) if prepared["passed"] else 0
+            replacement_rounds = prepared["rounds"]
+            excluded_rejection_wall_seconds = sum(
+                float(item.get("wall_seconds", 0.0))
+                for item in replacement_rounds
+                if int(item.get("rejected_count", 0)) > 0
+            )
+            generation_usages.extend(prepared["generation_usages"])
+            admission_usages.extend(prepared["admission_usages"])
+            generation_scheduler = prepared["scheduler"]
+            if prepared["passed"]:
+                controls = validation.score_controls(materials)
                 _require(controls["passed"], "阶段 6 候选盲测评分控制不能区分关键错误")
-                if not candidate_admission["passed"]:
-                    rejection_wall = time.perf_counter() - attempt_started
-                    excluded_rejection_wall_seconds += rejection_wall
-                    rejected_batches.append({
-                        "attempt": attempt,
-                        "material_identity": candidate_materials["identity"],
-                        "rejected_count": candidate_admission["rejected_count"],
-                        "failure_aggregate": candidate_admission["failure_aggregate"],
-                        "generation_usage": validation._sanitize_usage(generation_usages[-1]),
-                        "admission_usage": validation._sanitize_usage(admission_usages[-1]),
-                        "generation_scheduler": attempt_scheduler,
-                        "wall_seconds": rejection_wall,
-                    })
-                    evidence.atomic_json(rejection_path, {
-                        "schema": "ownward.kernel-iteration-stage6-admission-rejections/v1",
-                        "plan_identity": plan_identity,
-                        "batches": rejected_batches,
-                    })
-                    _destroy_attempt(attempt_root, scratch)
-                    continue
-                materials = candidate_materials
-                admission = candidate_admission
-                admitted_attempt = attempt
                 admitted_content = {
                     "schema": ADMISSION_SCHEMA,
                     "plan_identity": plan_identity,
-                    "attempt": attempt,
+                    "attempt": admitted_attempt,
                     "material_identity": materials["identity"],
                     "case_fact_identities": [validation._case_fact_identity(case) for case in materials["cases"]],
                     "coverage_counts": {name: sum(case["coverage"] == name for case in materials["cases"]) for name in validation.BLIND_COVERAGE},
@@ -371,7 +309,6 @@ def run(
                     "candidate_has_not_run": True,
                 }
                 evidence.atomic_json(root / "admission.json", {**admitted_content, "identity": evidence.canonical_sha256(admitted_content)})
-                break
         if materials is None or admission is None:
             return _finish(
                 root, scratch, candidate_runtime["runs"], state_path, state_before, plan, contract,
@@ -385,7 +322,7 @@ def run(
                 replacement_rounds=replacement_rounds,
             )
 
-        dataset_path = scratch / f"batch-{admitted_attempt:02d}" / "dataset.json"
+        dataset_path = scratch / "accepted" / "dataset.json"
         evidence.atomic_json(dataset_path, [validation._longmemeval_case(case) for case in materials["cases"]])
         candidate_execution = _execute(
             suite_root, candidate_runtime, dataset_path, scratch / "candidate", candidate["identity"], materials,
@@ -398,33 +335,61 @@ def run(
         relative = None
         resume_proof = None
         try:
+            answer_failure_attribution = None
+            candidate_comparison_observation = candidate_execution["observation"]
             if not absolute["passed"]:
-                attribution = _attribute_first_answer_failure(
+                answer_failure_attribution = _attribute_first_answer_failure(
                     suite_root, root, candidate_runtime, materials, candidate_execution, absolute,
                 )
                 root_cause = _general_root_cause(candidate_execution["observation"], absolute["failures"])
-                if attribution is not None:
-                    root_cause = {**root_cause, "answer_failure_attribution": attribution["classification"]}
-                evaluation_failed = attribution is not None and attribution["classification"] == "evaluation-process-failure"
-                return _finish(
-                    root, scratch, candidate_runtime["runs"], state_path, state_before, plan, contract,
-                    status="evaluation-process-error" if evaluation_failed else "candidate-rejected",
-                    passed=False, candidate_decision=None if evaluation_failed else False,
-                    admitted_attempt=admitted_attempt, materials=materials, admission=admission, rejected_batches=rejected_batches,
-                    generation_usage=validation._combine_usages(generation_usages), admission_usage=validation._combine_usages(admission_usages),
-                    generation_scheduler=generation_scheduler,
-                    evaluation_process_decision=({
-                        "passed": False,
-                        "candidate_failure": False,
-                        "stage": post_candidate_stage,
-                        "failures": [{"metric": "evaluation_process_attribution"}],
-                        "fail_closed": True,
-                    } if evaluation_failed else None),
-                    candidate_execution=candidate_execution, baseline_execution=None, absolute=absolute, relative=None,
-                    resume_proof=None, general_root_cause=root_cause, answer_failure_attribution=attribution, started=started,
-                    excluded_rejection_wall_seconds=excluded_rejection_wall_seconds,
-                    replacement_rounds=replacement_rounds,
-                )
+                if answer_failure_attribution is not None:
+                    root_cause = {**root_cause, "answer_failure_attribution": answer_failure_attribution["classification"]}
+                if answer_failure_attribution is not None and answer_failure_attribution["classification"] == "external-reader-random-failure":
+                    absolute = _adjudicate_external_reader_random_failure(absolute, answer_failure_attribution)
+                    candidate_comparison_observation = {
+                        **candidate_execution["observation"],
+                        "final_answer_accuracy": absolute["adjudicated_final_answer_accuracy"],
+                    }
+                if absolute["passed"]:
+                    root_cause = None
+                else:
+                    retrieval_confirmation_required = any(
+                        item.get("metric") == "retrieval_p95_confirmation_required"
+                        for item in absolute["failures"]
+                    )
+                    answer_candidate_failed = answer_failure_attribution is not None and answer_failure_attribution["classification"] in {
+                        "candidate-failure", "candidate-context-failure",
+                    }
+                    evaluation_failed = (
+                        answer_failure_attribution is not None and answer_failure_attribution["classification"] == "evaluation-process-failure"
+                    ) or (retrieval_confirmation_required and not answer_candidate_failed)
+                    independent_failures = _independent_absolute_failures(absolute)
+                    candidate_failed = bool(independent_failures) or answer_candidate_failed
+                    if evaluation_failed and independent_failures:
+                        root_cause = {
+                            **root_cause,
+                            "answer_failure_attribution": "unknown-due-to-evaluation-process-failure",
+                            "independently_adjudicated_failures": independent_failures,
+                        }
+                    return _finish(
+                        root, scratch, candidate_runtime["runs"], state_path, state_before, plan, contract,
+                        status="candidate-rejected" if candidate_failed else "evaluation-process-error",
+                        passed=False, candidate_decision=False if candidate_failed else None,
+                        admitted_attempt=admitted_attempt, materials=materials, admission=admission, rejected_batches=rejected_batches,
+                        generation_usage=validation._combine_usages(generation_usages), admission_usage=validation._combine_usages(admission_usages),
+                        generation_scheduler=generation_scheduler,
+                        evaluation_process_decision=({
+                            "passed": False,
+                            "candidate_failure": False,
+                            "stage": post_candidate_stage,
+                            "failures": [{"metric": "evaluation_process_attribution"}],
+                            "fail_closed": True,
+                        } if evaluation_failed else None),
+                        candidate_execution=candidate_execution, baseline_execution=None, absolute=absolute, relative=None,
+                        resume_proof=None, general_root_cause=root_cause, answer_failure_attribution=answer_failure_attribution, started=started,
+                        excluded_rejection_wall_seconds=excluded_rejection_wall_seconds,
+                        replacement_rounds=replacement_rounds,
+                    )
 
             post_candidate_stage = "v0-baseline-execution"
             baseline_execution = _execute(
@@ -432,7 +397,7 @@ def run(
                 resume=resume, runner=execute,
             )
             post_candidate_stage = "relative-decision"
-            relative = _relative_decision(candidate_execution["observation"], baseline_execution["observation"])
+            relative = _relative_decision(candidate_comparison_observation, baseline_execution["observation"])
             post_candidate_stage = "resume-proof"
             resume_proof = _resume_proof(
                 suite_root, candidate_runtime, baseline_runtime, dataset_path, scratch,
@@ -469,12 +434,13 @@ def run(
                 generation_scheduler=generation_scheduler, evaluation_process_decision=evaluation_process_decision,
                 candidate_execution=candidate_execution, baseline_execution=baseline_execution, absolute=absolute, relative=relative,
                 resume_proof=resume_proof, general_root_cause=root_cause, started=started,
-                answer_failure_attribution=None,
+                answer_failure_attribution=answer_failure_attribution,
                 excluded_rejection_wall_seconds=excluded_rejection_wall_seconds,
                 replacement_rounds=replacement_rounds,
             )
         except Exception as error:
             exception = answer_sufficiency.safe_attribution_exception(error, post_candidate_stage)
+            independent_failures = _independent_absolute_failures(absolute)
             process_failure = {
                 "passed": False,
                 "candidate_failure": False,
@@ -482,17 +448,27 @@ def run(
                 "failures": [{"metric": "evaluation_process_exception", **exception}],
                 "fail_closed": True,
             }
-            root_cause = {
-                "first_observed_gap": None,
-                "responsible_direction": "stage6-evaluation-controller",
-                "mechanism_status": "evaluation-process-exception-requires-repair-and-requalification",
-                "failure_metrics": ["evaluation_process_exception"],
-                "stage": post_candidate_stage,
-                "exception": exception,
-            }
+            root_cause = (
+                {
+                    **_general_root_cause(candidate_execution["observation"], independent_failures),
+                    "answer_failure_attribution": "unknown-due-to-evaluation-process-exception",
+                    "independently_adjudicated_failures": independent_failures,
+                    "evaluation_process_exception": exception,
+                }
+                if independent_failures
+                else {
+                    "first_observed_gap": None,
+                    "responsible_direction": "stage6-evaluation-controller",
+                    "mechanism_status": "evaluation-process-exception-requires-repair-and-requalification",
+                    "failure_metrics": ["evaluation_process_exception"],
+                    "stage": post_candidate_stage,
+                    "exception": exception,
+                }
+            )
             return _finish(
                 root, scratch, candidate_runtime["runs"], state_path, state_before, plan, contract,
-                status="evaluation-process-error", passed=False, candidate_decision=None,
+                status=("candidate-rejected" if independent_failures else "evaluation-process-error"),
+                passed=False, candidate_decision=(False if independent_failures else None),
                 admitted_attempt=admitted_attempt, materials=materials, admission=admission, rejected_batches=rejected_batches,
                 generation_usage=validation._combine_usages(generation_usages), admission_usage=validation._combine_usages(admission_usages),
                 generation_scheduler=generation_scheduler, evaluation_process_decision=process_failure,
@@ -536,7 +512,19 @@ def resume_by_plan_identity(
         result = _load_json(result_path)
         _validate_result(result, plan_identity)
         _require(not (root / "active.json").exists(), "阶段 6 候选盲测终态仍有活动恢复文件")
-        return {**_terminal_reference(result_path, result, reused=True), "model_calls": 0, "product_executions": 0, "current_dependencies_valid": True}
+        reference = _terminal_reference(result_path, result, reused=True)
+        adjudication = _load_candidate_decision_adjudication(suite_root, result_path, result)
+        if adjudication is not None:
+            reference = {
+                **reference,
+                "source_status": reference["status"],
+                "status": "evaluation-process-error-with-independent-performance-pass",
+                "candidate_decision": None,
+                "performance_decision": True,
+                "adjudication_identity": adjudication["identity"],
+                "next_action": _mapping(adjudication, "independent_candidate_adjudication")["next_action"],
+            }
+        return {**reference, "model_calls": 0, "product_executions": 0, "current_dependencies_valid": True}
     return run(
         suite_root, output_root,
         Path(locator["candidate_execution_config"]), Path(locator["baseline_execution_config"]),
@@ -574,13 +562,52 @@ def _execute(
     }
 
 
+def _adjudicate_retrieval_p95(
+    *,
+    samples: int,
+    actual: float,
+    maximum: float,
+    hard_timeout_or_execution_error: bool = False,
+    confirmation: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    _require(samples > 0, "检索 p95 样本数无效")
+    if hard_timeout_or_execution_error:
+        return {"status": "hard-failure", "passed": False, "candidate_failure": True, "samples": samples, "actual": actual, "maximum": maximum}
+    if samples >= RETRIEVAL_P95_MINIMUM_SAMPLES:
+        passed = actual <= maximum
+        return {"status": "sufficient-distribution-pass" if passed else "sufficient-distribution-failure", "passed": passed, "candidate_failure": not passed, "samples": samples, "actual": actual, "maximum": maximum}
+    if actual <= maximum:
+        return {"status": "insufficient-sample-no-outlier", "passed": True, "candidate_failure": False, "samples": samples, "actual": actual, "maximum": maximum}
+    if confirmation is None:
+        return {"status": "bounded-confirmation-required", "passed": False, "candidate_failure": False, "samples": samples, "actual": actual, "maximum": maximum}
+    confirmed_samples = int(confirmation.get("samples", 0))
+    confirmed_actual = float(confirmation.get("p95_ms", -1.0))
+    _require(confirmation.get("direct_dependencies_match") is True, "检索 p95 充分样本确认直接依赖不一致")
+    _require(confirmed_samples >= RETRIEVAL_P95_MINIMUM_SAMPLES, "检索 p95 确认样本仍不足")
+    passed = confirmed_actual <= maximum
+    return {
+        "status": "confirmed-environment-outlier" if passed else "confirmed-distribution-failure",
+        "passed": passed,
+        "candidate_failure": not passed,
+        "samples": samples,
+        "actual": actual,
+        "maximum": maximum,
+        "confirmation_samples": confirmed_samples,
+        "confirmation_p95_ms": confirmed_actual,
+    }
+
+
 def _absolute_decision(observation: dict[str, Any], contract: dict[str, Any]) -> dict[str, Any]:
     gate = _mapping(contract, "absolute_gate")
+    retrieval = _adjudicate_retrieval_p95(
+        samples=int(observation["questions"]),
+        actual=float(observation["latency"]["retrieval_p95_ms"]),
+        maximum=float(gate["complete_consumer_retrieval_p95_ms_maximum"]),
+    )
     checks = [
         ("questions", observation["questions"], gate["questions"], lambda actual, expected: actual == expected),
         ("final_answer_accuracy", observation["final_answer_accuracy"], gate["final_answer_accuracy_minimum"], lambda actual, expected: float(actual) >= float(expected)),
         ("fact_delivery_missing", observation["fact_delivery"]["missing_questions"], gate["fact_delivery_missing_maximum"], lambda actual, expected: int(actual) <= int(expected)),
-        ("retrieval_p95_ms", observation["latency"]["retrieval_p95_ms"], gate["complete_consumer_retrieval_p95_ms_maximum"], lambda actual, expected: float(actual) <= float(expected)),
     ]
     for name, field in (("temporal_correctness", "temporal_correctness_minimum"), ("conflict_correctness", "conflict_correctness_minimum")):
         if observation[name] is not None:
@@ -589,7 +616,52 @@ def _absolute_decision(observation: dict[str, Any], contract: dict[str, Any]) ->
         {"metric": name, "actual": actual, "required": expected}
         for name, actual, expected, predicate in checks if actual is None or not predicate(actual, expected)
     ]
-    return {"passed": not failures, "failures": failures}
+    if not retrieval["passed"]:
+        failures.append({
+            "metric": "retrieval_p95_ms" if retrieval["candidate_failure"] else "retrieval_p95_confirmation_required",
+            "actual": retrieval["actual"],
+            "required": retrieval["maximum"],
+        })
+    return {"passed": not failures, "failures": failures, "retrieval_distribution": retrieval}
+
+
+def _independent_absolute_failures(absolute: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return direct candidate failures that do not depend on answer attribution."""
+    failures = absolute.get("failures")
+    _require(isinstance(failures, list), "阶段 6 候选绝对门失败集合无效")
+    return [
+        dict(item)
+        for item in failures
+        if isinstance(item, dict)
+        and item.get("metric") not in {"final_answer_accuracy", "retrieval_p95_confirmation_required"}
+    ]
+
+
+def _adjudicate_external_reader_random_failure(
+    absolute: dict[str, Any],
+    attribution: dict[str, Any],
+) -> dict[str, Any]:
+    _require(attribution.get("classification") == "external-reader-random-failure", "外部 Reader 随机失误裁决类型无效")
+    _require(attribution.get("responsible_boundary") == "external-reader", "外部 Reader 随机失误责任边界无效")
+    failures = absolute.get("failures")
+    _require(isinstance(failures, list), "外部 Reader 裁决缺少原始绝对门失败")
+    answer_failures = [item for item in failures if isinstance(item, dict) and item.get("metric") == "final_answer_accuracy"]
+    _require(len(answer_failures) == 1, "外部 Reader 裁决没有绑定唯一首答失败")
+    remaining = [dict(item) for item in failures if item not in answer_failures]
+    return {
+        **absolute,
+        "passed": not remaining,
+        "failures": remaining,
+        "raw_failures": [dict(item) for item in failures],
+        "adjudicated_final_answer_accuracy": 1.0,
+        "external_reader_adjudication": {
+            "status": "qualified-reader-confirmed-candidate-context-sufficient",
+            "candidate_report_rewritten": False,
+            "candidate_context_sufficient": True,
+            "candidate_failure": False,
+            "reader_random_failure": True,
+        },
+    }
 
 
 def _attribute_first_answer_failure(
@@ -642,6 +714,7 @@ def _attribute_first_answer_failure(
     return {
         "classification": classified["classification"],
         "reason": classified["reason"],
+        "responsible_boundary": classified["responsible_boundary"],
         "first_answer_failure_remains_failure": True,
         "diagnostic_repetitions_changed_candidate_decision": False,
         "reader_profile_identity": "401aa7962b5ecd3d283093a2d5eee0fe76da941d20ce4aa317ef21216d55c83c",
@@ -714,15 +787,30 @@ def _classify_answer_diagnostic(diagnostic: dict[str, Any]) -> dict[str, str]:
     product_failures = int(reader["product_context_failures"])
     oracle_failures = int(reader["oracle_context_failures"])
     if not bool(judge["controls_passed"]):
-        return {"classification": "evaluation-process-failure", "reason": "judge-controls-failed"}
+        return {"classification": "evaluation-process-failure", "reason": "judge-controls-failed", "responsible_boundary": "external-evaluator"}
     if oracle_failures > 0 or oracle_unstable:
-        return {"classification": "evaluation-process-failure", "reason": "oracle-context-failed-or-mechanically-unstable"}
+        return {"classification": "evaluation-process-failure", "reason": "oracle-context-failed-or-mechanically-unstable", "responsible_boundary": "external-reader"}
+    qualified_repeat_recovered = bool(product_records) and all(
+        int(item["observations"]) == 3 and int(item["correct"]) == 2
+        for item in product_records
+    )
+    if qualified_repeat_recovered:
+        return {
+            "classification": "external-reader-random-failure",
+            "reason": "qualified-reader-repeats-recovered-the-wrong-first-answer-under-byte-identical-product-context",
+            "responsible_boundary": "external-reader",
+        }
     if product_unstable or product_failures == 0:
         return {
             "classification": "evaluation-process-failure",
             "reason": "byte-identical-product-prompt-mechanically-unstable-or-disagrees-with-first-score",
+            "responsible_boundary": "external-reader",
         }
-    return {"classification": "candidate-context-failure", "reason": "candidate-context-stably-fails-while-oracle-is-stable"}
+    return {
+        "classification": "candidate-context-failure",
+        "reason": "candidate-context-stably-fails-while-oracle-is-stable",
+        "responsible_boundary": "candidate-evidence-sufficiency",
+    }
 
 
 def _relative_decision(candidate: dict[str, Any], baseline: dict[str, Any]) -> dict[str, Any]:
@@ -1023,10 +1111,114 @@ def _load_scheduling_migration(suite_root: Path) -> dict[str, Any]:
 def _load_evaluator_reliability_migration(suite_root: Path) -> dict[str, Any]:
     value = _load_json(suite_root.resolve() / EVALUATOR_RELIABILITY_MIGRATION_RELATIVE)
     content = {key: item for key, item in value.items() if key != "identity"}
-    _require(value.get("schema") == "ownward.kernel-iteration-stage6-evaluator-reliability-migration/v4", "阶段 6 官方评测器可靠性迁移 schema 无效")
+    _require(value.get("schema") == "ownward.kernel-iteration-stage6-evaluator-reliability-migration/v7", "阶段 6 官方评测器可靠性迁移 schema 无效")
     _require(value.get("identity") == evidence.canonical_sha256(content), "阶段 6 官方评测器可靠性迁移身份漂移")
     _require(value.get("target_controller_identity") == _implementation_identity()["controller"], "阶段 6 官方评测器可靠性迁移没有绑定当前控制器")
     _require(value.get("candidate_results_rewritten") is False and value.get("model_or_product_execution") is False, "阶段 6 官方评测器可靠性迁移越权")
+    return value
+
+
+def _load_candidate_decision_adjudication(
+    suite_root: Path,
+    result_path: Path,
+    result: dict[str, Any],
+) -> dict[str, Any] | None:
+    value = _load_json(suite_root.resolve() / DECISION_ADJUDICATION_RELATIVE)
+    content = {key: item for key, item in value.items() if key != "identity"}
+    _require(value.get("schema") == "ownward.kernel-iteration-stage6-candidate-decision-adjudication/v1", "阶段 6 候选裁决迁移 schema 无效")
+    _require(value.get("identity") == evidence.canonical_sha256(content), "阶段 6 候选裁决迁移身份漂移")
+    source = _mapping(value, "source_result")
+    if source.get("plan_identity") != result.get("plan_identity"):
+        return None
+    _require(
+        source.get("result_identity") == result.get("identity")
+        and source.get("result_sha256") == evidence.file_sha256(result_path)
+        and source.get("status") == result.get("status")
+        and source.get("candidate_decision") == result.get("candidate_decision"),
+        "阶段 6 候选裁决迁移没有绑定不可变原结果",
+    )
+    direct = _mapping(value, "independent_candidate_adjudication")
+    raw_failures = _independent_absolute_failures(_mapping(result, "absolute_decision"))
+    _require(raw_failures == [{"actual": 1000.0, "metric": "retrieval_p95_ms", "required": 553.0}], "阶段 6 原始 15 题独立性能观测漂移")
+    policy = _mapping(value, "performance_distribution_policy")
+    _require(
+        policy == {
+            "metric": "retrieval_p95_ms",
+            "estimator": "nearest-rank-ceil-n-times-0.95",
+            "minimum_samples": RETRIEVAL_P95_MINIMUM_SAMPLES,
+            "single_non_timeout_outlier_is_candidate_failure": False,
+            "hard_timeout_or_execution_error_is_candidate_failure": True,
+            "insufficient_sample_outlier": "bounded-sufficient-sample-confirmation-required",
+            "same_dependency_confirmation_reused": True,
+        },
+        "阶段 6 充分样本性能裁决政策漂移",
+    )
+    reproduction = _mapping(_mapping(value, "retrieval_root_audit"), "independent_nonblind_reproduction")
+    aggregate = _mapping(reproduction, "aggregate")
+    performance = _adjudicate_retrieval_p95(
+        samples=int(_mapping(value, "retrieval_root_audit")["blind_measurement"]["questions"]),
+        actual=1000.0,
+        maximum=553.0,
+        confirmation={
+            "samples": reproduction["measured_requests"],
+            "p95_ms": aggregate["p95_ms"],
+            "direct_dependencies_match": (
+                reproduction.get("candidate_binary_sha256") == "4004f63f38faa9ce034b4ee89901397a51d23b9e4ab851a3cf1610f8bc24b46a"
+                and reproduction.get("embedding_manifest_sha256") == "fc2e4a1aa7d09fc64789618259a1bbedce2a18d00bd1abd81d13a16dfb78c0da"
+                and reproduction.get("protocol_sha256") == "6a52f479858b8a057a10e94dea38b7dd74bff4d8ee021a2abe693574bf98657f"
+            ),
+        },
+    )
+    boundary = _mapping(value, "answer_attribution_boundary_qualification")
+    _require(
+        boundary.get("qualification_receipt_identity") == "c58dd793db110f39dd5d64c1efaeeb5639eafd249d0a1ea6d7ada02503fefe5d"
+        and boundary.get("reader_profile_identity") == "401aa7962b5ecd3d283093a2d5eee0fe76da941d20ce4aa317ef21216d55c83c"
+        and boundary.get("blind_or_formal_content_used") is False
+        and boundary.get("candidate_or_product_execution") is False
+        and boundary.get("model_calls") == 0
+        and boundary.get("same_identity_resume_model_calls") == 0
+        and boundary.get("same_identity_resume_product_executions") == 0
+        and boundary.get("formal_state_sha256_before") == boundary.get("formal_state_sha256_after"),
+        "阶段 6 通用答案归因边界资格无效",
+    )
+    controls = boundary.get("controls")
+    _require(isinstance(controls, list) and len(controls) == 2, "阶段 6 通用答案归因边界控制缺失")
+    for control in controls:
+        _require(isinstance(control, dict), "阶段 6 通用答案归因控制无效")
+        product_failures = int(control["product_context_failures"])
+        product_unstable = bool(control["product_context_mechanically_unstable"])
+        oracle_failures = int(control["oracle_context_failures"])
+        oracle_unstable = bool(control["oracle_context_mechanically_unstable"])
+        diagnostic = {
+            "reader": {
+                "records": [
+                    {"context": "product", "correct": 2 if product_unstable else 3 - product_failures, "observations": 3},
+                    {"context": "oracle", "correct": 2 if oracle_unstable else 3 - oracle_failures, "observations": 3},
+                ],
+                "product_context_failures": product_failures,
+                "oracle_context_failures": oracle_failures,
+            },
+            "judge": {"controls_passed": bool(control["judge_controls_passed"])},
+        }
+        classified = _classify_answer_diagnostic(diagnostic)
+        _require(
+            classified["classification"] == control["expected_classification"]
+            and classified["responsible_boundary"] == control["expected_responsible_boundary"],
+            "阶段 6 通用答案归因边界不能区分 Reader 失误与候选证据不足",
+        )
+    _require(
+        performance.get("status") == "confirmed-environment-outlier"
+        and performance.get("passed") is True
+        and direct.get("failures") == []
+        and direct.get("performance_passed") is True
+        and direct.get("answer_attribution_valid") is False
+        and direct.get("candidate_decision") is None
+        and direct.get("answer_root_cause") == "unknown"
+        and direct.get("next_action") == "run-a-fresh-nonoverlapping-15-question-gate-from-the-valid-five-question-predecessor-after-the-general-attribution-boundary-is-qualified"
+        and value.get("source_result_rewritten") is False
+        and value.get("model_or_product_execution") is False,
+        "阶段 6 候选裁决迁移越权或遗漏充分样本裁决",
+    )
     return value
 
 
@@ -1053,7 +1245,8 @@ def _dependencies_current_or_scheduling_migrated(
         evaluator_migration = _load_evaluator_reliability_migration(suite_root)
     except (OSError, ValueError, KeyError, json.JSONDecodeError):
         return False
-    preserved = {str(item.get("plan_identity")) for item in evaluator_migration.get("preserved_plans", []) if isinstance(item, dict)}
+    preserved_items = [item for item in evaluator_migration.get("preserved_plans", []) if isinstance(item, dict)]
+    preserved = {str(item.get("plan_identity")) for item in preserved_items}
     if plan_identity not in preserved:
         return False
     for name, transition in _mapping(evaluator_migration, "dependency_changes").items():
@@ -1067,6 +1260,25 @@ def _dependencies_current_or_scheduling_migrated(
         if expected.get(name) not in accepted_sources:
             return False
         expected[name] = target
+    level = next((int(item["level"]) for item in preserved_items if str(item.get("plan_identity")) == plan_identity), None)
+    gate_changes = _mapping(evaluator_migration, "gate_contract_changes")
+    transition = gate_changes.get(str(level)) if level is not None else None
+    if isinstance(transition, dict) and expected.get("gate-contract") != transition.get("target"):
+        source = transition.get("source")
+        accepted_sources = transition.get("accepted_sources", [source])
+        _require(isinstance(accepted_sources, list), "阶段 6 官方评测器关卡合同迁移源集合无效")
+        if expected.get("gate-contract") not in accepted_sources:
+            return False
+        expected["gate-contract"] = str(transition["target"])
+    plan_changes = evaluator_migration.get("plan_dependency_changes", {}).get(plan_identity, {})
+    _require(isinstance(plan_changes, dict), "阶段 6 官方评测器计划依赖迁移无效")
+    for name, change in plan_changes.items():
+        _require(isinstance(change, dict), "阶段 6 官方评测器计划依赖迁移项无效")
+        if expected.get(name) == change.get("target"):
+            continue
+        if expected.get(name) != change.get("source"):
+            return False
+        expected[name] = str(change["target"])
     return current == expected
 
 
@@ -1233,7 +1445,10 @@ def _finish(
     replacement_rounds: list[dict[str, Any]],
 ) -> dict[str, Any]:
     decision_wall = _decision_wall_seconds(started, excluded_rejection_wall_seconds)
-    rejected_wall = sum(float(item.get("wall_seconds", 0.0)) for item in rejected_batches)
+    rejected_wall = (
+        sum(float(item.get("wall_seconds", 0.0)) for item in rejected_batches)
+        + sum(float(item.get("wall_seconds", 0.0)) for item in replacement_rounds if int(item.get("rejected_count", 0)) > 0)
+    )
     operational_wall = decision_wall + rejected_wall
     execution_aggregates = {
         "candidate": _execution_aggregate(candidate_execution),
@@ -1475,12 +1690,13 @@ def _implementation_identity() -> dict[str, str]:
     roles = {
         "generator": (_generator_prompt, validation._generator_case_schema, validation._validate_generated_case, validation._derive_truth_claims),
         "quality-admission": (validation._admission_prompt, validation._admission_schema, validation.validate_admission, validation.score_controls),
-        "observer-and-scorer": (validation.observe_report, _absolute_decision, _relative_decision, _general_root_cause),
+        "observer-and-scorer": (validation.observe_report, _absolute_decision, _independent_absolute_failures, _relative_decision, _general_root_cause),
         "controller": (
             load_contract, run, resume_by_plan_identity, _coverage_schedule,
             _decision_wall_seconds, _native_generation_invokers, _prepare_locally_replaced_materials,
             _generate_cases, _rejected_case_ids, _materials_from_generated,
             _previous_gate_dependency, _load_scheduling_migration, _load_evaluator_reliability_migration,
+            _load_candidate_decision_adjudication,
             _dependencies_current_or_scheduling_migrated, _execute, _resume_proof, _finish,
             _failure_transition, _next_action, _validate_material_isolation,
             _attribute_first_answer_failure, _first_failed_answer_material, _classify_answer_diagnostic,
@@ -1608,23 +1824,26 @@ def _validate_result(value: dict[str, Any], plan_identity: str) -> None:
     scheduler = _mapping(value, "generation_scheduler")
     level = int(value["level"])
     expected_limit = 8 if level == 50 else 4
-    expected_policy = (
-        "bounded-independent-lanes-rejected-only-original-order/v1"
-        if level == 50
-        else "bounded-independent-lanes-original-order/v1"
-    )
+    policy = scheduler.get("policy")
+    legacy_result = level in (5, 15, 25) and policy == "bounded-independent-lanes-original-order/v1"
     _require(
-        scheduler.get("policy") == expected_policy
+        policy in (
+            "bounded-independent-lanes-rejected-only-original-order/v1",
+            "bounded-independent-lanes-original-order/v1",
+        )
+        and (policy != "bounded-independent-lanes-original-order/v1" or legacy_result)
         and int(scheduler.get("max_active_limit", 0)) == expected_limit
         and 0 <= int(scheduler.get("max_active_observed", -1)) <= expected_limit
         and scheduler.get("per_worker_max_active_turns") == 1
         and scheduler.get("result_order") == "frozen-coverage-order",
         "阶段 6 生成调度终态无效",
     )
-    if level == 50:
+    if legacy_result:
+        _require(value.get("replacement_rounds") == [], "历史阶段 6 终态不得伪造局部替换轮次")
+    else:
         rounds = value.get("replacement_rounds")
-        _require(isinstance(rounds, list) and 1 <= len(rounds) <= 3, "阶段 6 50 题缺少局部替换终态")
-        _require(all(int(item.get("full_admission_questions", 0)) == 50 for item in rounds if isinstance(item, dict)), "阶段 6 50 题替换后没有整集复审")
+        _require(isinstance(rounds, list) and 1 <= len(rounds) <= 3, "阶段 6 终态缺少局部替换轮次")
+        _require(all(int(item.get("full_admission_questions", 0)) == level for item in rounds if isinstance(item, dict)), "阶段 6 局部替换后没有整集复审")
     process = value.get("evaluation_process_decision")
     if value.get("status") == "evaluation-process-rejected":
         _require(

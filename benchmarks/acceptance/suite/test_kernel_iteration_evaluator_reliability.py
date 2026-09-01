@@ -23,6 +23,32 @@ class _Renderer:
         return hypothesis
 
 
+class _QualificationSurface:
+    @staticmethod
+    def session_content(_session_id: str, _date: str, _turns: list[dict[str, object]]) -> str:
+        return "session"
+
+    @staticmethod
+    def _answer_prompt(_case: dict[str, object], _evidence: list[dict[str, object]]) -> str:
+        return "prompt"
+
+    @staticmethod
+    def retrieve() -> str:
+        return "old retrieval"
+
+
+class _RetrievalOnlyChange(_QualificationSurface):
+    @staticmethod
+    def retrieve() -> str:
+        return "new retrieval"
+
+
+class _PromptChange(_QualificationSurface):
+    @staticmethod
+    def _answer_prompt(_case: dict[str, object], _evidence: list[dict[str, object]]) -> str:
+        return "changed prompt"
+
+
 class EvaluatorReliabilityTests(unittest.TestCase):
     def setUp(self) -> None:
         self.suite_root = Path(__file__).resolve().parent
@@ -35,16 +61,16 @@ class EvaluatorReliabilityTests(unittest.TestCase):
         self.assertEqual(contract["product_reader_unchanged"]["model"], "gpt-5.6-luna")
         self.assertEqual(contract["product_reader_unchanged"]["reasoning_effort"], "xhigh")
         self.assertEqual(contract["attribution_reader"]["model"], "gpt-5.6-terra")
-        self.assertEqual(contract["attribution_reader"]["reasoning_effort"], "high")
-        self.assertEqual(contract["attribution_qualification"]["reader_calls"], 15)
-        self.assertEqual(contract["attribution_qualification"]["judge_calls"], 24)
+        self.assertEqual(contract["attribution_reader"]["reasoning_effort"], "xhigh")
+        self.assertEqual(contract["attribution_qualification"]["reader_calls"], 25)
+        self.assertEqual(contract["attribution_qualification"]["judge_calls"], 40)
         self.assertLessEqual(
             contract["cost_bound"]["pre_attribution_observed_upper_seconds"]
             + contract["cost_bound"]["future_single_case_attribution_maximum_seconds"],
             contract["cost_bound"]["level_total_wall_seconds_maximum"],
         )
 
-    def test_qualification_material_is_independent_and_covers_three_hard_boundaries(self) -> None:
+    def test_qualification_material_is_independent_and_covers_hard_boundaries(self) -> None:
         contract = reliability.load_contract(self.suite_root)
         material = reliability._load_material(self.suite_root, contract)
         self.assertFalse(material["formal"])
@@ -53,10 +79,21 @@ class EvaluatorReliabilityTests(unittest.TestCase):
         self.assertFalse(material["contains_formal_or_blind_content"])
         self.assertEqual(
             [case["coverage"] for case in material["cases"]],
-            ["temporal-order", "knowledge-update-conflict", "multi-session-relation"],
+            [
+                "temporal-authority-chain",
+                "multi-session-four-hop",
+                "structured-table-footnote",
+                "authority-over-recency",
+                "multi-fact-answer-sufficiency",
+            ],
         )
         self.assertTrue(all(case["answer_session_ids"] for case in material["cases"]))
         self.assertTrue(all(case["truth_claims"] for case in material["cases"]))
+
+    def test_qualification_surface_excludes_retrieval_but_includes_prompt_rendering(self) -> None:
+        original = reliability._longmemeval_qualification_surface_identity(_QualificationSurface)
+        self.assertEqual(original, reliability._longmemeval_qualification_surface_identity(_RetrievalOnlyChange))
+        self.assertNotEqual(original, reliability._longmemeval_qualification_surface_identity(_PromptChange))
 
     def test_correct_wrong_controls_persist_and_resume_without_execution(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -88,14 +125,14 @@ class EvaluatorReliabilityTests(unittest.TestCase):
                 self.assertEqual(kwargs["product_repeats"], (2, 3))
                 self.assertEqual(kwargs["oracle_repeats"], (1, 2, 3))
                 self.assertEqual(kwargs["reader_settings"]["model"], "gpt-5.6-terra")
-                self.assertEqual(kwargs["reader_settings"]["reasoning_effort"], "high")
+                self.assertEqual(kwargs["reader_settings"]["reasoning_effort"], "xhigh")
                 return {
                     "reader": {
                         "settings": kwargs["reader_settings"],
                         "product_context_failures": 0,
                         "oracle_context_failures": 0,
                         "cost": {
-                            "measured_calls": 15,
+                            "measured_calls": 25,
                             "aggregate_wall_seconds": 20.0,
                             "mean_wall_seconds": 4.0 / 3.0,
                             "p95_wall_seconds": 2.0,
@@ -103,9 +140,9 @@ class EvaluatorReliabilityTests(unittest.TestCase):
                     },
                     "judge": {
                         "controls_passed": True,
-                        "correct_controls": {"passed": 3, "total": 3},
-                        "wrong_controls": {"passed": 3, "total": 3},
-                        "reader_answers_total": 18,
+                        "correct_controls": {"passed": 5, "total": 5},
+                        "wrong_controls": {"passed": 5, "total": 5},
+                        "reader_answers_total": 30,
                     },
                     "transport": {
                         "process_starts": 4,
@@ -128,19 +165,21 @@ class EvaluatorReliabilityTests(unittest.TestCase):
                 )
             self.assertTrue(first["passed"])
             self.assertEqual(calls, [[
-                "stage6-oracle-reader-temporal",
-                "stage6-oracle-reader-conflict",
-                "stage6-oracle-reader-cross-evidence",
+                "stage6-oracle-reader-v2-temporal-authority",
+                "stage6-oracle-reader-v2-multihop",
+                "stage6-oracle-reader-v2-structured",
+                "stage6-oracle-reader-v2-authority-over-recency",
+                "stage6-oracle-reader-v2-complete-answer",
             ]])
-            self.assertEqual(first["model_calls"], 39)
+            self.assertEqual(first["model_calls"], 65)
             self.assertTrue(resumed["reused"])
             self.assertEqual(resumed["model_calls"], 0)
             self.assertEqual(resumed["product_executions"], 0)
             result = json.loads(Path(first["result"]).read_text(encoding="utf-8"))
-            self.assertEqual(result["attribution"]["reader_calls"], 15)
-            self.assertEqual(result["attribution"]["judge_calls"], 24)
+            self.assertEqual(result["attribution"]["reader_calls"], 25)
+            self.assertEqual(result["attribution"]["judge_calls"], 40)
             self.assertEqual(result["attribution"]["reader_settings"]["model"], "gpt-5.6-terra")
-            self.assertEqual(result["attribution"]["reader_settings"]["reasoning_effort"], "high")
+            self.assertEqual(result["attribution"]["reader_settings"]["reasoning_effort"], "xhigh")
             self.assertLessEqual(result["attribution"]["projected_level_wall_seconds"], 1961)
             self.assertTrue(result["raw_scratch_destroyed"])
             self.assertEqual(state.read_bytes(), b'{"immutable":true}\n')

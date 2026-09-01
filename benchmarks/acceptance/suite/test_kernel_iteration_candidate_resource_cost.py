@@ -14,6 +14,7 @@ sys.path.insert(0, str(LONGMEM_ROOT))
 
 import kernel_iteration_candidate_latency as latency_candidate  # noqa: E402
 import kernel_iteration_candidate_resource_cost as resource_candidate  # noqa: E402
+import kernel_iteration_evidence as iteration_evidence  # noqa: E402
 import semantic_representation  # noqa: E402
 
 
@@ -89,6 +90,36 @@ class ResourceCostCandidateTests(unittest.TestCase):
         self.assertEqual(contract.representation, semantic_representation.COMPACT_REPRESENTATION)
         self.assertEqual(value["selection"], "candidate-composition-declared")
         self.assertTrue(value["formal_requires_bound_candidate"])
+
+    def test_candidate_access_transform_binds_bounded_and_complete_source_context_to_current_revision(self) -> None:
+        repository = HERE.parents[2]
+        transform = repository / "manifests/kernel-candidates/v2/final-answer-sufficiency/mcpserver-transform.json"
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "server.go"
+            latency_candidate._render_transformed_source(repository, transform, output)
+            rendered = output.read_text(encoding="utf-8")
+        self.assertIn('SourcePreludeStartRune', rendered)
+        self.assertIn('json:"source_prelude_start_rune"', rendered)
+        self.assertIn('SourceCompleteStartRune', rendered)
+        self.assertIn('json:"source_complete_start_rune"', rendered)
+        self.assertIn("probeLimit := min(limit+1, 8)", rendered)
+        self.assertIn("result.SourceRunes = utf8.RuneCountInString(source.Content)", rendered)
+        self.assertIn("source.Revision != value.SourceRevision", rendered)
+        self.assertIn("endRune := min(128, value.StartRune)", rendered)
+        self.assertIn("result.SourcePrelude = source.Content[:endByte]", rendered)
+        self.assertNotIn("candidateEvidenceRead", (repository / "internal/adapter/mcpserver/server.go").read_text(encoding="utf-8"))
+
+    def test_context_sufficiency_contract_binds_root_reproduction_and_confirmation(self) -> None:
+        path = HERE / "iteration/v2/stage3-context-sufficiency-contract.json"
+        contract = json.loads(path.read_text(encoding="utf-8"))
+        identity = contract.pop("identity")
+        self.assertEqual(identity, iteration_evidence.canonical_sha256(contract))
+        self.assertTrue(contract["frozen_before_candidate_results"])
+        self.assertEqual(contract["gates"]["confirmation_cases"], 3)
+        for source in contract["sources"].values():
+            source_path = HERE / source["path"]
+            self.assertEqual(source["sha256"], iteration_evidence.file_sha256(source_path))
+        self.assertTrue(contract["candidate_constraints"]["no_blind_or_formal_execution"])
 
 
 if __name__ == "__main__":
