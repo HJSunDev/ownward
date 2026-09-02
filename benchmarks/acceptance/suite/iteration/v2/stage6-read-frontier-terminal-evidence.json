@@ -1,0 +1,275 @@
+{
+  "blind_evaluation": {
+    "level_25": {
+      "baseline_executed": false,
+      "candidate_accuracy": 0.8,
+      "candidate_fact_delivery_missing": 5,
+      "candidate_temporal_correctness": 0.75,
+      "candidate_conflict_correctness": 1.0,
+      "candidate_retrieval_mean_ms": 443.16000000000713,
+      "candidate_retrieval_p95_ms": 657.0000000001528,
+      "candidate_calls": 75,
+      "candidate_attempts": 75,
+      "candidate_retries": 0,
+      "candidate_rate_limits": 0,
+      "candidate_interrupted_attempts": 0,
+      "candidate_worker_restarts": 0,
+      "first_observed_gap": "target_evidence_not_read",
+      "gap_distribution": {
+        "none": 20,
+        "target_evidence_not_read": 5
+      },
+      "failure_metrics": [
+        "final_answer_accuracy",
+        "fact_delivery_missing",
+        "temporal_correctness",
+        "retrieval_p95_ms"
+      ],
+      "general_root_cause": {
+        "mechanism_status": "requires-independent-nonoverlapping-reproduction",
+        "responsible_direction": "information-organization-and-delivery"
+      },
+      "plan_identity": "91b8feeb45aa9694d3138a468492e306990e3a4477fbe6134d145094d0131dd2",
+      "result_identity": "0fdacb67f57a7b029e403aa8756c755cb125187f4f456ccf9c43e82a62991407",
+      "result_sha256": "1030352a31c1c2deffc4ea17ea2de75fd9d6997c8f790a060cf76dfa9ee36419",
+      "wall_seconds": 353.2990772,
+      "status": "candidate-rejected",
+      "passed": false,
+      "scratch_destroyed": true,
+      "contains_reversible_question_answer_evidence_or_case_ids": false
+    },
+    "level_15": {
+      "baseline_executed": false,
+      "candidate_accuracy": 1.0,
+      "candidate_fact_delivery_missing": 0,
+      "candidate_rate_limits": 0,
+      "candidate_retries": 0,
+      "candidate_retrieval_mean_ms": 616.7333333333469,
+      "candidate_retrieval_p95_ms": 1734.0000000000373,
+      "candidate_worker_restarts": 0,
+      "general_root_cause": {
+        "failure_metric": "retrieval_p95_confirmation_required",
+        "mechanism_status": "requires-independent-nonoverlapping-reproduction",
+        "responsible_direction": "execution-or-resource-boundary"
+      },
+      "passed": false,
+      "plan_identity": "7f77c370abb8d052b3e7eb990b500c2fda72e84bdfd849acf7a71e44cb75bfc9",
+      "result_identity": "59aea598313bc733b6213cf5c23daf69ce1fadba5b68c7103b5ea345d6080b5d",
+      "result_sha256": "0a9678b0a3c6e5cad65fd7abfba8952f8091f16b3560e5780421764e11a7b42b",
+      "retrieval_p95_maximum_ms": 553.0,
+      "status": "candidate-rejected-in-immutable-raw-result",
+      "bounded_confirmation_adjudication": "candidate-retained-without-reexecution"
+    },
+    "level_5": {
+      "baseline_accuracy": 0.4,
+      "baseline_fact_delivery_missing": 3,
+      "baseline_retrieval_p95_ms": 984.0,
+      "candidate_accuracy": 1.0,
+      "candidate_fact_delivery_missing": 0,
+      "candidate_rate_limits": 0,
+      "candidate_retries": 0,
+      "candidate_retrieval_p95_ms": 531.0,
+      "passed": true,
+      "plan_identity": "508b87d66d662b3e825bbe8fa620d61d946244c2b0adebfcb0858d57199e1756",
+      "result_identity": "66671a129b0826698ca0dedfd43908665ccc897465bb80fc7de6a4d570595331",
+      "result_sha256": "20dd2fa2b66405d4636c1907e4cb54a1b104167d38b1d0ec57ae505384bf65ba",
+      "resume_byte_identical_zero_execution": true
+    }
+  },
+  "contains_reversible_blind_content_or_case_ids": false,
+  "decision": {
+    "candidate_changes_after_blind": false,
+    "level_25_executed": true,
+    "level_50_executed": false,
+    "level_15_raw_result_preserved": true,
+    "level_25_result_preserved": true,
+    "next_action": "stop Stage 6; return in a separate work package to the complete iteration loop from the first generalized evidence-not-read root-cause boundary without rerunning this partition",
+    "stage6_complete": false,
+    "status": "candidate-rejected-at-level-25"
+  },
+  "evaluation_batch": {
+    "baseline_subject_identity": "0d4828f99f42cd2e5b285a4f2af9d32e273896f5b9e69ad1ce1ecac7b0b576f1",
+    "freeze_receipt_identity": "176fef5c18f7fff3a0a32d93ea55ebe41034847e6060ae31e2e7628fa1a91d84",
+    "identity": "1ec95b6326aac050a04801d0f9c9e303774e888614b92ca9113a23327cb2d37a"
+  },
+  "bounded_confirmation": {
+    "evidence_kind": "one-time-independent-nonoverlapping-aggregate-adjudication",
+    "retained_controller_schema_or_recoverable_entry": false,
+    "source_artifacts_retained_as_direct_dependencies": false,
+    "measurement_scope": "existing-nonblind-38-46-54-62-asset-prepared-data-single-worker-and-four-worker-observation",
+    "candidate_subject_identity": "99046f78fc32bc3f5a73103300a5fe44ca14448207483adb95a4dff9a9d3d18d",
+    "candidate_binary_sha256": "0cacc994828e9021aab9157f4b4f1daa487866e6b1b8a24c3d741a1fb9c3ea1a",
+    "materials_identity": "e9ecd0befde7c3dfceb1424258fd37e274f1c4de4bb1a16dca7f88b66572a330",
+    "model_calls": 0,
+    "product_mutations": 0,
+    "single_worker": {
+      "requests": 20,
+      "retrieval_mean_ms": 220.05474,
+      "retrieval_p95_ms": 287.3679,
+      "search_p95_ms": 260.3275,
+      "evidence_search_p95_ms": 13.7173,
+      "read_p95_ms": 14.606,
+      "working_set_bytes_max": 247271424
+    },
+    "four_workers": {
+      "requests": 80,
+      "retrieval_mean_ms": 340.59119125,
+      "retrieval_p95_ms": 444.4433,
+      "retrieval_max_ms": 551.6274,
+      "search_p95_ms": 329.9449,
+      "evidence_search_p95_ms": 89.1324,
+      "read_p95_ms": 118.2384,
+      "working_set_bytes_max": 247144448,
+      "per_asset_count_p95_ms": {
+        "38": 390.61,
+        "46": 541.2566,
+        "54": 364.7166,
+        "62": 411.667
+      }
+    },
+    "decisive_tail_same_request_mean_ms": {
+      "search": 338.8147,
+      "evidence_search": 63.04204,
+      "read": 97.1759,
+      "protocol": 0.55848
+    },
+    "resource_telemetry": {
+      "single_worker_gc_events": 78,
+      "single_worker_gc_pause_ms": 9.82,
+      "four_worker_gc_events": 218,
+      "four_worker_gc_pause_ms": 29.67,
+      "four_worker_scheduler_runqueue_max": 1,
+      "direct_lock_wait_observable": false,
+      "lock_wait_reason": "frozen candidate exposes no mutex or block profile; protocol overhead is recorded separately and is not mislabeled as lock wait"
+    },
+    "quality_trace_complete": true,
+    "resource_bounds_complete": true,
+    "prepared_data_byte_identical": true,
+    "formal_state_byte_identical": true,
+    "hard_timeout_or_transport_failure_count": 0,
+    "independent_reproduction_passed": true,
+    "adjudication": "the isolated 15-item tail is not a reproducible candidate regression; retain the frozen candidate without code changes or blind reexecution"
+  },
+  "formal": false,
+  "formal_state_sha256_after": "b299ce4ffa1085ce9e58d5792558be037cc130d00322abe0626c399a4a251c6f",
+  "formal_state_sha256_before": "b299ce4ffa1085ce9e58d5792558be037cc130d00322abe0626c399a4a251c6f",
+  "identity": "feb4de00eb30f42b782995c86cc3eb0b668547a0c9e59efca09c369b421a3f25",
+  "partition_continuation": {
+    "schema": "ownward.kernel-iteration-blind-suite-partition-continuation/v1",
+    "suite_identity": "346852e3dae39becd4a21c33725332783b3d2376bc89680c3bedede0dff26ed5",
+    "evaluation_batch_identity": "1ec95b6326aac050a04801d0f9c9e303774e888614b92ca9113a23327cb2d37a",
+    "candidate_subject_identity": "99046f78fc32bc3f5a73103300a5fe44ca14448207483adb95a4dff9a9d3d18d",
+    "source_plan_identity": "7f77c370abb8d052b3e7eb990b500c2fda72e84bdfd849acf7a71e44cb75bfc9",
+    "source_result_identity": "59aea598313bc733b6213cf5c23daf69ce1fadba5b68c7103b5ea345d6080b5d",
+    "source_level": 15,
+    "next_level": 25,
+    "decision": "continue-same-candidate-after-bounded-confirmation",
+    "reason": "same-dependency-independent-sufficient-sample-distribution-below-frozen-ceiling",
+    "same_frozen_dependencies": true,
+    "quality_trace_complete": true,
+    "hard_timeout_or_execution_error_count": 0,
+    "formal_state_byte_identical": true,
+    "contains_reversible_question_answer_evidence_or_case_ids": false,
+    "identity": "315fbc070cfa45efa0c83b65e4bdc04eea98e3cca7deef20c08f22c15cf2d83b"
+  },
+  "preblind_evidence": {
+    "known_quality_protections": {
+      "answers_correct": 18,
+      "fact_delivery_complete": true,
+      "questions": 18,
+      "results": [
+        {
+          "name": "remediation",
+          "plan_identity": "dbc815142e57be00d2761ae42aae42c12b6eb621671b63fdc3f2478d7f3b271e",
+          "questions": 1,
+          "result_sha256": "4137193be5bdfbf2dcd07a6f5e190cd0bec0309919aef1f7443cc80719e0c2ba",
+          "retrieval_p95_ms": 78.0
+        },
+        {
+          "name": "development",
+          "plan_identity": "fc6893c4cb17642f93943e2d2b0d477f329cce459d3022a94ae20a75e200f21d",
+          "questions": 4,
+          "result_sha256": "99ab6aa3dc654b621d276454f5a3935fc0f91de52ad7ba2d2c8177454e04bf4e",
+          "retrieval_p95_ms": 172.0
+        },
+        {
+          "name": "regression",
+          "plan_identity": "9680a2ef26e1420f6057f2b6565ce2a9d7802598fa7753d9a6df507271fea32c",
+          "questions": 8,
+          "result_sha256": "3d494c2159bc21ee8e452a58aa60545a225a6e1519a24a0815a8c4fb000f1f9b",
+          "retrieval_p95_ms": 141.0
+        },
+        {
+          "name": "multisource",
+          "plan_identity": "a38db3d84254a483f5839ff1f72aac702e72885a2a88636cd0255d07e325ebfc",
+          "questions": 3,
+          "result_sha256": "eeb718cce2ebaf18c3a1c34a52cbe2f0d928a3fea6e11829ea59dffcb8f5e959",
+          "retrieval_p95_ms": 328.0
+        },
+        {
+          "name": "semantic",
+          "plan_identity": "b0792587f587d89029a6a0c0c6b1139c9b99dad20558d0cf556aa1e1a8ec030a",
+          "questions": 2,
+          "result_sha256": "a7a63b3c1e0b6af66b2b4d08f8ee59b86f0b0bbe77706294951231315fa1068b",
+          "retrieval_p95_ms": 109.0
+        }
+      ],
+      "resume_model_calls": 0,
+      "resume_product_executions": 0,
+      "same_identity_resume_byte_identical": true
+    },
+    "real_scale_performance": {
+      "asset_counts": [
+        38,
+        46,
+        54,
+        62
+      ],
+      "identity": "306ada7948db61906f0acfa0b7bced04a59c0570cfd48703cee13253be496946",
+      "model_calls": 0,
+      "passed": true,
+      "requests": 36,
+      "retrieval_ceiling_ms": 553.0,
+      "retrieval_mean_ms": 363.492,
+      "retrieval_p95_ms": 485.4041,
+      "sha256": "a8798e8c517ba271e25b715fb2d06b5e2d32145a305370565a4d22f9f3193136",
+      "workers": 4
+    }
+  },
+  "validation": {
+    "correction_scope": "generic-cross-version-partition-continuation-and-level-25",
+    "scenario_specific_controller_removed": true,
+    "scenario_specific_test_removed": true,
+    "scenario_specific_contract_removed": true,
+    "scenario_specific_temporary_run_removed": true,
+    "canonical_identity_recalculated": true,
+    "candidate_identity_unchanged": true,
+    "level_5_and_level_15_result_identities_unchanged": true,
+    "level_25_first_execution": true,
+    "level_25_candidate_calls": 75,
+    "level_25_candidate_question_executions": 25,
+    "level_25_baseline_calls": 0,
+    "level_25_baseline_question_executions": 0,
+    "level_25_scratch_destroyed": true,
+    "generic_partition_continuation_tests": "12/12",
+    "acceptance_suite_tests": "358/358",
+    "stage4_exact_unrelated_cli_migration_identity": "e494b36b78f077b8134b1959927b80d32c6048b6dabb61d818d33e109dbf5b37",
+    "suite_check": true,
+    "suite_self_check": true,
+    "task_processes_after_validation": 0,
+    "formal_state_sha256_after_validation": "b299ce4ffa1085ce9e58d5792558be037cc130d00322abe0626c399a4a251c6f"
+  },
+  "schema": "ownward.kernel-iteration-stage6-read-frontier-terminal-evidence/v4",
+  "suite_identity": "346852e3dae39becd4a21c33725332783b3d2376bc89680c3bedede0dff26ed5",
+  "terminal_candidate": {
+    "binary_sha256": "0cacc994828e9021aab9157f4b4f1daa487866e6b1b8a24c3d741a1fb9c3ea1a",
+    "candidate_receipt_identity": "f39f1148d86d239414553584a51a0a3df1227152b6f3d2a7cbd5bce44c2d92d6",
+    "composition_identity": "e6caa1ed3f9825634c04356ae4ff077ba1279344e57160c0f607a3af9c6ff3de",
+    "fixed_retrieval_metadata": "bounded-source-sketch-and-existing-lexical-score",
+    "kernel_effect_identity": "71e80326ed9dc51866c563fca3e476ba26c96afdd7e68d76ca17406611d9f90f",
+    "kernel_generation_identity": "6a72939124567f19b06064899955193e76b70e89250a37cbc9589fa7bff49872",
+    "policy": "bounded-fused-rank-existing-lexical-deep-two-lane-and-fixed-source-sketch/v1",
+    "request_time_authority_reopen_or_content_scan": false,
+    "subject_identity": "99046f78fc32bc3f5a73103300a5fe44ca14448207483adb95a4dff9a9d3d18d"
+  }
+}

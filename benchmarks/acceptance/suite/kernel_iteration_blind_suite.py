@@ -40,7 +40,10 @@ QUALIFICATION_RESULT_SCHEMA = "ownward.kernel-iteration-blind-suite-admission-qu
 EXECUTION_PLAN_SCHEMA = "ownward.kernel-iteration-blind-suite-execution-plan/v1"
 EXECUTION_LOCATOR_SCHEMA = "ownward.kernel-iteration-blind-suite-execution-locator/v1"
 EXECUTION_RESULT_SCHEMA = "ownward.kernel-iteration-blind-suite-execution-result/v1"
+EXECUTION_SCRATCH_SCHEMA = "ownward.kernel-iteration-blind-suite-execution-scratch/v1"
+PARTITION_CONTINUATION_SCHEMA = "ownward.kernel-iteration-blind-suite-partition-continuation/v1"
 EVALUATION_BATCH_SCHEMA = "ownward.kernel-iteration-blind-suite-evaluation-batch/v1"
+EVALUATION_FREEZE_SCHEMA = "ownward.kernel-iteration-blind-suite-evaluation-freeze/v1"
 MATERIALS_SCHEMA = validation.MATERIALS_SCHEMA
 NO_ANSWER = "I don't have enough information to answer that."
 PRIMARY_COVERAGE = tuple(validation.BLIND_COVERAGE)
@@ -531,8 +534,44 @@ def load_evaluation_batch(path: Path, major_version: str, suite_identity: str) -
     _require(freeze_path.is_file() and freeze.get("sha256") == evidence.file_sha256(freeze_path), "版本级盲测冻结收据漂移")
     frozen = _load_json(freeze_path)
     _require(freeze.get("identity") == frozen.get("identity") and evidence.is_sha256(str(freeze.get("identity", ""))), "版本级盲测冻结收据身份错绑")
+    frozen_content = {key: item for key, item in frozen.items() if key != "identity"}
+    _require(frozen.get("schema") == EVALUATION_FREEZE_SCHEMA, "版本级盲测冻结收据 schema 无效")
+    _require(frozen.get("identity") == evidence.canonical_sha256(frozen_content), "版本级盲测冻结收据内容身份漂移")
+    _require(frozen.get("major_version") == major_version and frozen.get("suite_identity") == suite_identity, "版本级盲测冻结收据与套题错绑")
+    for role in ("candidate", "baseline"):
+        _require(frozen.get(f"{role}_subject_identity") == value[role]["subject_identity"], f"版本级盲测冻结收据与 {role} subject 错绑")
+    sources = frozen.get("source_freezes")
+    _require(isinstance(sources, list) and len(sources) == 2, "版本级盲测冻结收据缺少双 subject 来源")
+    by_role = {str(item.get("role", "")): item for item in sources if isinstance(item, dict)}
+    _require(set(by_role) == {"candidate", "baseline"}, "版本级盲测冻结收据 subject 来源角色无效")
+    for role, source in by_role.items():
+        source_path = Path(str(source.get("path", ""))).resolve()
+        _require(source_path.is_file(), f"版本级盲测冻结收据缺少 {role} 来源")
+        _require(source.get("sha256") == evidence.file_sha256(source_path), f"版本级盲测冻结收据 {role} 来源漂移")
+        source_value = _load_json(source_path)
+        _require(source.get("identity") == source_value.get("identity") and evidence.is_sha256(str(source.get("identity", ""))), f"版本级盲测冻结收据 {role} 来源身份错绑")
     _require(value["candidate"]["subject_identity"] != value["baseline"]["subject_identity"], "版本级盲测候选与基线身份相同")
     return value
+
+
+def _load_evaluation_subject(comparison: dict[str, Any], manifest_path: Path) -> dict[str, Any]:
+    """Load either a current candidate manifest or an exact frozen subject projection.
+
+    Frozen baselines are accepted only when the complete envelope is byte-for-value
+    equal to a subject selected from the versioned comparison contract.  This keeps
+    the evaluator generic without letting a self-addressed, operator-invented
+    baseline stand in for a frozen subject.
+    """
+    manifest = _load_json(manifest_path.resolve())
+    if "content" not in manifest:
+        return evidence.select_subject(comparison, None, manifest_path.resolve())
+    subjects = _mapping(comparison, "subjects")
+    for selector in subjects:
+        expected = evidence.select_subject(comparison, selector)
+        if manifest.get("identity") == expected["identity"]:
+            _require(manifest == expected, "版本级盲测冻结 subject 封存内容漂移")
+            return expected
+    raise BlindSuiteError("版本级盲测冻结 subject 不属于当前版本化比较合同")
 
 
 def run_partition(
@@ -546,6 +585,7 @@ def run_partition(
     suite_identity: str,
     level: int,
     previous_plan_identity: str | None = None,
+    previous_adjudication_path: Path | None = None,
     plan_identity: str | None = None,
     resume: bool = False,
     runner: Callable[..., dict[str, Any]] | None = None,
@@ -577,8 +617,8 @@ def run_partition(
     baseline_runtime = validation.validate_execution_config(
         suite_root, Path(batch["baseline"]["execution_config"]), expected_reader_effort=reader_selection["selected_reasoning_effort"],
     )
-    candidate = evidence.select_subject(comparison, None, Path(batch["candidate"]["subject_manifest"]))
-    baseline = evidence.select_subject(comparison, None, Path(batch["baseline"]["subject_manifest"]))
+    candidate = _load_evaluation_subject(comparison, Path(batch["candidate"]["subject_manifest"]))
+    baseline = _load_evaluation_subject(comparison, Path(batch["baseline"]["subject_manifest"]))
     _require(candidate["identity"] == batch["candidate"]["subject_identity"], "版本级盲测候选错绑")
     _require(baseline["identity"] == batch["baseline"]["subject_identity"], "版本级盲测基线错绑")
     _require(candidate["identity"] != baseline["identity"], "版本级盲测候选与基线不得相同")
@@ -591,16 +631,20 @@ def run_partition(
     runtime_calibration = evidence.calibrate_runtime(suite_root, output_root / "runtime-calibration", state_path, resume=resume)
     _require(state_path.read_bytes() == state_before, "版本级盲测执行校准改写了正式 state")
     evaluator_qualification = evaluator_reliability.load_current_qualification(suite_root, Path(batch["candidate"]["execution_config"]))
-    previous_result_identity = _previous_partition_result(
+    previous_decision = _previous_partition_result(
         output_root, suite_identity, candidate["identity"], contract, previous_plan_identity,
+        adjudication_path=previous_adjudication_path,
+        evaluation_batch_identity=batch["identity"],
     )
     dependencies = _partition_execution_dependencies(
         suite_root, suite_contract, contract, sealed, candidate, baseline,
         candidate_runtime, baseline_runtime, runtime_calibration, shared_conditions,
         reader_selection, evaluator_qualification, batch,
     )
-    if previous_result_identity is not None:
-        dependencies["previous-partition-result"] = previous_result_identity
+    if previous_decision is not None:
+        dependencies["previous-partition-result"] = previous_decision["result_identity"]
+        if previous_decision.get("continuation_identity") is not None:
+            dependencies["previous-partition-continuation"] = previous_decision["continuation_identity"]
     plan_content = {
         "schema": EXECUTION_PLAN_SCHEMA,
         "purpose": "run-one-frozen-version-suite-partition",
@@ -609,6 +653,9 @@ def run_partition(
         "partition_identity": sealed["partition_identity"],
         "level": level,
         "previous_plan_identity": previous_plan_identity,
+        "previous_partition_continuation_identity": (
+            previous_decision.get("continuation_identity") if previous_decision is not None else None
+        ),
         "candidate_subject_identity": candidate["identity"],
         "candidate_kernel_generation_identity": candidate["content"]["kernel_generation_identity"],
         "candidate_kernel_effect_identity": candidate["content"]["kernel_effect_identity"],
@@ -638,7 +685,7 @@ def run_partition(
     else:
         evidence.atomic_json(plan_path, plan)
     _require(candidate_runtime["runs"] == baseline_runtime["runs"], "候选与当前基线没有共享持久运行根")
-    scratch = candidate_runtime["runs"] / "kernel-version-blind-suite" / suite_identity / plan_identity
+    scratch = _execution_scratch_path(candidate_runtime["runs"], suite_identity, plan_identity)
     scratch.mkdir(parents=True, exist_ok=True)
     locator_content = {
         "schema": EXECUTION_LOCATOR_SCHEMA,
@@ -651,6 +698,7 @@ def run_partition(
         "output_root": str(output_root),
         "level": level,
         "previous_plan_identity": previous_plan_identity,
+        "previous_adjudication": str(previous_adjudication_path.resolve()) if previous_adjudication_path is not None else None,
     }
     locator = {**locator_content, "identity": evidence.canonical_sha256(locator_content)}
     if (root / "locator.json").is_file():
@@ -739,14 +787,26 @@ def resume_partition_by_plan_identity(suite_root: Path, output_root: Path, plan_
         suite_root, output_root, Path(locator["vault_root"]),
         Path(locator["evaluation_batch"]), Path(locator["formal_state"]),
         major_version=locator["major_version"], suite_identity=locator["suite_identity"], level=int(locator["level"]),
-        previous_plan_identity=locator.get("previous_plan_identity"), plan_identity=plan_identity, resume=True, runner=runner,
+        previous_plan_identity=locator.get("previous_plan_identity"),
+        previous_adjudication_path=(Path(locator["previous_adjudication"]) if locator.get("previous_adjudication") else None),
+        plan_identity=plan_identity, resume=True, runner=runner,
     )
 
 
-def _previous_partition_result(output_root: Path, suite_identity: str, candidate_identity: str, contract: dict[str, Any], previous_plan_identity: str | None) -> str | None:
+def _previous_partition_result(
+    output_root: Path,
+    suite_identity: str,
+    candidate_identity: str,
+    contract: dict[str, Any],
+    previous_plan_identity: str | None,
+    *,
+    adjudication_path: Path | None = None,
+    evaluation_batch_identity: str | None = None,
+) -> dict[str, str] | None:
     previous_level = _mapping(contract, "sequence")["previous_level"]
     if previous_level is None:
         _require(previous_plan_identity is None, "版本级盲测 5 题分区不得声明前级")
+        _require(adjudication_path is None, "版本级盲测 5 题分区不得声明前级裁决")
         return None
     _require(isinstance(previous_plan_identity, str) and evidence.is_sha256(previous_plan_identity), "后续版本级盲测分区缺少前级计划")
     root = output_root / "blind-suite-runs" / suite_identity / candidate_identity / previous_plan_identity
@@ -755,9 +815,79 @@ def _previous_partition_result(output_root: Path, suite_identity: str, candidate
     _require(plan.get("level") == previous_level, "版本级盲测前级级别错绑")
     result = _load_json(root / "result.json")
     _validate_execution_result(result, previous_plan_identity)
-    _require(result.get("passed") is True and result.get("candidate_decision") is True, "版本级盲测前级没有通过")
-    _require(result.get("next_level") == contract["level"], "版本级盲测前级未授权当前分区")
-    return str(result["identity"])
+    if result.get("passed") is True and result.get("candidate_decision") is True:
+        _require(adjudication_path is None, "已通过的版本级盲测前级不得叠加外部裁决")
+        _require(result.get("next_level") == contract["level"], "版本级盲测前级未授权当前分区")
+        return {"result_identity": str(result["identity"])}
+
+    absolute = _mapping(result, "absolute_decision")
+    distribution = _mapping(absolute, "retrieval_distribution")
+    failures = absolute.get("failures")
+    _require(
+        result.get("status") == "candidate-rejected"
+        and result.get("candidate_decision") is False
+        and result.get("baseline_execution") is None
+        and distribution.get("status") == "bounded-confirmation-required"
+        and distribution.get("candidate_failure") is False
+        and isinstance(failures, list)
+        and failures
+        and {item.get("metric") for item in failures if isinstance(item, dict)} == {"retrieval_p95_confirmation_required"},
+        "版本级盲测前级没有通过且不属于可独立确认的非候选失败尾值",
+    )
+    _require(adjudication_path is not None, "版本级盲测前级有界确认缺少独立裁决")
+    _require(isinstance(evaluation_batch_identity, str) and evidence.is_sha256(evaluation_batch_identity), "版本级盲测前级裁决缺少评测批次身份")
+    continuation = _load_partition_continuation(
+        adjudication_path,
+        suite_identity=suite_identity,
+        evaluation_batch_identity=evaluation_batch_identity,
+        candidate_identity=candidate_identity,
+        previous_plan_identity=previous_plan_identity,
+        previous_result_identity=str(result["identity"]),
+        previous_level=int(previous_level),
+        next_level=int(contract["level"]),
+    )
+    return {
+        "result_identity": str(result["identity"]),
+        "continuation_identity": str(continuation["identity"]),
+    }
+
+
+def _load_partition_continuation(
+    path: Path,
+    *,
+    suite_identity: str,
+    evaluation_batch_identity: str,
+    candidate_identity: str,
+    previous_plan_identity: str,
+    previous_result_identity: str,
+    previous_level: int,
+    next_level: int,
+) -> dict[str, Any]:
+    value = _load_json(path.resolve())
+    outer_content = {key: item for key, item in value.items() if key != "identity"}
+    _require(value.get("identity") == evidence.canonical_sha256(outer_content), "版本级盲测前级裁决外层身份漂移")
+    continuation = _mapping(value, "partition_continuation")
+    content = {key: item for key, item in continuation.items() if key != "identity"}
+    _require(continuation.get("schema") == PARTITION_CONTINUATION_SCHEMA, "版本级盲测前级裁决 schema 无效")
+    _require(continuation.get("identity") == evidence.canonical_sha256(content), "版本级盲测前级裁决身份漂移")
+    expected = {
+        "suite_identity": suite_identity,
+        "evaluation_batch_identity": evaluation_batch_identity,
+        "candidate_subject_identity": candidate_identity,
+        "source_plan_identity": previous_plan_identity,
+        "source_result_identity": previous_result_identity,
+        "source_level": previous_level,
+        "next_level": next_level,
+    }
+    for name, expected_value in expected.items():
+        _require(continuation.get(name) == expected_value, f"版本级盲测前级裁决 {name} 错绑")
+    _require(continuation.get("decision") == "continue-same-candidate-after-bounded-confirmation", "版本级盲测前级裁决没有授权继续")
+    _require(continuation.get("same_frozen_dependencies") is True, "版本级盲测前级裁决依赖不一致")
+    _require(continuation.get("quality_trace_complete") is True, "版本级盲测前级裁决质量证据不完整")
+    _require(continuation.get("hard_timeout_or_execution_error_count") == 0, "版本级盲测前级裁决包含硬失败")
+    _require(continuation.get("formal_state_byte_identical") is True, "版本级盲测前级裁决改写正式 state")
+    _require(continuation.get("contains_reversible_question_answer_evidence_or_case_ids") is False, "版本级盲测前级裁决泄露可逆内容")
+    return continuation
 
 
 def _partition_execution_dependencies(
@@ -861,16 +991,29 @@ def _finish_partition(
     }
     result = {**content, "identity": evidence.canonical_sha256(content)}
     evidence.atomic_json(root / "result.json", result)
-    _destroy_execution_scratch(scratch, runs_root, plan["suite_identity"])
+    _destroy_execution_scratch(scratch, runs_root, plan["suite_identity"], plan["identity"])
     (root / "active.json").unlink(missing_ok=True)
     _require(state_path.read_bytes() == state_before, "版本级盲测执行终态改写正式 state")
     return _execution_reference(root / "result.json", result, reused=False)
 
 
-def _destroy_execution_scratch(path: Path, runs_root: Path, suite_identity: str) -> None:
+def _execution_scratch_path(runs_root: Path, suite_identity: str, plan_identity: str) -> Path:
+    _require(evidence.is_sha256(suite_identity) and evidence.is_sha256(plan_identity), "版本级盲测执行 scratch 身份无效")
+    identity = evidence.canonical_sha256({
+        "schema": EXECUTION_SCRATCH_SCHEMA,
+        "suite_identity": suite_identity,
+        "plan_identity": plan_identity,
+    })
+    parent = (runs_root.resolve() / "kvs").resolve()
+    path = (parent / identity).resolve()
+    _require(path.parent == parent, "版本级盲测执行 scratch 逃逸持久运行根")
+    return path
+
+
+def _destroy_execution_scratch(path: Path, runs_root: Path, suite_identity: str, plan_identity: str) -> None:
     path = path.resolve()
-    expected_parent = (runs_root.resolve() / "kernel-version-blind-suite" / suite_identity).resolve()
-    _require(path.parent == expected_parent, "拒绝清理版本级盲测执行区之外的目录")
+    expected = _execution_scratch_path(runs_root, suite_identity, plan_identity)
+    _require(path == expected, "拒绝清理版本级盲测执行区之外的目录")
     if path.exists():
         shutil.rmtree(path)
 

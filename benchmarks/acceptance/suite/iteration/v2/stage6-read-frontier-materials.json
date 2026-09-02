@@ -1,0 +1,49 @@
+{
+  "schema": "ownward.kernel-iteration-materials/v2",
+  "contains_formal_questions_answers_gold_or_content": false,
+  "cases": [
+    {
+      "case_id": "v2rf-meridian-relay",
+      "coverage": "returned-below-fixed-read-frontier",
+      "question_type": "single-session-user",
+      "question_date": "2026-11-20",
+      "question": "Which two-word code is now binding for the Meridian Relay calibration?",
+      "answer": "Zircon Finch.",
+      "answer_session_ids": ["v2rf-s12"],
+      "stale_session_ids": [],
+      "distractor_session_ids": ["v2rf-s01", "v2rf-s02", "v2rf-s03", "v2rf-s04", "v2rf-s05", "v2rf-s06", "v2rf-s07", "v2rf-s08", "v2rf-s09", "v2rf-s10", "v2rf-s11"],
+      "truth_claims": [
+        {"claim": "Zircon Finch.", "evidence_session_ids": ["v2rf-s12"]}
+      ],
+      "sessions": [
+        {"session_id": "v2rf-s01", "date": "2026-10-01", "turns": [{"role": "user", "content": "The Meridian Relay calibration rehearsal used Amber Kite as its two-word code. The rehearsal sheet repeatedly labels it binding, current, and operational only inside the simulation, then explicitly says it cannot govern the real calibration."}]},
+        {"session_id": "v2rf-s02", "date": "2026-10-03", "turns": [{"role": "assistant", "content": "A rejected Meridian Relay calibration draft proposed Silver Heron as the binding two-word code. It repeats current calibration, binding code, relay procedure, and authorization while stating that the proposal was never approved."}]},
+        {"session_id": "v2rf-s03", "date": "2026-10-05", "turns": [{"role": "user", "content": "The parser fixture for Meridian Relay calibration fills the current binding code field with Copper Lark. Every example calls it the two-word operational code, but the footer marks all values as synthetic test data."}]},
+        {"session_id": "v2rf-s04", "date": "2026-10-07", "turns": [{"role": "assistant", "content": "A training workbook says Meridian Relay calibration learners should enter Cedar Wren as the current binding two-word code. The workbook is fictional and directs operators to ignore its answer outside training."}]},
+        {"session_id": "v2rf-s05", "date": "2026-10-09", "turns": [{"role": "user", "content": "A neighboring Meridian Harbor calibration uses Ivory Tern. The comparison repeatedly mentions Meridian Relay, current binding code, two-word authorization, and calibration so crews do not copy the neighboring value."}]},
+        {"session_id": "v2rf-s06", "date": "2026-10-11", "turns": [{"role": "assistant", "content": "The Meridian Relay calibration visibility trial evaluated Crimson Gull as a possible two-word code. The report repeats binding and current terminology but concludes that no code in the trial was authorized."}]},
+        {"session_id": "v2rf-s07", "date": "2026-10-13", "turns": [{"role": "user", "content": "A contingency worksheet for Meridian Relay calibration lists Bronze Crane in the binding code column. The row is a placeholder, the sign-off is empty, and the worksheet says it is not the current decision."}]},
+        {"session_id": "v2rf-s08", "date": "2026-10-15", "turns": [{"role": "assistant", "content": "A retired Meridian Relay calibration notice once made Onyx Robin the binding two-word code. The notice is stamped obsolete and says later signed instructions replace it."}]},
+        {"session_id": "v2rf-s09", "date": "2026-10-17", "turns": [{"role": "user", "content": "The Meridian Relay calibration incident drill used Golden Swift as its current binding code during the exercise. The drill report states that exercise values have no operational authority."}]},
+        {"session_id": "v2rf-s10", "date": "2026-10-19", "turns": [{"role": "assistant", "content": "A software mockup displays Pearl Falcon beside the Meridian Relay calibration field named current binding two-word code. The mockup is presentation-only and contains no signed instruction."}]},
+        {"session_id": "v2rf-s11", "date": "2026-10-21", "turns": [{"role": "user", "content": "Meeting notes discuss whether Slate Osprey could become the Meridian Relay calibration code. They repeat binding, current, two-word code, and operational approval, but record that the motion failed."}]},
+        {"session_id": "v2rf-s12", "date": "2026-11-18", "turns": [{"role": "assistant", "content": "Regarding that calibration, the signed final notice cancels every earlier rehearsal, draft, fixture, workbook, comparison, trial, worksheet, retired notice, drill, mockup, and proposal. Zircon Finch."}]}
+      ]
+    }
+  ],
+  "criteria": {
+    "minimum_accuracy": 1.0,
+    "require_complete_fact_delivery": true,
+    "category_minimums": {},
+    "maximum_wall_seconds": 300,
+    "provenance": {
+      "origin": "independent-stage6-read-frontier-reproduction",
+      "stage2_calibration_reuse": false,
+      "stage3_material_reuse": false,
+      "stage4_material_reuse": false,
+      "blind_suite_reuse": false,
+      "formal_source_access": false
+    }
+  },
+  "identity": "9c80770e49b9de03d8e7a5b2e18700fbea19a56d40a02bcea866c942d093086f"
+}

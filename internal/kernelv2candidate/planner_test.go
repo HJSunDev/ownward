@@ -1,12 +1,15 @@
 package kernelv2candidate
 
 import (
+	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
 
 	"github.com/HJSunDev/ownward/internal/domain"
+	"github.com/HJSunDev/ownward/internal/kernelv2candidate/coverage"
 )
 
 func TestEvidencePlansPreservesSingleSourceDepth(t *testing.T) {
@@ -132,6 +135,71 @@ func TestEvidencePlansCachedPathsAreInvalidatedByAuthorityMutation(t *testing.T)
 	if _, ok := plans.ReadCached(references[0].ID); ok {
 		t.Fatal("authority mutation must invalidate prepared evidence")
 	}
+}
+
+func TestCoverageSourceOrderBalancesFusedRankPassageRelevanceAndDistinctSource(t *testing.T) {
+	sources := make([]string, 12)
+	for index := range sources {
+		sources[index] = fmt.Sprintf("source-%02d", index)
+	}
+	metadata := make(map[string]coverage.Source, len(sources))
+	for _, sourceID := range sources {
+		metadata[sourceID] = coverage.Source{Diversity: signature("shared-harbor-topic")}
+	}
+	metadata[sources[5]] = coverage.Source{PassageScore: 4.5, Diversity: metadata[sources[5]].Diversity}
+	metadata[sources[7]] = coverage.Source{PassageScore: 6.0, Diversity: metadata[sources[7]].Diversity}
+	metadata[sources[11]] = coverage.Source{Diversity: signature("distinct:botanical-custody-ledger")}
+	got := CoverageSourceOrder(sources, metadata, len(sources))
+	for index := 0; index < planningRankFloor; index++ {
+		if got[index] != sources[index] {
+			t.Fatalf("rank floor source %d was not preserved: got=%v", index, got[:planningRankFloor])
+		}
+	}
+	if !slices.Contains(got[:planningSourceLimit], "source-07") {
+		t.Fatalf("query-specific passage source did not enter the fixed read frontier: %v", got[:planningSourceLimit])
+	}
+	if !slices.Contains(got[:planningSourceLimit], "source-11") {
+		t.Fatalf("distinct returned source did not enter the fixed read frontier: %v", got[:planningSourceLimit])
+	}
+	sortedGot := append([]string(nil), got...)
+	sortedWant := append([]string(nil), sources...)
+	slices.Sort(sortedGot)
+	slices.Sort(sortedWant)
+	if len(got) != len(sources) || !reflect.DeepEqual(sortedGot, sortedWant) {
+		t.Fatalf("diversity changed returned source identity or count: got=%v want=%v", got, sources)
+	}
+}
+
+func TestCoverageSourceOrderMatchesSealedLongPassageLaneSemantics(t *testing.T) {
+	sources := make([]string, 18)
+	for index := range sources {
+		sources[index] = fmt.Sprintf("source-%02d", index)
+	}
+	// A short exact lexical match must stay in its fused/diversity lane. The
+	// sealed v10 behavior never promoted whole short sources as local passages.
+	metadata := make(map[string]coverage.Source, len(sources))
+	for _, sourceID := range sources {
+		metadata[sourceID] = coverage.Source{Diversity: signature("shared-archive-topic")}
+	}
+	metadata[sources[8]] = coverage.Source{PassageScore: 5.0, Diversity: metadata[sources[8]].Diversity}
+	metadata[sources[14]] = coverage.Source{PassageScore: 4.0, Diversity: metadata[sources[14]].Diversity}
+	got := CoverageSourceOrder(sources, metadata, planningSourceLimit)
+	for _, sourceID := range []string{sources[8], sources[14]} {
+		if !slices.Contains(got[planningRankFloor:planningRankFloor+planningPassageLanes], sourceID) {
+			t.Fatalf("exact preindexed passage source %s did not enter its lane: %v", sourceID, got[:planningSourceLimit])
+		}
+	}
+	if slices.Contains(got[planningRankFloor:planningRankFloor+planningPassageLanes], sources[6]) {
+		t.Fatalf("short whole source consumed a long-passage lane: %v", got[:planningSourceLimit])
+	}
+}
+
+func signature(values ...string) coverage.Sketch {
+	var result coverage.Sketch
+	for _, value := range values {
+		result.Add(value)
+	}
+	return result
 }
 
 func testPlanReader(sourceID string) (domain.Information, bool) {

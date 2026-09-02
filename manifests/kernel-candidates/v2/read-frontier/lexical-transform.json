@@ -1,0 +1,36 @@
+{
+  "schema": "ownward.kernel-candidate-source-transform/v1",
+  "source": "internal/retrieval/lexical.go",
+  "replacements": [
+    {
+      "name": "candidate-fixed-source-import",
+      "count": 1,
+      "before": "\t\"github.com/HJSunDev/ownward/internal/domain\"",
+      "after": "\t\"github.com/HJSunDev/ownward/internal/derived\"\n\t\"github.com/HJSunDev/ownward/internal/domain\"\n\t\"github.com/HJSunDev/ownward/internal/kernelv2candidate/coverage\""
+    },
+    {
+      "name": "candidate-fixed-source-fields",
+      "count": 1,
+      "before": "type indexedDocument struct {\n\tinformation domain.Information\n\tlength      int\n\tgeneration  uint32\n}",
+      "after": "type indexedDocument struct {\n\tinformation domain.Information\n\tlength      int\n\tgeneration  uint32\n\tdeep        bool\n\tdiversity   coverage.Sketch\n}"
+    },
+    {
+      "name": "candidate-fixed-source-api",
+      "count": 1,
+      "before": "func queryTermWeight(term string) float64 {",
+      "after": "// SourceMetadata returns fixed index metadata for already returned sources.\n// It copies no authority text and performs no passage traversal.\nfunc (l *Lexical) SourceMetadata(sourceIDs []string) map[string]coverage.Source {\n\tl.mu.RLock()\n\tdefer l.mu.RUnlock()\n\tresult := make(map[string]coverage.Source, len(sourceIDs))\n\tfor _, sourceID := range sourceIDs {\n\t\tdocumentID, exists := l.docs[sourceID]\n\t\tif !exists || int(documentID) >= len(l.documents) { continue }\n\t\tdocument := l.documents[documentID]\n\t\tif document == nil || document.information.ID != sourceID { continue }\n\t\teligible := 0.0\n\t\tif document.deep { eligible = 1 }\n\t\tresult[sourceID] = coverage.Source{PassageScore: eligible, Diversity: document.diversity}\n\t}\n\treturn result\n}\n\nfunc queryTermWeight(term string) float64 {"
+    },
+    {
+      "name": "candidate-build-fixed-source-metadata",
+      "count": 1,
+      "before": "\tdocument := &indexedDocument{information: value, length: len(tokens), generation: l.generation}",
+      "after": "\tdocument := &indexedDocument{\n\t\tinformation: value, length: len(tokens), generation: l.generation,\n\t\tdeep: len(derived.EvidenceRanges(value)) > 1,\n\t\tdiversity: coverage.FromText(truncateCoverageText(value.Content)),\n\t}"
+    },
+    {
+      "name": "candidate-fixed-source-builder",
+      "count": 1,
+      "before": "func (l *Lexical) rebuildPostingsLocked() {",
+      "after": "func truncateCoverageText(value string) string {\n\tconst maximumFeatureRunes = 2048\n\trunes := []rune(value)\n\tif len(runes) > maximumFeatureRunes { runes = runes[:maximumFeatureRunes] }\n\treturn string(runes)\n}\n\nfunc (l *Lexical) rebuildPostingsLocked() {"
+    }
+  ]
+}

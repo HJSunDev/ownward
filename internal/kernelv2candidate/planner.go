@@ -7,11 +7,14 @@ import (
 
 	"github.com/HJSunDev/ownward/internal/derived"
 	"github.com/HJSunDev/ownward/internal/domain"
+	"github.com/HJSunDev/ownward/internal/kernelv2candidate/coverage"
 )
 
 const (
-	SourceSchedulingPolicy = "bounded-source-breadth-before-repeated-depth/v1"
+	SourceSchedulingPolicy = "bounded-fused-rank-existing-lexical-deep-two-lane-and-fixed-source-sketch/v1"
 	planningSourceLimit    = 8
+	planningRankFloor      = 4
+	planningPassageLanes   = 2
 	planningEvidenceProbe  = 2
 	maximumTrackedQueries  = 64
 )
@@ -33,6 +36,36 @@ type evidencePlan struct {
 	references   map[string][]domain.EvidenceReference
 	deep         map[string]bool
 	evidence     map[string]domain.Evidence
+}
+
+// ReadFrontierSource is the bounded retrieval-boundary input used by the
+// candidate scheduler. Summary is the already-produced public summary; Deep
+// and LexicalScore are captured while Search holds the current authority and
+// lexical result, so no later authority or passage scan is needed.
+type ReadFrontierSource struct {
+	ID           string
+	Summary      string
+	Deep         bool
+	LexicalScore float64
+	Diversity    coverage.Sketch
+}
+
+func FixedSourceOrder(sources []ReadFrontierSource, frontier int) []string {
+	ids := make([]string, 0, len(sources))
+	metadata := make(map[string]coverage.Source, len(sources))
+	for _, source := range sources {
+		ids = append(ids, source.ID)
+		score := 0.0
+		if source.Deep {
+			score = source.LexicalScore
+		}
+		diversity := source.Diversity
+		if diversity.Count == 0 {
+			diversity = coverage.FromText(source.Summary)
+		}
+		metadata[source.ID] = coverage.Source{PassageScore: score, Diversity: diversity}
+	}
+	return CoverageSourceOrder(ids, metadata, frontier)
 }
 
 type authorityReader func(string) (domain.Information, bool)
@@ -252,7 +285,6 @@ func (p *EvidencePlans) references(
 			}(index, plannedSource)
 		}
 		wait.Wait()
-
 		references := make(map[string][]domain.EvidenceReference, 2)
 		deep := make(map[string]bool, 2)
 		cachedEvidence := make(map[string]domain.Evidence)
@@ -281,6 +313,88 @@ func (p *EvidencePlans) references(
 		close(plan.ready)
 		p.mu.Unlock()
 	}
+}
+
+// CoverageSourceOrder reserves the bounded read frontier for three independent
+// retrieval facts: the strongest fused ranks, existing lexical hits from deep
+// sources, and the least redundant sources. The query score is reused from the
+// lexical channel; the fixed source sketch is produced when the index is built.
+// Request-time scheduling therefore never reopens or scans authority text or
+// passage metadata. Every source remains exactly once and all
+// unselected results retain their original order.
+func CoverageSourceOrder(sourceIDs []string, metadata map[string]coverage.Source, frontier int) []string {
+	if len(sourceIDs) <= planningRankFloor || frontier <= planningRankFloor {
+		return append([]string(nil), sourceIDs...)
+	}
+	frontier = min(frontier, min(planningSourceLimit, len(sourceIDs)))
+	sourceScores := make([]float64, len(sourceIDs))
+	for index, sourceID := range sourceIDs {
+		if item, exists := metadata[sourceID]; exists {
+			sourceScores[index] = item.PassageScore
+		}
+	}
+	selected := make(map[int]bool, frontier)
+	order := make([]int, 0, len(sourceIDs))
+	for index := 0; index < min(planningRankFloor, frontier); index++ {
+		selected[index] = true
+		order = append(order, index)
+	}
+	for range planningPassageLanes {
+		if len(selected) == frontier {
+			break
+		}
+		best := -1
+		for index := range sourceIDs {
+			if selected[index] || sourceScores[index] <= 0 {
+				continue
+			}
+			if best < 0 || sourceScores[index] > sourceScores[best] ||
+				sourceScores[index] == sourceScores[best] && index < best {
+				best = index
+			}
+		}
+		if best < 0 {
+			break
+		}
+		selected[best] = true
+		order = append(order, best)
+	}
+	for len(selected) < frontier {
+		best := -1
+		bestDistance := -1.0
+		for index := range sourceIDs {
+			candidate, exists := metadata[sourceIDs[index]]
+			if selected[index] || !exists {
+				continue
+			}
+			distance := 1.0
+			for chosen := range selected {
+				distance = min(distance, featureDistance(candidate.Diversity, metadata[sourceIDs[chosen]].Diversity))
+			}
+			if distance > bestDistance || distance == bestDistance && (best < 0 || index < best) {
+				best, bestDistance = index, distance
+			}
+		}
+		if best < 0 {
+			break
+		}
+		selected[best] = true
+		order = append(order, best)
+	}
+	for index := range sourceIDs {
+		if !selected[index] {
+			order = append(order, index)
+		}
+	}
+	result := make([]string, 0, len(sourceIDs))
+	for _, index := range order {
+		result = append(result, sourceIDs[index])
+	}
+	return result
+}
+
+func featureDistance(left, right coverage.Sketch) float64 {
+	return coverage.Distance(left, right)
 }
 
 // Read returns only evidence produced by the exact preceding bounded plan and

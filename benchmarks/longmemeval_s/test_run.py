@@ -1087,6 +1087,28 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
         self.assertEqual([(0, 0), (0, 1)], created)
         self.assertEqual(1, diagnostics["worker_restarts"])
 
+    def test_app_server_pool_closes_every_worker_before_raising_cleanup_failure(self) -> None:
+        closed: list[int] = []
+
+        class Worker:
+            def __init__(self, index: int) -> None:
+                self.index = index
+
+            def diagnostics(self):
+                return {"rate_limit_observed": False}
+
+            def __exit__(self, *_args):
+                closed.append(self.index)
+                if self.index == 0:
+                    raise adapter.AppServerError("cleanup failed")
+
+        pool = adapter.CodexAppServerPool(2, lambda index, _generation: Worker(index))
+        pool._workers = {0: Worker(0), 1: Worker(1)}
+        with self.assertRaisesRegex(adapter.AppServerError, "cleanup failed"):
+            pool.__exit__()
+        self.assertEqual([0, 1], closed)
+        self.assertEqual({}, pool._workers)
+
     def test_submission_package_is_deterministic(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

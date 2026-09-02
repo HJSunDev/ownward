@@ -17,11 +17,12 @@ import kernel_iteration_stage4_resource_cost as resource_cost
 import kernel_iteration_validation as validation
 
 
-CANDIDATE_RECEIPT_SCHEMA = "ownward.kernel-iteration-v2-candidate/v7"
-CANDIDATE_POLICY = "sealed-current-revision-raw-to-ready-formal-release-with-exact-query-vector-lazy-evidence-budget-fit-complete-source-quiescent-compaction-and-compact-semantic-transport/v6"
+CANDIDATE_RECEIPT_SCHEMA = "ownward.kernel-iteration-v2-candidate/v22"
+CANDIDATE_POLICY = "sealed-current-revision-raw-to-ready-with-candidate-isolated-bounded-fused-rank-existing-lexical-deep-two-lane-and-fixed-source-sketch-formal-release-with-exact-query-vector-lazy-evidence-budget-fit-complete-source-quiescent-compaction-and-compact-semantic-transport/v28"
 STORAGE_POLICY = "quiescent-lossless-derived-compaction/v1"
 SEMANTIC_REPRESENTATION = "ownward.semantic-indexed-body-context-table/v2"
 REPRESENTATION_LIFECYCLE = "sealed-current-revision-raw-to-ready-formal-release/v2"
+READ_FRONTIER_SCHEDULING_POLICY = "bounded-fused-rank-existing-lexical-deep-two-lane-and-fixed-source-sketch/v1"
 
 
 def prepare(
@@ -46,11 +47,12 @@ def prepare(
     generated_collaboration_path = output_root / "core-collaboration.go.overlay"
     generated_generation_path = output_root / "core-generation.go.overlay"
     generated_access_path = output_root / "mcpserver-server.go.overlay"
+    generated_lexical_path = output_root / "retrieval-lexical.go.overlay"
     semantic_manifest_path = output_root / "semantic-representation.json"
     paths = (
         receipt_path, subject_path, candidate_config_path, binary_path, composition_path,
         overlay_path, generated_service_path, generated_collaboration_path, generated_generation_path,
-        generated_access_path, semantic_manifest_path,
+        generated_access_path, generated_lexical_path, semantic_manifest_path,
     )
     if any(path.exists() for path in (*paths, embedding_path)):
         _require(resume and all(path.is_file() for path in paths) and embedding_path.is_dir(), "V2 资源成本候选现场不完整；禁止覆盖或宽松复用")
@@ -66,6 +68,7 @@ def prepare(
             "generated_collaboration_sha256": evidence.file_sha256(generated_collaboration_path),
             "generated_generation_sha256": evidence.file_sha256(generated_generation_path),
             "generated_access_sha256": evidence.file_sha256(generated_access_path),
+            "generated_lexical_sha256": evidence.file_sha256(generated_lexical_path),
             "semantic_manifest_sha256": evidence.file_sha256(semantic_manifest_path),
             "semantic_runtime_sha256": evidence.file_sha256(repository / "benchmarks/longmemeval_s/semantic_representation.py"),
             "semantic_executor_sha256": evidence.file_sha256(repository / "benchmarks/longmemeval_s/run.py"),
@@ -73,6 +76,8 @@ def prepare(
             "service_source_transform_sha256": evidence.file_sha256(repository / "manifests/kernel-candidates/v2/retrieval-latency/service-transform.json"),
             "collaboration_source_transform_sha256": evidence.file_sha256(repository / "manifests/kernel-candidates/v2/resource-cost/collaboration-transform.json"),
             "representation_service_transform_sha256": evidence.file_sha256(repository / "manifests/kernel-candidates/v2/resource-cost/representation-service-transform.json"),
+            "read_frontier_service_transform_sha256": evidence.file_sha256(repository / "manifests/kernel-candidates/v2/read-frontier/service-transform.json"),
+            "read_frontier_lexical_transform_sha256": evidence.file_sha256(repository / "manifests/kernel-candidates/v2/read-frontier/lexical-transform.json"),
             "representation_collaboration_transform_sha256": evidence.file_sha256(repository / "manifests/kernel-candidates/v2/resource-cost/representation-collaboration-transform.json"),
             "representation_generation_transform_sha256": evidence.file_sha256(repository / "manifests/kernel-candidates/v2/resource-cost/representation-generation-transform.json"),
             "representation_lifecycle_source_sha256": evidence.file_sha256(repository / "internal/kernelv2candidate/representation.go"),
@@ -86,6 +91,8 @@ def prepare(
     service_transform_relative = "manifests/kernel-candidates/v2/retrieval-latency/service-transform.json"
     collaboration_transform_relative = "manifests/kernel-candidates/v2/resource-cost/collaboration-transform.json"
     representation_service_transform_relative = "manifests/kernel-candidates/v2/resource-cost/representation-service-transform.json"
+    read_frontier_service_transform_relative = "manifests/kernel-candidates/v2/read-frontier/service-transform.json"
+    read_frontier_lexical_transform_relative = "manifests/kernel-candidates/v2/read-frontier/lexical-transform.json"
     representation_collaboration_transform_relative = "manifests/kernel-candidates/v2/resource-cost/representation-collaboration-transform.json"
     representation_generation_transform_relative = "manifests/kernel-candidates/v2/resource-cost/representation-generation-transform.json"
     access_transform_relative = "manifests/kernel-candidates/v2/final-answer-sufficiency/mcpserver-transform.json"
@@ -100,6 +107,7 @@ def prepare(
             repository, repository / service_transform_relative, stage_service,
         )
         _render_transformed_input(stage_service, repository / representation_service_transform_relative, generated_service_path)
+        _render_transformed_input(generated_service_path, repository / read_frontier_service_transform_relative, generated_service_path)
         system_budget.latency_candidate._render_transformed_source(
             repository, repository / collaboration_transform_relative, stage_collaboration,
         )
@@ -109,6 +117,9 @@ def prepare(
     )
     system_budget.latency_candidate._render_transformed_source(
         repository, repository / access_transform_relative, generated_access_path,
+    )
+    system_budget.latency_candidate._render_transformed_source(
+        repository, repository / read_frontier_lexical_transform_relative, generated_lexical_path,
     )
 
     current_path = repository / "manifests" / "compositions" / "v1" / "current-collaborative.json"
@@ -120,7 +131,7 @@ def prepare(
     kernel["config"] = {
         **_mapping(kernel, "config"),
         "evidence_selection": first_candidate.CANDIDATE_POLICY,
-        "evidence_source_scheduling": multisource_candidate.CANDIDATE_POLICY,
+        "evidence_source_scheduling": READ_FRONTIER_SCHEDULING_POLICY,
         "semantic_query_strategy": system_budget.CANDIDATE_POLICY,
         "derived_storage_lifecycle": STORAGE_POLICY,
         "representation_lifecycle": REPRESENTATION_LIFECYCLE,
@@ -135,10 +146,13 @@ def prepare(
     content.extend([
         {"name": "v2-evidence-continuity", "path": "internal/kernelv2candidate/evidence.go", "sha256": ""},
         {"name": "v2-source-scheduling", "path": "internal/kernelv2candidate/planner.go", "sha256": ""},
+        {"name": "v2-source-coverage-contract", "path": "internal/kernelv2candidate/coverage/coverage.go", "sha256": ""},
         {"name": "v2-latency-service-transform", "path": service_transform_relative, "sha256": ""},
         {"name": "v2-resource-cost-collaboration-transform", "path": collaboration_transform_relative, "sha256": ""},
         {"name": "v2-representation-lifecycle", "path": "internal/kernelv2candidate/representation.go", "sha256": ""},
         {"name": "v2-representation-service-transform", "path": representation_service_transform_relative, "sha256": ""},
+        {"name": "v2-read-frontier-service-transform", "path": read_frontier_service_transform_relative, "sha256": ""},
+        {"name": "v2-read-frontier-lexical-transform", "path": read_frontier_lexical_transform_relative, "sha256": ""},
         {"name": "v2-representation-collaboration-transform", "path": representation_collaboration_transform_relative, "sha256": ""},
         {"name": "v2-representation-generation-transform", "path": representation_generation_transform_relative, "sha256": ""},
     ])
@@ -182,7 +196,7 @@ def prepare(
         "kernel_effect_identity": sealed_kernel["identity"],
         "composition_identity": composition["identity"],
         "evidence_selection": first_candidate.CANDIDATE_POLICY,
-        "evidence_source_scheduling": multisource_candidate.CANDIDATE_POLICY,
+        "evidence_source_scheduling": READ_FRONTIER_SCHEDULING_POLICY,
         "semantic_query_strategy": system_budget.CANDIDATE_POLICY,
         "derived_storage_lifecycle": STORAGE_POLICY,
         "representation_lifecycle": REPRESENTATION_LIFECYCLE,
@@ -195,6 +209,7 @@ def prepare(
         str((repository / "internal" / "core" / "collaboration.go").resolve()): str(generated_collaboration_path),
         str((repository / "internal" / "core" / "generation.go").resolve()): str(generated_generation_path),
         str((repository / "internal" / "adapter" / "mcpserver" / "server.go").resolve()): str(generated_access_path),
+        str((repository / "internal" / "retrieval" / "lexical.go").resolve()): str(generated_lexical_path),
         str((repository / "manifests" / "compositions" / "v1" / "embed.go").resolve()): str((repository / composition_embed_relative).resolve()),
     }})
     # Windows CreateProcess has a short command-line ceiling. The sealed JSON
@@ -226,9 +241,13 @@ def prepare(
             "generated-collaboration": evidence.file_sha256(generated_collaboration_path),
             "generated-generation": evidence.file_sha256(generated_generation_path),
             "generated-access": evidence.file_sha256(generated_access_path),
+            "generated-lexical": evidence.file_sha256(generated_lexical_path),
             "service-source-transform": evidence.file_sha256(repository / service_transform_relative),
             "collaboration-source-transform": evidence.file_sha256(repository / collaboration_transform_relative),
             "representation-service-transform": evidence.file_sha256(repository / representation_service_transform_relative),
+            "read-frontier-service-transform": evidence.file_sha256(repository / read_frontier_service_transform_relative),
+            "read-frontier-lexical-transform": evidence.file_sha256(repository / read_frontier_lexical_transform_relative),
+            "read-frontier-coverage-contract": evidence.file_sha256(repository / "internal/kernelv2candidate/coverage/coverage.go"),
             "representation-collaboration-transform": evidence.file_sha256(repository / representation_collaboration_transform_relative),
             "representation-generation-transform": evidence.file_sha256(repository / representation_generation_transform_relative),
             "access-source-transform": evidence.file_sha256(repository / access_transform_relative),
@@ -273,6 +292,7 @@ def prepare(
         "generated_collaboration_sha256": evidence.file_sha256(generated_collaboration_path),
         "generated_generation_sha256": evidence.file_sha256(generated_generation_path),
         "generated_access_sha256": evidence.file_sha256(generated_access_path),
+        "generated_lexical_sha256": evidence.file_sha256(generated_lexical_path),
         "semantic_manifest_sha256": evidence.file_sha256(semantic_manifest_path),
         "semantic_representation": SEMANTIC_REPRESENTATION,
         "semantic_runtime_sha256": evidence.file_sha256(repository / semantic_runtime_relative),
@@ -280,6 +300,8 @@ def prepare(
         "service_source_transform_sha256": evidence.file_sha256(repository / service_transform_relative),
         "collaboration_source_transform_sha256": evidence.file_sha256(repository / collaboration_transform_relative),
         "representation_service_transform_sha256": evidence.file_sha256(repository / representation_service_transform_relative),
+        "read_frontier_service_transform_sha256": evidence.file_sha256(repository / read_frontier_service_transform_relative),
+        "read_frontier_lexical_transform_sha256": evidence.file_sha256(repository / read_frontier_lexical_transform_relative),
         "representation_collaboration_transform_sha256": evidence.file_sha256(repository / representation_collaboration_transform_relative),
         "representation_generation_transform_sha256": evidence.file_sha256(repository / representation_generation_transform_relative),
         "access_source_transform_sha256": evidence.file_sha256(repository / access_transform_relative),

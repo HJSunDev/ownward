@@ -1,0 +1,18 @@
+{
+  "schema": "ownward.kernel-candidate-source-transform/v1",
+  "source": "generated-resource-cost-service",
+  "replacements": [
+    {
+      "name": "capture-existing-lexical-signal",
+      "count": 1,
+      "before": "\tresults := make([]SearchResult, 0, len(fusedByID))\n\tfor id, item := range fusedByID {",
+      "after": "\tlexicalScoreByID := make(map[string]float64, len(lexical))\n\tfor _, hit := range lexical { lexicalScoreByID[hit.Information.ID] = hit.Score }\n\tresults := make([]SearchResult, 0, len(fusedByID))\n\tfor id, item := range fusedByID {"
+    },
+    {
+      "name": "publish-fixed-retrieval-boundary-source-order",
+      "count": 1,
+      "before": "\tif len(results) >= 2 && directlyRelated(results[0].ID, results[1].ID, related) {",
+      "after": "\tif len(results) > 4 {\n\t\tsourceIDs := make([]string, 0, len(results))\n\t\tresultByID := make(map[string]SearchResult, len(results))\n\t\tfor _, result := range results { sourceIDs = append(sourceIDs, result.ID); resultByID[result.ID] = result }\n\t\tmetadata := s.index.SourceMetadata(sourceIDs)\n\t\tfrontierSources := make([]kernelv2candidate.ReadFrontierSource, 0, len(results))\n\t\tfor _, result := range results {\n\t\t\titem := metadata[result.ID]\n\t\t\tfrontierSources = append(frontierSources, kernelv2candidate.ReadFrontierSource{\n\t\t\t\tID: result.ID, Summary: result.Summary, Deep: item.PassageScore > 0,\n\t\t\t\tLexicalScore: lexicalScoreByID[result.ID], Diversity: item.Diversity,\n\t\t\t})\n\t\t}\n\t\torderedIDs := kernelv2candidate.FixedSourceOrder(frontierSources, len(results))\n\t\tordered := make([]SearchResult, 0, len(results))\n\t\tfor _, sourceID := range orderedIDs { ordered = append(ordered, resultByID[sourceID]) }\n\t\tresults = ordered\n\t}\n\tif len(results) >= 2 && directlyRelated(results[0].ID, results[1].ID, related) {"
+    }
+  ]
+}

@@ -21,6 +21,30 @@ sys.modules[SPEC.name] = adapter
 SPEC.loader.exec_module(adapter)
 
 _public_retrieve = adapter.retrieve
+_official_prompt = adapter.official_prompt
+
+
+def official_prompt_with_explicit_unanswerable(
+    evaluator: Path,
+    question: dict[str, Any],
+    hypothesis: str,
+) -> str:
+    """Render synthetic unanswerable questions through the official abstention contract."""
+    if question.get("question_type") != "unanswerable":
+        return _official_prompt(evaluator, question, hypothesis)
+    spec = importlib.util.spec_from_file_location("longmemeval_official_evaluate_qa", evaluator)
+    adapter.require(spec is not None and spec.loader is not None, "official evaluator cannot be imported")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    prompt = module.get_anscheck_prompt(
+        question["question_type"],
+        question["question"],
+        question["answer"],
+        hypothesis,
+        abstention=True,
+    )
+    adapter.require(isinstance(prompt, str) and prompt, "official evaluator returned no prompt")
+    return prompt
 
 
 def retrieve_with_v0_compatibility(runtime: Any, question: str, protocol: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
@@ -91,6 +115,7 @@ def retrieve_with_v0_compatibility(runtime: Any, question: str, protocol: dict[s
 
 
 adapter.retrieve = retrieve_with_v0_compatibility
+adapter.official_prompt = official_prompt_with_explicit_unanswerable
 
 
 if __name__ == "__main__":

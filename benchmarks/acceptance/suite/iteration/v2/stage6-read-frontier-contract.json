@@ -1,0 +1,40 @@
+{
+  "schema": "ownward.kernel-iteration-stage6-read-frontier-contract/v1",
+  "contains_formal_questions_answers_gold_or_content": false,
+  "frozen_before_current_candidate_result": true,
+  "sources": {
+    "blind_public_result": "f964acd07231c46965927cdfea70a8e4d92d5cc77f0ac536521c500b026ab157",
+    "current_candidate_subject": "bb71c8343ab48bca82a58630e4c247eb10aa27dcff57d3280f99ce994c309150",
+    "formal_state_sha256": "b299ce4ffa1085ce9e58d5792558be037cc130d00322abe0626c399a4a251c6f",
+    "materials": "9c80770e49b9de03d8e7a5b2e18700fbea19a56d40a02bcea866c942d093086f",
+    "input": "81dd69120c9ddb0013d570ac3390eabef9ac1c9e4eca2b87b32e125659067313"
+  },
+  "reproduction_gate": {
+    "questions": 1,
+    "expected_source_search_returned": true,
+    "expected_source_read": false,
+    "expected_source_fusion_rank_minimum": 8,
+    "first_proven_mechanism": "target-ranked-below-read-budget"
+  },
+  "remediation_gate": {
+    "accuracy": 1.0,
+    "fact_delivery_complete": true,
+    "expected_source_search_returned": true,
+    "expected_source_read": true,
+    "read_units_maximum": 8,
+    "context_chars_maximum": 24000,
+    "persistent_state_growth_bytes": 0,
+    "preserve_stage4_development": "4/4",
+    "preserve_stage4_long_multifact": "5/5",
+    "preserve_stage4_multisource": "3/3-and-6/6",
+    "preserve_fixed_regression": "8/8",
+    "preserve_long_asset_semantic_recall": 1.0,
+    "preserve_retrieval_p95_ceiling_ms": 553.0,
+    "resume_model_calls": 0,
+    "resume_product_execution": 0
+  },
+  "candidate_route_must_be_frozen_after_reproduction_and_before_new_candidate_result": true,
+  "stage6_may_complete": false,
+  "formal_state_written": false,
+  "identity": "c8bb52bc5a0f5bc89dbaa525510e453bea34344f6064c02b2de538fc28bdb2a3"
+}

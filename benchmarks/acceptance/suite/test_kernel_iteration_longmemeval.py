@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 
 
@@ -55,6 +56,28 @@ class KernelIterationLongMemEvalTests(unittest.TestCase):
         _evidence, trace = stage3_adapter.retrieve_with_v0_compatibility(runtime, "complete source", self.protocol)
         self.assertEqual(self.protocol["retrieval"]["evidence_selection_policy"], trace["selection_policy"])
         self.assertIn("ownward_evidence_search", runtime.client.calls)
+
+    def test_explicit_unanswerable_type_uses_official_abstention_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            evaluator = Path(directory) / "evaluate_qa.py"
+            evaluator.write_text(
+                "def get_anscheck_prompt(task, question, answer, response, abstention=False):\n"
+                "    if not abstention:\n"
+                "        raise NotImplementedError\n"
+                "    return f'abstention:{task}:{question}:{answer}:{response}'\n",
+                encoding="utf-8",
+            )
+            prompt = stage3_adapter.official_prompt_with_explicit_unanswerable(
+                evaluator,
+                {
+                    "question_id": "synthetic-case",
+                    "question_type": "unanswerable",
+                    "question": "question",
+                    "answer": "explanation",
+                },
+                "insufficient",
+            )
+        self.assertEqual("abstention:unanswerable:question:explanation:insufficient", prompt)
 
 
 if __name__ == "__main__":

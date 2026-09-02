@@ -1,0 +1,26 @@
+{
+  "direct_dependencies": {
+    "development-materials": "59dee66dd999c5b84162013aeb415de8b785b834365d5c4f9031cf1ac14941d2",
+    "executor": "06d50f55b03cb2d92c37363a3f6372def8c3de95561ee02259af1e8385f8472e",
+    "observer": "edcee0c2b29d81ff0841a113af892acd7d7e2637cf7e5a04e2d3a26ca6b560e9"
+  },
+  "evidence_type": "development",
+  "identity": "bf9c9e0338dbfdb0a89ea2d76bf86e883bf6e8549a692c46027d49f13de11dc7",
+  "payloads": [
+    {
+      "path": "stage3-development-materials.json",
+      "sha256": "b4165589cb4dc6ab8ea853a456a68502bcb28c3f68d643cdc3fa6899467b8b98"
+    }
+  ],
+  "runtime_dependencies": {},
+  "schema": "ownward.kernel-iteration-input/v1",
+  "shared_conditions": {
+    "dataset": "59dee66dd999c5b84162013aeb415de8b785b834365d5c4f9031cf1ac14941d2",
+    "environment": "cb889873e2888699ea5dc1c9980591e2609edb3c0318c659815f08197691a88c",
+    "executor": "06d50f55b03cb2d92c37363a3f6372def8c3de95561ee02259af1e8385f8472e",
+    "model-profile": "2111a24e59d60b4b412a960aab70fee5e0f44b12fe6ff550fa1d7ff5230c194a",
+    "observer": "edcee0c2b29d81ff0841a113af892acd7d7e2637cf7e5a04e2d3a26ca6b560e9",
+    "prompt-and-schema": "5ea220e686f5972ccc50f9f149e41064b6db2f59ea3ca4a03111cbcf140adeaa",
+    "scorer": "9321ff233a513298fed71d0341fb89f1707dbe505aab622565aa57fb475eadd2"
+  }
+}

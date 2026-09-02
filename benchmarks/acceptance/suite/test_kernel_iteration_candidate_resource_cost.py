@@ -46,6 +46,7 @@ class ResourceCostCandidateTests(unittest.TestCase):
             service = root / "service.go"
             collaboration = root / "collaboration.go"
             generation = root / "generation.go"
+            lexical = root / "lexical.go"
             latency_candidate._render_transformed_source(
                 repository,
                 repository / "manifests/kernel-candidates/v2/retrieval-latency/service-transform.json",
@@ -54,6 +55,11 @@ class ResourceCostCandidateTests(unittest.TestCase):
             resource_candidate._render_transformed_input(
                 stage_service,
                 repository / "manifests/kernel-candidates/v2/resource-cost/representation-service-transform.json",
+                service,
+            )
+            resource_candidate._render_transformed_input(
+                service,
+                repository / "manifests/kernel-candidates/v2/read-frontier/service-transform.json",
                 service,
             )
             latency_candidate._render_transformed_source(
@@ -71,12 +77,25 @@ class ResourceCostCandidateTests(unittest.TestCase):
                 repository / "manifests/kernel-candidates/v2/resource-cost/representation-generation-transform.json",
                 generation,
             )
+            latency_candidate._render_transformed_source(
+                repository,
+                repository / "manifests/kernel-candidates/v2/read-frontier/lexical-transform.json",
+                lexical,
+            )
             rendered_service = service.read_text(encoding="utf-8")
             rendered_collaboration = collaboration.read_text(encoding="utf-8")
             rendered_generation = generation.read_text(encoding="utf-8")
+            rendered_lexical = lexical.read_text(encoding="utf-8")
         self.assertIn("representations *kernelv2candidate.RepresentationLifecycle", rendered_service)
         self.assertIn("s.ensurePendingRepresentations(ctx)", rendered_service)
         self.assertIn("s.representations.Invalidate(updated.ID, updated.Revision)", rendered_service)
+        self.assertIn("lexicalScoreByID", rendered_service)
+        self.assertNotIn("s.authority.ReadCurrent, len(sourceIDs)", rendered_service)
+        self.assertIn("kernelv2candidate.FixedSourceOrder", rendered_service)
+        self.assertIn("s.index.SourceMetadata", rendered_service)
+        self.assertIn("func (l *Lexical) SourceMetadata", rendered_lexical)
+        self.assertIn("diversity   coverage.Sketch", rendered_lexical)
+        self.assertNotIn("func (l *Lexical) SourceMetadata", (repository / "internal/retrieval/lexical.go").read_text(encoding="utf-8"))
         self.assertIn("s.representations.Ensure(ctx, asset)", rendered_collaboration)
         self.assertEqual(rendered_collaboration.count("s.representations.Commit("), 3)
         self.assertNotIn("s.embedder.EmbedDocuments(ctx, contents[offset:end])", rendered_collaboration)

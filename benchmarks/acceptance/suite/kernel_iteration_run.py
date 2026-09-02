@@ -123,6 +123,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--blind-suite-identity")
     parser.add_argument("--blind-suite-level", type=int, choices=(5, 15, 25, 50))
     parser.add_argument("--blind-suite-previous-plan-identity")
+    parser.add_argument("--blind-suite-previous-adjudication", type=Path)
     parser.add_argument("--gate-seed")
     parser.add_argument("--compare-left", type=Path)
     parser.add_argument("--compare-right", type=Path)
@@ -584,6 +585,7 @@ def main() -> None:
         if any(value is not None for value in (
             args.gate_seed, args.formal_state, args.execution_config,
             args.blind_suite_vault, args.blind_suite_version,
+            args.blind_suite_previous_adjudication,
         )):
             raise SystemExit("按 plan identity 恢复版本级套题准备只读取封存定位，不得再次提供 seed、配置、版本、封存根或正式 state")
         result = kernel_iteration_blind_suite.resume_by_plan_identity(
@@ -596,7 +598,7 @@ def main() -> None:
         if any(value is not None for value in (
             args.blind_suite_identity, args.blind_suite_evaluation_batch,
             args.baseline_execution_config, args.blind_suite_level,
-            args.blind_suite_previous_plan_identity,
+            args.blind_suite_previous_plan_identity, args.blind_suite_previous_adjudication,
         )):
             raise SystemExit("版本级套题准备不得接收候选、基线或分区执行参数")
         result = kernel_iteration_blind_suite.prepare(
@@ -610,7 +612,7 @@ def main() -> None:
             args.formal_state, args.execution_config, args.baseline_execution_config,
             args.blind_suite_vault, args.blind_suite_version, args.blind_suite_identity,
             args.blind_suite_evaluation_batch, args.blind_suite_level,
-            args.blind_suite_previous_plan_identity, args.gate_seed,
+            args.blind_suite_previous_plan_identity, args.blind_suite_previous_adjudication, args.gate_seed,
         )):
             raise SystemExit("按 plan identity 恢复版本级盲测分区只读取已封存定位")
         result = kernel_iteration_blind_suite.resume_partition_by_plan_identity(
@@ -631,6 +633,7 @@ def main() -> None:
             major_version=args.blind_suite_version, suite_identity=args.blind_suite_identity,
             level=args.blind_suite_level,
             previous_plan_identity=args.blind_suite_previous_plan_identity,
+            previous_adjudication_path=args.blind_suite_previous_adjudication,
             resume=args.resume,
         )
     elif args.blind_suite_inspect:

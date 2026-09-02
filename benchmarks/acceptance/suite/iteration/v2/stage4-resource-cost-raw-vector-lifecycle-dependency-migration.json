@@ -12,7 +12,7 @@
     {
       "path": "benchmarks/acceptance/suite/kernel_iteration_run.py",
       "frozen_sha256": "3a6ec83cc197d71b8594814cff7000d7face183a8e316e5d0c409f2e19eddc53",
-      "current_sha256": "d8f1ec0383d78905ebd8f63b9ec8f37c69ea2101bdc9bc1b4f805b0ad7ff7b4e",
+      "current_sha256": "4c4e272ddb35b269ecda6bdc6fd23be6d3d0e17eea3a08d2ac4e72b4b922b0a2",
       "classification": "version-suite-cli-dispatch-only-frozen-stage4-cost-and-representation-unchanged"
     }
   ],
@@ -82,7 +82,7 @@
         {
           "path": "benchmarks/acceptance/suite/kernel_iteration_candidate_resource_cost.py",
           "frozen_sha256": "1b531a61c7200df8ec34058a93bb0f18f922140d1b4a307a6ba0db627c98f12a",
-          "current_sha256": "fdcfced54c6f0ad3bb884fdd0f111374685f9731d04db8e987b390c52408ed4c",
+          "current_sha256": "30a9113fd56db490796d9857b9f1a980dd2ce650d76542e36e5429743caa5dff",
           "classification": "candidate-packaging-access-overlay-only-representation-and-storage-unchanged"
         },
         {
@@ -107,5 +107,5 @@
     "evidence_identities": true,
     "formal_state_sha256": true
   },
-  "identity": "573f76d182c989556d93d4270395dc89b5b0ec44104e4712183ff4738adbf67a"
+  "identity": "e494b36b78f077b8134b1959927b80d32c6048b6dabb61d818d33e109dbf5b37"
 }

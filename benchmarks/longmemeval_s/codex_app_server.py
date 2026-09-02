@@ -437,12 +437,19 @@ class CodexAppServerPool:
         }
 
     def __exit__(self, *_args: object) -> None:
+        failures: list[BaseException] = []
         for index, worker in list(self._workers.items()):
             try:
-                self._rate_limit_observed = self._rate_limit_observed or bool(worker.diagnostics()["rate_limit_observed"])
-                worker.__exit__()
+                try:
+                    self._rate_limit_observed = self._rate_limit_observed or bool(worker.diagnostics()["rate_limit_observed"])
+                finally:
+                    worker.__exit__()
+            except BaseException as error:
+                failures.append(error)
             finally:
                 self._workers.pop(index, None)
+        if failures:
+            raise failures[0]
 
 
 def isolated_runtime_root(parent: Path) -> Path:
@@ -450,7 +457,7 @@ def isolated_runtime_root(parent: Path) -> Path:
     return Path(tempfile.mkdtemp(prefix="codex-app-server-", dir=parent))
 
 
-def remove_runtime_root(path: Path, *, timeout_seconds: float = 5.0) -> None:
+def remove_runtime_root(path: Path, *, timeout_seconds: float = 30.0) -> None:
     """Remove one isolated worker root after Windows releases terminated-process handles."""
     deadline = time.perf_counter() + timeout_seconds
     last_error: OSError | None = None
