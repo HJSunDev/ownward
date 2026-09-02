@@ -108,7 +108,12 @@ class BlindVersionSuiteTests(unittest.TestCase):
     def test_preparation_identity_has_no_candidate_or_git_dependency(self) -> None:
         contract = suite.load_contract(self.suite_root)
         validation_contract = validation.load_validation_contract(self.suite_root)
-        runtime = {"codex_binary": Path(__file__), "codex_auth_file": Path(__file__)}
+        runtime = {"external_intelligence": {
+            "driver": "codex-app-server/v1",
+            "provider": "openai-codex",
+            "binary": Path(__file__),
+            "credential_file": Path(__file__),
+        }}
         qualification = {"identity": "9" * 64}
         dependencies = suite._preparation_dependencies(self.suite_root, contract, validation_contract, runtime, qualification)
         self.assertFalse(any("candidate" in name or "git" in name for name in dependencies))
@@ -375,6 +380,7 @@ class _PreparationFixture:
             "community": {
                 "codex_binary": str(self.codex_binary),
                 "codex_auth_file": str(self.auth_file),
+                "protocol": str(Path(__file__).parents[2] / "longmemeval_s" / "protocol.json"),
             },
         }) + "\n", encoding="utf-8")
         self.contract = suite.load_contract(suite_root)

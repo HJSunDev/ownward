@@ -31,6 +31,67 @@ class KernelIterationValidationTests(unittest.TestCase):
         self.assertNotIn(".tmp", serialized)
         self.assertEqual([5, 15, 25, 50], self.validation["blind"]["levels"])
 
+    def test_native_external_intelligence_invoker_forwards_the_declared_role(self) -> None:
+        class Transport:
+            def __init__(self) -> None:
+                self.roles: list[str] = []
+
+            @property
+            def identity(self) -> dict[str, object]:
+                return validation.external_intelligence.RuntimeIdentity(
+                    driver="fixture-driver/v1",
+                    provider="fixture-provider",
+                    transport="fixture-transport/v1",
+                    selection_sha256="1" * 64,
+                    artifact_sha256="2" * 64,
+                    credential_locator_sha256="3" * 64,
+                    max_active=1,
+                    worker_processes=1,
+                ).value()
+
+            def invoke(self, **_request: object):
+                return {"answer": "ok"}, {"input_tokens": 1, "output_tokens": 1}, {"transport": "fixture"}
+
+            def diagnostics(self) -> dict[str, object]:
+                return {"rate_limit_observed": False, "transport": "fixture"}
+
+        transport = Transport()
+
+        class Module:
+            @staticmethod
+            def open_external_intelligence_runtime(**_arguments: object):
+                class Context:
+                    def __enter__(self):
+                        return transport
+
+                    def __exit__(self, *_arguments: object) -> None:
+                        return None
+
+                return Context()
+
+        runtime = {"external_intelligence": {
+            "driver": "fixture-driver/v1",
+            "binary": Path("fixture-runtime"),
+            "credential_file": Path("fixture-credential"),
+        }}
+        with tempfile.TemporaryDirectory(dir=REPOSITORY) as temporary, mock.patch.object(
+            validation, "_load_longmemeval_module", return_value=Module,
+        ):
+            with validation._native_external_intelligence_batch_invoker(
+                HERE, runtime, Path(temporary) / "runtime",
+            ) as invoke:
+                value, usage = invoke(
+                    suite_root=HERE,
+                    runtime=runtime,
+                    stage=Path(temporary) / "stage",
+                    role="quality-admission",
+                    prompt="prompt",
+                    schema={"type": "object"},
+                    settings={"model": "model", "reasoning_effort": "medium", "timeout_seconds": 10, "attempts": 1},
+                )
+        self.assertEqual({"answer": "ok"}, value)
+        self.assertEqual("quality-admission", usage["role"])
+
     def test_versioned_blind_budget_is_clean_checkout_safe_and_bound_to_calibration(self) -> None:
         value = validation.load_blind_budget_archive(HERE)
         self.assertEqual(self.validation["identity"], value["validation_contract_identity"])
@@ -961,8 +1022,17 @@ class KernelIterationValidationTests(unittest.TestCase):
         runtime: dict[str, object] = {
             "path": config, "value": value, "binary": binary, "embedding": embedding,
             "environment_manifest": environment_manifest, "environment": environment,
-            "protocol": protocol_path, "protocol_value": protocol, "codex_binary": codex,
-            "codex_auth_file": auth, "runs": runs,
+            "protocol": protocol_path, "protocol_value": protocol,
+            "external_intelligence": {
+                "driver": "codex-app-server/v1",
+                "provider": "openai-codex",
+                "selection_sha256": "a" * 64,
+                "binary": codex,
+                "credential_file": auth,
+                "max_active": protocol["execution"]["codex_max_active"],
+                "worker_processes": protocol["execution"]["codex_server_processes"],
+            },
+            "codex_binary": codex, "codex_auth_file": auth, "runs": runs,
         }
         return config, runtime
 

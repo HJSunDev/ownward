@@ -14,6 +14,11 @@ from typing import Any
 import evidence_identity
 import report_relationships as relationships
 
+LONGMEM_ROOT = Path(__file__).resolve().parents[2] / "longmemeval_s"
+if str(LONGMEM_ROOT) not in sys.path:
+    sys.path.insert(0, str(LONGMEM_ROOT))
+import external_intelligence_runtime  # noqa: E402
+
 
 class BindingError(ValueError):
     pass
@@ -498,7 +503,7 @@ def _tool_manifest(suite_root: Path, scope: str) -> dict[str, Any]:
         "frontier": [suite_root / "execution_frontier.py", suite_root / "frontier.py", repository / "cmd" / "ownward-frontier" / "main.go"],
         "core": [suite_root / "execution_core.py", suite_root / "adapters" / "core" / "verify.py", repository / "benchmarks" / "support" / "ownward_mcp.py"],
         "product": [suite_root / "execution_core.py", suite_root / "execution_product.py", suite_root / "product.py", suite_root / "product_scoring.py", suite_root / "resource_environment.py", responsibility_path, *sorted(path for path in (suite_root / "adapters" / "product").glob("*.py") if not path.name.startswith("test_")), *sorted(path for path in (suite_root / "adapters" / "product_resource").glob("*.py") if not path.name.startswith("test_")), repository / "benchmarks" / "support" / "ownward_mcp.py"],
-        "community": [suite_root / "execution_community.py", suite_root / "community.py", suite_root / "process_control.py", suite_root / "adapters" / "product" / "codex_session.py", suite_root / "adapters" / "product" / "codex_transport.py", repository / "benchmarks" / "longmemeval_s" / "run.py", repository / "benchmarks" / "longmemeval_s" / "semantic_representation.py", repository / "benchmarks" / "longmemeval_s" / "codex_app_server.py", repository / "benchmarks" / "longmemeval_s" / "environment.py", repository / "benchmarks" / "longmemeval_s" / "protocol.json", repository / "benchmarks" / "longmemeval_s" / "constraints.txt", repository / "benchmarks" / "support" / "ownward_mcp.py"],
+        "community": [suite_root / "execution_community.py", suite_root / "community.py", suite_root / "process_control.py", suite_root / "adapters" / "product" / "codex_session.py", suite_root / "adapters" / "product" / "codex_transport.py", repository / "benchmarks" / "longmemeval_s" / "run.py", repository / "benchmarks" / "longmemeval_s" / "external_intelligence_runtime.py", repository / "benchmarks" / "longmemeval_s" / "semantic_representation.py", repository / "benchmarks" / "longmemeval_s" / "codex_app_server.py", repository / "benchmarks" / "longmemeval_s" / "environment.py", repository / "benchmarks" / "longmemeval_s" / "protocol.json", repository / "benchmarks" / "longmemeval_s" / "constraints.txt", repository / "benchmarks" / "support" / "external_intelligence.py", repository / "benchmarks" / "support" / "external-intelligence-runtime.json", repository / "benchmarks" / "support" / "ownward_mcp.py"],
     }[scope]
     files = _files(repository, shared + scoped)
     if scope == "product":
@@ -581,10 +586,19 @@ def _environment_manifest(config: dict[str, Any], scope: str) -> dict[str, Any]:
         result["embedding"] = _embedding_identity(bundle)
     if relationships.SCOPE_CONFIG[scope]["codex"]:
         section = _mapping(config, "product" if scope == "product" else "community")
-        codex = Path(section["codex_binary"]).resolve()
-        completed = subprocess.run([*_executable_command(codex), "--version"], capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
-        _require(completed.returncode == 0 and completed.stdout.strip(), "无法读取外部智能体版本")
-        result["codex"] = {"version": completed.stdout.strip(), "entry_sha256": sha256(codex)}
+        if scope == "product":
+            codex = Path(section["codex_binary"]).resolve()
+            completed = subprocess.run([*_executable_command(codex), "--version"], capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
+            _require(completed.returncode == 0 and completed.stdout.strip(), "无法读取外部智能体版本")
+            result["codex"] = {"version": completed.stdout.strip(), "entry_sha256": sha256(codex)}
+        else:
+            try:
+                probe = external_intelligence_runtime.probe(
+                    external_intelligence_runtime.configuration_from_execution(section)
+                )
+            except external_intelligence.ExternalIntelligenceError as error:
+                raise BindingError(str(error)) from error
+            result["codex"] = {"version": probe["version"], "entry_sha256": probe["artifact_sha256"]}
     if scope == "community":
         community = _mapping(config, "community")
         manifest_path = Path(community["environment_manifest"]).resolve()
@@ -653,12 +667,14 @@ def _candidate_paths(config: dict[str, Any]) -> tuple[Path, Path]:
 
 def _validate_community_config(community: dict[str, Any]) -> None:
     _require("judge_api_key_env" not in community, "LongMemEval-S community 不得要求额外 API Key")
-    for name in (
-        "environment_manifest", "protocol", "output_dir", "codex_binary", "codex_auth_file",
-        "codex_semantic_model", "codex_semantic_reasoning_effort", "codex_reader_model",
-        "codex_reader_reasoning_effort", "codex_judge_model", "codex_judge_reasoning_effort",
-    ):
+    for name in ("environment_manifest", "protocol", "output_dir"):
         _require(isinstance(community.get(name), str) and community[name].strip(), f"执行配置缺少 community.{name}")
+    try:
+        external_configuration = external_intelligence_runtime.configuration_from_execution(community)
+        external_intelligence_runtime.validate_configuration(external_configuration)
+        external_roles = external_intelligence_runtime.role_profile_from_execution(community)
+    except external_intelligence.ExternalIntelligenceError as error:
+        raise BindingError(str(error)) from error
     manifest_path = Path(community["environment_manifest"]).resolve()
     protocol_path = Path(community["protocol"]).resolve()
     _require(manifest_path.is_file() and protocol_path.is_file(), "LongMemEval-S 固定环境或协议不存在")
@@ -687,14 +703,9 @@ def _validate_community_config(community: dict[str, Any]) -> None:
         "LongMemEval-S Reader 禁止主动工具调用",
     )
     _require(protocol.get("official", {}).get("data_sha256") == LONGMEMEVAL_S_DATA_SHA256, "LongMemEval-S 协议与数据身份不一致")
-    _require(Path(community["codex_binary"]).resolve().is_file(), "LongMemEval-S Codex 执行程序不存在")
-    _require(Path(community["codex_auth_file"]).resolve().is_file(), "LongMemEval-S Codex 认证文件不存在")
-    _require(community["codex_semantic_model"] == protocol["memory"]["semantic_model"], "LongMemEval-S Codex 语义模型偏离固定口径")
-    _require(community["codex_semantic_reasoning_effort"] == protocol["memory"]["semantic_reasoning_effort"], "LongMemEval-S Codex 语义推理强度偏离固定口径")
-    _require(community["codex_reader_model"] == protocol["reader"]["model"], "LongMemEval-S Codex Reader 模型偏离固定口径")
-    _require(community["codex_reader_reasoning_effort"] == protocol["reader"]["reasoning_effort"], "LongMemEval-S Codex Reader 推理强度偏离固定口径")
-    _require(community["codex_judge_model"] == protocol["judge"]["model"], "LongMemEval-S Codex 裁判模型偏离固定口径")
-    _require(community["codex_judge_reasoning_effort"] == protocol["judge"]["reasoning_effort"], "LongMemEval-S Codex 裁判推理强度偏离固定口径")
+    _require(external_roles["semantic"] == {"model": protocol["memory"]["semantic_model"], "reasoning_effort": protocol["memory"]["semantic_reasoning_effort"]}, "LongMemEval-S 外部智能语义角色偏离固定口径")
+    _require(external_roles["reader"] == {"model": protocol["reader"]["model"], "reasoning_effort": protocol["reader"]["reasoning_effort"]}, "LongMemEval-S 外部智能 Reader 角色偏离固定口径")
+    _require(external_roles["judge"] == {"model": protocol["judge"]["model"], "reasoning_effort": protocol["judge"]["reasoning_effort"]}, "LongMemEval-S 外部智能裁判角色偏离固定口径")
 
 
 def _validate_community_workspace(config: dict[str, Any], workspace: Path) -> None:

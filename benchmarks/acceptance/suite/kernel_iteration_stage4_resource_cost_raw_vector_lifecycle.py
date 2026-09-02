@@ -13,7 +13,7 @@ RESULT_SCHEMA = "ownward.kernel-iteration-stage4-resource-cost-raw-vector-lifecy
 CONTRACT_PATH = Path("iteration/v2/stage4-resource-cost-raw-vector-lifecycle-contract.json")
 DEPENDENCY_MIGRATION_SCHEMA = "ownward.kernel-iteration-direct-dependency-migration/v1"
 DEPENDENCY_MIGRATION_PATH = Path("iteration/v2/stage4-resource-cost-raw-vector-lifecycle-dependency-migration.json")
-DEPENDENCY_MIGRATION_REASON = "version-suite-cli-dispatch-preserves-frozen-stage4-cost-and-representation"
+DEPENDENCY_MIGRATION_REASON = "external-intelligence-adapter-boundary-preserves-frozen-stage4-cost-and-representation"
 
 
 def run(suite_root: Path, output_root: Path, formal_state: Path, *, resume: bool) -> dict[str, Any]:
@@ -332,7 +332,7 @@ def _verify_related_source_migration(
     _require(changes == drifted, "生命周期源码漂移不在精确迁移收据内")
     _require(
         {item["path"]: item.get("classification") for item in related.get("changes", [])}
-        == {"benchmarks/longmemeval_s/run.py": "source-context-consumer-and-reader-profile-only-semantic-request-and-frozen-cost-unchanged"},
+        == {"benchmarks/longmemeval_s/run.py": "external-intelligence-port-and-reader-profile-only-frozen-stage4-semantic-request-and-cost-unchanged"},
         "生命周期源码迁移分类漂移",
     )
 

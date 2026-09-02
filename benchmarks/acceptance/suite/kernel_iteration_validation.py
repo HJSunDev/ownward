@@ -19,8 +19,12 @@ import kernel_iteration_evidence as evidence
 
 
 LONGMEM_ROOT = Path(__file__).resolve().parents[2] / "longmemeval_s"
-if str(LONGMEM_ROOT) not in sys.path:
-    sys.path.insert(0, str(LONGMEM_ROOT))
+SUPPORT_ROOT = Path(__file__).resolve().parents[2] / "support"
+for dependency_root in (LONGMEM_ROOT, SUPPORT_ROOT):
+    if str(dependency_root) not in sys.path:
+        sys.path.insert(0, str(dependency_root))
+import external_intelligence  # noqa: E402
+import external_intelligence_runtime  # noqa: E402
 import semantic_representation  # noqa: E402
 
 
@@ -466,12 +470,14 @@ def validate_execution_config(
     embedding = Path(str(candidate.get("embedding_bundle_dir", ""))).resolve()
     environment_manifest = Path(str(community.get("environment_manifest", ""))).resolve()
     protocol = Path(str(community.get("protocol", ""))).resolve()
-    codex_binary = Path(str(community.get("codex_binary", ""))).resolve()
-    codex_auth_file = Path(str(community.get("codex_auth_file", ""))).resolve()
+    try:
+        external_configuration = external_intelligence_runtime.configuration_from_execution(community)
+        external_intelligence_runtime.validate_configuration(external_configuration)
+    except external_intelligence.ExternalIntelligenceError as error:
+        raise KernelIterationValidationError(str(error)) from error
     _require(binary.is_file(), "非正式执行缺少产品二进制")
     _require(embedding.is_dir() and (embedding / "manifest.json").is_file(), "非正式执行缺少向量制品")
     _require(environment_manifest.is_file() and protocol.is_file(), "非正式执行缺少持久环境或协议")
-    _require(codex_binary.is_file() and codex_auth_file.is_file(), "Codex 原生能力不可用")
     representation_path: Path | None = None
     representation = candidate.get("semantic_representation")
     if representation is not None:
@@ -513,7 +519,8 @@ def validate_execution_config(
         and protocol_value["reader"].get("selection_result_identity") == "25f4954169249c92af6001813dca81ac04c0e70a75499bd1e1bcf9dc45ae5824",
         "Reader 配置没有绑定正式与 Stage 6 共用的冻结选择证据",
     )
-    _require(protocol_value.get("execution", {}).get("codex_max_active") == 8, "Codex 并发不是冻结值 8")
+    external_selection = external_intelligence.load_runtime_selection(SUPPORT_ROOT / "external-intelligence-runtime.json")
+    _require(protocol_value.get("execution", {}).get("codex_max_active") == 8, "外部智能并发不是冻结值 8")
     manifest = _load_json(environment_manifest)
     runs = Path(str(_mapping(manifest, "layout").get("runs", ""))).resolve()
     _require(runs.is_dir(), "LongMemEval-S 持久运行根缺失")
@@ -526,8 +533,17 @@ def validate_execution_config(
         "environment": manifest,
         "protocol": protocol,
         "protocol_value": protocol_value,
-        "codex_binary": codex_binary,
-        "codex_auth_file": codex_auth_file,
+        "external_intelligence": {
+            "driver": external_selection["driver"],
+            "provider": external_selection["provider"],
+            "transport": external_selection["transport"],
+            "worker_isolation": external_selection["worker_isolation"],
+            "selection_sha256": external_selection["selection_sha256"],
+            "binary": external_configuration.binary,
+            "credential_file": external_configuration.credential_file,
+            "max_active": protocol_value["execution"]["codex_max_active"],
+            "worker_processes": protocol_value["execution"]["codex_server_processes"],
+        },
         "runs": runs,
         "semantic_representation_manifest": representation_path,
         "semantic_representation_identity": (
@@ -549,9 +565,11 @@ def execution_identities(
     evaluator = Path(str(_mapping(environment, "layout")["source"])) / "src" / "evaluation" / "evaluate_qa.py"
     implementation = {
         name: evidence.file_sha256(long_root / name)
-        for name in ("run.py", "codex_app_server.py", "protocol.json")
+        for name in ("run.py", "external_intelligence_runtime.py", "codex_app_server.py", "protocol.json")
     }
     implementation["ownward-mcp-transport"] = evidence.file_sha256(repository / "benchmarks" / "support" / "ownward_mcp.py")
+    implementation["external-intelligence-contract"] = evidence.file_sha256(repository / "benchmarks" / "support" / "external_intelligence.py")
+    implementation["external-intelligence-selection"] = evidence.file_sha256(repository / "benchmarks" / "support" / "external-intelligence-runtime.json")
     implementation["semantic-representation-runtime"] = evidence.file_sha256(long_root / "semantic_representation.py")
     implementation["iteration-validation"] = evidence.file_sha256(Path(__file__).resolve())
     implementation["iteration-longmemeval"] = evidence.file_sha256(Path(__file__).with_name("kernel_iteration_longmemeval.py"))
@@ -1280,7 +1298,7 @@ def calibrate_blind(
             "formal_state": str(state_path),
             "scratch": str(scratch.resolve()),
         })
-    invoke = invoker or _native_codex_invoke
+    invoke = invoker or _native_external_intelligence_invoke
     run_adapter = runner or _run_longmemeval
     started = time.perf_counter()
     stage_name = "generator"
@@ -1835,7 +1853,14 @@ def _blind_dependencies(
         "controller": implementation["controller"],
         "generator": evidence.canonical_sha256({"settings": blind["generation"], "implementation": implementation["generator"]}),
         "quality-admission": evidence.canonical_sha256({"settings": blind["quality_admission"], "implementation": implementation["quality-admission"]}),
-        "executor": evidence.canonical_sha256({"run": evidence.file_sha256(long_root / "run.py"), "transport": evidence.file_sha256(long_root / "codex_app_server.py"), "protocol": evidence.file_sha256(runtime["protocol"])}),
+        "executor": evidence.canonical_sha256({
+            "contract": evidence.file_sha256(repository / "benchmarks" / "support" / "external_intelligence.py"),
+            "selection": evidence.file_sha256(repository / "benchmarks" / "support" / "external-intelligence-runtime.json"),
+            "run": evidence.file_sha256(long_root / "run.py"),
+            "runtime-adapter": evidence.file_sha256(long_root / "external_intelligence_runtime.py"),
+            "transport-adapter": evidence.file_sha256(long_root / "codex_app_server.py"),
+            "protocol": evidence.file_sha256(runtime["protocol"]),
+        }),
         "observer": evidence.canonical_sha256({"schema": BLIND_RESULT_SCHEMA, "implementation": implementation["observer"]}),
         "environment": evidence.file_sha256(runtime["environment_manifest"]),
         "binary": evidence.file_sha256(runtime["binary"]),
@@ -1870,7 +1895,7 @@ def _blind_implementation_identities() -> dict[str, str]:
     }
 
 
-def _native_codex_invoke(
+def _native_external_intelligence_invoke(
     *,
     suite_root: Path,
     runtime: dict[str, Any],
@@ -1881,7 +1906,7 @@ def _native_codex_invoke(
     settings: dict[str, Any],
     validate: Callable[[dict[str, Any]], Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    with _native_codex_batch_invoker(suite_root, runtime, stage / ".codex-runtime") as invoke:
+    with _native_external_intelligence_batch_invoker(suite_root, runtime, stage / ".external-intelligence-runtime") as invoke:
         return invoke(
             suite_root=suite_root,
             runtime=runtime,
@@ -1895,23 +1920,22 @@ def _native_codex_invoke(
 
 
 @contextmanager
-def _native_codex_batch_invoker(
+def _native_external_intelligence_batch_invoker(
     suite_root: Path,
     runtime: dict[str, Any],
     transport_parent: Path,
 ) -> Any:
     module = _load_longmemeval_module(suite_root)
-    command_prefix = module.CodexAppServer.direct_command_prefix(
-        runtime["codex_binary"], module.codex_session.command_prefix(runtime["codex_binary"]),
-    )
-
-    def factory(_index: int, _generation: int) -> Any:
-        runtime_root = module.isolated_runtime_root(transport_parent)
-        environment = module.codex_session.isolated_environment(runtime["codex_auth_file"], runtime_root / "codex-home")
-        return module.CodexAppServer(runtime["codex_binary"], runtime["codex_auth_file"], runtime_root, command_prefix, environment)
-
-    with module.CodexAppServerPool(1, factory) as transport:
-        capability = module.CodexCapability(transport)
+    external = _mapping(runtime, "external_intelligence")
+    with module.open_external_intelligence_runtime(
+        driver=external["driver"],
+        binary=external["binary"],
+        credential_file=external["credential_file"],
+        max_active=1,
+        worker_processes=1,
+        runtime_parent=transport_parent,
+    ) as transport:
+        executor = external_intelligence.ExternalIntelligenceExecutor(transport)
         def invoke(
             *,
             suite_root: Path,
@@ -1924,7 +1948,8 @@ def _native_codex_batch_invoker(
             validate: Callable[[dict[str, Any]], Any] | None = None,
         ) -> tuple[dict[str, Any], dict[str, Any]]:
             started = time.perf_counter()
-            value, usage = capability._invoke(
+            value, usage = executor.invoke(
+                role=role,
                 prompt=prompt,
                 schema=schema,
                 stage=stage / "checkpoint",
@@ -1938,6 +1963,21 @@ def _native_codex_batch_invoker(
             usage = {**usage, "role": role, "elapsed_seconds": time.perf_counter() - started, "transport": diagnostics}
             return value, usage
 
+        yield invoke
+
+
+@contextmanager
+def _native_codex_batch_invoker(
+    suite_root: Path,
+    runtime: dict[str, Any],
+    transport_parent: Path,
+) -> Any:
+    """Compatibility facade for already-sealed Stage 6 plans.
+
+    Provider selection and execution are delegated to the neutral runtime port;
+    this name is not a second transport implementation.
+    """
+    with _native_external_intelligence_batch_invoker(suite_root, runtime, transport_parent) as invoke:
         yield invoke
 
 
@@ -1961,8 +2001,9 @@ def _run_longmemeval(
         "--output-dir", str(output_dir),
         "--ownward-binary", str(runtime["binary"]),
         "--embedding-bundle-dir", str(runtime["embedding"]),
-        "--codex-binary", str(runtime["codex_binary"]),
-        "--codex-auth-file", str(runtime["codex_auth_file"]),
+        "--external-intelligence-driver", str(runtime["external_intelligence"]["driver"]),
+        "--external-intelligence-binary", str(runtime["external_intelligence"]["binary"]),
+        "--external-intelligence-credential-file", str(runtime["external_intelligence"]["credential_file"]),
         "--candidate", f"kernel-iteration:{subject_identity}",
         "--environment-sha256", evidence.file_sha256(runtime["environment_manifest"]),
         "--input-manifest-sha256", evidence.file_sha256(dataset_path),

@@ -15,7 +15,7 @@ RESULT_SCHEMA = "ownward.kernel-iteration-stage4-resource-cost-representation-li
 CONTRACT_PATH = Path("iteration/v2/stage4-resource-cost-representation-lifecycle-contract.json")
 DEPENDENCY_MIGRATION_SCHEMA = "ownward.kernel-iteration-direct-dependency-migration/v1"
 DEPENDENCY_MIGRATION_PATH = Path("iteration/v2/stage4-resource-cost-raw-vector-lifecycle-dependency-migration.json")
-DEPENDENCY_MIGRATION_REASON = "version-suite-cli-dispatch-preserves-frozen-stage4-cost-and-representation"
+DEPENDENCY_MIGRATION_REASON = "external-intelligence-adapter-boundary-preserves-frozen-stage4-cost-and-representation"
 SOURCE_SESSION = re.compile(r"(?:^|\n)Source session: ([^\n]+)")
 
 
@@ -212,7 +212,7 @@ def load_contract(suite_root: Path) -> dict[str, Any]:
     if drifted:
         _verify_dependency_migration(
             suite_root, value["identity"], drifted,
-            {"benchmarks/longmemeval_s/run.py": "source-context-consumer-and-reader-profile-only-semantic-request-and-frozen-cost-unchanged"},
+            {"benchmarks/longmemeval_s/run.py": "external-intelligence-port-and-reader-profile-only-frozen-stage4-semantic-request-and-cost-unchanged"},
         )
     return value
 
@@ -367,7 +367,7 @@ def _verified_text(repository: Path, item: dict[str, Any], name: str) -> str:
             repository / "benchmarks" / "acceptance" / "suite",
             "e39272da7f832ed8275f99284aa03ad8fdf1b68b7833a368b9bece116ef93ce8",
             {item["path"]: {"frozen": item["sha256"], "current": current}},
-            {"benchmarks/longmemeval_s/run.py": "source-context-consumer-and-reader-profile-only-semantic-request-and-frozen-cost-unchanged"},
+            {"benchmarks/longmemeval_s/run.py": "external-intelligence-port-and-reader-profile-only-frozen-stage4-semantic-request-and-cost-unchanged"},
         )
     return path.read_text(encoding="utf-8")
 

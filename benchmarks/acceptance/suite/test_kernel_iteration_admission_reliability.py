@@ -153,7 +153,7 @@ class AdmissionReliabilityTests(unittest.TestCase):
                 opened.append(transport_parent.name)
                 yield fixture.invoke
 
-            with fixture.patches(), mock.patch.object(validation, "_native_codex_batch_invoker", side_effect=batch_invoker):
+            with fixture.patches(), mock.patch.object(validation, "_native_external_intelligence_batch_invoker", side_effect=batch_invoker):
                 result = reliability.run(
                     self.suite_root,
                     fixture.output_root,

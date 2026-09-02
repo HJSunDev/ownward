@@ -209,21 +209,14 @@ def execute_calibration(
     contract: dict[str, Any],
 ) -> dict[str, Any]:
     module = validation._load_longmemeval_module(suite_root)
-    instruction = module.CodexCapability.semantic_instruction()
+    instruction = module.ExternalIntelligenceCapability.semantic_instruction()
     _require(evidence.canonical_sha256(instruction) == contract["request_shapes"]["semantic_instruction_identity"], "匹配差分语义指令漂移")
     prompts = {
         "minimum": str(contract["request_shapes"]["minimum_prompt"]),
         "instruction": instruction,
     }
-    command_prefix = module.CodexAppServer.direct_command_prefix(
-        runtime["codex_binary"], module.codex_session.command_prefix(runtime["codex_binary"]),
-    )
-    transport_parent = output_root / ".codex-runtime"
-
-    def factory(_index: int, _generation: int) -> Any:
-        runtime_root = module.isolated_runtime_root(transport_parent)
-        environment = module.codex_session.isolated_environment(runtime["codex_auth_file"], runtime_root / "codex-home")
-        return module.CodexAppServer(runtime["codex_binary"], runtime["codex_auth_file"], runtime_root, command_prefix, environment)
+    transport_parent = output_root / ".external-intelligence-runtime"
+    external = runtime["external_intelligence"]
 
     def calibrate(call: dict[str, Any], shape: str, transport: Any) -> dict[str, Any]:
         stage = output_root / "requests" / call["subject"] / call["material"] / call["question_id"] / call["schema_identity"] / shape
@@ -236,8 +229,9 @@ def execute_calibration(
                 "匹配差分输出没有按 Schema work_id 原序返回",
             )
 
-        capability = module.CodexCapability(transport)
+        capability = module.ExternalIntelligenceCapability(transport)
         _value, usage = capability._invoke(
+            role="semantic-organization",
             prompt=prompts[shape],
             schema=call["schema"],
             stage=stage,
@@ -268,7 +262,11 @@ def execute_calibration(
         }
 
     requests: list[dict[str, Any]] = []
-    with module.CodexAppServerPool(int(contract["execution"]["app_server_pool_size"]), factory) as transport:
+    with module.open_external_intelligence_runtime(
+        driver=external["driver"], binary=external["binary"], credential_file=external["credential_file"],
+        max_active=int(contract["execution"]["app_server_pool_size"]),
+        worker_processes=int(contract["execution"]["app_server_pool_size"]), runtime_parent=transport_parent,
+    ) as transport:
         work = []
         # Alternate shapes so neither shape is systematically assigned only cold or warm workers.
         for index, call in enumerate(calls):
@@ -425,10 +423,10 @@ def evaluate_gate_migration(subjects: dict[str, dict[str, Any]], contract: dict[
 def _validate_runtime_contract(runtime: dict[str, Any], protocol: dict[str, Any], contract: dict[str, Any]) -> None:
     _require(protocol["memory"]["semantic_model"] == contract["model_profile"]["model"], "匹配差分模型漂移")
     _require(protocol["memory"]["semantic_reasoning_effort"] == contract["model_profile"]["reasoning_effort"], "匹配差分 effort 漂移")
-    _require(protocol["execution"]["codex_transport"] == "app-server-pool-stdio", "匹配差分传输漂移")
-    _require(int(protocol["execution"]["codex_max_active"]) == int(contract["execution"]["app_server_pool_size"]), "匹配差分 App Server 池漂移")
+    _require(runtime["external_intelligence"]["driver"] == "codex-app-server/v1", "匹配差分传输漂移")
+    _require(int(protocol["execution"]["codex_max_active"]) == int(contract["execution"]["app_server_pool_size"]), "匹配差分外部智能池漂移")
     _require(int(protocol["execution"]["max_workers"]) == int(contract["execution"]["question_workers"]), "匹配差分问题并发漂移")
-    _require(evidence.file_sha256(runtime["codex_binary"]) == contract["model_profile"]["codex_binary_sha256"], "匹配差分 Codex 二进制漂移")
+    _require(evidence.file_sha256(runtime["external_intelligence"]["binary"]) == contract["model_profile"]["codex_binary_sha256"], "匹配差分外部智能执行制品漂移")
 
 
 def _verify_file(path: Path, item: dict[str, Any]) -> None:

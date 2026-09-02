@@ -31,9 +31,22 @@ for dependency_root in (SUITE_ROOT, PRODUCT_ADAPTER_ROOT):
         sys.path.insert(0, str(dependency_root))
 
 from ownward_mcp import MCPError, OwnwardRuntime  # noqa: E402
-import codex_session  # noqa: E402
+from external_intelligence import (  # noqa: E402
+    CONTRACT_SCHEMA as EXTERNAL_INTELLIGENCE_CONTRACT_SCHEMA,
+    BoundedScheduler,
+    ExternalIntelligenceError,
+    ExternalIntelligenceExecutor,
+    ExternalIntelligenceTransport,
+    InvocationLifecycle,
+)
 import semantic_representation  # noqa: E402
-from codex_app_server import AppServerError, AppServerTimeout, CodexAppServer, CodexAppServerPool, isolated_runtime_root, remove_runtime_root  # noqa: E402
+from external_intelligence_runtime import (  # noqa: E402
+    CURRENT_DRIVER as CURRENT_EXTERNAL_INTELLIGENCE_DRIVER,
+    CURRENT_PROVIDER as CURRENT_EXTERNAL_INTELLIGENCE_PROVIDER,
+    clean_stale_runtime_roots,
+    current_runtime_identity,
+    open_external_intelligence_runtime,
+)
 
 
 PROTOCOL_SCHEMA = "ownward.longmemeval-s-protocol/v2"
@@ -63,7 +76,7 @@ CORE_ACTIVE_RETRIEVAL_TOOLS = (
 )
 
 
-class AdapterError(RuntimeError):
+class AdapterError(ExternalIntelligenceError):
     pass
 
 
@@ -170,7 +183,12 @@ def validate_protocol(value: dict[str, Any], *, formal: bool | None = None) -> N
         and reader.get("selection_result_identity") == "25f4954169249c92af6001813dca81ac04c0e70a75499bd1e1bcf9dc45ae5824",
         "Reader identity changed",
     )
-    require(judge.get("capability_source") == "codex" and judge["model"] == "gpt-5.6-terra" and judge["reasoning_effort"] == "medium", "judge identity changed")
+    require(
+        judge.get("capability_source") == "codex"
+        and judge["model"] == "gpt-5.6-terra"
+        and judge["reasoning_effort"] == "medium",
+        "judge identity changed",
+    )
     require(
         execution["max_workers"] == 4
         and execution["codex_max_active"] in {8, 12}
@@ -282,43 +300,7 @@ def _add_usage(total: dict[str, float | int], value: dict[str, Any]) -> None:
         total[name] += float(value.get(name, 0)) if name == "wall_seconds" else int(value.get(name, 0))
 
 
-class CodexScheduler:
-    """One global bound for all semantic, Reader, and judge Codex processes."""
-
-    def __init__(self, max_active: int) -> None:
-        require(max_active > 0, "Codex concurrency limit must be positive")
-        self.max_active = max_active
-        self._pool = ThreadPoolExecutor(max_workers=max_active, thread_name_prefix="longmemeval-codex")
-        self._lock = threading.Lock()
-        self._active = 0
-        self._maximum = 0
-        self._submitted = 0
-
-    def submit(self, callback: Callable[..., Any], *args: Any, **kwargs: Any) -> Future[Any]:
-        with self._lock:
-            self._submitted += 1
-
-        def bounded() -> Any:
-            with self._lock:
-                self._active += 1
-                self._maximum = max(self._maximum, self._active)
-            try:
-                return callback(*args, **kwargs)
-            finally:
-                with self._lock:
-                    self._active -= 1
-
-        return self._pool.submit(bounded)
-
-    def snapshot(self) -> dict[str, int]:
-        with self._lock:
-            return {"limit": self.max_active, "max_active": self._maximum, "submitted": self._submitted}
-
-    def __enter__(self) -> "CodexScheduler":
-        return self
-
-    def __exit__(self, *_args: object) -> None:
-        self._pool.shutdown(wait=True, cancel_futures=False)
+ExternalIntelligenceScheduler = BoundedScheduler
 
 
 def freeze_semantic_batch(
@@ -368,11 +350,11 @@ def freeze_semantic_batch(
 def semantic_analysis_units(
     frozen: dict[str, Any] | list[dict[str, Any]],
     settings: dict[str, Any],
-    capability: "CodexCapability",
+    capability: "ExternalIntelligenceCapability",
 ) -> list[dict[str, Any]]:
     semantic_contract = (
         capability.semantic_contract
-        if isinstance(capability, CodexCapability)
+        if isinstance(capability, ExternalIntelligenceCapability)
         else semantic_representation.load_contract(None)
     )
     frozen_batches = [frozen] if isinstance(frozen, dict) else list(frozen)
@@ -397,7 +379,7 @@ def semantic_analysis_units(
             prompt, _, work_ids = capability.semantic_request(trial_work, settings)
             over = (
                 len(prompt.encode("utf-8")) > input_maximum
-                or CodexCapability.semantic_output_upper_bound(work_ids) > output_maximum
+                or ExternalIntelligenceCapability.semantic_output_upper_bound(work_ids) > output_maximum
                 or len(trial) > maximum_works
             )
             if current and over:
@@ -419,18 +401,18 @@ def semantic_analysis_units(
     for index, group in enumerate(groups):
         work = [item["work"] for item in group]
         prompt, schema, work_ids = capability.semantic_request(work, settings)
-        if isinstance(capability, CodexCapability):
+        if isinstance(capability, ExternalIntelligenceCapability):
             semantic_input = capability.encoded_semantic_input(work)
             equivalence = capability.validate_encoded_semantic_input(work, semantic_input)
             fact_equivalence_sha256 = capability.semantic_fact_identity(work)
         else:
-            semantic_input = CodexCapability.semantic_input(work)
-            equivalence = CodexCapability.validate_semantic_input(work, semantic_input)
-            fact_equivalence_sha256 = CodexCapability.semantic_fact_equivalence_sha256(work)
+            semantic_input = ExternalIntelligenceCapability.semantic_input(work)
+            equivalence = ExternalIntelligenceCapability.validate_semantic_input(work, semantic_input)
+            fact_equivalence_sha256 = ExternalIntelligenceCapability.semantic_fact_equivalence_sha256(work)
         input_bytes = len(prompt.encode("utf-8"))
-        output_upper_bound = CodexCapability.semantic_output_upper_bound(work_ids)
-        require(input_bytes <= input_maximum, f"one semantic work item exceeds the frozen Codex input token upper bound: {work_ids[0]}")
-        require(output_upper_bound <= output_maximum, f"one semantic work item exceeds the frozen Codex output token upper bound: {work_ids[0]}")
+        output_upper_bound = ExternalIntelligenceCapability.semantic_output_upper_bound(work_ids)
+        require(input_bytes <= input_maximum, f"one semantic work item exceeds the frozen external-intelligence input token upper bound: {work_ids[0]}")
+        require(output_upper_bound <= output_maximum, f"one semantic work item exceeds the frozen external-intelligence output token upper bound: {work_ids[0]}")
         unit = {
             "schema": "ownward.longmemeval-s-semantic-analysis-unit/v2",
             "question_identity": question_identity,
@@ -452,7 +434,7 @@ def semantic_analysis_units(
             "body_chars": semantic_contract.body_chars(semantic_input),
             "equivalence_sha256": canonical_sha256(equivalence),
             "fact_equivalence_sha256": fact_equivalence_sha256,
-            "legacy_input_utf8_bytes": CodexCapability.legacy_semantic_input_chars(work),
+            "legacy_input_utf8_bytes": ExternalIntelligenceCapability.legacy_semantic_input_chars(work),
         }
         unit["identity"] = canonical_sha256(unit)
         units.append(unit)
@@ -467,7 +449,7 @@ def analyze_semantic_unit(
     unit: dict[str, Any],
     trace_root: Path,
     settings: dict[str, Any],
-    capability: "CodexCapability",
+    capability: "ExternalIntelligenceCapability",
 ) -> dict[str, Any]:
     unit_label = f"{unit['scope_id']}/{unit['unit_index']}"
     unit_root = trace_root / "_analysis" / unit["scope_id"] / f"unit-{unit['unit_index']:03d}"
@@ -483,8 +465,8 @@ def analyze_semantic_unit(
         return existing
     encoded_input = (
         capability.encoded_semantic_input(unit["work"])
-        if isinstance(capability, CodexCapability)
-        else CodexCapability.semantic_input(unit["work"])
+        if isinstance(capability, ExternalIntelligenceCapability)
+        else ExternalIntelligenceCapability.semantic_input(unit["work"])
     )
     write_json(unit_root / "input.json", {
         "schema": "ownward.longmemeval-s-semantic-analysis-input/v2",
@@ -499,6 +481,8 @@ def analyze_semantic_unit(
         "output_token_upper_bound": unit["output_token_upper_bound"],
         "fact_equivalence_sha256": unit["fact_equivalence_sha256"],
     })
+    # Keep the v4 evidence namespace stable while the execution implementation is
+    # provider-neutral.  The directory label is wire compatibility, not routing.
     analyses, usage = capability.semantics(unit["work"], settings, unit_root / "codex")
     require([item.get("work_id") for item in analyses if isinstance(item, dict)] == unit["work_ids"], f"semantic analysis unit reordered work: {unit_label}")
     value = {
@@ -569,7 +553,7 @@ def combine_semantic_batch(
         submissions.append({
             "schema": "ownward.semantic-submission/v1", "work_id": item["id"], "asset_id": item["asset"]["id"],
             "asset_revision": item["asset"]["revision"],
-            "capability": {"id": "codex", "version": settings["semantic_model"], "execution": "longmemeval-s"},
+            "capability": {"id": settings.get("capability_id", "codex"), "version": settings["semantic_model"], "execution": "longmemeval-s"},
             "status": "complete",
             "analysis": {"summary": summary.strip(), "topics": topics[:4], "cues": cues[:4], "inferred_contexts": [], "relations": []},
         })
@@ -921,8 +905,8 @@ class ActiveRetrievalSession:
         )
 
 
-class CodexCapability:
-    def __init__(self, transport: CodexAppServer, semantic_contract: semantic_representation.SemanticInputContract | None = None) -> None:
+class ExternalIntelligenceCapability:
+    def __init__(self, transport: ExternalIntelligenceTransport, semantic_contract: semantic_representation.SemanticInputContract | None = None) -> None:
         self.transport = transport
         self._semantic_contract = semantic_contract or semantic_representation.load_contract(None)
 
@@ -948,155 +932,44 @@ class CodexCapability:
     def semantic_instruction_text(self) -> str:
         return self.semantic_contract.instruction()
 
-    @staticmethod
-    def _is_rate_limit(value: str) -> bool:
-        lowered = value.lower()
-        return any(marker in lowered for marker in ("rate limit", "rate_limit", "too many requests", "status 429", "http 429"))
-
     def _invoke(
-        self, *, prompt: str, schema: dict[str, Any], stage: Path, model: str, effort: str,
+        self, *, role: str, prompt: str, schema: dict[str, Any], stage: Path, model: str, effort: str,
         timeout_seconds: float, attempts: int, validate: Callable[[dict[str, Any]], None] | None = None,
         active_retrieval: ActiveRetrievalSession | None = None,
     ) -> tuple[dict[str, Any], dict[str, int]]:
-        dynamic_tools = active_retrieval.dynamic_tools if active_retrieval is not None else None
-        tool_manifest_identity = active_retrieval.tool_manifest_identity if active_retrieval is not None else None
         base_instructions = (
             "Act as the external intelligent entity using only the supplied Ownward dynamic tools. "
             "Choose retrieval actions from accumulated evidence and return only the requested structured JSON."
             if active_retrieval is not None else None
         )
-        identity = canonical_sha256({
-            "prompt": prompt,
-            "schema": schema,
-            "model": model,
-            "effort": effort,
-            "retrieval_mode": "external-agent-progressive/v1" if active_retrieval is not None else "no-tools",
-            "tool_manifest_identity": tool_manifest_identity,
-            "base_instructions": base_instructions,
-        })
-        request_value = {
-            "schema": "ownward.codex-capability-request/v1",
-            "identity": identity,
-            "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
-            "output_schema_sha256": canonical_sha256(schema),
-            "model": model,
-            "reasoning_effort": effort,
-            "retrieval_mode": "external-agent-progressive/v1" if active_retrieval is not None else "no-tools",
-            "tool_manifest_identity": tool_manifest_identity,
-        }
-        request_path = stage / "request.json"
-        if request_path.is_file():
-            require(load_json(request_path) == request_value, "Codex capability request identity changed")
-        else:
-            write_json(request_path, request_value)
-        complete_path = stage / "complete.json"
-        if complete_path.is_file():
-            complete = load_json(complete_path)
-            require(isinstance(complete, dict) and complete.get("identity") == identity, "Codex capability checkpoint identity changed")
-            try:
-                if active_retrieval is not None:
-                    active_retrieval.restore(complete.get("active_retrieval"))
-                if validate is not None:
-                    validate(complete["output"])
-                if active_retrieval is not None:
-                    active_retrieval.validate()
-            except (AdapterError, ValueError) as error:
-                audit = stage / "_audit"
-                audit.mkdir(parents=True, exist_ok=True)
-                archived = audit / f"invalid-complete-{sha256(complete_path)}.json"
-                if archived.is_file():
-                    require(archived.read_bytes() == complete_path.read_bytes(), "Codex invalid checkpoint audit changed")
-                    complete_path.unlink()
-                else:
-                    complete_path.replace(archived)
-            else:
-                return complete["output"], complete["usage"]
-        stage.mkdir(parents=True, exist_ok=True)
-        last_error = ""
-        attempt_directories = sorted(path for path in stage.glob("attempt-*") if path.is_dir())
-        existing_attempts = len(attempt_directories)
-        prior_wall_seconds = 0.0
-        prior_rate_limits = 0
-        interrupted_attempts = 0
-        for attempt in attempt_directories:
-            metadata_path = attempt / "metadata.json"
-            if not metadata_path.is_file():
-                interrupted_attempts += 1
-                continue
-            metadata = load_json(metadata_path)
-            require(isinstance(metadata, dict), "Codex attempt metadata is invalid")
-            prior_wall_seconds += float(metadata.get("wall_seconds", 0.0))
-            prior_rate_limits += int(bool(metadata.get("rate_limited", False)))
-        for number in range(existing_attempts + 1, attempts + 1):
-            attempt = stage / f"attempt-{number:03d}"
-            attempt.mkdir()
-            work = attempt / "work"
-            work.mkdir()
-            attempt_started = time.perf_counter()
-            try:
-                if active_retrieval is not None:
-                    active_retrieval.reset_attempt()
-                started = time.perf_counter()
-                invoke_arguments: dict[str, Any] = {
-                    "prompt": prompt, "schema": schema, "model": model, "effort": effort,
-                    "work_dir": work, "timeout_seconds": timeout_seconds,
-                }
-                if active_retrieval is not None:
-                    invoke_arguments.update({
-                        "dynamic_tools": dynamic_tools,
-                        "tool_handler": active_retrieval.call,
-                        "base_instructions": base_instructions,
-                    })
-                value, usage, transport = self.transport.invoke(**invoke_arguments)
-                elapsed = time.perf_counter() - started
-                require(isinstance(value, dict), "Codex capability output is not an object")
-                if validate is not None:
-                    validate(value)
-                if active_retrieval is not None:
-                    active_retrieval.validate()
-                rate_limited = bool(self.transport.diagnostics()["rate_limit_observed"])
-                write_json(attempt / "metadata.json", {
-                    "schema": "ownward.codex-capability-attempt/v1",
-                    "attempt": number,
-                    "outcome": "complete",
-                    "wall_seconds": elapsed,
-                    "rate_limited": rate_limited,
-                    **transport,
-                })
-                usage.update({
-                    "calls": 1,
-                    "attempts": number,
-                    "retries": number - 1,
-                    "rate_limit_events": prior_rate_limits + int(rate_limited),
-                    "interrupted_attempts": interrupted_attempts,
-                    "wall_seconds": prior_wall_seconds + elapsed,
-                })
-                write_json(complete_path, {
-                    "schema": "ownward.codex-capability-checkpoint/v1",
-                    "identity": identity,
-                    "output": value,
-                    "usage": usage,
-                    "wall_seconds": usage["wall_seconds"],
-                    "active_retrieval": active_retrieval.report() if active_retrieval is not None else None,
-                })
-                return value, usage
-            except (AdapterError, AppServerError, OSError, ValueError) as error:
-                last_error = str(error)
-                elapsed = time.perf_counter() - attempt_started
-                rate_limited = self._is_rate_limit(last_error) or bool(self.transport.diagnostics()["rate_limit_observed"])
-                write_json(attempt / "metadata.json", {
-                    "schema": "ownward.codex-capability-attempt/v1",
-                    "attempt": number,
-                    "outcome": "failed",
-                    "error_type": type(error).__name__,
-                    "error_message": last_error[:1000],
-                    "wall_seconds": elapsed,
-                    "rate_limited": rate_limited,
-                    "transport": self.transport.diagnostics().get("transport", "codex-app-server-pool-stdio"),
-                })
-                prior_wall_seconds += elapsed
-                prior_rate_limits += int(rate_limited)
-        raise AdapterError(f"Codex capability failed after {attempts} bounded attempts: {last_error}")
+        lifecycle = InvocationLifecycle(
+            retrieval_mode="external-agent-progressive/v1" if active_retrieval is not None else "no-tools",
+            tool_manifest_identity=(active_retrieval.tool_manifest_identity if active_retrieval is not None else None),
+            dynamic_tools=(active_retrieval.dynamic_tools if active_retrieval is not None else None),
+            tool_handler=(active_retrieval.call if active_retrieval is not None else None),
+            base_instructions=base_instructions,
+            reset_attempt=(active_retrieval.reset_attempt if active_retrieval is not None else None),
+            restore=(active_retrieval.restore if active_retrieval is not None else None),
+            validate=(active_retrieval.validate if active_retrieval is not None else None),
+            report=(active_retrieval.report if active_retrieval is not None else None),
+        )
+        try:
+            return ExternalIntelligenceExecutor(self.transport).invoke(
+                role=role,
+                prompt=prompt,
+                schema=schema,
+                stage=stage,
+                model=model,
+                effort=effort,
+                timeout_seconds=timeout_seconds,
+                attempts=attempts,
+                validate=validate,
+                lifecycle=lifecycle,
+            )
+        except ExternalIntelligenceError as error:
+            if isinstance(error, AdapterError):
+                raise
+            raise AdapterError(str(error)) from error
 
     @staticmethod
     def semantic_input(work: list[dict[str, Any]]) -> dict[str, Any]:
@@ -1138,7 +1011,7 @@ class CodexCapability:
 
     @staticmethod
     def legacy_semantic_call_count(work: list[dict[str, Any]], maximum_bytes: int = 300000) -> int:
-        return len(CodexCapability.legacy_semantic_request_sizes(work, maximum_bytes))
+        return len(ExternalIntelligenceCapability.legacy_semantic_request_sizes(work, maximum_bytes))
 
     @staticmethod
     def legacy_semantic_request_sizes(work: list[dict[str, Any]], maximum_bytes: int = 300000) -> list[int]:
@@ -1146,14 +1019,14 @@ class CodexCapability:
         current: list[dict[str, Any]] = []
         for item in work:
             trial = [*current, item]
-            if current and CodexCapability.legacy_semantic_input_chars(trial) > maximum_bytes:
+            if current and ExternalIntelligenceCapability.legacy_semantic_input_chars(trial) > maximum_bytes:
                 groups.append(current)
                 current = [item]
             else:
                 current = trial
         if current:
             groups.append(current)
-        return [CodexCapability.legacy_semantic_input_chars(group) for group in groups]
+        return [ExternalIntelligenceCapability.legacy_semantic_input_chars(group) for group in groups]
 
     @staticmethod
     def semantic_instruction() -> str:
@@ -1205,27 +1078,27 @@ class CodexCapability:
             require(
                 isinstance(analyses, list)
                 and [item.get("work_id") for item in analyses if isinstance(item, dict)] == work_ids,
-                "Codex semantic output omitted or reordered work items",
+                "external-intelligence semantic output omitted or reordered work items",
             )
 
         value, usage = self._invoke(
-            prompt=prompt, schema=schema, stage=stage, model=settings["semantic_model"],
+            role="semantic-organization", prompt=prompt, schema=schema, stage=stage, model=settings["semantic_model"],
             effort=settings["semantic_reasoning_effort"], timeout_seconds=float(settings["semantic_timeout_seconds"]),
             attempts=int(settings["semantic_attempts"]), validate=validate,
         )
         analyses = value.get("analyses")
-        require(isinstance(analyses, list) and [item.get("work_id") for item in analyses if isinstance(item, dict)] == work_ids, "Codex semantic output omitted or reordered work items")
+        require(isinstance(analyses, list) and [item.get("work_id") for item in analyses if isinstance(item, dict)] == work_ids, "external-intelligence semantic output omitted or reordered work items")
         return analyses, usage
 
     def answer(self, prompt: str, settings: dict[str, Any], stage: Path) -> tuple[str, dict[str, int]]:
         schema = {"type": "object", "additionalProperties": False, "required": ["answer"], "properties": {"answer": {"type": "string"}}}
         value, usage = self._invoke(
-            prompt=prompt + "\n\nReturn only the structured answer object.", schema=schema, stage=stage,
+            role="reader", prompt=prompt + "\n\nReturn only the structured answer object.", schema=schema, stage=stage,
             model=settings["model"], effort=settings["reasoning_effort"],
             timeout_seconds=float(settings["timeout_seconds"]), attempts=int(settings["attempts"]),
         )
         answer = value.get("answer")
-        require(isinstance(answer, str) and answer.strip(), "Codex Reader returned no answer")
+        require(isinstance(answer, str) and answer.strip(), "external-intelligence Reader returned no answer")
         return answer.strip(), usage
 
     def active_answer(
@@ -1244,6 +1117,7 @@ class CodexCapability:
             "properties": {"answer": {"type": "string"}},
         }
         value, usage = self._invoke(
+            role="reader",
             prompt=_active_answer_prompt(question, retrieval_settings),
             schema=schema,
             stage=stage,
@@ -1254,7 +1128,7 @@ class CodexCapability:
             active_retrieval=session,
         )
         answer = value.get("answer")
-        require(isinstance(answer, str) and answer.strip(), "Codex active retrieval agent returned no answer")
+        require(isinstance(answer, str) and answer.strip(), "external-intelligence active retrieval agent returned no answer")
         session.validate()
         return answer.strip(), usage, session.report()
 
@@ -1266,7 +1140,7 @@ class CodexCapability:
             "properties": {"label": {"type": "string", "enum": ["yes", "no"]}},
         }
         value, usage = self._invoke(
-            prompt=prompt,
+            role="judge", prompt=prompt,
             schema=schema,
             stage=stage,
             model=settings["model"],
@@ -1275,7 +1149,7 @@ class CodexCapability:
             attempts=int(settings["attempts"]),
         )
         label = value.get("label")
-        require(label in {"yes", "no"}, "Codex judge returned an invalid official label")
+        require(label in {"yes", "no"}, "external-intelligence judge returned an invalid official label")
         return label == "yes", label, usage
 
 
@@ -1539,6 +1413,7 @@ def _question_identity(question: dict[str, Any], run_identity: str) -> str:
 def stage_dependency_identities(
     *, protocol: dict[str, Any], candidate: str, binary_sha256: str, environment_sha256: str,
     input_manifest_sha256: str, dataset_sha256: str, formal: bool, evaluator_sha256: str,
+    external_intelligence_runtime_identity: dict[str, Any] | None = None,
     semantic_contract: semantic_representation.SemanticInputContract | None = None,
 ) -> dict[str, str]:
     semantic_contract = semantic_contract or semantic_representation.load_contract(None)
@@ -1546,10 +1421,13 @@ def stage_dependency_identities(
     implementation = {
         "semantic": canonical_sha256({
             "transport": transport_sha256,
-            "invoke": inspect.getsource(CodexCapability._invoke),
-            "input": inspect.getsource(CodexCapability.semantic_input),
-            "validation": inspect.getsource(CodexCapability.validate_semantic_input),
-            "request": inspect.getsource(CodexCapability.semantic_request),
+            "external_intelligence_contract": EXTERNAL_INTELLIGENCE_CONTRACT_SCHEMA,
+            "external_intelligence_executor": inspect.getsource(ExternalIntelligenceExecutor),
+            "runtime_adapter": sha256(Path(__file__).with_name("external_intelligence_runtime.py")),
+            "invoke": inspect.getsource(ExternalIntelligenceCapability._invoke),
+            "input": inspect.getsource(ExternalIntelligenceCapability.semantic_input),
+            "validation": inspect.getsource(ExternalIntelligenceCapability.validate_semantic_input),
+            "request": inspect.getsource(ExternalIntelligenceCapability.semantic_request),
             "units": inspect.getsource(semantic_analysis_units),
             "analysis": inspect.getsource(analyze_semantic_unit),
             "combine": inspect.getsource(combine_semantic_batch),
@@ -1562,14 +1440,20 @@ def stage_dependency_identities(
         }),
         "reader": canonical_sha256({
             "transport": transport_sha256,
-            "invoke": inspect.getsource(CodexCapability._invoke),
-            "answer": inspect.getsource(CodexCapability.active_answer),
+            "external_intelligence_contract": EXTERNAL_INTELLIGENCE_CONTRACT_SCHEMA,
+            "external_intelligence_executor": inspect.getsource(ExternalIntelligenceExecutor),
+            "runtime_adapter": sha256(Path(__file__).with_name("external_intelligence_runtime.py")),
+            "invoke": inspect.getsource(ExternalIntelligenceCapability._invoke),
+            "answer": inspect.getsource(ExternalIntelligenceCapability.active_answer),
         }),
         "judge": canonical_sha256({
             "transport": transport_sha256,
-            "invoke": inspect.getsource(CodexCapability._invoke),
+            "external_intelligence_contract": EXTERNAL_INTELLIGENCE_CONTRACT_SCHEMA,
+            "external_intelligence_executor": inspect.getsource(ExternalIntelligenceExecutor),
+            "runtime_adapter": sha256(Path(__file__).with_name("external_intelligence_runtime.py")),
+            "invoke": inspect.getsource(ExternalIntelligenceCapability._invoke),
             "prompt": inspect.getsource(official_prompt),
-            "judge": inspect.getsource(CodexCapability.judge),
+            "judge": inspect.getsource(ExternalIntelligenceCapability.judge),
         }),
         "diagnostic": canonical_sha256({"record": inspect.getsource(_diagnostic_record)}),
     }
@@ -1581,6 +1465,7 @@ def stage_dependency_identities(
         "dataset_sha256": dataset_sha256,
         "formal": formal,
         "profile": PRODUCTION_PROFILE,
+        "external_intelligence_runtime": external_intelligence_runtime_identity,
     }
     semantic = canonical_sha256({
         **common,
@@ -1605,18 +1490,8 @@ def _archive_path(source: Path, destination: Path) -> None:
     source.replace(destination)
 
 
-def clean_stale_codex_runtime_roots(output_dir: Path) -> list[str]:
-    parent = (output_dir / ".codex-runtime").resolve()
-    if not parent.exists():
-        return []
-    require(parent.is_dir() and parent.parent == output_dir.resolve(), "Codex runtime root escapes the community output")
-    cleaned = []
-    for child in parent.iterdir():
-        require(child.is_dir() and child.name.startswith("codex-app-server-"), f"unexpected object in Codex runtime root: {child.name}")
-        require(child.resolve().parent == parent, "Codex runtime child escapes its parent")
-        cleaned.append(child.name)
-        remove_runtime_root(child)
-    parent.rmdir()
+def clean_stale_external_intelligence_runtime_roots(output_dir: Path) -> list[str]:
+    cleaned = clean_stale_runtime_roots(output_dir)
     if cleaned:
         append_jsonl(output_dir / "_audit" / "transport-cleanup.jsonl", {
             "schema": "ownward.longmemeval-s-transport-cleanup/v1",
@@ -1790,8 +1665,8 @@ def process_question(
     question: dict[str, Any], output_root: Path, run_identity: str,
     binary: Path, embedding: Path,
     protocol: dict[str, Any], evaluator: Path,
-    capability_factory: Callable[[], CodexCapability],
-    codex_scheduler: CodexScheduler,
+    capability_factory: Callable[[], ExternalIntelligenceCapability],
+    external_intelligence_scheduler: ExternalIntelligenceScheduler,
     stage_run_identities: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     evaluation_question = question
@@ -1843,7 +1718,7 @@ def process_question(
     capability = capability_factory()
     semantic_contract = (
         capability.semantic_contract
-        if isinstance(capability, CodexCapability)
+        if isinstance(capability, ExternalIntelligenceCapability)
         else semantic_representation.load_contract(None)
     )
     with OwnwardRuntime(binary, data_dir, environment, startup_seconds=60, operation_seconds=float(protocol["retrieval"]["query_timeout_seconds"])) as runtime:
@@ -1919,10 +1794,10 @@ def process_question(
                 "output_token_upper_bound": protocol["memory"]["semantic_analysis_output_token_upper_bound"],
                 "context_safety_tokens": protocol["memory"]["semantic_context_safety_tokens"],
                 "analysis_calls": len(units),
-                "legacy_analysis_calls": sum(CodexCapability.legacy_semantic_call_count(batch["work"]) for batch in frozen_batches),
+                "legacy_analysis_calls": sum(ExternalIntelligenceCapability.legacy_semantic_call_count(batch["work"]) for batch in frozen_batches),
                 "new_input_utf8_bytes": sum(unit["input_utf8_bytes"] for unit in units),
                 "legacy_input_utf8_bytes": sum(
-                    sum(CodexCapability.legacy_semantic_request_sizes(batch["work"])) for batch in frozen_batches
+                    sum(ExternalIntelligenceCapability.legacy_semantic_request_sizes(batch["work"])) for batch in frozen_batches
                 ),
             },
             "serial_identity_sha256": canonical_sha256(request_plan),
@@ -1960,7 +1835,7 @@ def process_question(
                 if marker not in completion_order:
                     completion_order.append(marker)
             else:
-                future = codex_scheduler.submit(analyze_semantic_unit, unit, trace_root, protocol["memory"], capability)
+                future = external_intelligence_scheduler.submit(analyze_semantic_unit, unit, trace_root, protocol["memory"], capability)
                 futures[future] = unit_index
         for future in as_completed(futures):
             unit_index = futures[future]
@@ -2023,7 +1898,7 @@ def process_question(
             reader_seconds = float(reader_output_value["wall_seconds"])
         else:
             reader_started = time.monotonic()
-            answer, reader_usage, retrieval = codex_scheduler.submit(
+            answer, reader_usage, retrieval = external_intelligence_scheduler.submit(
                 capability.active_answer,
                 question,
                 runtime.client,
@@ -2071,7 +1946,7 @@ def process_question(
         judge_seconds = float(judge_output_value["wall_seconds"])
     else:
         judge_started = time.monotonic()
-        correct, judge_output, judge_usage = codex_scheduler.submit(
+        correct, judge_output, judge_usage = external_intelligence_scheduler.submit(
             capability.judge,
             prompt,
             protocol["judge"],
@@ -2158,8 +2033,8 @@ def retrieve(runtime: OwnwardRuntime, question: str, protocol: dict[str, Any]) -
     return passive_retrieve(runtime, question, protocol)
 
 
-def write_dry_plan_input_manifest(path: Path, units: list[dict[str, Any]], capability: CodexCapability | None = None) -> None:
-    capability = capability or CodexCapability(object())
+def write_dry_plan_input_manifest(path: Path, units: list[dict[str, Any]], capability: ExternalIntelligenceCapability | None = None) -> None:
+    capability = capability or ExternalIntelligenceCapability(object())
     manifest_units = []
     for unit in units:
         value = capability.encoded_semantic_input(unit["work"])
@@ -2227,7 +2102,7 @@ def dry_plan_question(
                 key=lambda value: int(value["batch_index"]),
             )
             require(frozen_batches, f"dry-plan input evidence is missing: {identifier}")
-            capability = CodexCapability(object(), semantic_contract)
+            capability = ExternalIntelligenceCapability(object(), semantic_contract)
             units = semantic_analysis_units(frozen_batches, protocol["memory"], capability)
             write_dry_plan_input_manifest(input_manifest_path, units, capability)
         if result.get("input_manifest_sha256") != sha256(input_manifest_path):
@@ -2248,7 +2123,7 @@ def dry_plan_question(
     data_dir = root / "ownward-data"
     environment = os.environ.copy()
     environment["OWNWARD_EMBEDDING_BUNDLE_DIR"] = str(embedding)
-    capability = CodexCapability(object(), semantic_contract)
+    capability = ExternalIntelligenceCapability(object(), semantic_contract)
     with OwnwardRuntime(binary, data_dir, environment, startup_seconds=60, operation_seconds=float(protocol["retrieval"]["query_timeout_seconds"])) as runtime:
         require(runtime.client is not None, "Ownward client is unavailable")
         sessions = [
@@ -2290,7 +2165,7 @@ def dry_plan_question(
         units = semantic_analysis_units(frozen_batches, protocol["memory"], capability)
     input_manifest_path = root / "input-manifest.json"
     write_dry_plan_input_manifest(input_manifest_path, units, capability)
-    old_sizes = [size for batch in frozen_batches for size in CodexCapability.legacy_semantic_request_sizes(batch["work"])]
+    old_sizes = [size for batch in frozen_batches for size in ExternalIntelligenceCapability.legacy_semantic_request_sizes(batch["work"])]
     source_body_chars = sum(len(session) for session in sessions)
     result = {
         "schema": "ownward.longmemeval-s-dry-plan-question/v1",
@@ -2598,7 +2473,8 @@ def complete_report(output_dir: Path, identity: dict[str, Any], question_count: 
 
 def execute(
     *, environment_manifest: Path, protocol_path: Path, dataset_path: Path, output_dir: Path,
-    binary: Path, embedding: Path, codex_binary: Path, codex_auth_file: Path,
+    binary: Path, embedding: Path, external_intelligence_driver: str,
+    external_intelligence_binary: Path, external_intelligence_credential_file: Path,
     candidate: str, environment_sha256: str, input_manifest_sha256: str, tool_sha256: str,
     formal: bool, resume: bool, semantic_representation_manifest: Path | None = None,
 ) -> dict[str, Any]:
@@ -2608,7 +2484,15 @@ def execute(
     validate_protocol(protocol, formal=formal)
     questions = validate_dataset(dataset_path.resolve(), formal=formal)
     require(binary.resolve().is_file() and embedding.resolve().is_dir(), "candidate artifacts are incomplete")
-    require(codex_binary.resolve().is_file() and codex_auth_file.resolve().is_file(), "Codex capability is incomplete")
+    runtime_identity = current_runtime_identity(
+        driver=external_intelligence_driver,
+        binary=external_intelligence_binary,
+        credential_file=external_intelligence_credential_file,
+        max_active=int(protocol["execution"]["codex_max_active"]),
+        worker_processes=int(protocol["execution"]["codex_server_processes"]),
+    )
+    require(runtime_identity["driver"] == CURRENT_EXTERNAL_INTELLIGENCE_DRIVER, "external-intelligence driver is not the selected runtime driver")
+    require(runtime_identity["provider"] == CURRENT_EXTERNAL_INTELLIGENCE_PROVIDER, "external-intelligence provider is not the selected runtime provider")
     try:
         semantic_contract = semantic_representation.load_contract(semantic_representation_manifest)
     except (OSError, ValueError, json.JSONDecodeError, semantic_representation.SemanticRepresentationError) as error:
@@ -2627,6 +2511,7 @@ def execute(
         dataset_sha256=dataset_digest,
         formal=formal,
         evaluator_sha256=sha256(environment["evaluator"]),
+        external_intelligence_runtime_identity=runtime_identity,
         semantic_contract=semantic_contract,
     )
     run_identity_value = {
@@ -2636,15 +2521,16 @@ def execute(
         "stage_dependencies": stage_dependencies,
         "capabilities": {
             "semantic": {
-                "source": "codex",
+                "source": protocol["memory"]["capability_source"],
                 "model": protocol["memory"]["semantic_model"],
                 "reasoning_effort": protocol["memory"]["semantic_reasoning_effort"],
                 "input_representation": semantic_contract.representation,
                 "input_representation_manifest_identity": semantic_contract.manifest_identity,
             },
-            "reader": {"source": "codex", "model": protocol["reader"]["model"], "reasoning_effort": protocol["reader"]["reasoning_effort"]},
-            "judge": {"source": "codex", "model": protocol["judge"]["model"], "reasoning_effort": protocol["judge"]["reasoning_effort"]},
+            "reader": {"source": protocol["reader"]["capability_source"], "model": protocol["reader"]["model"], "reasoning_effort": protocol["reader"]["reasoning_effort"]},
+            "judge": {"source": protocol["judge"]["capability_source"], "model": protocol["judge"]["model"], "reasoning_effort": protocol["judge"]["reasoning_effort"]},
         },
+        "external_intelligence_runtime": runtime_identity,
     }
     run_identity = canonical_sha256(run_identity_value)
     identity_path = output_dir / "identity.json"
@@ -2657,36 +2543,32 @@ def execute(
     else:
         require(not any(output_dir.iterdir()), "community output is not empty and has no identity")
         write_json(identity_path, {**run_identity_value, "sha256": run_identity})
-    clean_stale_codex_runtime_roots(output_dir)
+    clean_stale_external_intelligence_runtime_roots(output_dir)
     existing_report = complete_report(output_dir, {**run_identity_value, "sha256": run_identity}, len(questions))
     if existing_report is not None:
         return existing_report
     started_at = datetime.now(timezone.utc).isoformat()
     results: dict[str, dict[str, Any]] = {}
-    transport_parent = output_dir / ".codex-runtime"
-    command_prefix = CodexAppServer.direct_command_prefix(
-        codex_binary.resolve(), codex_session.command_prefix(codex_binary.resolve()),
-    )
-
-    def app_server_factory(_worker_index: int, _generation: int) -> CodexAppServer:
-        runtime_root = isolated_runtime_root(transport_parent)
-        environment = codex_session.isolated_environment(codex_auth_file.resolve(), runtime_root / "codex-home")
-        return CodexAppServer(
-            codex_binary.resolve(), codex_auth_file.resolve(), runtime_root, command_prefix, environment,
-        )
-
+    transport_parent = output_dir / ".external-intelligence-runtime"
     try:
         pool_size = int(protocol["execution"]["codex_max_active"])
-        with CodexScheduler(pool_size) as codex_scheduler:
-            with CodexAppServerPool(pool_size, app_server_factory) as transport:
-                capability_factory = lambda: CodexCapability(transport, semantic_contract)
+        with ExternalIntelligenceScheduler(pool_size) as external_intelligence_scheduler:
+            with open_external_intelligence_runtime(
+                driver=external_intelligence_driver,
+                binary=external_intelligence_binary,
+                credential_file=external_intelligence_credential_file,
+                max_active=pool_size,
+                worker_processes=int(protocol["execution"]["codex_server_processes"]),
+                runtime_parent=transport_parent,
+            ) as transport:
+                capability_factory = lambda: ExternalIntelligenceCapability(transport, semantic_contract)
                 with PersistentWallClock(output_dir / "wall-clock.json") as clock:
                     pool = ThreadPoolExecutor(max_workers=int(protocol["execution"]["max_workers"]), thread_name_prefix="longmemeval-question")
                     try:
                         futures = {
                             pool.submit(
                                 process_question, question, output_dir, run_identity, binary.resolve(), embedding.resolve(),
-                                protocol, environment["evaluator"], capability_factory, codex_scheduler, stage_dependencies,
+                                protocol, environment["evaluator"], capability_factory, external_intelligence_scheduler, stage_dependencies,
                             ): question
                             for question in questions
                         }
@@ -2706,9 +2588,9 @@ def execute(
                         pool.shutdown(wait=True, cancel_futures=False)
                     accumulated_wall_seconds = clock.elapsed()
                 transport_metrics = transport.diagnostics()
-            scheduler_metrics = codex_scheduler.snapshot()
+            scheduler_metrics = external_intelligence_scheduler.snapshot()
     finally:
-        clean_stale_codex_runtime_roots(output_dir)
+        clean_stale_external_intelligence_runtime_roots(output_dir)
     ordered = [results[item["question_id"]] for item in questions]
     hypotheses = output_dir / "hypotheses.jsonl"
     evaluation = output_dir / "official-evaluation.jsonl"
@@ -2737,7 +2619,7 @@ def execute(
         "judge_input_tokens": sum(item["usage"]["judge"]["input_tokens"] for item in ordered),
         "judge_output_tokens": sum(item["usage"]["judge"]["output_tokens"] for item in ordered),
     }
-    codex_metrics = {
+    external_intelligence_metrics = {
         name: sum(
             float(item["usage"][stage].get(name, 0)) if name == "wall_seconds" else int(item["usage"][stage].get(name, 0))
             for item in ordered
@@ -2764,7 +2646,9 @@ def execute(
             **usage, "wall_seconds": accumulated_wall_seconds, "sessions": sum(item["asset_count"] for item in ordered),
             "semantic_batches": sum(item["semantic_batches"] for item in ordered),
             "semantic_submitted_batches": sum(len(item["semantic_execution"]["submission_order"]) for item in ordered),
-            "codex": {**codex_metrics, "scheduler": scheduler_metrics, "transport": transport_metrics},
+            # `codex` is the stable v4 report field. Provider routing and identity
+            # live in external_intelligence_runtime and do not depend on this label.
+            "codex": {**external_intelligence_metrics, "scheduler": scheduler_metrics, "transport": transport_metrics},
             "ownward_data_bytes": sum(item["resources"]["ownward_data_bytes"] for item in ordered),
         },
         "comparison": {
@@ -2827,8 +2711,9 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--input-manifest-sha256")
     parser.add_argument("--tool-sha256")
     parser.add_argument("--semantic-representation-manifest", type=Path)
-    parser.add_argument("--codex-binary", type=Path)
-    parser.add_argument("--codex-auth-file", type=Path)
+    parser.add_argument("--external-intelligence-driver")
+    parser.add_argument("--external-intelligence-binary", type=Path)
+    parser.add_argument("--external-intelligence-credential-file", type=Path)
     parser.add_argument("--non-formal", action="store_true")
     parser.add_argument("--resume", action="store_true")
     return parser.parse_args()
@@ -2868,14 +2753,17 @@ def main() -> int:
         else:
             required = (
                 arguments.dataset, arguments.output_dir, arguments.ownward_binary, arguments.embedding_bundle_dir,
-                arguments.codex_binary, arguments.codex_auth_file, arguments.candidate, arguments.environment_sha256,
+                arguments.external_intelligence_driver, arguments.external_intelligence_binary,
+                arguments.external_intelligence_credential_file, arguments.candidate, arguments.environment_sha256,
                 arguments.input_manifest_sha256, arguments.tool_sha256,
             )
             require(all(value is not None for value in required), "run action is missing required arguments")
             result = execute(
                 environment_manifest=arguments.environment_manifest, protocol_path=arguments.protocol, dataset_path=arguments.dataset,
                 output_dir=arguments.output_dir, binary=arguments.ownward_binary, embedding=arguments.embedding_bundle_dir,
-                codex_binary=arguments.codex_binary, codex_auth_file=arguments.codex_auth_file,
+                external_intelligence_driver=arguments.external_intelligence_driver,
+                external_intelligence_binary=arguments.external_intelligence_binary,
+                external_intelligence_credential_file=arguments.external_intelligence_credential_file,
                 candidate=arguments.candidate,
                 environment_sha256=arguments.environment_sha256, input_manifest_sha256=arguments.input_manifest_sha256,
                 tool_sha256=arguments.tool_sha256,

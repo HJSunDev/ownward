@@ -1,0 +1,8 @@
+{
+  "schema": "ownward.external-intelligence-selection/v1",
+  "contract": "ownward.external-intelligence/v1",
+  "driver": "codex-app-server/v1",
+  "provider": "openai-codex",
+  "transport": "persistent-independent-worker-pool/v1",
+  "worker_isolation": "one-active-turn-per-worker"
+}

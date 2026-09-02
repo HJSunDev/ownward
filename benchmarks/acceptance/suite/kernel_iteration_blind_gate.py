@@ -1569,8 +1569,18 @@ def _validate_subjects(
 def _shared_conditions(candidate: dict[str, Any], baseline: dict[str, Any]) -> dict[str, str]:
     _require(evidence.file_sha256(candidate["environment_manifest"]) == evidence.file_sha256(baseline["environment_manifest"]), "候选与 V0 环境不同")
     _require(evidence.file_sha256(candidate["protocol"]) == evidence.file_sha256(baseline["protocol"]), "候选与 V0 协议不同")
-    _require(evidence.file_sha256(candidate["codex_binary"]) == evidence.file_sha256(baseline["codex_binary"]), "候选与 V0 Codex 执行器不同")
-    _require(candidate["codex_auth_file"].resolve() == baseline["codex_auth_file"].resolve(), "候选与 V0 Codex 身份来源不同")
+    candidate_external = _mapping(candidate, "external_intelligence")
+    baseline_external = _mapping(baseline, "external_intelligence")
+    shared_external = {
+        name: candidate_external.get(name)
+        for name in ("driver", "provider", "transport", "worker_isolation", "selection_sha256")
+    }
+    _require(shared_external == {
+        name: baseline_external.get(name)
+        for name in ("driver", "provider", "transport", "worker_isolation", "selection_sha256")
+    }, "候选与 V0 外部智能运行选择不同")
+    _require(evidence.file_sha256(candidate_external["binary"]) == evidence.file_sha256(baseline_external["binary"]), "候选与 V0 外部智能执行制品不同")
+    _require(candidate_external["credential_file"].resolve() == baseline_external["credential_file"].resolve(), "候选与 V0 外部智能身份来源不同")
     candidate_bundle = _load_json(candidate["embedding"] / "manifest.json")
     baseline_bundle = _load_json(baseline["embedding"] / "manifest.json")
     vector_projection = lambda value: {
@@ -1584,10 +1594,11 @@ def _shared_conditions(candidate: dict[str, Any], baseline: dict[str, Any]) -> d
     return dict(sorted({
         "environment": evidence.file_sha256(candidate["environment_manifest"]),
         "protocol": evidence.file_sha256(candidate["protocol"]),
-        "codex-executor": evidence.file_sha256(candidate["codex_binary"]),
+        "external-intelligence-selection": evidence.canonical_sha256(shared_external),
+        "external-intelligence-executor": evidence.file_sha256(candidate_external["binary"]),
         "model-profile": evidence.canonical_sha256({"memory": protocol["memory"], "reader": protocol["reader"], "judge": protocol["judge"]}),
         "vector-semantics": evidence.canonical_sha256(vector_projection(candidate_bundle)),
-        "question-concurrency": evidence.canonical_sha256({"question": 4, "codex": 8}),
+        "question-concurrency": evidence.canonical_sha256({"question": 4, "external_intelligence": 8}),
     }.items()))
 
 
@@ -1617,8 +1628,11 @@ def _direct_dependencies(
     mcp_transport = repository / "benchmarks" / "support" / "ownward_mcp.py"
     evaluator = Path(str(_mapping(candidate_runtime["environment"], "layout")["source"])) / "src" / "evaluation" / "evaluate_qa.py"
     executor_identity = evidence.canonical_sha256({
+        "external-intelligence-contract": evidence.file_sha256(repository / "benchmarks" / "support" / "external_intelligence.py"),
+        "external-intelligence-selection": evidence.file_sha256(repository / "benchmarks" / "support" / "external-intelligence-runtime.json"),
         "longmemeval": evidence.file_sha256(long_root / "run.py"),
-        "codex-transport": evidence.file_sha256(long_root / "codex_app_server.py"),
+        "runtime-adapter": evidence.file_sha256(long_root / "external_intelligence_runtime.py"),
+        "transport-adapter": evidence.file_sha256(long_root / "codex_app_server.py"),
         "nonformal-adapter": evidence.file_sha256(adapter),
         "ownward-mcp-transport": evidence.file_sha256(mcp_transport),
         "semantic-representation-runtime": evidence.file_sha256(long_root / "semantic_representation.py"),

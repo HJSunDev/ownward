@@ -549,19 +549,10 @@ def _diagnose_codex_boundaries_impl(
             "official-prompt-renderer", "renderer-construction",
             lambda: prompt_renderer_factory(python, evaluator),
         )
-    command_prefix = module.CodexAppServer.direct_command_prefix(
-        runtime["codex_binary"], module.codex_session.command_prefix(runtime["codex_binary"]),
-    )
-
     runtime_parent = (
         suite_root.parents[2] / ".tmp" / "kernel-v2-answer-runtime"
         / evidence.canonical_sha256({"stage": str(stage_root.resolve())})[:16]
     )
-
-    def factory(_index: int, _generation: int) -> Any:
-        runtime_root = module.isolated_runtime_root(runtime_parent)
-        environment = module.codex_session.isolated_environment(runtime["codex_auth_file"], runtime_root / "codex-home")
-        return module.CodexAppServer(runtime["codex_binary"], runtime["codex_auth_file"], runtime_root, command_prefix, environment)
 
     reader_jobs: list[dict[str, Any]] = []
     original_answers: dict[str, str] = {}
@@ -587,9 +578,14 @@ def _diagnose_codex_boundaries_impl(
             reader_jobs.append({"case": case, "context": "oracle", "repeat": repeat, "prompt": oracle_prompt})
 
     answers: list[dict[str, Any]] = []
+    external = _mapping(runtime, "external_intelligence")
+    transport_context = module.open_external_intelligence_runtime(
+        driver=external["driver"], binary=external["binary"], credential_file=external["credential_file"],
+        max_active=4, worker_processes=4, runtime_parent=runtime_parent,
+    )
     with _attribution_context(renderer_context, "official-prompt-renderer", "renderer-lifecycle") as evaluator_renderer, \
-            _attribution_context(module.CodexAppServerPool(4, factory), "transport", "transport-lifecycle") as transport:
-        capability = module.CodexCapability(transport)
+            _attribution_context(transport_context, "transport", "transport-lifecycle") as transport:
+        capability = module.ExternalIntelligenceCapability(transport)
 
         def run_reader(job: dict[str, Any]) -> dict[str, Any]:
             case = job["case"]

@@ -75,7 +75,7 @@ class AnswerSufficiencyTests(unittest.TestCase):
                     raise AssertionError("renderer used outside its context")
 
         class Pool:
-            def __init__(self, _size: int, _factory: object) -> None:
+            def __init__(self, *_args: object, **_kwargs: object) -> None:
                 pass
 
             def __enter__(self) -> "Pool":
@@ -109,11 +109,8 @@ class AnswerSufficiencyTests(unittest.TestCase):
             raise AssertionError("formal run.py prompt entry must not be used")
 
         module = SimpleNamespace(
-            CodexAppServer=SimpleNamespace(direct_command_prefix=lambda *_args: []),
-            codex_session=SimpleNamespace(command_prefix=lambda *_args: [], isolated_environment=lambda *_args: {}),
-            isolated_runtime_root=lambda path: path / "runtime",
-            CodexAppServerPool=Pool,
-            CodexCapability=Capability,
+            open_external_intelligence_runtime=lambda **_kwargs: Pool(),
+            ExternalIntelligenceCapability=Capability,
             session_content=lambda *_args: "session",
             _answer_prompt=lambda *_args: "oracle prompt",
             official_prompt=formal_prompt,
@@ -134,8 +131,10 @@ class AnswerSufficiencyTests(unittest.TestCase):
         runtime = {
             "protocol_value": {"reader": {"model": "reader"}, "judge": {"model": "judge"}},
             "environment": {"layout": {"source": ".", "python": "."}},
-            "codex_binary": Path("codex"),
-            "codex_auth_file": Path("auth"),
+            "external_intelligence": {
+                "driver": "fixture/v1", "provider": "fixture",
+                "binary": Path("runtime"), "credential_file": Path("credential"),
+            },
         }
         with tempfile.TemporaryDirectory() as directory:
             run_root = Path(directory) / "run"

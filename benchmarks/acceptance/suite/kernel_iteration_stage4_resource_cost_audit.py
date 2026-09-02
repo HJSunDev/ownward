@@ -17,7 +17,7 @@ CONTRACT_SCHEMA = "ownward.kernel-iteration-stage4-resource-cost-controllability
 CONTRACT_PATH = Path("iteration/v2/stage4-resource-cost-controllability-audit-contract.json")
 DEPENDENCY_MIGRATION_SCHEMA = "ownward.kernel-iteration-direct-dependency-migration/v1"
 DEPENDENCY_MIGRATION_PATH = Path("iteration/v2/stage4-resource-cost-raw-vector-lifecycle-dependency-migration.json")
-DEPENDENCY_MIGRATION_REASON = "version-suite-cli-dispatch-preserves-frozen-stage4-cost-and-representation"
+DEPENDENCY_MIGRATION_REASON = "external-intelligence-adapter-boundary-preserves-frozen-stage4-cost-and-representation"
 SEMANTIC_INSTRUCTION = (
     "Act only as Ownward's external semantic capability. Analyze every supplied semantic work item exactly once. "
     "The items came from Ownward's public semantic_work path; the host will validate and submit your result through "
@@ -126,8 +126,8 @@ def _verify_dependency_migration(
     _require(changes == drifted, "资源同尺审计依赖漂移不在精确迁移收据内")
     _require(classifications == {
         "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_audit.py": "dependency-receipt-validation-only",
-        "benchmarks/acceptance/suite/kernel_iteration_validation.py": "source-context-validation-only-frozen-stage4-cost-and-representation-unchanged",
-        "benchmarks/longmemeval_s/run.py": "source-context-consumer-and-reader-profile-only-semantic-request-and-frozen-cost-unchanged",
+        "benchmarks/acceptance/suite/kernel_iteration_validation.py": "external-intelligence-orchestration-boundary-only-frozen-stage4-cost-and-representation-unchanged",
+        "benchmarks/longmemeval_s/run.py": "external-intelligence-port-and-reader-profile-only-frozen-stage4-semantic-request-and-cost-unchanged",
     }, "资源同尺审计依赖迁移分类漂移")
     _require(related.get("preserved") == {
         "contract_identity": True,

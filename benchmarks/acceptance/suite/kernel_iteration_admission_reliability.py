@@ -370,7 +370,7 @@ def _native_generation_invokers(
     _require(1 <= max_active <= 8, "阶段 2 生成并发必须在 1..8 的冻结边界内")
     with ExitStack() as stack:
         invokers = [
-            stack.enter_context(validation._native_codex_batch_invoker(
+            stack.enter_context(validation._native_external_intelligence_batch_invoker(
                 suite_root, runtime, transport_parent / f"worker-{index + 1:02d}",
             ))
             for index in range(max_active)
@@ -591,8 +591,8 @@ def _direct_dependencies(suite_root: Path, contract: dict[str, Any], validation_
         "controller-entry": cli_entry_identity(),
         "generator": evidence.canonical_sha256({"settings": blind["generation"], "implementation": implementation["generator"]}),
         "quality-admission": evidence.canonical_sha256({"settings": blind["quality_admission"], "implementation": implementation["quality-admission"]}),
-        "codex-executor": evidence.file_sha256(runtime["codex_binary"]),
-        "codex-auth-location": evidence.canonical_sha256(str(runtime["codex_auth_file"].resolve())),
+        "external-intelligence-executor": evidence.file_sha256(runtime["external_intelligence"]["binary"]),
+        "external-intelligence-credential-location": evidence.canonical_sha256(str(runtime["external_intelligence"]["credential_file"].resolve())),
         "runs-root": evidence.canonical_sha256(str(runtime["runs"].resolve())),
     }
 
@@ -622,7 +622,7 @@ def _implementation_identity() -> dict[str, str]:
             _aggregate_diagnostics, _materials, _coverage_schedule, _case_tags,
             _dependencies_current_or_migrated, _initialize_recovery,
             _validate_plan, _validate_result, _validate_progress,
-            _destroy_batch, _destroy_scratch, validation._native_codex_batch_invoker,
+            _destroy_batch, _destroy_scratch, validation._native_external_intelligence_batch_invoker,
             material_scheduler.run_local_replacement,
             material_scheduler._merge_scheduler,
             material_scheduler._write_checkpoint,

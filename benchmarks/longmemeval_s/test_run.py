@@ -10,6 +10,7 @@ import time
 import unittest
 from unittest import mock
 
+import codex_app_server as concrete_transport
 import run as adapter
 
 
@@ -99,8 +100,8 @@ class FakeCodex:
         })
 
     def semantic_request(self, work: list[dict], settings: dict):
-        real = object.__new__(adapter.CodexCapability)
-        return adapter.CodexCapability.semantic_request(real, work, settings)
+        real = object.__new__(adapter.ExternalIntelligenceCapability)
+        return adapter.ExternalIntelligenceCapability.semantic_request(real, work, settings)
 
     def answer(self, prompt: str, _settings: dict, _stage: Path):
         if "Kyoto" in prompt:
@@ -152,13 +153,29 @@ class FakeTransport:
         self.error = error
         self.calls = 0
 
+    @property
+    def identity(self):
+        return {
+            "schema": "ownward.external-intelligence-runtime-identity/v1",
+            "contract": "ownward.external-intelligence/v1",
+            "driver": "fixture/v1",
+            "provider": "fixture",
+            "transport": "in-process/v1",
+            "selection_sha256": "c" * 64,
+            "artifact_sha256": "a" * 64,
+            "credential_locator_sha256": "b" * 64,
+            "credential_content_read": False,
+            "max_active": 1,
+            "worker_processes": 1,
+        }
+
     def invoke(self, **_kwargs):
         self.calls += 1
         if self.error is not None:
             raise self.error
         value = self.outputs.pop(0)
         return value, {"input_tokens": 1, "cached_input_tokens": 0, "output_tokens": 1, "reasoning_output_tokens": 0}, {
-            "transport": "codex-app-server-stdio", "server_instance": "fixture", "thread_id": f"thread-{self.calls}",
+            "transport": "in-process/v1", "server_instance": "fixture", "thread_id": f"thread-{self.calls}",
             "turn_id": f"turn-{self.calls}", "thread_ephemeral": True, "sandbox": "read-only", "status": "completed",
         }
 
@@ -185,8 +202,10 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
         self.assertEqual(23867, self.protocol["execution"]["total_sessions"])
         self.assertEqual(1498, self.protocol["execution"]["semantic_batches"])
         self.assertEqual(1498, self.protocol["execution"]["semantic_work_requests"])
+        selection = adapter.load_json(adapter.SUPPORT_ROOT / "external-intelligence-runtime.json")
+        self.assertEqual("ownward.external-intelligence/v1", selection["contract"])
+        self.assertEqual("codex-app-server/v1", selection["driver"])
         self.assertEqual(8, self.protocol["execution"]["codex_max_active"])
-        self.assertEqual("app-server-pool-stdio", self.protocol["execution"]["codex_transport"])
         self.assertEqual(20, self.protocol["memory"]["semantic_analysis_max_works"])
         self.assertEqual("ownward.semantic-deduplicated-body-table/v1", self.protocol["memory"]["semantic_input_representation"])
         self.assertEqual(1050000, self.protocol["memory"]["semantic_context_window_tokens"])
@@ -270,7 +289,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             client.contents["info-1"] = "The selected city is Kyoto."
             transport = ActiveTransport()
             transport.test_case = self
-            answer, _usage, report = adapter.CodexCapability(transport).active_answer(
+            answer, _usage, report = adapter.ExternalIntelligenceCapability(transport).active_answer(
                 {"question": "Which city?", "question_date": "today"},
                 client,
                 self.protocol["reader"],
@@ -283,7 +302,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             self.assertEqual("external-agent-progressive/v1", checkpoint["active_retrieval"]["mode"])
 
     def test_app_server_returns_dynamic_tool_results_on_the_protocol_channel(self) -> None:
-        server = adapter.CodexAppServer(Path("codex.exe"), Path("auth.json"), Path("runtime"), ["codex"], {})
+        server = concrete_transport.CodexAppServer(Path("codex.exe"), Path("auth.json"), Path("runtime"), ["codex"], {})
         server._active_tool_handler = lambda name, arguments: {"tool": name, "arguments": arguments}
         with mock.patch.object(server, "_write_message") as write:
             server._handle_tool_call(17, {"tool": "ownward_search", "arguments": {"query": "q"}})
@@ -333,7 +352,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
                 "haystack_sessions": [[{"role": "user", "content": "I chose Kyoto."}]],
             }
             FakeRuntime.starts = 0
-            with mock.patch.object(adapter, "OwnwardRuntime", FakeRuntime), adapter.CodexScheduler(8) as scheduler:
+            with mock.patch.object(adapter, "OwnwardRuntime", FakeRuntime), adapter.ExternalIntelligenceScheduler(8) as scheduler:
                 result = adapter.process_question(
                     question, root / "run", "identity", binary, embedding,
                     self.protocol, evaluator, lambda: FakeCodex(), scheduler,
@@ -793,8 +812,8 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             {"id": "work-1", "asset": {"id": "info-1", "revision": 1, "content": "asset one", "contexts": []}, "candidates": [shared]},
             {"id": "work-2", "asset": {"id": "info-shared", "revision": 2, "content": "shared body", "contexts": []}, "candidates": []},
         ]
-        encoded = adapter.CodexCapability.semantic_input(work)
-        proof = adapter.CodexCapability.validate_semantic_input(work, encoded)
+        encoded = adapter.ExternalIntelligenceCapability.semantic_input(work)
+        proof = adapter.ExternalIntelligenceCapability.validate_semantic_input(work, encoded)
         serialized = json.dumps(encoded, ensure_ascii=False)
         self.assertTrue(proof["equivalent"])
         self.assertEqual(2, proof["body_count"])
@@ -814,8 +833,8 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
 
         renamed = replace(renamed)
         self.assertEqual(
-            adapter.CodexCapability.semantic_fact_equivalence_sha256(work),
-            adapter.CodexCapability.semantic_fact_equivalence_sha256(renamed),
+            adapter.ExternalIntelligenceCapability.semantic_fact_equivalence_sha256(work),
+            adapter.ExternalIntelligenceCapability.semantic_fact_equivalence_sha256(renamed),
         )
 
     def test_global_codex_scheduler_never_exceeds_its_bound(self) -> None:
@@ -829,7 +848,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             time.sleep(0.02)
             active -= 1
 
-        with adapter.CodexScheduler(8) as scheduler:
+        with adapter.ExternalIntelligenceScheduler(8) as scheduler:
             futures = [scheduler.submit(work) for _ in range(24)]
             for future in futures:
                 future.result()
@@ -872,12 +891,12 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
     def test_interrupted_app_server_runtime_is_cleaned_without_reading_credentials(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            stale = root / ".codex-runtime" / "codex-app-server-stale"
+            stale = root / ".external-intelligence-runtime" / "codex-app-server-stale"
             stale.mkdir(parents=True)
             (stale / "auth.json").write_text("secret fixture", encoding="utf-8")
-            cleaned = adapter.clean_stale_codex_runtime_roots(root)
+            cleaned = adapter.clean_stale_external_intelligence_runtime_roots(root)
             self.assertEqual(["codex-app-server-stale"], cleaned)
-            self.assertFalse((root / ".codex-runtime").exists())
+            self.assertFalse((root / ".external-intelligence-runtime").exists())
             audit = (root / "_audit" / "transport-cleanup.jsonl").read_text(encoding="utf-8")
             self.assertNotIn("secret fixture", audit)
             self.assertIn('"credential_content_read":false', audit)
@@ -898,7 +917,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
                 "question_date": "today", "haystack_dates": ["yesterday"] * 45,
                 "haystack_session_ids": [f"session-{index}" for index in range(45)], "haystack_sessions": sessions,
             }
-            with mock.patch.object(adapter, "OwnwardRuntime", FakeRuntime), adapter.CodexScheduler(8) as scheduler:
+            with mock.patch.object(adapter, "OwnwardRuntime", FakeRuntime), adapter.ExternalIntelligenceScheduler(8) as scheduler:
                 result = adapter.process_question(
                     question, root / "run", "identity", binary, embedding, self.protocol, evaluator,
                     lambda: DelayedCodex(), scheduler,
@@ -939,11 +958,11 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
     def test_codex_failure_is_bounded_by_frozen_attempt_count(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            transport = FakeTransport(error=adapter.AppServerTimeout("timeout"))
-            capability = adapter.CodexCapability(transport)
+            transport = FakeTransport(error=adapter.ExternalIntelligenceError("timeout"))
+            capability = adapter.ExternalIntelligenceCapability(transport)
             with self.assertRaisesRegex(adapter.AdapterError, "after 3 bounded attempts"):
                 capability._invoke(
-                    prompt="prompt", schema={"type": "object"}, stage=root / "stage",
+                    role="test", prompt="prompt", schema={"type": "object"}, stage=root / "stage",
                     model="model", effort="low", timeout_seconds=1, attempts=3,
                 )
             self.assertEqual(3, transport.calls)
@@ -953,8 +972,8 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             transport = FakeTransport(outputs=[{"items": []}, {"items": ["ok"]}])
-            value, usage = adapter.CodexCapability(transport)._invoke(
-                prompt="prompt", schema={"type": "object"}, stage=root / "stage",
+            value, usage = adapter.ExternalIntelligenceCapability(transport)._invoke(
+                role="test", prompt="prompt", schema={"type": "object"}, stage=root / "stage",
                 model="model", effort="low", timeout_seconds=1, attempts=3,
                 validate=lambda result: adapter.require(result["items"] == ["ok"], "incomplete output"),
             )
@@ -967,15 +986,15 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             root = Path(directory)
             stage = root / "stage"
             first_transport = FakeTransport(outputs=[{"items": ["stale"]}])
-            first, _usage = adapter.CodexCapability(first_transport)._invoke(
-                prompt="prompt", schema={"type": "object"}, stage=stage,
+            first, _usage = adapter.ExternalIntelligenceCapability(first_transport)._invoke(
+                role="test", prompt="prompt", schema={"type": "object"}, stage=stage,
                 model="model", effort="low", timeout_seconds=1, attempts=3,
             )
             self.assertEqual({"items": ["stale"]}, first)
 
             transport = FakeTransport(outputs=[{"items": ["ok"]}])
-            value, usage = adapter.CodexCapability(transport)._invoke(
-                prompt="prompt", schema={"type": "object"}, stage=stage,
+            value, usage = adapter.ExternalIntelligenceCapability(transport)._invoke(
+                role="test", prompt="prompt", schema={"type": "object"}, stage=stage,
                 model="model", effort="low", timeout_seconds=1, attempts=3,
                 validate=lambda result: adapter.require(result["items"] == ["ok"], "cached output is invalid"),
             )
@@ -987,14 +1006,14 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
     def test_invalid_cached_codex_output_cannot_reset_the_frozen_attempt_bound(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             stage = Path(directory) / "stage"
-            adapter.CodexCapability(FakeTransport(outputs=[{"items": ["stale"]}]))._invoke(
-                prompt="prompt", schema={"type": "object"}, stage=stage,
+            adapter.ExternalIntelligenceCapability(FakeTransport(outputs=[{"items": ["stale"]}]))._invoke(
+                role="test", prompt="prompt", schema={"type": "object"}, stage=stage,
                 model="model", effort="low", timeout_seconds=1, attempts=1,
             )
             transport = FakeTransport(outputs=[{"items": ["must-not-run"]}])
             with self.assertRaisesRegex(adapter.AdapterError, "after 1 bounded attempts"):
-                adapter.CodexCapability(transport)._invoke(
-                    prompt="prompt", schema={"type": "object"}, stage=stage,
+                adapter.ExternalIntelligenceCapability(transport)._invoke(
+                    role="test", prompt="prompt", schema={"type": "object"}, stage=stage,
                     model="model", effort="low", timeout_seconds=1, attempts=1,
                     validate=lambda result: adapter.require(result["items"] == ["ok"], "cached output is invalid"),
                 )
@@ -1004,14 +1023,14 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
     def test_cached_codex_revalidation_never_masks_request_identity_drift(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             stage = Path(directory) / "stage"
-            adapter.CodexCapability(FakeTransport(outputs=[{"items": ["stale"]}]))._invoke(
-                prompt="prompt", schema={"type": "object"}, stage=stage,
+            adapter.ExternalIntelligenceCapability(FakeTransport(outputs=[{"items": ["stale"]}]))._invoke(
+                role="test", prompt="prompt", schema={"type": "object"}, stage=stage,
                 model="model", effort="low", timeout_seconds=1, attempts=3,
             )
             transport = FakeTransport(outputs=[{"items": ["ok"]}])
             with self.assertRaisesRegex(adapter.AdapterError, "request identity changed"):
-                adapter.CodexCapability(transport)._invoke(
-                    prompt="different-prompt", schema={"type": "object"}, stage=stage,
+                adapter.ExternalIntelligenceCapability(transport)._invoke(
+                    role="test", prompt="different-prompt", schema={"type": "object"}, stage=stage,
                     model="model", effort="low", timeout_seconds=1, attempts=3,
                     validate=lambda _result: None,
                 )
@@ -1035,7 +1054,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
                 real_rmtree(path)
 
             with mock.patch("codex_app_server.shutil.rmtree", side_effect=transient), mock.patch("codex_app_server.time.sleep"):
-                adapter.remove_runtime_root(root, timeout_seconds=1)
+                concrete_transport.remove_runtime_root(root, timeout_seconds=1)
             self.assertEqual(2, calls)
             self.assertFalse(root.exists())
 
@@ -1044,15 +1063,15 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             root = Path(directory) / "codex-app-server-fixture"
             root.mkdir()
             with mock.patch("codex_app_server.shutil.rmtree", side_effect=PermissionError(32, "fixture lock")):
-                with self.assertRaisesRegex(adapter.AppServerError, "cleanup did not quiesce"):
-                    adapter.remove_runtime_root(root, timeout_seconds=0)
+                with self.assertRaisesRegex(concrete_transport.AppServerError, "cleanup did not quiesce"):
+                    concrete_transport.remove_runtime_root(root, timeout_seconds=0)
             self.assertTrue(root.exists())
 
     def test_codex_worker_shutdown_targets_its_exact_windows_process_tree(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "codex-app-server-fixture"
             root.mkdir()
-            server = adapter.CodexAppServer(Path(directory) / "codex.exe", Path(directory) / "auth.json", root, ["codex"], {})
+            server = concrete_transport.CodexAppServer(Path(directory) / "codex.exe", Path(directory) / "auth.json", root, ["codex"], {})
             process = mock.Mock(pid=43210, stdin=None, stdout=None, stderr=None)
             process.poll.side_effect = [None, 0]
             server.process = process
@@ -1088,7 +1107,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             root = Path(directory)
             work = root / "work"
             work.mkdir()
-            server = adapter.CodexAppServer(root / "codex.exe", root / "auth.json", root / "runtime", ["codex"], {})
+            server = concrete_transport.CodexAppServer(root / "codex.exe", root / "auth.json", root / "runtime", ["codex"], {})
             responses = [
                 {"thread": {"id": "thread-1"}},
                 {"turn": {"id": "turn-1"}},
@@ -1097,7 +1116,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             target = mock.Mock()
             target.get.side_effect = [queue.Empty(), queue.Empty()]
             with mock.patch.object(server, "request", side_effect=responses) as request, mock.patch("codex_app_server.queue.Queue", return_value=target):
-                with self.assertRaisesRegex(adapter.AppServerTimeout, "timed out"):
+                with self.assertRaisesRegex(concrete_transport.AppServerTimeout, "timed out"):
                     server.invoke(
                         prompt="prompt", schema={"type": "object"}, model="model", effort="low",
                         work_dir=work, timeout_seconds=1,
@@ -1112,15 +1131,15 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             root = Path(directory)
             work = root / "work"
             work.mkdir()
-            server = adapter.CodexAppServer(root / "codex.exe", root / "auth.json", root / "runtime", ["codex"], {})
+            server = concrete_transport.CodexAppServer(root / "codex.exe", root / "auth.json", root / "runtime", ["codex"], {})
             responses = [
                 {"thread": {"id": "thread-1"}},
-                adapter.AppServerTimeout("turn/start timeout"),
+                concrete_transport.AppServerTimeout("turn/start timeout"),
                 {"thread": {"turns": [{"id": "turn-1", "status": "inProgress"}]}},
                 {},
             ]
             with mock.patch.object(server, "request", side_effect=responses) as request:
-                with self.assertRaisesRegex(adapter.AppServerTimeout, "orphan_turn_interrupted=true"):
+                with self.assertRaisesRegex(concrete_transport.AppServerTimeout, "orphan_turn_interrupted=true"):
                     server.invoke(
                         prompt="prompt", schema={"type": "object"}, model="model", effort="low",
                         work_dir=work, timeout_seconds=1,
@@ -1163,7 +1182,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             workers.append(worker)
             return worker
 
-        with adapter.CodexAppServerPool(2, factory) as pool:
+        with concrete_transport.CodexAppServerPool(2, factory) as pool:
             with ThreadPoolExecutor(max_workers=4) as executor:
                 values = list(executor.map(lambda _: pool.invoke(), range(4)))
             diagnostics = pool.diagnostics()
@@ -1188,7 +1207,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
 
             def invoke(self, **_request):
                 if self.generation == 0:
-                    raise adapter.AppServerError("worker failed")
+                    raise concrete_transport.AppServerError("worker failed")
                 return {"ok": True}, {}, {"transport": "codex-app-server-stdio"}
 
             def diagnostics(self):
@@ -1198,8 +1217,8 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             created.append((index, generation))
             return Worker(index, generation)
 
-        with adapter.CodexAppServerPool(1, factory) as pool:
-            with self.assertRaises(adapter.AppServerError):
+        with concrete_transport.CodexAppServerPool(1, factory) as pool:
+            with self.assertRaises(concrete_transport.AppServerError):
                 pool.invoke()
             value, _, metadata = pool.invoke()
             diagnostics = pool.diagnostics()
@@ -1221,11 +1240,11 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             def __exit__(self, *_args):
                 closed.append(self.index)
                 if self.index == 0:
-                    raise adapter.AppServerError("cleanup failed")
+                    raise concrete_transport.AppServerError("cleanup failed")
 
-        pool = adapter.CodexAppServerPool(2, lambda index, _generation: Worker(index))
+        pool = concrete_transport.CodexAppServerPool(2, lambda index, _generation: Worker(index))
         pool._workers = {0: Worker(0), 1: Worker(1)}
-        with self.assertRaisesRegex(adapter.AppServerError, "cleanup failed"):
+        with self.assertRaisesRegex(concrete_transport.AppServerError, "cleanup failed"):
             pool.__exit__()
         self.assertEqual([0, 1], closed)
         self.assertEqual({}, pool._workers)
@@ -1264,14 +1283,14 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
         self.assertIn('capability.active_answer,', source)
         self.assertNotIn('evidence, retrieval = retrieve(', source)
         self.assertIn('capability.judge,', source)
-        self.assertIn('codex_scheduler.submit(', source)
-        self.assertIn('"capability": {"id": "codex"', source)
+        self.assertIn('external_intelligence_scheduler.submit(', source)
+        self.assertIn('"capability": {"id": settings.get("capability_id", "codex")', source)
         self.assertNotIn('"/responses"', source)
         self.assertNotIn("OfficialJudgeClient", source)
         self.assertNotIn("OPENAI_API_KEY", source)
 
     def test_codex_capability_uses_one_app_server_without_ephemeral_cli_processes(self) -> None:
-        command = adapter.CodexAppServer.command(["codex"])
+        command = concrete_transport.CodexAppServer.command(["codex"])
         serialized = " ".join(command)
         self.assertIn("app-server", command)
         self.assertNotIn("exec", command)
@@ -1287,7 +1306,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             entry.write_text("wrapper", encoding="utf-8")
             native.parent.mkdir(parents=True)
             native.write_bytes(b"native")
-            self.assertEqual([str(native.resolve())], adapter.CodexAppServer.direct_command_prefix(entry, ["pwsh", str(entry)]))
+            self.assertEqual([str(native.resolve())], concrete_transport.CodexAppServer.direct_command_prefix(entry, ["pwsh", str(entry)]))
 
 
 if __name__ == "__main__":

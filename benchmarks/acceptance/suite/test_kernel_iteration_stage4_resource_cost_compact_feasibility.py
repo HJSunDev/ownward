@@ -97,7 +97,7 @@ class CompactFeasibilityTests(unittest.TestCase):
             "asset": {"id": "a", "revision": 2, "content": "alpha", "contexts": [{"key": "source", "value": "test"}]},
             "candidates": [{"id": "b", "revision": 3, "content": "beta", "explicit_contexts": [], "semantic_similarity": 0.75, "relation": {"kind": "related"}}],
         }]
-        capability = module.CodexCapability(object(), contract)
+        capability = module.ExternalIntelligenceCapability(object(), contract)
         compact = capability.encoded_semantic_input(work)
         result = capability.validate_encoded_semantic_input(work, compact)
         self.assertEqual(compact["representation"], module.semantic_representation.COMPACT_REPRESENTATION)

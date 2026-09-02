@@ -114,7 +114,7 @@ def qualify_admission(
         "settings": _mapping(contract, "quality_admission"),
         "quality_admission_implementation": implementation,
         "control_set_identity": evidence.canonical_sha256({"controls": controls, "expected": expected}),
-        "codex_executor": evidence.file_sha256(runtime["codex_binary"]),
+        "external_intelligence_executor": evidence.file_sha256(runtime["external_intelligence"]["binary"]),
         "formal": False,
     }
     plan_identity = evidence.canonical_sha256(plan_content)
@@ -135,7 +135,7 @@ def qualify_admission(
     schema = validation._admission_schema([case["case_id"] for case in controls])
     started = time.perf_counter()
     if invoker is None:
-        with validation._native_codex_batch_invoker(suite_root, runtime, root / ".transport") as native:
+        with validation._native_external_intelligence_batch_invoker(suite_root, runtime, root / ".transport") as native:
             output, usage = native(
                 suite_root=suite_root, runtime=runtime, stage=root / "assessment", role="quality-admission-qualification",
                 prompt=_admission_prompt(validation_contract, materials), schema=schema, settings=settings,
@@ -304,7 +304,7 @@ def prepare(
     try:
         with ExitStack() as stack:
             lanes = invokers or [
-                stack.enter_context(validation._native_codex_batch_invoker(
+                stack.enter_context(validation._native_external_intelligence_batch_invoker(
                     suite_root, runtime, scratch / "generation-transport" / f"worker-{index + 1:02d}",
                 ))
                 for index in range(int(_mapping(contract, "generation")["max_active"]))
@@ -910,8 +910,11 @@ def _partition_execution_dependencies(
     long_root = repository / "benchmarks" / "longmemeval_s"
     adapter = suite_root / "kernel_iteration_longmemeval.py"
     executor = evidence.canonical_sha256({
+        "external-intelligence-contract": evidence.file_sha256(repository / "benchmarks" / "support" / "external_intelligence.py"),
+        "external-intelligence-selection": evidence.file_sha256(repository / "benchmarks" / "support" / "external-intelligence-runtime.json"),
         "longmemeval": evidence.file_sha256(long_root / "run.py"),
-        "codex-transport": evidence.file_sha256(long_root / "codex_app_server.py"),
+        "runtime-adapter": evidence.file_sha256(long_root / "external_intelligence_runtime.py"),
+        "transport-adapter": evidence.file_sha256(long_root / "codex_app_server.py"),
         "adapter": evidence.file_sha256(adapter),
         "protocol": evidence.file_sha256(candidate_runtime["protocol"]),
     })
@@ -1903,8 +1906,8 @@ def _preparation_dependencies(
         "generator": evidence.canonical_sha256({"settings": contract["generation"], "implementation": implementation["generator"]}),
         "quality-admission": evidence.canonical_sha256({"settings": contract["quality_admission"], "implementation": implementation["quality-admission"]}),
         "quality-admission-qualification": qualification["identity"],
-        "codex-executor": evidence.file_sha256(runtime["codex_binary"]),
-        "codex-auth-location": evidence.canonical_sha256(str(runtime["codex_auth_file"])),
+        "external-intelligence-executor": evidence.file_sha256(runtime["external_intelligence"]["binary"]),
+        "external-intelligence-credential-location": evidence.canonical_sha256(str(runtime["external_intelligence"]["credential_file"])),
     }
 
 
@@ -1947,7 +1950,7 @@ def _load_current_admission_qualification(
         "settings": _mapping(contract, "quality_admission"),
         "quality_admission_implementation": _implementation_identity()["quality-admission"],
         "control_set_identity": evidence.canonical_sha256({"controls": controls, "expected": expected}),
-        "codex_executor": evidence.file_sha256(runtime["codex_binary"]),
+        "external_intelligence_executor": evidence.file_sha256(runtime["external_intelligence"]["binary"]),
         "formal": False,
     }
     identity = evidence.canonical_sha256(content)
@@ -2124,10 +2127,23 @@ def _load_generation_runtime(path: Path) -> dict[str, Any]:
     value = _load_json(path)
     _require(value.get("schema") == "ownward.acceptance-execution/v3", "版本级套题生成配置 schema 无效")
     community = _mapping(value, "community")
-    codex_binary = Path(str(community.get("codex_binary", ""))).resolve()
-    codex_auth_file = Path(str(community.get("codex_auth_file", ""))).resolve()
-    _require(codex_binary.is_file() and codex_auth_file.is_file(), "版本级套题 Codex 原生生成能力不可用")
-    return {"codex_binary": codex_binary, "codex_auth_file": codex_auth_file}
+    try:
+        configuration = validation.external_intelligence_runtime.configuration_from_execution(community)
+        validation.external_intelligence_runtime.validate_configuration(configuration)
+    except validation.external_intelligence.ExternalIntelligenceError as error:
+        raise BlindSuiteError(str(error)) from error
+    external = validation.external_intelligence.load_runtime_selection(
+        Path(__file__).resolve().parents[2] / "support" / "external-intelligence-runtime.json"
+    )
+    return {"external_intelligence": {
+        "driver": external["driver"],
+        "provider": external["provider"],
+        "transport": external["transport"],
+        "worker_isolation": external["worker_isolation"],
+        "selection_sha256": external["selection_sha256"],
+        "binary": configuration.binary,
+        "credential_file": configuration.credential_file,
+    }}
 
 
 def _initialize_recovery(public_root: Path, scratch: Path, output_root: Path, vault_root: Path, plan: dict[str, Any], suite_seed: str, generation_config: Path, state_path: Path) -> None:

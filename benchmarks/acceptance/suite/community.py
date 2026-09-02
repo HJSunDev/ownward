@@ -7,10 +7,19 @@ import math
 import os
 from pathlib import Path
 import shutil
+import sys
 import time
 from typing import Any
 
 import process_control
+
+SUPPORT_ROOT = Path(__file__).resolve().parents[2] / "support"
+LONGMEM_ROOT = Path(__file__).resolve().parents[2] / "longmemeval_s"
+for dependency_root in (SUPPORT_ROOT, LONGMEM_ROOT):
+    if str(dependency_root) not in sys.path:
+        sys.path.insert(0, str(dependency_root))
+import external_intelligence  # noqa: E402
+import external_intelligence_runtime  # noqa: E402
 
 
 OFFICIAL_REVISION = "9e0b455f4ef0e2ab8f2e582289761153549043fc"
@@ -159,6 +168,10 @@ def execute(
     manifest_path = Path(config["environment_manifest"]).resolve()
     _, python, dataset, runs = _persistent_layout(manifest_path)
     protocol = Path(config["protocol"]).resolve()
+    protocol_value = _load(protocol)
+    external_selection = external_intelligence.load_runtime_selection(SUPPORT_ROOT / "external-intelligence-runtime.json")
+    external_configuration = external_intelligence_runtime.configuration_from_execution(config)
+    external_intelligence_runtime.validate_configuration(external_configuration)
     adapter = (suite_root.parents[1] / "longmemeval_s" / "run.py").resolve()
     binary = Path(config["binary"]).resolve()
     embedding = Path(config["embedding_bundle_dir"]).resolve()
@@ -176,7 +189,9 @@ def execute(
             str(python), str(adapter), "run", "--environment-manifest", str(manifest_path), "--protocol", str(protocol),
             "--dataset", str(dataset), "--output-dir", str(run_dir), "--ownward-binary", str(binary),
             "--embedding-bundle-dir", str(embedding),
-            "--codex-binary", str(config["codex_binary"]), "--codex-auth-file", str(config["codex_auth_file"]),
+            "--external-intelligence-driver", str(external_selection["driver"]),
+            "--external-intelligence-binary", str(external_configuration.binary),
+            "--external-intelligence-credential-file", str(external_configuration.credential_file),
             "--candidate", binding["candidate"], "--environment-sha256", binding["environment_sha256"],
             "--input-manifest-sha256", binding["input_manifest_sha256"], "--tool-sha256", binding["tool_sha256"],
         ]

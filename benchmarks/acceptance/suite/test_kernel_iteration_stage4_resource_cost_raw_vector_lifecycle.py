@@ -116,7 +116,7 @@ class RawVectorLifecycleTests(unittest.TestCase):
         run_path = "benchmarks/acceptance/suite/kernel_iteration_run.py"
         validator_path = "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_raw_vector_lifecycle.py"
         self.assertEqual(
-            "version-suite-cli-dispatch-preserves-frozen-stage4-cost-and-representation",
+            "external-intelligence-adapter-boundary-preserves-frozen-stage4-cost-and-representation",
             receipt["reason"],
         )
         self.assertEqual(
@@ -142,7 +142,7 @@ class RawVectorLifecycleTests(unittest.TestCase):
                 if item["path"] == "benchmarks/longmemeval_s/run.py"
             )
             self.assertEqual(
-                "source-context-consumer-and-reader-profile-only-semantic-request-and-frozen-cost-unchanged",
+                "external-intelligence-port-and-reader-profile-only-frozen-stage4-semantic-request-and-cost-unchanged",
                 runner["classification"],
             )
             self.assertEqual(

@@ -184,7 +184,7 @@ def current_dependencies(suite_root: Path, execution_config: Path) -> tuple[dict
         "python-runtime": evidence.file_sha256(python),
         "environment-manifest": evidence.file_sha256(runtime["environment_manifest"]),
         "protocol": evidence.file_sha256(runtime["protocol"]),
-        "codex-executor": evidence.file_sha256(runtime["codex_binary"]),
+        "external-intelligence-executor": evidence.file_sha256(runtime["external_intelligence"]["binary"]),
     }.items()))
     return dependencies, runtime, contract
 

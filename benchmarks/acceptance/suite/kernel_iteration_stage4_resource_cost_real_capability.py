@@ -89,7 +89,7 @@ def audit_real_semantic_capability(suite_root: Path, contract: dict[str, Any]) -
     module = validation._load_longmemeval_module(suite_root)
     semantic_contract = module.semantic_representation.load_contract(repository / sources["representation_manifest"]["path"])
     protocol = _load_json(repository / contract["semantic_capability"]["protocol_path"])
-    capability = module.CodexCapability(None, semantic_contract)
+    capability = module.ExternalIntelligenceCapability(None, semantic_contract)
     prompt_matches = 0
     source_plans = contract["semantic_capability"]["balanced_source_plans"]
     runs = Path(contract["runtime"]["runs_root"])

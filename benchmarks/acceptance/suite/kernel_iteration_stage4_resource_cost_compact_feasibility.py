@@ -100,7 +100,7 @@ def validate_for_semantic_submission(
             and item.get("asset_revision") == source["asset"]["revision"]
             and item.get("status") == "complete"
             and item.get("capability") == {
-                "id": "codex",
+                "id": settings.get("capability_id", "codex"),
                 "version": settings["semantic_model"],
                 "execution": "longmemeval-s",
             }
@@ -269,13 +269,8 @@ def execute_requests(
     module = validation._load_longmemeval_module(suite_root)
     instruction = compact_instruction()
     _require(evidence.canonical_sha256(instruction) == contract["protocol"]["instruction_identity"], "紧凑协议指令漂移")
-    command_prefix = module.CodexAppServer.direct_command_prefix(runtime["codex_binary"], module.codex_session.command_prefix(runtime["codex_binary"]))
-    transport_parent = output_root / ".codex-runtime"
-
-    def factory(_index: int, _generation: int) -> Any:
-        runtime_root = module.isolated_runtime_root(transport_parent)
-        environment = module.codex_session.isolated_environment(runtime["codex_auth_file"], runtime_root / "codex-home")
-        return module.CodexAppServer(runtime["codex_binary"], runtime["codex_auth_file"], runtime_root, command_prefix, environment)
+    transport_parent = output_root / ".external-intelligence-runtime"
+    external = runtime["external_intelligence"]
 
     def invoke(call: dict[str, Any], transport: Any) -> dict[str, Any]:
         input_path = runtime["runs"] / "kernel-iteration" / contract["source_plans"][call["material"]]["plan_identity"] / "run" / call["source_input"]
@@ -288,8 +283,9 @@ def execute_requests(
             analyses = value.get("analyses")
             _require(isinstance(analyses, list) and [item.get("work_id") for item in analyses if isinstance(item, dict)] == call["work_ids"], "紧凑协议输出遗漏或重排 work_id")
 
-        capability = module.CodexCapability(transport)
+        capability = module.ExternalIntelligenceCapability(transport)
         _value, usage = capability._invoke(
+            role="semantic-organization",
             prompt=prompt,
             schema=call["schema"],
             stage=stage,
@@ -314,7 +310,11 @@ def execute_requests(
         }
 
     requests = []
-    with module.CodexAppServerPool(int(contract["execution"]["app_server_pool_size"]), factory) as transport:
+    with module.open_external_intelligence_runtime(
+        driver=external["driver"], binary=external["binary"], credential_file=external["credential_file"],
+        max_active=int(contract["execution"]["app_server_pool_size"]),
+        worker_processes=int(contract["execution"]["app_server_pool_size"]), runtime_parent=transport_parent,
+    ) as transport:
         with ThreadPoolExecutor(max_workers=int(contract["execution"]["max_concurrent_turns"])) as pool:
             futures = [pool.submit(invoke, call, transport) for call in calls]
             for future in as_completed(futures):
@@ -337,18 +337,13 @@ def execute_balanced_requests(
     contract: dict[str, Any],
 ) -> dict[str, Any]:
     module = validation._load_longmemeval_module(suite_root)
-    current_instruction = module.CodexCapability.semantic_instruction()
+    current_instruction = module.ExternalIntelligenceCapability.semantic_instruction()
     compact = compact_instruction()
     _require(evidence.canonical_sha256(current_instruction) == contract["protocol"]["current_instruction_identity"], "平衡复核 current 指令漂移")
     _require(evidence.canonical_sha256(compact) == contract["protocol"]["compact_instruction_identity"], "平衡复核 compact 指令漂移")
     settings = protocol["memory"]
-    command_prefix = module.CodexAppServer.direct_command_prefix(runtime["codex_binary"], module.codex_session.command_prefix(runtime["codex_binary"]))
-    transport_parent = output_root / ".codex-runtime"
-
-    def factory(_index: int, _generation: int) -> Any:
-        runtime_root = module.isolated_runtime_root(transport_parent)
-        environment = module.codex_session.isolated_environment(runtime["codex_auth_file"], runtime_root / "codex-home")
-        return module.CodexAppServer(runtime["codex_binary"], runtime["codex_auth_file"], runtime_root, command_prefix, environment)
+    transport_parent = output_root / ".external-intelligence-runtime"
+    external = runtime["external_intelligence"]
 
     def invoke(call: dict[str, Any], variant: str, repeat: int, transport: Any) -> dict[str, Any]:
         input_path = runtime["runs"] / "kernel-iteration" / contract["source_plans"][call["material"]]["plan_identity"] / "run" / call["source_input"]
@@ -374,7 +369,7 @@ def execute_balanced_requests(
                 stage / "_submission-validation",
             )
 
-        capability = module.CodexCapability(transport)
+        capability = module.ExternalIntelligenceCapability(transport)
         value, usage, measurement_wall, cached_attempts = _invoke_uncached(
             capability=capability,
             prompt=prompt,
@@ -419,7 +414,11 @@ def execute_balanced_requests(
     requests: list[dict[str, Any]] = []
     batches: list[dict[str, Any]] = []
     order = contract["execution"]["balanced_order"]
-    with module.CodexAppServerPool(int(contract["execution"]["app_server_pool_size"]), factory) as transport:
+    with module.open_external_intelligence_runtime(
+        driver=external["driver"], binary=external["binary"], credential_file=external["credential_file"],
+        max_active=int(contract["execution"]["app_server_pool_size"]),
+        worker_processes=int(contract["execution"]["app_server_pool_size"]), runtime_parent=transport_parent,
+    ) as transport:
         for repeat, variants in enumerate(order, 1):
             for position, variant in enumerate(variants, 1):
                 batch_started = time.perf_counter()
@@ -470,6 +469,7 @@ def _invoke_uncached(
     discarded = len(list(audit.glob("cached-complete-*.json"))) if audit.is_dir() else 0
     while True:
         value, usage = capability._invoke(
+            role="semantic-organization",
             prompt=prompt,
             schema=schema,
             stage=stage,

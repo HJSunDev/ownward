@@ -6,11 +6,20 @@ import math
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
 import binding
 import report_relationships as relationships
+
+SUPPORT_ROOT = Path(__file__).resolve().parents[2] / "support"
+LONGMEM_ROOT = Path(__file__).resolve().parents[2] / "longmemeval_s"
+for dependency_root in (SUPPORT_ROOT, LONGMEM_ROOT):
+    if str(dependency_root) not in sys.path:
+        sys.path.insert(0, str(dependency_root))
+import external_intelligence  # noqa: E402
+import external_intelligence_runtime  # noqa: E402
 
 
 class PreflightError(ValueError):
@@ -21,11 +30,11 @@ def _community_cost_projection(
     *, semantic_model_seconds: float, semantic_calls: int, reader_model_seconds: float,
     judge_model_seconds: float, calibration_questions: int, per_question_host_seconds: float,
     projected_semantic_requests: int, question_count: int, question_workers: int,
-    codex_max_active: int, normal_variation_reserve_ratio: float,
+    external_intelligence_max_active: int, normal_variation_reserve_ratio: float,
     bounded_retry_reserve_ratio: float, checkpoint_recovery_reserve_seconds: float,
 ) -> dict[str, float]:
-    """Project independent semantic work at Codex capacity; question stages stay question-bound."""
-    semantic = semantic_model_seconds / semantic_calls * projected_semantic_requests / codex_max_active
+    """Project independent semantic work at external-intelligence capacity; question stages stay question-bound."""
+    semantic = semantic_model_seconds / semantic_calls * projected_semantic_requests / external_intelligence_max_active
     reader = reader_model_seconds / calibration_questions * question_count / question_workers
     judge = judge_model_seconds / calibration_questions * question_count / question_workers
     host = per_question_host_seconds * question_count / question_workers
@@ -150,14 +159,11 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
     source = adapter.read_text(encoding="utf-8")
     _require(f'OFFICIAL_CODE_REVISION = "{revision}"' in source, "LongMemEval-S 校验路径未绑定固定版本")
     section = config["community"]
-    codex = Path(section["codex_binary"]).resolve()
-    auth = Path(section["codex_auth_file"]).resolve()
-    _require(codex.is_file() and auth.is_file(), "LongMemEval-S Codex capability is unavailable")
-    codex_version = subprocess.run(
-        [*binding._executable_command(codex), "--version"], capture_output=True, text=True,
-        encoding="utf-8", errors="replace", timeout=30, check=False,
-    )
-    _require(codex_version.returncode == 0 and codex_version.stdout.strip(), "LongMemEval-S Codex capability cannot start")
+    try:
+        external_configuration = external_intelligence_runtime.configuration_from_execution(section)
+        external_intelligence_runtime.probe(external_configuration)
+    except external_intelligence.ExternalIntelligenceError as error:
+        raise PreflightError(str(error)) from error
     manifest_path = Path(section["environment_manifest"]).resolve()
     manifest = binding.load_json(manifest_path)
     layout = manifest.get("layout")
@@ -179,6 +185,7 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
     )
     _require(check.returncode == 0, f"LongMemEval-S 离线环境检查失败: {check.stderr[-2000:]}")
     protocol = binding.load_json(protocol_path)
+    external_selection = external_intelligence.load_runtime_selection(SUPPORT_ROOT / "external-intelligence-runtime.json")
     official_questions = json.loads(data.read_text(encoding="utf-8"))
     _require(isinstance(official_questions, list), "LongMemEval-S 固定数据不是问题数组")
     expected_batches = int(protocol["execution"]["calibration_semantic_batches_per_question"])
@@ -187,9 +194,14 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
     fixture_path.write_text(json.dumps(fixture, ensure_ascii=False, indent=2), encoding="utf-8")
     product_binary_sha256 = binding.sha256(Path(config["candidate"]["binary"]).resolve())
     calibration_candidate = f"preflight-{product_binary_sha256}"
+    runtime_path = adapter.with_name("external_intelligence_runtime.py")
     transport_path = adapter.with_name("codex_app_server.py")
-    _require(transport_path.is_file(), "LongMemEval-S Codex App Server transport is missing")
-    community_tool_sha256 = hashlib.sha256(adapter.read_bytes() + transport_path.read_bytes() + protocol_path.read_bytes()).hexdigest()
+    contract_path = adapter.parents[1] / "support" / "external_intelligence.py"
+    selection_path = SUPPORT_ROOT / "external-intelligence-runtime.json"
+    _require(runtime_path.is_file() and transport_path.is_file() and contract_path.is_file() and selection_path.is_file(), "LongMemEval-S external-intelligence adapter is missing")
+    community_tool_sha256 = hashlib.sha256(
+        adapter.read_bytes() + runtime_path.read_bytes() + transport_path.read_bytes() + contract_path.read_bytes() + selection_path.read_bytes() + protocol_path.read_bytes()
+    ).hexdigest()
     if representation_arguments:
         representation_runtime = adapter.with_name("semantic_representation.py")
         community_tool_sha256 = hashlib.sha256(bytes.fromhex(community_tool_sha256) + representation_runtime.read_bytes() + Path(representation_arguments[1]).read_bytes()).hexdigest()
@@ -202,7 +214,7 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
     semantic_token = hashlib.sha256(json.dumps({
         "dry_plan_token": dry_plan_token,
         "app_server_sha256": binding.sha256(transport_path),
-        "calibration_codex_max_active": protocol["execution"]["codex_max_active"],
+        "calibration_external_intelligence_max_active": protocol["execution"]["codex_max_active"],
     }, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()[:16]
     dry_plan_output = runs / "dry-plan" / f"{product_binary_sha256[:8]}-{dry_plan_token}"
     expected_dry_plan_sources = {
@@ -262,7 +274,9 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
         str(python), str(adapter), "run", "--non-formal", "--environment-manifest", str(manifest_path), "--protocol", str(protocol_path),
         "--dataset", str(fixture_path), "--output-dir", str(output), "--ownward-binary", str(config["candidate"]["binary"]),
         "--embedding-bundle-dir", str(config["candidate"]["embedding_bundle_dir"]), "--candidate", calibration_candidate,
-        "--codex-binary", str(codex), "--codex-auth-file", str(auth),
+        "--external-intelligence-driver", str(external_selection["driver"]),
+        "--external-intelligence-binary", str(external_configuration.binary),
+        "--external-intelligence-credential-file", str(external_configuration.credential_file),
         "--environment-sha256", binding.sha256(manifest_path), "--input-manifest-sha256", binding.sha256(data),
         "--tool-sha256", community_tool_sha256,
         *representation_arguments,
@@ -299,11 +313,32 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
         "LongMemEval-S 隔离预检不得伪造质量通过",
     )
     _require(result.get("profile") == protocol["acceptance"]["profile"], "LongMemEval-S 隔离预检生产口径无效")
-    _require(result.get("capabilities") == {
-        "semantic": {"source": "codex", "model": protocol["memory"]["semantic_model"], "reasoning_effort": protocol["memory"]["semantic_reasoning_effort"]},
-        "reader": {"source": "codex", "model": protocol["reader"]["model"], "reasoning_effort": protocol["reader"]["reasoning_effort"]},
-        "judge": {"source": "codex", "model": protocol["judge"]["model"], "reasoning_effort": protocol["judge"]["reasoning_effort"]},
-    }, "LongMemEval-S 隔离预检未真实调用冻结的三个 Codex 模型")
+    capabilities = result.get("capabilities")
+    _require(isinstance(capabilities, dict), "LongMemEval-S 隔离预检缺少外部智能角色证据")
+    _require(capabilities.get("semantic") == {
+        "source": protocol["memory"]["capability_source"],
+        "model": protocol["memory"]["semantic_model"],
+        "reasoning_effort": protocol["memory"]["semantic_reasoning_effort"],
+        "input_representation": capabilities.get("semantic", {}).get("input_representation"),
+        "input_representation_manifest_identity": capabilities.get("semantic", {}).get("input_representation_manifest_identity"),
+    }, "LongMemEval-S 隔离预检未真实调用冻结的语义角色")
+    _require(
+        isinstance(capabilities["semantic"]["input_representation"], str)
+        and capabilities["semantic"]["input_representation"]
+        and isinstance(capabilities["semantic"]["input_representation_manifest_identity"], str)
+        and len(capabilities["semantic"]["input_representation_manifest_identity"]) == 64,
+        "LongMemEval-S 语义输入表示身份缺失",
+    )
+    _require(capabilities.get("reader") == {
+        "source": protocol["reader"]["capability_source"],
+        "model": protocol["reader"]["model"],
+        "reasoning_effort": protocol["reader"]["reasoning_effort"],
+    }, "LongMemEval-S 隔离预检未真实调用冻结的 Reader 角色")
+    _require(capabilities.get("judge") == {
+        "source": protocol["judge"]["capability_source"],
+        "model": protocol["judge"]["model"],
+        "reasoning_effort": protocol["judge"]["reasoning_effort"],
+    }, "LongMemEval-S 隔离预检未真实调用冻结的 Judge 角色")
     _require(result.get("diagnostics", {}).get("questions") == 4, "LongMemEval-S 隔离预检诊断链路不完整")
     questions = [binding.load_json(output / "questions" / item["question_id"] / "result.json") for item in fixture]
     plans = [binding.load_json(output / "questions" / item["question_id"] / "semantic-plan.json") for item in fixture]
@@ -316,7 +351,7 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
     legacy_semantic_calls = sum(int(plan["transport"]["legacy_analysis_calls"]) for plan in plans)
     new_input_utf8_bytes = sum(int(plan["transport"]["new_input_utf8_bytes"]) for plan in plans)
     legacy_input_utf8_bytes = sum(int(plan["transport"]["legacy_input_utf8_bytes"]) for plan in plans)
-    _require(len(analysis_units) == semantic_calls, "LongMemEval-S 分析单元与 Codex 调用量不一致")
+    _require(len(analysis_units) == semantic_calls, "LongMemEval-S 分析单元与外部智能调用量不一致")
     _require(
         semantic_calls == semantic_batches
         and all(len(unit.get("batch_indexes", [])) == 1 for unit in analysis_units),
@@ -339,7 +374,7 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
         for item in questions
     ) / len(questions)
     workers = int(protocol["execution"]["max_workers"])
-    codex_limit = int(protocol["execution"]["codex_max_active"])
+    external_intelligence_limit = int(protocol["execution"]["codex_max_active"])
     question_count = int(protocol["official"]["question_count"])
     projected_semantic_requests = int(dry_plan["semantic_work_batches"])
     projection = _community_cost_projection(
@@ -347,7 +382,7 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
         reader_model_seconds=reader_model_seconds, judge_model_seconds=judge_model_seconds,
         calibration_questions=len(questions), per_question_host_seconds=per_question_host,
         projected_semantic_requests=projected_semantic_requests, question_count=question_count,
-        question_workers=workers, codex_max_active=codex_limit,
+        question_workers=workers, external_intelligence_max_active=external_intelligence_limit,
         normal_variation_reserve_ratio=float(protocol["execution"]["normal_variation_reserve_ratio"]),
         bounded_retry_reserve_ratio=float(protocol["execution"]["bounded_retry_reserve_ratio"]),
         checkpoint_recovery_reserve_seconds=float(protocol["execution"]["checkpoint_recovery_reserve_seconds"]),
@@ -361,35 +396,35 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
     bounded_retry_reserve = projection["bounded_retry"]
     checkpoint_recovery_reserve = projection["checkpoint_recovery"]
     required_ceiling = projection["required_ceiling"]
-    codex = result["cost"]["codex"]
-    expected_codex_calls = semantic_calls + 2 * len(questions)
+    external_intelligence = result["cost"]["codex"]
+    expected_external_intelligence_calls = semantic_calls + 2 * len(questions)
     attempt_metadata = [
         binding.load_json(path) for path in output.glob("questions/**/codex/attempt-*/metadata.json")
     ]
     completed_attempts = [item for item in attempt_metadata if item.get("outcome") == "complete"]
     completed_threads = [str(item.get("thread_id")) for item in completed_attempts]
-    maximum_bounded_retries = max(1, math.floor(expected_codex_calls * 0.1))
-    _require(int(codex["calls"]) == expected_codex_calls, "LongMemEval-S Codex 调用量不完整")
-    _require(int(codex["attempts"]) == expected_codex_calls + int(codex["retries"]), "LongMemEval-S Codex 尝试计数不一致")
-    _require(int(codex["retries"]) == 0, f"并发 {codex_limit} 的代表预检未全部首次完成")
-    _require(int(codex["rate_limit_events"]) == 0 and int(codex["interrupted_attempts"]) == 0, f"并发 {codex_limit} 的代表校准存在限流或中断")
-    _require(int(codex["scheduler"]["limit"]) == codex_limit and int(codex["scheduler"]["max_active"]) == codex_limit, "代表校准未实际达到全局 Codex 并发上限")
+    maximum_bounded_retries = max(1, math.floor(expected_external_intelligence_calls * 0.1))
+    _require(int(external_intelligence["calls"]) == expected_external_intelligence_calls, "LongMemEval-S 外部智能调用量不完整")
+    _require(int(external_intelligence["attempts"]) == expected_external_intelligence_calls + int(external_intelligence["retries"]), "LongMemEval-S 外部智能尝试计数不一致")
+    _require(int(external_intelligence["retries"]) == 0, f"并发 {external_intelligence_limit} 的代表预检未全部首次完成")
+    _require(int(external_intelligence["rate_limit_events"]) == 0 and int(external_intelligence["interrupted_attempts"]) == 0, f"并发 {external_intelligence_limit} 的代表校准存在限流或中断")
+    _require(int(external_intelligence["scheduler"]["limit"]) == external_intelligence_limit and int(external_intelligence["scheduler"]["max_active"]) == external_intelligence_limit, "代表校准未实际达到全局外部智能并发上限")
     _require(
-        codex.get("transport", {}).get("transport") == "codex-app-server-pool-stdio"
-        and int(codex["transport"]["server_processes"]) == codex_limit
-        and int(codex["transport"]["per_worker_max_active"]) == 1,
-        "代表校准未使用单 turn 的有界 Codex App Server 池",
+        external_intelligence.get("transport", {}).get("external_intelligence_driver") == external_selection["driver"]
+        and int(external_intelligence["transport"]["server_processes"]) == external_intelligence_limit
+        and int(external_intelligence["transport"]["per_worker_max_active"]) == 1,
+        "代表校准未使用单 turn 的有界外部智能 worker 池",
     )
     _require(
-        int(codex["transport"]["worker_restarts"]) == 0
-        and int(codex["transport"]["process_starts"]) == codex_limit,
+        int(external_intelligence["transport"]["worker_restarts"]) == 0
+        and int(external_intelligence["transport"]["process_starts"]) == external_intelligence_limit,
         "代表预检出现 App Server transport 失败或 worker 重启",
     )
     _require(
-        len(completed_attempts) == expected_codex_calls
-        and len(set(completed_threads)) == expected_codex_calls
+        len(completed_attempts) == expected_external_intelligence_calls
+        and len(set(completed_threads)) == expected_external_intelligence_calls
         and all(item.get("thread_ephemeral") is True and item.get("sandbox") == "read-only" for item in completed_attempts),
-        "代表校准未为每个请求使用独立、只读的新 Codex thread",
+        "代表校准未为每个请求使用独立、只读的新外部智能会话",
     )
     _require(int(result["cost"]["semantic_submitted_batches"]) == semantic_batches, "代表校准未提交全部语义批次")
     _require(
@@ -422,8 +457,8 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
             "analysis_calls": semantic_calls,
             "legacy_input_utf8_bytes": legacy_input_utf8_bytes,
             "input_utf8_bytes": new_input_utf8_bytes,
-            "legacy_codex_process_starts": legacy_semantic_calls + 2 * len(questions),
-            "app_server_process_starts": codex["transport"]["process_starts"],
+            "legacy_process_starts": legacy_semantic_calls + 2 * len(questions),
+            "worker_process_starts": external_intelligence["transport"]["process_starts"],
         },
         "fixture_analysis_input_chars": {
             "maximum": max(int(unit["input_chars"]) for unit in analysis_units),
@@ -467,18 +502,18 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
             "reader": protocol["execution"]["reader_requests"],
             "judge": protocol["execution"]["judge_requests"],
         },
-        "codex_concurrency": {
-            **codex["scheduler"], "frozen": codex_limit,
+        "external_intelligence_concurrency": {
+            **external_intelligence["scheduler"], "frozen": external_intelligence_limit,
             "selection_candidates": [8, 12],
             "selection_policy": "lowest stable pool whose required ceiling is at most the frozen full-run wall budget",
-            "selected": codex_limit,
-            "higher_pool_not_required": codex_limit == 8 and required_ceiling <= float(protocol["execution"]["full_wall_seconds"]),
+            "selected": external_intelligence_limit,
+            "higher_pool_not_required": external_intelligence_limit == 8 and required_ceiling <= float(protocol["execution"]["full_wall_seconds"]),
         },
-        "codex_calls": {
-            **{name: codex[name] for name in ("calls", "attempts", "retries", "rate_limit_events", "interrupted_attempts")},
+        "external_intelligence_calls": {
+            **{name: external_intelligence[name] for name in ("calls", "attempts", "retries", "rate_limit_events", "interrupted_attempts")},
             "maximum_bounded_retries": maximum_bounded_retries,
         },
-        "codex_tokens": {
+        "external_intelligence_tokens": {
             name: result["cost"][name]
             for name in (
                 "semantic_input_tokens", "semantic_output_tokens", "reader_input_tokens", "reader_output_tokens",

@@ -98,13 +98,13 @@ class PreflightTests(unittest.TestCase):
         self.assertEqual(list(preflight.COMMUNITY_CALIBRATION_TYPES), [item["question_id"] for item in selected])
         self.assertTrue(all((len(item["haystack_sessions"]) + 19) // 20 == 3 for item in selected))
 
-    def test_community_cost_projection_uses_codex_capacity_only_for_semantics(self) -> None:
+    def test_community_cost_projection_uses_external_intelligence_capacity_only_for_semantics(self) -> None:
         projected = preflight._community_cost_projection(
             semantic_model_seconds=800.0, semantic_calls=8,
             reader_model_seconds=40.0, judge_model_seconds=20.0,
             calibration_questions=4, per_question_host_seconds=8.0,
             projected_semantic_requests=80, question_count=40,
-            question_workers=4, codex_max_active=8,
+            question_workers=4, external_intelligence_max_active=8,
             normal_variation_reserve_ratio=0.2, bounded_retry_reserve_ratio=0.1,
             checkpoint_recovery_reserve_seconds=3600.0,
         )
