@@ -45,11 +45,13 @@ class BindingManifestTests(unittest.TestCase):
         self.assertIn("benchmarks/acceptance/suite/product_scoring.py", product)
         self.assertIn("benchmarks/longmemeval_s/run.py", community)
         self.assertIn("benchmarks/longmemeval_s/external_intelligence_runtime.py", community)
-        self.assertIn("benchmarks/longmemeval_s/codex_app_server.py", community)
+        self.assertIn("benchmarks/longmemeval_s/opencode_external_intelligence.py", community)
+        self.assertIn("benchmarks/longmemeval_s/opencode_mcp_bridge.py", community)
         self.assertIn("benchmarks/support/external_intelligence.py", community)
-        self.assertIn("benchmarks/support/external-intelligence-runtime.json", community)
+        self.assertNotIn("benchmarks/support/external-intelligence-runtime.json", community)
+        self.assertEqual("opencode-server/v1", manifests["community"]["external_intelligence_selection"]["driver"])
         self.assertIn("benchmarks/longmemeval_s/protocol.json", community)
-        self.assertIn("benchmarks/acceptance/suite/adapters/product/codex_session.py", community)
+        self.assertNotIn("benchmarks/acceptance/suite/adapters/product/codex_session.py", community)
         self.assertFalse(any("longmemeval_v2" in path for path in community))
         self.assertIn("benchmarks/support/ownward_mcp.py", core)
         self.assertNotIn("cmd/ownward-frontier/main.go", community)
@@ -65,6 +67,18 @@ class BindingManifestTests(unittest.TestCase):
         self.assertIn("benchmarks/acceptance/suite/adapters/product/codex_session.py", derivation)
         self.assertIn("benchmarks/acceptance/suite/product_scoring.py", derivation)
         self.assertNotIn("benchmarks/acceptance/suite/adapters/product/replay.py", derivation)
+
+    def test_community_tool_identity_binds_only_the_selected_provider_adapter(self) -> None:
+        config = {"community": {"external_intelligence": {
+            "driver": "opencode-server/v1", "binary": "opencode.cmd", "credential_file": "auth.json",
+        }}}
+        manifest = binding._tool_manifest(self.root, "community", config)
+        paths = {item["path"] for item in manifest["files"]}
+        self.assertEqual("opencode-server/v1", manifest["external_intelligence_selection"]["driver"])
+        self.assertIn("benchmarks/longmemeval_s/opencode_external_intelligence.py", paths)
+        self.assertIn("benchmarks/longmemeval_s/opencode_mcp_bridge.py", paths)
+        self.assertNotIn("benchmarks/longmemeval_s/codex_app_server.py", paths)
+        self.assertNotIn("benchmarks/acceptance/suite/adapters/product/codex_session.py", paths)
 
     def test_targeted_scope_is_not_a_frozen_input(self) -> None:
         external = self.root / "contract.json"
@@ -343,9 +357,12 @@ class BindingManifestTests(unittest.TestCase):
         config = binding.load_json(self.root / "execution.example.json")
         community = config["community"]
         self.assertEqual("E:\\Ownward\\acceptance\\longmemeval-s\\manifests\\v1.json", community["environment_manifest"])
-        self.assertEqual("gpt-5.6-luna", community["codex_semantic_model"])
-        self.assertEqual("gpt-5.6-luna", community["codex_reader_model"])
-        self.assertEqual("gpt-5.6-terra", community["codex_judge_model"])
+        self.assertNotIn("driver", community["external_intelligence"])
+        self.assertIn("opencode", community["external_intelligence"]["binary"])
+        roles = binding.external_intelligence_runtime.role_profile_from_execution(community)
+        self.assertEqual("qwen3.8-flash", roles["semantic"]["model"])
+        self.assertEqual("xhigh", roles["reader"]["reasoning_effort"])
+        self.assertEqual("medium", roles["judge"]["reasoning_effort"])
         self.assertNotIn("judge_api_key_env", community)
         protocol = binding.load_json(self.root.parents[1] / "longmemeval_s" / "protocol.json")
         self.assertEqual(binding.LONGMEMEVAL_S_CODE_REVISION, protocol["official"]["code_revision"])
@@ -383,6 +400,41 @@ class BindingManifestTests(unittest.TestCase):
             community["codex_reader_reasoning_effort"] = "xhigh"
             community["codex_reader_model"] = "different"
             with self.assertRaisesRegex(binding.BindingError, "Reader"):
+                binding._validate_community_config(community)
+
+    def test_community_config_accepts_one_complete_explicit_provider_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            launcher = root / "opencode.cmd"
+            native = root / "node_modules" / "opencode-ai" / "bin" / "opencode.exe"
+            native.parent.mkdir(parents=True)
+            launcher.write_bytes(b"launcher")
+            native.write_bytes(b"runtime")
+            credential = root / "auth.json"
+            credential.write_bytes(b"credential")
+            manifest = root / "manifest.json"
+            manifest.write_text(json.dumps({
+                "schema": binding.LONGMEMEVAL_S_ENVIRONMENT_SCHEMA,
+                "official": {"code_revision": binding.LONGMEMEVAL_S_CODE_REVISION, "data_revision": binding.LONGMEMEVAL_S_DATA_REVISION},
+                "integrity": {"data_sha256": binding.LONGMEMEVAL_S_DATA_SHA256},
+            }), encoding="utf-8")
+            roles = {
+                role: {"model": "qwen3.8-flash", "reasoning_effort": "xhigh"}
+                for role in binding.external_intelligence_runtime.EXPLICIT_ROLE_KEYS
+            }
+            roles["judge"]["reasoning_effort"] = "medium"
+            community = {
+                "environment_manifest": str(manifest),
+                "protocol": str(self.root.parents[1] / "longmemeval_s" / "protocol.json"),
+                "output_dir": str(root / "runs"),
+                "external_intelligence": {
+                    "driver": "opencode-server/v1", "binary": str(launcher),
+                    "credential_file": str(credential), "roles": roles,
+                },
+            }
+            binding._validate_community_config(community)
+            community["external_intelligence"]["roles"].pop("generator")
+            with self.assertRaisesRegex(binding.BindingError, "role profile"):
                 binding._validate_community_config(community)
 
     def test_scope_rebind_preserves_candidate_and_other_scope_generations(self) -> None:

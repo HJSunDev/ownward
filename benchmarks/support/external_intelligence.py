@@ -15,7 +15,7 @@ CONTRACT_SCHEMA = "ownward.external-intelligence/v1"
 REQUEST_SCHEMA = "ownward.external-intelligence-request/v1"
 ATTEMPT_SCHEMA = "ownward.external-intelligence-attempt/v1"
 CHECKPOINT_SCHEMA = "ownward.external-intelligence-checkpoint/v1"
-SELECTION_SCHEMA = "ownward.external-intelligence-selection/v1"
+SELECTION_SCHEMA = "ownward.external-intelligence-selection/v2"
 
 
 class ExternalIntelligenceError(RuntimeError):
@@ -74,19 +74,21 @@ class RuntimeIdentity:
     transport: str
     selection_sha256: str
     artifact_sha256: str
+    implementation_sha256: str
     credential_locator_sha256: str
     max_active: int
     worker_processes: int
 
     def value(self) -> dict[str, Any]:
         result = {
-            "schema": "ownward.external-intelligence-runtime-identity/v1",
+            "schema": "ownward.external-intelligence-runtime-identity/v2",
             "contract": CONTRACT_SCHEMA,
             "driver": self.driver,
             "provider": self.provider,
             "transport": self.transport,
             "selection_sha256": self.selection_sha256,
             "artifact_sha256": self.artifact_sha256,
+            "implementation_sha256": self.implementation_sha256,
             "credential_locator_sha256": self.credential_locator_sha256,
             "credential_content_read": False,
             "max_active": self.max_active,
@@ -103,30 +105,109 @@ def canonical_sha256(value: Any) -> str:
 
 def load_runtime_selection(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8"))
-    required = {"schema", "contract", "driver", "provider", "transport", "worker_isolation"}
+    required = {"schema", "contract", "default_driver", "implementations", "role_profiles"}
     if not isinstance(value, dict) or set(value) != required:
         raise ExternalIntelligenceError("external-intelligence runtime selection fields changed")
     if value["schema"] != SELECTION_SCHEMA or value["contract"] != CONTRACT_SCHEMA:
         raise ExternalIntelligenceError("external-intelligence runtime selection schema changed")
-    for name in ("driver", "provider", "transport", "worker_isolation"):
-        if not isinstance(value[name], str) or not value[name].strip():
-            raise ExternalIntelligenceError(f"external-intelligence runtime selection {name} is missing")
-    return {**value, "selection_sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+    default_driver = value["default_driver"]
+    implementations = value["implementations"]
+    if not isinstance(default_driver, str) or not default_driver.strip():
+        raise ExternalIntelligenceError("external-intelligence default driver is missing")
+    if not isinstance(implementations, list) or not implementations:
+        raise ExternalIntelligenceError("external-intelligence implementations are missing")
+    expected = {
+        "driver", "provider", "transport", "worker_isolation", "models", "reasoning_efforts",
+        "reasoning_fallback",
+    }
+    by_driver: dict[str, dict[str, Any]] = {}
+    for item in implementations:
+        if not isinstance(item, dict) or set(item) != expected:
+            raise ExternalIntelligenceError("external-intelligence implementation fields changed")
+        for name in ("driver", "provider", "transport", "worker_isolation", "reasoning_fallback"):
+            if not isinstance(item[name], str) or not item[name].strip():
+                raise ExternalIntelligenceError(f"external-intelligence implementation {name} is missing")
+        for name in ("models", "reasoning_efforts"):
+            entries = item[name]
+            if not isinstance(entries, list) or any(not isinstance(entry, str) or not entry.strip() for entry in entries):
+                raise ExternalIntelligenceError(f"external-intelligence implementation {name} is invalid")
+            if len(entries) != len(set(entries)):
+                raise ExternalIntelligenceError(f"external-intelligence implementation {name} contains duplicates")
+        driver = item["driver"]
+        if driver in by_driver:
+            raise ExternalIntelligenceError(f"duplicate external-intelligence driver: {driver}")
+        by_driver[driver] = dict(item)
+    if default_driver not in by_driver:
+        raise ExternalIntelligenceError("external-intelligence default driver is unknown")
+    profiles = value["role_profiles"]
+    if not isinstance(profiles, dict) or set(profiles) != set(by_driver):
+        raise ExternalIntelligenceError("external-intelligence role profiles do not match implementations")
+    role_names = {"generator", "quality_admission", "semantic", "reader", "judge"}
+    for driver, profile in profiles.items():
+        if not isinstance(profile, dict) or set(profile) != role_names:
+            raise ExternalIntelligenceError(f"external-intelligence {driver} role profile is incomplete")
+        implementation = by_driver[driver]
+        allowed_models = set(implementation["models"])
+        allowed_efforts = set(implementation["reasoning_efforts"])
+        for role, settings in profile.items():
+            if not isinstance(settings, dict) or set(settings) != {"model", "reasoning_effort"}:
+                raise ExternalIntelligenceError(f"external-intelligence {driver} {role} profile is invalid")
+            model, effort = settings["model"], settings["reasoning_effort"]
+            if not isinstance(model, str) or not model.strip() or not isinstance(effort, str) or not effort.strip():
+                raise ExternalIntelligenceError(f"external-intelligence {driver} {role} profile is missing")
+            if allowed_models and model.removeprefix(f"{implementation['provider']}/") not in allowed_models:
+                raise ExternalIntelligenceError(f"external-intelligence {driver} {role} model is unsupported")
+            if allowed_efforts and effort not in allowed_efforts:
+                raise ExternalIntelligenceError(f"external-intelligence {driver} {role} effort is unsupported")
+    selected = by_driver[default_driver]
+    return {
+        **value,
+        # Keep the historical flattened default view for read-only callers.
+        **{name: selected[name] for name in ("driver", "provider", "transport", "worker_isolation")},
+        "selection_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+    }
+
+
+def select_runtime_implementation(selection: dict[str, Any], driver: str | None = None) -> dict[str, Any]:
+    """Resolve one sealed implementation; a running request can never switch it."""
+    selected_driver = driver or selection.get("default_driver")
+    for item in selection.get("implementations", []):
+        if isinstance(item, dict) and item.get("driver") == selected_driver:
+            return {
+                **item,
+                "selection_sha256": canonical_sha256({
+                    "schema": selection.get("schema"),
+                    "contract": selection.get("contract"),
+                    "implementation": item,
+                }),
+            }
+    raise ExternalIntelligenceError(f"unsupported external-intelligence driver: {selected_driver}")
+
+
+def select_runtime_role_profile(selection: dict[str, Any], driver: str | None = None) -> dict[str, dict[str, str]]:
+    """Resolve the qualified role profile for one implementation without reading credentials."""
+    selected_driver = driver or selection.get("default_driver")
+    select_runtime_implementation(selection, selected_driver)
+    profile = selection.get("role_profiles", {}).get(selected_driver)
+    if not isinstance(profile, dict):
+        raise ExternalIntelligenceError(f"external-intelligence role profile is missing: {selected_driver}")
+    return {role: dict(settings) for role, settings in profile.items()}
 
 
 def validate_runtime_identity(value: dict[str, Any]) -> None:
     required = {
         "schema", "contract", "driver", "provider", "transport", "selection_sha256", "artifact_sha256",
+        "implementation_sha256",
         "credential_locator_sha256", "credential_content_read", "max_active", "worker_processes",
     }
     if set(value) != required:
         raise ExternalIntelligenceError("external-intelligence runtime identity fields changed")
-    if value["schema"] != "ownward.external-intelligence-runtime-identity/v1" or value["contract"] != CONTRACT_SCHEMA:
+    if value["schema"] != "ownward.external-intelligence-runtime-identity/v2" or value["contract"] != CONTRACT_SCHEMA:
         raise ExternalIntelligenceError("external-intelligence runtime identity schema changed")
     for name in ("driver", "provider", "transport"):
         if not isinstance(value[name], str) or not value[name].strip():
             raise ExternalIntelligenceError(f"external-intelligence runtime {name} is missing")
-    for name in ("selection_sha256", "artifact_sha256", "credential_locator_sha256"):
+    for name in ("selection_sha256", "artifact_sha256", "implementation_sha256", "credential_locator_sha256"):
         item = value[name]
         if not isinstance(item, str) or len(item) != 64 or any(character not in "0123456789abcdef" for character in item):
             raise ExternalIntelligenceError(f"external-intelligence runtime {name} is invalid")

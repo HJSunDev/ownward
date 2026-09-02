@@ -2132,8 +2132,19 @@ def _load_generation_runtime(path: Path) -> dict[str, Any]:
         validation.external_intelligence_runtime.validate_configuration(configuration)
     except validation.external_intelligence.ExternalIntelligenceError as error:
         raise BlindSuiteError(str(error)) from error
-    external = validation.external_intelligence.load_runtime_selection(
+    external_catalog = validation.external_intelligence.load_runtime_selection(
         Path(__file__).resolve().parents[2] / "support" / "external-intelligence-runtime.json"
+    )
+    external = validation.external_intelligence.select_runtime_implementation(external_catalog, configuration.driver)
+    # Legacy generation-only configurations predate the provider-neutral role
+    # block and intentionally carry no semantic/reader/judge settings.  Their
+    # generator and admission choices come from the selected implementation's
+    # sealed profile; full community executions still validate their complete
+    # role declaration through role_profile_from_execution.
+    roles = (
+        validation.external_intelligence.select_runtime_role_profile(external_catalog, configuration.driver)
+        if community.get("external_intelligence") is None
+        else validation.external_intelligence_runtime.role_profile_from_execution(community)
     )
     return {"external_intelligence": {
         "driver": external["driver"],
@@ -2143,6 +2154,7 @@ def _load_generation_runtime(path: Path) -> dict[str, Any]:
         "selection_sha256": external["selection_sha256"],
         "binary": configuration.binary,
         "credential_file": configuration.credential_file,
+        "roles": roles,
     }}
 
 

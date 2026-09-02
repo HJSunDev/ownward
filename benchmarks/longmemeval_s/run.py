@@ -41,11 +41,11 @@ from external_intelligence import (  # noqa: E402
 )
 import semantic_representation  # noqa: E402
 from external_intelligence_runtime import (  # noqa: E402
-    CURRENT_DRIVER as CURRENT_EXTERNAL_INTELLIGENCE_DRIVER,
-    CURRENT_PROVIDER as CURRENT_EXTERNAL_INTELLIGENCE_PROVIDER,
+    CURRENT_DRIVER,
     clean_stale_runtime_roots,
     current_runtime_identity,
     open_external_intelligence_runtime,
+    selected_role_profile,
 )
 
 
@@ -217,6 +217,35 @@ def validate_protocol(value: dict[str, Any], *, formal: bool | None = None) -> N
     )
     require(production_acceptance, "production profile is invalid")
     require("minimum_accuracy" not in acceptance, "production profile cannot use a cross-profile accuracy threshold")
+
+
+def apply_external_intelligence_roles(
+    protocol: dict[str, Any],
+    roles: dict[str, dict[str, str]] | None,
+) -> dict[str, Any]:
+    """Bind an explicitly selected provider profile without mutating the frozen task protocol."""
+    if roles is None:
+        return protocol
+    if set(roles) != {"semantic", "reader", "judge"}:
+        raise AdapterError("LongMemEval-S external-intelligence role profile is incomplete")
+    for role, value in roles.items():
+        if (
+            not isinstance(value, dict)
+            or set(value) != {"model", "reasoning_effort"}
+            or not isinstance(value.get("model"), str)
+            or not value["model"].strip()
+            or not isinstance(value.get("reasoning_effort"), str)
+            or not value["reasoning_effort"].strip()
+        ):
+            raise AdapterError(f"LongMemEval-S external-intelligence {role} profile is invalid")
+    effective = json.loads(json.dumps(protocol))
+    effective["memory"]["semantic_model"] = roles["semantic"]["model"]
+    effective["memory"]["semantic_reasoning_effort"] = roles["semantic"]["reasoning_effort"]
+    effective["reader"]["model"] = roles["reader"]["model"]
+    effective["reader"]["reasoning_effort"] = roles["reader"]["reasoning_effort"]
+    effective["judge"]["model"] = roles["judge"]["model"]
+    effective["judge"]["reasoning_effort"] = roles["judge"]["reasoning_effort"]
+    return effective
 
 
 def validate_environment(manifest_path: Path, *, smoke: bool = False) -> dict[str, Any]:
@@ -1417,10 +1446,8 @@ def stage_dependency_identities(
     semantic_contract: semantic_representation.SemanticInputContract | None = None,
 ) -> dict[str, str]:
     semantic_contract = semantic_contract or semantic_representation.load_contract(None)
-    transport_sha256 = sha256(Path(__file__).with_name("codex_app_server.py"))
     implementation = {
         "semantic": canonical_sha256({
-            "transport": transport_sha256,
             "external_intelligence_contract": EXTERNAL_INTELLIGENCE_CONTRACT_SCHEMA,
             "external_intelligence_executor": inspect.getsource(ExternalIntelligenceExecutor),
             "runtime_adapter": sha256(Path(__file__).with_name("external_intelligence_runtime.py")),
@@ -1439,7 +1466,6 @@ def stage_dependency_identities(
             "active_session": inspect.getsource(ActiveRetrievalSession),
         }),
         "reader": canonical_sha256({
-            "transport": transport_sha256,
             "external_intelligence_contract": EXTERNAL_INTELLIGENCE_CONTRACT_SCHEMA,
             "external_intelligence_executor": inspect.getsource(ExternalIntelligenceExecutor),
             "runtime_adapter": sha256(Path(__file__).with_name("external_intelligence_runtime.py")),
@@ -1447,7 +1473,6 @@ def stage_dependency_identities(
             "answer": inspect.getsource(ExternalIntelligenceCapability.active_answer),
         }),
         "judge": canonical_sha256({
-            "transport": transport_sha256,
             "external_intelligence_contract": EXTERNAL_INTELLIGENCE_CONTRACT_SCHEMA,
             "external_intelligence_executor": inspect.getsource(ExternalIntelligenceExecutor),
             "runtime_adapter": sha256(Path(__file__).with_name("external_intelligence_runtime.py")),
@@ -2477,11 +2502,16 @@ def execute(
     external_intelligence_binary: Path, external_intelligence_credential_file: Path,
     candidate: str, environment_sha256: str, input_manifest_sha256: str, tool_sha256: str,
     formal: bool, resume: bool, semantic_representation_manifest: Path | None = None,
+    external_intelligence_roles: dict[str, dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     environment = validate_environment(environment_manifest, smoke=False)
     protocol = load_json(protocol_path)
     require(isinstance(protocol, dict), "protocol is not an object")
     validate_protocol(protocol, formal=formal)
+    effective_roles = external_intelligence_roles or selected_role_profile(external_intelligence_driver)
+    protocol = apply_external_intelligence_roles(protocol, {
+        name: effective_roles[name] for name in ("semantic", "reader", "judge")
+    })
     questions = validate_dataset(dataset_path.resolve(), formal=formal)
     require(binary.resolve().is_file() and embedding.resolve().is_dir(), "candidate artifacts are incomplete")
     runtime_identity = current_runtime_identity(
@@ -2491,8 +2521,6 @@ def execute(
         max_active=int(protocol["execution"]["codex_max_active"]),
         worker_processes=int(protocol["execution"]["codex_server_processes"]),
     )
-    require(runtime_identity["driver"] == CURRENT_EXTERNAL_INTELLIGENCE_DRIVER, "external-intelligence driver is not the selected runtime driver")
-    require(runtime_identity["provider"] == CURRENT_EXTERNAL_INTELLIGENCE_PROVIDER, "external-intelligence provider is not the selected runtime provider")
     try:
         semantic_contract = semantic_representation.load_contract(semantic_representation_manifest)
     except (OSError, ValueError, json.JSONDecodeError, semantic_representation.SemanticRepresentationError) as error:
@@ -2521,14 +2549,14 @@ def execute(
         "stage_dependencies": stage_dependencies,
         "capabilities": {
             "semantic": {
-                "source": protocol["memory"]["capability_source"],
+                "source": runtime_identity["provider"],
                 "model": protocol["memory"]["semantic_model"],
                 "reasoning_effort": protocol["memory"]["semantic_reasoning_effort"],
                 "input_representation": semantic_contract.representation,
                 "input_representation_manifest_identity": semantic_contract.manifest_identity,
             },
-            "reader": {"source": protocol["reader"]["capability_source"], "model": protocol["reader"]["model"], "reasoning_effort": protocol["reader"]["reasoning_effort"]},
-            "judge": {"source": protocol["judge"]["capability_source"], "model": protocol["judge"]["model"], "reasoning_effort": protocol["judge"]["reasoning_effort"]},
+            "reader": {"source": runtime_identity["provider"], "model": protocol["reader"]["model"], "reasoning_effort": protocol["reader"]["reasoning_effort"]},
+            "judge": {"source": runtime_identity["provider"], "model": protocol["judge"]["model"], "reasoning_effort": protocol["judge"]["reasoning_effort"]},
         },
         "external_intelligence_runtime": runtime_identity,
     }
@@ -2711,9 +2739,10 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--input-manifest-sha256")
     parser.add_argument("--tool-sha256")
     parser.add_argument("--semantic-representation-manifest", type=Path)
-    parser.add_argument("--external-intelligence-driver")
+    parser.add_argument("--external-intelligence-driver", default=CURRENT_DRIVER)
     parser.add_argument("--external-intelligence-binary", type=Path)
     parser.add_argument("--external-intelligence-credential-file", type=Path)
+    parser.add_argument("--external-intelligence-roles-json")
     parser.add_argument("--non-formal", action="store_true")
     parser.add_argument("--resume", action="store_true")
     return parser.parse_args()
@@ -2769,6 +2798,10 @@ def main() -> int:
                 tool_sha256=arguments.tool_sha256,
                 formal=not arguments.non_formal, resume=arguments.resume,
                 semantic_representation_manifest=arguments.semantic_representation_manifest,
+                external_intelligence_roles=(
+                    json.loads(arguments.external_intelligence_roles_json)
+                    if arguments.external_intelligence_roles_json is not None else None
+                ),
             )
     except (AdapterError, MCPError, OSError, ValueError, subprocess.SubprocessError, json.JSONDecodeError) as error:
         print(f"LongMemEval-S adapter error: {error}", file=sys.stderr)

@@ -95,7 +95,7 @@ def create(suite_root: Path, config_path: Path, output_dir: Path) -> dict[str, A
         manifests = {
             "environment": _environment_manifest(config, scope),
             "inputs": _input_manifest(suite_root, config, scope),
-            "tools": _tool_manifest(suite_root, scope),
+            "tools": _tool_manifest(suite_root, scope, config),
         }
         manifest_values.update({f"{scope}-{name}.json": value for name, value in manifests.items()})
         paths = {name: output_dir / ".binding-hash" / f"{scope}-{name}.json" for name in manifests}
@@ -162,7 +162,7 @@ def rebind_scope(suite_root: Path, config_path: Path, output_dir: Path, scope: s
     replacement = {
         "environment": _environment_manifest(config, scope),
         "inputs": _input_manifest(suite_root, config, scope),
-        "tools": _tool_manifest(suite_root, scope),
+        "tools": _tool_manifest(suite_root, scope, config),
     }
     manifest_values.update({f"{scope}-{name}.json": value for name, value in replacement.items()})
     hashes = {name: _serialized_json_sha256(value) for name, value in replacement.items()}
@@ -416,7 +416,7 @@ def verify_current(suite_root: Path, binding_dir: Path, config: dict[str, Any], 
     binding_path = active_dir / "binding.json"
     _require(binding_path.is_file() and load_json(binding_path) == expected, "绑定文件与状态不一致")
     manifests = {name: active_dir / f"{scope}-{name}.json" for name in ("environment", "inputs", "tools")}
-    current = {"environment": _environment_manifest(config, scope), "inputs": _input_manifest(suite_root, config, scope), "tools": _tool_manifest(suite_root, scope)}
+    current = {"environment": _environment_manifest(config, scope), "inputs": _input_manifest(suite_root, config, scope), "tools": _tool_manifest(suite_root, scope, config)}
     for name, field in (("environment", "environment_sha256"), ("inputs", "input_manifest_sha256"), ("tools", "tool_sha256")):
         _require(manifests[name].is_file(), f"{scope} {name} 清单缺失")
         if name == "tools":
@@ -464,17 +464,32 @@ def _input_manifest(suite_root: Path, config: dict[str, Any], scope: str) -> dic
                 "name": representation_path.name,
                 "sha256": sha256(representation_path),
             })
-        result["protocol"] = {
+        common_protocol = {
             "official_code_revision": LONGMEMEVAL_S_CODE_REVISION,
             "official_data_revision": LONGMEMEVAL_S_DATA_REVISION,
             "official_data_sha256": LONGMEMEVAL_S_DATA_SHA256,
-            "codex_semantic_model": community["codex_semantic_model"],
-            "codex_semantic_reasoning_effort": community["codex_semantic_reasoning_effort"],
-            "codex_reader_model": community["codex_reader_model"],
-            "codex_reader_reasoning_effort": community["codex_reader_reasoning_effort"],
-            "codex_judge_model": community["codex_judge_model"],
-            "codex_judge_reasoning_effort": community["codex_judge_reasoning_effort"],
         }
+        if "external_intelligence" in community:
+            configuration = external_intelligence_runtime.configuration_from_execution(community)
+            implementation = external_intelligence_runtime.selected_implementation(configuration.driver)
+            result["protocol"] = {
+                **common_protocol,
+                "external_intelligence": {
+                    "driver": configuration.driver,
+                    "provider": implementation["provider"],
+                    "roles": external_intelligence_runtime.role_profile_from_execution(community),
+                },
+            }
+        else:
+            result["protocol"] = {
+                **common_protocol,
+                "codex_semantic_model": community["codex_semantic_model"],
+                "codex_semantic_reasoning_effort": community["codex_semantic_reasoning_effort"],
+                "codex_reader_model": community["codex_reader_model"],
+                "codex_reader_reasoning_effort": community["codex_reader_reasoning_effort"],
+                "codex_judge_model": community["codex_judge_model"],
+                "codex_judge_reasoning_effort": community["codex_judge_reasoning_effort"],
+            }
     return result
 
 
@@ -494,7 +509,7 @@ def _adapter_projection(suite_root: Path, scope: str) -> dict[str, Any]:
     return {"suite_version": adapters["suite_version"], "definition": adapters["layers"][layer], "product_interface": adapters["product_interface"]}
 
 
-def _tool_manifest(suite_root: Path, scope: str) -> dict[str, Any]:
+def _tool_manifest(suite_root: Path, scope: str, config: dict[str, Any] | None = None) -> dict[str, Any]:
     _require(scope in SCOPE_NAMES, f"未知绑定范围: {scope}")
     repository = suite_root.parents[2]
     shared = [suite_root / name for name in ("run.py", "binding.py", "execution.py", "execution_support.py", "lifecycle.py", "evidence.py", "contract.py", "materials.py", "process_control.py")]
@@ -503,16 +518,26 @@ def _tool_manifest(suite_root: Path, scope: str) -> dict[str, Any]:
         "frontier": [suite_root / "execution_frontier.py", suite_root / "frontier.py", repository / "cmd" / "ownward-frontier" / "main.go"],
         "core": [suite_root / "execution_core.py", suite_root / "adapters" / "core" / "verify.py", repository / "benchmarks" / "support" / "ownward_mcp.py"],
         "product": [suite_root / "execution_core.py", suite_root / "execution_product.py", suite_root / "product.py", suite_root / "product_scoring.py", suite_root / "resource_environment.py", responsibility_path, *sorted(path for path in (suite_root / "adapters" / "product").glob("*.py") if not path.name.startswith("test_")), *sorted(path for path in (suite_root / "adapters" / "product_resource").glob("*.py") if not path.name.startswith("test_")), repository / "benchmarks" / "support" / "ownward_mcp.py"],
-        "community": [suite_root / "execution_community.py", suite_root / "community.py", suite_root / "process_control.py", suite_root / "adapters" / "product" / "codex_session.py", suite_root / "adapters" / "product" / "codex_transport.py", repository / "benchmarks" / "longmemeval_s" / "run.py", repository / "benchmarks" / "longmemeval_s" / "external_intelligence_runtime.py", repository / "benchmarks" / "longmemeval_s" / "semantic_representation.py", repository / "benchmarks" / "longmemeval_s" / "codex_app_server.py", repository / "benchmarks" / "longmemeval_s" / "environment.py", repository / "benchmarks" / "longmemeval_s" / "protocol.json", repository / "benchmarks" / "longmemeval_s" / "constraints.txt", repository / "benchmarks" / "support" / "external_intelligence.py", repository / "benchmarks" / "support" / "external-intelligence-runtime.json", repository / "benchmarks" / "support" / "ownward_mcp.py"],
+        "community": [suite_root / "execution_community.py", suite_root / "community.py", suite_root / "process_control.py", repository / "benchmarks" / "longmemeval_s" / "run.py", repository / "benchmarks" / "longmemeval_s" / "external_intelligence_runtime.py", repository / "benchmarks" / "longmemeval_s" / "semantic_representation.py", repository / "benchmarks" / "longmemeval_s" / "environment.py", repository / "benchmarks" / "longmemeval_s" / "protocol.json", repository / "benchmarks" / "longmemeval_s" / "constraints.txt", repository / "benchmarks" / "support" / "external_intelligence.py", repository / "benchmarks" / "support" / "ownward_mcp.py"],
     }[scope]
+    if scope == "community":
+        section = _mapping(config, "community") if config is not None else {}
+        driver = (
+            external_intelligence_runtime.configuration_from_execution(section).driver
+            if section else external_intelligence_runtime.CURRENT_DRIVER
+        )
+        scoped.extend(external_intelligence_runtime.implementation_files(driver))
     files = _files(repository, shared + scoped)
     if scope == "product":
         return _product_tool_manifest(repository, responsibility_path, files)
-    return {
+    result = {
         "schema": "ownward.acceptance-tool-manifest/v4",
         "scope": scope,
         "files": files,
     }
+    if scope == "community":
+        result["external_intelligence_selection"] = external_intelligence_runtime.selected_implementation(driver)
+    return result
 
 
 def _product_tool_manifest(
@@ -593,12 +618,18 @@ def _environment_manifest(config: dict[str, Any], scope: str) -> dict[str, Any]:
             result["codex"] = {"version": completed.stdout.strip(), "entry_sha256": sha256(codex)}
         else:
             try:
-                probe = external_intelligence_runtime.probe(
-                    external_intelligence_runtime.configuration_from_execution(section)
-                )
-            except external_intelligence.ExternalIntelligenceError as error:
+                external_configuration = external_intelligence_runtime.configuration_from_execution(section)
+                probe = external_intelligence_runtime.probe(external_configuration)
+            except external_intelligence_runtime.ExternalIntelligenceError as error:
                 raise BindingError(str(error)) from error
-            result["codex"] = {"version": probe["version"], "entry_sha256": probe["artifact_sha256"]}
+            runtime = {"version": probe["version"], "entry_sha256": probe["artifact_sha256"]}
+            if "external_intelligence" in section:
+                implementation = external_intelligence_runtime.selected_implementation(external_configuration.driver)
+                result["external_intelligence"] = {
+                    **runtime, "driver": external_configuration.driver, "provider": implementation["provider"],
+                }
+            else:
+                result["codex"] = runtime
     if scope == "community":
         community = _mapping(config, "community")
         manifest_path = Path(community["environment_manifest"]).resolve()
@@ -673,7 +704,7 @@ def _validate_community_config(community: dict[str, Any]) -> None:
         external_configuration = external_intelligence_runtime.configuration_from_execution(community)
         external_intelligence_runtime.validate_configuration(external_configuration)
         external_roles = external_intelligence_runtime.role_profile_from_execution(community)
-    except external_intelligence.ExternalIntelligenceError as error:
+    except external_intelligence_runtime.ExternalIntelligenceError as error:
         raise BindingError(str(error)) from error
     manifest_path = Path(community["environment_manifest"]).resolve()
     protocol_path = Path(community["protocol"]).resolve()
@@ -703,9 +734,10 @@ def _validate_community_config(community: dict[str, Any]) -> None:
         "LongMemEval-S Reader 禁止主动工具调用",
     )
     _require(protocol.get("official", {}).get("data_sha256") == LONGMEMEVAL_S_DATA_SHA256, "LongMemEval-S 协议与数据身份不一致")
-    _require(external_roles["semantic"] == {"model": protocol["memory"]["semantic_model"], "reasoning_effort": protocol["memory"]["semantic_reasoning_effort"]}, "LongMemEval-S 外部智能语义角色偏离固定口径")
-    _require(external_roles["reader"] == {"model": protocol["reader"]["model"], "reasoning_effort": protocol["reader"]["reasoning_effort"]}, "LongMemEval-S 外部智能 Reader 角色偏离固定口径")
-    _require(external_roles["judge"] == {"model": protocol["judge"]["model"], "reasoning_effort": protocol["judge"]["reasoning_effort"]}, "LongMemEval-S 外部智能裁判角色偏离固定口径")
+    if "external_intelligence" not in community:
+        _require(external_roles["semantic"] == {"model": protocol["memory"]["semantic_model"], "reasoning_effort": protocol["memory"]["semantic_reasoning_effort"]}, "LongMemEval-S 外部智能语义角色偏离固定口径")
+        _require(external_roles["reader"] == {"model": protocol["reader"]["model"], "reasoning_effort": protocol["reader"]["reasoning_effort"]}, "LongMemEval-S 外部智能 Reader 角色偏离固定口径")
+        _require(external_roles["judge"] == {"model": protocol["judge"]["model"], "reasoning_effort": protocol["judge"]["reasoning_effort"]}, "LongMemEval-S 外部智能裁判角色偏离固定口径")
 
 
 def _validate_community_workspace(config: dict[str, Any], workspace: Path) -> None:

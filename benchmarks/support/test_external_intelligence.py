@@ -17,6 +17,7 @@ def runtime_identity() -> dict[str, object]:
         transport="in-process-test/v1",
         selection_sha256="d" * 64,
         artifact_sha256="a" * 64,
+        implementation_sha256="e" * 64,
         credential_locator_sha256="b" * 64,
         max_active=2,
         worker_processes=1,
@@ -125,9 +126,42 @@ class ExternalIntelligenceContractTests(unittest.TestCase):
     def test_runtime_selection_is_versioned_and_provider_explicit(self) -> None:
         selection = subject.load_runtime_selection(Path(__file__).with_name("external-intelligence-runtime.json"))
         self.assertEqual(subject.CONTRACT_SCHEMA, selection["contract"])
-        self.assertEqual("codex-app-server/v1", selection["driver"])
-        self.assertEqual("openai-codex", selection["provider"])
+        self.assertEqual("opencode-server/v1", selection["default_driver"])
+        self.assertEqual("opencode-server/v1", selection["driver"])
+        self.assertEqual("opencode-go", selection["provider"])
+        self.assertEqual("opencode-server/v1", subject.select_runtime_implementation(selection, "opencode-server/v1")["driver"])
+        qwen = subject.select_runtime_role_profile(selection)
+        self.assertEqual({"model": "qwen3.8-flash", "reasoning_effort": "xhigh"}, qwen["reader"])
+        self.assertEqual({"model": "qwen3.8-flash", "reasoning_effort": "medium"}, qwen["judge"])
         self.assertEqual(64, len(selection["selection_sha256"]))
+
+    def test_implementation_identity_changes_only_for_its_direct_selection(self) -> None:
+        selection = subject.load_runtime_selection(Path(__file__).with_name("external-intelligence-runtime.json"))
+        codex = subject.select_runtime_implementation(selection, "codex-app-server/v1")["selection_sha256"]
+        qwen = subject.select_runtime_implementation(selection, "opencode-server/v1")["selection_sha256"]
+        changed = copy.deepcopy(selection)
+        next(item for item in changed["implementations"] if item["driver"] == "opencode-server/v1")["models"].append("future-model")
+        self.assertEqual(codex, subject.select_runtime_implementation(changed, "codex-app-server/v1")["selection_sha256"])
+        self.assertNotEqual(qwen, subject.select_runtime_implementation(changed, "opencode-server/v1")["selection_sha256"])
+
+    def test_runtime_catalog_rejects_duplicate_unknown_and_missing_implementations(self) -> None:
+        source = json.loads(Path(__file__).with_name("external-intelligence-runtime.json").read_text(encoding="utf-8"))
+        mutations = []
+        duplicate = copy.deepcopy(source)
+        duplicate["implementations"].append(copy.deepcopy(duplicate["implementations"][0]))
+        mutations.append(duplicate)
+        unknown_default = copy.deepcopy(source)
+        unknown_default["default_driver"] = "missing/v1"
+        mutations.append(unknown_default)
+        missing = copy.deepcopy(source)
+        missing["implementations"] = []
+        mutations.append(missing)
+        with tempfile.TemporaryDirectory() as directory:
+            for index, value in enumerate(mutations):
+                path = Path(directory) / f"invalid-{index}.json"
+                path.write_text(json.dumps(value), encoding="utf-8")
+                with self.assertRaises(subject.ExternalIntelligenceError):
+                    subject.load_runtime_selection(path)
 
     def test_scheduler_is_provider_neutral_and_bounded(self) -> None:
         with subject.BoundedScheduler(2) as scheduler:
@@ -161,7 +195,10 @@ class ExternalIntelligenceContractTests(unittest.TestCase):
         adapter_source = (
             repository / "benchmarks" / "longmemeval_s" / "external_intelligence_runtime.py"
         ).read_text(encoding="utf-8")
-        self.assertIn("from codex_app_server import", adapter_source)
+        self.assertIn("import codex_external_intelligence", adapter_source)
+        self.assertIn("import opencode_external_intelligence", adapter_source)
+        self.assertNotIn("CodexAppServer(", adapter_source)
+        self.assertNotIn("OpenCodeServer(", adapter_source)
 
 
 if __name__ == "__main__":

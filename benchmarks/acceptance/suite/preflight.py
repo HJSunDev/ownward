@@ -162,6 +162,7 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
     try:
         external_configuration = external_intelligence_runtime.configuration_from_execution(section)
         external_intelligence_runtime.probe(external_configuration)
+        external_roles = external_intelligence_runtime.role_profile_from_execution(section)
     except external_intelligence.ExternalIntelligenceError as error:
         raise PreflightError(str(error)) from error
     manifest_path = Path(section["environment_manifest"]).resolve()
@@ -185,7 +186,7 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
     )
     _require(check.returncode == 0, f"LongMemEval-S 离线环境检查失败: {check.stderr[-2000:]}")
     protocol = binding.load_json(protocol_path)
-    external_selection = external_intelligence.load_runtime_selection(SUPPORT_ROOT / "external-intelligence-runtime.json")
+    external_selection = external_intelligence_runtime.selected_implementation(external_configuration.driver)
     official_questions = json.loads(data.read_text(encoding="utf-8"))
     _require(isinstance(official_questions, list), "LongMemEval-S 固定数据不是问题数组")
     expected_batches = int(protocol["execution"]["calibration_semantic_batches_per_question"])
@@ -195,12 +196,13 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
     product_binary_sha256 = binding.sha256(Path(config["candidate"]["binary"]).resolve())
     calibration_candidate = f"preflight-{product_binary_sha256}"
     runtime_path = adapter.with_name("external_intelligence_runtime.py")
-    transport_path = adapter.with_name("codex_app_server.py")
     contract_path = adapter.parents[1] / "support" / "external_intelligence.py"
-    selection_path = SUPPORT_ROOT / "external-intelligence-runtime.json"
-    _require(runtime_path.is_file() and transport_path.is_file() and contract_path.is_file() and selection_path.is_file(), "LongMemEval-S external-intelligence adapter is missing")
+    implementation_paths = external_intelligence_runtime.implementation_files(external_configuration.driver)
+    _require(runtime_path.is_file() and all(path.is_file() for path in implementation_paths) and contract_path.is_file(), "LongMemEval-S external-intelligence adapter is missing")
+    selection_bytes = json.dumps(external_selection, sort_keys=True, separators=(",", ":")).encode("utf-8")
     community_tool_sha256 = hashlib.sha256(
-        adapter.read_bytes() + runtime_path.read_bytes() + transport_path.read_bytes() + contract_path.read_bytes() + selection_path.read_bytes() + protocol_path.read_bytes()
+        adapter.read_bytes() + runtime_path.read_bytes() + b"".join(path.read_bytes() for path in implementation_paths)
+        + contract_path.read_bytes() + selection_bytes + protocol_path.read_bytes()
     ).hexdigest()
     if representation_arguments:
         representation_runtime = adapter.with_name("semantic_representation.py")
@@ -213,8 +215,13 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
     }, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()[:16]
     semantic_token = hashlib.sha256(json.dumps({
         "dry_plan_token": dry_plan_token,
-        "app_server_sha256": binding.sha256(transport_path),
+        "external_intelligence_implementation_sha256": hashlib.sha256(
+            b"".join(path.read_bytes() for path in implementation_paths)
+        ).hexdigest(),
         "calibration_external_intelligence_max_active": protocol["execution"]["codex_max_active"],
+        "external_intelligence_roles": {
+            name: external_roles[name] for name in ("semantic", "reader", "judge")
+        },
     }, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()[:16]
     dry_plan_output = runs / "dry-plan" / f"{product_binary_sha256[:8]}-{dry_plan_token}"
     expected_dry_plan_sources = {
@@ -274,9 +281,12 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
         str(python), str(adapter), "run", "--non-formal", "--environment-manifest", str(manifest_path), "--protocol", str(protocol_path),
         "--dataset", str(fixture_path), "--output-dir", str(output), "--ownward-binary", str(config["candidate"]["binary"]),
         "--embedding-bundle-dir", str(config["candidate"]["embedding_bundle_dir"]), "--candidate", calibration_candidate,
-        "--external-intelligence-driver", str(external_selection["driver"]),
+        "--external-intelligence-driver", external_configuration.driver,
         "--external-intelligence-binary", str(external_configuration.binary),
         "--external-intelligence-credential-file", str(external_configuration.credential_file),
+        "--external-intelligence-roles-json", json.dumps({
+            name: external_roles[name] for name in ("semantic", "reader", "judge")
+        }, sort_keys=True, separators=(",", ":")),
         "--environment-sha256", binding.sha256(manifest_path), "--input-manifest-sha256", binding.sha256(data),
         "--tool-sha256", community_tool_sha256,
         *representation_arguments,
@@ -316,9 +326,9 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
     capabilities = result.get("capabilities")
     _require(isinstance(capabilities, dict), "LongMemEval-S 隔离预检缺少外部智能角色证据")
     _require(capabilities.get("semantic") == {
-        "source": protocol["memory"]["capability_source"],
-        "model": protocol["memory"]["semantic_model"],
-        "reasoning_effort": protocol["memory"]["semantic_reasoning_effort"],
+        "source": external_selection["provider"],
+        "model": external_roles["semantic"]["model"],
+        "reasoning_effort": external_roles["semantic"]["reasoning_effort"],
         "input_representation": capabilities.get("semantic", {}).get("input_representation"),
         "input_representation_manifest_identity": capabilities.get("semantic", {}).get("input_representation_manifest_identity"),
     }, "LongMemEval-S 隔离预检未真实调用冻结的语义角色")
@@ -330,14 +340,14 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
         "LongMemEval-S 语义输入表示身份缺失",
     )
     _require(capabilities.get("reader") == {
-        "source": protocol["reader"]["capability_source"],
-        "model": protocol["reader"]["model"],
-        "reasoning_effort": protocol["reader"]["reasoning_effort"],
+        "source": external_selection["provider"],
+        "model": external_roles["reader"]["model"],
+        "reasoning_effort": external_roles["reader"]["reasoning_effort"],
     }, "LongMemEval-S 隔离预检未真实调用冻结的 Reader 角色")
     _require(capabilities.get("judge") == {
-        "source": protocol["judge"]["capability_source"],
-        "model": protocol["judge"]["model"],
-        "reasoning_effort": protocol["judge"]["reasoning_effort"],
+        "source": external_selection["provider"],
+        "model": external_roles["judge"]["model"],
+        "reasoning_effort": external_roles["judge"]["reasoning_effort"],
     }, "LongMemEval-S 隔离预检未真实调用冻结的 Judge 角色")
     _require(result.get("diagnostics", {}).get("questions") == 4, "LongMemEval-S 隔离预检诊断链路不完整")
     questions = [binding.load_json(output / "questions" / item["question_id"] / "result.json") for item in fixture]

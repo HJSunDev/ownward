@@ -10,9 +10,9 @@
 
 正式协议固定每个问题使用独立 Ownward 数据目录；只把会话 ID、日期和用户—助手正文经公开创建与语义协作路径交给产品，不向记忆、组织和检索阶段暴露答案、答案会话、题型或裁判。语义工作仍按冻结身份、数量、顺序和 Schema 经公开路径提交。
 
-产品评测固定为 `external-agent-progressive/v1`：问题经 `ownward.external-intelligence/v1` 稳定端口直接交给外部智能体；当前适配器使用 Codex `gpt-5.6-luna` / `xhigh`，并向其提供 Ownward 的搜索、导航、证据检索、证据读取和完整读取工具。外部智能体自主选择操作、积累证据、调整方向、判断停止并组织答案。宿主只执行工具和冻结预算，不预选来源、证据或读取顺序；每题最多 12 次工具调用、8 次读取和 24,000 字符已读证据。工具未暴露、被禁止、出现宿主固定预取或智能体未实际完成搜索与读取时，产品运行失败关闭。历史固定预取实现仅作为 `passive-ranking-diagnostic/v1` 内部诊断，不得进入盲测、正式验收、内核归因或晋升判断。
+产品评测固定为 `external-agent-progressive/v1`：问题经 `ownward.external-intelligence/v1` 稳定端口直接交给外部智能体；默认适配器使用 OpenCode Go `qwen3.8-flash` / `xhigh`，原 Codex Luna/Terra 组合仍可显式选择。Reader 获得 Ownward 的搜索、导航、证据检索、证据读取和完整读取工具，自主选择操作、积累证据、调整方向、判断停止并组织答案。宿主只执行工具和冻结预算，不预选来源、证据或读取顺序；每题最多 12 次工具调用、8 次读取和 24,000 字符已读证据。工具未暴露、被禁止、出现宿主固定预取或智能体未实际完成搜索与读取时，产品运行失败关闭。历史固定预取实现仅作为 `passive-ranking-diagnostic/v1` 内部诊断，不得进入盲测、正式验收、内核归因或晋升判断。
 
-语义、主动检索回答与裁判共用八个彼此独立的外部智能 worker；每个 worker 同时最多一个 turn，每次请求使用独立、临时、只读的新会话，单 worker 故障只重启自身且只能有界重试。当前 `codex-app-server/v1` 适配器继续复用 Codex 原生认证，不使用额外 API Key；裁判仍固定为 `gpt-5.6-terra` / `medium` 并按官方原始评测提示输出原标签。供应商与 driver 由 `benchmarks/support/external-intelligence-runtime.json` 封存，模型、推理档位与质量边界仍由 `protocol.json` 封存；运行身份和检查点同时绑定二者及执行制品、工具清单与恢复策略，稳定端口不会隐藏来源。
+语义、主动检索回答与裁判共用有界的独立外部智能 worker；每个 worker 同时最多一个 turn，每次请求使用独立、临时、只读的新会话，单 worker 故障只重启自身且只能有界重试。默认 `opencode-server/v1` 使用 OpenCode Go / Qwen3.8 Flash；并列的 `codex-app-server/v1` 继续复用 Codex 原生认证和既有 Luna/Terra 能力。供应商与 driver 由 `benchmarks/support/external-intelligence-runtime.json` 封存，模型、推理档位与质量边界由角色配置和冻结协议共同封存；运行身份和检查点同时绑定所选实现、执行制品、工具清单与恢复策略，稳定端口不会隐藏来源。
 
 正式结果标识为 `Ownward LongMemEval-S Production Profile`。官方数据、500 题、问答协议、提示和计分语义保持不变；由于 Reader、裁判与检索预算不同的公开成绩不具备直接可比性，本口径不设置跨 profile 准确率硬阈值。产品答案先独立冻结，评测层随后才接触官方答案与证据标识；逐题诊断封存语义组织、search/read、Reader、裁判、Token、重试、限流和时延证据，并与产品执行和正式计分单向隔离。
 
@@ -32,4 +32,4 @@ python benchmarks/longmemeval_s/environment.py check `
   --smoke
 ```
 
-正式 community 配置必须直接引用 `manifests/v1.json`、仓库内 `protocol.json`、当前外部智能适配器的执行制品与认证定位，并把候选运行目录置于 `runs/<candidate>/`；配置只保存定位和公开身份，不读取或复制认证内容。当前适配器仍由既有 `codex_binary` / `codex_auth_file` 字段装配，这两个字段是适配器边界，不是业务合同。不得引用 `.install`、系统临时目录或固定资产目录作为输出位置。500 题无模型 dry-plan 已封存并复用：23,867 个会话、1,498 个自然工作批，全部工作与正文完整。历史池 1/2/4 校准证据继续保留，但不再决定正式并发；活动规则是在候选池 8/12 中选择稳定且包含完整余量上界不超过 20,400 秒的最低并发。旧四题预检绑定 Luna/medium，只保留传输、批次和历史成本基线价值。当前 xhigh 成本迁移使用实测 8.447 秒 p95 全额新增法，并只扣除已封存、含重复误差的 V2 本地关键路径节省：原始投影 12,339.621 秒，完整余量上界 19,635.850 秒，低于 20,400 秒且保留 764.150 秒。该证明不是正式 preflight；当前候选仍须在最终交接前重建 community binding 并运行一次 xhigh 四题 preflight。dry-plan 与历史 medium 预检证据分别位于 `runs/dry-plan/99f5190-appserver-v2` 和 `runs/preflight/77600820-89e959e3ae7c92f1-production-profile`。
+正式 community 配置必须直接引用 `manifests/v1.json`、仓库内 `protocol.json`、当前外部智能适配器的执行制品与认证定位，并把候选运行目录置于 `runs/<candidate>/`；配置只保存定位和公开身份，不读取或复制认证内容。新配置使用 `external_intelligence` 块；既有 `codex_binary` / `codex_auth_file` 字段继续作为显式 Codex 兼容输入，不随默认值改变。不得引用 `.install`、系统临时目录或固定资产目录作为输出位置。500 题无模型 dry-plan 已封存并复用：23,867 个会话、1,498 个自然工作批，全部工作与正文完整。历史池 1/2/4 校准证据继续保留，但不再决定正式并发；活动规则是在候选池 8/12 中选择稳定且包含完整余量上界不超过 20,400 秒的最低并发。任何 provider 的正式运行都必须用自身身份重建 community binding 并通过四题 preflight，不能复用另一 provider 的模型检查点。

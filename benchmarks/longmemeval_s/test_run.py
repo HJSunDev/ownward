@@ -156,13 +156,14 @@ class FakeTransport:
     @property
     def identity(self):
         return {
-            "schema": "ownward.external-intelligence-runtime-identity/v1",
+            "schema": "ownward.external-intelligence-runtime-identity/v2",
             "contract": "ownward.external-intelligence/v1",
             "driver": "fixture/v1",
             "provider": "fixture",
             "transport": "in-process/v1",
             "selection_sha256": "c" * 64,
             "artifact_sha256": "a" * 64,
+            "implementation_sha256": "d" * 64,
             "credential_locator_sha256": "b" * 64,
             "credential_content_read": False,
             "max_active": 1,
@@ -204,7 +205,11 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
         self.assertEqual(1498, self.protocol["execution"]["semantic_work_requests"])
         selection = adapter.load_json(adapter.SUPPORT_ROOT / "external-intelligence-runtime.json")
         self.assertEqual("ownward.external-intelligence/v1", selection["contract"])
-        self.assertEqual("codex-app-server/v1", selection["driver"])
+        self.assertEqual("opencode-server/v1", selection["default_driver"])
+        self.assertEqual(
+            {"codex-app-server/v1", "opencode-server/v1"},
+            {item["driver"] for item in selection["implementations"]},
+        )
         self.assertEqual(8, self.protocol["execution"]["codex_max_active"])
         self.assertEqual(20, self.protocol["memory"]["semantic_analysis_max_works"])
         self.assertEqual("ownward.semantic-deduplicated-body-table/v1", self.protocol["memory"]["semantic_input_representation"])
@@ -216,6 +221,20 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
         self.assertTrue(self.protocol["reader"]["requires_tools"])
         self.assertNotIn("evidence_selection_policy", self.protocol["retrieval"])
         self.assertEqual(list(adapter.ACTIVE_RETRIEVAL_TOOLS), self.protocol["retrieval"]["allowed_tools"])
+
+    def test_explicit_external_intelligence_roles_create_an_effective_copy(self) -> None:
+        before = json.loads(json.dumps(self.protocol))
+        roles = {
+            role: {"model": "qwen3.8-flash", "reasoning_effort": effort}
+            for role, effort in (("semantic", "xhigh"), ("reader", "xhigh"), ("judge", "medium"))
+        }
+        effective = adapter.apply_external_intelligence_roles(self.protocol, roles)
+        self.assertEqual(before, self.protocol)
+        self.assertEqual("qwen3.8-flash", effective["memory"]["semantic_model"])
+        self.assertEqual("xhigh", effective["reader"]["reasoning_effort"])
+        self.assertEqual("medium", effective["judge"]["reasoning_effort"])
+        with self.assertRaisesRegex(adapter.AdapterError, "incomplete"):
+            adapter.apply_external_intelligence_roles(self.protocol, {"reader": roles["reader"]})
 
     def test_stage6_and_formal_share_the_same_xhigh_reader_identity(self) -> None:
         adapter.validate_protocol(self.protocol, formal=False)

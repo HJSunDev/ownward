@@ -24,13 +24,9 @@
     "environment_manifest": "E:\\Ownward\\acceptance\\longmemeval-s\\manifests\\v1.json",
     "protocol": "E:\\path\\to\\ownward\\benchmarks\\longmemeval_s\\protocol.json",
     "output_dir": "E:\\Ownward\\acceptance\\longmemeval-s\\runs\\candidate-commit\\formal",
-    "codex_binary": "E:\\path\\to\\codex.exe",
-    "codex_auth_file": "C:\\Users\\USERNAME\\.codex\\auth.json",
-    "codex_semantic_model": "gpt-5.6-luna",
-    "codex_semantic_reasoning_effort": "low",
-    "codex_reader_model": "gpt-5.6-luna",
-    "codex_reader_reasoning_effort": "xhigh",
-    "codex_judge_model": "gpt-5.6-terra",
-    "codex_judge_reasoning_effort": "medium"
+    "external_intelligence": {
+      "binary": "E:\\path\\to\\opencode.ps1",
+      "credential_file": "C:\\Users\\USERNAME\\.local\\share\\opencode\\auth.json"
+    }
   }
 }

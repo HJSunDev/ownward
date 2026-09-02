@@ -35,6 +35,7 @@ class KernelIterationValidationTests(unittest.TestCase):
         class Transport:
             def __init__(self) -> None:
                 self.roles: list[str] = []
+                self.requests: list[dict[str, object]] = []
 
             @property
             def identity(self) -> dict[str, object]:
@@ -44,12 +45,14 @@ class KernelIterationValidationTests(unittest.TestCase):
                     transport="fixture-transport/v1",
                     selection_sha256="1" * 64,
                     artifact_sha256="2" * 64,
+                    implementation_sha256="4" * 64,
                     credential_locator_sha256="3" * 64,
                     max_active=1,
                     worker_processes=1,
                 ).value()
 
             def invoke(self, **_request: object):
+                self.requests.append(_request)
                 return {"answer": "ok"}, {"input_tokens": 1, "output_tokens": 1}, {"transport": "fixture"}
 
             def diagnostics(self) -> dict[str, object]:
@@ -73,6 +76,7 @@ class KernelIterationValidationTests(unittest.TestCase):
             "driver": "fixture-driver/v1",
             "binary": Path("fixture-runtime"),
             "credential_file": Path("fixture-credential"),
+            "roles": {"quality_admission": {"model": "selected-model", "reasoning_effort": "max"}},
         }}
         with tempfile.TemporaryDirectory(dir=REPOSITORY) as temporary, mock.patch.object(
             validation, "_load_longmemeval_module", return_value=Module,
@@ -91,6 +95,8 @@ class KernelIterationValidationTests(unittest.TestCase):
                 )
         self.assertEqual({"answer": "ok"}, value)
         self.assertEqual("quality-admission", usage["role"])
+        self.assertEqual("selected-model", transport.requests[0]["model"])
+        self.assertEqual("max", transport.requests[0]["effort"])
 
     def test_versioned_blind_budget_is_clean_checkout_safe_and_bound_to_calibration(self) -> None:
         value = validation.load_blind_budget_archive(HERE)
@@ -1031,6 +1037,7 @@ class KernelIterationValidationTests(unittest.TestCase):
                 "credential_file": auth,
                 "max_active": protocol["execution"]["codex_max_active"],
                 "worker_processes": protocol["execution"]["codex_server_processes"],
+                "roles": validation.external_intelligence_runtime.role_profile_from_execution(value["community"]),
             },
             "codex_binary": codex, "codex_auth_file": auth, "runs": runs,
         }

@@ -473,6 +473,7 @@ def validate_execution_config(
     try:
         external_configuration = external_intelligence_runtime.configuration_from_execution(community)
         external_intelligence_runtime.validate_configuration(external_configuration)
+        external_roles = external_intelligence_runtime.role_profile_from_execution(community)
     except external_intelligence.ExternalIntelligenceError as error:
         raise KernelIterationValidationError(str(error)) from error
     _require(binary.is_file(), "非正式执行缺少产品二进制")
@@ -505,13 +506,14 @@ def validate_execution_config(
     validation = load_validation_contract(suite_root)
     blind = _mapping(validation, "blind")
     expected_roles = _mapping(blind, "production_roles")
-    _require(
-        f"{protocol_value['memory']['semantic_model']}/{protocol_value['memory']['semantic_reasoning_effort']}" == expected_roles["semantic"]
-        and protocol_value["reader"]["model"] == "gpt-5.6-luna"
-        and protocol_value["reader"]["reasoning_effort"] == expected_reader_effort
-        and f"{protocol_value['judge']['model']}/{protocol_value['judge']['reasoning_effort']}" == expected_roles["judge"],
-        "执行配置没有使用冻结的 Luna/Luna/Terra 角色",
-    )
+    if "external_intelligence" not in community:
+        _require(
+            f"{protocol_value['memory']['semantic_model']}/{protocol_value['memory']['semantic_reasoning_effort']}" == expected_roles["semantic"]
+            and protocol_value["reader"]["model"] == "gpt-5.6-luna"
+            and protocol_value["reader"]["reasoning_effort"] == expected_reader_effort
+            and f"{protocol_value['judge']['model']}/{protocol_value['judge']['reasoning_effort']}" == expected_roles["judge"],
+            "执行配置没有使用冻结的 Luna/Luna/Terra 角色",
+        )
     _require(
         expected_reader_effort == "xhigh"
         and protocol_value["reader"].get("selection_profile_identity") == "401aa7962b5ecd3d283093a2d5eee0fe76da941d20ce4aa317ef21216d55c83c"
@@ -519,7 +521,10 @@ def validate_execution_config(
         and protocol_value["reader"].get("selection_result_identity") == "25f4954169249c92af6001813dca81ac04c0e70a75499bd1e1bcf9dc45ae5824",
         "Reader 配置没有绑定正式与 Stage 6 共用的冻结选择证据",
     )
-    external_selection = external_intelligence.load_runtime_selection(SUPPORT_ROOT / "external-intelligence-runtime.json")
+    external_catalog = external_intelligence.load_runtime_selection(SUPPORT_ROOT / "external-intelligence-runtime.json")
+    external_selection = external_intelligence.select_runtime_implementation(
+        external_catalog, external_configuration.driver,
+    )
     _require(protocol_value.get("execution", {}).get("codex_max_active") == 8, "外部智能并发不是冻结值 8")
     manifest = _load_json(environment_manifest)
     runs = Path(str(_mapping(manifest, "layout").get("runs", ""))).resolve()
@@ -543,6 +548,7 @@ def validate_execution_config(
             "credential_file": external_configuration.credential_file,
             "max_active": protocol_value["execution"]["codex_max_active"],
             "worker_processes": protocol_value["execution"]["codex_server_processes"],
+            "roles": external_roles,
         },
         "runs": runs,
         "semantic_representation_manifest": representation_path,
@@ -1948,13 +1954,22 @@ def _native_external_intelligence_batch_invoker(
             validate: Callable[[dict[str, Any]], Any] | None = None,
         ) -> tuple[dict[str, Any], dict[str, Any]]:
             started = time.perf_counter()
+            role_key = (
+                "quality_admission" if role.startswith("quality-admission")
+                else "semantic" if role == "semantic-organization"
+                else role
+            )
+            profile = external.get("roles", {}).get(role_key)
+            selected = dict(settings)
+            if isinstance(profile, dict):
+                selected.update(model=profile["model"], reasoning_effort=profile["reasoning_effort"])
             value, usage = executor.invoke(
                 role=role,
                 prompt=prompt,
                 schema=schema,
                 stage=stage / "checkpoint",
-                model=settings["model"],
-                effort=settings["reasoning_effort"],
+                model=selected["model"],
+                effort=selected["reasoning_effort"],
                 timeout_seconds=float(settings["timeout_seconds"]),
                 attempts=int(settings["attempts"]),
                 validate=validate,
@@ -2004,6 +2019,10 @@ def _run_longmemeval(
         "--external-intelligence-driver", str(runtime["external_intelligence"]["driver"]),
         "--external-intelligence-binary", str(runtime["external_intelligence"]["binary"]),
         "--external-intelligence-credential-file", str(runtime["external_intelligence"]["credential_file"]),
+        "--external-intelligence-roles-json", json.dumps({
+            name: runtime["external_intelligence"]["roles"][name]
+            for name in ("semantic", "reader", "judge")
+        }, sort_keys=True, separators=(",", ":")),
         "--candidate", f"kernel-iteration:{subject_identity}",
         "--environment-sha256", evidence.file_sha256(runtime["environment_manifest"]),
         "--input-manifest-sha256", evidence.file_sha256(dataset_path),

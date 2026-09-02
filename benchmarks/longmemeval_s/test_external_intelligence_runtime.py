@@ -21,6 +21,7 @@ class ExternalIntelligenceRuntimeTests(unittest.TestCase):
                 "codex_auth_file": str(credential),
             })
             subject.validate_configuration(configuration)
+            self.assertEqual("codex-app-server/v1", configuration.driver)
             self.assertEqual(binary.resolve(), configuration.binary)
             self.assertEqual(credential.resolve(), configuration.credential_file)
 
@@ -37,9 +38,33 @@ class ExternalIntelligenceRuntimeTests(unittest.TestCase):
         self.assertEqual({"model": "reader", "reasoning_effort": "medium"}, roles["reader"])
         self.assertEqual({"model": "judge", "reasoning_effort": "high"}, roles["judge"])
 
+    def test_default_opencode_go_configuration_uses_qualified_qwen_profile(self) -> None:
+        roles = {
+            role: {"model": "qwen3.8-flash", "reasoning_effort": "xhigh"}
+            for role in subject.EXPLICIT_ROLE_KEYS
+        }
+        roles["judge"] = {"model": "qwen3.8-flash", "reasoning_effort": "medium"}
+        value = {
+            "external_intelligence": {
+                "binary": "opencode.cmd", "credential_file": "auth.json",
+            },
+        }
+        configuration = subject.configuration_from_execution(value)
+        self.assertEqual("opencode-server/v1", configuration.driver)
+        self.assertEqual(roles, subject.role_profile_from_execution(value))
+
+    def test_explicit_codex_selection_remains_available(self) -> None:
+        value = {
+            "external_intelligence": {
+                "driver": "codex-app-server/v1", "binary": "codex.exe", "credential_file": "auth.json",
+            },
+        }
+        self.assertEqual("codex-app-server/v1", subject.configuration_from_execution(value).driver)
+        self.assertEqual("gpt-5.6-luna", subject.role_profile_from_execution(value)["reader"]["model"])
+
     def test_current_adapter_selection_is_exact_and_auditable(self) -> None:
-        self.assertEqual("codex-app-server/v1", subject.CURRENT_DRIVER)
-        self.assertEqual("openai-codex", subject.CURRENT_PROVIDER)
+        self.assertEqual("opencode-server/v1", subject.CURRENT_DRIVER)
+        self.assertEqual("opencode-go", subject.CURRENT_PROVIDER)
         self.assertEqual("persistent-independent-worker-pool/v1", subject.CURRENT_TRANSPORT)
         self.assertEqual("one-active-turn-per-worker", subject.CURRENT_WORKER_ISOLATION)
 
@@ -87,10 +112,11 @@ class ExternalIntelligenceRuntimeTests(unittest.TestCase):
 
     def test_adapter_translates_provider_failure_at_the_boundary(self) -> None:
         pool = mock.Mock()
-        pool.invoke.side_effect = subject.AppServerError("provider failed")
-        adapter = subject.CodexAppServerAdapter(pool, {"driver": subject.CURRENT_DRIVER})
+        codex = subject.selected_implementation("codex-app-server/v1")
+        adapter = subject.codex_external_intelligence.CodexTransport(pool, {"driver": codex["driver"]}, codex["provider"])
+        pool.invoke.side_effect = subject.codex_external_intelligence.AppServerError("provider failed")
         with self.assertRaisesRegex(subject.ExternalIntelligenceError, "provider failed"):
-            adapter.invoke(prompt="test")
+            subject._StableTransport(adapter).invoke(prompt="test")
 
 
 if __name__ == "__main__":

@@ -169,9 +169,9 @@ def execute(
     _, python, dataset, runs = _persistent_layout(manifest_path)
     protocol = Path(config["protocol"]).resolve()
     protocol_value = _load(protocol)
-    external_selection = external_intelligence.load_runtime_selection(SUPPORT_ROOT / "external-intelligence-runtime.json")
     external_configuration = external_intelligence_runtime.configuration_from_execution(config)
     external_intelligence_runtime.validate_configuration(external_configuration)
+    external_roles = external_intelligence_runtime.role_profile_from_execution(config)
     adapter = (suite_root.parents[1] / "longmemeval_s" / "run.py").resolve()
     binary = Path(config["binary"]).resolve()
     embedding = Path(config["embedding_bundle_dir"]).resolve()
@@ -189,9 +189,12 @@ def execute(
             str(python), str(adapter), "run", "--environment-manifest", str(manifest_path), "--protocol", str(protocol),
             "--dataset", str(dataset), "--output-dir", str(run_dir), "--ownward-binary", str(binary),
             "--embedding-bundle-dir", str(embedding),
-            "--external-intelligence-driver", str(external_selection["driver"]),
+            "--external-intelligence-driver", external_configuration.driver,
             "--external-intelligence-binary", str(external_configuration.binary),
             "--external-intelligence-credential-file", str(external_configuration.credential_file),
+            "--external-intelligence-roles-json", json.dumps({
+                name: external_roles[name] for name in ("semantic", "reader", "judge")
+            }, sort_keys=True, separators=(",", ":")),
             "--candidate", binding["candidate"], "--environment-sha256", binding["environment_sha256"],
             "--input-manifest-sha256", binding["input_manifest_sha256"], "--tool-sha256", binding["tool_sha256"],
         ]
