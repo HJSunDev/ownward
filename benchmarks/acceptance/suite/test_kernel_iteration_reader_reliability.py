@@ -30,14 +30,15 @@ class ReaderReliabilityTests(unittest.TestCase):
         self.assertFalse(proof["levels"]["5"]["passed"])
 
     def test_formal_xhigh_reader_cost_migration_keeps_full_ceiling_and_requires_preflight(self) -> None:
-        proof = reliability.load_formal_cost_migration(HERE)
+        source = reliability.load_formal_cost_migration(HERE)
+        proof = reliability.load_active_retrieval_cost_migration(HERE, source)
         self.assertLessEqual(proof["migrated_projection"]["required_ceiling_wall_seconds"], 20400)
         self.assertGreater(proof["migrated_projection"]["margin_seconds"], 0)
         self.assertEqual(
-            proof["policy"]["community_binding_and_preflight_status"],
-            "pending-rebuild-before-formal-handoff",
+            proof["policy"]["formal_preflight_status"],
+            "pending",
         )
-        self.assertTrue(proof["policy"]["this_receipt_is_not_a_formal_preflight"])
+        self.assertTrue(proof["policy"]["active_retrieval_fully_charged_without_parallelism_credit"])
 
 
 if __name__ == "__main__":

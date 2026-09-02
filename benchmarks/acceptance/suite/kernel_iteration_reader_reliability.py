@@ -17,6 +17,7 @@ RESULT_SCHEMA = "ownward.kernel-iteration-stage3-reader-reliability-result/v1"
 CONTRACT_RELATIVE = Path("iteration/v2/stage3-reader-reliability-contract.json")
 SELECTION_RELATIVE = Path("iteration/v2/stage3-reader-reliability-selection.json")
 FORMAL_COST_MIGRATION_RELATIVE = Path("iteration/v2/stage6-formal-reader-cost-migration.json")
+ACTIVE_RETRIEVAL_COST_MIGRATION_RELATIVE = Path("iteration/evaluation-correction/stage6-active-retrieval-cost-migration.json")
 
 
 class ReaderReliabilityError(ValueError):
@@ -80,7 +81,7 @@ def load_selection(suite_root: Path, *, require_result: bool = True) -> dict[str
         "Reader 可靠性控制器身份迁移无效",
     )
     protocol_path = suite_root / str(value["protocol_relative_path"])
-    _require(protocol_path.is_file() and evidence.file_sha256(protocol_path) == value["protocol_sha256"], "正式与 Stage 6 共用 Reader 协议漂移")
+    _require(protocol_path.is_file(), "正式与 Stage 6 共用 Reader 协议缺失")
     protocol = _load_json(protocol_path)
     reader = _mapping(protocol, "reader")
     _require(
@@ -94,6 +95,9 @@ def load_selection(suite_root: Path, *, require_result: bool = True) -> dict[str
     )
     cost = load_formal_cost_migration(suite_root, require_source_artifacts=require_result)
     _require(value.get("formal_cost_migration_identity") == cost["identity"], "正式 Reader 成本迁移证明错绑")
+    if evidence.file_sha256(protocol_path) != value["protocol_sha256"]:
+        active_cost = load_active_retrieval_cost_migration(suite_root, cost)
+        _require(active_cost["reader_selection_identity"] == value["identity"], "主动检索成本迁移错绑 Reader 选择")
     _require(value.get("formal_handoff_status") == "community-binding-and-preflight-pending-rebuild", "community 重绑/预检状态错误")
     if require_result:
         result_path = suite_root.parents[2] / str(value["result_relative_path"])
@@ -115,7 +119,7 @@ def load_formal_cost_migration(
     _require(value.get("identity") == evidence.canonical_sha256(content), "正式 Reader 成本迁移身份漂移")
     target = _mapping(value, "target_formal_protocol")
     target_path = suite_root.parents[2] / str(target["path"])
-    _require(target_path.is_file() and evidence.file_sha256(target_path) == target["sha256"], "正式 xhigh 协议与成本证明错绑")
+    _require(target_path.is_file(), "正式 xhigh 协议缺失")
     source = _mapping(value, "source_formal_projection")
     reader = _mapping(value, "reader_selection")
     local = _mapping(value, "candidate_local_critical_path")
@@ -149,6 +153,8 @@ def load_formal_cost_migration(
         and policy.get("this_receipt_is_not_a_formal_preflight") is True,
         "正式 Reader 成本迁移越过质量、状态或 preflight 边界",
     )
+    if evidence.file_sha256(target_path) != target["sha256"]:
+        load_active_retrieval_cost_migration(suite_root, value)
     if require_source_artifacts:
         repo_root = suite_root.parents[2]
         reader_result = repo_root / ".tmp/kernel-v2-major-iteration/stage3-reader-reliability/reader-reliability/268576e324bed9a36dd442f9dcda519d96177c285bc99a9a373b7b00d2e8063e/result.json"
@@ -157,6 +163,64 @@ def load_formal_cost_migration(
         _require(evidence.file_sha256(reader_result) == reader["result_sha256"], "xhigh Reader 原始成本证据漂移")
         _require(evidence.file_sha256(local_contract) == local["contract_sha256"], "V2 本地关键路径合同漂移")
         _require(evidence.file_sha256(local_result) == local["result_sha256"], "V2 本地关键路径结果漂移")
+    return value
+
+
+def load_active_retrieval_cost_migration(suite_root: Path, source_cost: dict[str, Any]) -> dict[str, Any]:
+    suite_root = suite_root.resolve()
+    value = _load_json(suite_root / ACTIVE_RETRIEVAL_COST_MIGRATION_RELATIVE)
+    _require(value.get("schema") == "ownward.product-faithful-active-retrieval-cost-migration/v1", "主动检索成本迁移 schema 无效")
+    content = {key: item for key, item in value.items() if key != "identity"}
+    _require(value.get("identity") == evidence.canonical_sha256(content), "主动检索成本迁移身份漂移")
+    _require(value.get("source_reader_cost_migration_identity") == source_cost.get("identity"), "主动检索成本迁移源错绑")
+    target = _mapping(value, "target_protocol")
+    target_path = suite_root.parents[2] / str(target["path"])
+    _require(target_path.is_file() and evidence.file_sha256(target_path) == target["sha256"], "主动检索正式协议与成本迁移错绑")
+    protocol = _load_json(target_path)
+    retrieval = _mapping(protocol, "retrieval")
+    reader = _mapping(protocol, "reader")
+    _require(
+        retrieval.get("mode") == target.get("retrieval_mode")
+        and retrieval.get("allowed_tools") == target.get("required_tools")
+        and f'{reader.get("model")}/{reader.get("reasoning_effort")}' == target.get("reader"),
+        "主动检索正式协议表面漂移",
+    )
+    calibration = _mapping(value, "calibration")
+    comparison_path = suite_root.parents[2] / str(calibration["comparison_evidence_path"])
+    _require(
+        comparison_path.is_file()
+        and evidence.file_sha256(comparison_path) == calibration["comparison_evidence_sha256"],
+        "主动检索成本校准证据漂移",
+    )
+    charged = float(calibration["charged_retrieval_seconds_per_question"]) * int(calibration["formal_questions"])
+    _require(
+        float(calibration["charged_retrieval_seconds_per_question"]) >= 2 * float(calibration["observed_retrieval_p95_seconds"])
+        and int(calibration["parallelism_credit"]) == 0
+        and math.isclose(charged, float(calibration["conservative_incremental_seconds"]), abs_tol=1e-9),
+        "主动检索成本没有按无并发折扣的保守边界计入",
+    )
+    source = _mapping(source_cost, "migrated_projection")
+    reserves = _mapping(value, "reserves")
+    migrated = _mapping(value, "migrated_projection")
+    projected = float(source["projected_wall_seconds"]) + charged
+    normal = float(source["normal_variation_reserve_seconds"]) + charged * float(reserves["normal_variation_ratio"])
+    retry = float(source["bounded_retry_reserve_seconds"]) + charged * float(reserves["bounded_retry_ratio"])
+    required = projected + normal + retry + float(reserves["checkpoint_recovery_seconds"])
+    _require(math.isclose(projected, float(migrated["projected_wall_seconds"]), abs_tol=1e-9), "主动检索正式原始投影错误")
+    _require(math.isclose(normal, float(migrated["normal_variation_reserve_seconds"]), abs_tol=1e-9), "主动检索正式波动余量错误")
+    _require(math.isclose(retry, float(migrated["bounded_retry_reserve_seconds"]), abs_tol=1e-9), "主动检索正式重试余量错误")
+    _require(math.isclose(required, float(migrated["required_ceiling_wall_seconds"]), abs_tol=1e-9), "主动检索正式完整余量错误")
+    _require(required <= float(migrated["hard_ceiling_wall_seconds"]) and migrated.get("passed") is True, "主动检索超过正式 20400 秒硬上限")
+    policy = _mapping(value, "policy")
+    _require(
+        policy.get("reader_quality_relaxed") is False
+        and policy.get("time_ceiling_relaxed") is False
+        and policy.get("active_retrieval_fully_charged_without_parallelism_credit") is True
+        and policy.get("model_or_product_execution") is False
+        and policy.get("formal_state_written") is False
+        and policy.get("formal_preflight_status") == "pending",
+        "主动检索成本迁移越过质量、执行或正式状态边界",
+    )
     return value
 
 

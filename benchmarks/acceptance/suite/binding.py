@@ -668,7 +668,24 @@ def _validate_community_config(community: dict[str, Any]) -> None:
     _require(manifest.get("official", {}).get("data_revision") == LONGMEMEVAL_S_DATA_REVISION, "LongMemEval-S 官方数据版本漂移")
     _require(manifest.get("integrity", {}).get("data_sha256") == LONGMEMEVAL_S_DATA_SHA256, "LongMemEval-S 官方数据摘要漂移")
     protocol = load_json(protocol_path)
-    _require(protocol.get("schema") == "ownward.longmemeval-s-protocol/v1", "LongMemEval-S 固定协议无效")
+    _require(protocol.get("schema") == "ownward.longmemeval-s-protocol/v2", "LongMemEval-S 固定协议无效")
+    retrieval = protocol.get("retrieval")
+    reader = protocol.get("reader")
+    _require(
+        isinstance(retrieval, dict)
+        and retrieval.get("mode") == "external-agent-progressive/v1"
+        and isinstance(retrieval.get("allowed_tools"), list)
+        and "ownward_search" in retrieval["allowed_tools"]
+        and "ownward_read" in retrieval["allowed_tools"]
+        and "evidence_selection_policy" not in retrieval,
+        "LongMemEval-S 产品评测未冻结外部智能体主动检索",
+    )
+    _require(
+        isinstance(reader, dict)
+        and reader.get("mode") == "external-agent-progressive/v1"
+        and reader.get("requires_tools") is True,
+        "LongMemEval-S Reader 禁止主动工具调用",
+    )
     _require(protocol.get("official", {}).get("data_sha256") == LONGMEMEVAL_S_DATA_SHA256, "LongMemEval-S 协议与数据身份不一致")
     _require(Path(community["codex_binary"]).resolve().is_file(), "LongMemEval-S Codex 执行程序不存在")
     _require(Path(community["codex_auth_file"]).resolve().is_file(), "LongMemEval-S Codex 认证文件不存在")

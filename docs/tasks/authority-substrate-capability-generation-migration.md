@@ -50,7 +50,7 @@
 | 对象 | 机械核定的真实状态 | 制品、配置与证据 |
 | --- | --- | --- |
 | 活动产品 | Codex 当前实际启动的是 `bin/ownward.exe`，SHA-256 为 `2c3221f3…3628`，构建来源为 `38ca955+dirty`，版本行为为 `0.1.0-dev`；它不是 HEAD、V0、V1，也不等同于留存的 `38ca955` 候选制品 | `.codex/config.toml` 明确装配 `mcp` 与 `.ownward/development`；活动权威日志与派生日志均为空。共享 MCP 的 PID、端口、令牌和描述文件属于易失运行状态，不进入冻结清单；二进制、向量包、数据目录及非秘密身份进入校验 |
-| V0 | 唯一曾正式晋升的内核基线为 `99f5190…b80e`，二进制 `77600820…d2b`；内部 core/frontier/qualification/full 通过，LongMemEval-S 为 `242/500`，质量条件未满足 | `candidate-artifacts-99f5190`、`acceptance-99f5190`、`execution-99f5190-community.json`。唯一 state 中当前 `baseline=null`，但三条基线历史记录均为同一 V0，只是不同 product 工具身份下的重复晋升记录，不代表三个基线候选 |
+| V0 | 唯一曾正式晋升的内核基线为 `99f5190…b80e`，二进制 `77600820…d2b`；内部 core/frontier/qualification/full 通过，历史旧被动 LongMemEval-S 为 `242/500`，不具产品证明力 | `candidate-artifacts-99f5190`、`acceptance-99f5190`、`execution-99f5190-community.json`。唯一 state 中当前 `baseline=null`，但三条基线历史记录均为同一 V0，只是不同 product 工具身份下的重复晋升记录，不代表三个基线候选 |
 | V1 | 唯一活动验收候选为 `3e712f2…f6bf8`，二进制 `57e0e63c…97f5`；尚未晋升、尚未运行最终社区层 | 唯一 state 与活动 binding 共同绑定 V1；frontier/core/qualification/full 四个检查点均通过，报告摘要分别为 `edcf96d8…1cdf`、`3b06f5d7…b446`、`50d39201…d21`、`f89024c6…81b7` |
 | 其他留存候选 | 没有其他有效候选 | 十二份候选制品目录已逐一核对；除 V0、V1 外均只是不被唯一 state 或正式基线历史引用的历史制品，不能因目录或旧报告仍存在而恢复候选资格 |
 

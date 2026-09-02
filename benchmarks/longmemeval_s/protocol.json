@@ -1,5 +1,5 @@
 {
-  "schema": "ownward.longmemeval-s-protocol/v1",
+  "schema": "ownward.longmemeval-s-protocol/v2",
   "version": "longmemeval-s/9e0b455f4ef0e2ab8f2e582289761153549043fc+d6f21ea9",
   "official": {
     "code_revision": "9e0b455f4ef0e2ab8f2e582289761153549043fc",
@@ -25,15 +25,27 @@
     "semantic_attempts": 3
   },
   "retrieval": {
+    "mode": "external-agent-progressive/v1",
+    "allowed_tools": [
+      "ownward_search",
+      "ownward_navigate",
+      "ownward_evidence_search",
+      "ownward_evidence_read",
+      "ownward_read"
+    ],
+    "max_tool_calls": 12,
     "search_limit": 24,
+    "search_limit_per_call": 24,
+    "navigate_limit_per_call": 24,
     "read_limit": 8,
     "evidence_search_limit_per_source": 3,
-    "evidence_selection_policy": "rank-depth-diagonal-budget-fit/v1",
     "context_max_chars": 24000,
     "query_timeout_seconds": 60
   },
   "reader": {
     "capability_source": "codex",
+    "mode": "external-agent-progressive/v1",
+    "requires_tools": true,
     "model": "gpt-5.6-luna",
     "reasoning_effort": "xhigh",
     "selection_profile_identity": "401aa7962b5ecd3d283093a2d5eee0fe76da941d20ce4aa317ef21216d55c83c",
@@ -87,7 +99,9 @@
       "judge_model",
       "reasoning_efforts",
       "official_prompt",
+      "retrieval_mode",
       "retrieval_budget",
+      "retrieval_tools",
       "timing_boundary"
     ]
   }

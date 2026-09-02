@@ -1,0 +1,56 @@
+{
+  "schema": "ownward.product-faithful-active-retrieval-cost-migration/v1",
+  "purpose": "conservatively-add-the-product-faithful-active-retrieval-cost-to-the-frozen-reader-projection-without-rerunning-formal-content",
+  "source_reader_cost_migration_identity": "8ec2dc562df78d8f9be646e55d6759f5c10601c81299550bc1748af25fc75e96",
+  "reader_selection_identity": "268023d6a4cab714d94d136c998cd20e3f3e9ad017cb3b5f49e783696c41f8fe",
+  "reader_profile_identity": "401aa7962b5ecd3d283093a2d5eee0fe76da941d20ce4aa317ef21216d55c83c",
+  "source_protocol_sha256": "6a52f479858b8a057a10e94dea38b7dd74bff4d8ee021a2abe693574bf98657f",
+  "target_protocol": {
+    "path": "benchmarks/longmemeval_s/protocol.json",
+    "sha256": "cdb347d7aca6f89484c952e02c9e10c7246bb26cfd45a5bef559e2020545d069",
+    "retrieval_mode": "external-agent-progressive/v1",
+    "required_tools": [
+      "ownward_search",
+      "ownward_navigate",
+      "ownward_evidence_search",
+      "ownward_evidence_read",
+      "ownward_read"
+    ],
+    "reader": "gpt-5.6-luna/xhigh"
+  },
+  "calibration": {
+    "comparison_evidence_path": "benchmarks/acceptance/suite/iteration/evaluation-correction/product-faithful-comparison.json",
+    "comparison_evidence_sha256": "1d85d310821b2e4b0c6e4025f6ccf15ef120795d608ae834b2f38166d88d096f",
+    "clean_questions": 4,
+    "clean_report_sha256": "acead7baf054a9f699a2cf08c40aa42d4927ead732a06ca85aee96d4ca4a68a6",
+    "observed_retrieval_p95_seconds": 0.25,
+    "charged_retrieval_seconds_per_question": 0.5,
+    "formal_questions": 500,
+    "parallelism_credit": 0,
+    "conservative_incremental_seconds": 250.0
+  },
+  "reserves": {
+    "normal_variation_ratio": 0.2,
+    "bounded_retry_ratio": 0.1,
+    "checkpoint_recovery_seconds": 3600.0
+  },
+  "migrated_projection": {
+    "projected_wall_seconds": 12589.62081875,
+    "normal_variation_reserve_seconds": 2517.92416375,
+    "bounded_retry_reserve_seconds": 1253.30518,
+    "checkpoint_recovery_reserve_seconds": 3600.0,
+    "required_ceiling_wall_seconds": 19960.8501625,
+    "hard_ceiling_wall_seconds": 20400.0,
+    "margin_seconds": 439.1498375,
+    "passed": true
+  },
+  "policy": {
+    "reader_quality_relaxed": false,
+    "time_ceiling_relaxed": false,
+    "active_retrieval_fully_charged_without_parallelism_credit": true,
+    "model_or_product_execution": false,
+    "formal_state_written": false,
+    "formal_preflight_status": "pending"
+  },
+  "identity": "afa4c3c3e86b4fbec69e70fd68693215413ea09706817a92e04dca626bee5f90"
+}

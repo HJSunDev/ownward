@@ -38,6 +38,7 @@ class CodexAppServer:
         self._completed_turns: dict[str, dict[str, Any]] = {}
         self._usage: dict[str, dict[str, Any]] = {}
         self._active_turns: dict[str, str] = {}
+        self._active_tool_handler: Callable[[str, Any], Any] | None = None
         self._fatal_error: str | None = None
         self._stderr_chunks: list[str] = []
         self.instance_id = ""
@@ -106,7 +107,14 @@ class CodexAppServer:
                     continue
                 method = event.get("method")
                 params = event.get("params") if isinstance(event.get("params"), dict) else {}
-                if method == "thread/tokenUsage/updated":
+                if method == "item/tool/call" and "id" in event:
+                    threading.Thread(
+                        target=self._handle_tool_call,
+                        args=(event["id"], params),
+                        name="codex-app-server-dynamic-tool",
+                        daemon=True,
+                    ).start()
+                elif method == "thread/tokenUsage/updated":
                     turn_id = str(params.get("turnId", ""))
                     token_usage = params.get("tokenUsage") if isinstance(params.get("tokenUsage"), dict) else {}
                     with self._state_lock:
@@ -139,6 +147,42 @@ class CodexAppServer:
         failure = {"error": {"message": message}}
         for target in responses + turns:
             target.put(failure)
+
+    def _write_message(self, value: dict[str, Any]) -> None:
+        if self.process is None or self.process.poll() is not None:
+            raise AppServerError(self._fatal_error or "Codex App Server is not running")
+        with self._write_lock:
+            assert self.process.stdin is not None
+            self.process.stdin.write(json.dumps(value, ensure_ascii=False) + "\n")
+            self.process.stdin.flush()
+
+    def _handle_tool_call(self, request_id: Any, params: dict[str, Any]) -> None:
+        with self._state_lock:
+            handler = self._active_tool_handler
+        if handler is None:
+            response = {
+                "success": False,
+                "contentItems": [{"type": "inputText", "text": "Dynamic tools are disabled for this turn."}],
+            }
+        else:
+            try:
+                result = handler(str(params.get("tool", "")), params.get("arguments"))
+                response = {
+                    "success": True,
+                    "contentItems": [{
+                        "type": "inputText",
+                        "text": json.dumps(result, ensure_ascii=False, separators=(",", ":")),
+                    }],
+                }
+            except Exception as error:  # Tool failures are observations the agent may recover from.
+                response = {
+                    "success": False,
+                    "contentItems": [{"type": "inputText", "text": f"Tool failed: {error}"}],
+                }
+        try:
+            self._write_message({"id": request_id, "result": response})
+        except AppServerError:
+            pass
 
     def request(self, method: str, params: dict[str, Any], *, timeout_seconds: float = 30) -> dict[str, Any]:
         if self.process is None or self.process.poll() is not None:
@@ -179,7 +223,12 @@ class CodexAppServer:
     def invoke(
         self, *, prompt: str, schema: dict[str, Any], model: str, effort: str,
         work_dir: Path, timeout_seconds: float,
+        dynamic_tools: list[dict[str, Any]] | None = None,
+        tool_handler: Callable[[str, Any], Any] | None = None,
+        base_instructions: str | None = None,
     ) -> tuple[dict[str, Any], dict[str, int], dict[str, Any]]:
+        if (dynamic_tools is None) != (tool_handler is None):
+            raise AppServerError("dynamic tools and their handler must be enabled together")
         deadline = time.perf_counter() + timeout_seconds
 
         def remaining() -> float:
@@ -188,19 +237,30 @@ class CodexAppServer:
                 raise AppServerTimeout(f"Codex turn timed out after {timeout_seconds:g} seconds")
             return value
 
-        thread_result = self.request("thread/start", {
-            "model": model,
-            "cwd": str(work_dir.resolve()),
-            "approvalPolicy": "never",
-            "sandbox": "read-only",
-            "ephemeral": True,
-            "dynamicTools": [],
-            "environments": [],
-            "baseInstructions": "Return only the requested structured JSON. Do not use tools.",
-        }, timeout_seconds=min(30, remaining()))
+        with self._state_lock:
+            if self._active_tool_handler is not None:
+                raise AppServerError("Codex App Server worker already owns an active tool turn")
+            self._active_tool_handler = tool_handler
+        try:
+            thread_result = self.request("thread/start", {
+                "model": model,
+                "cwd": str(work_dir.resolve()),
+                "approvalPolicy": "never",
+                "sandbox": "read-only",
+                "ephemeral": True,
+                "dynamicTools": dynamic_tools or [],
+                "environments": [],
+                "baseInstructions": base_instructions or "Return only the requested structured JSON. Do not use tools.",
+            }, timeout_seconds=min(30, remaining()))
+        except BaseException:
+            with self._state_lock:
+                self._active_tool_handler = None
+            raise
         thread = thread_result.get("thread") if isinstance(thread_result.get("thread"), dict) else {}
         thread_id = str(thread.get("id", ""))
         if not thread_id:
+            with self._state_lock:
+                self._active_tool_handler = None
             raise AppServerError("Codex App Server created no thread")
         try:
             turn_result = self.request("turn/start", {
@@ -246,9 +306,12 @@ class CodexAppServer:
                 error = final_turn.get("error") if isinstance(final_turn.get("error"), dict) else {}
                 raise AppServerError(f"Codex turn ended as {status}: {error.get('message', '')}")
             items = final_turn.get("items") if isinstance(final_turn.get("items"), list) else []
-            forbidden = [item.get("type") for item in items if isinstance(item, dict) and item.get("type") not in {"userMessage", "agentMessage", "reasoning", "plan"}]
+            allowed_item_types = {"userMessage", "agentMessage", "reasoning", "plan"}
+            if dynamic_tools is not None:
+                allowed_item_types.add("dynamicToolCall")
+            forbidden = [item.get("type") for item in items if isinstance(item, dict) and item.get("type") not in allowed_item_types]
             if forbidden:
-                raise AppServerError(f"Codex capability attempted to use a tool: {forbidden[0]}")
+                raise AppServerError(f"Codex capability used an unavailable path: {forbidden[0]}")
             messages = [str(item.get("text")) for item in items if isinstance(item, dict) and item.get("type") == "agentMessage"]
             if not messages:
                 raise AppServerError("Codex turn produced no agent message")
@@ -274,6 +337,8 @@ class CodexAppServer:
                 "thread_ephemeral": True,
                 "sandbox": "read-only",
                 "status": status,
+                "dynamic_tools_enabled": dynamic_tools is not None,
+                "dynamic_tool_names": [str(item.get("name", "")) for item in dynamic_tools or []],
             }
             return value, usage, metadata
         finally:
@@ -282,6 +347,7 @@ class CodexAppServer:
                 self._turn_events.pop(turn_id, None)
                 self._completed_turns.pop(turn_id, None)
                 self._usage.pop(turn_id, None)
+                self._active_tool_handler = None
 
     def _interrupt_latest_turn(self, thread_id: str) -> bool:
         """Recover a turn id when turn/start itself timed out, then stop that exact turn."""

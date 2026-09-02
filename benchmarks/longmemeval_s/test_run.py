@@ -63,6 +63,16 @@ class FakeToolClient:
             return {"results": [{"result": {"organization": {"status": "ready"}}} for _ in arguments["submissions"]]}
         raise AssertionError(name)
 
+    def list_tools(self):
+        return [
+            {
+                "name": name,
+                "description": name,
+                "inputSchema": {"type": "object", "additionalProperties": True},
+            }
+            for name in adapter.ACTIVE_RETRIEVAL_TOOLS
+        ]
+
 
 class FakeRuntime:
     starts = 0
@@ -98,6 +108,28 @@ class FakeCodex:
         return "unknown", {
             "input_tokens": 10, "output_tokens": 1, "calls": 1, "attempts": 1, "retries": 0,
             "rate_limit_events": 0, "interrupted_attempts": 0, "wall_seconds": 0.01,
+        }
+
+    def active_answer(self, question: dict, client: FakeToolClient, _reader: dict, retrieval: dict, _stage: Path):
+        search = client.call_tool("ownward_search", {"query": question["question"], "limit": retrieval["search_limit_per_call"]})
+        source = search["results"][0]["id"]
+        read = client.call_tool("ownward_read", {"id": source})["information"]
+        answer = "Kyoto" if "Kyoto" in read["content"] else "unknown"
+        return answer, {
+            "input_tokens": 10, "output_tokens": 1, "calls": 1, "attempts": 1, "retries": 0,
+            "rate_limit_events": 0, "interrupted_attempts": 0, "wall_seconds": 0.01,
+        }, {
+            "mode": "external-agent-progressive/v1", "tool_manifest_identity": "fixture",
+            "search_ms": 0.1, "evidence_search_ms": 0.0, "read_ms": 0.1, "total_ms": 0.2,
+            "returned": [{"id": source}], "read_ids": [source], "evidence_read_ids": [],
+            "read_paths": [{"source_id": source, "mode": "full", "evidence_ids": []}],
+            "context_chars": len(read["content"]),
+            "limits": {"tool_calls": retrieval["max_tool_calls"], "read_units": retrieval["read_limit"], "context_chars": retrieval["context_max_chars"]},
+            "selection_policy": "external-agent-progressive/v1",
+            "selection_steps": [
+                {"tool": "ownward_search", "success": True, "elapsed_ms": 0.1},
+                {"tool": "ownward_read", "success": True, "elapsed_ms": 0.1},
+            ],
         }
 
     def judge(self, prompt: str, _settings: dict, _stage: Path):
@@ -161,11 +193,10 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
         self.assertEqual(850000, self.protocol["memory"]["semantic_analysis_input_token_upper_bound"])
         self.assertEqual(20400, self.protocol["execution"]["full_wall_seconds"])
         self.assertEqual("not_determined", self.protocol["acceptance"]["quality_assessment_status"])
-        self.assertEqual(3, self.protocol["retrieval"]["evidence_search_limit_per_source"])
-        self.assertEqual(
-            "rank-depth-diagonal-budget-fit/v1",
-            self.protocol["retrieval"]["evidence_selection_policy"],
-        )
+        self.assertEqual("external-agent-progressive/v1", self.protocol["retrieval"]["mode"])
+        self.assertTrue(self.protocol["reader"]["requires_tools"])
+        self.assertNotIn("evidence_selection_policy", self.protocol["retrieval"])
+        self.assertEqual(list(adapter.ACTIVE_RETRIEVAL_TOOLS), self.protocol["retrieval"]["allowed_tools"])
 
     def test_stage6_and_formal_share_the_same_xhigh_reader_identity(self) -> None:
         adapter.validate_protocol(self.protocol, formal=False)
@@ -176,6 +207,96 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             adapter.validate_protocol(medium, formal=False)
         with self.assertRaisesRegex(adapter.AdapterError, "Reader identity changed"):
             adapter.validate_protocol(medium, formal=True)
+
+    def test_product_protocol_fails_closed_without_active_agent_tools(self) -> None:
+        passive = json.loads(json.dumps(self.protocol))
+        passive["retrieval"].pop("mode")
+        with self.assertRaisesRegex(adapter.AdapterError, "retrieval protocol is invalid"):
+            adapter.validate_protocol(passive)
+        host_selected = json.loads(json.dumps(self.protocol))
+        host_selected["retrieval"]["evidence_selection_policy"] = "rank-depth-diagonal-budget-fit/v1"
+        with self.assertRaisesRegex(adapter.AdapterError, "host-side evidence selection"):
+            adapter.validate_protocol(host_selected)
+        no_tools = json.loads(json.dumps(self.protocol))
+        no_tools["reader"]["requires_tools"] = False
+        with self.assertRaisesRegex(adapter.AdapterError, "Reader identity changed"):
+            adapter.validate_protocol(no_tools)
+
+    def test_nonformal_comparison_accepts_only_the_common_active_tools(self) -> None:
+        comparison = json.loads(json.dumps(self.protocol))
+        comparison["retrieval"]["allowed_tools"] = list(adapter.CORE_ACTIVE_RETRIEVAL_TOOLS)
+        adapter.validate_protocol(comparison, formal=False)
+        with self.assertRaisesRegex(adapter.AdapterError, "retrieval protocol is invalid"):
+            adapter.validate_protocol(comparison, formal=True)
+
+    def test_active_retrieval_agent_chooses_observed_tools_and_reads_evidence(self) -> None:
+        client = FakeToolClient()
+        client.contents["info-1"] = "The selected city is Kyoto."
+        session = adapter.ActiveRetrievalSession(client, self.protocol["retrieval"])
+        search = session.call("ownward_search", {"query": "selected city", "limit": 1})
+        source_id = search["results"][0]["id"]
+        session.call("ownward_read", {"id": source_id})
+        session.validate()
+        report = session.report()
+        self.assertEqual("external-agent-progressive/v1", report["mode"])
+        self.assertEqual(["info-1"], report["read_ids"])
+        self.assertEqual(2, len(report["selection_steps"]))
+
+    def test_active_retrieval_rejects_unobserved_ids(self) -> None:
+        client = FakeToolClient()
+        session = adapter.ActiveRetrievalSession(client, self.protocol["retrieval"])
+        with self.assertRaisesRegex(adapter.AdapterError, "not observed"):
+            session.call("ownward_read", {"id": "invented"})
+        self.assertEqual(1, len(session.report()["selection_steps"]))
+        self.assertFalse(session.report()["selection_steps"][0]["success"])
+
+    def test_active_capability_exposes_tools_and_checkpoints_the_agent_trace(self) -> None:
+        class ActiveTransport(FakeTransport):
+            def invoke(self, **request):
+                names = [item["name"] for item in request["dynamic_tools"]]
+                self.test_case.assertEqual(list(adapter.ACTIVE_RETRIEVAL_TOOLS), names)
+                search = request["tool_handler"]("ownward_search", {"query": "selected city", "limit": 1})
+                request["tool_handler"]("ownward_read", {"id": search["results"][0]["id"]})
+                return {"answer": "Kyoto"}, {
+                    "input_tokens": 1, "cached_input_tokens": 0, "output_tokens": 1, "reasoning_output_tokens": 0,
+                }, {
+                    "transport": "codex-app-server-stdio", "server_instance": "fixture",
+                    "thread_id": "thread", "turn_id": "turn", "thread_ephemeral": True,
+                    "sandbox": "read-only", "status": "completed",
+                }
+
+        with tempfile.TemporaryDirectory() as directory:
+            client = FakeToolClient()
+            client.contents["info-1"] = "The selected city is Kyoto."
+            transport = ActiveTransport()
+            transport.test_case = self
+            answer, _usage, report = adapter.CodexCapability(transport).active_answer(
+                {"question": "Which city?", "question_date": "today"},
+                client,
+                self.protocol["reader"],
+                self.protocol["retrieval"],
+                Path(directory),
+            )
+            self.assertEqual("Kyoto", answer)
+            self.assertEqual("external-agent-progressive/v1", report["mode"])
+            checkpoint = adapter.load_json(Path(directory) / "complete.json")
+            self.assertEqual("external-agent-progressive/v1", checkpoint["active_retrieval"]["mode"])
+
+    def test_app_server_returns_dynamic_tool_results_on_the_protocol_channel(self) -> None:
+        server = adapter.CodexAppServer(Path("codex.exe"), Path("auth.json"), Path("runtime"), ["codex"], {})
+        server._active_tool_handler = lambda name, arguments: {"tool": name, "arguments": arguments}
+        with mock.patch.object(server, "_write_message") as write:
+            server._handle_tool_call(17, {"tool": "ownward_search", "arguments": {"query": "q"}})
+        write.assert_called_once_with({
+            "id": 17,
+            "result": {
+                "success": True,
+                "contentItems": [{
+                    "type": "inputText",
+                    "text": '{"tool":"ownward_search","arguments":{"query":"q"}}',
+                }],
+            },
+        })
 
     def test_official_answer_labels_are_validated_but_never_enter_memory_content(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -252,7 +373,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             old_chars += len(content)
         self.assertEqual(["info-1"], old_read_ids)
 
-        evidence, trace = adapter.retrieve(runtime, "What is the cobalt archive final code?", self.protocol)
+        evidence, trace = adapter.passive_retrieve(runtime, "What is the cobalt archive final code?", self.protocol)
         self.assertEqual(["info-1", "info-2"], trace["read_ids"])
         self.assertTrue(all(item["mode"] == "evidence" for item in trace["read_paths"]))
         self.assertLessEqual(trace["context_chars"], self.protocol["retrieval"]["context_max_chars"])
@@ -288,7 +409,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
 
         runtime = Runtime()
         runtime.client.contents = {"info-1": "neutral detail. " * 40 + "the selected marker is IVORY-17"}
-        evidence, trace = adapter.retrieve(runtime, "What is the selected marker?", self.protocol)
+        evidence, trace = adapter.passive_retrieve(runtime, "What is the selected marker?", self.protocol)
         self.assertTrue(evidence[0]["content"].startswith("Conversation date: 2031-02-15"))
         self.assertEqual(sum(len(item["content"]) for item in evidence), trace["context_chars"])
         selected = next(step for step in trace["selection_steps"] if step["selected"])
@@ -326,7 +447,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
         for failure in ("revision", "origin", "overlap"):
             with self.subTest(failure=failure):
                 with self.assertRaisesRegex(adapter.AdapterError, "non-source-bound prelude"):
-                    adapter.retrieve(Runtime(failure), "What is the selected marker?", self.protocol)
+                    adapter.passive_retrieve(Runtime(failure), "What is the selected marker?", self.protocol)
 
     def test_truncated_candidate_evidence_uses_one_revision_bound_budget_fit_complete_source(self) -> None:
         source = "header " + ("neutral record. " * 80) + "FACT-A FACT-B FACT-C FACT-D"
@@ -363,7 +484,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
 
         client = CompleteSourceClient()
         runtime = type("Runtime", (), {"client": client})()
-        evidence, trace = adapter.retrieve(runtime, "List FACT-A through FACT-D", self.protocol)
+        evidence, trace = adapter.passive_retrieve(runtime, "List FACT-A through FACT-D", self.protocol)
 
         self.assertEqual(1, len(evidence))
         self.assertEqual(source, evidence[0]["content"])
@@ -405,7 +526,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
 
         client = OversizedClient()
         runtime = type("Runtime", (), {"client": client})()
-        evidence, trace = adapter.retrieve(runtime, "x", self.protocol)
+        evidence, trace = adapter.passive_retrieve(runtime, "x", self.protocol)
 
         self.assertEqual(3, len(evidence))
         self.assertTrue(all("source_context_limit" not in value for value in client.read_arguments))
@@ -421,7 +542,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             "info-4": "The cobalt routing marker is SOLAR-904. " + ("cobalt routing target context. " * 80),
         }
 
-        evidence, trace = adapter.retrieve(runtime, "What is the cobalt routing marker?", self.protocol)
+        evidence, trace = adapter.passive_retrieve(runtime, "What is the cobalt routing marker?", self.protocol)
 
         self.assertEqual("rank-depth-diagonal-budget-fit/v1", trace["selection_policy"])
         self.assertEqual(["info-1", "info-2", "info-3", "info-4"], trace["read_ids"][:4])
@@ -447,7 +568,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
         protocol["retrieval"]["read_limit"] = 3
         protocol["retrieval"]["evidence_search_limit_per_source"] = 1
 
-        evidence, trace = adapter.retrieve(runtime, "signal result", protocol)
+        evidence, trace = adapter.passive_retrieve(runtime, "signal result", protocol)
 
         self.assertEqual(["info-1", "info-3"], trace["read_ids"])
         self.assertTrue(any(step.get("source_id") == "info-2" and step.get("reason") == "context_budget" for step in trace["selection_steps"]))
@@ -474,7 +595,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
         protocol = json.loads(json.dumps(self.protocol))
         protocol["retrieval"]["read_limit"] = 3
 
-        evidence, trace = adapter.retrieve(runtime, "signal result", protocol)
+        evidence, trace = adapter.passive_retrieve(runtime, "signal result", protocol)
 
         self.assertFalse(any(item["id"] == "info-1" for item in evidence))
         self.assertTrue(any(item["id"] == "info-2" for item in evidence))
@@ -490,12 +611,12 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
         assert runtime.client is not None
         runtime.client.contents = {
             f"info-{index + 1}": f"orchid relay source {index + 1}. " * 80
-            for index in range(self.protocol["retrieval"]["search_limit"])
+            for index in range(self.protocol["retrieval"]["search_limit_per_call"])
         }
 
-        evidence, trace = adapter.retrieve(runtime, "orchid relay", self.protocol)
+        evidence, trace = adapter.passive_retrieve(runtime, "orchid relay", self.protocol)
 
-        self.assertEqual(self.protocol["retrieval"]["search_limit"], len(trace["returned"]))
+        self.assertEqual(self.protocol["retrieval"]["search_limit_per_call"], len(trace["returned"]))
         self.assertEqual(self.protocol["retrieval"]["read_limit"], len(evidence))
         self.assertEqual(4, len(trace["read_ids"]))
         selected = [step for step in trace["selection_steps"] if step["selected"]]
@@ -519,11 +640,11 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             )),
             **{
                 f"info-{index}": f"cobalt itinerary distractor source {index}. " * 80
-                for index in range(2, self.protocol["retrieval"]["search_limit"] + 1)
+                for index in range(2, self.protocol["retrieval"]["search_limit_per_call"] + 1)
             },
         }
 
-        evidence, trace = adapter.retrieve(runtime, "Which cobalt itinerary facts are required?", self.protocol)
+        evidence, trace = adapter.passive_retrieve(runtime, "Which cobalt itinerary facts are required?", self.protocol)
 
         delivered = "\n".join(item["content"] for item in evidence)
         self.assertTrue(all(marker in delivered for marker in ("DAWN-31", "NOON-52", "DUSK-74")))
@@ -957,7 +1078,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
 
         client.call_tool = call_tool  # type: ignore[method-assign]
         runtime = mock.Mock(client=client)
-        evidence, retrieval = adapter.retrieve(runtime, "short source", self.protocol)
+        evidence, retrieval = adapter.passive_retrieve(runtime, "short source", self.protocol)
         self.assertEqual("A short source that must be read in full.", evidence[0]["content"])
         self.assertEqual("full", retrieval["read_paths"][0]["mode"])
         self.assertEqual([], retrieval["evidence_read_ids"])
@@ -1140,7 +1261,8 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
     def test_codex_is_the_only_semantic_reader_and_judge_capability(self) -> None:
         source = Path(adapter.__file__).read_text(encoding="utf-8")
         self.assertNotIn('client.answer(_answer_prompt', source)
-        self.assertIn('capability.answer,', source)
+        self.assertIn('capability.active_answer,', source)
+        self.assertNotIn('evidence, retrieval = retrieve(', source)
         self.assertIn('capability.judge,', source)
         self.assertIn('codex_scheduler.submit(', source)
         self.assertIn('"capability": {"id": "codex"', source)

@@ -8,7 +8,11 @@
 - 官方清洗数据 `xiaowu0162/longmemeval-cleaned`：`98d7416c24c778c2fee6e6f3006e7a073259d48f` 的 `longmemeval_s_cleaned.json`；
 - 官方轻量评测依赖：上述代码提交的 `requirements-lite.txt`；项目约束固定 `httpx==0.27.2`，兼容官方固定的 `openai==1.35.1`。安装后的完整解析版本写入环境清单并校验摘要。
 
-正式协议固定每个问题使用独立 Ownward 数据目录；只把会话 ID、日期和用户—助手正文经公开 create/semantic/search/read 路径交给产品，不向记忆、组织和检索阶段暴露问题、答案、答案会话、题型或裁判。宿主从公开 `semantic_work` 原序取得并固化最多 20 项结构化工作；每个原始自然工作批独立分析，批内资产与候选正文各列一次，工作项只以稳定 ID、revision、上下文及关系元数据引用正文。真实越界只能在该自然批内确定性拆分，不得跨批合并、截断或丢项。模型输出完成身份、数量、顺序和 Schema 校验后，仍按原工作批顺序经公开 `semantic_submit_batch` 提交。语义、Reader 与裁判请求共用八个彼此独立的 Codex App Server worker；每个 worker 同时最多一个 turn，每次请求使用独立、临时、只读的新 thread，单 worker故障只重启自身且只能有界重试。检索先经公开 `ownward_search` 冻结来源顺序；短资产继续完整读取，长资产只经公开 `ownward_evidence_search` 冻结至多三条源绑定区间，再用 `ownward_evidence_read` 读取。预算装载按 `source_rank + evidence_depth` 逐层惰性遍历，同层优先较浅深度，在来源广度与高排名来源深度之间提供有界公平；单条证据不适合剩余预算时只跳过该项，读满后不探测不可能交付的低位来源。全部结果仍共同受每题 8 条证据和 24,000 字符上限约束。检索后的 Reader 固定使用 Codex `gpt-5.6-luna` / `xhigh`，并与 Stage 6 使用同一冻结 Reader 选择身份；裁判固定使用 Codex `gpt-5.6-terra` / `medium` 按官方原始评测提示输出原标签。三者复用现有 Codex 原生认证，不使用额外 API Key。完整值与成本上限见 `protocol.json`。
+正式协议固定每个问题使用独立 Ownward 数据目录；只把会话 ID、日期和用户—助手正文经公开创建与语义协作路径交给产品，不向记忆、组织和检索阶段暴露答案、答案会话、题型或裁判。语义工作仍按冻结身份、数量、顺序和 Schema 经公开路径提交。
+
+产品评测固定为 `external-agent-progressive/v1`：问题直接交给外部智能体；Codex `gpt-5.6-luna` / `xhigh` 获得 Ownward 的搜索、导航、证据检索、证据读取和完整读取工具，自主选择操作、积累证据、调整方向、判断停止并组织答案。宿主只执行工具和冻结预算，不预选来源、证据或读取顺序；每题最多 12 次工具调用、8 次读取和 24,000 字符已读证据。工具未暴露、被禁止、出现宿主固定预取或智能体未实际完成搜索与读取时，产品运行失败关闭。历史固定预取实现仅作为 `passive-ranking-diagnostic/v1` 内部诊断，不得进入盲测、正式验收、内核归因或晋升判断。
+
+语义、主动检索回答与裁判共用八个彼此独立的 Codex App Server worker；每个 worker 同时最多一个 turn，每次请求使用独立、临时、只读的新 thread，单 worker 故障只重启自身且只能有界重试。裁判固定使用 Codex `gpt-5.6-terra` / `medium` 按官方原始评测提示输出原标签。全部能力复用 Codex 原生认证，不使用额外 API Key。完整身份与成本上限见 `protocol.json`。
 
 正式结果标识为 `Ownward LongMemEval-S Production Profile`。官方数据、500 题、问答协议、提示和计分语义保持不变；由于 Reader、裁判与检索预算不同的公开成绩不具备直接可比性，本口径不设置跨 profile 准确率硬阈值。产品答案先独立冻结，评测层随后才接触官方答案与证据标识；逐题诊断封存语义组织、search/read、Reader、裁判、Token、重试、限流和时延证据，并与产品执行和正式计分单向隔离。
 

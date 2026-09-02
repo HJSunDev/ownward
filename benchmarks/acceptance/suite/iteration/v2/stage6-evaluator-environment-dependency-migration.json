@@ -1,6 +1,6 @@
 {
   "schema": "ownward.kernel-iteration-stage6-evaluator-environment-dependency-migration/v1",
-  "purpose": "preserve-qualified-evaluator-evidence-across-nonconsumed-answer-attribution-maintenance",
+  "purpose": "preserve-qualified-evaluator-evidence-across-changes-outside-its-exact-consumed-surface",
   "qualification_result_identity": "8841a424d192590f5baa87bc03db2faaf950f408ceb904c9995429b31c3817c9",
   "qualification_result_sha256": "780d80c6450301a6f1a2d5798681888b6dc41b5927af1dc06473238783a5cbbf",
   "source_dependencies": {
@@ -25,11 +25,11 @@
     "contract": "89fff13d313c22ac00cf21b590d4fb24955d50bc58baddf2a97accccc28ac155",
     "controller": "7f49aadfcb88df7995b286ee42b5e0418d72504e7851156b2ea322b26164d722",
     "environment-manifest": "cb889873e2888699ea5dc1c9980591e2609edb3c0318c659815f08197691a88c",
-    "longmemeval-executor": "4cd9247b56a1c79f5a3a2a6396fc877c3566b05110a96c667d9c0d4c0826e7f6",
+    "longmemeval-executor": "1f02d9c84e32cf1ba0a6e57665f835039b6af7a83751c951322d137117a747bc",
     "official-evaluator-adapter": "cc5c4d8d297daacf5b4b44adf8c0da092680b87b9f68e6c6ccf84b37d2f7e9fe",
     "official-evaluator-source": "5085eb9ae08b91c6c4f97c6bea9b8c2d6e55f9ec72c27734cafa0a04f00a430a",
     "official-evaluator-worker": "14150097fc55fe31fac5f0dc0657c6e8f91a0d60f4a9f17b74db047d8c1b673f",
-    "protocol": "6a52f479858b8a057a10e94dea38b7dd74bff4d8ee021a2abe693574bf98657f",
+    "protocol": "cdb347d7aca6f89484c952e02c9e10c7246bb26cfd45a5bef559e2020545d069",
     "python-runtime": "964fe6c4e742df32d59e35d8992e34ca5c1b621e9c7831f8ecdc60df5b95e655",
     "qualification-entry": "3dc5388510c06b62c2e4559d6a48407896d6049164e526bd2c7bab979b4ae780",
     "qualification-material": "dc8319b9f16ed65b244c37971d37bad9b56489d83ba3e6d2fc94f441c0885f98",
@@ -38,11 +38,11 @@
   "proof": {
     "source_longmemeval_commit_audit": "97019ce5ccf515bdfd74558a720a789be1997e25",
     "source_longmemeval_file_sha256": "4cd9247b56a1c79f5a3a2a6396fc877c3566b05110a96c667d9c0d4c0826e7f6",
-    "target_longmemeval_file_sha256": "3d16f112f33e7e34bd38cb3f096d64158d044ad3379b2facfad076839590512d",
+    "target_longmemeval_file_sha256": "1f02d9c84e32cf1ba0a6e57665f835039b6af7a83751c951322d137117a747bc",
     "qualification_surface": "session_content+_answer_prompt",
     "source_qualification_surface_identity": "4cd9247b56a1c79f5a3a2a6396fc877c3566b05110a96c667d9c0d4c0826e7f6",
     "qualification_surface_identity": "4cd9247b56a1c79f5a3a2a6396fc877c3566b05110a96c667d9c0d4c0826e7f6",
-    "changed_surface": "answer-attribution-runtime-location-and-unused-atom-normalizer",
+    "changed_surface": "answer-attribution-maintenance-and-product-evaluation-orchestration-outside-the-qualified-surface",
     "qualified_correctness_source": "judge",
     "prompt_model_schema_and_official_renderer_unchanged": true,
     "candidate_or_product_execution": false
@@ -50,5 +50,5 @@
   "candidate_executions": 0,
   "product_executions": 0,
   "qualification_result_rewritten": false,
-  "identity": "398bac85733dd442c7834f093a6c5c4e8f01d5e30327052b41c1c714a6a4e544"
+  "identity": "895cd9596015e4b91e14de231eb68b534e96875ed598f1136c6a04a97bce7cbb"
 }

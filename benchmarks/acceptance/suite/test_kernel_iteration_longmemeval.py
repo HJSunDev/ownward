@@ -54,7 +54,7 @@ class KernelIterationLongMemEvalTests(unittest.TestCase):
     def test_current_public_evidence_path_is_not_replaced(self) -> None:
         runtime = _Runtime(evidence_available=True)
         _evidence, trace = stage3_adapter.retrieve_with_v0_compatibility(runtime, "complete source", self.protocol)
-        self.assertEqual(self.protocol["retrieval"]["evidence_selection_policy"], trace["selection_policy"])
+        self.assertEqual("rank-depth-diagonal-budget-fit/v1", trace["selection_policy"])
         self.assertIn("ownward_evidence_search", runtime.client.calls)
 
     def test_explicit_unanswerable_type_uses_official_abstention_contract(self) -> None:

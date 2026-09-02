@@ -1,0 +1,138 @@
+{
+  "schema": "ownward.product-faithful-evaluation-correction/v1",
+  "formal": false,
+  "official_questions_used": false,
+  "retrieval_mode": "external-agent-progressive/v1",
+  "shared_conditions": {
+    "protocol_sha256": "d99007b664b5df957207d4c11e9965b8540332e2d553e99d2154b2e084fb7d12",
+    "tool_manifest_identity": "910999063b663fd6db1a2760fcbc3ab3100b542f0b8636e886d94de3287ba5dc",
+    "tools": [
+      "ownward_search",
+      "ownward_navigate",
+      "ownward_read"
+    ],
+    "semantic": "gpt-5.6-luna/low",
+    "reader": "gpt-5.6-luna/xhigh",
+    "judge": "gpt-5.6-terra/medium",
+    "environment_sha256": "cb889873e2888699ea5dc1c9980591e2609edb3c0318c659815f08197691a88c"
+  },
+  "inputs": {
+    "conversion": "case_id/question_type/question/answer/question_date plus sessions mapped losslessly to LongMemEval session arrays",
+    "calibration": {
+      "dataset_sha256": "1593281cb72f7782f2b17c3028b6bda302ffa75d39cf66780b71a417b2933024",
+      "sources": {
+        "stage6-oracle-reader-qualification-material-v2.json": [
+          "stage6-oracle-reader-v2-temporal-authority",
+          "stage6-oracle-reader-v2-multihop",
+          "stage6-oracle-reader-v2-structured",
+          "stage6-oracle-reader-v2-complete-answer"
+        ]
+      }
+    },
+    "primary": {
+      "dataset_sha256": "d603953ce3edb39fd9606dace44841390ec5d02f5aa86c3d549a947be567a721",
+      "sources": {
+        "stage3-development-materials.json": [
+          "v2d-long-multifact",
+          "v2d-temporal-conflict",
+          "v2d-structured-boundary",
+          "v2d-multisession-sufficiency"
+        ],
+        "stage3-regression-materials.json": [
+          "v2r-user",
+          "v2r-assistant",
+          "v2r-preference",
+          "v2r-temporal",
+          "v2r-update",
+          "v2r-multisession"
+        ],
+        "stage4-multisource-materials.json": [
+          "v2m-lower-ranked-authority",
+          "v2m-joint-authorities"
+        ]
+      }
+    },
+    "challenge_after_primary_tie": {
+      "dataset_sha256": "18bf15eb85de3d2e40e0fd0e6ebaac33869e5e1a9a906eb23fa66fb3eefed58c",
+      "sources": {
+        "stage4-retrieval-semantic-protection-materials-v3.json": [
+          "v2sp-weak-lexical-pollinator-v3",
+          "v2sp-semantic-intent-convoy-v3"
+        ],
+        "stage4-retrieval-semantic-generalization-materials-v1.json": [
+          "v2sg-chinese-ceramic-v1",
+          "v2sg-spanish-solar-v1"
+        ],
+        "stage3-final-answer-sufficiency-confirmation-materials.json": [
+          "v2fasc-seed-vault",
+          "v2fasc-river-lock"
+        ],
+        "stage3-temporal-applicability-stress-materials.json": [
+          "v2tas-effective-exception-chain",
+          "v2tas-event-time-correction-order"
+        ]
+      }
+    }
+  },
+  "calibration": {
+    "candidate": "v2",
+    "questions": 4,
+    "correct": 4,
+    "wall_seconds": 47.453,
+    "retrieval_p95_ms": 250.0,
+    "retries": 0,
+    "interrupted_attempts": 0,
+    "rate_limit_events": 0,
+    "report_sha256": "acead7baf054a9f699a2cf08c40aa42d4927ead732a06ca85aee96d4ca4a68a6",
+    "recovery_calibration_report_sha256": "dd825cbcab4558a6388a0da73e6fe2517d00cd4c353ee5560883604ca60754c6"
+  },
+  "comparison": {
+    "v0": {
+      "binary_sha256": "77600820a450b0931b9e63595b8564be757825000af16f9c2f0a028c69e81d2b",
+      "correct": 20,
+      "questions": 20,
+      "wall_seconds": 289.25,
+      "retrieval_mean_ms": 107.2,
+      "retrieval_p95_ms": 188.0,
+      "ownward_data_bytes": 2268840,
+      "report_sha256": [
+        "0ca45a82e7e5909592cbd370dd658ac57ccfcf172f9a953484385ecf242dca65",
+        "4f0385a377cd476161060101b9573ad49d886671f48940ba7d790219af598ce0"
+      ]
+    },
+    "v1": {
+      "binary_sha256": "57e0e63c75e4fbb474112e398a1ec4c7d5fc95ee5ae87a7773210e534b1897f5",
+      "correct": 20,
+      "questions": 20,
+      "wall_seconds": 277.516,
+      "retrieval_mean_ms": 106.25,
+      "retrieval_p95_ms": 203.0,
+      "ownward_data_bytes": 1220376,
+      "report_sha256": [
+        "d4fb8027b1a18ec6e397131895fcfb86ebceb46fb036cf5f5ede10fba178c15e",
+        "4e941ad189530532312f685e2612df6d17bd08f3dc6e6dede7b669cd5365e42f"
+      ]
+    },
+    "v2": {
+      "subject_identity": "99046f78fc32bc3f5a73103300a5fe44ca14448207483adb95a4dff9a9d3d18d",
+      "binary_sha256": "0cacc994828e9021aab9157f4b4f1daa487866e6b1b8a24c3d741a1fb9c3ea1a",
+      "correct": 20,
+      "questions": 20,
+      "wall_seconds": 261.608,
+      "retrieval_mean_ms": 90.55,
+      "retrieval_p95_ms": 126.0,
+      "ownward_data_bytes": 730994,
+      "report_sha256": [
+        "436f6c7144296f51c3394d44ffda0072ced6280b01acad37b0d503a37736cb18",
+        "ffd90e2adac5b1068d65889cb5eda8f4672f563feffa3cac3e68da2758655284"
+      ]
+    }
+  },
+  "selection": {
+    "baseline": "v2",
+    "basis": "all candidates delivered 20/20; v2 had the lowest combined wall time, retrieval mean, retrieval p95, and data footprint",
+    "formal_score": false,
+    "promoted": false,
+    "next_boundary": "resume product-faithful V2 blind gates before any formal LongMemEval-S run"
+  }
+}
