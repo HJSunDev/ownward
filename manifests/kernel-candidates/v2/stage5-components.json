@@ -1,12 +1,12 @@
 {
   "schema": "ownward.acceptance-candidate-components/v1",
-  "identity": "48d155facde7db624ef64b872b427315ad557b51f1015e8513500ce358296bd5",
-  "source_subject_identity": "a0a597710578a1c3442ff5e71cab41600ab7565178acf36d6f77deb41d658117",
-  "runtime_identity": "75a460c2ff8d82c3be71f9abb00f3a6a30c0688b045d57975a7ee20e7f778aee",
-  "kernel_effect_identity": "a2ad626f00e3806599f625c07d4df4a6430c23c27b3e996c50bd75a9e5fef922",
-  "sealed_composition_identity": "19b9b25dbf737da636020101aa534030e46a3d565f464b74ab6659d3440885c3",
+  "identity": "fd5f2127e56982e4143292022135a17473909b1d07c5caf78fe8a1c2f5c1ddaf",
+  "source_subject_identity": "460e3f8205dab3f47c83d3620a89be447264ab81d9327e5602f06866fa4cb5fd",
+  "runtime_identity": "44806167edcf99d685d5fa658b0e9855f99951fba4424e8a0fc5576420768fe1",
+  "kernel_effect_identity": "68552054f30a8acf4266e022bc4fbb7b03feca6e86675e3d9660cf96b8b3b86a",
+  "sealed_composition_identity": "ca4b5ce281a9d1fac066a8cde101ce030a7dc010dcec8a812fa887886a4a128a",
   "components": {
-    "access": "7ce12de462b494d3c9cef5d3a8bb1dd1d10c10f2330b15791cecc1b74cdc858a",
+    "access": "77831e54ff7a9649e1fced6e134eaf74692ec529f6d76b464e0d566b30581d60",
     "authority-substrate": "dc4539c88ad3fdcd99bc686ebbfc9e47df8190a44b65a19867b2a44636276607",
     "product-rules": "80919d7ce74ea5a443c1c0c0d2b957ae3e2f1e1adb559f7b761e2e38e2e713f9",
     "semantic": "bd8551d33bfcb8b9ec8a2224d723f5c65d9d378b2b037526129015f833bd6dc3",

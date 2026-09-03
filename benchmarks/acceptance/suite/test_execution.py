@@ -76,6 +76,35 @@ class UnifiedExecutionTests(unittest.TestCase):
         self.assertEqual(2, verify_current.call_count)
 
     @mock.patch("execution.binding.verify_current")
+    @mock.patch("execution.lifecycle.can_start")
+    @mock.patch("execution.report_semantics.reusable_report")
+    def test_final_product_modes_reject_before_blind_gate_or_report_reuse(
+        self, reusable_report, can_start, verify_current,
+    ) -> None:
+        self.config["enabled_scopes"] = ["product"]
+        for mode in ("qualification", "full"):
+            with self.assertRaisesRegex(execution.ExecutionError, "必须先完成"):
+                execution.execute(self.root, self.contract, self.state_path, mode, self.config, resume=True)
+        reusable_report.assert_not_called()
+        can_start.assert_not_called()
+        verify_current.assert_not_called()
+
+    @mock.patch("execution.binding.verify_current")
+    @mock.patch("execution.lifecycle.can_start")
+    @mock.patch("execution.report_semantics.reusable_report")
+    @mock.patch("final_validation_gate.require_blind_completion", return_value={"passed": True})
+    def test_final_product_mode_can_reuse_only_after_blind_gate(
+        self, require_gate, reusable_report, _can_start, _verify_current,
+    ) -> None:
+        self.config["enabled_scopes"] = ["product"]
+        report = self.workspace / "existing.json"
+        report.write_text("{}\n", encoding="utf-8")
+        reusable_report.return_value = report
+        result = execution.execute(self.root, self.contract, self.state_path, "qualification", self.config, resume=True)
+        self.assertEqual("reused", result["outcome"])
+        require_gate.assert_called_once_with(self.config)
+
+    @mock.patch("execution.binding.verify_current")
     def test_completed_report_is_recovered_without_rerun(self, _verify_current) -> None:
         first = execution.execute(self.root, self.contract, self.state_path, "targeted", self.config, resume=False)
         state = lifecycle.load_state(self.state_path)

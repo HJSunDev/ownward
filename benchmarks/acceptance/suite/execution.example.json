@@ -20,6 +20,10 @@
     "codex_model": "gpt-5.4-mini",
     "codex_reasoning_effort": "xhigh"
   },
+  "final_validation_gate": {
+    "blind_suite_output": "E:\\path\\to\\ownward-evidence\\kernel-v2",
+    "suite_identity": "replace-with-the-sealed-blind-suite-identity"
+  },
   "community": {
     "environment_manifest": "E:\\Ownward\\acceptance\\longmemeval-s\\manifests\\v1.json",
     "protocol": "E:\\path\\to\\ownward\\benchmarks\\longmemeval_s\\protocol.json",

@@ -59,6 +59,9 @@ def execute(
         require(bool(workspace.drive) and workspace.drive.lower() != Path.home().drive.lower(), "正式验收工作区不得位于系统盘")
     else:
         require(workspace.is_absolute(), "正式验收工作区必须使用绝对路径")
+    if mode in {"qualification", "full"}:
+        from final_validation_gate import require_blind_completion
+        require_blind_completion(config)
     binding.verify_current(suite_root, Path(config["binding_dir"]), config, state["binding"], mode)
     lifecycle.can_start(contract, state, mode)
     try:

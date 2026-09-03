@@ -1,15 +1,15 @@
 {
   "schema": "ownward.kernel-iteration-stage5-contract/v1",
-  "identity": "968f71eef276cbfd134994903fbaf238fc6574bdb3fc0ea7fa896a25215bc22d",
-  "audit_source_git": "a74a2e163dc6aaf6c868736bb5d4bb0e8dba65e9",
-  "frontier_evidence_source_git": "a74a2e163dc6aaf6c868736bb5d4bb0e8dba65e9",
+  "identity": "2ce8bd01bc3bc189f4414ede2383f1938e042558df9b90a2530b0ddc3665ac12",
+  "audit_source_git": "67fdc76345c7655db9ab22aa40d5a95f2dfd6cc7",
+  "frontier_evidence_source_git": "67fdc76345c7655db9ab22aa40d5a95f2dfd6cc7",
   "candidate": {
-    "source_subject_identity": "a0a597710578a1c3442ff5e71cab41600ab7565178acf36d6f77deb41d658117",
-    "kernel_generation_identity": "75a460c2ff8d82c3be71f9abb00f3a6a30c0688b045d57975a7ee20e7f778aee",
-    "kernel_effect_identity": "a2ad626f00e3806599f625c07d4df4a6430c23c27b3e996c50bd75a9e5fef922",
-    "composition_identity": "19b9b25dbf737da636020101aa534030e46a3d565f464b74ab6659d3440885c3",
+    "source_subject_identity": "460e3f8205dab3f47c83d3620a89be447264ab81d9327e5602f06866fa4cb5fd",
+    "kernel_generation_identity": "44806167edcf99d685d5fa658b0e9855f99951fba4424e8a0fc5576420768fe1",
+    "kernel_effect_identity": "68552054f30a8acf4266e022bc4fbb7b03feca6e86675e3d9660cf96b8b3b86a",
+    "composition_identity": "ca4b5ce281a9d1fac066a8cde101ce030a7dc010dcec8a812fa887886a4a128a",
     "component_manifest": "manifests/kernel-candidates/v2/stage5-components.json",
-    "component_manifest_identity": "48d155facde7db624ef64b872b427315ad557b51f1015e8513500ce358296bd5"
+    "component_manifest_identity": "fd5f2127e56982e4143292022135a17473909b1d07c5caf78fe8a1c2f5c1ddaf"
   },
   "rebuild_equivalence": {
     "must_match": [
@@ -47,44 +47,11 @@
     "dirty_stage4_binary_is_provenance_only": true,
     "formal_binary_requires_clean_audit_source": true
   },
-  "stage4_evidence": [
-    {
-      "role": "cost-contract",
-      "path": "benchmarks/acceptance/suite/iteration/v2/stage4-resource-cost-representation-final-contract.json",
-      "sha256": "9560e2d0f3f7ad127526b8459c87dd8cb90059e4eddb76a83e6ddd6c7b0a6c20",
-      "identity": "db0de5be1d737ea23e9fd6a14ee1e8288b7fc1fac6bef905e66adfb52e71a927"
-    },
-    {
-      "role": "dependency-migration",
-      "path": "benchmarks/acceptance/suite/iteration/v2/stage4-resource-cost-raw-vector-lifecycle-dependency-migration.json",
-      "sha256": "e6d00ceb0815af49510be70fc749bcc04363eff8a862e0f810566e86af85c5c5",
-      "identity": "fd82621e7c0eadf55cea262598baf940a3b0945ce799cb6882c54828c4fa3998"
-    },
-    {
-      "role": "controlled-cost",
-      "path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/representation-lifecycle-final-v6/result.json",
-      "sha256": "a4a720b93738a40ce6115074e44d39f58497cac4638d8a53fe09a7e89af17b3a",
-      "identity": "3e06bfd3f7c8d235eab8f5d436825ee3210794527744bb558e63ae24cb9fff72"
-    },
-    {
-      "role": "current-development",
-      "path": ".tmp/kernel-v2-major-iteration/stage3-final-answer-sufficiency-v2/revalidation/subjects/v2-candidate/a0a597710578a1c3442ff5e71cab41600ab7565178acf36d6f77deb41d658117/development/926706fa871a3b5ac9e8c31f0f18c19c1e71375a85594c4a22c37dd660b7c0fc/execution-result.json",
-      "sha256": "943225c8d135e2875d105f5cc28c2902fe9436fed98cd9762dc375903365311d",
-      "identity": "e29d2b3fcc77825f07f734beb477b72e51dfa9dfd93326eb90ad2ad65345fd6a"
-    },
-    {
-      "role": "current-regression",
-      "path": ".tmp/kernel-v2-major-iteration/stage3-final-answer-sufficiency-v2/revalidation/subjects/v2-candidate/a0a597710578a1c3442ff5e71cab41600ab7565178acf36d6f77deb41d658117/regression/8b3c38a4a51d6352eeef9500b7bff188704a085bbcab24e69818944e5f05fd8f/execution-result.json",
-      "sha256": "b5433c435489a572f9e939fdc5c5cde3b1e18feb496447ddb574638ca7c55668",
-      "identity": "22a606b24a9fb9f6bbe60f7e80f1c76d7f833fb1e6c0e9ee59c8815601d33cde"
-    },
-    {
-      "role": "semantic-cost",
-      "path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/real-capability-wall-audit-v1/result.json",
-      "sha256": "07da31c5fbd7fcf1220f3fb2a2441d1a7f4dfab8058959c75699d071ea5deb76",
-      "identity": "c7480729170c671dcbfc1c441abb7a708c3378f2285f29a8c6ab79e77b215a1b"
-    }
-  ],
+  "stage4_closure": {
+    "path": "benchmarks/acceptance/suite/iteration/v2/stage4-closure-summary.json",
+    "sha256": "20c817a84191927b7b20f822aa618d7c07e13d73d722c742c9792c44ce2f74c2",
+    "identity": "bcd3c1dfa788ccb0c4177b44b2844b5dd0ecf0d611ab8da4f5d8077faf8eedd8"
+  },
   "eligibility": {
     "development_accuracy": 1.0,
     "regression_accuracy": 1.0,
@@ -97,11 +64,11 @@
     "same_identity_resume_requires_zero_execution": true
   },
   "acceptance": {
-    "modes": ["frontier", "core", "qualification", "full"],
-    "order": ["frontier", "core", "qualification", "full"],
-    "minimum_preflight_scopes": ["frontier", "core", "product"],
+    "pre_blind_modes": ["frontier", "core"],
+    "post_blind_modes": ["qualification", "full"],
+    "post_blind_order": ["qualification", "full"],
     "resume": "only-valid-direct-dependency-checkpoints",
-    "blind_gate": false,
+    "blind_gate": "required-before-post-blind-modes",
     "community": false
   },
   "prohibitions": [

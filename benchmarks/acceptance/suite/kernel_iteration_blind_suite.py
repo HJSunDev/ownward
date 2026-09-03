@@ -49,6 +49,7 @@ EVALUATION_BATCH_SCHEMA = "ownward.kernel-iteration-blind-suite-evaluation-batch
 EVALUATION_FREEZE_SCHEMA = "ownward.kernel-iteration-blind-suite-evaluation-freeze/v1"
 PROCESS_BUDGET_SCHEMA = "ownward.kernel-iteration-blind-suite-process-budget/v1"
 READER_PROCESS_RECOVERY_SCHEMA = "ownward.kernel-iteration-blind-suite-reader-process-recovery/v1"
+BASELINE_RESULT_SCHEMA = "ownward.kernel-iteration-blind-suite-baseline-result/v1"
 MATERIALS_SCHEMA = validation.MATERIALS_SCHEMA
 NO_ANSWER = "I don't have enough information to answer that."
 PRIMARY_COVERAGE = tuple(validation.BLIND_COVERAGE)
@@ -712,6 +713,9 @@ def run_partition(
         reader_binding, batch,
         process_budget,
     )
+    baseline_dependencies = _baseline_partition_dependencies(dependencies)
+    baseline_identity = _baseline_partition_identity(baseline_dependencies)
+    dependencies["baseline-partition-result"] = baseline_identity
     if previous_decision is not None:
         dependencies["previous-partition-result"] = previous_decision["result_identity"]
         if previous_decision.get("continuation_identity") is not None:
@@ -845,14 +849,29 @@ def run_partition(
                     started=started,
                 )
                 return result
-        baseline_execution = evaluator._execute(
-            suite_root, baseline_runtime, dataset_path, scratch / "baseline", baseline["identity"], sealed["materials"], resume=resume, runner=execute,
+        baseline_result = _load_baseline_partition_result(
+            output_root, suite_identity, sealed["partition_identity"], baseline_identity,
+            baseline_dependencies, baseline["identity"], level,
         )
-        relative = evaluator._relative_decision(candidate_observation, baseline_execution["observation"])
-        resume_proof = evaluator._resume_proof(
+        if baseline_result is None:
+            baseline_execution = evaluator._execute(
+                suite_root, baseline_runtime, dataset_path, scratch / "baseline", baseline["identity"], sealed["materials"], resume=resume, runner=execute,
+            )
+        else:
+            baseline_execution = baseline_result["execution"]
+        baseline_observation = baseline_execution.get("observation", baseline_execution)
+        relative = evaluator._relative_decision(candidate_observation, baseline_observation)
+        resume_proof = _partition_resume_proof(
             suite_root, candidate_runtime, baseline_runtime, dataset_path, scratch,
             candidate["identity"], baseline["identity"], execute,
+            baseline_result,
         )
+        if baseline_result is None:
+            baseline_result = _persist_baseline_partition_result(
+                output_root, suite_identity, sealed["partition_identity"], baseline_identity,
+                baseline_dependencies, baseline["identity"], level, baseline_execution,
+                next(item for item in resume_proof["subjects"] if item["subject"] == "baseline"),
+            )
         total = time.perf_counter() - started
         wall_limit = float(
             _mapping(process_budget, "level_total_wall_seconds_maximum")[str(level)]
@@ -1103,6 +1122,173 @@ def _partition_execution_dependencies(
     if process_budget is not None:
         dependencies["evaluation-process-budget"] = process_budget["identity"]
     return dependencies
+
+
+def _baseline_partition_dependencies(dependencies: dict[str, str]) -> dict[str, str]:
+    names = {
+        "suite-contract", "partition-contract", "suite", "suite-partition",
+        "baseline-subject", "baseline-binary", "shared-conditions",
+        "external-intelligence-reader-role", "executor", "observer-and-scorer",
+        "execution-controller",
+    }
+    _require(names <= set(dependencies), "V0 分区结果缺少真实直接依赖")
+    result = {name: dependencies[name] for name in sorted(names)}
+    _require(not any("candidate" in name or "evaluation-batch" in name for name in result), "V0 分区结果错误绑定候选")
+    return result
+
+
+def _partition_resume_proof(
+    suite_root: Path,
+    candidate_runtime: dict[str, Any],
+    baseline_runtime: dict[str, Any],
+    dataset_path: Path,
+    scratch: Path,
+    candidate_identity: str,
+    baseline_identity: str,
+    runner: Callable[..., dict[str, Any]],
+    baseline_cache: dict[str, Any] | None,
+) -> dict[str, Any]:
+    import kernel_iteration_blind_gate as evaluator
+
+    if baseline_cache is None:
+        return evaluator._resume_proof(
+            suite_root, candidate_runtime, baseline_runtime, dataset_path, scratch,
+            candidate_identity, baseline_identity, runner,
+        )
+    run_root = scratch / "candidate"
+    before_report = (run_root / "report.json").read_bytes()
+    before_checkpoint = (run_root / "checkpoint-manifest.json").read_bytes()
+    runner(
+        suite_root=suite_root,
+        runtime=candidate_runtime,
+        dataset_path=dataset_path,
+        output_dir=run_root,
+        subject_identity=candidate_identity,
+        resume=True,
+    )
+    candidate_proof = {
+        "subject": "candidate",
+        "report_byte_identical": before_report == (run_root / "report.json").read_bytes(),
+        "checkpoint_byte_identical": before_checkpoint == (run_root / "checkpoint-manifest.json").read_bytes(),
+        "model_calls": 0,
+        "product_executions": 0,
+    }
+    baseline_proof = dict(_mapping(baseline_cache, "resume_proof"))
+    _require(baseline_proof.get("subject") == "baseline", "V0 分区缓存恢复证明错绑")
+    baseline_proof["cache_identity"] = baseline_cache["identity"]
+    proofs = [candidate_proof, baseline_proof]
+    _require(
+        all(item["report_byte_identical"] and item["checkpoint_byte_identical"] for item in proofs),
+        "版本级盲测恢复未逐字复用",
+    )
+    return {"subjects": proofs, "passed": True}
+
+
+def _partition_execution_aggregate(value: dict[str, Any] | None) -> dict[str, Any] | None:
+    import kernel_iteration_blind_gate as evaluator
+
+    if value is None or "observation" in value:
+        return evaluator._execution_aggregate(value)
+    required = {
+        "subject_identity", "report_sha256", "checkpoint_sha256",
+        "diagnostic_summary_sha256", "questions", "fact_delivery",
+        "final_answer_accuracy", "temporal_correctness", "conflict_correctness",
+        "latency", "resources", "codex",
+    }
+    _require(required <= set(value), "V0 分区聚合执行证据不完整")
+    return {name: value[name] for name in (
+        "subject_identity", "report_sha256", "checkpoint_sha256",
+        "diagnostic_summary_sha256", "questions", "fact_delivery",
+        "final_answer_accuracy", "temporal_correctness", "conflict_correctness",
+        "latency", "resources", "codex",
+    )}
+
+
+def _baseline_partition_identity(dependencies: dict[str, str]) -> str:
+    return evidence.canonical_sha256({
+        "schema": BASELINE_RESULT_SCHEMA,
+        "direct_dependencies": dict(sorted(dependencies.items())),
+    })
+
+
+def _baseline_partition_root(
+    output_root: Path,
+    suite_identity: str,
+    partition_identity: str,
+    baseline_identity: str,
+) -> Path:
+    _require(all(evidence.is_sha256(value) for value in (suite_identity, partition_identity, baseline_identity)), "V0 分区结果定位身份无效")
+    return output_root / "blind-suite-baselines" / suite_identity / partition_identity / baseline_identity
+
+
+def _load_baseline_partition_result(
+    output_root: Path,
+    suite_identity: str,
+    partition_identity: str,
+    baseline_identity: str,
+    dependencies: dict[str, str],
+    baseline_subject_identity: str,
+    level: int,
+) -> dict[str, Any] | None:
+    path = _baseline_partition_root(output_root, suite_identity, partition_identity, baseline_identity) / "result.json"
+    if not path.is_file():
+        return None
+    value = _load_json(path)
+    content = {name: item for name, item in value.items() if name != "identity"}
+    _require(value.get("schema") == BASELINE_RESULT_SCHEMA, "V0 分区结果 schema 无效")
+    _require(value.get("identity") == evidence.canonical_sha256(content), "V0 分区结果身份漂移")
+    _require(value.get("baseline_identity") == baseline_identity, "V0 分区结果寻址错绑")
+    _require(value.get("suite_identity") == suite_identity and value.get("partition_identity") == partition_identity, "V0 分区结果套件错绑")
+    _require(value.get("level") == level and value.get("baseline_subject_identity") == baseline_subject_identity, "V0 分区结果对象错绑")
+    _require(value.get("direct_dependencies") == dict(sorted(dependencies.items())), "V0 分区结果直接依赖漂移")
+    _require(value.get("formal") is False and value.get("contains_reversible_question_answer_evidence_or_case_ids") is False, "V0 分区结果越权或泄露内容")
+    execution = _mapping(value, "execution")
+    _require(execution.get("subject_identity") == baseline_subject_identity, "V0 分区执行错绑")
+    proof = _mapping(value, "resume_proof")
+    _require(
+        proof.get("subject") == "baseline"
+        and proof.get("report_byte_identical") is True
+        and proof.get("checkpoint_byte_identical") is True
+        and proof.get("model_calls") == 0
+        and proof.get("product_executions") == 0,
+        "V0 分区结果没有逐字恢复证明",
+    )
+    return value
+
+
+def _persist_baseline_partition_result(
+    output_root: Path,
+    suite_identity: str,
+    partition_identity: str,
+    baseline_identity: str,
+    dependencies: dict[str, str],
+    baseline_subject_identity: str,
+    level: int,
+    execution: dict[str, Any],
+    resume_proof: dict[str, Any],
+) -> dict[str, Any]:
+    import kernel_iteration_blind_gate as evaluator
+
+    content = {
+        "schema": BASELINE_RESULT_SCHEMA,
+        "baseline_identity": baseline_identity,
+        "suite_identity": suite_identity,
+        "partition_identity": partition_identity,
+        "level": level,
+        "baseline_subject_identity": baseline_subject_identity,
+        "direct_dependencies": dict(sorted(dependencies.items())),
+        "execution": evaluator._execution_aggregate(execution),
+        "resume_proof": dict(resume_proof),
+        "formal": False,
+        "contains_reversible_question_answer_evidence_or_case_ids": False,
+    }
+    value = {**content, "identity": evidence.canonical_sha256(content)}
+    path = _baseline_partition_root(output_root, suite_identity, partition_identity, baseline_identity) / "result.json"
+    if path.is_file():
+        _require(_load_json(path) == value, "V0 分区结果发生选择性替换")
+    else:
+        evidence.atomic_json(path, value)
+    return value
 
 
 def _reader_process_recovery_path(root: Path) -> Path:
@@ -1526,8 +1712,8 @@ def _finish_partition(
         "formal": False,
         "formal_state_written": False,
         "contains_reversible_question_answer_evidence_or_case_ids": False,
-        "candidate_execution": evaluator._execution_aggregate(candidate_execution),
-        "baseline_execution": evaluator._execution_aggregate(baseline_execution),
+        "candidate_execution": _partition_execution_aggregate(candidate_execution),
+        "baseline_execution": _partition_execution_aggregate(baseline_execution),
         "absolute_decision": absolute,
         "relative_baseline_decision": relative,
         "resume_proof": resume_proof,
@@ -2707,6 +2893,12 @@ def _implementation_identity() -> dict[str, str]:
             _invalidate_reader_process_outputs,
             _finish_partition,
             _validate_execution_result,
+            _partition_resume_proof,
+            _partition_execution_aggregate,
+            _baseline_partition_dependencies,
+            _baseline_partition_identity,
+            _load_baseline_partition_result,
+            _persist_baseline_partition_result,
         ),
     }
     return {

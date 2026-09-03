@@ -98,57 +98,49 @@ def freeze(
     }
     _require(component_manifest.get("components") == sealed_components, "组件清单直接依赖与封存候选不一致")
 
-    stage4: dict[str, dict[str, Any]] = {}
-    for item in contract["stage4_evidence"]:
-        path = (repository / item["path"]).resolve()
-        _require(path.is_file() and _sha256(path) == item["sha256"], f"Stage 4 证据缺失或改变: {item['path']}")
+    closure_reference = contract.get("stage4_closure", {})
+    closure_path = (repository / str(closure_reference.get("path", ""))).resolve()
+    _require(closure_path.is_file() and _sha256(closure_path) == closure_reference.get("sha256"), "Stage 4 通用闭合汇总缺失或改变")
+    closure = _load(closure_path)
+    _require(closure.get("schema") == "ownward.kernel-iteration-stage4-closure-summary/v1", "Stage 4 通用闭合汇总 schema 无效")
+    _require(closure.get("identity") == closure_reference.get("identity") == _identity(closure), "Stage 4 通用闭合汇总身份漂移")
+    _require(closure.get("candidate_subject_identity") == source_subject["identity"], "Stage 4 通用闭合汇总候选错绑")
+    _require(closure.get("formal") is False, "Stage 4 通用闭合汇总不得成为正式证据")
+    segments: set[str] = set()
+    for item in closure.get("evidence", []):
+        _require(isinstance(item, dict) and isinstance(item.get("segment"), str), "Stage 4 分段证据声明无效")
+        _require(item["segment"] not in segments, f"Stage 4 分段证据重复: {item['segment']}")
+        segments.add(item["segment"])
+        path = (repository / str(item.get("path", ""))).resolve()
+        _require(path.is_file() and _sha256(path) == item.get("sha256"), f"Stage 4 分段证据缺失或改变: {item['segment']}")
         value = _load(path)
-        _require(value.get("identity") == item["identity"], f"Stage 4 证据身份错绑: {item['path']}")
-        _require(item["role"] not in stage4, f"Stage 4 证据职责重复: {item['role']}")
-        stage4[item["role"]] = value
-    _require(set(stage4) == {
-        "cost-contract", "dependency-migration", "controlled-cost", "current-development",
-        "current-regression", "semantic-cost",
-    }, "Stage 4 证据职责不完整")
-    final = stage4["controlled-cost"]
-    semantic_gate = stage4["semantic-cost"]["semantic_input_tokens"]
-    development = stage4["current-development"]
-    regression = stage4["current-regression"]
-    for name, value in (("开发", development), ("回归", regression)):
-        _require(value.get("passed") is True and value.get("status") == "passed", f"当前{name}证据未通过")
-        _require(value.get("subject_identity") == source_subject["identity"], f"当前{name}证据未绑定当前 subject")
-        _require(value["observation"]["fact_delivery"]["complete"] is True, f"当前{name}事实交付不完整")
-    development_observation = development["observation"]
-    regression_observation = regression["observation"]
-    long_case = next(
-        (item for item in development_observation["case_evidence"] if item.get("coverage") == "long-session-multi-fact"),
-        None,
-    )
-    _require(
-        isinstance(long_case, dict)
-        and long_case.get("truth_claims") == 5
-        and long_case.get("delivered_truth_claims") == 5
-        and all(
-            expected.get("returned") is True
-            and expected.get("read") is True
-            and "semantic" in expected.get("channel_signals", [])
-            for expected in long_case.get("selection", {}).get("expected_sources", [])
-        ),
-        "长资产语义召回或 5/5 事实交付资格不成立",
-    )
-    quality = final["quality_and_closed_dimensions"]
+        _require(value.get("identity") == item.get("identity"), f"Stage 4 分段证据身份错绑: {item['segment']}")
+    _require(segments >= {
+        "quality-development", "quality-regression", "quality-protection",
+        "query-through-delivery-latency", "semantic-input-cost",
+        "storage-and-controlled-wall", "dependency-continuity",
+    }, "Stage 4 通用闭合汇总缺少必要流水线分段")
+    dimensions = closure.get("dimensions", {})
+    _require(isinstance(dimensions, dict) and set(dimensions) == {
+        "quality", "complete_consumer_latency", "semantic_cost",
+        "storage_cost", "controlled_wall", "recovery",
+    }, "Stage 4 通用闭合维度不完整")
+    _require(all(isinstance(value, dict) and value.get("passed") is True for value in dimensions.values()), "Stage 4 存在未关闭维度")
+    quality = dimensions["quality"]
+    latency = dimensions["complete_consumer_latency"]
+    semantic = dimensions["semantic_cost"]
+    storage = dimensions["storage_cost"]
+    controlled_wall = dimensions["controlled_wall"]
+    recovery = dimensions["recovery"]
     gates = contract["eligibility"]
-    _require(development_observation["final_answer_accuracy"] == gates["development_accuracy"], "开发质量资格不成立")
-    _require(regression_observation["final_answer_accuracy"] == gates["regression_accuracy"], "固定回归资格不成立")
-    _require(semantic_gate["candidate_component_tokens"] <= gates["maximum_semantic_component_tokens"], "语义组件成本资格不成立")
-    _require(quality["ownward_data_ratio_to_v0"] <= gates["maximum_ownward_data_ratio_to_v0"], "产品数据成本资格不成立")
-    _require(
-        max(development_observation["latency"]["retrieval_p95_ms"], regression_observation["latency"]["retrieval_p95_ms"])
-        <= gates["maximum_consumer_p95_ms"],
-        "完整消费者时延资格不成立",
-    )
-    _require(final["candidate_controlled_gate"]["candidate_plus_error_seconds"] <= gates["maximum_controlled_wall_seconds"], "候选可控墙钟资格不成立")
-    _require(final["resume"]["same_identity_is_byte_exact_and_zero_execution"] is True, "同身份恢复资格不成立")
+    _require(quality.get("development_accuracy") == gates["development_accuracy"], "开发质量资格不成立")
+    _require(quality.get("regression_accuracy") == gates["regression_accuracy"], "固定回归资格不成立")
+    _require(quality.get("fact_delivery_complete") is True and quality.get("long_multifact_delivery") == gates["long_multifact_delivery"] and quality.get("semantic_recall") == gates["semantic_recall"], "事实交付或语义召回资格不成立")
+    _require(float(semantic.get("component_input_tokens", float("inf"))) <= gates["maximum_semantic_component_tokens"], "语义组件成本资格不成立")
+    _require(float(storage.get("ownward_data_ratio_to_v0", float("inf"))) <= gates["maximum_ownward_data_ratio_to_v0"], "产品数据成本资格不成立")
+    _require(float(latency.get("p95_ms", float("inf"))) <= gates["maximum_consumer_p95_ms"] and int(latency.get("samples", 0)) >= 20 and latency.get("stable_selection_trace") is True and int(latency.get("maximum_read_calls", 9)) <= 8 and int(latency.get("maximum_context_chars", 24001)) <= 24000, "完整消费者时延资格不成立")
+    _require(float(controlled_wall.get("candidate_plus_error_seconds", float("inf"))) <= gates["maximum_controlled_wall_seconds"], "候选可控墙钟资格不成立")
+    _require(recovery.get("same_identity_byte_exact") is True and recovery.get("model_calls") == 0 and recovery.get("product_executions") == 0, "同身份恢复资格不成立")
 
     binary = rebuilt_candidate_root / "ownward.exe"
     source_build = _go_build(source_candidate_root / "ownward.exe")
@@ -193,10 +185,7 @@ def freeze(
         "release_manifest_sha256": _sha256(package / "manifest.json"),
         "production_storage_sha256": _sha256(production_storage_report),
         "formal_state_before_sha256": formal_state_sha256,
-        "stage4_evidence": [
-            {"role": item["role"], "identity": item["identity"], "sha256": item["sha256"]}
-            for item in contract["stage4_evidence"]
-        ],
+        "stage4_closure_identity": closure["identity"],
         "eligibility_passed": True,
         "packaging_drift": {
             "stage4_binary_was_dirty": True,

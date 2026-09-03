@@ -1,0 +1,86 @@
+{
+  "schema": "ownward.kernel-iteration-stage4-closure-summary/v1",
+  "identity": "bcd3c1dfa788ccb0c4177b44b2844b5dd0ecf0d611ab8da4f5d8077faf8eedd8",
+  "candidate_subject_identity": "460e3f8205dab3f47c83d3620a89be447264ab81d9327e5602f06866fa4cb5fd",
+  "formal": false,
+  "dimensions": {
+    "quality": {
+      "passed": true,
+      "development_accuracy": 1.0,
+      "regression_accuracy": 1.0,
+      "fact_delivery_complete": true,
+      "long_multifact_delivery": "5/5",
+      "semantic_recall": 1.0
+    },
+    "complete_consumer_latency": {
+      "passed": true,
+      "p95_ms": 506.432,
+      "samples": 80,
+      "stable_selection_trace": true,
+      "maximum_read_calls": 8,
+      "maximum_context_chars": 24000
+    },
+    "semantic_cost": {
+      "passed": true,
+      "component_input_tokens": 9674
+    },
+    "storage_cost": {
+      "passed": true,
+      "ownward_data_ratio_to_v0": 0.401517
+    },
+    "controlled_wall": {
+      "passed": true,
+      "candidate_plus_error_seconds": 1.485877
+    },
+    "recovery": {
+      "passed": true,
+      "same_identity_byte_exact": true,
+      "model_calls": 0,
+      "product_executions": 0
+    }
+  },
+  "evidence": [
+    {
+      "segment": "quality-development",
+      "path": ".tmp/kernel-v2-major-iteration/stage6-context-delivery-repair-v2/stage4-development/subjects/v2-candidate/460e3f8205dab3f47c83d3620a89be447264ab81d9327e5602f06866fa4cb5fd/development/4a9dab4469b92df4fb9d24166b18ddbd4f92c67863a84d3809dc2938bb25d5ea/execution-result.json",
+      "sha256": "30da3f406676bc9c2f05b2ecee7a25cd3e56c4ff63a8cb436e8160526b3eca16",
+      "identity": "b68d03591d9f9edeba2341f5df2f944a150a86a2b3bba26976fce0b6dec10ed7"
+    },
+    {
+      "segment": "quality-regression",
+      "path": ".tmp/kernel-v2-major-iteration/stage6-context-delivery-repair-v2/stage4-regression/subjects/v2-candidate/460e3f8205dab3f47c83d3620a89be447264ab81d9327e5602f06866fa4cb5fd/regression/67c6774f4a9ec93b18782c2db77b6bd424efedc28bd9256c63a53969e303b976/execution-result.json",
+      "sha256": "1c65f0b78d1149f2ca3b8ce588f5e917611de61c033f4e9f7792dae072904f38",
+      "identity": "0463da097f991e8641b49c296a91e4884ee659957a9d663744b0ea07c651c125"
+    },
+    {
+      "segment": "quality-protection",
+      "path": ".tmp/kernel-v2-major-iteration/stage6-context-delivery-repair-v2/answer-sufficiency/ae4d94fe3bf3b1b9bf6110e2e1bb2d7627874a0f655fdbb4970573b903dd78bb/result.json",
+      "sha256": "9f3841ef7f71707af4ec84af334a59b3037ae1f0b30be1b5fe06b931b65828e7",
+      "identity": "bd08c8c57cd7cf006aba6eb0623632dc59eaa5b3738f3343884c357d430de5a1"
+    },
+    {
+      "segment": "query-through-delivery-latency",
+      "path": ".tmp/kernel-v2-major-iteration/stage6-context-delivery-repair-v2/stage4-latency-revalidation/result.json",
+      "sha256": "8a06a21f8829b2f7d4077cc1b6f6cdbc23372dc5dade6310ece80be2824c0729",
+      "identity": "d65938d6bfc25d7ffe1a85b7519635c8f10b36402ed30ac1d287b05ca182c950"
+    },
+    {
+      "segment": "semantic-input-cost",
+      "path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/real-capability-wall-audit-v1/result.json",
+      "sha256": "07da31c5fbd7fcf1220f3fb2a2441d1a7f4dfab8058959c75699d071ea5deb76",
+      "identity": "c7480729170c671dcbfc1c441abb7a708c3378f2285f29a8c6ab79e77b215a1b"
+    },
+    {
+      "segment": "storage-and-controlled-wall",
+      "path": ".tmp/kernel-v2-major-iteration/stage4-end-to-end-resource-cost/representation-lifecycle-final-v6/result.json",
+      "sha256": "a4a720b93738a40ce6115074e44d39f58497cac4638d8a53fe09a7e89af17b3a",
+      "identity": "3e06bfd3f7c8d235eab8f5d436825ee3210794527744bb558e63ae24cb9fff72"
+    },
+    {
+      "segment": "dependency-continuity",
+      "path": "benchmarks/acceptance/suite/iteration/v2/stage4-resource-cost-raw-vector-lifecycle-dependency-migration.json",
+      "sha256": "c0eac181d2b9515b9f5d83b17055e39be4b01c508f74989428ba809cb8922d1c",
+      "identity": "3b2d766dfd8d298c511d8b7bb3f9d062d970d873553f4887e3de3ac361e694fb"
+    }
+  ]
+}

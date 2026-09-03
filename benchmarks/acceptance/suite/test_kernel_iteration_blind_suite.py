@@ -695,6 +695,114 @@ class BlindVersionSuiteTests(unittest.TestCase):
             suite._destroy_execution_scratch(path, runs, suite_identity, plan_identity)
             self.assertFalse(path.exists())
 
+    def test_v0_partition_result_is_candidate_independent_and_dependency_bound(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            suite_identity = "1" * 64
+            partition_identity = "2" * 64
+            baseline_subject = "3" * 64
+            dependencies = {
+                "suite-contract": "4" * 64,
+                "partition-contract": "5" * 64,
+                "suite": suite_identity,
+                "suite-partition": partition_identity,
+                "candidate-subject": "6" * 64,
+                "candidate-binary": "7" * 64,
+                "baseline-subject": baseline_subject,
+                "baseline-binary": "8" * 64,
+                "shared-conditions": "9" * 64,
+                "external-intelligence-reader-role": "a" * 64,
+                "executor": "b" * 64,
+                "observer-and-scorer": "c" * 64,
+                "execution-controller": "d" * 64,
+                "evaluation-batch": "e" * 64,
+            }
+            baseline_dependencies = suite._baseline_partition_dependencies(dependencies)
+            changed_candidate = dict(dependencies)
+            changed_candidate["candidate-subject"] = "f" * 64
+            changed_candidate["candidate-binary"] = "0" * 64
+            changed_candidate["evaluation-batch"] = "f" * 64
+            self.assertEqual(baseline_dependencies, suite._baseline_partition_dependencies(changed_candidate))
+            identity = suite._baseline_partition_identity(baseline_dependencies)
+            observation = {
+                "questions": 5,
+                "fact_delivery": {"complete": True, "missing_questions": 0},
+                "final_answer_accuracy": 1.0,
+                "temporal_correctness": 1.0,
+                "conflict_correctness": 1.0,
+                "latency": {"retrieval_p95_ms": 10.0},
+                "resources": {"semantic_input_tokens": 1, "ownward_data_bytes": 2},
+                "codex": {"calls": 1},
+            }
+            execution = {
+                "subject_identity": baseline_subject,
+                "report_sha256": "1" * 64,
+                "checkpoint_sha256": "2" * 64,
+                "diagnostic_summary_sha256": "3" * 64,
+                "observation": observation,
+            }
+            proof = {
+                "subject": "baseline", "report_byte_identical": True,
+                "checkpoint_byte_identical": True, "model_calls": 0, "product_executions": 0,
+            }
+            stored = suite._persist_baseline_partition_result(
+                output, suite_identity, partition_identity, identity, baseline_dependencies,
+                baseline_subject, 5, execution, proof,
+            )
+            loaded = suite._load_baseline_partition_result(
+                output, suite_identity, partition_identity, identity, baseline_dependencies,
+                baseline_subject, 5,
+            )
+            self.assertEqual(stored, loaded)
+            serialized = json.dumps(stored)
+            self.assertNotIn("6" * 64, serialized)
+            self.assertNotIn("candidate", serialized)
+            drifted = dict(baseline_dependencies)
+            drifted["shared-conditions"] = "0" * 64
+            drifted_identity = suite._baseline_partition_identity(drifted)
+            self.assertIsNone(suite._load_baseline_partition_result(
+                output, suite_identity, partition_identity, drifted_identity, drifted,
+                baseline_subject, 5,
+            ))
+
+    def test_cached_v0_resume_never_invokes_the_baseline_runner(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            scratch = Path(temporary)
+            candidate_root = scratch / "candidate"
+            candidate_root.mkdir()
+            (candidate_root / "report.json").write_bytes(b"candidate-report")
+            (candidate_root / "checkpoint-manifest.json").write_bytes(b"candidate-checkpoint")
+            calls: list[str] = []
+
+            def runner(**kwargs: object) -> dict[str, object]:
+                calls.append(Path(str(kwargs["output_dir"])).name)
+                return {}
+
+            cache = {
+                "identity": "a" * 64,
+                "resume_proof": {
+                    "subject": "baseline",
+                    "report_byte_identical": True,
+                    "checkpoint_byte_identical": True,
+                    "model_calls": 0,
+                    "product_executions": 0,
+                },
+            }
+            proof = suite._partition_resume_proof(
+                self.suite_root,
+                {},
+                {},
+                scratch / "dataset.json",
+                scratch,
+                "b" * 64,
+                "c" * 64,
+                runner,
+                cache,
+            )
+            self.assertTrue(proof["passed"])
+            self.assertEqual(calls, ["candidate"])
+            self.assertEqual(proof["subjects"][1]["cache_identity"], cache["identity"])
+
     def test_public_suite_evidence_has_no_v0_baseline_assumption(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             fixture = _PreparationFixture(self.suite_root, Path(temporary), reject_once=False)
