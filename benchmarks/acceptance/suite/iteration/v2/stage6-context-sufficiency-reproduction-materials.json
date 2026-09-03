@@ -1,0 +1,101 @@
+{
+  "schema": "ownward.kernel-iteration-materials/v2",
+  "contains_formal_questions_answers_gold_or_content": false,
+  "cases": [
+    {
+      "case_id": "v2s6csr-dispatch-exception",
+      "coverage": "stage6-context-cross-source-conditional",
+      "question_type": "multi-session",
+      "question_date": "2034-03-31",
+      "question": "For shipment KX-17 under the current signed dispatch and storm exception, state the route, approver, escalation threshold, and fallback depot.",
+      "answer": "For KX-17, use Route Helix. For KX-17, approval belongs to Mara Quill. For KX-17, the escalation threshold is 17 minutes, and the fallback is Depot Umber.",
+      "answer_session_ids": ["v2s6csr01-s04", "v2s6csr01-s06", "v2s6csr01-s08"],
+      "stale_session_ids": ["v2s6csr01-s01"],
+      "distractor_session_ids": ["v2s6csr01-s02", "v2s6csr01-s03", "v2s6csr01-s05", "v2s6csr01-s07", "v2s6csr01-s09"],
+      "truth_claims": [
+        {"claim": "For KX-17, use Route Helix.", "evidence_session_ids": ["v2s6csr01-s04"]},
+        {"claim": "For KX-17, approval belongs to Mara Quill.", "evidence_session_ids": ["v2s6csr01-s06"]},
+        {"claim": "For KX-17, the escalation threshold is 17 minutes, and the fallback is Depot Umber.", "evidence_session_ids": ["v2s6csr01-s08"]}
+      ],
+      "sessions": [
+        {"session_id": "v2s6csr01-s01", "date": "2034-03-02", "turns": [{"role": "assistant", "content": "The superseded KX-17 dispatch used Route Amber, was approved by Oren Pike, and escalated after 25 minutes to Depot Slate."}]},
+        {"session_id": "v2s6csr01-s02", "date": "2034-03-05", "turns": [{"role": "user", "content": "KX-71 is routed through Route Helix, but its approver is Oren Pike and its fallback is Depot Slate."}]},
+        {"session_id": "v2s6csr01-s03", "date": "2034-03-08", "turns": [{"role": "assistant", "content": "A training worksheet pairs KX-17 with Route Cedar and a 17-minute drill; it is not a signed dispatch."}]},
+        {"session_id": "v2s6csr01-s04", "date": "2034-03-18", "turns": [{"role": "assistant", "content": "For KX-17, use Route Helix."}]},
+        {"session_id": "v2s6csr01-s05", "date": "2034-03-19", "turns": [{"role": "user", "content": "Mara Quill approves KX-71 through Route Amber during a separate coastal exercise."}]},
+        {"session_id": "v2s6csr01-s06", "date": "2034-03-21", "turns": [{"role": "user", "content": "For KX-17, approval belongs to Mara Quill."}]},
+        {"session_id": "v2s6csr01-s07", "date": "2034-03-22", "turns": [{"role": "assistant", "content": "Depot Umber reports a 25-minute unloading window for shipment KX-71; this does not amend KX-17."}]},
+        {"session_id": "v2s6csr01-s08", "date": "2034-03-24", "turns": [{"role": "assistant", "content": "For KX-17, the escalation threshold is 17 minutes, and the fallback is Depot Umber."}]},
+        {"session_id": "v2s6csr01-s09", "date": "2034-03-27", "turns": [{"role": "user", "content": "An unsigned rehearsal memo suggests Depot Cedar for KX-17 after 12 minutes; the memo has no dispatch authority."}]}
+      ]
+    },
+    {
+      "case_id": "v2s6csr-bilingual-batch",
+      "coverage": "stage6-context-bilingual-structured-join",
+      "question_type": "multi-session",
+      "question_date": "2034-07-31",
+      "question": "请根据批次 CN-42 的现行放行记录，说明采用哪条线路、由谁复核、生效窗口是什么，以及超限后的仓库。",
+      "answer": "对于批次 CN-42，采用苍穹线。 对于批次 CN-42，复核人为林澄。 对于批次 CN-42，生效窗口为周四 14:10 至 14:35，超限后转入青屿库。",
+      "answer_session_ids": ["v2s6csr02-s03", "v2s6csr02-s06", "v2s6csr02-s08"],
+      "stale_session_ids": ["v2s6csr02-s01"],
+      "distractor_session_ids": ["v2s6csr02-s02", "v2s6csr02-s04", "v2s6csr02-s05", "v2s6csr02-s07", "v2s6csr02-s09"],
+      "truth_claims": [
+        {"claim": "对于批次 CN-42，采用苍穹线。", "evidence_session_ids": ["v2s6csr02-s03"]},
+        {"claim": "对于批次 CN-42，复核人为林澄。", "evidence_session_ids": ["v2s6csr02-s06"]},
+        {"claim": "对于批次 CN-42，生效窗口为周四 14:10 至 14:35，超限后转入青屿库。", "evidence_session_ids": ["v2s6csr02-s08"]}
+      ],
+      "sessions": [
+        {"session_id": "v2s6csr02-s01", "date": "2034-07-02", "turns": [{"role": "user", "content": "旧版 CN-42 放行单采用海棠线，由周岚复核，周四 13:20 至 13:45 生效。"}]},
+        {"session_id": "v2s6csr02-s02", "date": "2034-07-04", "turns": [{"role": "assistant", "content": "批次 CN-24 在苍穹线运行，由周岚复核，超限后进入白沙库。"}]},
+        {"session_id": "v2s6csr02-s03", "date": "2034-07-16", "turns": [{"role": "assistant", "content": "对于批次 CN-42，采用苍穹线。"}]},
+        {"session_id": "v2s6csr02-s04", "date": "2034-07-17", "turns": [{"role": "user", "content": "演练表把 CN-42 与海棠线、青屿库放在同一行，但演练表不是现行放行记录。"}]},
+        {"session_id": "v2s6csr02-s05", "date": "2034-07-18", "turns": [{"role": "assistant", "content": "林澄在 CN-24 的周四 14:10 演练中担任观察员，不承担复核职责。"}]},
+        {"session_id": "v2s6csr02-s06", "date": "2034-07-20", "turns": [{"role": "user", "content": "对于批次 CN-42，复核人为林澄。"}]},
+        {"session_id": "v2s6csr02-s07", "date": "2034-07-22", "turns": [{"role": "assistant", "content": "青屿库为 CN-24 保留周五 14:35 的临时泊位，与 CN-42 无关。"}]},
+        {"session_id": "v2s6csr02-s08", "date": "2034-07-24", "turns": [{"role": "assistant", "content": "对于批次 CN-42，生效窗口为周四 14:10 至 14:35，超限后转入青屿库。"}]},
+        {"session_id": "v2s6csr02-s09", "date": "2034-07-27", "turns": [{"role": "user", "content": "未签字的便笺建议 CN-42 改为周五 12:00 并转入白沙库，该便笺不具有效力。"}]}
+      ]
+    },
+    {
+      "case_id": "v2s6csr-access-window",
+      "coverage": "stage6-context-temporal-scope-composition",
+      "question_type": "temporal-reasoning",
+      "question_date": "2034-11-12",
+      "question": "As of 2034-11-12, summarize badge OR-9's validity end date, active zone, after-hours escort, and emergency rendezvous under the current notices.",
+      "answer": "Badge OR-9 remains valid through 2034-11-18. Its active zone is North Atrium. After 18:30, escort Imani Vale is required, and the emergency rendezvous is Cedar Gate.",
+      "answer_session_ids": ["v2s6csr03-s04", "v2s6csr03-s06", "v2s6csr03-s08"],
+      "stale_session_ids": ["v2s6csr03-s01", "v2s6csr03-s03"],
+      "distractor_session_ids": ["v2s6csr03-s02", "v2s6csr03-s05", "v2s6csr03-s07", "v2s6csr03-s09"],
+      "truth_claims": [
+        {"claim": "Badge OR-9 remains valid through 2034-11-18.", "evidence_session_ids": ["v2s6csr03-s04"]},
+        {"claim": "Its active zone is North Atrium.", "evidence_session_ids": ["v2s6csr03-s06"]},
+        {"claim": "After 18:30, escort Imani Vale is required, and the emergency rendezvous is Cedar Gate.", "evidence_session_ids": ["v2s6csr03-s08"]}
+      ],
+      "sessions": [
+        {"session_id": "v2s6csr03-s01", "date": "2034-10-01", "turns": [{"role": "assistant", "content": "The earlier OR-9 notice ended validity on 2034-11-10 and assigned South Gallery with escort Pavel Rook."}]},
+        {"session_id": "v2s6csr03-s02", "date": "2034-10-06", "turns": [{"role": "user", "content": "Badge OR-6 remains active in North Atrium through 2034-11-18, but its escort is Pavel Rook."}]},
+        {"session_id": "v2s6csr03-s03", "date": "2034-10-18", "turns": [{"role": "assistant", "content": "A superseded OR-9 amendment moved the badge to East Archive until 2034-11-14."}]},
+        {"session_id": "v2s6csr03-s04", "date": "2034-11-02", "turns": [{"role": "user", "content": "Badge OR-9 remains valid through 2034-11-18."}]},
+        {"session_id": "v2s6csr03-s05", "date": "2034-11-03", "turns": [{"role": "assistant", "content": "North Atrium closes at 18:30 for badge OR-6, whose rendezvous is Maple Gate."}]},
+        {"session_id": "v2s6csr03-s06", "date": "2034-11-05", "turns": [{"role": "assistant", "content": "Its active zone is North Atrium."}]},
+        {"session_id": "v2s6csr03-s07", "date": "2034-11-06", "turns": [{"role": "user", "content": "Imani Vale escorts badge OR-6 after 17:45 during a temporary gallery inspection."}]},
+        {"session_id": "v2s6csr03-s08", "date": "2034-11-08", "turns": [{"role": "assistant", "content": "After 18:30, escort Imani Vale is required, and the emergency rendezvous is Cedar Gate."}]},
+        {"session_id": "v2s6csr03-s09", "date": "2034-11-10", "turns": [{"role": "user", "content": "An unsigned drill card lists Maple Gate and South Gallery for OR-9; it is not an active notice."}]}
+      ]
+    }
+  ],
+  "criteria": {
+    "minimum_accuracy": 1.0,
+    "require_complete_fact_delivery": true,
+    "category_minimums": {},
+    "maximum_wall_seconds": 600,
+    "provenance": {
+      "origin": "independent-stage6-candidate-context-reproduction",
+      "stage2_calibration_reuse": false,
+      "formal_source_access": false,
+      "blind_gate_reuse": false,
+      "tuning_role": "independent-adjudication-only"
+    }
+  },
+  "identity": "1855e2f0723bb7cb6dc5cdbca0abab0d699d66ce3a58029875d6a18b8682fad0"
+}

@@ -173,6 +173,18 @@ class AnswerSufficiencyTests(unittest.TestCase):
         self.assertNotIn("question", contract["aggregate_trigger"])
         self.assertNotIn("answer", contract["aggregate_trigger"])
 
+    def test_explicit_contract_is_read_only_and_must_stay_inside_suite(self) -> None:
+        explicit = HERE / answer_sufficiency.CONTRACT_RELATIVE
+        self.assertEqual(
+            answer_sufficiency.load_contract(HERE)["identity"],
+            answer_sufficiency.load_contract(HERE, explicit)["identity"],
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            outside = Path(directory) / "contract.json"
+            outside.write_text(explicit.read_text(encoding="utf-8"), encoding="utf-8")
+            with self.assertRaisesRegex(answer_sufficiency.AnswerSufficiencyError, "路径越界"):
+                answer_sufficiency.load_contract(HERE, outside)
+
     def test_classification_stops_at_first_proven_boundary(self) -> None:
         contract = answer_sufficiency.load_contract(HERE)
         execution = {

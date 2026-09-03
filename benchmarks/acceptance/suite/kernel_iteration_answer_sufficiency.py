@@ -109,9 +109,10 @@ def _mapping(value: dict[str, Any], key: str) -> dict[str, Any]:
     return item
 
 
-def load_contract(suite_root: Path) -> dict[str, Any]:
+def load_contract(suite_root: Path, contract_path: Path | None = None) -> dict[str, Any]:
     suite_root = suite_root.resolve()
-    path = suite_root / CONTRACT_RELATIVE
+    path = (contract_path.resolve() if contract_path is not None else suite_root / CONTRACT_RELATIVE)
+    _require(path.is_relative_to(suite_root) and path.is_file(), "最终回答充分性合同路径越界或缺失")
     value = _load_json(path)
     _require(value.get("schema") == CONTRACT_SCHEMA, "最终回答充分性合同 schema 无效")
     _require(value.get("frozen_before_diagnostic_results") is True, "最终回答充分性合同没有在结果前冻结")
@@ -182,13 +183,14 @@ def run(
     resume: bool = False,
     execute: Callable[..., dict[str, Any]] | None = None,
     codex_diagnose: Callable[..., dict[str, Any]] | None = None,
+    contract_path: Path | None = None,
 ) -> dict[str, Any]:
     suite_root = suite_root.resolve()
     output_root = output_root.resolve()
     repository = suite_root.parents[2]
     evidence._validate_output_boundary(repository, output_root)
     _require(phase in {"reproduction", "final"}, "最终回答充分性阶段无效")
-    contract = load_contract(suite_root)
+    contract = load_contract(suite_root, contract_path)
     state_path = formal_state.resolve()
     _require(state_path.is_file(), "最终回答充分性诊断缺少正式 state 只读基线")
     state_before = state_path.read_bytes()
@@ -280,6 +282,7 @@ def run(
         contract["loaded"]["diagnosis_materials"], diagnosis_run_root,
         oracle_repeats=(1, 2, 3),
         prompt_renderer_factory=official_evaluator.PromptRenderer,
+        answer_atoms=_mapping(contract, "mechanical_answer_atoms"),
     )
     observer_replay = _replay_observer(diagnosis_run_root, contract["loaded"]["diagnosis_materials"], diagnosis_execution)
     confirmation_execution = executions.get("candidate-confirmation")
@@ -295,6 +298,7 @@ def run(
             contract["loaded"]["confirmation_materials"], confirmation_run_root,
             oracle_repeats=(1, 2, 3),
             prompt_renderer_factory=official_evaluator.PromptRenderer,
+            answer_atoms=_mapping(contract, "mechanical_answer_atoms"),
         )
         confirmation_replay = _replay_observer(
             confirmation_run_root, contract["loaded"]["confirmation_materials"], confirmation_execution,
@@ -534,6 +538,7 @@ def _diagnose_codex_boundaries_impl(
     run_judge: bool = True,
     correctness_source: str = "atoms",
     prompt_renderer_factory: Callable[[Path, Path], Any] | None = None,
+    answer_atoms: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     _require(correctness_source in {"atoms", "judge"}, "Reader 正确性来源无效")
     _require(correctness_source != "judge" or run_judge, "Judge 正确性来源必须实际运行 Judge")
@@ -660,7 +665,7 @@ def _diagnose_codex_boundaries_impl(
                     judged.append(future.result())
         transport_diagnostics = transport.diagnostics()
 
-    atoms = _mapping(load_contract(suite_root), "mechanical_answer_atoms")
+    atoms = answer_atoms if answer_atoms is not None else _mapping(load_contract(suite_root), "mechanical_answer_atoms")
     reader_judgments = [item for item in judged if item["kind"] == "reader"]
     reader_records: list[dict[str, Any]] = []
     product_failures = oracle_failures = 0

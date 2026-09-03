@@ -116,6 +116,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--answer-sufficiency-subject-manifest", type=Path)
     parser.add_argument("--answer-sufficiency-phase", choices=["reproduction", "final"], default="final")
     parser.add_argument("--answer-sufficiency-reproduction-result", type=Path)
+    parser.add_argument("--answer-sufficiency-contract", type=Path)
     parser.add_argument("--reader-reliability-source-result", type=Path)
     parser.add_argument("--reader-reliability-run-root", type=Path)
     parser.add_argument("--blind-suite-vault", type=Path)
@@ -204,6 +205,7 @@ def main() -> None:
             phase=args.answer_sufficiency_phase,
             reproduction_result_path=args.answer_sufficiency_reproduction_result,
             resume=args.resume,
+            contract_path=args.answer_sufficiency_contract,
         )
     elif args.stage4_resource_cost_raw_vector_lifecycle:
         if args.formal_state is None:

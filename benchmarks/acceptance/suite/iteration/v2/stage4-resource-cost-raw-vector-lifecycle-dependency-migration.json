@@ -12,7 +12,7 @@
     {
       "path": "benchmarks/acceptance/suite/kernel_iteration_run.py",
       "frozen_sha256": "3a6ec83cc197d71b8594814cff7000d7face183a8e316e5d0c409f2e19eddc53",
-      "current_sha256": "aa1dd661be3e981baaf9ecc27630b99ee941da65ef07e529a54cc78bae7a6651",
+      "current_sha256": "32f2cbcb46f7e487d2398cf4d6d7e4d08939485e1cb89e38f49004cde04265bc",
       "classification": "version-suite-cli-dispatch-only-frozen-stage4-cost-and-representation-unchanged"
     }
   ],
@@ -107,5 +107,5 @@
     "evidence_identities": true,
     "formal_state_sha256": true
   },
-  "identity": "d0973f1b26692814d24acd20a46463aa2c6a8a22971dcd9751404e926e132dd4"
+  "identity": "184cc2c395168cfae4458327b606e34c2cccdf4ce9fc8d86367628e516f5f108"
 }

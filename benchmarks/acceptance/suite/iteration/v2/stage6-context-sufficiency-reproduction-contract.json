@@ -1,0 +1,127 @@
+{
+  "schema": "ownward.kernel-iteration-stage3-answer-sufficiency-contract/v2",
+  "purpose": "independent-nonoverlapping-stage6-candidate-context-reproduction",
+  "frozen_before_diagnostic_results": true,
+  "confirmation_frozen_before_reproduction": true,
+  "contains_blind_or_formal_question_answer_gold_content_outputs_or_case_ids": false,
+  "aggregate_trigger": {
+    "source_result_identity": "3d36efd691b84d111b3fd4d2eef14678741679f68169a7bb8d0d8fc4040a0914",
+    "first_observed_gaps": {"evidence_read_answer_incorrect": 2, "none": 23},
+    "raw_content_destroyed": true,
+    "same_content_rerun_forbidden": true,
+    "only_general_boundary_reused": "final-answer-sufficiency-boundary"
+  },
+  "subject": {
+    "reproduction": {
+      "identity": "99046f78fc32bc3f5a73103300a5fe44ca14448207483adb95a4dff9a9d3d18d",
+      "kernel_generation_identity": "6a72939124567f19b06064899955193e76b70e89250a37cbc9589fa7bff49872",
+      "kernel_effect_identity": "71e80326ed9dc51866c563fca3e476ba26c96afdd7e68d76ca17406611d9f90f"
+    },
+    "final": {
+      "identity": "99046f78fc32bc3f5a73103300a5fe44ca14448207483adb95a4dff9a9d3d18d",
+      "kernel_generation_identity": "6a72939124567f19b06064899955193e76b70e89250a37cbc9589fa7bff49872",
+      "kernel_effect_identity": "71e80326ed9dc51866c563fca3e476ba26c96afdd7e68d76ca17406611d9f90f"
+    },
+    "candidate_code_change_authorized_before_root_proven": false
+  },
+  "sources": {
+    "diagnosis_materials": {
+      "path": "iteration/v2/stage6-context-sufficiency-reproduction-materials.json",
+      "sha256": "797a7ac08746367163e12e96ad29eb94cc59f864c12d3de9c8b1f41e7175d42f",
+      "identity": "1855e2f0723bb7cb6dc5cdbca0abab0d699d66ce3a58029875d6a18b8682fad0",
+      "may_inform_implementation": false
+    },
+    "confirmation_materials": {
+      "path": "iteration/v2/stage3-final-answer-sufficiency-confirmation-materials.json",
+      "sha256": "851c00803d76cebd4ae7658d1093300e6f9a565bc8e80fdf10a9603a09f2f584",
+      "identity": "590e8fc42aab4d5a86b85e80eeedcc4ab406eaec2756347be2a0063c2a0e9615",
+      "may_inform_implementation": false
+    },
+    "regression_materials": {
+      "path": "iteration/v2/stage3-answer-sufficiency-regression.json",
+      "sha256": "aad780072f1511271516572ffd516dd26d299d251dd1b616e62a88940e8ca82b",
+      "identity": "978ee8479844fddf8412df027648b6807fc283e65ed7fdb01e32b0c1cee3759a"
+    }
+  },
+  "coverage": {
+    "diagnosis_required": [
+      "stage6-context-cross-source-conditional",
+      "stage6-context-bilingual-structured-join",
+      "stage6-context-temporal-scope-composition"
+    ],
+    "confirmation_required": [
+      "final-answer-confirmation-source-local-legend",
+      "final-answer-confirmation-source-local-schema"
+    ],
+    "regression_required": [
+      "answer-sufficiency-regression-user",
+      "answer-sufficiency-regression-assistant",
+      "answer-sufficiency-regression-preference",
+      "answer-sufficiency-regression-update"
+    ],
+    "diagnosis_confirmation_regression_and_prior_stage3_facts_disjoint": true
+  },
+  "diagnostic_order": [
+    "authority-source-and-revision",
+    "semantic-organization",
+    "search-rank-and-signals",
+    "evidence-source-depth-and-order",
+    "cross-source-structural-context",
+    "context-budget-and-final-order",
+    "byte-identical-product-context-reader-repetitions",
+    "complete-source-oracle-reader-repetitions",
+    "official-judge-controls",
+    "observer-replay"
+  ],
+  "repetitions": {
+    "product_context_total_per_case_including_original": 3,
+    "oracle_context_per_case": 3,
+    "identical_prompt_required": true,
+    "model_and_effort_unchanged": true
+  },
+  "mechanical_answer_atoms": {
+    "stage6-context-cross-source-conditional": [["route helix"], ["mara quill"], ["17 minutes"], ["depot umber"]],
+    "stage6-context-bilingual-structured-join": [["苍穹线"], ["林澄"], ["周四"], ["14:10"], ["14:35"], ["青屿库"]],
+    "stage6-context-temporal-scope-composition": [["2034-11-18"], ["north atrium"], ["18:30"], ["imani vale"], ["cedar gate"]],
+    "final-answer-confirmation-source-local-legend": [["shelf linden"], ["42–45%", "42-45%", "42 to 45"], ["priya senn"], ["desk marigold"], ["quiet comet"], ["devan roe"]],
+    "final-answer-confirmation-source-local-schema": [["lock heron"], ["11:20–11:40", "11:20-11:40", "11:20 to 11:40"], ["kian daro"], ["counter saffron"], ["calm harbor"], ["lyra penn"]],
+    "answer-sufficiency-regression-user": [["copper"]],
+    "answer-sufficiency-regression-assistant": [["vega-31"]],
+    "answer-sufficiency-regression-preference": [["amber"], ["no ceiling"]],
+    "answer-sufficiency-regression-update": [["fern arch"]]
+  },
+  "gates": {
+    "diagnosis_cases": 3,
+    "confirmation_cases": 2,
+    "regression_cases": 4,
+    "current_subject_reproduction_minimum_cases": 1,
+    "truth_claim_delivery_ratio": 1.0,
+    "final_candidate_diagnosis_accuracy": 1.0,
+    "final_candidate_confirmation_accuracy": 1.0,
+    "regression_accuracy": 1.0,
+    "reader_product_context_accuracy": 1.0,
+    "reader_oracle_context_accuracy": 1.0,
+    "judge_correct_control_accuracy": 1.0,
+    "judge_wrong_control_accuracy": 1.0,
+    "observer_replay_exact": true,
+    "maximum_read_units": 8,
+    "maximum_context_chars": 24000,
+    "maximum_affected_feedback_seconds": 600,
+    "formal_state_writes": 0
+  },
+  "root_classification": {
+    "kernel-context": "all required facts are delivered but the product context cannot support a stable answer while the complete authority oracle can",
+    "reader": "the complete authority oracle also fails before judging",
+    "judge-or-scorer": "a mechanically correct answer is rejected or a known-wrong answer is accepted",
+    "executor-or-observer": "raw Reader and Judge artifacts are correct but deterministic replay changes the label",
+    "not-reproduced": "all independent diagnosis gates pass; preserve the immutable blind aggregate without changing the candidate"
+  },
+  "candidate_constraints": {
+    "candidate_only": true,
+    "no_model_prompt_schema_scorer_or_threshold_change": true,
+    "no_unbounded_context_or_read_growth": true,
+    "no_blind_or_formal_execution": true,
+    "same_identity_resume_zero_model_zero_product": true
+  },
+  "identity": "3b20005e5fdf37177e87601319599fdf665046155c089df2220618706e460aa8"
+}
