@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import json
+import os
 from pathlib import Path
 import socket
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -11,6 +15,33 @@ import opencode_qualification as qualification
 
 
 class OpenCodeExternalIntelligenceTests(unittest.TestCase):
+    def test_private_mcp_bridge_emits_utf8_even_under_windows_ansi_stdio(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = root / "manifest.json"
+            manifest.write_text(json.dumps({
+                "tools": [{
+                    "name": "ownward_read",
+                    "description": "读取苍穹线与青屿库",
+                    "inputSchema": {"type": "object"},
+                }],
+            }, ensure_ascii=False), encoding="utf-8")
+            environment = dict(os.environ)
+            environment["PYTHONIOENCODING"] = "gbk"
+            completed = subprocess.run(
+                [
+                    sys.executable, str(subject.BRIDGE_PATH), "--manifest", str(manifest),
+                    "--callback", "http://127.0.0.1:1/call", "--token", "fixture",
+                ],
+                input=b'{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}\n',
+                capture_output=True,
+                env=environment,
+                timeout=10,
+                check=True,
+            )
+            response = json.loads(completed.stdout.decode("utf-8"))
+            self.assertEqual("读取苍穹线与青屿库", response["result"]["tools"][0]["description"])
+
     def test_http_normalizes_socket_timeout_for_startup_retry(self) -> None:
         server = subject.OpenCodeServer(
             Path("opencode.exe"), Path("auth.json"), Path("runtime"),

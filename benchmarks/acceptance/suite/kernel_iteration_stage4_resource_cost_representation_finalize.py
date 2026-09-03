@@ -107,7 +107,7 @@ def _verify_dependency_migration(
     _require(changes == drifted, "表示生命周期终测依赖漂移不在精确迁移收据内")
     _require(classifications == {
         "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_representation_finalize.py": "dependency-receipt-validation-only",
-        "benchmarks/acceptance/suite/kernel_iteration_candidate_resource_cost.py": "candidate-packaging-access-overlay-only-representation-and-storage-unchanged",
+        "benchmarks/acceptance/suite/kernel_iteration_candidate_resource_cost.py": "candidate-packaging-query-scheduling-and-summary-overlay-only-representation-and-storage-unchanged",
         "benchmarks/longmemeval_s/run.py": "external-intelligence-port-and-reader-profile-only-frozen-stage4-semantic-request-and-cost-unchanged",
     }, "表示生命周期终测依赖迁移分类漂移")
     _require(related.get("preserved") == {

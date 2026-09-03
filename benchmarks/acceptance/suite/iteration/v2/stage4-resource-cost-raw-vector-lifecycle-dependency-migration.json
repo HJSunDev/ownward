@@ -76,14 +76,14 @@
         {
           "path": "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_representation_finalize.py",
           "frozen_sha256": "2fbbebf747c8064d62fcdfc3bbe6779eafddb7e49c2e5aa8b567935045c7e7d9",
-          "current_sha256": "66f93db1ed249bf61a649841a104bfea6be7f09da878250548b91c8d736007fb",
+          "current_sha256": "315c9f37f39d49131bcaaad24cf0342b11540b4f86482b95b96f9aa87dcb938e",
           "classification": "dependency-receipt-validation-only"
         },
         {
           "path": "benchmarks/acceptance/suite/kernel_iteration_candidate_resource_cost.py",
           "frozen_sha256": "1b531a61c7200df8ec34058a93bb0f18f922140d1b4a307a6ba0db627c98f12a",
-          "current_sha256": "30a9113fd56db490796d9857b9f1a980dd2ce650d76542e36e5429743caa5dff",
-          "classification": "candidate-packaging-access-overlay-only-representation-and-storage-unchanged"
+          "current_sha256": "4d210375262637062833a5052856fd82a2c77bc48f4a5387a468e7fd9b83088b",
+          "classification": "candidate-packaging-query-scheduling-and-summary-overlay-only-representation-and-storage-unchanged"
         },
         {
           "path": "benchmarks/longmemeval_s/run.py",
@@ -107,5 +107,5 @@
     "evidence_identities": true,
     "formal_state_sha256": true
   },
-  "identity": "184cc2c395168cfae4458327b606e34c2cccdf4ce9fc8d86367628e516f5f108"
+  "identity": "3b2d766dfd8d298c511d8b7bb3f9d062d970d873553f4887e3de3ac361e694fb"
 }

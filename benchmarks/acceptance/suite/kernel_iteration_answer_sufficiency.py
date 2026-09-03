@@ -109,6 +109,51 @@ def _mapping(value: dict[str, Any], key: str) -> dict[str, Any]:
     return item
 
 
+def _frozen_product_context_prompt(module: Any, case: dict[str, Any], question_root: Path) -> str:
+    retrieval_document = _load_json(question_root / "retrieval.json")
+    retrieval = _mapping(retrieval_document, "retrieval")
+    _require(not retrieval.get("evidence_read_ids"), "冻结产品上下文暂不支持缺少原文快照的细粒度证据读取")
+    read_paths = retrieval.get("read_paths")
+    _require(isinstance(read_paths, list) and read_paths, "冻结产品上下文缺少读取轨迹")
+    _require(
+        all(isinstance(item, dict) and item.get("mode") == "full" and item.get("source_id") for item in read_paths),
+        "冻结产品上下文包含无法逐字重建的读取模式",
+    )
+    source_log = question_root / "ownward-data" / "assets" / "information.jsonl"
+    _require(source_log.is_file(), "冻结产品上下文缺少权威资产日志")
+    current: dict[str, dict[str, Any]] = {}
+    with source_log.open("r", encoding="utf-8") as stream:
+        for line_number, line in enumerate(stream, 1):
+            if not line.strip():
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError as error:
+                raise AnswerSufficiencyError(f"权威资产日志第 {line_number} 行无效") from error
+            _require(isinstance(event, dict) and event.get("operation") in {"create", "update", "snapshot"}, "权威资产日志操作无效")
+            value = event.get("value")
+            _require(isinstance(value, dict), "权威资产日志值无效")
+            asset_id = value.get("id")
+            revision = value.get("revision")
+            content = value.get("content")
+            _require(isinstance(asset_id, str) and asset_id and isinstance(revision, int) and revision > 0, "权威资产身份无效")
+            _require(isinstance(content, str), "权威资产正文无效")
+            previous = current.get(asset_id)
+            _require(previous is None or int(previous["revision"]) < revision, "权威资产版本不递增")
+            current[asset_id] = {"revision": revision, "content": content}
+    evidence_items = []
+    read_source_ids = []
+    for item in read_paths:
+        source_id = str(item["source_id"])
+        _require(source_id in current, f"读取来源不在权威资产中: {source_id}")
+        read_source_ids.append(source_id)
+        evidence_items.append({"id": source_id, "content": str(current[source_id]["content"])})
+    deduplicated = list(dict.fromkeys(read_source_ids))
+    _require(deduplicated == [str(item) for item in retrieval.get("read_ids", [])], "读取来源顺序与轨迹不一致")
+    _require(sum(len(item["content"]) for item in evidence_items) == int(retrieval.get("context_chars", -1)), "读取正文字符数与轨迹不一致")
+    return str(module._answer_prompt(case, evidence_items))
+
+
 def load_contract(suite_root: Path, contract_path: Path | None = None) -> dict[str, Any]:
     suite_root = suite_root.resolve()
     path = (contract_path.resolve() if contract_path is not None else suite_root / CONTRACT_RELATIVE)
@@ -215,11 +260,13 @@ def run(
         _require(reproduction_result_path is not None and reproduction_result_path.resolve().is_file(), "终态验证缺少已封存根因复现结果")
         reproduction_result = _load_json(reproduction_result_path.resolve())
         _validate_result(reproduction_result, str(reproduction_result.get("plan_identity", "")))
+        reproduction_root = _mapping(reproduction_result, "root_cause")
         _require(
             reproduction_result.get("phase") == "reproduction"
-            and _mapping(reproduction_result, "root_cause").get("responsible_component") == "kernel-context"
-            and reproduction_result.get("passed") is True,
-            "终态验证没有绑定已证明的内核上下文根因",
+            and reproduction_root.get("status") == "proven"
+            and reproduction_root.get("responsible_component") in {"kernel-context", "evidence-delivery"}
+            and bool(_mapping(reproduction_result, "observer_replay").get("exact")),
+            "终态验证没有绑定已证明且可重放的内核交付根因",
         )
         dependencies["reproduction-result"] = evidence.file_sha256(reproduction_result_path.resolve())
     content = {
@@ -281,6 +328,7 @@ def run(
         suite_root, output_root / "answer-sufficiency-attribution" / diagnosis_execution["plan_identity"], candidate_runtime,
         contract["loaded"]["diagnosis_materials"], diagnosis_run_root,
         oracle_repeats=(1, 2, 3),
+        correctness_source="judge",
         prompt_renderer_factory=official_evaluator.PromptRenderer,
         answer_atoms=_mapping(contract, "mechanical_answer_atoms"),
     )
@@ -297,6 +345,7 @@ def run(
             suite_root, output_root / "answer-sufficiency-attribution" / confirmation_execution["plan_identity"], candidate_runtime,
             contract["loaded"]["confirmation_materials"], confirmation_run_root,
             oracle_repeats=(1, 2, 3),
+            correctness_source="judge",
             prompt_renderer_factory=official_evaluator.PromptRenderer,
             answer_atoms=_mapping(contract, "mechanical_answer_atoms"),
         )
@@ -313,7 +362,9 @@ def run(
     )
     elapsed = time.perf_counter() - started
     gates = _mapping(contract, "gates")
-    reproduction_passed = phase == "reproduction" and classification["responsible_component"] == "kernel-context"
+    reproduction_passed = phase == "reproduction" and classification["responsible_component"] in {
+        "kernel-context", "evidence-delivery",
+    }
     final_passed = phase == "final" and all(
         item is not None and bool(item.get("passed"))
         for item in (diagnosis_execution, confirmation_execution, regression_execution)
@@ -420,8 +471,8 @@ def _bind_root_semantics(
     proven_root = dict(_mapping(reproduction_result, "root_cause"))
     _require(
         proven_root.get("status") == "proven"
-        and proven_root.get("responsible_component") == "kernel-context",
-        "终态根因不是复现阶段已经证明的内核上下文根因",
+        and proven_root.get("responsible_component") in {"kernel-context", "evidence-delivery"},
+        "终态根因不是复现阶段已经证明的内核交付根因",
     )
     _require(
         candidate_classification.get("status") == "not-reproduced-with-counterevidence"
@@ -495,10 +546,11 @@ def classify_root(
         "responsible_component": component,
         "mechanism": mechanism,
         "blind_aggregate_preserved": True,
-        "kernel_change_required": component == "kernel-context",
+        "kernel_change_required": component in {"kernel-context", "evidence-delivery"},
         "responsible_component_changed": False,
         "repair_boundary": (
             "candidate-kernel-context" if component == "kernel-context"
+            else "candidate-evidence-delivery" if component == "evidence-delivery"
             else "frozen-external-evaluation-boundary-no-change-authorized"
         ),
         "blind_failure_reclassified_as_random_without_evidence": False,
@@ -542,6 +594,13 @@ def _diagnose_codex_boundaries_impl(
 ) -> dict[str, Any]:
     _require(correctness_source in {"atoms", "judge"}, "Reader 正确性来源无效")
     _require(correctness_source != "judge" or run_judge, "Judge 正确性来源必须实际运行 Judge")
+    if product_repeats and include_original_product_answer:
+        # The original answer came from an interactive tool transcript.  It is
+        # not comparable with a no-tools replay of that interactive prompt.
+        # Replace it with repeat 1 over the exact frozen read context so all
+        # three observations have byte-identical prompts.
+        product_repeats = tuple(dict.fromkeys((1, *product_repeats)))
+        include_original_product_answer = False
     started = time.perf_counter()
     module = validation._load_longmemeval_module(suite_root)
     protocol = runtime["protocol_value"]
@@ -571,8 +630,12 @@ def _diagnose_codex_boundaries_impl(
         if include_original_product_answer:
             original_answers[case_id] = str(reader_output["answer"])
         product_prompt_hashes[case_id] = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+        product_prompt = (
+            _frozen_product_context_prompt(module, case, question_root)
+            if product_repeats else prompt
+        )
         for repeat in product_repeats:
-            reader_jobs.append({"case": case, "context": "product", "repeat": repeat, "prompt": prompt})
+            reader_jobs.append({"case": case, "context": "product", "repeat": repeat, "prompt": product_prompt})
         session_by_id = {session["session_id"]: session for session in case["sessions"]}
         oracle_evidence = [
             {"id": f"oracle-{session_id}", "content": module.session_content(session_id, session_by_id[session_id]["date"], session_by_id[session_id]["turns"])}
@@ -594,7 +657,8 @@ def _diagnose_codex_boundaries_impl(
 
         def run_reader(job: dict[str, Any]) -> dict[str, Any]:
             case = job["case"]
-            stage = stage_root / "reader" / settings_label / str(case["case_id"]) / str(job["context"]) / f"repeat-{job['repeat']}"
+            context_label = "product-read-context-v2" if job["context"] == "product" else str(job["context"])
+            stage = stage_root / "reader" / settings_label / str(case["case_id"]) / context_label / f"repeat-{job['repeat']}"
             answer, usage = _attribution_call(
                 "reader", "reader-execution",
                 lambda: capability.answer(str(job["prompt"]), reader_settings or protocol["reader"], stage),
@@ -802,7 +866,11 @@ def _validate_result(
     if phase == "reproduction":
         _require(result.get("root_cause_evidence") is None and result.get("repair_validation") is None, "根因复现不得伪装成修复验证")
         return
-    _require(root.get("status") == "proven" and root.get("responsible_component") == "kernel-context", "终态没有保留已证原始根因")
+    _require(
+        root.get("status") == "proven"
+        and root.get("responsible_component") in {"kernel-context", "evidence-delivery"},
+        "终态没有保留已证原始内核交付根因",
+    )
     _require(reproduction_result is not None, "终态校验缺少原始根因复现证据")
     root_evidence = _mapping(result, "root_cause_evidence")
     _require(

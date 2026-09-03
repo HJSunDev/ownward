@@ -62,6 +62,11 @@ class ResourceCostCandidateTests(unittest.TestCase):
                 repository / "manifests/kernel-candidates/v2/read-frontier/service-transform.json",
                 service,
             )
+            resource_candidate._render_transformed_input(
+                service,
+                repository / "manifests/kernel-candidates/v2/final-answer-sufficiency/service-transform.json",
+                service,
+            )
             latency_candidate._render_transformed_source(
                 repository,
                 repository / "manifests/kernel-candidates/v2/resource-cost/collaboration-transform.json",
@@ -93,6 +98,8 @@ class ResourceCostCandidateTests(unittest.TestCase):
         self.assertNotIn("s.authority.ReadCurrent, len(sourceIDs)", rendered_service)
         self.assertIn("kernelv2candidate.FixedSourceOrder", rendered_service)
         self.assertIn("s.index.SourceMetadata", rendered_service)
+        self.assertIn("summary != value.Content", rendered_service)
+        self.assertIn("Preserve the exact authoritative source", rendered_service)
         self.assertIn("func (l *Lexical) SourceMetadata", rendered_lexical)
         self.assertIn("diversity   coverage.Sketch", rendered_lexical)
         self.assertNotIn("func (l *Lexical) SourceMetadata", (repository / "internal/retrieval/lexical.go").read_text(encoding="utf-8"))

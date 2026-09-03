@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	SourceSchedulingPolicy = "bounded-fused-rank-existing-lexical-deep-two-lane-and-fixed-source-sketch/v1"
+	SourceSchedulingPolicy = "bounded-fused-rank-query-relevance-two-lane-and-fixed-source-sketch/v2"
 	planningSourceLimit    = 8
 	planningRankFloor      = 4
 	planningPassageLanes   = 2
@@ -55,15 +55,11 @@ func FixedSourceOrder(sources []ReadFrontierSource, frontier int) []string {
 	metadata := make(map[string]coverage.Source, len(sources))
 	for _, source := range sources {
 		ids = append(ids, source.ID)
-		score := 0.0
-		if source.Deep {
-			score = source.LexicalScore
-		}
 		diversity := source.Diversity
 		if diversity.Count == 0 {
 			diversity = coverage.FromText(source.Summary)
 		}
-		metadata[source.ID] = coverage.Source{PassageScore: score, Diversity: diversity}
+		metadata[source.ID] = coverage.Source{PassageScore: source.LexicalScore, Diversity: diversity}
 	}
 	return CoverageSourceOrder(ids, metadata, frontier)
 }
@@ -316,9 +312,10 @@ func (p *EvidencePlans) references(
 }
 
 // CoverageSourceOrder reserves the bounded read frontier for three independent
-// retrieval facts: the strongest fused ranks, existing lexical hits from deep
-// sources, and the least redundant sources. The query score is reused from the
-// lexical channel; the fixed source sketch is produced when the index is built.
+// retrieval facts: the strongest fused ranks, the strongest existing
+// query-relevance signals, and the least redundant sources. The query score is
+// reused from the lexical channel for every returned source, including short
+// authoritative facts; the fixed source sketch is produced when the index is built.
 // Request-time scheduling therefore never reopens or scans authority text or
 // passage metadata. Every source remains exactly once and all
 // unselected results retain their original order.

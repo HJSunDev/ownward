@@ -15,6 +15,43 @@ HERE = Path(__file__).resolve().parent
 
 
 class AnswerSufficiencyTests(unittest.TestCase):
+    def test_frozen_product_context_replays_exact_authority_reads_in_trace_order(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            question_root = Path(directory)
+            assets = question_root / "ownward-data" / "assets"
+            assets.mkdir(parents=True)
+            events = [
+                {"operation": "create", "value": {"id": "a", "revision": 1, "content": "旧值"}},
+                {"operation": "create", "value": {"id": "b", "revision": 1, "content": "青屿库"}},
+                {"operation": "update", "value": {"id": "a", "revision": 2, "content": "苍穹线"}},
+            ]
+            (assets / "information.jsonl").write_text(
+                "".join(json.dumps(item, ensure_ascii=False) + "\n" for item in events), encoding="utf-8",
+            )
+            (question_root / "retrieval.json").write_text(json.dumps({
+                "retrieval": {
+                    "read_ids": ["b", "a"],
+                    "evidence_read_ids": [],
+                    "read_paths": [
+                        {"source_id": "b", "mode": "full", "evidence_ids": []},
+                        {"source_id": "a", "mode": "full", "evidence_ids": []},
+                    ],
+                    "context_chars": len("青屿库") + len("苍穹线"),
+                },
+            }), encoding="utf-8")
+            module = SimpleNamespace(_answer_prompt=lambda _case, evidence: json.dumps(evidence, ensure_ascii=False))
+            prompt = answer_sufficiency._frozen_product_context_prompt(module, {"case_id": "case"}, question_root)
+            self.assertEqual(
+                [{"id": "b", "content": "青屿库"}, {"id": "a", "content": "苍穹线"}],
+                json.loads(prompt),
+            )
+
+            retrieval = json.loads((question_root / "retrieval.json").read_text(encoding="utf-8"))
+            retrieval["retrieval"]["evidence_read_ids"] = ["fragment"]
+            (question_root / "retrieval.json").write_text(json.dumps(retrieval), encoding="utf-8")
+            with self.assertRaisesRegex(answer_sufficiency.AnswerSufficiencyError, "细粒度证据读取"):
+                answer_sufficiency._frozen_product_context_prompt(module, {"case_id": "case"}, question_root)
+
     def test_attribution_errors_are_stage_specific_and_content_safe(self) -> None:
         for category, stage in (
             ("reader", "reader-execution"),
@@ -216,6 +253,8 @@ class AnswerSufficiencyTests(unittest.TestCase):
         undelivered["observation"]["fact_delivery"]["missing_questions"] = 1
         result = answer_sufficiency.classify_root(contract, undelivered, regression, stable, {"exact": True})
         self.assertEqual(result["responsible_component"], "evidence-delivery")
+        self.assertTrue(result["kernel_change_required"])
+        self.assertEqual(result["repair_boundary"], "candidate-evidence-delivery")
 
         context_failure = copy.deepcopy(stable)
         context_failure["reader"]["product_context_failures"] = 1

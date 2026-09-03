@@ -1,0 +1,12 @@
+{
+  "schema": "ownward.kernel-candidate-source-transform/v1",
+  "source": "generated-read-frontier-service",
+  "replacements": [
+    {
+      "name": "preserve-lossless-authority-summary-when-it-fits",
+      "count": 1,
+      "before": "\t\t\tif record.AssetRevision == value.Revision && strings.TrimSpace(record.Analysis.Summary) != \"\" {\n\t\t\t\tsummary = record.Analysis.Summary\n\t\t\t}",
+      "after": "\t\t\tif record.AssetRevision == value.Revision && strings.TrimSpace(record.Analysis.Summary) != \"\" && summary != value.Content {\n\t\t\t\t// A semantic record may summarize related candidates as well as this asset.\n\t\t\t\t// Preserve the exact authoritative source whenever it already fits the\n\t\t\t\t// public summary bound; only long sources require lossy summarization.\n\t\t\t\tsummary = record.Analysis.Summary\n\t\t\t}"
+    }
+  ]
+}

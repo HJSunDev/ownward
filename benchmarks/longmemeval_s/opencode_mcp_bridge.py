@@ -8,6 +8,16 @@ from typing import Any
 from urllib import request
 
 
+def _configure_utf8_stdio() -> None:
+    # OpenCode consumes MCP stdio as UTF-8.  On Windows a Python child whose
+    # stdio is a pipe otherwise inherits the active ANSI code page (typically
+    # GBK here), corrupting non-ASCII tool results before the model sees them.
+    for stream in (sys.stdin, sys.stdout):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding="utf-8", errors="strict")
+
+
 def _arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Private stdio MCP bridge for one OpenCode worker")
     parser.add_argument("--manifest", type=Path, required=True)
@@ -32,6 +42,7 @@ def _callback(url: str, token: str, name: str, arguments: Any) -> dict[str, Any]
 
 
 def main() -> int:
+    _configure_utf8_stdio()
     arguments = _arguments()
     manifest = json.loads(arguments.manifest.read_text(encoding="utf-8"))
     tools = manifest.get("tools") if isinstance(manifest, dict) else None

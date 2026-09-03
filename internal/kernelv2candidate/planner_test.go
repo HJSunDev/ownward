@@ -170,13 +170,14 @@ func TestCoverageSourceOrderBalancesFusedRankPassageRelevanceAndDistinctSource(t
 	}
 }
 
-func TestCoverageSourceOrderMatchesSealedLongPassageLaneSemantics(t *testing.T) {
+func TestCoverageSourceOrderUsesExistingQueryRelevanceForShortAndLongSources(t *testing.T) {
 	sources := make([]string, 18)
 	for index := range sources {
 		sources[index] = fmt.Sprintf("source-%02d", index)
 	}
-	// A short exact lexical match must stay in its fused/diversity lane. The
-	// sealed v10 behavior never promoted whole short sources as local passages.
+	// Query relevance is already computed for every returned source. A short
+	// authoritative fact must not lose that signal merely because it has no
+	// separately indexed passage, while long sources retain the same lane.
 	metadata := make(map[string]coverage.Source, len(sources))
 	for _, sourceID := range sources {
 		metadata[sourceID] = coverage.Source{Diversity: signature("shared-archive-topic")}
@@ -189,8 +190,26 @@ func TestCoverageSourceOrderMatchesSealedLongPassageLaneSemantics(t *testing.T) 
 			t.Fatalf("exact preindexed passage source %s did not enter its lane: %v", sourceID, got[:planningSourceLimit])
 		}
 	}
-	if slices.Contains(got[planningRankFloor:planningRankFloor+planningPassageLanes], sources[6]) {
-		t.Fatalf("short whole source consumed a long-passage lane: %v", got[:planningSourceLimit])
+}
+
+func TestFixedSourceOrderDoesNotDropShortQueryRelevantTruthAtReadBoundary(t *testing.T) {
+	sources := make([]ReadFrontierSource, 9)
+	for index := range sources {
+		sources[index] = ReadFrontierSource{
+			ID:        fmt.Sprintf("source-%02d", index),
+			Summary:   "shared archive summary",
+			Diversity: signature("shared-archive-topic"),
+		}
+	}
+	// Two required sources already occupy the fused-rank floor. The third is a
+	// short fact at rank nine: the old deep-only gate silently discarded its
+	// existing query score and left it outside the fixed eight-read frontier.
+	sources[0].LexicalScore = 8
+	sources[3].LexicalScore = 7
+	sources[8].LexicalScore = 6
+	got := FixedSourceOrder(sources, planningSourceLimit)
+	if !slices.Contains(got[:planningSourceLimit], sources[8].ID) {
+		t.Fatalf("short query-relevant source was dropped from the fixed read frontier: %v", got)
 	}
 }
 
