@@ -156,6 +156,181 @@ class BlindVersionSuiteTests(unittest.TestCase):
         self.assertEqual("external-reader", result["responsible_boundary"])
         self.assertEqual(0, result["model_calls"])
 
+    def test_reader_process_failure_is_not_a_candidate_failure(self) -> None:
+        absolute = {
+            "failures": [
+                {"metric": "final_answer_accuracy"},
+                {"metric": "fact_delivery_missing"},
+                {"metric": "temporal_correctness"},
+                {"metric": "retrieval_p95_confirmation_required"},
+            ],
+            "retrieval_distribution": {"candidate_failure": False},
+        }
+        attribution = {
+            "classification": "evaluation-process-failure",
+            "responsible_boundary": "external-reader",
+        }
+        self.assertEqual(
+            ("evaluation-process-error", None),
+            suite._partition_failure_disposition(absolute, attribution),
+        )
+        absolute["retrieval_distribution"]["candidate_failure"] = True
+        self.assertEqual(
+            ("candidate-rejected", False),
+            suite._partition_failure_disposition(absolute, attribution),
+        )
+
+    def test_reader_process_recovery_replays_only_invalid_reader_downstream(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "public"
+            scratch = Path(temporary) / "scratch"
+            run_root = scratch / "candidate"
+            root.mkdir(parents=True)
+            question = run_root / "questions" / "private-case"
+            question.mkdir(parents=True)
+            for name in (
+                "report.json", "hypotheses.jsonl", "official-evaluation.jsonl", "diagnostics.jsonl",
+                "diagnostic-summary.json", "checkpoint-manifest.json", "submission.zip",
+            ):
+                (run_root / name).parent.mkdir(parents=True, exist_ok=True)
+                (run_root / name).write_text("{}\n", encoding="utf-8")
+            (question / "reader").mkdir()
+            (question / "judge").mkdir()
+            for name in ("result.json", "retrieval.json", "answer.json", "diagnostic.json"):
+                (question / name).write_text("{}\n", encoding="utf-8")
+            (question / "reader" / "output.json").write_text("{}\n", encoding="utf-8")
+            (question / "judge" / "output.json").write_text("{}\n", encoding="utf-8")
+            (question / "semantic-proof.json").write_text("{}\n", encoding="utf-8")
+            (question / "diagnostic.json").write_text(json.dumps({
+                "correct": False,
+                "first_observed_gap": "target_evidence_not_read",
+                "evidence_coverage": {
+                    "active_reader_observation": {
+                        "unread_expected_best_return_ranks": [8],
+                        "read_limit": 8,
+                        "read_units_used": 7,
+                        "tool_call_limit": 12,
+                        "tool_calls_used": 11,
+                    },
+                    "direct_question_retrieval_probe": {"all_expected_returned": False},
+                },
+            }) + "\n", encoding="utf-8")
+            plan = {"identity": "1" * 64}
+            execution = {
+                "run_root": str(run_root),
+                "report_sha256": "2" * 64,
+                "checkpoint_sha256": "3" * 64,
+                "diagnostic_summary_sha256": "4" * 64,
+            }
+            attribution = {
+                "classification": "evaluation-process-failure",
+                "reason": "external-reader-skipped-target-returned-within-read-budget",
+                "responsible_boundary": "external-reader",
+                "mechanical_observation": {"questions": 1},
+            }
+            recovery = suite._start_reader_process_recovery(
+                root, scratch, plan, {"cases": [{"case_id": "private-case"}]}, execution, attribution,
+            )
+            self.assertEqual("invalidated", recovery["status"])
+            self.assertTrue((question / "semantic-proof.json").is_file())
+            self.assertFalse((question / "reader").exists())
+            self.assertFalse((question / "result.json").exists())
+            public = (root / "reader-process-recovery.json").read_text(encoding="utf-8")
+            self.assertNotIn("private-case", public)
+            self.assertIn("private-case", (scratch / "reader-process-recovery-private.json").read_text(encoding="utf-8"))
+
+            for name in ("report.json", "diagnostic-summary.json", "checkpoint-manifest.json"):
+                (run_root / name).write_text("{\"recovered\":true}\n", encoding="utf-8")
+            completed = suite._complete_reader_process_recovery(
+                root,
+                plan,
+                recovery,
+                {
+                    "report_sha256": "5" * 64,
+                    "checkpoint_sha256": "6" * 64,
+                    "diagnostic_summary_sha256": "7" * 64,
+                },
+            )
+            self.assertEqual("completed", completed["status"])
+            self.assertEqual(1, completed["affected_questions"])
+
+    def test_mixed_reader_selection_misses_are_one_process_failure_and_unknown_gaps_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run_root = Path(temporary)
+            cases = [{"case_id": "unread"}, {"case_id": "search-choice"}]
+            diagnostics = {
+                "unread": {
+                    "correct": False,
+                    "first_observed_gap": "target_evidence_not_read",
+                    "evidence_coverage": {
+                        "active_reader_observation": {
+                            "unread_expected_best_return_ranks": [4],
+                            "read_limit": 8,
+                            "read_units_used": 7,
+                            "tool_call_limit": 12,
+                            "tool_calls_used": 11,
+                        },
+                    },
+                },
+                "search-choice": {
+                    "correct": False,
+                    "first_observed_gap": "target_evidence_not_search_returned",
+                    "evidence_coverage": {
+                        "direct_question_retrieval_probe": {"all_expected_returned": True},
+                    },
+                },
+            }
+            for case_id, diagnostic in diagnostics.items():
+                question = run_root / "questions" / case_id
+                question.mkdir(parents=True)
+                (question / "diagnostic.json").write_text(json.dumps(diagnostic) + "\n", encoding="utf-8")
+            runtime = {
+                "external_intelligence": {
+                    "driver": "opencode-server/v1",
+                    "provider": "opencode-go",
+                    "selection_sha256": "a" * 64,
+                    "roles": {"reader": {"model": "qwen3.8-flash", "reasoning_effort": "xhigh"}},
+                },
+                "protocol_value": {"reader": {"model": "qwen3.8-flash", "reasoning_effort": "xhigh"}},
+            }
+            execution = {
+                "run_root": str(run_root),
+                "observation": {
+                    "fact_delivery": {
+                        "missing_questions": 2,
+                        "by_first_observed_gap": {
+                            "target_evidence_not_read": 1,
+                            "target_evidence_not_search_returned": 1,
+                        },
+                    },
+                    "active_reader_observation": {},
+                    "direct_question_retrieval_observation": {},
+                },
+            }
+            result = suite._attribute_partition_answer_failure(
+                self.suite_root, run_root, runtime, {"cases": cases}, execution,
+                {"failures": [{"metric": "final_answer_accuracy"}]},
+            )
+            self.assertEqual("evaluation-process-failure", result["classification"])
+            self.assertEqual("external-reader-mixed-search-and-read-selection-misses", result["reason"])
+            self.assertEqual(2, result["mechanical_observation"]["questions"])
+            self.assertCountEqual(
+                ["unread", "search-choice"],
+                suite._reader_process_recovery_case_ids({"cases": cases}, run_root, result["reason"]),
+            )
+            self.assertTrue(suite._is_retryable_reader_process_failure(result))
+
+            diagnostics["search-choice"]["evidence_coverage"]["direct_question_retrieval_probe"]["all_expected_returned"] = False
+            (run_root / "questions" / "search-choice" / "diagnostic.json").write_text(
+                json.dumps(diagnostics["search-choice"]) + "\n", encoding="utf-8",
+            )
+            rejected = suite._attribute_partition_answer_failure(
+                self.suite_root, run_root, runtime, {"cases": cases}, execution,
+                {"failures": [{"metric": "final_answer_accuracy"}]},
+            )
+            self.assertEqual("candidate-failure", rejected["classification"])
+            self.assertFalse(suite._is_retryable_reader_process_failure(rejected))
+
     def test_preparation_identity_has_no_candidate_or_git_dependency(self) -> None:
         contract = suite.load_contract(self.suite_root)
         validation_contract = validation.load_validation_contract(self.suite_root)
@@ -441,6 +616,7 @@ class BlindVersionSuiteTests(unittest.TestCase):
             decision = suite._previous_partition_result(
                 output, suite_identity, candidate_identity, contract, previous_plan_identity,
                 adjudication_path=terminal_path, evaluation_batch_identity=evaluation_batch_identity,
+                process_budget={"identity": "7" * 64, "calibration": {}},
             )
             self.assertEqual(result["identity"], decision["result_identity"])
             self.assertEqual(continuation["identity"], decision["continuation_identity"])

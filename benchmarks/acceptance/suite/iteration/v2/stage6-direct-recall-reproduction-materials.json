@@ -1,0 +1,76 @@
+{
+  "schema": "ownward.kernel-iteration-materials/v2",
+  "contains_formal_questions_answers_gold_or_content": false,
+  "cases": [
+    {
+      "case_id": "v2dr-dark-sky-stabilization",
+      "coverage": "semantic-only-authority-competes-with-lexical-semantic-distractor-saturation",
+      "question_type": "single-session-user",
+      "question_date": "2026-12-20",
+      "question": "What did the observatory ultimately use to stop vibration from spoiling the night photographs?",
+      "answer": "A suspended tray filled with dry grains.",
+      "answer_session_ids": ["v2dr-s29"],
+      "stale_session_ids": [],
+      "distractor_session_ids": [
+        "v2dr-s01", "v2dr-s02", "v2dr-s03", "v2dr-s04", "v2dr-s05", "v2dr-s06", "v2dr-s07",
+        "v2dr-s08", "v2dr-s09", "v2dr-s10", "v2dr-s11", "v2dr-s12", "v2dr-s13", "v2dr-s14",
+        "v2dr-s15", "v2dr-s16", "v2dr-s17", "v2dr-s18", "v2dr-s19", "v2dr-s20", "v2dr-s21",
+        "v2dr-s22", "v2dr-s23", "v2dr-s24", "v2dr-s25", "v2dr-s26", "v2dr-s27", "v2dr-s28",
+        "v2dr-s30"
+      ],
+      "truth_claims": [
+        {
+          "claim": "A suspended tray filled with dry grains.",
+          "evidence_session_ids": ["v2dr-s29"]
+        }
+      ],
+      "sessions": [
+        {"session_id": "v2dr-s01", "date": "2026-11-01", "turns": [{"role": "user", "content": "The observatory vibration review tested rubber feet for night photographs, but rejected them after image shake remained."}]},
+        {"session_id": "v2dr-s02", "date": "2026-11-02", "turns": [{"role": "assistant", "content": "Foam pads were proposed to stop observatory vibration spoiling night photographs; the proposal was not adopted."}]},
+        {"session_id": "v2dr-s03", "date": "2026-11-03", "turns": [{"role": "user", "content": "A training exercise claimed steel braces would stop vibration in night photographs, but labels that answer fictional."}]},
+        {"session_id": "v2dr-s04", "date": "2026-11-04", "turns": [{"role": "assistant", "content": "The observatory tried cork blocks beneath the camera; vibration still spoiled the night photographs."}]},
+        {"session_id": "v2dr-s05", "date": "2026-11-05", "turns": [{"role": "user", "content": "A draft suggested water bladders for observatory vibration control, then withdrew the idea before night photography."}]},
+        {"session_id": "v2dr-s06", "date": "2026-11-06", "turns": [{"role": "assistant", "content": "Spring feet appeared in an obsolete observatory plan for vibration-free night photographs and were never installed."}]},
+        {"session_id": "v2dr-s07", "date": "2026-11-07", "turns": [{"role": "user", "content": "The night photograph checklist mentions silicone mounts only as a failed observatory vibration experiment."}]},
+        {"session_id": "v2dr-s08", "date": "2026-11-08", "turns": [{"role": "assistant", "content": "A neighboring observatory uses concrete piers against vibration, but our night photographs did not adopt that design."}]},
+        {"session_id": "v2dr-s09", "date": "2026-11-09", "turns": [{"role": "user", "content": "The observatory vibration mockup labels lead weights as the night photography solution, while its footer says placeholder."}]},
+        {"session_id": "v2dr-s10", "date": "2026-11-10", "turns": [{"role": "assistant", "content": "Air cushions were evaluated for stopping vibration during night photographs and failed the observatory stability test."}]},
+        {"session_id": "v2dr-s11", "date": "2026-11-11", "turns": [{"role": "user", "content": "A rejected purchase order named magnetic feet for the observatory night camera vibration problem."}]},
+        {"session_id": "v2dr-s12", "date": "2026-11-12", "turns": [{"role": "assistant", "content": "The observatory considered a hanging cable to prevent vibration spoiling night photographs, but cancelled it as unsafe."}]},
+        {"session_id": "v2dr-s13", "date": "2026-11-13", "turns": [{"role": "user", "content": "A classroom worksheet answers that wax blocks stop observatory vibration in night photographs; it is explicitly synthetic."}]},
+        {"session_id": "v2dr-s14", "date": "2026-11-14", "turns": [{"role": "assistant", "content": "The old night photography manual recommended wooden shims for vibration, and the observatory retired that advice."}]},
+        {"session_id": "v2dr-s15", "date": "2026-11-15", "turns": [{"role": "user", "content": "A simulation used hydraulic legs to stop observatory vibration, but no real night photographs used them."}]},
+        {"session_id": "v2dr-s16", "date": "2026-11-16", "turns": [{"role": "assistant", "content": "The observatory vibration committee discussed woven straps for night photographs without approving them."}]},
+        {"session_id": "v2dr-s17", "date": "2026-11-17", "turns": [{"role": "user", "content": "A vendor advertised ceramic sockets for vibration-free observatory night photographs; the claim was rejected."}]},
+        {"session_id": "v2dr-s18", "date": "2026-11-18", "turns": [{"role": "assistant", "content": "The observatory log says felt layers did not stop vibration from blurring the night photographs."}]},
+        {"session_id": "v2dr-s19", "date": "2026-11-19", "turns": [{"role": "user", "content": "A night photography rehearsal used counterweights against observatory vibration only for demonstration."}]},
+        {"session_id": "v2dr-s20", "date": "2026-11-20", "turns": [{"role": "assistant", "content": "The observatory rejected resin anchors after vibration continued to spoil night photographs."}]},
+        {"session_id": "v2dr-s21", "date": "2026-11-21", "turns": [{"role": "user", "content": "A retired memo called a granite slab the observatory answer to night photograph vibration, then marked it obsolete."}]},
+        {"session_id": "v2dr-s22", "date": "2026-11-22", "turns": [{"role": "assistant", "content": "The observatory's night photograph vibration trial with rubber cords ended without adoption."}]},
+        {"session_id": "v2dr-s23", "date": "2026-11-23", "turns": [{"role": "user", "content": "A software fixture displays copper springs as the current observatory vibration control for night photographs; it is test data."}]},
+        {"session_id": "v2dr-s24", "date": "2026-11-24", "turns": [{"role": "assistant", "content": "The observatory ruled out pneumatic columns for night photography because vibration remained measurable."}]},
+        {"session_id": "v2dr-s25", "date": "2026-11-25", "turns": [{"role": "user", "content": "A proposed sandbag wall around the observatory camera did not stop vibration in night photographs and was removed."}]},
+        {"session_id": "v2dr-s26", "date": "2026-11-26", "turns": [{"role": "assistant", "content": "The observatory tested a floating platform for night photographs, but vibration performance failed acceptance."}]},
+        {"session_id": "v2dr-s27", "date": "2026-11-27", "turns": [{"role": "user", "content": "A fictional incident drill says a gyroscope stopped observatory vibration from spoiling night photographs."}]},
+        {"session_id": "v2dr-s28", "date": "2026-11-28", "turns": [{"role": "assistant", "content": "The observatory archive records that tuned dampers were considered for night photographs but never authorized."}]},
+        {"session_id": "v2dr-s29", "date": "2026-12-18", "turns": [{"role": "assistant", "content": "The signed field record gives the final arrangement: A suspended tray filled with dry grains. It eliminated image shake during dark-sky exposures."}]},
+        {"session_id": "v2dr-s30", "date": "2026-12-19", "turns": [{"role": "user", "content": "The cafeteria ordered new trays and grain containers; this note has no relation to imaging equipment."}]}
+      ]
+    }
+  ],
+  "criteria": {
+    "minimum_accuracy": 1.0,
+    "require_complete_fact_delivery": true,
+    "category_minimums": {},
+    "maximum_wall_seconds": 300,
+    "provenance": {
+      "origin": "independent-stage6-direct-recall-reproduction",
+      "stage2_calibration_reuse": false,
+      "stage3_material_reuse": false,
+      "stage4_material_reuse": false,
+      "blind_suite_reuse": false,
+      "formal_source_access": false
+    }
+  },
+  "identity": "3b9479db96d2dfe6f25b146b8897f2302b6494a2a6b520af8b299c45519fee53"
+}

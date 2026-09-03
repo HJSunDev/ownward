@@ -48,6 +48,7 @@ PARTITION_CONTINUATION_SCHEMA = "ownward.kernel-iteration-blind-suite-partition-
 EVALUATION_BATCH_SCHEMA = "ownward.kernel-iteration-blind-suite-evaluation-batch/v1"
 EVALUATION_FREEZE_SCHEMA = "ownward.kernel-iteration-blind-suite-evaluation-freeze/v1"
 PROCESS_BUDGET_SCHEMA = "ownward.kernel-iteration-blind-suite-process-budget/v1"
+READER_PROCESS_RECOVERY_SCHEMA = "ownward.kernel-iteration-blind-suite-reader-process-recovery/v1"
 MATERIALS_SCHEMA = validation.MATERIALS_SCHEMA
 NO_ANSWER = "I don't have enough information to answer that."
 PRIMARY_COVERAGE = tuple(validation.BLIND_COVERAGE)
@@ -788,27 +789,60 @@ def run_partition(
     relative = None
     answer_attribution = None
     resume_proof = None
+    reader_process_recovery = _resume_reader_process_recovery(root, scratch, plan)
     try:
         candidate_execution = evaluator._execute(
             suite_root, candidate_runtime, dataset_path, scratch / "candidate", candidate["identity"], sealed["materials"], resume=resume, runner=execute,
         )
         absolute = evaluator._absolute_decision(candidate_execution["observation"], contract)
+        if reader_process_recovery is not None and reader_process_recovery["status"] == "invalidated":
+            reader_process_recovery = _complete_reader_process_recovery(
+                root, plan, reader_process_recovery, candidate_execution,
+            )
         candidate_observation = candidate_execution["observation"]
         if not absolute["passed"]:
             answer_attribution = _attribute_partition_answer_failure(
                 suite_root, root, candidate_runtime, sealed["materials"], candidate_execution, absolute,
             )
+            if (
+                reader_process_recovery is None
+                and _is_retryable_reader_process_failure(answer_attribution)
+            ):
+                reader_process_recovery = _start_reader_process_recovery(
+                    root, scratch, plan, sealed["materials"], candidate_execution, answer_attribution,
+                )
+                candidate_execution = evaluator._execute(
+                    suite_root, candidate_runtime, dataset_path, scratch / "candidate", candidate["identity"],
+                    sealed["materials"], resume=True, runner=execute,
+                )
+                reader_process_recovery = _complete_reader_process_recovery(
+                    root, plan, reader_process_recovery, candidate_execution,
+                )
+                absolute = evaluator._absolute_decision(candidate_execution["observation"], contract)
+                candidate_observation = candidate_execution["observation"]
+                answer_attribution = (
+                    _attribute_partition_answer_failure(
+                        suite_root, root, candidate_runtime, sealed["materials"], candidate_execution, absolute,
+                    )
+                    if not absolute["passed"] else None
+                )
             if answer_attribution is not None and answer_attribution["classification"] == "external-reader-random-failure":
                 absolute = evaluator._adjudicate_external_reader_random_failure(absolute, answer_attribution)
-                candidate_observation = {**candidate_observation, "final_answer_accuracy": absolute["adjudicated_final_answer_accuracy"]}
+                candidate_observation = {
+                    **candidate_observation,
+                    "final_answer_accuracy": absolute["adjudicated_final_answer_accuracy"],
+                }
             if not absolute["passed"]:
+                failure_status, failure_decision = _partition_failure_disposition(absolute, answer_attribution)
                 result = _finish_partition(
                     root, scratch, candidate_runtime["runs"], state_path, state_before, plan, contract,
-                    status="candidate-rejected", passed=False, candidate_decision=False,
+                    status=failure_status, passed=False, candidate_decision=failure_decision,
                     candidate_execution=candidate_execution, baseline_execution=None, absolute=absolute,
                     relative=None, resume_proof=None,
                     general_root_cause=evaluator._general_root_cause(candidate_execution["observation"], absolute["failures"]),
-                    answer_failure_attribution=answer_attribution, started=started,
+                    answer_failure_attribution=answer_attribution,
+                    reader_process_recovery=reader_process_recovery,
+                    started=started,
                 )
                 return result
         baseline_execution = evaluator._execute(
@@ -859,6 +893,7 @@ def run_partition(
             candidate_execution=candidate_execution, baseline_execution=baseline_execution,
             absolute=absolute, relative=relative, resume_proof=resume_proof,
             general_root_cause=root_cause, answer_failure_attribution=answer_attribution, started=started,
+            reader_process_recovery=reader_process_recovery,
             process_budget_outcome=process_outcome, measured_wall_seconds=total,
         )
     except (KeyboardInterrupt, InterruptedError):
@@ -924,18 +959,21 @@ def _previous_partition_result(
 
     if process_budget is not None:
         calibration = _mapping(process_budget, "calibration")
-        absolute = _mapping(result, "absolute_decision")
-        relative = _mapping(result, "relative_baseline_decision")
-        cause = _mapping(result, "general_root_cause")
         if (
             result.get("status") == "evaluation-process-rejected"
             and result.get("candidate_decision") is True
-            and absolute.get("passed") is True
-            and relative.get("passed") is True
-            and cause.get("failure_metrics") == ["level_total_wall_seconds"]
-            and calibration.get("source_plan_identity") == previous_plan_identity
-            and calibration.get("source_result_identity") == result.get("identity")
         ):
+            absolute = _mapping(result, "absolute_decision")
+            relative = _mapping(result, "relative_baseline_decision")
+            cause = _mapping(result, "general_root_cause")
+            calibrated = bool(
+                absolute.get("passed") is True
+                and relative.get("passed") is True
+                and cause.get("failure_metrics") == ["level_total_wall_seconds"]
+                and calibration.get("source_plan_identity") == previous_plan_identity
+                and calibration.get("source_result_identity") == result.get("identity")
+            )
+            _require(calibrated, "版本级盲测前级进程预算与流程失败证据不一致")
             _require(adjudication_path is None, "进程预算已完成独立裁决，不得叠加其他前级裁决")
             return {
                 "result_identity": str(result["identity"]),
@@ -1067,6 +1105,238 @@ def _partition_execution_dependencies(
     return dependencies
 
 
+def _reader_process_recovery_path(root: Path) -> Path:
+    return root / "reader-process-recovery.json"
+
+
+def _reader_process_recovery_private_path(scratch: Path) -> Path:
+    return scratch / "reader-process-recovery-private.json"
+
+
+def _write_reader_process_recovery(path: Path, content: dict[str, Any]) -> dict[str, Any]:
+    value = {**content, "identity": evidence.canonical_sha256(content)}
+    evidence.atomic_json(path, value)
+    return value
+
+
+def _load_reader_process_recovery(path: Path, plan_identity: str) -> dict[str, Any]:
+    value = _load_json(path)
+    content = {key: item for key, item in value.items() if key != "identity"}
+    _require(value.get("schema") == READER_PROCESS_RECOVERY_SCHEMA, "外部 Reader 进程恢复 schema 无效")
+    _require(value.get("plan_identity") == plan_identity, "外部 Reader 进程恢复计划错绑")
+    _require(value.get("identity") == evidence.canonical_sha256(content), "外部 Reader 进程恢复身份漂移")
+    _require(value.get("contains_reversible_question_answer_evidence_or_case_ids") is False, "外部 Reader 进程恢复泄露盲测内容")
+    return value
+
+
+def _load_reader_process_recovery_private(path: Path, plan_identity: str) -> dict[str, Any]:
+    value = _load_json(path)
+    content = {key: item for key, item in value.items() if key != "identity"}
+    _require(value.get("schema") == READER_PROCESS_RECOVERY_SCHEMA, "外部 Reader 私有恢复 schema 无效")
+    _require(value.get("plan_identity") == plan_identity, "外部 Reader 私有恢复计划错绑")
+    _require(value.get("identity") == evidence.canonical_sha256(content), "外部 Reader 私有恢复身份漂移")
+    case_ids = value.get("case_ids")
+    _require(isinstance(case_ids, list) and case_ids and all(isinstance(item, str) and item for item in case_ids), "外部 Reader 私有恢复题目无效")
+    return value
+
+
+def _is_retryable_reader_process_failure(attribution: dict[str, Any] | None) -> bool:
+    return bool(
+        attribution is not None
+        and attribution.get("classification") == "evaluation-process-failure"
+        and attribution.get("responsible_boundary") == "external-reader"
+        and attribution.get("reason") in {
+            "external-reader-skipped-target-returned-within-read-budget",
+            "external-reader-search-choice-missed-target-retrievable-by-direct-question",
+            "external-reader-mixed-search-and-read-selection-misses",
+        }
+    )
+
+
+def _partition_failure_disposition(
+    absolute: dict[str, Any],
+    attribution: dict[str, Any] | None,
+) -> tuple[str, bool | None]:
+    evaluation_process_failure = bool(
+        attribution is not None
+        and attribution.get("classification") == "evaluation-process-failure"
+    )
+    retrieval_candidate_failure = _mapping(absolute, "retrieval_distribution").get("candidate_failure") is True
+    if evaluation_process_failure and not retrieval_candidate_failure:
+        return "evaluation-process-error", None
+    return "candidate-rejected", False
+
+
+def _reader_process_gap_reason(diagnostic: dict[str, Any]) -> str | None:
+    coverage = _mapping(diagnostic, "evidence_coverage")
+    if diagnostic.get("first_observed_gap") == "target_evidence_not_read":
+        observation = _mapping(coverage, "active_reader_observation")
+        ranks = observation.get("unread_expected_best_return_ranks")
+        if (
+            isinstance(ranks, list)
+            and ranks
+            and min(int(value) for value in ranks) <= int(observation.get("read_limit", 0))
+            and int(observation.get("read_units_used", 0)) < int(observation.get("read_limit", 0))
+            and int(observation.get("tool_calls_used", 0)) < int(observation.get("tool_call_limit", 0))
+        ):
+            return "external-reader-skipped-target-returned-within-read-budget"
+    if diagnostic.get("first_observed_gap") == "target_evidence_not_search_returned":
+        direct = _mapping(coverage, "direct_question_retrieval_probe")
+        if direct.get("all_expected_returned") is True:
+            return "external-reader-search-choice-missed-target-retrievable-by-direct-question"
+    return None
+
+
+def _reader_process_failure_cases(
+    materials: dict[str, Any],
+    run_root: Path,
+) -> list[tuple[str, str]]:
+    selected: list[tuple[str, str]] = []
+    for case in materials["cases"]:
+        case_id = str(case["case_id"])
+        diagnostic = _load_json(run_root / "questions" / case_id / "diagnostic.json")
+        reason = _reader_process_gap_reason(diagnostic)
+        if reason is not None:
+            selected.append((case_id, reason))
+    return selected
+
+
+def _reader_process_recovery_case_ids(
+    materials: dict[str, Any],
+    run_root: Path,
+    reason: str,
+) -> list[str]:
+    allowed_reasons = (
+        {
+            "external-reader-skipped-target-returned-within-read-budget",
+            "external-reader-search-choice-missed-target-retrievable-by-direct-question",
+        }
+        if reason == "external-reader-mixed-search-and-read-selection-misses"
+        else {reason}
+    )
+    selected: list[str] = []
+    for case_id, case_reason in _reader_process_failure_cases(materials, run_root):
+        if case_reason in allowed_reasons:
+            selected.append(case_id)
+    _require(selected, "外部 Reader 进程恢复没有找到机械失效题")
+    return selected
+
+
+def _archive_reader_process_path(source: Path, destination: Path, *, required: bool) -> None:
+    if destination.exists():
+        _require(not source.exists(), f"外部 Reader 进程恢复审计路径冲突: {source}")
+        return
+    if not source.exists():
+        _require(not required, f"外部 Reader 进程恢复缺少必要路径: {source}")
+        return
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    source.replace(destination)
+
+
+def _invalidate_reader_process_outputs(run_root: Path, private: dict[str, Any]) -> None:
+    audit = run_root / "_audit" / "external-reader-process-recovery-1"
+    for name in (
+        "report.json", "hypotheses.jsonl", "official-evaluation.jsonl", "diagnostics.jsonl",
+        "diagnostic-summary.json", "checkpoint-manifest.json", "submission.zip",
+    ):
+        _archive_reader_process_path(run_root / name, audit / name, required=True)
+    for case_id in private["case_ids"]:
+        question_root = run_root / "questions" / str(case_id)
+        destination = audit / "questions" / str(case_id)
+        for name, required in (
+            ("result.json", True), ("failure.json", False), ("retrieval.json", True),
+            ("reader", True), ("answer.json", True), ("judge", True), ("diagnostic.json", True),
+        ):
+            _archive_reader_process_path(question_root / name, destination / name, required=required)
+
+
+def _start_reader_process_recovery(
+    root: Path,
+    scratch: Path,
+    plan: dict[str, Any],
+    materials: dict[str, Any],
+    candidate_execution: dict[str, Any],
+    attribution: dict[str, Any],
+) -> dict[str, Any]:
+    _require(_is_retryable_reader_process_failure(attribution), "外部 Reader 进程恢复原因不可重试")
+    public_path = _reader_process_recovery_path(root)
+    private_path = _reader_process_recovery_private_path(scratch)
+    _require(not public_path.exists() and not private_path.exists(), "外部 Reader 进程恢复超过一次上限")
+    run_root = Path(candidate_execution["run_root"]).resolve()
+    _require(run_root == (scratch / "candidate").resolve(), "外部 Reader 进程恢复越过候选执行区")
+    case_ids = _reader_process_recovery_case_ids(materials, run_root, str(attribution["reason"]))
+    mechanical_questions = int(_mapping(attribution, "mechanical_observation").get("questions", 0))
+    _require(len(case_ids) == mechanical_questions, "外部 Reader 进程恢复题数与机械观察不一致")
+    public_content = {
+        "schema": READER_PROCESS_RECOVERY_SCHEMA,
+        "plan_identity": plan["identity"],
+        "status": "planned",
+        "attempt": 1,
+        "reason": attribution["reason"],
+        "responsible_boundary": "external-reader",
+        "affected_questions": len(case_ids),
+        "source_report_sha256": candidate_execution["report_sha256"],
+        "source_checkpoint_sha256": candidate_execution["checkpoint_sha256"],
+        "source_diagnostic_summary_sha256": candidate_execution["diagnostic_summary_sha256"],
+        "selection_policy": "all-mechanically-invalid-external-reader-results-once/v1",
+        "candidate_or_baseline_changed": False,
+        "contains_reversible_question_answer_evidence_or_case_ids": False,
+    }
+    public = _write_reader_process_recovery(public_path, public_content)
+    private_content = {
+        "schema": READER_PROCESS_RECOVERY_SCHEMA,
+        "plan_identity": plan["identity"],
+        "status": "planned",
+        "case_ids": case_ids,
+        "reason": attribution["reason"],
+    }
+    _write_reader_process_recovery(private_path, private_content)
+    _invalidate_reader_process_outputs(run_root, private_content)
+    private_content["status"] = "invalidated"
+    _write_reader_process_recovery(private_path, private_content)
+    public_content["status"] = "invalidated"
+    return _write_reader_process_recovery(public_path, public_content)
+
+
+def _resume_reader_process_recovery(root: Path, scratch: Path, plan: dict[str, Any]) -> dict[str, Any] | None:
+    public_path = _reader_process_recovery_path(root)
+    if not public_path.is_file():
+        return None
+    public = _load_reader_process_recovery(public_path, plan["identity"])
+    if public["status"] in {"completed", "completed-with-failure"}:
+        return public
+    _require(public["status"] in {"planned", "invalidated"}, "外部 Reader 进程恢复状态无效")
+    private_path = _reader_process_recovery_private_path(scratch)
+    private = _load_reader_process_recovery_private(private_path, plan["identity"])
+    _require(private.get("reason") == public.get("reason"), "外部 Reader 进程恢复私有状态错绑")
+    if public["status"] == "planned":
+        _invalidate_reader_process_outputs((scratch / "candidate").resolve(), private)
+        private_content = {key: item for key, item in private.items() if key != "identity"}
+        private_content["status"] = "invalidated"
+        _write_reader_process_recovery(private_path, private_content)
+        public_content = {key: item for key, item in public.items() if key != "identity"}
+        public_content["status"] = "invalidated"
+        public = _write_reader_process_recovery(public_path, public_content)
+    return public
+
+
+def _complete_reader_process_recovery(
+    root: Path,
+    plan: dict[str, Any],
+    recovery: dict[str, Any],
+    candidate_execution: dict[str, Any],
+) -> dict[str, Any]:
+    _require(recovery.get("status") == "invalidated", "外部 Reader 进程恢复尚未失效旧派生结果")
+    content = {key: item for key, item in recovery.items() if key != "identity"}
+    content.update({
+        "status": "completed",
+        "recovered_report_sha256": candidate_execution["report_sha256"],
+        "recovered_checkpoint_sha256": candidate_execution["checkpoint_sha256"],
+        "recovered_diagnostic_summary_sha256": candidate_execution["diagnostic_summary_sha256"],
+    })
+    return _write_reader_process_recovery(_reader_process_recovery_path(root), content)
+
+
 def _attribute_partition_answer_failure(
     suite_root: Path,
     root: Path,
@@ -1089,6 +1359,32 @@ def _attribute_partition_answer_failure(
         unreturned = int(gaps.get("target_evidence_not_search_returned", 0))
         reader_observation = _mapping(observation, "active_reader_observation")
         direct_question = _mapping(observation, "direct_question_retrieval_observation")
+        if unread + unreturned == missing and materials.get("cases"):
+            failure_cases = _reader_process_failure_cases(
+                materials, Path(candidate_execution["run_root"]),
+            )
+            if len(failure_cases) == missing:
+                reason_counts: dict[str, int] = {}
+                for _, reason in failure_cases:
+                    reason_counts[reason] = reason_counts.get(reason, 0) + 1
+                reason = (
+                    next(iter(reason_counts))
+                    if len(reason_counts) == 1
+                    else "external-reader-mixed-search-and-read-selection-misses"
+                )
+                return {
+                    "classification": "evaluation-process-failure",
+                    "reason": reason,
+                    "responsible_boundary": "external-reader",
+                    "first_answer_failure_remains_failure": True,
+                    "diagnostic_repetitions_changed_candidate_decision": False,
+                    "reader_profile_identity": reader_binding["identity"],
+                    "mechanical_observation": {
+                        "questions": len(failure_cases),
+                        "by_reason": dict(sorted(reason_counts.items())),
+                    },
+                    "model_calls": 0,
+                }
         if (
             unread == missing
             and unread > 0
@@ -1200,7 +1496,7 @@ def _finish_partition(
     *,
     status: str,
     passed: bool,
-    candidate_decision: bool,
+    candidate_decision: bool | None,
     candidate_execution: dict[str, Any],
     baseline_execution: dict[str, Any] | None,
     absolute: dict[str, Any],
@@ -1208,6 +1504,7 @@ def _finish_partition(
     resume_proof: dict[str, Any] | None,
     general_root_cause: dict[str, Any] | None,
     answer_failure_attribution: dict[str, Any] | None,
+    reader_process_recovery: dict[str, Any] | None,
     started: float,
     process_budget_outcome: dict[str, Any] | None = None,
     measured_wall_seconds: float | None = None,
@@ -1236,6 +1533,7 @@ def _finish_partition(
         "resume_proof": resume_proof,
         "general_root_cause": general_root_cause,
         "answer_failure_attribution": answer_failure_attribution,
+        "reader_process_recovery": reader_process_recovery,
         "evaluation_process_budget": process_budget_outcome,
         "wall_seconds": wall_seconds,
         "next_level": _mapping(contract, "sequence")["next_level"] if passed else None,
@@ -1245,6 +1543,8 @@ def _finish_partition(
             else "final-community-preparation" if passed
             else "recalibrate-evaluation-process-without-changing-candidate"
             if status == "evaluation-process-rejected" and candidate_decision
+            else "repair-external-reader-process-and-retry-current-partition"
+            if status == "evaluation-process-error"
             else "return-to-optimization-and-restart-same-suite-from-level-5"
         ),
     }
@@ -2390,6 +2690,21 @@ def _implementation_identity() -> dict[str, str]:
             _previous_partition_result,
             _partition_execution_dependencies,
             _attribute_partition_answer_failure,
+            _reader_process_recovery_path,
+            _reader_process_recovery_private_path,
+            _write_reader_process_recovery,
+            _load_reader_process_recovery,
+            _load_reader_process_recovery_private,
+            _is_retryable_reader_process_failure,
+            _partition_failure_disposition,
+            _reader_process_gap_reason,
+            _reader_process_failure_cases,
+            _reader_process_recovery_case_ids,
+            _archive_reader_process_path,
+            _start_reader_process_recovery,
+            _resume_reader_process_recovery,
+            _complete_reader_process_recovery,
+            _invalidate_reader_process_outputs,
             _finish_partition,
             _validate_execution_result,
         ),
