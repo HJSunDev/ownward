@@ -1,6 +1,6 @@
 {
-  "schema": "ownward.kernel-iteration-blind-suite-contract/v1",
-  "identity": "33a11353efcf0d07bc95e04592ba07057b31ac59414b40d6f4170e86ba8c100e",
+  "schema": "ownward.kernel-iteration-blind-suite-contract/v2",
+  "identity": "ccd1522f85a1566984ffbe9c6cba3d83a9e855e8702a71367a902cf17b75c34e",
   "formal": false,
   "frozen_before_generation": true,
   "major_version_identity_rule": "normalized-major-version-plus-contract-and-preparation-direct-dependencies",
@@ -45,8 +45,7 @@
     }
   },
   "generation": {
-    "model": "gpt-5.6-terra",
-    "reasoning_effort": "xhigh",
+    "role": "generator",
     "timeout_seconds": 240,
     "attempts": 2,
     "prompt_version": "ownward.kernel-iteration-version-blind-suite-generator/v1",
@@ -55,8 +54,7 @@
     "result_order": "frozen-suite-order"
   },
   "quality_admission": {
-    "model": "gpt-5.6-terra",
-    "reasoning_effort": "medium",
+    "role": "quality_admission",
     "timeout_seconds": 240,
     "attempts": 2,
     "prompt_version": "ownward.kernel-iteration-version-blind-suite-admission/v1",

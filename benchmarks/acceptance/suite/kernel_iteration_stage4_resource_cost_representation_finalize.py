@@ -74,8 +74,8 @@ def load_contract(suite_root: Path) -> dict[str, Any]:
     drifted = {}
     for item in value["direct_dependencies"]:
         path = repository / item["path"]
-        current = evidence.file_sha256(path) if path.is_file() else None
-        if current != item["sha256"]:
+        current = evidence.text_file_sha256(path) if path.is_file() else None
+        if not path.is_file() or not evidence.text_file_matches(path, item["sha256"]):
             drifted[item["path"]] = {"frozen": item["sha256"], "current": current}
         elif "identity" in item:
             _verified(repository, item, "表示生命周期终测直接依赖")

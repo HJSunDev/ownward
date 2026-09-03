@@ -317,14 +317,14 @@ class KernelIterationValidationTests(unittest.TestCase):
             del config
             materials = validation.validate_materials(self._materials(1))
             baseline = validation.execution_identities(HERE, self.validation, materials, runtime)
-            original = iteration.file_sha256
+            original = iteration.text_file_sha256
 
             def drifted(path: Path) -> str:
                 if Path(path).resolve() == (REPOSITORY / "benchmarks" / "support" / "ownward_mcp.py").resolve():
                     return "f" * 64
                 return original(path)
 
-            with mock.patch.object(iteration, "file_sha256", side_effect=drifted):
+            with mock.patch.object(iteration, "text_file_sha256", side_effect=drifted):
                 changed = validation.execution_identities(HERE, self.validation, materials, runtime)
             self.assertNotEqual(baseline["executor"], changed["executor"])
             self.assertEqual(baseline["model-profile"], changed["model-profile"])

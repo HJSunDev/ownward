@@ -61,7 +61,7 @@ SEMANTIC_TRANSPORT_VERSION = "ownward.longmemeval-s-semantic-transport/v2"
 RETRIEVAL_STAGE_VERSION = "ownward.longmemeval-s-retrieval/v6"
 READER_STAGE_VERSION = "ownward.longmemeval-s-reader/v2"
 JUDGE_STAGE_VERSION = "ownward.longmemeval-s-judge/v1"
-DIAGNOSTIC_STAGE_VERSION = "ownward.longmemeval-s-diagnostic/v2"
+DIAGNOSTIC_STAGE_VERSION = "ownward.longmemeval-s-diagnostic/v3"
 ACTIVE_RETRIEVAL_TOOLS = (
     "ownward_search",
     "ownward_navigate",
@@ -239,10 +239,15 @@ def apply_external_intelligence_roles(
         ):
             raise AdapterError(f"LongMemEval-S external-intelligence {role} profile is invalid")
     effective = json.loads(json.dumps(protocol))
+    effective["memory"]["capability_source"] = "external-intelligence"
     effective["memory"]["semantic_model"] = roles["semantic"]["model"]
     effective["memory"]["semantic_reasoning_effort"] = roles["semantic"]["reasoning_effort"]
+    effective["reader"]["capability_source"] = "external-intelligence"
     effective["reader"]["model"] = roles["reader"]["model"]
     effective["reader"]["reasoning_effort"] = roles["reader"]["reasoning_effort"]
+    for field in ("selection_profile_identity", "selection_contract_identity", "selection_result_identity"):
+        effective["reader"].pop(field, None)
+    effective["judge"]["capability_source"] = "external-intelligence"
     effective["judge"]["model"] = roles["judge"]["model"]
     effective["judge"]["reasoning_effort"] = roles["judge"]["reasoning_effort"]
     return effective
@@ -1480,7 +1485,10 @@ def stage_dependency_identities(
             "prompt": inspect.getsource(official_prompt),
             "judge": inspect.getsource(ExternalIntelligenceCapability.judge),
         }),
-        "diagnostic": canonical_sha256({"record": inspect.getsource(_diagnostic_record)}),
+        "diagnostic": canonical_sha256({
+            "probe": inspect.getsource(_direct_question_retrieval_probe),
+            "record": inspect.getsource(_diagnostic_record),
+        }),
     }
     common = {
         "candidate": candidate,
@@ -1579,12 +1587,50 @@ def _write_immutable(path: Path, value: dict[str, Any], message: str) -> None:
         write_json(path, value)
 
 
+def _direct_question_retrieval_probe(
+    client: Any,
+    question: str,
+    expected_asset_ids: list[str],
+    search_limit: int,
+) -> dict[str, Any]:
+    """Post-answer diagnostic: test kernel recall without changing product execution or scoring."""
+    expected = set(expected_asset_ids)
+    if not expected:
+        return {
+            "applicable": False,
+            "expected_assets": 0,
+            "returned_expected": 0,
+            "all_expected_returned": False,
+            "expected_return_ranks": [],
+            "search_limit": search_limit,
+        }
+    result = client.call_tool("ownward_search", {"query": question, "limit": search_limit})
+    values = result.get("results") if isinstance(result, dict) else None
+    require(isinstance(values, list), "direct-question diagnostic search returned no result list")
+    returned_ids = [
+        str(value["id"])
+        for value in values
+        if isinstance(value, dict) and isinstance(value.get("id"), str) and value["id"]
+    ]
+    ranks = sorted(index for index, value in enumerate(returned_ids, 1) if value in expected)
+    returned_expected = len(expected.intersection(returned_ids))
+    return {
+        "applicable": True,
+        "expected_assets": len(expected),
+        "returned_expected": returned_expected,
+        "all_expected_returned": returned_expected == len(expected),
+        "expected_return_ranks": ranks,
+        "search_limit": search_limit,
+    }
+
+
 def _diagnostic_record(
     question: dict[str, Any], *, identity: str, answer: str, correct: bool,
     assets: list[str], asset_sources: list[dict[str, str]], organized_asset_ids: list[str],
     retrieval: dict[str, Any], semantic_trace_root: Path, reader_input: Path, reader_output: Path,
     judge_input: Path, judge_output: Path, phase_seconds: dict[str, float], usage: dict[str, Any],
     checkpoint_path: Path, semantic_plan_path: Path, retrieval_path: Path, answer_path: Path,
+    direct_question_probe: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     source_to_asset = {str(item["session_id"]): str(item["asset_id"]) for item in asset_sources}
     expected_sessions = [str(value) for value in question.get("answer_session_ids", [])]
@@ -1595,6 +1641,32 @@ def _diagnostic_record(
     returned = set(returned_ids)
     read = set(read_ids)
     expected = set(expected_assets)
+    best_return_ranks: dict[str, int] = {}
+    selection_steps = retrieval.get("selection_steps", [])
+    if isinstance(selection_steps, list):
+        for step in selection_steps:
+            if not isinstance(step, dict) or step.get("success") is not True:
+                continue
+            result_ids = step.get("result_ids", [])
+            if not isinstance(result_ids, list):
+                continue
+            for rank, value in enumerate(result_ids, 1):
+                source_id = str(value)
+                if source_id in expected:
+                    best_return_ranks[source_id] = min(rank, best_return_ranks.get(source_id, rank))
+    unread_expected = expected - read
+    unread_return_ranks = sorted(best_return_ranks[value] for value in unread_expected if value in best_return_ranks)
+    limits = retrieval.get("limits", {}) if isinstance(retrieval.get("limits"), dict) else {}
+    read_limit = int(limits.get("read_units", 0))
+    tool_call_limit = int(limits.get("tool_calls", 0))
+    tool_calls_used = len(selection_steps)
+    read_units_used = sum(
+        1
+        for step in selection_steps
+        if isinstance(step, dict)
+        and step.get("success") is True
+        and step.get("tool") in {"ownward_read", "ownward_evidence_read"}
+    )
     abstention = "_abs" in str(question["question_id"])
     if correct:
         first_gap = "none"
@@ -1634,7 +1706,7 @@ def _diagnostic_record(
             "work_ids": value.get("work_ids"), "analysis_identity": value.get("analysis_identity"),
         })
     return {
-        "schema": "ownward.longmemeval-s-diagnostic/v2",
+        "schema": "ownward.longmemeval-s-diagnostic/v3",
         "question_identity": identity,
         "question_id": question["question_id"],
         "question_type": question["question_type"],
@@ -1659,6 +1731,21 @@ def _diagnostic_record(
             "read_expected": sorted(expected.intersection(read)),
             "search_returned_ids": returned_ids,
             "read_ids": read_ids,
+            "active_reader_observation": {
+                "unread_expected_best_return_ranks": unread_return_ranks,
+                "read_limit": read_limit,
+                "read_units_used": read_units_used,
+                "tool_call_limit": tool_call_limit,
+                "tool_calls_used": tool_calls_used,
+            },
+            "direct_question_retrieval_probe": dict(direct_question_probe or {
+                "applicable": False,
+                "expected_assets": len(expected),
+                "returned_expected": 0,
+                "all_expected_returned": False,
+                "expected_return_ranks": [],
+                "search_limit": 0,
+            }),
         },
         "execution_observations": {
             "expected_source_sessions": len(question.get("haystack_session_ids", [])),
@@ -1888,6 +1975,7 @@ def process_question(
         checkpoint["phase_seconds"] = {"create": create_seconds, "semantic": semantic_seconds}
         checkpoint["semantic_usage"] = semantic_usage
         write_json(checkpoint_path, checkpoint)
+        direct_question_probe: dict[str, Any] | None = None
         retrieval_path = root / "retrieval.json"
         reader_prompt = _active_answer_prompt(question, protocol["retrieval"])
         reader_input_path = root / "reader" / "input.json"
@@ -1945,6 +2033,19 @@ def process_question(
                 "usage": reader_usage,
                 "wall_seconds": reader_seconds,
             }, f"Reader output changed: {identifier}")
+        source_to_asset = {str(item["session_id"]): str(item["asset_id"]) for item in asset_sources}
+        expected_assets = [
+            source_to_asset[str(value)]
+            for value in evaluation_question.get("answer_session_ids", [])
+            if str(value) in source_to_asset
+        ]
+        if not set(expected_assets).issubset(set(retrieval.get("read_ids", []))):
+            direct_question_probe = _direct_question_retrieval_probe(
+                runtime.client,
+                str(question["question"]),
+                expected_assets,
+                int(protocol["retrieval"]["search_limit_per_call"]),
+            )
     answer_path = root / "answer.json"
     _write_immutable(answer_path, {
         "schema": "ownward.longmemeval-s-frozen-answer/v1",
@@ -2026,6 +2127,7 @@ def process_question(
         semantic_plan_path=plan_path,
         retrieval_path=retrieval_path,
         answer_path=answer_path,
+        direct_question_probe=direct_question_probe,
     )
     _write_immutable(diagnostic_path, diagnostic, f"diagnostic evidence changed: {identifier}")
     result = {
@@ -2383,6 +2485,18 @@ def build_diagnostic_summary(output_dir: Path, ordered: list[dict[str, Any]]) ->
     by_gap: dict[str, int] = {}
     by_capability: dict[str, dict[str, int]] = {}
     by_type: dict[str, dict[str, int]] = {}
+    unread_target_observation = {
+        "questions": 0,
+        "best_rank_within_read_limit": 0,
+        "best_rank_beyond_read_limit": 0,
+        "read_capacity_remaining": 0,
+        "tool_capacity_remaining": 0,
+    }
+    unreturned_target_observation = {
+        "questions": 0,
+        "direct_question_probe_questions": 0,
+        "all_expected_returned": 0,
+    }
     for item in diagnostics:
         gap = str(item["first_observed_gap"])
         by_gap[gap] = by_gap.get(gap, 0) + 1
@@ -2391,12 +2505,38 @@ def build_diagnostic_summary(output_dir: Path, ordered: list[dict[str, Any]]) ->
             bucket = target.setdefault(name, {"questions": 0, "correct": 0})
             bucket["questions"] += 1
             bucket["correct"] += int(bool(item["correct"]))
+        if gap == "target_evidence_not_read":
+            observation = item.get("evidence_coverage", {}).get("active_reader_observation", {})
+            ranks = observation.get("unread_expected_best_return_ranks", [])
+            read_limit = int(observation.get("read_limit", 0))
+            read_units_used = int(observation.get("read_units_used", 0))
+            tool_call_limit = int(observation.get("tool_call_limit", 0))
+            tool_calls_used = int(observation.get("tool_calls_used", 0))
+            unread_target_observation["questions"] += 1
+            if isinstance(ranks, list) and ranks:
+                if min(int(rank) for rank in ranks) <= read_limit:
+                    unread_target_observation["best_rank_within_read_limit"] += 1
+                else:
+                    unread_target_observation["best_rank_beyond_read_limit"] += 1
+            if read_units_used < read_limit:
+                unread_target_observation["read_capacity_remaining"] += 1
+            if tool_calls_used < tool_call_limit:
+                unread_target_observation["tool_capacity_remaining"] += 1
+        if gap == "target_evidence_not_search_returned":
+            unreturned_target_observation["questions"] += 1
+            probe = item.get("evidence_coverage", {}).get("direct_question_retrieval_probe", {})
+            if isinstance(probe, dict) and probe.get("applicable") is True:
+                unreturned_target_observation["direct_question_probe_questions"] += 1
+                if probe.get("all_expected_returned") is True:
+                    unreturned_target_observation["all_expected_returned"] += 1
     summary = {
-        "schema": "ownward.longmemeval-s-diagnostic-summary/v2",
+        "schema": "ownward.longmemeval-s-diagnostic-summary/v3",
         "profile": PRODUCTION_PROFILE,
         "questions": len(diagnostics),
         "correct": sum(int(bool(item["correct"])) for item in diagnostics),
         "by_first_observed_gap": by_gap,
+        "unread_target_observation": unread_target_observation,
+        "unreturned_target_observation": unreturned_target_observation,
         "automatic_root_cause_attribution": False,
         "by_capability": by_capability,
         "by_question_type": by_type,

@@ -674,6 +674,18 @@ def file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def text_file_sha256(path: Path) -> str:
+    """Hash versioned text by content, independent of checkout line endings."""
+    value = path.read_text(encoding="utf-8")
+    normalized = value.replace("\r\n", "\n").replace("\r", "\n")
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def text_file_matches(path: Path, expected_sha256: str) -> bool:
+    """Match new canonical or historical checkout-specific text identities."""
+    return expected_sha256 in {file_sha256(path), text_file_sha256(path)}
+
+
 def is_sha256(value: Any) -> bool:
     return isinstance(value, str) and len(value) == 64 and all(character in "0123456789abcdef" for character in value)
 

@@ -476,6 +476,10 @@ def validate_execution_config(
         external_roles = external_intelligence_runtime.role_profile_from_execution(community)
     except external_intelligence.ExternalIntelligenceError as error:
         raise KernelIterationValidationError(str(error)) from error
+    _require(
+        external_roles["reader"]["reasoning_effort"] == expected_reader_effort,
+        "外部智能 Reader 推理档位没有达到本次评测要求",
+    )
     _require(binary.is_file(), "非正式执行缺少产品二进制")
     _require(embedding.is_dir() and (embedding / "manifest.json").is_file(), "非正式执行缺少向量制品")
     _require(environment_manifest.is_file() and protocol.is_file(), "非正式执行缺少持久环境或协议")
@@ -502,30 +506,34 @@ def validate_execution_config(
             and semantic_config.get("input_representation_manifest_identity") == representation_contract.manifest_identity,
             "候选组合没有声明封存语义表示",
         )
-    protocol_value = _load_json(protocol)
+    protocol_contract_value = _load_json(protocol)
     validation = load_validation_contract(suite_root)
     blind = _mapping(validation, "blind")
     expected_roles = _mapping(blind, "production_roles")
     if "external_intelligence" not in community:
         _require(
-            f"{protocol_value['memory']['semantic_model']}/{protocol_value['memory']['semantic_reasoning_effort']}" == expected_roles["semantic"]
-            and protocol_value["reader"]["model"] == "gpt-5.6-luna"
-            and protocol_value["reader"]["reasoning_effort"] == expected_reader_effort
-            and f"{protocol_value['judge']['model']}/{protocol_value['judge']['reasoning_effort']}" == expected_roles["judge"],
+            f"{protocol_contract_value['memory']['semantic_model']}/{protocol_contract_value['memory']['semantic_reasoning_effort']}" == expected_roles["semantic"]
+            and protocol_contract_value["reader"]["model"] == "gpt-5.6-luna"
+            and protocol_contract_value["reader"]["reasoning_effort"] == expected_reader_effort
+            and f"{protocol_contract_value['judge']['model']}/{protocol_contract_value['judge']['reasoning_effort']}" == expected_roles["judge"],
             "执行配置没有使用冻结的 Luna/Luna/Terra 角色",
         )
-    _require(
-        expected_reader_effort == "xhigh"
-        and protocol_value["reader"].get("selection_profile_identity") == "401aa7962b5ecd3d283093a2d5eee0fe76da941d20ce4aa317ef21216d55c83c"
-        and protocol_value["reader"].get("selection_contract_identity") == "841ab01d016bf0c987527061dad95e2ba23e069f4b32642c7a3276b7cff75805"
-        and protocol_value["reader"].get("selection_result_identity") == "25f4954169249c92af6001813dca81ac04c0e70a75499bd1e1bcf9dc45ae5824",
-        "Reader 配置没有绑定正式与 Stage 6 共用的冻结选择证据",
+        _require(
+            expected_reader_effort == "xhigh"
+            and protocol_contract_value["reader"].get("selection_profile_identity") == "401aa7962b5ecd3d283093a2d5eee0fe76da941d20ce4aa317ef21216d55c83c"
+            and protocol_contract_value["reader"].get("selection_contract_identity") == "841ab01d016bf0c987527061dad95e2ba23e069f4b32642c7a3276b7cff75805"
+            and protocol_contract_value["reader"].get("selection_result_identity") == "25f4954169249c92af6001813dca81ac04c0e70a75499bd1e1bcf9dc45ae5824",
+            "Reader 配置没有绑定正式与 Stage 6 共用的冻结选择证据",
+        )
+    protocol_value = _load_longmemeval_module(suite_root).apply_external_intelligence_roles(
+        protocol_contract_value,
+        {name: external_roles[name] for name in ("semantic", "reader", "judge")},
     )
     external_catalog = external_intelligence.load_runtime_selection(SUPPORT_ROOT / "external-intelligence-runtime.json")
     external_selection = external_intelligence.select_runtime_implementation(
         external_catalog, external_configuration.driver,
     )
-    _require(protocol_value.get("execution", {}).get("codex_max_active") == 8, "外部智能并发不是冻结值 8")
+    _require(protocol_contract_value.get("execution", {}).get("codex_max_active") == 8, "外部智能并发不是冻结值 8")
     manifest = _load_json(environment_manifest)
     runs = Path(str(_mapping(manifest, "layout").get("runs", ""))).resolve()
     _require(runs.is_dir(), "LongMemEval-S 持久运行根缺失")
@@ -537,6 +545,7 @@ def validate_execution_config(
         "environment_manifest": environment_manifest,
         "environment": manifest,
         "protocol": protocol,
+        "protocol_contract_value": protocol_contract_value,
         "protocol_value": protocol_value,
         "external_intelligence": {
             "driver": external_selection["driver"],
@@ -559,6 +568,40 @@ def validate_execution_config(
     }
 
 
+def external_role_binding(runtime: dict[str, Any], role: str) -> dict[str, Any]:
+    external = _mapping(runtime, "external_intelligence")
+    roles = _mapping(external, "roles")
+    settings = _mapping(roles, role)
+    content = {
+        "schema": "ownward.external-intelligence-role-binding/v1",
+        "driver": external["driver"],
+        "provider": external["provider"],
+        "selection_sha256": external["selection_sha256"],
+        "role": role,
+        "model": settings["model"],
+        "reasoning_effort": settings["reasoning_effort"],
+    }
+    return {**content, "identity": evidence.canonical_sha256(content)}
+
+
+def external_runtime_implementation_identity(repository: Path, runtime: dict[str, Any]) -> str:
+    external = _mapping(runtime, "external_intelligence")
+    files: dict[str, str] = {}
+    for path in external_intelligence_runtime.implementation_files(str(external["driver"])):
+        resolved = path.resolve()
+        try:
+            name = resolved.relative_to(repository.resolve()).as_posix()
+        except ValueError:
+            name = resolved.name
+        files[name] = evidence.text_file_sha256(resolved)
+    return evidence.canonical_sha256({
+        "schema": "ownward.external-intelligence-implementation-binding/v1",
+        "driver": external["driver"],
+        "selection_sha256": external["selection_sha256"],
+        "files": dict(sorted(files.items())),
+    })
+
+
 def execution_identities(
     suite_root: Path,
     validation: dict[str, Any],
@@ -570,15 +613,16 @@ def execution_identities(
     environment = runtime["environment"]
     evaluator = Path(str(_mapping(environment, "layout")["source"])) / "src" / "evaluation" / "evaluate_qa.py"
     implementation = {
-        name: evidence.file_sha256(long_root / name)
-        for name in ("run.py", "external_intelligence_runtime.py", "codex_app_server.py", "protocol.json")
+        name: evidence.text_file_sha256(long_root / name)
+        for name in ("run.py", "external_intelligence_runtime.py", "protocol.json")
     }
-    implementation["ownward-mcp-transport"] = evidence.file_sha256(repository / "benchmarks" / "support" / "ownward_mcp.py")
-    implementation["external-intelligence-contract"] = evidence.file_sha256(repository / "benchmarks" / "support" / "external_intelligence.py")
-    implementation["external-intelligence-selection"] = evidence.file_sha256(repository / "benchmarks" / "support" / "external-intelligence-runtime.json")
-    implementation["semantic-representation-runtime"] = evidence.file_sha256(long_root / "semantic_representation.py")
-    implementation["iteration-validation"] = evidence.file_sha256(Path(__file__).resolve())
-    implementation["iteration-longmemeval"] = evidence.file_sha256(Path(__file__).with_name("kernel_iteration_longmemeval.py"))
+    implementation["selected-external-intelligence-adapter"] = external_runtime_implementation_identity(repository, runtime)
+    implementation["ownward-mcp-transport"] = evidence.text_file_sha256(repository / "benchmarks" / "support" / "ownward_mcp.py")
+    implementation["external-intelligence-contract"] = evidence.text_file_sha256(repository / "benchmarks" / "support" / "external_intelligence.py")
+    implementation["external-intelligence-selection"] = evidence.text_file_sha256(repository / "benchmarks" / "support" / "external-intelligence-runtime.json")
+    implementation["semantic-representation-runtime"] = evidence.text_file_sha256(long_root / "semantic_representation.py")
+    implementation["iteration-validation"] = evidence.text_file_sha256(Path(__file__).resolve())
+    implementation["iteration-longmemeval"] = evidence.text_file_sha256(Path(__file__).with_name("kernel_iteration_longmemeval.py"))
     protocol = runtime["protocol_value"]
     return {
         "dataset": materials["identity"],
@@ -741,6 +785,40 @@ def observe_report(report: dict[str, Any], materials: dict[str, Any]) -> dict[st
     _require(set(first_gaps) <= {"none", *FACT_DELIVERY_MISSING_GAPS, *ANSWER_ONLY_GAPS}, "诊断含有未冻结的首个观测缺口")
     _require(sum(first_gaps.values()) == report["questions"], "诊断首个观测缺口题量不闭合")
     delivery_missing = sum(first_gaps.get(name, 0) for name in FACT_DELIVERY_MISSING_GAPS)
+    unread_target = diagnostic_summary.get("unread_target_observation")
+    if unread_target is None:
+        unread_target = {
+            "questions": int(first_gaps.get("target_evidence_not_read", 0)),
+            "best_rank_within_read_limit": 0,
+            "best_rank_beyond_read_limit": 0,
+            "read_capacity_remaining": 0,
+            "tool_capacity_remaining": 0,
+        }
+    _require(
+        isinstance(unread_target, dict)
+        and all(isinstance(unread_target.get(name), int) and unread_target[name] >= 0 for name in (
+            "questions", "best_rank_within_read_limit", "best_rank_beyond_read_limit", "read_capacity_remaining",
+            "tool_capacity_remaining",
+        )),
+        "外部 Reader 未读取目标的机械归因摘要无效",
+    )
+    _require(unread_target["questions"] == first_gaps.get("target_evidence_not_read", 0), "外部 Reader 未读取目标摘要题量不闭合")
+    unreturned_target = diagnostic_summary.get("unreturned_target_observation")
+    if unreturned_target is None:
+        unreturned_target = {
+            "questions": int(first_gaps.get("target_evidence_not_search_returned", 0)),
+            "direct_question_probe_questions": 0,
+            "all_expected_returned": 0,
+        }
+    _require(
+        isinstance(unreturned_target, dict)
+        and all(isinstance(unreturned_target.get(name), int) and unreturned_target[name] >= 0 for name in (
+            "questions", "direct_question_probe_questions", "all_expected_returned",
+        )),
+        "原问题直搜机械归因摘要无效",
+    )
+    _require(unreturned_target["questions"] == first_gaps.get("target_evidence_not_search_returned", 0), "原问题直搜摘要题量不闭合")
+    _require(unreturned_target["all_expected_returned"] <= unreturned_target["direct_question_probe_questions"] <= unreturned_target["questions"], "原问题直搜摘要计数无效")
     return {
         "questions": report["questions"],
         "fact_delivery": {
@@ -748,6 +826,8 @@ def observe_report(report: dict[str, Any], materials: dict[str, Any]) -> dict[st
             "missing_questions": delivery_missing,
             "by_first_observed_gap": dict(sorted(first_gaps.items())),
         },
+        "active_reader_observation": dict(unread_target),
+        "direct_question_retrieval_observation": dict(unreturned_target),
         "final_answer_accuracy": report.get("accuracy"),
         "temporal_correctness": _category_accuracy(categories, "temporal-reasoning"),
         "conflict_correctness": _category_accuracy(categories, "knowledge-update"),
@@ -1860,12 +1940,12 @@ def _blind_dependencies(
         "generator": evidence.canonical_sha256({"settings": blind["generation"], "implementation": implementation["generator"]}),
         "quality-admission": evidence.canonical_sha256({"settings": blind["quality_admission"], "implementation": implementation["quality-admission"]}),
         "executor": evidence.canonical_sha256({
-            "contract": evidence.file_sha256(repository / "benchmarks" / "support" / "external_intelligence.py"),
-            "selection": evidence.file_sha256(repository / "benchmarks" / "support" / "external-intelligence-runtime.json"),
-            "run": evidence.file_sha256(long_root / "run.py"),
-            "runtime-adapter": evidence.file_sha256(long_root / "external_intelligence_runtime.py"),
-            "transport-adapter": evidence.file_sha256(long_root / "codex_app_server.py"),
-            "protocol": evidence.file_sha256(runtime["protocol"]),
+            "contract": evidence.text_file_sha256(repository / "benchmarks" / "support" / "external_intelligence.py"),
+            "selection": evidence.text_file_sha256(repository / "benchmarks" / "support" / "external-intelligence-runtime.json"),
+            "run": evidence.text_file_sha256(long_root / "run.py"),
+            "runtime-adapter": evidence.text_file_sha256(long_root / "external_intelligence_runtime.py"),
+            "selected-provider-adapter": external_runtime_implementation_identity(repository, runtime),
+            "protocol": evidence.text_file_sha256(runtime["protocol"]),
         }),
         "observer": evidence.canonical_sha256({"schema": BLIND_RESULT_SCHEMA, "implementation": implementation["observer"]}),
         "environment": evidence.file_sha256(runtime["environment_manifest"]),

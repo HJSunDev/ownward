@@ -95,7 +95,7 @@ def load_selection(suite_root: Path, *, require_result: bool = True) -> dict[str
     )
     cost = load_formal_cost_migration(suite_root, require_source_artifacts=require_result)
     _require(value.get("formal_cost_migration_identity") == cost["identity"], "正式 Reader 成本迁移证明错绑")
-    if evidence.file_sha256(protocol_path) != value["protocol_sha256"]:
+    if not evidence.text_file_matches(protocol_path, value["protocol_sha256"]):
         active_cost = load_active_retrieval_cost_migration(suite_root, cost)
         _require(active_cost["reader_selection_identity"] == value["identity"], "主动检索成本迁移错绑 Reader 选择")
     _require(value.get("formal_handoff_status") == "community-binding-and-preflight-pending-rebuild", "community 重绑/预检状态错误")
@@ -153,7 +153,7 @@ def load_formal_cost_migration(
         and policy.get("this_receipt_is_not_a_formal_preflight") is True,
         "正式 Reader 成本迁移越过质量、状态或 preflight 边界",
     )
-    if evidence.file_sha256(target_path) != target["sha256"]:
+    if not evidence.text_file_matches(target_path, target["sha256"]):
         load_active_retrieval_cost_migration(suite_root, value)
     if require_source_artifacts:
         repo_root = suite_root.parents[2]
@@ -175,7 +175,7 @@ def load_active_retrieval_cost_migration(suite_root: Path, source_cost: dict[str
     _require(value.get("source_reader_cost_migration_identity") == source_cost.get("identity"), "主动检索成本迁移源错绑")
     target = _mapping(value, "target_protocol")
     target_path = suite_root.parents[2] / str(target["path"])
-    _require(target_path.is_file() and evidence.file_sha256(target_path) == target["sha256"], "主动检索正式协议与成本迁移错绑")
+    _require(target_path.is_file() and evidence.text_file_matches(target_path, target["sha256"]), "主动检索正式协议与成本迁移错绑")
     protocol = _load_json(target_path)
     retrieval = _mapping(protocol, "retrieval")
     reader = _mapping(protocol, "reader")

@@ -101,8 +101,8 @@ def load_contract(suite_root: Path) -> dict[str, Any]:
     drifted = {}
     for item in value["direct_dependencies"]:
         dependency = repository / item["path"]
-        current = evidence.file_sha256(dependency) if dependency.is_file() else None
-        if current != item["sha256"]:
+        current = evidence.text_file_sha256(dependency) if dependency.is_file() else None
+        if not dependency.is_file() or not evidence.text_file_matches(dependency, item["sha256"]):
             drifted[item["path"]] = {"frozen": item["sha256"], "current": current}
     if drifted:
         _verify_dependency_migration(suite_root, value["identity"], drifted)

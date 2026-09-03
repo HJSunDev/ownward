@@ -14,6 +14,8 @@ from typing import Any, Callable
 
 import kernel_iteration_evidence as evidence
 import kernel_iteration_validation as validation
+import kernel_iteration_answer_sufficiency as answer_sufficiency
+import kernel_iteration_official_evaluator as official_evaluator
 
 
 class BlindSuiteError(ValueError):
@@ -21,7 +23,8 @@ class BlindSuiteError(ValueError):
 
 
 CONTRACT_RELATIVE = Path("iteration/blind-suite-contract.json")
-CONTRACT_SCHEMA = "ownward.kernel-iteration-blind-suite-contract/v1"
+CONTRACT_SCHEMA = "ownward.kernel-iteration-blind-suite-contract/v2"
+LEGACY_CONTRACT_SCHEMA = "ownward.kernel-iteration-blind-suite-contract/v1"
 PLAN_SCHEMA = "ownward.kernel-iteration-blind-suite-plan/v1"
 LOCATOR_SCHEMA = "ownward.kernel-iteration-blind-suite-locator/v1"
 SECRET_SCHEMA = "ownward.kernel-iteration-blind-suite-secret/v1"
@@ -72,8 +75,8 @@ def load_contract(suite_root: Path) -> dict[str, Any]:
             _require(sum(int(_mapping(counts, name).get(str(level), -1)) for name in counts) == level, f"版本级套题 {axis}/{level} 配额不闭合")
     generation = _mapping(value, "generation")
     admission = _mapping(value, "quality_admission")
-    _require(generation.get("model") == "gpt-5.6-terra" and generation.get("reasoning_effort") == "xhigh", "版本级套题生成模型漂移")
-    _require(admission.get("model") == "gpt-5.6-terra" and admission.get("reasoning_effort") == "medium", "版本级套题准入模型漂移")
+    _require(generation.get("role") == "generator", "版本级套题生成角色漂移")
+    _require(admission.get("role") == "quality_admission", "版本级套题准入角色漂移")
     _require(int(generation.get("max_active", 0)) == 8 and generation.get("worker_active_turns_maximum") == 1, "版本级套题生成并发漂移")
     _require(int(admission.get("batch_questions_maximum", 0)) == 15 and int(admission.get("max_active", 0)) == 8, "版本级套题准入批次或并发漂移")
     _require(int(admission.get("maximum_replacement_rounds_per_invocation", 0)) == 3, "版本级套题单次恢复局部替换边界漂移")
@@ -107,14 +110,18 @@ def qualify_admission(
     state_before = state_path.read_bytes()
     controls, expected = _qualification_controls()
     implementation = _implementation_identity()["quality-admission"]
+    settings = _effective_role_settings(contract, runtime, "quality_admission")
+    role_binding = validation.external_role_binding(runtime, "quality_admission")
     plan_content = {
         "schema": QUALIFICATION_PLAN_SCHEMA,
         "admission_contract_identity": _admission_contract_identity(contract),
         "validation_contract_identity": validation_contract["identity"],
-        "settings": _mapping(contract, "quality_admission"),
+        "settings": settings,
         "quality_admission_implementation": implementation,
         "control_set_identity": evidence.canonical_sha256({"controls": controls, "expected": expected}),
         "external_intelligence_executor": evidence.file_sha256(runtime["external_intelligence"]["binary"]),
+        "external_intelligence_implementation": validation.external_runtime_implementation_identity(repository, runtime),
+        "external_intelligence_role": role_binding["identity"],
         "formal": False,
     }
     plan_identity = evidence.canonical_sha256(plan_content)
@@ -130,7 +137,6 @@ def qualify_admission(
         _require(state_path.read_bytes() == state_before, "版本级套题准入资格复用改写正式 state")
         return _qualification_reference(result_path, result, reused=True)
     evidence.atomic_json(plan_path, plan)
-    settings = _mapping(contract, "quality_admission")
     materials = _qualification_materials(controls)
     schema = validation._admission_schema([case["case_id"] for case in controls])
     started = time.perf_counter()
@@ -591,8 +597,6 @@ def run_partition(
     runner: Callable[..., dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     import kernel_iteration_blind_gate as evaluator
-    import kernel_iteration_evaluator_reliability as evaluator_reliability
-    import kernel_iteration_reader_reliability as reader_reliability
 
     suite_root = suite_root.resolve()
     repository = suite_root.parents[2]
@@ -610,12 +614,16 @@ def run_partition(
     batch = load_evaluation_batch(evaluation_batch_path.resolve(), version, suite_identity)
     comparison = evidence.load_contract(suite_root)
     validation_contract = validation.load_validation_contract(suite_root)
-    reader_selection = reader_reliability.load_selection(suite_root)
     candidate_runtime = validation.validate_execution_config(
-        suite_root, Path(batch["candidate"]["execution_config"]), expected_reader_effort=reader_selection["selected_reasoning_effort"],
+        suite_root, Path(batch["candidate"]["execution_config"]),
     )
     baseline_runtime = validation.validate_execution_config(
-        suite_root, Path(batch["baseline"]["execution_config"]), expected_reader_effort=reader_selection["selected_reasoning_effort"],
+        suite_root, Path(batch["baseline"]["execution_config"]),
+    )
+    reader_binding = validation.external_role_binding(candidate_runtime, "reader")
+    _require(
+        reader_binding == validation.external_role_binding(baseline_runtime, "reader"),
+        "版本级盲测候选与基线 Reader 角色不同",
     )
     candidate = _load_evaluation_subject(comparison, Path(batch["candidate"]["subject_manifest"]))
     baseline = _load_evaluation_subject(comparison, Path(batch["baseline"]["subject_manifest"]))
@@ -630,7 +638,6 @@ def run_partition(
     state_before = state_path.read_bytes()
     runtime_calibration = evidence.calibrate_runtime(suite_root, output_root / "runtime-calibration", state_path, resume=resume)
     _require(state_path.read_bytes() == state_before, "版本级盲测执行校准改写了正式 state")
-    evaluator_qualification = evaluator_reliability.load_current_qualification(suite_root, Path(batch["candidate"]["execution_config"]))
     previous_decision = _previous_partition_result(
         output_root, suite_identity, candidate["identity"], contract, previous_plan_identity,
         adjudication_path=previous_adjudication_path,
@@ -639,7 +646,7 @@ def run_partition(
     dependencies = _partition_execution_dependencies(
         suite_root, suite_contract, contract, sealed, candidate, baseline,
         candidate_runtime, baseline_runtime, runtime_calibration, shared_conditions,
-        reader_selection, evaluator_qualification, batch,
+        reader_binding, batch,
     )
     if previous_decision is not None:
         dependencies["previous-partition-result"] = previous_decision["result_identity"]
@@ -723,7 +730,7 @@ def run_partition(
         absolute = evaluator._absolute_decision(candidate_execution["observation"], contract)
         candidate_observation = candidate_execution["observation"]
         if not absolute["passed"]:
-            answer_attribution = evaluator._attribute_first_answer_failure(
+            answer_attribution = _attribute_partition_answer_failure(
                 suite_root, root, candidate_runtime, sealed["materials"], candidate_execution, absolute,
             )
             if answer_attribution is not None and answer_attribution["classification"] == "external-reader-random-failure":
@@ -901,8 +908,7 @@ def _partition_execution_dependencies(
     baseline_runtime: dict[str, Any],
     runtime_calibration: dict[str, Any],
     shared_conditions: dict[str, str],
-    reader_selection: dict[str, Any],
-    evaluator_qualification: dict[str, Any],
+    reader_binding: dict[str, Any],
     evaluation_batch: dict[str, Any],
 ) -> dict[str, str]:
     import kernel_iteration_blind_gate as evaluator
@@ -910,13 +916,15 @@ def _partition_execution_dependencies(
     long_root = repository / "benchmarks" / "longmemeval_s"
     adapter = suite_root / "kernel_iteration_longmemeval.py"
     executor = evidence.canonical_sha256({
-        "external-intelligence-contract": evidence.file_sha256(repository / "benchmarks" / "support" / "external_intelligence.py"),
-        "external-intelligence-selection": evidence.file_sha256(repository / "benchmarks" / "support" / "external-intelligence-runtime.json"),
-        "longmemeval": evidence.file_sha256(long_root / "run.py"),
-        "runtime-adapter": evidence.file_sha256(long_root / "external_intelligence_runtime.py"),
-        "transport-adapter": evidence.file_sha256(long_root / "codex_app_server.py"),
-        "adapter": evidence.file_sha256(adapter),
-        "protocol": evidence.file_sha256(candidate_runtime["protocol"]),
+        "external-intelligence-contract": evidence.text_file_sha256(repository / "benchmarks" / "support" / "external_intelligence.py"),
+        "external-intelligence-selection": evidence.text_file_sha256(repository / "benchmarks" / "support" / "external-intelligence-runtime.json"),
+        "longmemeval": evidence.text_file_sha256(long_root / "run.py"),
+        "runtime-adapter": evidence.text_file_sha256(long_root / "external_intelligence_runtime.py"),
+        "selected-provider-adapter": validation.external_runtime_implementation_identity(repository, candidate_runtime),
+        "adapter": evidence.text_file_sha256(adapter),
+        "ownward-mcp-transport": evidence.text_file_sha256(repository / "benchmarks" / "support" / "ownward_mcp.py"),
+        "semantic-representation-runtime": evidence.text_file_sha256(long_root / "semantic_representation.py"),
+        "protocol": evidence.text_file_sha256(candidate_runtime["protocol"]),
     })
     return {
         "suite-contract": suite_contract["identity"],
@@ -931,11 +939,132 @@ def _partition_execution_dependencies(
         "shared-conditions": evidence.canonical_sha256(shared_conditions),
         "evaluation-batch": evaluation_batch["identity"],
         "evaluation-freeze-receipt": evaluation_batch["freeze_receipt"]["identity"],
-        "reader-selection": reader_selection["identity"],
-        "evaluator-qualification": evaluator_qualification["identity"],
+        "external-intelligence-reader-role": reader_binding["identity"],
         "executor": executor,
         "observer-and-scorer": evaluator._implementation_identity()["observer-and-scorer"],
         "execution-controller": _implementation_identity()["execution-controller"],
+    }
+
+
+def _attribute_partition_answer_failure(
+    suite_root: Path,
+    root: Path,
+    runtime: dict[str, Any],
+    materials: dict[str, Any],
+    candidate_execution: dict[str, Any],
+    absolute: dict[str, Any],
+) -> dict[str, Any] | None:
+    import kernel_iteration_blind_gate as evaluator
+
+    failed_metrics = {str(item.get("metric")) for item in absolute["failures"]}
+    if "final_answer_accuracy" not in failed_metrics:
+        return None
+    reader_binding = validation.external_role_binding(runtime, "reader")
+    observation = candidate_execution["observation"]
+    missing = int(_mapping(observation, "fact_delivery")["missing_questions"])
+    if missing > 0:
+        gaps = _mapping(_mapping(observation, "fact_delivery"), "by_first_observed_gap")
+        unread = int(gaps.get("target_evidence_not_read", 0))
+        unreturned = int(gaps.get("target_evidence_not_search_returned", 0))
+        reader_observation = _mapping(observation, "active_reader_observation")
+        direct_question = _mapping(observation, "direct_question_retrieval_observation")
+        if (
+            unread == missing
+            and unread > 0
+            and int(reader_observation.get("best_rank_within_read_limit", 0)) == unread
+            and int(reader_observation.get("read_capacity_remaining", 0)) == unread
+            and int(reader_observation.get("tool_capacity_remaining", 0)) == unread
+        ):
+            return {
+                "classification": "evaluation-process-failure",
+                "reason": "external-reader-skipped-target-returned-within-read-budget",
+                "responsible_boundary": "external-reader",
+                "first_answer_failure_remains_failure": True,
+                "diagnostic_repetitions_changed_candidate_decision": False,
+                "reader_profile_identity": reader_binding["identity"],
+                "mechanical_observation": dict(reader_observation),
+                "model_calls": 0,
+            }
+        if (
+            unreturned == missing
+            and unreturned > 0
+            and int(direct_question.get("direct_question_probe_questions", 0)) == unreturned
+            and int(direct_question.get("all_expected_returned", 0)) == unreturned
+        ):
+            return {
+                "classification": "evaluation-process-failure",
+                "reason": "external-reader-search-choice-missed-target-retrievable-by-direct-question",
+                "responsible_boundary": "external-reader",
+                "first_answer_failure_remains_failure": True,
+                "diagnostic_repetitions_changed_candidate_decision": False,
+                "reader_profile_identity": reader_binding["identity"],
+                "mechanical_observation": dict(direct_question),
+                "model_calls": 0,
+            }
+        return {
+            "classification": "candidate-failure",
+            "reason": (
+                "direct-question-kernel-recall-failure-requires-independent-reproduction"
+                if unreturned > 0 else "first-answer-wrong-with-incomplete-evidence"
+            ),
+            "first_answer_failure_remains_failure": True,
+            "diagnostic_repetitions_changed_candidate_decision": False,
+            "reader_profile_identity": reader_binding["identity"],
+            "model_calls": 0,
+        }
+    selected_materials, selection = evaluator._first_failed_answer_material(
+        materials, Path(candidate_execution["run_root"]), observation,
+    )
+    diagnostic = answer_sufficiency._diagnose_codex_boundaries(
+        suite_root,
+        Path(candidate_execution["run_root"]).parent / "answer-attribution-external-intelligence",
+        runtime,
+        selected_materials,
+        Path(candidate_execution["run_root"]),
+        reader_settings=_mapping(runtime["protocol_value"], "reader"),
+        include_original_product_answer=True,
+        product_repeats=(2, 3),
+        oracle_repeats=(1, 2, 3),
+        settings_label="stage6-first-answer-attribution",
+        run_judge=True,
+        correctness_source="judge",
+        prompt_renderer_factory=official_evaluator.PromptRenderer,
+    )
+    classified = evaluator._classify_answer_diagnostic(diagnostic)
+    reader = _mapping(diagnostic, "reader")
+    judge = _mapping(diagnostic, "judge")
+    product_records = [item for item in reader["records"] if item["context"] == "product"]
+    oracle_records = [item for item in reader["records"] if item["context"] == "oracle"]
+    return {
+        "classification": classified["classification"],
+        "reason": classified["reason"],
+        "responsible_boundary": classified["responsible_boundary"],
+        "first_answer_failure_remains_failure": True,
+        "diagnostic_repetitions_changed_candidate_decision": False,
+        "reader_profile_identity": reader_binding["identity"],
+        "diagnostic_reader": dict(reader["settings"]),
+        "selection": selection,
+        "product_context": {
+            "observations": sum(int(item["observations"]) for item in product_records),
+            "mechanical_failures": int(reader["product_context_failures"]),
+            "mechanically_unstable_cases": sum(0 < int(item["correct"]) < int(item["observations"]) for item in product_records),
+            "answer_hash_variation_cases": int(reader["product_context_variations"]),
+        },
+        "oracle_context": {
+            "observations": sum(int(item["observations"]) for item in oracle_records),
+            "mechanical_failures": int(reader["oracle_context_failures"]),
+            "mechanically_unstable_cases": sum(0 < int(item["correct"]) < int(item["observations"]) for item in oracle_records),
+            "answer_hash_variation_cases": int(reader["oracle_context_variations"]),
+        },
+        "judge_controls": {
+            "passed": bool(judge["controls_passed"]),
+            "correct": judge["correct_controls"],
+            "wrong": judge["wrong_controls"],
+        },
+        "wording_or_hash_variation_is_failure": False,
+        "raw_answers_persisted": False,
+        "cost": diagnostic["cost"],
+        "transport": diagnostic["transport"],
     }
 
 
@@ -1852,7 +1981,7 @@ def _load_frozen_suite_contract(vault_root: Path, version: str, suite_identity: 
     _require(path.is_file() and evidence.file_sha256(path) == manifest.get("contract_sha256"), "封存套题合同快照摘要漂移")
     value = _load_json(path)
     content = {key: item for key, item in value.items() if key != "identity"}
-    _require(value.get("schema") == CONTRACT_SCHEMA and value.get("identity") == evidence.canonical_sha256(content), "封存套题合同快照身份漂移")
+    _require(value.get("schema") in {LEGACY_CONTRACT_SCHEMA, CONTRACT_SCHEMA} and value.get("identity") == evidence.canonical_sha256(content), "封存套题合同快照身份漂移")
     _require(value.get("identity") == manifest.get("contract_identity"), "封存套题合同快照与私有清单错绑")
     _require(tuple(value.get("levels", [])) == (5, 15, 25, 50) and value.get("questions_total") == 95, "封存套题合同快照分区漂移")
     return value
@@ -1897,18 +2026,37 @@ def _preparation_dependencies(
     runtime: dict[str, Any],
     qualification: dict[str, Any],
 ) -> dict[str, str]:
+    repository = suite_root.parents[2]
     implementation = _implementation_identity()
+    generator_settings = _effective_role_settings(contract, runtime, "generator")
+    admission_settings = _effective_role_settings(contract, runtime, "quality_admission")
     return {
         "suite-preparation-contract": _preparation_contract_identity(contract),
         "legacy-validation-primitives": validation_contract["identity"],
         "preparation-controller": implementation["preparation-controller"],
         "suite-storage": implementation["suite-storage"],
-        "generator": evidence.canonical_sha256({"settings": contract["generation"], "implementation": implementation["generator"]}),
-        "quality-admission": evidence.canonical_sha256({"settings": contract["quality_admission"], "implementation": implementation["quality-admission"]}),
+        "generator": evidence.canonical_sha256({"settings": generator_settings, "implementation": implementation["generator"]}),
+        "quality-admission": evidence.canonical_sha256({"settings": admission_settings, "implementation": implementation["quality-admission"]}),
         "quality-admission-qualification": qualification["identity"],
         "external-intelligence-executor": evidence.file_sha256(runtime["external_intelligence"]["binary"]),
         "external-intelligence-credential-location": evidence.canonical_sha256(str(runtime["external_intelligence"]["credential_file"])),
+        "external-intelligence-implementation": validation.external_runtime_implementation_identity(repository, runtime),
+        "external-intelligence-generator-role": validation.external_role_binding(runtime, "generator")["identity"],
+        "external-intelligence-quality-admission-role": validation.external_role_binding(runtime, "quality_admission")["identity"],
     }
+
+
+def _effective_role_settings(contract: dict[str, Any], runtime: dict[str, Any], role: str) -> dict[str, Any]:
+    contract_key = "generation" if role == "generator" else "quality_admission"
+    policy = dict(_mapping(contract, contract_key))
+    _require(policy.get("role") == role, f"版本级套题 {role} 角色错绑")
+    profile = _mapping(_mapping(runtime, "external_intelligence"), "roles").get(role)
+    _require(isinstance(profile, dict), f"外部智能缺少 {role} 角色配置")
+    model = profile.get("model")
+    effort = profile.get("reasoning_effort")
+    _require(isinstance(model, str) and model.strip(), f"外部智能 {role} 模型无效")
+    _require(isinstance(effort, str) and effort.strip(), f"外部智能 {role} 推理档位无效")
+    return {**policy, "model": model, "reasoning_effort": effort}
 
 
 def _preparation_contract_identity(contract: dict[str, Any]) -> str:
@@ -1942,15 +2090,20 @@ def _load_current_admission_qualification(
     validation_contract: dict[str, Any],
     runtime: dict[str, Any],
 ) -> dict[str, Any]:
+    repository = suite_root.parents[2]
     controls, expected = _qualification_controls()
+    settings = _effective_role_settings(contract, runtime, "quality_admission")
+    role_binding = validation.external_role_binding(runtime, "quality_admission")
     content = {
         "schema": QUALIFICATION_PLAN_SCHEMA,
         "admission_contract_identity": _admission_contract_identity(contract),
         "validation_contract_identity": validation_contract["identity"],
-        "settings": _mapping(contract, "quality_admission"),
+        "settings": settings,
         "quality_admission_implementation": _implementation_identity()["quality-admission"],
         "control_set_identity": evidence.canonical_sha256({"controls": controls, "expected": expected}),
         "external_intelligence_executor": evidence.file_sha256(runtime["external_intelligence"]["binary"]),
+        "external_intelligence_implementation": validation.external_runtime_implementation_identity(repository, runtime),
+        "external_intelligence_role": role_binding["identity"],
         "formal": False,
     }
     identity = evidence.canonical_sha256(content)
@@ -2109,6 +2262,7 @@ def _implementation_identity() -> dict[str, str]:
             resume_partition_by_plan_identity,
             _previous_partition_result,
             _partition_execution_dependencies,
+            _attribute_partition_answer_failure,
             _finish_partition,
             _validate_execution_result,
         ),

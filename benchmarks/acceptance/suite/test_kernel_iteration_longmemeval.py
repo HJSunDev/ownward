@@ -20,6 +20,12 @@ class _Client:
         self.calls: list[str] = []
         self.contents = {"source-1": "complete first source", "source-2": "second distractor"}
 
+    def list_tools(self) -> list[dict]:
+        names = ["ownward_search", "ownward_navigate", "ownward_read"]
+        if self.evidence_available:
+            names.extend(["ownward_evidence_search", "ownward_evidence_read"])
+        return [{"name": name, "inputSchema": {"type": "object"}} for name in names]
+
     def call_tool(self, name: str, arguments: dict):
         self.calls.append(name)
         if name == "ownward_search":
@@ -56,6 +62,14 @@ class KernelIterationLongMemEvalTests(unittest.TestCase):
         _evidence, trace = stage3_adapter.retrieve_with_v0_compatibility(runtime, "complete source", self.protocol)
         self.assertEqual("rank-depth-diagonal-budget-fit/v1", trace["selection_policy"])
         self.assertIn("ownward_evidence_search", runtime.client.calls)
+
+    def test_active_v0_uses_its_real_public_tool_surface(self) -> None:
+        settings = stage3_adapter.active_retrieval_settings_for_client(_Client(evidence_available=False), self.protocol["retrieval"])
+        self.assertEqual(["ownward_search", "ownward_navigate", "ownward_read"], settings["allowed_tools"])
+
+    def test_active_current_kernel_keeps_evidence_tools(self) -> None:
+        settings = stage3_adapter.active_retrieval_settings_for_client(_Client(evidence_available=True), self.protocol["retrieval"])
+        self.assertEqual(self.protocol["retrieval"]["allowed_tools"], settings["allowed_tools"])
 
     def test_explicit_unanswerable_type_uses_official_abstention_contract(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

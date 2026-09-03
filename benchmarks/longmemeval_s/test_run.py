@@ -233,6 +233,10 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
         self.assertEqual("qwen3.8-flash", effective["memory"]["semantic_model"])
         self.assertEqual("xhigh", effective["reader"]["reasoning_effort"])
         self.assertEqual("medium", effective["judge"]["reasoning_effort"])
+        self.assertEqual("external-intelligence", effective["memory"]["capability_source"])
+        self.assertEqual("external-intelligence", effective["reader"]["capability_source"])
+        self.assertEqual("external-intelligence", effective["judge"]["capability_source"])
+        self.assertNotIn("selection_profile_identity", effective["reader"])
         with self.assertRaisesRegex(adapter.AdapterError, "incomplete"):
             adapter.apply_external_intelligence_roles(self.protocol, {"reader": roles["reader"]})
 
@@ -743,6 +747,14 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             )
             self.assertEqual("abstention_response_incorrect", abstention["first_observed_gap"])
             self.assertEqual("abstention", abstention["capability"])
+
+    def test_direct_question_probe_separates_kernel_recall_from_reader_search_choice(self) -> None:
+        client = FakeToolClient()
+        client.contents = {"info-1": "target", "info-2": "distractor"}
+        probe = adapter._direct_question_retrieval_probe(client, "target?", ["info-1"], 2)
+        self.assertTrue(probe["applicable"])
+        self.assertTrue(probe["all_expected_returned"])
+        self.assertEqual([1], probe["expected_return_ranks"])
 
     def test_failure_record_distinguishes_source_and_semantic_submission_without_gold(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

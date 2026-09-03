@@ -223,14 +223,15 @@ def load_contract(suite_root: Path) -> dict[str, Any]:
     _require(value.get("frozen_before_new_measurement") is True, "生命周期合同未在新测量前冻结")
     _require(value.get("candidate_results_seen") is False, "生命周期合同错误声明已看到候选结果")
     actual = {
-        item["path"]: evidence.file_sha256(repository / item["path"])
+        item["path"]: evidence.text_file_sha256(repository / item["path"])
         for item in value["direct_dependencies"]
         if (repository / item["path"]).is_file()
     }
     drifted = {
         item["path"]: {"frozen": item["sha256"], "current": actual.get(item["path"])}
         for item in value["direct_dependencies"]
-        if actual.get(item["path"]) != item["sha256"]
+        if not (repository / item["path"]).is_file()
+        or not evidence.text_file_matches(repository / item["path"], item["sha256"])
     }
     if drifted:
         migration = _load_json(suite_root / DEPENDENCY_MIGRATION_PATH)
@@ -303,8 +304,8 @@ def _verify_source_lifecycle(sources: dict[str, str]) -> None:
 
 def _verified_text(repository: Path, item: dict[str, Any], name: str) -> str:
     path = repository / item["path"]
-    current = evidence.file_sha256(path) if path.is_file() else None
-    if current != item["sha256"]:
+    current = evidence.text_file_sha256(path) if path.is_file() else None
+    if not path.is_file() or not evidence.text_file_matches(path, item["sha256"]):
         _verify_related_source_migration(
             repository / "benchmarks" / "acceptance" / "suite",
             "125278c6aa9d6a34dc91bfe1ced32b22b93dad60ce6b5bc34aa14c3c2561abb7",

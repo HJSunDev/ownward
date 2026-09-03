@@ -24,6 +24,17 @@ class KernelIterationEvidenceTests(unittest.TestCase):
         cls.repository = cls.suite_root.parents[2]
         cls.contract = iteration.load_contract(cls.suite_root)
 
+    def test_versioned_text_identity_accepts_historical_line_endings(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            lf = Path(directory) / "lf.txt"
+            crlf = Path(directory) / "crlf.txt"
+            lf.write_bytes(b"alpha\nbeta\n")
+            crlf.write_bytes(b"alpha\r\nbeta\r\n")
+            self.assertNotEqual(iteration.file_sha256(lf), iteration.file_sha256(crlf))
+            self.assertEqual(iteration.text_file_sha256(lf), iteration.text_file_sha256(crlf))
+            self.assertTrue(iteration.text_file_matches(crlf, iteration.file_sha256(crlf)))
+            self.assertTrue(iteration.text_file_matches(crlf, iteration.text_file_sha256(lf)))
+
     def test_contract_freezes_three_dimensions_before_any_v2_result(self) -> None:
         self.assertTrue(self.contract["unchanged_dimensions_frozen_before_v2_results"])
         self.assertTrue(self.contract["latency_correction_frozen_before_new_candidate_measurement"])

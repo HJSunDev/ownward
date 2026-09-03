@@ -206,8 +206,8 @@ def load_contract(suite_root: Path) -> dict[str, Any]:
     drifted = {}
     for item in value["source_files"].values():
         path = repository / item["path"]
-        current = evidence.file_sha256(path) if path.is_file() else None
-        if current != item["sha256"]:
+        current = evidence.text_file_sha256(path) if path.is_file() else None
+        if not path.is_file() or not evidence.text_file_matches(path, item["sha256"]):
             drifted[item["path"]] = {"frozen": item["sha256"], "current": current}
     if drifted:
         _verify_dependency_migration(
@@ -361,8 +361,8 @@ def _verify_source_boundaries(sources: dict[str, str]) -> None:
 
 def _verified_text(repository: Path, item: dict[str, Any], name: str) -> str:
     path = repository / item["path"]
-    current = evidence.file_sha256(path) if path.is_file() else None
-    if current != item["sha256"]:
+    current = evidence.text_file_sha256(path) if path.is_file() else None
+    if not path.is_file() or not evidence.text_file_matches(path, item["sha256"]):
         _verify_dependency_migration(
             repository / "benchmarks" / "acceptance" / "suite",
             "e39272da7f832ed8275f99284aa03ad8fdf1b68b7833a368b9bece116ef93ce8",

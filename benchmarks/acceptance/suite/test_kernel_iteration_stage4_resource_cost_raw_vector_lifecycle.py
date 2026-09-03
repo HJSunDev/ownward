@@ -99,14 +99,14 @@ class RawVectorLifecycleTests(unittest.TestCase):
             )
 
     def test_dependency_migration_receipt_rejects_any_unlisted_drift(self) -> None:
-        original = evidence.file_sha256
+        original = evidence.text_file_sha256
 
         def drift(path: Path) -> str:
             if Path(path).name == "kernel_iteration_run.py":
                 return "f" * 64
             return original(path)
 
-        with mock.patch.object(evidence, "file_sha256", side_effect=drift):
+        with mock.patch.object(evidence, "text_file_sha256", side_effect=drift):
             with self.assertRaisesRegex(validation.KernelIterationValidationError, "不在精确迁移收据内"):
                 lifecycle.load_contract(self.suite_root)
 
@@ -124,8 +124,8 @@ class RawVectorLifecycleTests(unittest.TestCase):
             changes[run_path]["classification"],
         )
         self.assertEqual("dependency-receipt-validation-only", changes[validator_path]["classification"])
-        self.assertEqual(evidence.file_sha256(self.repository / run_path), changes[run_path]["current_sha256"])
-        self.assertEqual(evidence.file_sha256(self.repository / validator_path), changes[validator_path]["current_sha256"])
+        self.assertEqual(evidence.text_file_sha256(self.repository / run_path), changes[run_path]["current_sha256"])
+        self.assertEqual(evidence.text_file_sha256(self.repository / validator_path), changes[validator_path]["current_sha256"])
         related = receipt["related_contract_migrations"]
         self.assertEqual(
             {
@@ -146,7 +146,7 @@ class RawVectorLifecycleTests(unittest.TestCase):
                 runner["classification"],
             )
             self.assertEqual(
-                evidence.file_sha256(self.repository / runner["path"]),
+                evidence.text_file_sha256(self.repository / runner["path"]),
                 runner["current_sha256"],
             )
         self.assertEqual(

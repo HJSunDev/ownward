@@ -30,6 +30,12 @@ class BlindVersionSuiteTests(unittest.TestCase):
         self.assertEqual(1, contract["lifecycle"]["active_suites_per_major_version_maximum"])
         self.assertEqual(8, contract["generation"]["max_active"])
         self.assertEqual(15, contract["quality_admission"]["batch_questions_maximum"])
+        self.assertEqual("generator", contract["generation"]["role"])
+        self.assertEqual("quality_admission", contract["quality_admission"]["role"])
+        self.assertNotIn("model", contract["generation"])
+        self.assertNotIn("reasoning_effort", contract["generation"])
+        self.assertNotIn("model", contract["quality_admission"])
+        self.assertNotIn("reasoning_effort", contract["quality_admission"])
 
     def test_prepare_replaces_only_rejected_case_seals_once_and_resumes_without_work(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -105,14 +111,63 @@ class BlindVersionSuiteTests(unittest.TestCase):
         self.assertIn("kernel_iteration_blind_suite.prepare", source)
         self.assertIn("kernel_iteration_blind_suite.run_partition", source)
 
+    def test_active_suite_depends_on_selected_external_intelligence_not_legacy_codex_receipts(self) -> None:
+        source = Path(suite.__file__).read_text(encoding="utf-8")
+        validation_source = Path(validation.__file__).read_text(encoding="utf-8")
+        self.assertNotIn("kernel_iteration_reader_reliability", source)
+        self.assertNotIn("kernel_iteration_evaluator_reliability", source)
+        self.assertNotIn('long_root / "codex_app_server.py"', source)
+        self.assertNotIn('long_root / "codex_app_server.py"', validation_source)
+        self.assertNotIn("gpt-5.6-terra", source)
+        self.assertIn("external-intelligence-reader-role", source)
+        self.assertIn("selected-provider-adapter", source)
+
+    def test_reader_skip_is_attributed_to_selected_external_role_without_model_rerun(self) -> None:
+        runtime = {
+            "external_intelligence": {
+                "driver": "opencode-server/v1",
+                "provider": "opencode-go",
+                "selection_sha256": "a" * 64,
+                "roles": {"reader": {"model": "qwen3.8-flash", "reasoning_effort": "xhigh"}},
+            },
+            "protocol_value": {"reader": {"model": "qwen3.8-flash", "reasoning_effort": "xhigh"}},
+        }
+        execution = {"observation": {
+            "fact_delivery": {
+                "missing_questions": 1,
+                "by_first_observed_gap": {"target_evidence_not_read": 1},
+            },
+            "active_reader_observation": {
+                "best_rank_within_read_limit": 1,
+                "read_capacity_remaining": 1,
+                "tool_capacity_remaining": 1,
+            },
+            "direct_question_retrieval_observation": {
+                "direct_question_probe_questions": 0,
+                "all_expected_returned": 0,
+            },
+        }}
+        result = suite._attribute_partition_answer_failure(
+            self.suite_root, self.suite_root, runtime, {"cases": []}, execution,
+            {"failures": [{"metric": "final_answer_accuracy"}]},
+        )
+        self.assertEqual("evaluation-process-failure", result["classification"])
+        self.assertEqual("external-reader", result["responsible_boundary"])
+        self.assertEqual(0, result["model_calls"])
+
     def test_preparation_identity_has_no_candidate_or_git_dependency(self) -> None:
         contract = suite.load_contract(self.suite_root)
         validation_contract = validation.load_validation_contract(self.suite_root)
         runtime = {"external_intelligence": {
             "driver": "codex-app-server/v1",
             "provider": "openai-codex",
+            "selection_sha256": "8" * 64,
             "binary": Path(__file__),
             "credential_file": Path(__file__),
+            "roles": {
+                "generator": {"model": "generator-model", "reasoning_effort": "xhigh"},
+                "quality_admission": {"model": "admission-model", "reasoning_effort": "medium"},
+            },
         }}
         qualification = {"identity": "9" * 64}
         dependencies = suite._preparation_dependencies(self.suite_root, contract, validation_contract, runtime, qualification)
@@ -120,6 +175,26 @@ class BlindVersionSuiteTests(unittest.TestCase):
         plan = suite._plan_content("v2", contract, dependencies, "stable-version-seed-12345")
         self.assertIsNone(plan["candidate_identity"])
         self.assertIsNone(plan["candidate_output"])
+
+    def test_preparation_role_identity_changes_without_business_controller_changes(self) -> None:
+        contract = suite.load_contract(self.suite_root)
+        runtime = {"external_intelligence": {
+            "driver": "fixture-driver/v1",
+            "provider": "fixture-provider",
+            "selection_sha256": "1" * 64,
+            "roles": {
+                "generator": {"model": "model-a", "reasoning_effort": "xhigh"},
+                "quality_admission": {"model": "model-a", "reasoning_effort": "medium"},
+            },
+        }}
+        generator = suite._effective_role_settings(contract, runtime, "generator")
+        admission = suite._effective_role_settings(contract, runtime, "quality_admission")
+        self.assertEqual("model-a", generator["model"])
+        self.assertEqual("xhigh", generator["reasoning_effort"])
+        self.assertEqual("model-a", admission["model"])
+        self.assertEqual("medium", admission["reasoning_effort"])
+        self.assertEqual("generator", generator["role"])
+        self.assertEqual("quality_admission", admission["role"])
 
     def test_execution_changes_do_not_invalidate_suite_preparation_and_frozen_contract_opens(self) -> None:
         contract = suite.load_contract(self.suite_root)

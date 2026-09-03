@@ -2,6 +2,7 @@
 """Stage-3 non-formal LongMemEval adapter with an explicit V0 public-path fallback."""
 from __future__ import annotations
 
+import copy
 import importlib.util
 from pathlib import Path
 import sys
@@ -22,6 +23,38 @@ SPEC.loader.exec_module(adapter)
 
 _public_retrieve = adapter.retrieve
 _official_prompt = adapter.official_prompt
+_active_answer = adapter.ExternalIntelligenceCapability.active_answer
+
+
+def active_retrieval_settings_for_client(client: Any, settings: dict[str, Any]) -> dict[str, Any]:
+    """Expose each frozen kernel's real public tools without weakening the active-agent contract."""
+    manifest = adapter.ActiveRetrievalSession._list_tools(client)
+    available = {str(item.get("name", "")) for item in manifest}
+    required = {"ownward_search", "ownward_navigate", "ownward_read"}
+    adapter.require(not (required - available), f"Ownward active retrieval tools are missing: {sorted(required - available)}")
+    evidence = {"ownward_evidence_search", "ownward_evidence_read"}
+    adapter.require(not (available & evidence) or evidence <= available, "Ownward evidence tools must be exposed as a complete pair")
+    effective = copy.deepcopy(settings)
+    effective["allowed_tools"] = [name for name in settings["allowed_tools"] if name in available]
+    return effective
+
+
+def active_answer_with_version_capabilities(
+    capability: Any,
+    question: dict[str, Any],
+    client: Any,
+    reader_settings: dict[str, Any],
+    retrieval_settings: dict[str, Any],
+    stage: Path,
+) -> tuple[str, dict[str, int], dict[str, Any]]:
+    return _active_answer(
+        capability,
+        question,
+        client,
+        reader_settings,
+        active_retrieval_settings_for_client(client, retrieval_settings),
+        stage,
+    )
 
 
 def official_prompt_with_explicit_unanswerable(
@@ -116,6 +149,7 @@ def retrieve_with_v0_compatibility(runtime: Any, question: str, protocol: dict[s
 
 adapter.retrieve = retrieve_with_v0_compatibility
 adapter.official_prompt = official_prompt_with_explicit_unanswerable
+adapter.ExternalIntelligenceCapability.active_answer = active_answer_with_version_capabilities
 
 
 if __name__ == "__main__":
