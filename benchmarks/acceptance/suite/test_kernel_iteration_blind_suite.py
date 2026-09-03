@@ -107,6 +107,7 @@ class BlindVersionSuiteTests(unittest.TestCase):
         self.assertIn("--blind-suite-prepare", source)
         self.assertIn("--blind-suite-evaluation-batch", source)
         self.assertIn("--blind-suite-previous-adjudication", source)
+        self.assertIn("--blind-suite-process-budget", source)
         self.assertIn("--blind-suite-qualify-admission", source)
         self.assertIn("kernel_iteration_blind_suite.prepare", source)
         self.assertIn("kernel_iteration_blind_suite.run_partition", source)
@@ -296,6 +297,58 @@ class BlindVersionSuiteTests(unittest.TestCase):
             self.assertNotIn("v0", json.dumps(level).lower())
             self.assertIn("relative_baseline_gate", level)
 
+            process_plan_content = {
+                "schema": suite.EXECUTION_PLAN_SCHEMA,
+                "evaluation_batch_identity": batch["identity"],
+                "candidate_subject_identity": "3" * 64,
+                "baseline_subject_identity": "2" * 64,
+            }
+            process_plan = {**process_plan_content, "identity": suite.evidence.canonical_sha256(process_plan_content)}
+            process_root = root / "process-calibration"
+            process_root.mkdir()
+            (process_root / "plan.json").write_text(json.dumps(process_plan) + "\n", encoding="utf-8")
+            process_result_content = {
+                "schema": suite.EXECUTION_RESULT_SCHEMA,
+                "plan_identity": process_plan["identity"],
+                "level": 5,
+                "status": "evaluation-process-rejected",
+                "passed": False,
+                "candidate_decision": True,
+                "absolute_decision": {"passed": True},
+                "relative_baseline_decision": {"passed": True},
+                "general_root_cause": {"failure_metrics": ["level_total_wall_seconds"]},
+                "formal_state_written": False,
+                "contains_reversible_question_answer_evidence_or_case_ids": False,
+                "wall_seconds": 500.0,
+            }
+            process_result = {**process_result_content, "identity": suite.evidence.canonical_sha256(process_result_content)}
+            process_result_path = process_root / "result.json"
+            process_result_path.write_text(json.dumps(process_result) + "\n", encoding="utf-8")
+            budget_content = {
+                "schema": suite.PROCESS_BUDGET_SCHEMA,
+                "major_version": "v3",
+                "suite_identity": "8" * 64,
+                "evaluation_batch_identity": batch["identity"],
+                "candidate_subject_identity": "3" * 64,
+                "baseline_subject_identity": "2" * 64,
+                "quality_contract_unchanged": True,
+                "candidate_or_baseline_execution_changed": False,
+                "level_total_wall_seconds_maximum": {"5": 600, "15": 2000, "25": 3200, "50": 6000},
+                "cumulative_wall_seconds_maximum": 9000,
+                "calibration": {
+                    "source_plan_identity": process_plan["identity"],
+                    "source_result": str(process_result_path),
+                    "source_result_sha256": suite.evidence.file_sha256(process_result_path),
+                    "source_result_identity": process_result["identity"],
+                    "observed_wall_seconds": 500.0,
+                },
+            }
+            budget = {**budget_content, "identity": suite.evidence.canonical_sha256(budget_content)}
+            budget_path = root / "process-budget.json"
+            budget_path.write_text(json.dumps(budget) + "\n", encoding="utf-8")
+            loaded_budget = suite.load_process_budget(self.suite_root, budget_path, "v3", "8" * 64, batch)
+            self.assertEqual(9000, loaded_budget["cumulative_wall_seconds_maximum"])
+
             freeze["baseline_subject_identity"] = "4" * 64
             frozen_content = {key: item for key, item in freeze.items() if key != "identity"}
             freeze["identity"] = suite.evidence.canonical_sha256(frozen_content)
@@ -396,6 +449,57 @@ class BlindVersionSuiteTests(unittest.TestCase):
                     output, suite_identity, candidate_identity, contract, previous_plan_identity,
                     adjudication_path=terminal_path, evaluation_batch_identity="5" * 64,
                 )
+
+    def test_process_budget_continues_quality_passed_process_calibration(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            suite_identity = "1" * 64
+            candidate_identity = "2" * 64
+            baseline_identity = "6" * 64
+            previous_plan_identity = "3" * 64
+            evaluation_batch_identity = "4" * 64
+            root = output / "blind-suite-runs" / suite_identity / candidate_identity / previous_plan_identity
+            root.mkdir(parents=True)
+            (root / "plan.json").write_text(json.dumps({
+                "schema": suite.EXECUTION_PLAN_SCHEMA,
+                "identity": previous_plan_identity,
+                "suite_identity": suite_identity,
+                "candidate_subject_identity": candidate_identity,
+                "baseline_subject_identity": baseline_identity,
+                "evaluation_batch_identity": evaluation_batch_identity,
+                "level": 5,
+            }) + "\n", encoding="utf-8")
+            result_content = {
+                "schema": suite.EXECUTION_RESULT_SCHEMA,
+                "plan_identity": previous_plan_identity,
+                "status": "evaluation-process-rejected",
+                "passed": False,
+                "candidate_decision": True,
+                "absolute_decision": {"passed": True},
+                "relative_baseline_decision": {"passed": True},
+                "general_root_cause": {"failure_metrics": ["level_total_wall_seconds"]},
+                "formal_state_written": False,
+                "contains_reversible_question_answer_evidence_or_case_ids": False,
+                "wall_seconds": 500.0,
+            }
+            result = {**result_content, "identity": suite.evidence.canonical_sha256(result_content)}
+            (root / "result.json").write_text(json.dumps(result) + "\n", encoding="utf-8")
+            process_budget = {
+                "identity": "7" * 64,
+                "calibration": {
+                    "source_plan_identity": previous_plan_identity,
+                    "source_result_identity": result["identity"],
+                },
+            }
+            contract = suite.level_contract(suite.load_contract(self.suite_root), 15)
+            decision = suite._previous_partition_result(
+                output, suite_identity, candidate_identity, contract, previous_plan_identity,
+                evaluation_batch_identity=evaluation_batch_identity,
+                process_budget=process_budget,
+            )
+            self.assertEqual(result["identity"], decision["result_identity"])
+            self.assertEqual(process_budget["identity"], decision["continuation_identity"])
+            self.assertEqual(500.0, decision["cumulative_wall_seconds"])
 
     def test_execution_scratch_is_short_suite_bound_and_exactly_cleaned(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

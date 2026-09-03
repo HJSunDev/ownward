@@ -339,7 +339,7 @@ class OpenCodeServer:
             if caught.code == 429:
                 self._rate_limit_observed = True
             raise OpenCodeError(f"OpenCode HTTP {caught.code}: {detail[:1000]}") from caught
-        except TimeoutError as caught:
+        except (TimeoutError, socket.timeout) as caught:
             raise OpenCodeTimeout(f"OpenCode request timed out after {timeout:g} seconds") from caught
         except error.URLError as caught:
             raise OpenCodeError(f"OpenCode request failed: {caught.reason}") from caught

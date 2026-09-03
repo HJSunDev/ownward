@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import socket
 import tempfile
 import unittest
 from unittest import mock
@@ -10,6 +11,18 @@ import opencode_qualification as qualification
 
 
 class OpenCodeExternalIntelligenceTests(unittest.TestCase):
+    def test_http_normalizes_socket_timeout_for_startup_retry(self) -> None:
+        server = subject.OpenCodeServer(
+            Path("opencode.exe"), Path("auth.json"), Path("runtime"),
+            provider="opencode-go", models=("qwen3.8-flash",), reasoning_efforts=("xhigh",),
+        )
+        opener = mock.MagicMock()
+        opener.open.side_effect = socket.timeout("timed out")
+        with mock.patch.object(subject.request, "build_opener", return_value=opener):
+            server._base_url = "http://127.0.0.1:1"
+            with self.assertRaisesRegex(subject.OpenCodeTimeout, "request timed out"):
+                server._http("GET", "/global/health", timeout=2)
+
     def test_turn_pins_qwen_model_effort_and_disables_every_unowned_tool(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -264,6 +264,16 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
         with self.assertRaisesRegex(adapter.AdapterError, "Reader identity changed"):
             adapter.validate_protocol(no_tools)
 
+    def test_active_reader_prompt_preserves_budget_for_returned_evidence(self) -> None:
+        prompt = adapter._active_answer_prompt(
+            {"question": "Which detail is current?", "question_date": "2026-09-03"},
+            self.protocol["retrieval"],
+        )
+        self.assertIn("Start with a direct question-focused search", prompt)
+        self.assertIn("read high-value returned evidence before broadening", prompt)
+        self.assertIn("Preserve enough tool calls for the reads needed to support the answer", prompt)
+        self.assertIn("do not spend the final available call on discovery", prompt)
+
     def test_nonformal_comparison_accepts_only_the_common_active_tools(self) -> None:
         comparison = json.loads(json.dumps(self.protocol))
         comparison["retrieval"]["allowed_tools"] = list(adapter.CORE_ACTIVE_RETRIEVAL_TOOLS)

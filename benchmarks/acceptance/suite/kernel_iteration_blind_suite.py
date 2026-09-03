@@ -47,6 +47,7 @@ EXECUTION_SCRATCH_SCHEMA = "ownward.kernel-iteration-blind-suite-execution-scrat
 PARTITION_CONTINUATION_SCHEMA = "ownward.kernel-iteration-blind-suite-partition-continuation/v1"
 EVALUATION_BATCH_SCHEMA = "ownward.kernel-iteration-blind-suite-evaluation-batch/v1"
 EVALUATION_FREEZE_SCHEMA = "ownward.kernel-iteration-blind-suite-evaluation-freeze/v1"
+PROCESS_BUDGET_SCHEMA = "ownward.kernel-iteration-blind-suite-process-budget/v1"
 MATERIALS_SCHEMA = validation.MATERIALS_SCHEMA
 NO_ANSWER = "I don't have enough information to answer that."
 PRIMARY_COVERAGE = tuple(validation.BLIND_COVERAGE)
@@ -560,6 +561,61 @@ def load_evaluation_batch(path: Path, major_version: str, suite_identity: str) -
     return value
 
 
+def load_process_budget(
+    suite_root: Path,
+    path: Path,
+    major_version: str,
+    suite_identity: str,
+    evaluation_batch: dict[str, Any],
+) -> dict[str, Any]:
+    """Load a provider-profile process budget without changing quality gates."""
+    value = _load_json(path.resolve())
+    content = {key: item for key, item in value.items() if key != "identity"}
+    _require(value.get("schema") == PROCESS_BUDGET_SCHEMA, "版本级盲测进程预算 schema 无效")
+    _require(value.get("identity") == evidence.canonical_sha256(content), "版本级盲测进程预算身份漂移")
+    _require(value.get("major_version") == major_version and value.get("suite_identity") == suite_identity, "版本级盲测进程预算与套题错绑")
+    _require(value.get("evaluation_batch_identity") == evaluation_batch["identity"], "版本级盲测进程预算与评测批次错绑")
+    _require(value.get("candidate_subject_identity") == evaluation_batch["candidate"]["subject_identity"], "版本级盲测进程预算与候选错绑")
+    _require(value.get("baseline_subject_identity") == evaluation_batch["baseline"]["subject_identity"], "版本级盲测进程预算与基线错绑")
+    _require(value.get("quality_contract_unchanged") is True and value.get("candidate_or_baseline_execution_changed") is False, "版本级盲测进程预算越过质量或产品边界")
+
+    limits = _mapping(value, "level_total_wall_seconds_maximum")
+    expected_levels = {"5", "15", "25", "50"}
+    _require(set(limits) == expected_levels, "版本级盲测进程预算级别不完整")
+    _require(all(isinstance(limits[level], int) and limits[level] > 0 for level in expected_levels), "版本级盲测进程预算上限无效")
+    validation_contract = validation.load_validation_contract(suite_root)
+    design_limit = int(_mapping(validation_contract, "calibration")["design_total_normal_seconds"])
+    _require(value.get("cumulative_wall_seconds_maximum") == design_limit, "版本级盲测累计进程预算放宽了冻结设计上限")
+
+    calibration = _mapping(value, "calibration")
+    result_path = Path(str(calibration.get("source_result", ""))).resolve()
+    _require(result_path.is_file(), "版本级盲测进程预算缺少校准结果")
+    _require(calibration.get("source_result_sha256") == evidence.file_sha256(result_path), "版本级盲测进程预算校准结果漂移")
+    result = _load_json(result_path)
+    source_plan_identity = str(calibration.get("source_plan_identity", ""))
+    _validate_execution_result(result, source_plan_identity)
+    _require(result.get("identity") == calibration.get("source_result_identity"), "版本级盲测进程预算校准结果身份错绑")
+    plan = _load_json(result_path.parent / "plan.json")
+    _require(plan.get("identity") == source_plan_identity and plan.get("evaluation_batch_identity") == evaluation_batch["identity"], "版本级盲测进程预算校准计划错绑")
+    _require(plan.get("candidate_subject_identity") == evaluation_batch["candidate"]["subject_identity"] and plan.get("baseline_subject_identity") == evaluation_batch["baseline"]["subject_identity"], "版本级盲测进程预算校准对象错绑")
+    absolute = _mapping(result, "absolute_decision")
+    relative = _mapping(result, "relative_baseline_decision")
+    cause = _mapping(result, "general_root_cause")
+    _require(
+        result.get("status") == "evaluation-process-rejected"
+        and result.get("candidate_decision") is True
+        and absolute.get("passed") is True
+        and relative.get("passed") is True
+        and cause.get("failure_metrics") == ["level_total_wall_seconds"],
+        "版本级盲测进程预算只能来自质量通过的纯进程超时校准",
+    )
+    source_level = str(result.get("level"))
+    observed_wall = float(result.get("wall_seconds", -1))
+    _require(float(calibration.get("observed_wall_seconds", -1)) == observed_wall, "版本级盲测进程预算校准墙钟漂移")
+    _require(float(limits[source_level]) >= observed_wall, "版本级盲测进程预算没有覆盖校准运行")
+    return value
+
+
 def _load_evaluation_subject(comparison: dict[str, Any], manifest_path: Path) -> dict[str, Any]:
     """Load either a current candidate manifest or an exact frozen subject projection.
 
@@ -592,6 +648,7 @@ def run_partition(
     level: int,
     previous_plan_identity: str | None = None,
     previous_adjudication_path: Path | None = None,
+    process_budget_path: Path | None = None,
     plan_identity: str | None = None,
     resume: bool = False,
     runner: Callable[..., dict[str, Any]] | None = None,
@@ -612,6 +669,10 @@ def run_partition(
     suite_contract = sealed["contract"]
     contract = level_contract(suite_contract, level)
     batch = load_evaluation_batch(evaluation_batch_path.resolve(), version, suite_identity)
+    process_budget = (
+        load_process_budget(suite_root, process_budget_path.resolve(), version, suite_identity, batch)
+        if process_budget_path is not None else None
+    )
     comparison = evidence.load_contract(suite_root)
     validation_contract = validation.load_validation_contract(suite_root)
     candidate_runtime = validation.validate_execution_config(
@@ -642,11 +703,13 @@ def run_partition(
         output_root, suite_identity, candidate["identity"], contract, previous_plan_identity,
         adjudication_path=previous_adjudication_path,
         evaluation_batch_identity=batch["identity"],
+        process_budget=process_budget,
     )
     dependencies = _partition_execution_dependencies(
         suite_root, suite_contract, contract, sealed, candidate, baseline,
         candidate_runtime, baseline_runtime, runtime_calibration, shared_conditions,
         reader_binding, batch,
+        process_budget,
     )
     if previous_decision is not None:
         dependencies["previous-partition-result"] = previous_decision["result_identity"]
@@ -668,6 +731,7 @@ def run_partition(
         "candidate_kernel_effect_identity": candidate["content"]["kernel_effect_identity"],
         "baseline_subject_identity": baseline["identity"],
         "evaluation_batch_identity": batch["identity"],
+        "evaluation_process_budget_identity": process_budget["identity"] if process_budget is not None else None,
         "shared_conditions": shared_conditions,
         "direct_dependencies": dict(sorted(dependencies.items())),
         "formal": False,
@@ -706,6 +770,7 @@ def run_partition(
         "level": level,
         "previous_plan_identity": previous_plan_identity,
         "previous_adjudication": str(previous_adjudication_path.resolve()) if previous_adjudication_path is not None else None,
+        "process_budget": str(process_budget_path.resolve()) if process_budget_path is not None else None,
     }
     locator = {**locator_content, "identity": evidence.canonical_sha256(locator_content)}
     if (root / "locator.json").is_file():
@@ -755,8 +820,24 @@ def run_partition(
             candidate["identity"], baseline["identity"], execute,
         )
         total = time.perf_counter() - started
-        wall_limit = float(_mapping(contract, "absolute_gate")["level_total_wall_seconds_maximum"])
-        process_passed = total <= wall_limit
+        wall_limit = float(
+            _mapping(process_budget, "level_total_wall_seconds_maximum")[str(level)]
+            if process_budget is not None
+            else _mapping(contract, "absolute_gate")["level_total_wall_seconds_maximum"]
+        )
+        previous_wall = float(previous_decision.get("cumulative_wall_seconds", 0.0)) if previous_decision is not None else 0.0
+        cumulative_wall = previous_wall + total
+        cumulative_limit = float(process_budget["cumulative_wall_seconds_maximum"]) if process_budget is not None else None
+        process_passed = total <= wall_limit and (cumulative_limit is None or cumulative_wall <= cumulative_limit)
+        process_outcome = {
+            "budget_identity": process_budget["identity"] if process_budget is not None else None,
+            "level_wall_seconds": total,
+            "level_wall_seconds_maximum": wall_limit,
+            "previous_cumulative_wall_seconds": previous_wall,
+            "cumulative_wall_seconds": cumulative_wall,
+            "cumulative_wall_seconds_maximum": cumulative_limit,
+            "passed": process_passed,
+        }
         passed = bool(relative["passed"] and process_passed)
         status = "passed" if passed else ("relative-rejected" if not relative["passed"] else "evaluation-process-rejected")
         root_cause = None if passed else (
@@ -766,7 +847,10 @@ def run_partition(
                 "first_observed_gap": None,
                 "responsible_direction": "blind-suite-evaluation-controller",
                 "mechanism_status": "requires-independent-process-attribution",
-                "failure_metrics": ["level_total_wall_seconds"],
+                "failure_metrics": [
+                    "cumulative_wall_seconds" if cumulative_limit is not None and cumulative_wall > cumulative_limit
+                    else "level_total_wall_seconds"
+                ],
             }
         )
         return _finish_partition(
@@ -775,6 +859,7 @@ def run_partition(
             candidate_execution=candidate_execution, baseline_execution=baseline_execution,
             absolute=absolute, relative=relative, resume_proof=resume_proof,
             general_root_cause=root_cause, answer_failure_attribution=answer_attribution, started=started,
+            process_budget_outcome=process_outcome, measured_wall_seconds=total,
         )
     except (KeyboardInterrupt, InterruptedError):
         _require(state_path.read_bytes() == state_before, "版本级盲测执行中断改写正式 state")
@@ -796,6 +881,7 @@ def resume_partition_by_plan_identity(suite_root: Path, output_root: Path, plan_
         major_version=locator["major_version"], suite_identity=locator["suite_identity"], level=int(locator["level"]),
         previous_plan_identity=locator.get("previous_plan_identity"),
         previous_adjudication_path=(Path(locator["previous_adjudication"]) if locator.get("previous_adjudication") else None),
+        process_budget_path=(Path(locator["process_budget"]) if locator.get("process_budget") else None),
         plan_identity=plan_identity, resume=True, runner=runner,
     )
 
@@ -809,7 +895,8 @@ def _previous_partition_result(
     *,
     adjudication_path: Path | None = None,
     evaluation_batch_identity: str | None = None,
-) -> dict[str, str] | None:
+    process_budget: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
     previous_level = _mapping(contract, "sequence")["previous_level"]
     if previous_level is None:
         _require(previous_plan_identity is None, "版本级盲测 5 题分区不得声明前级")
@@ -825,7 +912,36 @@ def _previous_partition_result(
     if result.get("passed") is True and result.get("candidate_decision") is True:
         _require(adjudication_path is None, "已通过的版本级盲测前级不得叠加外部裁决")
         _require(result.get("next_level") == contract["level"], "版本级盲测前级未授权当前分区")
-        return {"result_identity": str(result["identity"])}
+        expected_budget = process_budget["identity"] if process_budget is not None else None
+        _require(plan.get("evaluation_process_budget_identity") == expected_budget, "版本级盲测前级进程预算身份漂移")
+        process = result.get("evaluation_process_budget")
+        cumulative = (
+            float(process["cumulative_wall_seconds"])
+            if isinstance(process, dict) and process.get("cumulative_wall_seconds") is not None
+            else float(result.get("wall_seconds", 0.0))
+        )
+        return {"result_identity": str(result["identity"]), "cumulative_wall_seconds": cumulative}
+
+    if process_budget is not None:
+        calibration = _mapping(process_budget, "calibration")
+        absolute = _mapping(result, "absolute_decision")
+        relative = _mapping(result, "relative_baseline_decision")
+        cause = _mapping(result, "general_root_cause")
+        if (
+            result.get("status") == "evaluation-process-rejected"
+            and result.get("candidate_decision") is True
+            and absolute.get("passed") is True
+            and relative.get("passed") is True
+            and cause.get("failure_metrics") == ["level_total_wall_seconds"]
+            and calibration.get("source_plan_identity") == previous_plan_identity
+            and calibration.get("source_result_identity") == result.get("identity")
+        ):
+            _require(adjudication_path is None, "进程预算已完成独立裁决，不得叠加其他前级裁决")
+            return {
+                "result_identity": str(result["identity"]),
+                "continuation_identity": str(process_budget["identity"]),
+                "cumulative_wall_seconds": float(result["wall_seconds"]),
+            }
 
     absolute = _mapping(result, "absolute_decision")
     distribution = _mapping(absolute, "retrieval_distribution")
@@ -856,6 +972,7 @@ def _previous_partition_result(
     return {
         "result_identity": str(result["identity"]),
         "continuation_identity": str(continuation["identity"]),
+        "cumulative_wall_seconds": float(result.get("wall_seconds", 0.0)),
     }
 
 
@@ -910,6 +1027,7 @@ def _partition_execution_dependencies(
     shared_conditions: dict[str, str],
     reader_binding: dict[str, Any],
     evaluation_batch: dict[str, Any],
+    process_budget: dict[str, Any] | None,
 ) -> dict[str, str]:
     import kernel_iteration_blind_gate as evaluator
     repository = suite_root.parents[2]
@@ -926,7 +1044,7 @@ def _partition_execution_dependencies(
         "semantic-representation-runtime": evidence.text_file_sha256(long_root / "semantic_representation.py"),
         "protocol": evidence.text_file_sha256(candidate_runtime["protocol"]),
     })
-    return {
+    dependencies = {
         "suite-contract": suite_contract["identity"],
         "partition-contract": contract["identity"],
         "suite": sealed["suite_identity"],
@@ -944,6 +1062,9 @@ def _partition_execution_dependencies(
         "observer-and-scorer": evaluator._implementation_identity()["observer-and-scorer"],
         "execution-controller": _implementation_identity()["execution-controller"],
     }
+    if process_budget is not None:
+        dependencies["evaluation-process-budget"] = process_budget["identity"]
+    return dependencies
 
 
 def _attribute_partition_answer_failure(
@@ -1088,8 +1209,11 @@ def _finish_partition(
     general_root_cause: dict[str, Any] | None,
     answer_failure_attribution: dict[str, Any] | None,
     started: float,
+    process_budget_outcome: dict[str, Any] | None = None,
+    measured_wall_seconds: float | None = None,
 ) -> dict[str, Any]:
     import kernel_iteration_blind_gate as evaluator
+    wall_seconds = measured_wall_seconds if measured_wall_seconds is not None else time.perf_counter() - started
     content = {
         "schema": EXECUTION_RESULT_SCHEMA,
         "plan_identity": plan["identity"],
@@ -1112,12 +1236,15 @@ def _finish_partition(
         "resume_proof": resume_proof,
         "general_root_cause": general_root_cause,
         "answer_failure_attribution": answer_failure_attribution,
-        "wall_seconds": time.perf_counter() - started,
+        "evaluation_process_budget": process_budget_outcome,
+        "wall_seconds": wall_seconds,
         "next_level": _mapping(contract, "sequence")["next_level"] if passed else None,
         "stage6_complete": bool(passed and _mapping(contract, "sequence")["terminal"] is True),
         "next_action": (
             "run-next-frozen-partition" if passed and not _mapping(contract, "sequence")["terminal"]
             else "final-community-preparation" if passed
+            else "recalibrate-evaluation-process-without-changing-candidate"
+            if status == "evaluation-process-rejected" and candidate_decision
             else "return-to-optimization-and-restart-same-suite-from-level-5"
         ),
     }
