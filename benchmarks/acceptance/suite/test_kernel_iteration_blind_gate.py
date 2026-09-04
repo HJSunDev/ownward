@@ -28,7 +28,9 @@ class BlindGateTests(unittest.TestCase):
                 self.assertEqual(value["execution"]["maximum_replacement_rounds"], 3)
                 self.assertEqual(value["absolute_gate"]["questions"], level)
                 self.assertEqual(value["absolute_gate"]["final_answer_accuracy_minimum"], 1.0)
-                self.assertEqual(value["absolute_gate"]["level_total_wall_seconds_maximum"], gate.LEVEL_BUDGETS[level])
+                self.assertNotIn("complete_consumer_retrieval_p95_ms_maximum", value["absolute_gate"])
+                self.assertEqual(value["evaluation_process_gate"]["level_total_wall_seconds_maximum"], gate.LEVEL_BUDGETS[level])
+                self.assertFalse(value["evaluation_process_gate"]["candidate_failure"])
                 self.assertEqual(len(gate._coverage_schedule(value)), level)
 
     def test_candidate_absolute_failure_never_runs_v0_and_destroys_raw_data(self) -> None:
@@ -337,10 +339,10 @@ class BlindGateTests(unittest.TestCase):
         ])
 
     def test_small_sample_p95_outlier_requires_bounded_sufficient_confirmation(self) -> None:
-        pending = gate._adjudicate_retrieval_p95(samples=15, actual=1000.0, maximum=553.0)
+        pending = gate._adjudicate_historical_retrieval_p95(samples=15, actual=1000.0, maximum=553.0)
         self.assertEqual(pending["status"], "bounded-confirmation-required")
         self.assertFalse(pending["candidate_failure"])
-        confirmed = gate._adjudicate_retrieval_p95(
+        confirmed = gate._adjudicate_historical_retrieval_p95(
             samples=15,
             actual=1000.0,
             maximum=553.0,
@@ -348,10 +350,10 @@ class BlindGateTests(unittest.TestCase):
         )
         self.assertEqual(confirmed["status"], "confirmed-environment-outlier")
         self.assertTrue(confirmed["passed"])
-        repeated = gate._adjudicate_retrieval_p95(samples=20, actual=600.0, maximum=553.0)
+        repeated = gate._adjudicate_historical_retrieval_p95(samples=20, actual=600.0, maximum=553.0)
         self.assertEqual(repeated["status"], "sufficient-distribution-failure")
         self.assertTrue(repeated["candidate_failure"])
-        hard = gate._adjudicate_retrieval_p95(
+        hard = gate._adjudicate_historical_retrieval_p95(
             samples=1, actual=1.0, maximum=553.0, hard_timeout_or_execution_error=True,
         )
         self.assertEqual(hard["status"], "hard-failure")
@@ -562,7 +564,8 @@ class BlindGateTests(unittest.TestCase):
         history = json.loads(path.read_text(encoding="utf-8"))
         content = {key: value for key, value in history.items() if key != "identity"}
         self.assertEqual(history["identity"], gate.evidence.canonical_sha256(content))
-        self.assertEqual(history["controller_identity"], gate._implementation_identity()["controller"])
+        migration = gate._load_evaluator_reliability_migration(self.suite_root)
+        self.assertEqual(history["controller_identity"], migration["target_controller_identity"])
         previous = history["last_passed_gate"]
         self.assertEqual(previous["level"], 15)
         self.assertEqual(previous["plan_identity"], "4f65af5bb145b7643810be31c206b1ebe71c4b8e2ec5ae942873f3139d4c832d")

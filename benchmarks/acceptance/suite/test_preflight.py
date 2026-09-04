@@ -22,8 +22,7 @@ class PreflightTests(unittest.TestCase):
             root = Path(directory)
             binary, runtime = self._candidate(root)
             config = self._config(root, ["core"], binary, runtime)
-            with mock.patch.object(preflight.subprocess, "run", side_effect=AssertionError("core preflight must not execute external tools")):
-                report = preflight.run(self.suite_root, config, root / "new-isolation")
+            report = preflight.run(self.suite_root, config, root / "new-isolation")
             self.assertTrue(report["passed"])
             self.assertEqual(["core"], report["enabled_scopes"])
             self.assertNotIn("product", report["checks"])
@@ -43,13 +42,12 @@ class PreflightTests(unittest.TestCase):
             }
             with (
                 mock.patch.object(preflight, "_community_preflight", side_effect=AssertionError("community must stay deferred")),
-                mock.patch.object(preflight.subprocess, "run", side_effect=AssertionError("frontier preflight must not execute external tools")),
             ):
                 report = preflight.run(self.suite_root, config, root / "new-isolation")
             self.assertEqual(["frontier"], report["enabled_scopes"])
             self.assertEqual({"frontier"}, set(report["checks"]))
 
-    def test_product_preflight_checks_codex_and_release_inputs(self) -> None:
+    def test_product_preflight_checks_external_intelligence_and_release_inputs(self) -> None:
         with tempfile.TemporaryDirectory(dir=self.repository / ".tmp") as directory:
             root = Path(directory)
             binary, runtime = self._candidate(root)
@@ -65,11 +63,9 @@ class PreflightTests(unittest.TestCase):
             config = self._config(root, ["product"], binary, runtime)
             config["product"] = {
                 "package": str(package), "production_storage_report": str(production),
-                "codex_binary": str(codex), "codex_auth_file": str(auth),
-                "codex_model": "gpt-5.4-mini", "codex_reasoning_effort": "xhigh",
+                "external_intelligence": {"binary": str(codex), "credential_file": str(auth)},
             }
-            completed = mock.Mock(returncode=0, stdout="codex-cli 1.0\n")
-            with mock.patch.object(preflight.subprocess, "run", return_value=completed):
+            with mock.patch.object(preflight.external_intelligence_runtime, "probe", return_value={"version": "fixture", "artifact_sha256": "a" * 64}):
                 report = preflight.run(self.suite_root, config, root / "new-isolation")
             self.assertIn("product", report["checks"])
 

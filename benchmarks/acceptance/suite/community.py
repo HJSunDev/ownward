@@ -143,7 +143,7 @@ def _run_complete(path: Path, binding: dict[str, str]) -> dict[str, Any] | None:
         or report.get("execution", {}).get("protocol_valid") is not True
         or report.get("execution", {}).get("evidence_complete") is not True
         or report.get("quality", {}).get("assessment_status") != "not_determined"
-        or report.get("passed") is not False
+        or report.get("passed") is not True
     ):
         return None
     return report
@@ -172,6 +172,7 @@ def execute(
     external_configuration = external_intelligence_runtime.configuration_from_execution(config)
     external_intelligence_runtime.validate_configuration(external_configuration)
     external_roles = external_intelligence_runtime.role_profile_from_execution(config)
+    external_implementation = external_intelligence_runtime.selected_implementation(external_configuration.driver)
     adapter = (suite_root.parents[1] / "longmemeval_s" / "run.py").resolve()
     binary = Path(config["binary"]).resolve()
     embedding = Path(config["embedding_bundle_dir"]).resolve()
@@ -225,6 +226,18 @@ def execute(
         shutil.copyfile(source, temporary)
         temporary.replace(evidence / name)
     adapter_report = existing
+    adapter_capabilities = adapter_report.get("capabilities")
+    _require(isinstance(adapter_capabilities, dict), "community adapter did not report external-intelligence roles")
+    for role in ("semantic", "reader", "judge"):
+        actual = adapter_capabilities.get(role)
+        expected = external_roles[role]
+        _require(
+            isinstance(actual, dict)
+            and actual.get("source") == external_implementation["provider"]
+            and actual.get("model") == expected["model"]
+            and actual.get("reasoning_effort") == expected["reasoning_effort"],
+            f"community adapter used an external-intelligence identity other than the frozen binding: {role}",
+        )
     definition = contract["evidence_layers"]["community"]
     wall_seconds = float(adapter_report["cost"]["wall_seconds"])
     within_budget = wall_seconds <= float(definition["expected_wall_seconds"]["max"])
@@ -280,8 +293,8 @@ def execute(
             "diagnostic_summary_sha256": _sha256(run_dir / "diagnostic-summary.json"),
             "checkpoint_manifest_sha256": _sha256(run_dir / "checkpoint-manifest.json"),
         },
-        "completion": {"status": "not_satisfied", "reason": "community-quality-not-determined"},
-        "passed": False,
+        "completion": {"status": "completed", "reason": "official-benchmark-evidence-complete"},
+        "passed": bool(execution_complete and profile_complete and diagnostics_complete and within_budget),
         "started_at": started_at, "finished_at": datetime.now(timezone.utc).isoformat(),
     }
     return report

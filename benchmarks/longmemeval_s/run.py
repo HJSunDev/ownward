@@ -2777,6 +2777,14 @@ def execute(
     for bucket in by_type.values():
         bucket["accuracy"] = bucket["correct"] / bucket["questions"]
     query_values = sorted(float(item["retrieval"]["total_ms"]) for item in ordered)
+    kernel_call_values = sorted(
+        float(step["elapsed_ms"])
+        for item in ordered
+        for step in item["retrieval"].get("selection_steps", [])
+        if isinstance(step, dict) and isinstance(step.get("elapsed_ms"), (int, float))
+    )
+    require(kernel_call_values, "active retrieval report has no Ownward tool-call latency")
+    question_wall_values = sorted(float(item["wall_seconds"]) for item in ordered)
     search_values = sorted(float(item["retrieval"]["search_ms"]) for item in ordered)
     evidence_search_values = sorted(float(item["retrieval"].get("evidence_search_ms", 0)) for item in ordered)
     read_values = sorted(float(item["retrieval"]["read_ms"]) for item in ordered)
@@ -2808,6 +2816,24 @@ def execute(
         "questions": len(ordered), "correct": correct, "accuracy": accuracy, "categories": by_type,
         "retrieval": {
             "mean_ms": sum(query_values) / len(query_values), "p95_ms": percentile95(query_values), "max_ms": max(query_values),
+            "kernel_call_latency": {
+                "calls": len(kernel_call_values),
+                "mean_ms": sum(kernel_call_values) / len(kernel_call_values),
+                "p95_ms": percentile95(kernel_call_values),
+                "max_ms": max(kernel_call_values),
+            },
+            "active_retrieval_cumulative": {
+                "questions": len(query_values),
+                "mean_ms": sum(query_values) / len(query_values),
+                "p95_ms": percentile95(query_values),
+                "max_ms": max(query_values),
+            },
+            "question_wall": {
+                "questions": len(question_wall_values),
+                "mean_seconds": sum(question_wall_values) / len(question_wall_values),
+                "p95_seconds": percentile95(question_wall_values),
+                "max_seconds": max(question_wall_values),
+            },
             "search_mean_ms": sum(search_values) / len(search_values),
             "evidence_search_mean_ms": sum(evidence_search_values) / len(evidence_search_values),
             "read_mean_ms": sum(read_values) / len(read_values),
@@ -2845,13 +2871,17 @@ def execute(
             "categories": by_type,
             "assessment_status": protocol["acceptance"]["quality_assessment_status"],
             "assessment_basis": protocol["acceptance"]["quality_assessment_basis"],
-            "first_version_condition_satisfied": False,
+            "first_version_condition_satisfied": None,
         },
         "completion": {
-            "status": "not_satisfied",
-            "reason": "community-quality-not-determined",
+            "status": "completed",
+            "reason": "official-benchmark-evidence-complete",
         },
-        "passed": False,
+        "passed": bool(
+            all(item.get("complete") is True for item in ordered)
+            and diagnostic_summary["questions"] == len(ordered)
+            and accumulated_wall_seconds <= float(protocol["execution"]["full_wall_seconds"])
+        ),
         "started_at": started_at,
         "finished_at": datetime.now(timezone.utc).isoformat(),
     }

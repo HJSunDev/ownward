@@ -27,8 +27,6 @@ class BindingError(ValueError):
 TARGET_STAGES = set(relationships.TARGET_STAGES)
 SCOPE_NAMES = set(relationships.SCOPE_CONFIG)
 MODE_SCOPES = relationships.MODE_SCOPES
-ACTIVE_CODEX_MODEL = "gpt-5.4-mini"
-ACTIVE_CODEX_REASONING_EFFORT = "xhigh"
 LONGMEMEVAL_S_ENVIRONMENT_SCHEMA = "ownward.longmemeval-s-environment/v1"
 LONGMEMEVAL_S_CODE_REVISION = "9e0b455f4ef0e2ab8f2e582289761153549043fc"
 LONGMEMEVAL_S_DATA_REVISION = "98d7416c24c778c2fee6e6f3006e7a073259d48f"
@@ -77,12 +75,15 @@ def create(suite_root: Path, config_path: Path, output_dir: Path) -> dict[str, A
         product = _mapping(config, "product")
         package = Path(product["package"]).resolve()
         production = Path(product["production_storage_report"]).resolve()
-        codex = Path(product["codex_binary"]).resolve()
-        auth = Path(product["codex_auth_file"]).resolve()
         _require(package.is_dir() and (package / "manifest.json").is_file(), "候选发布包或清单不存在")
         _require(production.is_file(), "生产规模存储证据不存在")
-        _require(codex.is_file(), "Codex 不存在")
-        _require(auth.is_file(), "Codex 认证文件不存在")
+        try:
+            external_intelligence_runtime.validate_configuration(
+                external_intelligence_runtime.configuration_from_execution(product)
+            )
+            external_intelligence_runtime.role_profile_from_execution(product)
+        except external_intelligence_runtime.ExternalIntelligenceError as error:
+            raise BindingError(str(error)) from error
     if "community" in scopes_to_bind:
         _validate_community_workspace(config, workspace)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -361,10 +362,9 @@ def validate_config(config: dict[str, Any]) -> None:
             _require(manifest.get("runtime_identity") == runtime_identity, "独立候选组件清单与运行身份错绑")
     if "product" in enabled:
         product = _mapping(config, "product")
-        for name in ("package", "production_storage_report", "codex_binary", "codex_auth_file", "codex_model", "codex_reasoning_effort"):
+        for name in ("package", "production_storage_report"):
             _require(isinstance(product.get(name), str) and product[name].strip(), f"执行配置缺少 product.{name}")
-        _require(product["codex_model"] == ACTIVE_CODEX_MODEL, "专项集必须使用固定外部智能体模型")
-        _require(product["codex_reasoning_effort"] == ACTIVE_CODEX_REASONING_EFFORT, "专项集必须使用固定外部智能体推理强度")
+        _validate_external_intelligence_config(product)
     if "community" in enabled:
         _validate_community_config(_mapping(config, "community"))
 
@@ -443,7 +443,16 @@ def _input_manifest(suite_root: Path, config: dict[str, Any], scope: str) -> dic
         production = Path(product["production_storage_report"]).resolve()
         result["external_files"] = [{"id": "production_storage_report", "name": production.name, "sha256": sha256(production)}]
         result["external_trees"] = {"product_package": _directory_files(package)}
-        result["protocol"] = {"codex_model": product["codex_model"], "codex_reasoning_effort": product["codex_reasoning_effort"]}
+        configuration = external_intelligence_runtime.configuration_from_execution(product)
+        implementation = external_intelligence_runtime.selected_implementation(configuration.driver)
+        roles = external_intelligence_runtime.role_profile_from_execution(product)
+        result["protocol"] = {
+            "external_intelligence": {
+                "driver": configuration.driver,
+                "provider": implementation["provider"],
+                "roles": {name: roles[name] for name in ("semantic", "reader")},
+            }
+        }
     elif scope == "community":
         community = _mapping(config, "community")
         environment_path = Path(community["environment_manifest"]).resolve()
@@ -469,27 +478,16 @@ def _input_manifest(suite_root: Path, config: dict[str, Any], scope: str) -> dic
             "official_data_revision": LONGMEMEVAL_S_DATA_REVISION,
             "official_data_sha256": LONGMEMEVAL_S_DATA_SHA256,
         }
-        if "external_intelligence" in community:
-            configuration = external_intelligence_runtime.configuration_from_execution(community)
-            implementation = external_intelligence_runtime.selected_implementation(configuration.driver)
-            result["protocol"] = {
-                **common_protocol,
-                "external_intelligence": {
-                    "driver": configuration.driver,
-                    "provider": implementation["provider"],
-                    "roles": external_intelligence_runtime.role_profile_from_execution(community),
-                },
-            }
-        else:
-            result["protocol"] = {
-                **common_protocol,
-                "codex_semantic_model": community["codex_semantic_model"],
-                "codex_semantic_reasoning_effort": community["codex_semantic_reasoning_effort"],
-                "codex_reader_model": community["codex_reader_model"],
-                "codex_reader_reasoning_effort": community["codex_reader_reasoning_effort"],
-                "codex_judge_model": community["codex_judge_model"],
-                "codex_judge_reasoning_effort": community["codex_judge_reasoning_effort"],
-            }
+        configuration = external_intelligence_runtime.configuration_from_execution(community)
+        implementation = external_intelligence_runtime.selected_implementation(configuration.driver)
+        result["protocol"] = {
+            **common_protocol,
+            "external_intelligence": {
+                "driver": configuration.driver,
+                "provider": implementation["provider"],
+                "roles": external_intelligence_runtime.role_profile_from_execution(community),
+            },
+        }
     return result
 
 
@@ -512,13 +510,12 @@ def _adapter_projection(suite_root: Path, scope: str) -> dict[str, Any]:
 def _tool_manifest(suite_root: Path, scope: str, config: dict[str, Any] | None = None) -> dict[str, Any]:
     _require(scope in SCOPE_NAMES, f"未知绑定范围: {scope}")
     repository = suite_root.parents[2]
-    shared = [suite_root / name for name in ("run.py", "binding.py", "execution.py", "execution_support.py", "lifecycle.py", "evidence.py", "contract.py", "materials.py", "process_control.py")]
     responsibility_path = suite_root / "adapters" / "product" / "tool-responsibilities.json"
     scoped = {
-        "frontier": [suite_root / "execution_frontier.py", suite_root / "frontier.py", repository / "cmd" / "ownward-frontier" / "main.go"],
-        "core": [suite_root / "execution_core.py", suite_root / "adapters" / "core" / "verify.py", repository / "benchmarks" / "support" / "ownward_mcp.py"],
-        "product": [suite_root / "execution_core.py", suite_root / "execution_product.py", suite_root / "product.py", suite_root / "product_scoring.py", suite_root / "resource_environment.py", responsibility_path, *sorted(path for path in (suite_root / "adapters" / "product").glob("*.py") if not path.name.startswith("test_")), *sorted(path for path in (suite_root / "adapters" / "product_resource").glob("*.py") if not path.name.startswith("test_")), repository / "benchmarks" / "support" / "ownward_mcp.py"],
-        "community": [suite_root / "execution_community.py", suite_root / "community.py", suite_root / "process_control.py", repository / "benchmarks" / "longmemeval_s" / "run.py", repository / "benchmarks" / "longmemeval_s" / "external_intelligence_runtime.py", repository / "benchmarks" / "longmemeval_s" / "semantic_representation.py", repository / "benchmarks" / "longmemeval_s" / "environment.py", repository / "benchmarks" / "longmemeval_s" / "protocol.json", repository / "benchmarks" / "longmemeval_s" / "constraints.txt", repository / "benchmarks" / "support" / "external_intelligence.py", repository / "benchmarks" / "support" / "ownward_mcp.py"],
+        "frontier": [suite_root / name for name in ("execution_frontier.py", "frontier.py", "execution_support.py", "evidence.py", "contract.py", "materials.py", "process_control.py")] + [repository / "cmd" / "ownward-frontier" / "main.go"],
+        "core": [suite_root / name for name in ("execution_core.py", "execution_support.py", "evidence.py", "contract.py", "materials.py", "process_control.py")] + [suite_root / "adapters" / "core" / "verify.py", repository / "benchmarks" / "support" / "ownward_mcp.py"],
+        "product": [],
+        "community": [suite_root / name for name in ("execution_community.py", "community.py", "evidence.py", "contract.py", "materials.py", "process_control.py")] + [repository / "benchmarks" / "longmemeval_s" / name for name in ("run.py", "external_intelligence_runtime.py", "semantic_representation.py", "environment.py", "protocol.json", "constraints.txt")] + [repository / "benchmarks" / "support" / name for name in ("external_intelligence.py", "ownward_mcp.py")],
     }[scope]
     if scope == "community":
         section = _mapping(config, "community") if config is not None else {}
@@ -527,9 +524,29 @@ def _tool_manifest(suite_root: Path, scope: str, config: dict[str, Any] | None =
             if section else external_intelligence_runtime.CURRENT_DRIVER
         )
         scoped.extend(external_intelligence_runtime.implementation_files(driver))
-    files = _files(repository, shared + scoped)
     if scope == "product":
-        return _product_tool_manifest(repository, responsibility_path, files)
+        section = _mapping(config, "product") if config is not None else {}
+        driver = (
+            external_intelligence_runtime.configuration_from_execution(section).driver
+            if section else external_intelligence_runtime.CURRENT_DRIVER
+        )
+        implementation_files = external_intelligence_runtime.implementation_files(driver)
+        declaration = load_json(responsibility_path)
+        declared_paths = [repository / path for path in declaration["raw_execution"] + declaration["derivation"]]
+        files = _files(repository, declared_paths + list(implementation_files) + [
+            repository / "benchmarks" / "support" / "external_intelligence.py",
+            repository / "benchmarks" / "longmemeval_s" / "external_intelligence_runtime.py",
+        ])
+        external_paths = {
+            path.resolve().relative_to(repository.resolve()).as_posix()
+            for path in (*implementation_files,
+                repository / "benchmarks" / "support" / "external_intelligence.py",
+                repository / "benchmarks" / "longmemeval_s" / "external_intelligence_runtime.py")
+        }
+        result = _product_tool_manifest(repository, responsibility_path, files, external_paths)
+        result["external_intelligence_selection"] = external_intelligence_runtime.selected_implementation(driver)
+        return result
+    files = _files(repository, scoped)
     result = {
         "schema": "ownward.acceptance-tool-manifest/v4",
         "scope": scope,
@@ -542,6 +559,7 @@ def _tool_manifest(suite_root: Path, scope: str, config: dict[str, Any] | None =
 
 def _product_tool_manifest(
     repository: Path, responsibility_path: Path, files: list[dict[str, str]],
+    external_raw_paths: set[str] | None = None,
 ) -> dict[str, Any]:
     declaration = load_json(responsibility_path)
     _require(declaration.get("schema") == "ownward.product-tool-responsibilities/v1", "product 工具职责清单 schema 无效")
@@ -554,8 +572,8 @@ def _product_tool_manifest(
         and all(isinstance(value, str) and value for value in raw_paths + derivation_paths),
         "product 工具职责清单内容无效",
     )
-    raw_set, derivation_set = set(raw_paths), set(derivation_paths)
-    _require(len(raw_set) == len(raw_paths) and len(derivation_set) == len(derivation_paths), "product 工具职责清单包含重复路径")
+    _require(len(set(raw_paths)) == len(raw_paths) and len(set(derivation_paths)) == len(derivation_paths), "product 工具职责清单包含重复路径")
+    raw_set, derivation_set = set(raw_paths) | (external_raw_paths or set()), set(derivation_paths)
     _require(not raw_set & derivation_set, "product 工具职责发生重叠")
     _require(raw_set | derivation_set == set(available), "product 工具职责没有完整覆盖活动文件")
     responsibilities = {
@@ -609,27 +627,18 @@ def _environment_manifest(config: dict[str, Any], scope: str) -> dict[str, Any]:
     if relationships.SCOPE_CONFIG[scope]["embedding"]:
         _, bundle = _candidate_paths(config)
         result["embedding"] = _embedding_identity(bundle)
-    if relationships.SCOPE_CONFIG[scope]["codex"]:
+    if relationships.SCOPE_CONFIG[scope]["external_intelligence"]:
         section = _mapping(config, "product" if scope == "product" else "community")
-        if scope == "product":
-            codex = Path(section["codex_binary"]).resolve()
-            completed = subprocess.run([*_executable_command(codex), "--version"], capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
-            _require(completed.returncode == 0 and completed.stdout.strip(), "无法读取外部智能体版本")
-            result["codex"] = {"version": completed.stdout.strip(), "entry_sha256": sha256(codex)}
-        else:
-            try:
-                external_configuration = external_intelligence_runtime.configuration_from_execution(section)
-                probe = external_intelligence_runtime.probe(external_configuration)
-            except external_intelligence_runtime.ExternalIntelligenceError as error:
-                raise BindingError(str(error)) from error
-            runtime = {"version": probe["version"], "entry_sha256": probe["artifact_sha256"]}
-            if "external_intelligence" in section:
-                implementation = external_intelligence_runtime.selected_implementation(external_configuration.driver)
-                result["external_intelligence"] = {
-                    **runtime, "driver": external_configuration.driver, "provider": implementation["provider"],
-                }
-            else:
-                result["codex"] = runtime
+        try:
+            external_configuration = external_intelligence_runtime.configuration_from_execution(section)
+            probe = external_intelligence_runtime.probe(external_configuration)
+        except external_intelligence_runtime.ExternalIntelligenceError as error:
+            raise BindingError(str(error)) from error
+        implementation = external_intelligence_runtime.selected_implementation(external_configuration.driver)
+        result["external_intelligence"] = {
+            "version": probe["version"], "entry_sha256": probe["artifact_sha256"],
+            "driver": external_configuration.driver, "provider": implementation["provider"],
+        }
     if scope == "community":
         community = _mapping(config, "community")
         manifest_path = Path(community["environment_manifest"]).resolve()
@@ -696,16 +705,22 @@ def _candidate_paths(config: dict[str, Any]) -> tuple[Path, Path]:
     return Path(candidate["binary"]).resolve(), Path(candidate["embedding_bundle_dir"]).resolve()
 
 
+def _validate_external_intelligence_config(section: dict[str, Any]) -> None:
+    try:
+        configuration = external_intelligence_runtime.configuration_from_execution(section)
+        external_intelligence_runtime.validate_configuration(configuration)
+        external_intelligence_runtime.role_profile_from_execution(section)
+    except external_intelligence_runtime.ExternalIntelligenceError as error:
+        raise BindingError(str(error)) from error
+
+
 def _validate_community_config(community: dict[str, Any]) -> None:
     _require("judge_api_key_env" not in community, "LongMemEval-S community 不得要求额外 API Key")
     for name in ("environment_manifest", "protocol", "output_dir"):
         _require(isinstance(community.get(name), str) and community[name].strip(), f"执行配置缺少 community.{name}")
-    try:
-        external_configuration = external_intelligence_runtime.configuration_from_execution(community)
-        external_intelligence_runtime.validate_configuration(external_configuration)
-        external_roles = external_intelligence_runtime.role_profile_from_execution(community)
-    except external_intelligence_runtime.ExternalIntelligenceError as error:
-        raise BindingError(str(error)) from error
+    _validate_external_intelligence_config(community)
+    external_configuration = external_intelligence_runtime.configuration_from_execution(community)
+    external_roles = external_intelligence_runtime.role_profile_from_execution(community)
     manifest_path = Path(community["environment_manifest"]).resolve()
     protocol_path = Path(community["protocol"]).resolve()
     _require(manifest_path.is_file() and protocol_path.is_file(), "LongMemEval-S 固定环境或协议不存在")

@@ -19,7 +19,15 @@ def require_blind_completion(config: dict[str, Any]) -> dict[str, Any]:
     require(isinstance(gate, dict), "qualification/full 必须先完成 5/15/25/50 四级盲测")
     output_root = Path(str(gate.get("blind_suite_output", ""))).resolve()
     suite_identity = str(gate.get("suite_identity", ""))
-    require(output_root.is_dir() and _is_sha256(suite_identity), "最终内部验收的盲测定位无效")
+    terminal_plan_identity = str(gate.get("terminal_plan_identity", ""))
+    evaluation_batch_identity = str(gate.get("evaluation_batch_identity", ""))
+    require(
+        output_root.is_dir()
+        and _is_sha256(suite_identity)
+        and _is_sha256(terminal_plan_identity)
+        and _is_sha256(evaluation_batch_identity),
+        "最终内部验收必须显式绑定套题、评测批次和 50 题终态计划",
+    )
 
     candidate = config.get("candidate")
     require(isinstance(candidate, dict), "最终内部验收缺少候选清单")
@@ -33,18 +41,14 @@ def require_blind_completion(config: dict[str, Any]) -> dict[str, Any]:
     require(_is_sha256(candidate_identity), "候选组件清单缺少盲测 subject 身份")
 
     candidate_root = output_root / "blind-suite-runs" / suite_identity / candidate_identity
-    terminals: list[tuple[Path, dict[str, Any]]] = []
-    if candidate_root.is_dir():
-        for path in candidate_root.glob("*/result.json"):
-            try:
-                value = _load(path)
-            except (OSError, ValueError, json.JSONDecodeError):
-                continue
-            if value.get("level") == 50 and value.get("stage6_complete") is True:
-                terminals.append((path.parent, value))
-    require(len(terminals) == 1, "当前候选没有唯一完成的 5/15/25/50 盲测终态")
-    terminal_root, terminal = terminals[0]
-    return _validate_chain(candidate_root, terminal_root, terminal, suite_identity, candidate_identity)
+    terminal_root = candidate_root / terminal_plan_identity
+    terminal_path = terminal_root / "result.json"
+    require(terminal_path.is_file(), "指定的 50 题盲测终态不存在")
+    terminal = _load(terminal_path)
+    require(terminal.get("level") == 50 and terminal.get("stage6_complete") is True, "指定计划不是完成的 50 题终态")
+    result = _validate_chain(candidate_root, terminal_root, terminal, suite_identity, candidate_identity)
+    require(result["evaluation_batch_identity"] == evaluation_batch_identity, "最终内部验收绑定了另一评测批次")
+    return result
 
 
 def _validate_chain(

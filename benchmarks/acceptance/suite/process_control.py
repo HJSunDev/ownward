@@ -83,12 +83,19 @@ def run(
         finally:
             process.stdin.close()
     timed_out = False
+    interrupted: BaseException | None = None
     try:
         process.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
         timed_out = True
         _terminate_tree(process)
         process.wait()
+    except BaseException as error:
+        interrupted = error
+    finally:
+        if process.poll() is None:
+            _terminate_tree(process)
+            process.wait()
     for thread in threads:
         thread.join(timeout=5)
         if thread.is_alive():
@@ -101,6 +108,8 @@ def run(
             stdout_text,
             stderr_text,
         )
+    if interrupted is not None:
+        raise interrupted
     if stream_errors:
         raise RuntimeError(f"process output capture failed: {stream_errors[0]}")
     return subprocess.CompletedProcess(command, process.returncode, stdout_text, stderr_text)

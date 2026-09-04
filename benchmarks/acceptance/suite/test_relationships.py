@@ -31,8 +31,9 @@ class InternalRelationshipMatrixTests(unittest.TestCase):
             **common, "enabled_scopes": ["product"], "candidate": {"binary": "binary", "embedding_bundle_dir": "embedding"},
             "product": {"package": "package", "production_storage_report": "production", "codex_binary": "codex", "codex_auth_file": "auth", "codex_model": "gpt-5.4-mini", "codex_reasoning_effort": "xhigh"},
         }
-        for config in (frontier, core, product):
-            binding.validate_config(config)
+        with unittest.mock.patch.object(binding.external_intelligence_runtime, "validate_configuration"):
+            for config in (frontier, core, product):
+                binding.validate_config(config)
 
     def test_frontier_environment_excludes_observer_and_embedding(self) -> None:
         first = {"frontier": {"tool": "first"}}

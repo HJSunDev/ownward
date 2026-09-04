@@ -1,0 +1,10 @@
+{
+  "schema": "ownward.kernel-iteration-manifest/v1",
+  "major_version": "v2",
+  "paths": {
+    "validation_contract": "iteration/v2/validation-contract.json",
+    "blind_budget": "iteration/v2/blind-calibration-budget.json",
+    "comparison_contract": "iteration/v2/comparison-contract.json",
+    "measurement_rejudgment": "iteration/v2/stage6-active-retrieval-measurement-correction.json"
+  }
+}

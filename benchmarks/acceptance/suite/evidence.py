@@ -103,7 +103,8 @@ def validate_adapters(suite_root: Path) -> dict[str, Any]:
     _require(community.get("data_revision") == "98d7416c24c778c2fee6e6f3006e7a073259d48f", "LongMemEval-S 数据版本未固定")
     _require(community.get("data_sha256") == "d6f21ea9d60a0d56f34a05b609c79c88a451d2ae03597821ea3d5a9678c3a442", "LongMemEval-S 数据摘要未固定")
     _require(community.get("questions") == 500, "LongMemEval-S 题量无效")
-    _require(community.get("capability_sources") == {"semantic": "codex", "reader": "codex", "judge": "codex"}, "LongMemEval-S 能力来源未固定")
+    _require(community.get("external_intelligence_contract") == "ownward.external-intelligence/v1", "LongMemEval-S 外部智能合同无效")
+    _require(community.get("capability_roles") == ["semantic", "reader", "judge"], "LongMemEval-S 外部智能角色不完整")
     adapter_path = (suite_root / str(community.get("adapter"))).resolve()
     protocol_path = (suite_root / str(community.get("protocol"))).resolve()
     _require(adapter_path.is_file() and protocol_path.is_file(), "LongMemEval-S 适配器或协议不存在")
@@ -318,7 +319,16 @@ def _validate_community(contract: dict[str, Any], report: dict[str, Any]) -> Non
     definition = contract["evidence_layers"]["community"]
     _require(report.get("official_version") == definition["version"], "社区报告官方版本无效")
     _require(report.get("profile") == definition["profile"], "社区报告生产评测口径无效")
-    _require(report.get("capabilities") == definition["capabilities"], "社区报告能力来源无效")
+    capabilities = report.get("capabilities")
+    _require(isinstance(capabilities, dict) and set(capabilities) == set(definition["external_intelligence"]["roles"]), "社区报告外部智能角色不完整")
+    for name, capability in capabilities.items():
+        _require(
+            isinstance(capability, dict)
+            and isinstance(capability.get("source"), str) and bool(capability["source"])
+            and isinstance(capability.get("model"), str) and bool(capability["model"])
+            and isinstance(capability.get("reasoning_effort"), str) and bool(capability["reasoning_effort"]),
+            f"社区报告外部智能角色无效: {name}",
+        )
     benchmark = report.get("benchmark")
     _require(isinstance(benchmark, dict) and benchmark.get("questions") == definition["questions"] and benchmark.get("complete") is True, "社区报告基准范围不完整")
     _require(set(benchmark.get("question_types", [])) == set(definition["question_types"]), "社区报告问题类型不完整")
@@ -353,8 +363,8 @@ def _validate_community(contract: dict[str, Any], report: dict[str, Any]) -> Non
     _require(_is_sha256(str(submission.get("diagnostic_summary_sha256", ""))), "社区诊断汇总摘要无效")
     _require(_is_sha256(str(submission.get("checkpoint_manifest_sha256", ""))), "社区报告检查点清单摘要无效")
     completion = report.get("completion")
-    _require(isinstance(completion, dict) and completion.get("status") == "not_satisfied" and completion.get("reason") == "community-quality-not-determined", "社区第一版完成状态无效")
-    _require(report.get("passed") is False, "社区质量尚未判定时不得形成通过检查点")
+    _require(isinstance(completion, dict) and completion.get("status") == "completed" and completion.get("reason") == "official-benchmark-evidence-complete", "社区正式证据完成状态无效")
+    _require(report.get("passed") is True, "社区正式执行与证据完整时必须形成通过检查点")
 
 
 def _recall(returned: list[str], expected: list[str]) -> float:

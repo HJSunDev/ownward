@@ -1,6 +1,6 @@
 {
   "schema": "ownward.kernel-iteration-stage4-closure-summary/v1",
-  "identity": "bcd3c1dfa788ccb0c4177b44b2844b5dd0ecf0d611ab8da4f5d8077faf8eedd8",
+  "identity": "a3221cd357c7d7385efaa8fe87a71726388179d4375d99fc37219824d70c8eb3",
   "candidate_subject_identity": "460e3f8205dab3f47c83d3620a89be447264ab81d9327e5602f06866fa4cb5fd",
   "formal": false,
   "dimensions": {
@@ -79,8 +79,8 @@
     {
       "segment": "dependency-continuity",
       "path": "benchmarks/acceptance/suite/iteration/v2/stage4-resource-cost-raw-vector-lifecycle-dependency-migration.json",
-      "sha256": "c0eac181d2b9515b9f5d83b17055e39be4b01c508f74989428ba809cb8922d1c",
-      "identity": "3b2d766dfd8d298c511d8b7bb3f9d062d970d873553f4887e3de3ac361e694fb"
+      "sha256": "a782a64cd6300c14857dd64075cdba6ef28c05ee7ecc5f5cab378dff27292d60",
+      "identity": "eccbec08aa5e3824890cf3315abe45d29f26aec81d3a0ca9b4a7a47825e3b9c0"
     }
   ]
 }

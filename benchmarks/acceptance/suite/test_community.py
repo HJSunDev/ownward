@@ -30,7 +30,7 @@ class CommunityExecutionTests(unittest.TestCase):
             report = {
                 **identity, "questions": 500, "submission_sha256": community._sha256(package),
                 "execution": {"complete": True, "protocol_valid": True, "evidence_complete": True},
-                "quality": {"assessment_status": "not_determined"}, "passed": False,
+                "quality": {"assessment_status": "not_determined"}, "passed": True,
             }
             (root / "report.json").write_text(json.dumps(report), encoding="utf-8")
             self.assertEqual(500, community._run_complete(root, self.binding)["questions"])

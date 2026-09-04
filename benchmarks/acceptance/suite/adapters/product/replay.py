@@ -18,9 +18,8 @@ def rebind_replayable_evidence(
     tasks: dict[str, Any],
     binding: dict[str, Any],
     resource_sha256: str,
-    codex_binary: Path,
-    codex_model: str,
-    codex_reasoning_effort: str,
+    external_intelligence_identity: dict[str, Any],
+    external_intelligence_roles: dict[str, dict[str, str]],
     include_preflight: bool,
 ) -> list[dict[str, Any]]:
     """Re-derive checkpoints from immutable traces after parser-only tool changes.
@@ -33,9 +32,8 @@ def rebind_replayable_evidence(
     _require(isinstance(scenario_tasks, list), "product replay requires frozen scenario tasks")
     args = SimpleNamespace(
         evidence_dir=workspace / "evidence" / "product" / "scenarios",
-        codex_binary=codex_binary.resolve(),
-        codex_model=codex_model,
-        codex_reasoning_effort=codex_reasoning_effort,
+        external_intelligence_identity=external_intelligence_identity,
+        external_roles=external_intelligence_roles,
     )
     receipts = _rebind_scenarios(
         args, scenario_tasks, binding, resource_sha256, binding_dir.resolve(),
@@ -220,7 +218,7 @@ def _replay_progress(
         for attempt in sorted(item for item in stage_root.glob("attempt-*") if item.is_dir()):
             events = attempt / "events.jsonl"
             _require(events.is_file(), "semantic replay lacks raw event evidence")
-            trace = verify.codex_session.load_exec_events(events.read_text(encoding="utf-8"))
+            trace = verify.session_trace.load_exec_events(events.read_text(encoding="utf-8"))
             operations.extend(str(value) for value in trace.protocol_operations)
             attempt_record = attempt / "attempt.json"
             if attempt_record.is_file():
@@ -264,7 +262,7 @@ def _replay_agent(
     accepted: tuple[Any, list[str], list[str], bool] | None = None
     for recorded in agent["query_attempts"]:
         stage = scenario_root / str(recorded["path"])
-        trace = verify.codex_session.load_exec_events((stage / "events.jsonl").read_text(encoding="utf-8"))
+        trace = verify.session_trace.load_exec_events((stage / "events.jsonl").read_text(encoding="utf-8"))
         traces.append(trace)
         status = "accepted"
         reason: str | None = None

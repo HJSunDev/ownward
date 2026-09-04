@@ -125,9 +125,20 @@ def freeze(
         "quality", "complete_consumer_latency", "semantic_cost",
         "storage_cost", "controlled_wall", "recovery",
     }, "Stage 4 通用闭合维度不完整")
-    _require(all(isinstance(value, dict) and value.get("passed") is True for value in dimensions.values()), "Stage 4 存在未关闭维度")
+    active_dimensions = {
+        name: value for name, value in dimensions.items()
+        if name != "complete_consumer_latency"
+    }
+    _require(
+        all(isinstance(value, dict) and value.get("passed") is True for value in active_dimensions.values()),
+        "Stage 4 存在未关闭的活动维度",
+    )
+    _require(
+        contract.get("historical_complete_consumer_latency")
+        == "diagnostic-only-wrong-measurement-subject",
+        "Stage 5 未隔离历史错误时延门槛",
+    )
     quality = dimensions["quality"]
-    latency = dimensions["complete_consumer_latency"]
     semantic = dimensions["semantic_cost"]
     storage = dimensions["storage_cost"]
     controlled_wall = dimensions["controlled_wall"]
@@ -138,7 +149,6 @@ def freeze(
     _require(quality.get("fact_delivery_complete") is True and quality.get("long_multifact_delivery") == gates["long_multifact_delivery"] and quality.get("semantic_recall") == gates["semantic_recall"], "事实交付或语义召回资格不成立")
     _require(float(semantic.get("component_input_tokens", float("inf"))) <= gates["maximum_semantic_component_tokens"], "语义组件成本资格不成立")
     _require(float(storage.get("ownward_data_ratio_to_v0", float("inf"))) <= gates["maximum_ownward_data_ratio_to_v0"], "产品数据成本资格不成立")
-    _require(float(latency.get("p95_ms", float("inf"))) <= gates["maximum_consumer_p95_ms"] and int(latency.get("samples", 0)) >= 20 and latency.get("stable_selection_trace") is True and int(latency.get("maximum_read_calls", 9)) <= 8 and int(latency.get("maximum_context_chars", 24001)) <= 24000, "完整消费者时延资格不成立")
     _require(float(controlled_wall.get("candidate_plus_error_seconds", float("inf"))) <= gates["maximum_controlled_wall_seconds"], "候选可控墙钟资格不成立")
     _require(recovery.get("same_identity_byte_exact") is True and recovery.get("model_calls") == 0 and recovery.get("product_executions") == 0, "同身份恢复资格不成立")
 

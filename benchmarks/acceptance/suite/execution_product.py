@@ -79,12 +79,15 @@ def _product_command(
     binding_path: Path, resource: Path, evidence: Path, output: Path, maximum: float,
 ) -> list[str]:
     section = config["product"]
+    external_configuration = candidate_binding.external_intelligence_runtime.configuration_from_execution(section)
+    external_roles = candidate_binding.external_intelligence_runtime.role_profile_from_execution(section)
     return [
         sys.executable, str(suite_root / "adapters" / "product" / "verify.py"),
         "--binary", str(product_binary(config, state)),
-        "--codex-binary", str(Path(section["codex_binary"]).resolve()),
-        "--codex-auth-file", str(Path(section["codex_auth_file"]).resolve()),
-        "--codex-model", str(section["codex_model"]), "--codex-reasoning-effort", str(section["codex_reasoning_effort"]),
+        "--external-intelligence-driver", external_configuration.driver,
+        "--external-intelligence-binary", str(external_configuration.binary),
+        "--external-intelligence-credential-file", str(external_configuration.credential_file),
+        "--external-intelligence-roles-json", json.dumps(external_roles, sort_keys=True, separators=(",", ":")),
         "--tasks", str(tasks_path), "--binding", str(binding_path), "--resource-report", str(resource),
         "--evidence-dir", str(evidence), "--output", str(output), "--max-wall-seconds", str(maximum),
     ]
@@ -344,15 +347,23 @@ def execute_product(
     tasks_path = _activate_frozen_tasks(workspace, mode, tasks, resume=resume)
     binding_path = _activate_workspace_binding(workspace, state["binding"], resume=resume)
     if resume:
+        external_configuration = candidate_binding.external_intelligence_runtime.configuration_from_execution(section)
+        external_roles = candidate_binding.external_intelligence_runtime.role_profile_from_execution(section)
+        external_identity = candidate_binding.external_intelligence_runtime.current_runtime_identity(
+            driver=external_configuration.driver,
+            binary=external_configuration.binary,
+            credential_file=external_configuration.credential_file,
+            max_active=4,
+            worker_processes=4,
+        )
         product_replay.rebind_replayable_evidence(
             binding_dir=Path(config["binding_dir"]),
             workspace=workspace,
             tasks=tasks,
             binding=state["binding"],
             resource_sha256=lifecycle.file_sha256(resource),
-            codex_binary=Path(section["codex_binary"]),
-            codex_model=str(section["codex_model"]),
-            codex_reasoning_effort=str(section["codex_reasoning_effort"]),
+            external_intelligence_identity=external_identity,
+            external_intelligence_roles=external_roles,
             include_preflight=mode == "qualification",
         )
     if mode == "qualification":

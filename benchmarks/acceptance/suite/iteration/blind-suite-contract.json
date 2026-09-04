@@ -1,6 +1,6 @@
 {
-  "schema": "ownward.kernel-iteration-blind-suite-contract/v2",
-  "identity": "ccd1522f85a1566984ffbe9c6cba3d83a9e855e8702a71367a902cf17b75c34e",
+  "schema": "ownward.kernel-iteration-blind-suite-contract/v3",
+  "identity": "cb847f5abcd4daca3c5c29422fd3845a7ad56e4a828256e555795adea2c24e33",
   "formal": false,
   "frozen_before_generation": true,
   "major_version_identity_rule": "normalized-major-version-plus-contract-and-preparation-direct-dependencies",
@@ -96,11 +96,36 @@
       "fact_delivery_missing_maximum": 0,
       "temporal_correctness_minimum": 1.0,
       "conflict_correctness_minimum": 1.0,
-      "complete_consumer_retrieval_p95_ms_maximum": 553.0,
       "read_limit": 8,
       "context_chars_maximum": 24000
     },
-    "level_total_wall_seconds_maximum": {"5": 406, "15": 751, "25": 1097, "50": 1961}
+    "performance_measurements": {
+      "kernel_call_latency": {
+        "measurement": "each-ownward-tool-call-wall-time-excluding-external-intelligence",
+        "evaluates": "kernel",
+        "decision": "authorized-kernel-contract-only"
+      },
+      "active_retrieval_cumulative": {
+        "measurement": "sum-of-ownward-tool-call-wall-time-per-question",
+        "evaluates": "kernel-and-external-agent-policy-composition",
+        "decision": "equivalent-profile-comparison-only"
+      },
+      "question_wall": {
+        "measurement": "question-start-through-final-scored-answer",
+        "evaluates": "product-experience",
+        "decision": "authorized-product-contract-only"
+      }
+    },
+    "threshold_rule": "measurement-subject-workload-and-authority-must-match",
+    "threshold_authorities": {
+      "answer-and-evidence-quality": "docs/engineering/kernel-evolution-system.md",
+      "active-retrieval-resource-budgets": "benchmarks/longmemeval_s/protocol.json",
+      "product-performance": "docs/product/requirements.md"
+    },
+    "evaluation_process_observation": {
+      "measurement": "partition-wall-seconds",
+      "decision": "diagnostic-only"
+    }
   },
   "isolation": {
     "candidate_inputs_forbidden_during_preparation": true,

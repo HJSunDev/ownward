@@ -325,29 +325,22 @@ class ProductAdapterTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "not one-to-one"):
             verify._validated_answer({"information_ids": ["one", "two"], "answer_facts": ["fact"]})
 
-    def test_codex_command_excludes_repository_project_instructions(self) -> None:
-        args = SimpleNamespace(
-            codex_binary=Path("codex.exe"),
-            codex_model="model",
-            codex_reasoning_effort="effort",
+    def test_external_session_exposes_only_enabled_product_tools(self) -> None:
+        client = SimpleNamespace(
+            call_tool=mock.Mock(),
+            list_tools=lambda: [
+                {"name": name, "description": "", "inputSchema": {"type": "object"}}
+                for name in verify.QUERY_TOOLS
+            ],
         )
-        command = verify._codex_command(
-            args,
-            work_dir=Path("work"),
-            schema_path=Path("schema.json"),
-            output_path=Path("output.json"),
-            endpoint="http://127.0.0.1:1",
-            enabled_tools=verify.QUERY_TOOLS,
-        )
-        overrides = [command[index + 1] for index, value in enumerate(command[:-1]) if value == "-c"]
-        self.assertIn("project_doc_max_bytes=0", overrides)
-        self.assertIn(
-            'mcp_servers.ownward.enabled_tools=["ownward_search","ownward_read","ownward_navigate"]',
-            overrides,
-        )
+        session = verify.session_trace.DynamicToolSession(client, verify.QUERY_TOOLS)
+        self.assertEqual(set(verify.QUERY_TOOLS), {tool["name"] for tool in session.dynamic_tools})
 
     def test_agent_prompts_state_the_irrecoverable_execution_contracts(self) -> None:
-        semantic = verify._semantic_prompt("asset", SimpleNamespace(codex_model="model"))
+        semantic = verify._semantic_prompt("asset", SimpleNamespace(
+            external_provider="provider",
+            external_roles={"semantic": {"model": "model", "reasoning_effort": "effort"}},
+        ))
         query = verify._query_prompt("question")
         self.assertIn("successful `ownward_semantic_submit` is mandatory", semantic)
         self.assertIn("do not exhaustively compare every candidate", semantic)
@@ -371,14 +364,14 @@ class ProductAdapterTests(unittest.TestCase):
         self.assertTrue(all(len(stem) >= 70 for stem in verify.WARM_READINESS_PROBE_STEMS))
 
     def test_query_trace_accepts_groundable_read_recovery_but_rejects_nonpublic_paths(self) -> None:
-        search = verify.codex_session.ToolCall(
+        search = verify.session_trace.ToolCall(
             "ownward_search",
             {"query": "x"},
             {"results": [{"id": "observed", "source": {"id": "metadata"}}]},
             False,
         )
-        failed = verify.codex_session.ToolCall("ownward_read", {"id": "observed"}, None, True)
-        recovered = verify.codex_session.ToolCall(
+        failed = verify.session_trace.ToolCall("ownward_read", {"id": "observed"}, None, True)
+        recovered = verify.session_trace.ToolCall(
             "ownward_read", {"id": "observed"}, {"information": {"id": "observed", "content": "fact"}}, False,
         )
         trace = SimpleNamespace(calls=[search, failed, recovered], bypassed=False)
@@ -388,13 +381,13 @@ class ProductAdapterTests(unittest.TestCase):
         )
         self.assertEqual({"observed"}, verify._successfully_read_ids(trace))
         self.assertTrue(verify._grounded_query_answer(trace, ["observed"], ["fact"]))
-        summarized = verify.codex_session.ToolCall(
+        summarized = verify.session_trace.ToolCall(
             "ownward_search", {"query": "x"}, {"results": [{"id": "observed", "summary": "A paraphrased fact"}]}, False,
         )
         self.assertFalse(verify._grounded_query_answer(
             SimpleNamespace(calls=[summarized, recovered]), ["observed"], ["A paraphrased fact"],
         ))
-        second_read = verify.codex_session.ToolCall(
+        second_read = verify.session_trace.ToolCall(
             "ownward_read", {"id": "second"}, {"information": {"id": "second", "content": "second fact"}}, False,
         )
         self.assertFalse(verify._grounded_query_answer(
@@ -402,39 +395,23 @@ class ProductAdapterTests(unittest.TestCase):
         ))
         with self.assertRaisesRegex(RuntimeError, "was not successfully read"):
             verify._grounded_query_answer(SimpleNamespace(calls=[search]), ["observed"], ["fact"])
-        mutation = verify.codex_session.ToolCall("ownward_update", {}, {}, False)
+        mutation = verify.session_trace.ToolCall("ownward_update", {}, {}, False)
         with self.assertRaisesRegex(RuntimeError, "outside public search/read/navigate"):
             verify._query_trace_metrics(SimpleNamespace(calls=[search, mutation], bypassed=False))
         for unobserved in ("missing", "metadata"):
-            fabricated = verify.codex_session.ToolCall("ownward_read", {"id": unobserved}, None, True)
+            fabricated = verify.session_trace.ToolCall("ownward_read", {"id": unobserved}, None, True)
             with self.assertRaisesRegex(RuntimeError, "not observed from an earlier public result"):
                 verify._query_trace_metrics(SimpleNamespace(calls=[search, fabricated], bypassed=False))
-        invalid_navigation = verify.codex_session.ToolCall(
+        invalid_navigation = verify.session_trace.ToolCall(
             "ownward_navigate", {"start_ids": ["observed", "missing"]}, None, True,
         )
         with self.assertRaisesRegex(RuntimeError, "not observed from an earlier public result"):
             verify._query_trace_metrics(SimpleNamespace(calls=[search, invalid_navigation], bypassed=False))
-        mismatched_read = verify.codex_session.ToolCall(
+        mismatched_read = verify.session_trace.ToolCall(
             "ownward_read", {"id": "observed"}, {"information": {"id": "other"}}, False,
         )
         with self.assertRaisesRegex(RuntimeError, "did not bind the requested information ID"):
             verify._query_trace_metrics(SimpleNamespace(calls=[search, mismatched_read], bypassed=False))
-
-    def test_isolated_codex_environment_bypasses_proxy_for_loopback_mcp(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            auth = root / "auth.json"
-            auth.write_text("{}", encoding="utf-8")
-            with mock.patch.dict(
-                os.environ,
-                {"HTTP_PROXY": "http://127.0.0.1:7890", "NO_PROXY": "example.test"},
-                clear=True,
-            ):
-                environment = verify.codex_session.isolated_environment(auth, root / "codex-home")
-            self.assertEqual("http://127.0.0.1:7890", environment["HTTP_PROXY"])
-            for value in ("example.test", "127.0.0.1", "localhost", "::1"):
-                self.assertIn(value, environment["NO_PROXY"].split(","))
-                self.assertIn(value, environment["no_proxy"].split(","))
 
     def test_codex_events_preserve_ownward_calls_and_expose_bypasses(self) -> None:
         events = [
@@ -446,7 +423,7 @@ class ProductAdapterTests(unittest.TestCase):
             }},
             {"type": "item.completed", "item": {"type": "command_execution"}},
         ]
-        trace = verify.codex_session.load_exec_events("\n".join(json.dumps(item) for item in events))
+        trace = verify.session_trace.load_exec_events("\n".join(json.dumps(item) for item in events))
         self.assertTrue(trace.bypassed)
         self.assertEqual("ownward_search", trace.calls[0].name)
         self.assertFalse(trace.calls[0].error)
@@ -465,13 +442,13 @@ class ProductAdapterTests(unittest.TestCase):
                 "result": {"structured_content": {"work": []}},
             }},
         ]
-        trace = verify.codex_session.load_exec_events("\n".join(json.dumps(item) for item in events))
+        trace = verify.session_trace.load_exec_events("\n".join(json.dumps(item) for item in events))
         self.assertFalse(trace.bypassed)
         self.assertEqual(("list_mcp_resources:empty",), trace.protocol_operations)
         self.assertEqual(["ownward_semantic_work"], [call.name for call in trace.calls])
 
         events[1]["item"]["result"]["content"][0]["text"] = '{"server":"ownward","resources":[{"uri":"secret"}]}'
-        trace = verify.codex_session.load_exec_events("\n".join(json.dumps(item) for item in events))
+        trace = verify.session_trace.load_exec_events("\n".join(json.dumps(item) for item in events))
         self.assertTrue(trace.bypassed)
 
     def test_empty_ownward_resource_template_discovery_is_protocol_metadata_not_a_product_bypass(self) -> None:
@@ -488,7 +465,7 @@ class ProductAdapterTests(unittest.TestCase):
                 "result": {"structured_content": {"work": []}},
             }},
         ]
-        trace = verify.codex_session.load_exec_events("\n".join(json.dumps(item) for item in events))
+        trace = verify.session_trace.load_exec_events("\n".join(json.dumps(item) for item in events))
         self.assertFalse(trace.bypassed)
         self.assertEqual(("list_mcp_resource_templates:empty",), trace.protocol_operations)
         self.assertEqual(["ownward_semantic_work"], [call.name for call in trace.calls])
@@ -496,7 +473,7 @@ class ProductAdapterTests(unittest.TestCase):
         events[1]["item"]["result"]["content"][0]["text"] = (
             '{"server":"ownward","resourceTemplates":[{"uriTemplate":"secret/{id}"}]}'
         )
-        trace = verify.codex_session.load_exec_events("\n".join(json.dumps(item) for item in events))
+        trace = verify.session_trace.load_exec_events("\n".join(json.dumps(item) for item in events))
         self.assertTrue(trace.bypassed)
 
     def test_failed_and_empty_generic_resource_discovery_are_protocol_metadata(self) -> None:
@@ -513,7 +490,7 @@ class ProductAdapterTests(unittest.TestCase):
                 "result": {"content": [{"type": "text", "text": '{"resources":[]}'}], "structured_content": None},
             }},
         ]
-        trace = verify.codex_session.load_exec_events("\n".join(json.dumps(item) for item in events))
+        trace = verify.session_trace.load_exec_events("\n".join(json.dumps(item) for item in events))
         self.assertFalse(trace.bypassed)
         self.assertEqual((), tuple(trace.calls))
         self.assertEqual(
@@ -522,20 +499,20 @@ class ProductAdapterTests(unittest.TestCase):
         )
 
         events[2]["item"]["result"]["content"][0]["text"] = '{"resources":[{"uri":"secret"}]}'
-        trace = verify.codex_session.load_exec_events("\n".join(json.dumps(item) for item in events))
+        trace = verify.session_trace.load_exec_events("\n".join(json.dumps(item) for item in events))
         self.assertTrue(trace.bypassed)
 
     def test_semantic_unit_retries_only_a_no_call_attempt_and_preserves_both_traces(self) -> None:
         asset_id = "asset"
         work_id = "work"
         no_call = SimpleNamespace(calls=[], bypassed=False, bypass_operations=(), protocol_operations=())
-        work = verify.codex_session.ToolCall(
+        work = verify.session_trace.ToolCall(
             "ownward_semantic_work",
             {"asset_ids": [asset_id]},
             {"work": [{"id": work_id, "asset": {"id": asset_id, "revision": 1}}]},
             False,
         )
-        submit = verify.codex_session.ToolCall(
+        submit = verify.session_trace.ToolCall(
             "ownward_semantic_submit",
             {"submission": {"work_id": work_id, "asset_id": asset_id, "asset_revision": 1}},
             {"organization": {"status": "ready"}},
@@ -561,7 +538,7 @@ class ProductAdapterTests(unittest.TestCase):
             client=SimpleNamespace(call_tool=mock.Mock(return_value={"organization": {"status": "ready"}})),
         )
         args = SimpleNamespace(stage_timeout=240, codex_model="model")
-        with tempfile.TemporaryDirectory() as directory, mock.patch.object(verify, "_run_codex", side_effect=run):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(verify, "_run_external_intelligence", side_effect=run):
             root = Path(directory)
             elapsed, identity, evidence = verify._complete_semantic_unit(
                 args, runtime, root, root / "semantic-initial" / "unit", asset_id, 1, time.monotonic() + 300,
@@ -575,7 +552,7 @@ class ProductAdapterTests(unittest.TestCase):
     def test_semantic_unit_retries_work_without_submit_and_commits_complete_evidence(self) -> None:
         asset_id = "asset"
         work_id = "work"
-        work = verify.codex_session.ToolCall(
+        work = verify.session_trace.ToolCall(
             "ownward_semantic_work",
             {"asset_ids": [asset_id]},
             {"work": [{"id": work_id, "asset": {"id": asset_id, "revision": 1}}]},
@@ -584,7 +561,7 @@ class ProductAdapterTests(unittest.TestCase):
         partial = SimpleNamespace(
             calls=[work], bypassed=False, bypass_operations=(), protocol_operations=("list_mcp_resources:empty",),
         )
-        submit = verify.codex_session.ToolCall(
+        submit = verify.session_trace.ToolCall(
             "ownward_semantic_submit",
             {"submission": {"work_id": work_id, "asset_id": asset_id, "asset_revision": 1}},
             {"organization": {"status": "ready"}},
@@ -606,7 +583,7 @@ class ProductAdapterTests(unittest.TestCase):
             client=SimpleNamespace(call_tool=mock.Mock(return_value={"organization": {"status": "ready"}})),
         )
         args = SimpleNamespace(stage_timeout=240, codex_model="model")
-        with tempfile.TemporaryDirectory() as directory, mock.patch.object(verify, "_run_codex", side_effect=run):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(verify, "_run_external_intelligence", side_effect=run):
             root = Path(directory)
             elapsed, identity, evidence = verify._complete_semantic_unit(
                 args, runtime, root, root / "semantic-initial" / "unit", asset_id, 1, time.monotonic() + 300,
@@ -624,13 +601,13 @@ class ProductAdapterTests(unittest.TestCase):
     def test_semantic_unit_classifies_an_interrupted_partial_attempt_before_retrying(self) -> None:
         asset_id = "asset"
         work_id = "work"
-        work = verify.codex_session.ToolCall(
+        work = verify.session_trace.ToolCall(
             "ownward_semantic_work",
             {"asset_ids": [asset_id]},
             {"work": [{"id": work_id, "asset": {"id": asset_id, "revision": 1}}]},
             False,
         )
-        submit = verify.codex_session.ToolCall(
+        submit = verify.session_trace.ToolCall(
             "ownward_semantic_submit",
             {"submission": {"work_id": work_id, "asset_id": asset_id, "asset_revision": 1}},
             {"organization": {"status": "ready"}},
@@ -669,7 +646,7 @@ class ProductAdapterTests(unittest.TestCase):
                 client=SimpleNamespace(call_tool=mock.Mock(return_value={"organization": {"status": "ready"}})),
             )
             args = SimpleNamespace(stage_timeout=240, codex_model="model")
-            with mock.patch.object(verify, "_run_codex", side_effect=run):
+            with mock.patch.object(verify, "_run_external_intelligence", side_effect=run):
                 elapsed, identity, evidence = verify._complete_semantic_unit(
                     args, runtime, root, root / "semantic-initial" / "unit",
                     asset_id, 1, time.monotonic() + 300,
@@ -715,7 +692,7 @@ class ProductAdapterTests(unittest.TestCase):
                 client=SimpleNamespace(call_tool=mock.Mock(return_value={"organization": {"status": "ready"}})),
             )
             args = SimpleNamespace(stage_timeout=240, codex_model="model")
-            with mock.patch.object(verify, "_run_codex") as run:
+            with mock.patch.object(verify, "_run_external_intelligence") as run:
                 elapsed, identity, evidence = verify._complete_semantic_unit(
                     args, runtime, root, root / "semantic-initial" / "unit",
                     asset_id, 1, time.monotonic() + 300,
@@ -726,55 +703,17 @@ class ProductAdapterTests(unittest.TestCase):
             self.assertTrue(identity["elapsed_unavailable"])
             self.assertIn("semantic-initial/unit/attempt-001/terminal.json", evidence)
 
-    def test_codex_timeout_accepts_already_persisted_structured_output(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            auth = root / "auth.json"
-            auth.write_text("{}", encoding="utf-8")
-            args = SimpleNamespace(
-                codex_binary=root / "codex.exe",
-                codex_auth_file=auth,
-                codex_model="model",
-                codex_reasoning_effort="effort",
-            )
-            events = json.dumps({"type": "thread.started", "thread_id": "session"}) + "\n"
-
-            def timeout(command: list[str], **keyword: object) -> object:
-                output = Path(command[command.index("-o") + 1])
-                output.write_text('{"processed":1,"uncertain":0}', encoding="utf-8")
-                stdout_path = keyword["stdout_path"]
-                stderr_path = keyword["stderr_path"]
-                assert isinstance(stdout_path, Path) and isinstance(stderr_path, Path)
-                stdout_path.write_text(events, encoding="utf-8")
-                stderr_path.write_text("", encoding="utf-8")
-                raise verify.process_control.ProcessTimeout("timeout", events, "")
-
-            with mock.patch.object(verify.process_control, "run", side_effect=timeout):
-                output, trace, elapsed = verify._run_codex(
-                    args,
-                    stage=root / "stage",
-                    prompt="prompt",
-                    schema=verify.SEMANTIC_SCHEMA,
-                    endpoint="http://127.0.0.1:1",
-                    bearer_token="token",
-                    timeout_seconds=1,
-                    enabled_tools=verify.SEMANTIC_TOOLS,
-                )
-            self.assertEqual({"processed": 1, "uncertain": 0}, output)
-            self.assertEqual("session", trace.session_id)
-            self.assertGreaterEqual(elapsed, 0)
-
     def test_semantic_trace_accepts_only_bounded_rejected_submissions_before_success(self) -> None:
         asset_id = "asset"
         work_id = "work"
-        work = verify.codex_session.ToolCall(
+        work = verify.session_trace.ToolCall(
             "ownward_semantic_work",
             {"asset_ids": [asset_id]},
             {"work": [{"id": work_id, "asset": {"id": asset_id, "revision": 1}}]},
             False,
         )
-        rejected = verify.codex_session.ToolCall("ownward_semantic_submit", {"submission": {}}, None, True)
-        successful = verify.codex_session.ToolCall(
+        rejected = verify.session_trace.ToolCall("ownward_semantic_submit", {"submission": {}}, None, True)
+        successful = verify.session_trace.ToolCall(
             "ownward_semantic_submit",
             {"submission": {"work_id": work_id, "asset_id": asset_id, "asset_revision": 1}},
             {"organization": {"status": "ready"}},
@@ -793,13 +732,13 @@ class ProductAdapterTests(unittest.TestCase):
     def test_semantic_timeout_after_successful_submit_uses_terminal_product_state(self) -> None:
         asset_id = "asset"
         work_id = "work"
-        work = verify.codex_session.ToolCall(
+        work = verify.session_trace.ToolCall(
             "ownward_semantic_work",
             {"asset_ids": [asset_id]},
             {"work": [{"id": work_id, "asset": {"id": asset_id, "revision": 1}}]},
             False,
         )
-        successful = verify.codex_session.ToolCall(
+        successful = verify.session_trace.ToolCall(
             "ownward_semantic_submit",
             {"submission": {"work_id": work_id, "asset_id": asset_id, "asset_revision": 1}},
             {"organization": {"status": "ready"}},
@@ -815,7 +754,7 @@ class ProductAdapterTests(unittest.TestCase):
                 stage.mkdir(parents=True)
                 (stage / "events.jsonl").write_text("events", encoding="utf-8")
                 (stage / "stderr.txt").write_text("", encoding="utf-8")
-                raise verify.CodexStageTimeout("timeout", trace, 240.0)
+                raise verify.ExternalIntelligenceStageTimeout("timeout", trace, 240.0)
 
             client = SimpleNamespace(call_tool=mock.Mock(return_value={"organization": {"status": "ready"}}))
             runtime = SimpleNamespace(
@@ -823,7 +762,7 @@ class ProductAdapterTests(unittest.TestCase):
                 client=client,
             )
             args = SimpleNamespace(stage_timeout=240, codex_model="model")
-            with mock.patch.object(verify, "_run_codex", side_effect=timeout):
+            with mock.patch.object(verify, "_run_external_intelligence", side_effect=timeout):
                 elapsed, identity, evidence = verify._complete_semantic_unit(
                     args, runtime, root, root / "semantic-initial" / "unit", asset_id, 1, time.monotonic() + 300,
                 )
@@ -838,7 +777,7 @@ class ProductAdapterTests(unittest.TestCase):
 
     def test_semantic_timeout_without_successful_submit_exhausts_bounded_recovery(self) -> None:
         asset_id = "asset"
-        work = verify.codex_session.ToolCall(
+        work = verify.session_trace.ToolCall(
             "ownward_semantic_work",
             {"asset_ids": [asset_id]},
             {"work": [{"id": "work", "asset": {"id": asset_id, "revision": 1}}]},
@@ -851,7 +790,7 @@ class ProductAdapterTests(unittest.TestCase):
         )
         args = SimpleNamespace(stage_timeout=240, codex_model="model")
         with tempfile.TemporaryDirectory() as directory, mock.patch.object(
-            verify, "_run_codex", side_effect=verify.CodexStageTimeout("timeout", trace, 240.0),
+            verify, "_run_external_intelligence", side_effect=verify.ExternalIntelligenceStageTimeout("timeout", trace, 240.0),
         ):
             with self.assertRaisesRegex(RuntimeError, "without a successful submit in 3 bounded attempts"):
                 verify._complete_semantic_unit(
@@ -862,13 +801,13 @@ class ProductAdapterTests(unittest.TestCase):
     def test_semantic_timeout_rejects_mismatched_binding_and_nonterminal_state(self) -> None:
         asset_id = "asset"
         work_id = "work"
-        work = verify.codex_session.ToolCall(
+        work = verify.session_trace.ToolCall(
             "ownward_semantic_work",
             {"asset_ids": [asset_id]},
             {"work": [{"id": work_id, "asset": {"id": asset_id, "revision": 1}}]},
             False,
         )
-        mismatched = verify.codex_session.ToolCall(
+        mismatched = verify.session_trace.ToolCall(
             "ownward_semantic_submit",
             {"submission": {"work_id": work_id, "asset_id": "other", "asset_revision": 1}},
             {"organization": {"status": "ready"}},
@@ -877,7 +816,7 @@ class ProductAdapterTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "do not bind"):
             verify._semantic_trace_identity(SimpleNamespace(calls=[work, mismatched]), asset_id, 1)
 
-        successful = verify.codex_session.ToolCall(
+        successful = verify.session_trace.ToolCall(
             "ownward_semantic_submit",
             {"submission": {"work_id": work_id, "asset_id": asset_id, "asset_revision": 1}},
             {"organization": {"status": "ready"}},
@@ -890,7 +829,7 @@ class ProductAdapterTests(unittest.TestCase):
         )
         args = SimpleNamespace(stage_timeout=240, codex_model="model")
         with tempfile.TemporaryDirectory() as directory, mock.patch.object(
-            verify, "_run_codex", side_effect=verify.CodexStageTimeout("timeout", trace, 240.0),
+            verify, "_run_external_intelligence", side_effect=verify.ExternalIntelligenceStageTimeout("timeout", trace, 240.0),
         ):
             with self.assertRaisesRegex(RuntimeError, "terminal state"):
                 verify._complete_semantic_unit(
@@ -948,7 +887,7 @@ class ProductAdapterTests(unittest.TestCase):
             unrelated = root / "codex-preserved"
             unrelated.mkdir()
 
-            verify._scrub_ephemeral_codex_roots(root)
+            verify._scrub_ephemeral_runtime_roots(root)
 
             self.assertFalse(temporary.exists())
             self.assertTrue(events.is_file())
@@ -968,7 +907,7 @@ class ProductAdapterTests(unittest.TestCase):
                 "result": {"structured_content": {"results": [{"id": "from-search"}]}},
             }},
         ]
-        trace = verify.codex_session.load_exec_events("\n".join(json.dumps(item) for item in events))
+        trace = verify.session_trace.load_exec_events("\n".join(json.dumps(item) for item in events))
         observed = verify._observed(trace, {"ownward_navigate"})
         self.assertEqual({"from-navigation"}, set(observed))
 

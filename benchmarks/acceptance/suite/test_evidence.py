@@ -53,14 +53,17 @@ class EvidenceLayerTests(unittest.TestCase):
         report.update({
             "official_version": "longmemeval-s/9e0b455f4ef0e2ab8f2e582289761153549043fc+d6f21ea9",
             "profile": "Ownward LongMemEval-S Production Profile",
-            "capabilities": self.contract["evidence_layers"]["community"]["capabilities"],
+            "capabilities": {
+                name: {"source": "test-provider", "model": f"test-{name}", "reasoning_effort": "high"}
+                for name in self.contract["evidence_layers"]["community"]["external_intelligence"]["roles"]
+            },
             "benchmark": {"questions": 500, "complete": True, "question_types": list(self.contract["evidence_layers"]["community"]["question_types"])},
             "execution": {"complete": True, "protocol_valid": True, "evidence_complete": True, "passed": True},
             "quality": {
                 "accuracy": 0.83, "comparison_policy": "equivalent-profile-only", "hard_accuracy_threshold": None,
                 "score_complete": True, "assessment_status": "not_determined",
                 "assessment_basis": "no-equivalent-production-profile-reference",
-                "first_version_condition_satisfied": False, "passed": None,
+                "first_version_condition_satisfied": None, "passed": None,
             },
             "retrieval": {"mean_ms": 10.0, "p95_ms": 20.0, "max_ms": 30.0},
             "cost": {"wall_seconds": 14400.0, "within_budget": True},
@@ -70,8 +73,8 @@ class EvidenceLayerTests(unittest.TestCase):
                 "hypotheses_sha256": "f" * 64, "diagnostics_sha256": "2" * 64,
                 "diagnostic_summary_sha256": "3" * 64, "checkpoint_manifest_sha256": "1" * 64,
             },
-            "completion": {"status": "not_satisfied", "reason": "community-quality-not-determined"},
-            "passed": False,
+            "completion": {"status": "completed", "reason": "official-benchmark-evidence-complete"},
+            "passed": True,
         })
         return report
 

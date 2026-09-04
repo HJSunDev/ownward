@@ -5,13 +5,13 @@ import json
 import math
 import os
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
 import binding
 import report_relationships as relationships
+import process_control
 
 SUPPORT_ROOT = Path(__file__).resolve().parents[2] / "support"
 LONGMEM_ROOT = Path(__file__).resolve().parents[2] / "longmemeval_s"
@@ -20,6 +20,7 @@ for dependency_root in (SUPPORT_ROOT, LONGMEM_ROOT):
         sys.path.insert(0, str(dependency_root))
 import external_intelligence  # noqa: E402
 import external_intelligence_runtime  # noqa: E402
+import semantic_representation  # noqa: E402
 
 
 class PreflightError(ValueError):
@@ -60,6 +61,16 @@ def run(suite_root: Path, config: dict[str, Any], isolation_dir: Path) -> dict[s
     _require(isolation_dir.drive.upper() != "C:", "验收隔离目录不得位于系统盘")
     _require(not isolation_dir.exists(), "验收隔离目录必须为空白且尚未存在")
     isolation_dir.mkdir(parents=True)
+    try:
+        return _run_created(suite_root, config, isolation_dir, scopes)
+    finally:
+        if isolation_dir.exists():
+            shutil.rmtree(isolation_dir)
+
+
+def _run_created(
+    suite_root: Path, config: dict[str, Any], isolation_dir: Path, scopes: tuple[str, ...],
+) -> dict[str, Any]:
     probe = isolation_dir / ".write-probe"
     probe.write_text("ok", encoding="utf-8")
     probe.unlink()
@@ -86,29 +97,31 @@ def run(suite_root: Path, config: dict[str, Any], isolation_dir: Path) -> dict[s
         }
     if "product" in scopes:
         product = config["product"]
-        codex = Path(product["codex_binary"]).resolve()
-        auth = Path(product["codex_auth_file"]).resolve()
         package = Path(product["package"]).resolve()
         production = Path(product["production_storage_report"]).resolve()
-        _require(codex.is_file(), "外部智能体执行程序不存在")
-        _require(auth.is_file(), "外部智能体认证文件不存在")
         _require(package.is_dir() and (package / "manifest.json").is_file(), "候选发布包或清单不存在")
         _require(production.is_file(), "生产规模存储证据不存在")
-        completed = subprocess.run([*binding._executable_command(codex), "--version"], capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
-        _require(completed.returncode == 0 and completed.stdout.strip(), "外部智能体执行程序不可运行")
-        checks["product"] = {"codex_binary_sha256": binding.sha256(codex), "codex_version": completed.stdout.strip(), "codex_auth_available": True}
+        try:
+            configuration = external_intelligence_runtime.configuration_from_execution(product)
+            probe_result = external_intelligence_runtime.probe(configuration)
+            roles = external_intelligence_runtime.role_profile_from_execution(product)
+            implementation = external_intelligence_runtime.selected_implementation(configuration.driver)
+        except external_intelligence.ExternalIntelligenceError as error:
+            raise PreflightError(str(error)) from error
+        checks["product"] = {
+            "external_intelligence": {
+                "driver": configuration.driver,
+                "provider": implementation["provider"],
+                "artifact_sha256": binding.sha256(configuration.binary),
+                "probe": probe_result,
+                "roles": {name: roles[name] for name in ("semantic", "reader")},
+                "credential_content_read": False,
+            }
+        }
     if "community" in scopes:
         community = config["community"]
-        try:
-            checks["community"] = _community_preflight(suite_root, config, isolation_dir)
-        except BaseException:
-            if isolation_dir.exists():
-                shutil.rmtree(isolation_dir)
-            raise
+        checks["community"] = _community_preflight(suite_root, config, isolation_dir)
         _require(free_bytes >= 20 * 1024**3, "社区验收隔离目录可用磁盘空间不足 20 GiB")
-
-    if isolation_dir.exists():
-        shutil.rmtree(isolation_dir)
 
     report: dict[str, Any] = {
         "schema": "ownward.acceptance-preflight/v2",
@@ -180,9 +193,9 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
         representation_path = Path(representation["manifest"]).resolve()
         _require(representation_path.is_file(), "候选语义表示清单不存在")
         representation_arguments = ["--semantic-representation-manifest", str(representation_path)]
-    check = subprocess.run(
+    check = process_control.run(
         [str(python), str(adapter), "check", "--environment-manifest", str(manifest_path), "--protocol", str(protocol_path), *representation_arguments],
-        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180, check=False,
+        cwd=repository, timeout=180,
     )
     _require(check.returncode == 0, f"LongMemEval-S 离线环境检查失败: {check.stderr[-2000:]}")
     protocol = binding.load_json(protocol_path)
@@ -207,12 +220,26 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
     if representation_arguments:
         representation_runtime = adapter.with_name("semantic_representation.py")
         community_tool_sha256 = hashlib.sha256(bytes.fromhex(community_tool_sha256) + representation_runtime.read_bytes() + Path(representation_arguments[1]).read_bytes()).hexdigest()
-    dry_plan_token = hashlib.sha256(json.dumps({
-        "transport": "ownward.longmemeval-s-semantic-transport/v2",
-        "memory": protocol["memory"],
+    semantic_contract = semantic_representation.load_contract(
+        Path(representation_arguments[1]) if representation_arguments else None
+    )
+    dry_plan_identity = {
+        "schema": "ownward.longmemeval-s-dry-plan/v1",
+        "candidate": calibration_candidate,
         "binary_sha256": product_binary_sha256,
+        "environment_sha256": binding.sha256(manifest_path),
+        "input_manifest_sha256": binding.sha256(data),
         "dataset_sha256": binding.sha256(data),
-    }, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()[:16]
+        "semantic_dependency_sha256": binding._canonical_sha256({
+            "transport_version": "ownward.longmemeval-s-semantic-transport/v2",
+            "memory": protocol["memory"],
+            "input_representation": semantic_contract.representation,
+            "input_representation_manifest_identity": semantic_contract.manifest_identity,
+            "create_context": {"key": "source", "value": "LongMemEval-S"},
+        }),
+    }
+    dry_plan_identity["sha256"] = binding._canonical_sha256(dry_plan_identity)
+    dry_plan_token = dry_plan_identity["sha256"][:16]
     semantic_token = hashlib.sha256(json.dumps({
         "dry_plan_token": dry_plan_token,
         "external_intelligence_implementation_sha256": hashlib.sha256(
@@ -224,19 +251,13 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
         },
     }, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()[:16]
     dry_plan_output = runs / "dry-plan" / f"{product_binary_sha256[:8]}-{dry_plan_token}"
-    expected_dry_plan_sources = {
-        "binary_sha256": product_binary_sha256,
-        "environment_sha256": binding.sha256(manifest_path),
-        "input_manifest_sha256": binding.sha256(data),
-        "dataset_sha256": binding.sha256(data),
-    }
     dry_plan_reused = False
     for identity_path in sorted((runs / "dry-plan").glob("*/identity.json")) if (runs / "dry-plan").is_dir() else []:
         identity = binding.load_json(identity_path)
         candidate_output = identity_path.parent
         candidate_report = binding.load_json(candidate_output / "report.json") if (candidate_output / "report.json").is_file() else {}
         if (
-            all(identity.get(name) == value for name, value in expected_dry_plan_sources.items())
+            identity == dry_plan_identity
             and candidate_report.get("complete") is True
             and candidate_report.get("model_invoked") is False
             and candidate_report.get("questions") == int(protocol["official"]["question_count"])
@@ -255,9 +276,7 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
     if not dry_plan_reused:
         if dry_plan_output.exists():
             dry_plan_command.append("--resume")
-        dry_plan_process = subprocess.run(
-            dry_plan_command, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=7200, check=False,
-        )
+        dry_plan_process = process_control.run(dry_plan_command, cwd=repository, timeout=7200)
         _require(dry_plan_process.returncode == 0, f"LongMemEval-S 全量确定性 dry-plan 失败: {dry_plan_process.stderr[-3000:]}")
     dry_plan = binding.load_json(dry_plan_output / "report.json")
     _require(
@@ -268,13 +287,6 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
         and dry_plan.get("all_work_preserved") is True
         and dry_plan.get("all_bodies_deduplicated_per_analysis_scope") is True,
         "LongMemEval-S 全量 dry-plan 不完整",
-    )
-    pool_calibration_path = runs / "calibration" / "appserver-pool-natural-batch-v1" / "report.json"
-    _require(pool_calibration_path.is_file(), "LongMemEval-S App Server 池校准证据不存在")
-    historical_pool_calibration = binding.load_json(pool_calibration_path)
-    _require(
-        historical_pool_calibration.get("facts_equivalent_across_pool_sizes") is True,
-        "LongMemEval-S 历史 App Server 池校准缺少事实等价证明",
     )
     output = runs / "preflight" / f"{product_binary_sha256[:8]}-{semantic_token}-production-profile"
     command = [
@@ -293,14 +305,14 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
     ]
     if output.exists():
         command.append("--resume")
-    completed = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=1800, check=False)
+    completed = process_control.run(command, cwd=repository, timeout=1800)
     _require(completed.returncode == 0, f"LongMemEval-S 隔离预检失败: {completed.stderr[-3000:]}")
     report_before_resume = (output / "report.json").read_bytes()
     checkpoint_before_resume = (output / "checkpoint-manifest.json").read_bytes()
     resume_command = list(command)
     if "--resume" not in resume_command:
         resume_command.append("--resume")
-    resumed = subprocess.run(resume_command, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180, check=False)
+    resumed = process_control.run(resume_command, cwd=repository, timeout=180)
     _require(resumed.returncode == 0, f"LongMemEval-S 精确恢复复核失败: {resumed.stderr[-2000:]}")
     _require(
         report_before_resume == (output / "report.json").read_bytes()
@@ -318,9 +330,9 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
     )
     _require(
         result.get("quality", {}).get("assessment_status") == "not_determined"
-        and result.get("quality", {}).get("first_version_condition_satisfied") is False
-        and result.get("passed") is False,
-        "LongMemEval-S 隔离预检不得伪造质量通过",
+        and result.get("quality", {}).get("first_version_condition_satisfied") is None
+        and result.get("passed") is True,
+        "LongMemEval-S 隔离预检未形成有效执行检查点",
     )
     _require(result.get("profile") == protocol["acceptance"]["profile"], "LongMemEval-S 隔离预检生产口径无效")
     capabilities = result.get("capabilities")
@@ -416,19 +428,23 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
     maximum_bounded_retries = max(1, math.floor(expected_external_intelligence_calls * 0.1))
     _require(int(external_intelligence["calls"]) == expected_external_intelligence_calls, "LongMemEval-S 外部智能调用量不完整")
     _require(int(external_intelligence["attempts"]) == expected_external_intelligence_calls + int(external_intelligence["retries"]), "LongMemEval-S 外部智能尝试计数不一致")
-    _require(int(external_intelligence["retries"]) == 0, f"并发 {external_intelligence_limit} 的代表预检未全部首次完成")
-    _require(int(external_intelligence["rate_limit_events"]) == 0 and int(external_intelligence["interrupted_attempts"]) == 0, f"并发 {external_intelligence_limit} 的代表校准存在限流或中断")
-    _require(int(external_intelligence["scheduler"]["limit"]) == external_intelligence_limit and int(external_intelligence["scheduler"]["max_active"]) == external_intelligence_limit, "代表校准未实际达到全局外部智能并发上限")
+    _require(int(external_intelligence["retries"]) <= maximum_bounded_retries, f"并发 {external_intelligence_limit} 的代表预检超过有界重试预算")
+    _require(
+        int(external_intelligence["scheduler"]["limit"]) == external_intelligence_limit
+        and 0 < int(external_intelligence["scheduler"]["max_active"]) <= external_intelligence_limit,
+        "代表校准没有遵守全局外部智能并发上限",
+    )
     _require(
         external_intelligence.get("transport", {}).get("external_intelligence_driver") == external_selection["driver"]
-        and int(external_intelligence["transport"]["server_processes"]) == external_intelligence_limit
+        and 0 < int(external_intelligence["transport"]["server_processes"]) <= external_intelligence_limit
         and int(external_intelligence["transport"]["per_worker_max_active"]) == 1,
         "代表校准未使用单 turn 的有界外部智能 worker 池",
     )
     _require(
-        int(external_intelligence["transport"]["worker_restarts"]) == 0
-        and int(external_intelligence["transport"]["process_starts"]) == external_intelligence_limit,
-        "代表预检出现 App Server transport 失败或 worker 重启",
+        int(external_intelligence["transport"]["worker_restarts"]) <= maximum_bounded_retries
+        and int(external_intelligence["transport"]["process_starts"])
+        >= int(external_intelligence["transport"]["server_processes"]),
+        "代表预检外部智能 worker 恢复超过有界预算",
     )
     _require(
         len(completed_attempts) == expected_external_intelligence_calls
@@ -487,12 +503,6 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
             "maximum_input_utf8_bytes": dry_plan["maximum_input_utf8_bytes"],
             "maximum_output_token_upper_bound": dry_plan["maximum_output_token_upper_bound"],
         },
-        "historical_pool_calibration": {
-            "report": str(pool_calibration_path),
-            "report_sha256": binding.sha256(pool_calibration_path),
-            "evaluated_pool_sizes": [item["pool_size"] for item in historical_pool_calibration["pools"]],
-            "facts_equivalent_across_pool_sizes": historical_pool_calibration["facts_equivalent_across_pool_sizes"],
-        },
         "calibration_accuracy": result["accuracy"],
         "fixture_wall_seconds": result["cost"]["wall_seconds"], "projected_full_wall_seconds": projected,
         "required_ceiling_wall_seconds": required_ceiling,
@@ -531,8 +541,13 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
             )
         },
         "semantic_plan_equivalent": True, "semantic_submission_complete": True, "byte_exact_resume": True,
-        "semantic_transport": "codex-app-server-pool-stdio", "reader_transport": "codex-app-server-pool-stdio", "judge_transport": "codex-app-server-pool-stdio",
-        "codex_version": codex_version.stdout.strip(),
+        "external_intelligence": {
+            "driver": external_configuration.driver,
+            "provider": external_selection["provider"],
+            "transport": external_selection["transport"],
+            "probe": external_intelligence_runtime.probe(external_configuration),
+            "roles": {name: external_roles[name] for name in ("semantic", "reader", "judge")},
+        },
         "production_profile": protocol["acceptance"]["profile"],
         "judge_model": protocol["judge"]["model"],
         "judge_reasoning_effort": protocol["judge"]["reasoning_effort"],

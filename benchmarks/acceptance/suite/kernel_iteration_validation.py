@@ -9,13 +9,14 @@ import os
 from pathlib import Path
 import secrets
 import shutil
-import subprocess
 import sys
 import time
 from contextlib import contextmanager
 from typing import Any, Callable
 
 import kernel_iteration_evidence as evidence
+import kernel_iteration_manifest
+import process_control
 
 
 LONGMEM_ROOT = Path(__file__).resolve().parents[2] / "longmemeval_s"
@@ -45,10 +46,8 @@ BLIND_RESULT_SCHEMA = "ownward.kernel-iteration-blind-calibration/v2"
 BLIND_RECOVERY_SCHEMA = "ownward.kernel-iteration-blind-recovery/v1"
 BLIND_SECRET_SCHEMA = "ownward.kernel-iteration-blind-recovery-secret/v1"
 BLIND_DEPENDENCY_LOCATOR_SCHEMA = "ownward.kernel-iteration-blind-dependency-locator/v1"
-VALIDATION_CONTRACT_RELATIVE = Path("iteration/v2/validation-contract.json")
-BLIND_BUDGET_RELATIVE = Path("iteration/v2/blind-calibration-budget.json")
-STAGE3_CONTRACT_RELATIVE = Path("iteration/v2/stage3-contract.json")
 SUPPORTED_EXECUTION_TYPES = {"development", "regression", "integrated"}
+HISTORICAL_STAGE3_CONTRACT_RELATIVE = Path("iteration/v2/stage3-contract.json")
 BLIND_COVERAGE = (
     "knowledge-update-conflict",
     "temporal-order",
@@ -70,8 +69,8 @@ ANSWER_ONLY_GAPS = (
 FORMAL_KEYS = ("question", "answer", "answer_session_ids", "haystack_sessions")
 
 
-def load_validation_contract(suite_root: Path) -> dict[str, Any]:
-    path = suite_root.resolve() / VALIDATION_CONTRACT_RELATIVE
+def load_validation_contract(suite_root: Path, manifest: dict[str, Any] | None = None) -> dict[str, Any]:
+    path = kernel_iteration_manifest.path(suite_root, "validation_contract", manifest)
     value = _load_json(path)
     _require(value.get("schema") == VALIDATION_CONTRACT_SCHEMA, "V2 验证合同 schema 无效")
     _require(value.get("frozen_before_calibration") is True, "V2 验证标准未在五题生成前冻结")
@@ -102,7 +101,7 @@ def load_validation_contract(suite_root: Path) -> dict[str, Any]:
 def load_stage3_contract(suite_root: Path) -> dict[str, Any]:
     """Load the aggregate-only stage-3 policy and independently authored materials."""
     suite_root = suite_root.resolve()
-    path = suite_root / STAGE3_CONTRACT_RELATIVE
+    path = suite_root / HISTORICAL_STAGE3_CONTRACT_RELATIVE
     value = _load_json(path)
     _require(value.get("schema") == STAGE3_CONTRACT_SCHEMA, "V2 阶段 3 合同 schema 无效")
     _require(value.get("frozen_before_diagnostic_results") is True, "阶段 3 门槛未在诊断结果前冻结")
@@ -170,7 +169,7 @@ def validate_stage3_problem_pool(value: dict[str, Any]) -> dict[str, Any]:
 
 def load_blind_budget_archive(suite_root: Path) -> dict[str, Any]:
     validation = load_validation_contract(suite_root)
-    value = _load_json(suite_root.resolve() / BLIND_BUDGET_RELATIVE)
+    value = _load_json(kernel_iteration_manifest.path(suite_root, "blind_budget"))
     _require(value.get("schema") == "ownward.kernel-iteration-blind-budget-freeze/v2", "V2 盲测预算 schema 无效")
     _require(value.get("validation_contract_identity") == validation["identity"], "V2 盲测预算与验证合同错绑")
     content = {key: item for key, item in value.items() if key != "identity"}
@@ -619,7 +618,6 @@ def execution_identities(
     implementation["selected-external-intelligence-adapter"] = external_runtime_implementation_identity(repository, runtime)
     implementation["ownward-mcp-transport"] = evidence.text_file_sha256(repository / "benchmarks" / "support" / "ownward_mcp.py")
     implementation["external-intelligence-contract"] = evidence.text_file_sha256(repository / "benchmarks" / "support" / "external_intelligence.py")
-    implementation["external-intelligence-selection"] = evidence.text_file_sha256(repository / "benchmarks" / "support" / "external-intelligence-runtime.json")
     implementation["semantic-representation-runtime"] = evidence.text_file_sha256(long_root / "semantic_representation.py")
     implementation["iteration-validation"] = evidence.text_file_sha256(Path(__file__).resolve())
     implementation["iteration-longmemeval"] = evidence.text_file_sha256(Path(__file__).with_name("kernel_iteration_longmemeval.py"))
@@ -779,6 +777,9 @@ def observe_report(report: dict[str, Any], materials: dict[str, Any]) -> dict[st
     _require(isinstance(diagnostics, dict) and diagnostics.get("post_answer_only") is True and diagnostics.get("excluded_from_product_execution_and_scoring") is True, "诊断没有与产品执行及评分隔离")
     cost = _mapping(report, "cost")
     retrieval = _mapping(report, "retrieval")
+    kernel_call_latency = retrieval.get("kernel_call_latency")
+    active_retrieval = retrieval.get("active_retrieval_cumulative")
+    question_wall = retrieval.get("question_wall")
     diagnostic_summary = report.get("diagnostic_summary") if isinstance(report.get("diagnostic_summary"), dict) else {}
     first_gaps = diagnostic_summary.get("by_first_observed_gap")
     _require(isinstance(first_gaps, dict) and all(isinstance(name, str) and isinstance(count, int) and count >= 0 for name, count in first_gaps.items()), "诊断缺少逐题首个观测缺口汇总")
@@ -831,7 +832,18 @@ def observe_report(report: dict[str, Any], materials: dict[str, Any]) -> dict[st
         "final_answer_accuracy": report.get("accuracy"),
         "temporal_correctness": _category_accuracy(categories, "temporal-reasoning"),
         "conflict_correctness": _category_accuracy(categories, "knowledge-update"),
-        "latency": {"retrieval_mean_ms": retrieval.get("mean_ms"), "retrieval_p95_ms": retrieval.get("p95_ms"), "wall_seconds": cost.get("wall_seconds")},
+        "latency": {
+            "kernel_call_latency": dict(kernel_call_latency) if isinstance(kernel_call_latency, dict) else None,
+            "active_retrieval_cumulative": (
+                dict(active_retrieval) if isinstance(active_retrieval, dict)
+                else {"mean_ms": retrieval.get("mean_ms"), "p95_ms": retrieval.get("p95_ms"), "max_ms": retrieval.get("max_ms")}
+            ),
+            "question_wall": dict(question_wall) if isinstance(question_wall, dict) else None,
+            "evaluation_run_wall_seconds": cost.get("wall_seconds"),
+            "retrieval_mean_ms": retrieval.get("mean_ms"),
+            "retrieval_p95_ms": retrieval.get("p95_ms"),
+            "wall_seconds": cost.get("wall_seconds"),
+        },
         "resources": {
             "semantic_input_tokens": cost.get("semantic_input_tokens"),
             "reader_input_tokens": cost.get("reader_input_tokens"),
@@ -2113,16 +2125,12 @@ def _run_longmemeval(
         arguments.extend(["--semantic-representation-manifest", str(representation_manifest)])
     if resume:
         arguments.append("--resume")
-    completed = subprocess.run(
-        arguments,
-        cwd=repository,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=1800,
-        check=False,
-    )
+    try:
+        completed = process_control.run(arguments, cwd=repository, timeout=1800)
+    except process_control.ProcessTimeout as error:
+        raise KernelIterationValidationError(
+            f"非正式端到端执行超时: {(error.stderr or error.stdout)[-2000:]}"
+        ) from error
     if completed.returncode != 0:
         raise KernelIterationValidationError(f"非正式端到端执行失败: {(completed.stderr or completed.stdout)[-2000:]}")
     report = _load_json(output_dir / "report.json")

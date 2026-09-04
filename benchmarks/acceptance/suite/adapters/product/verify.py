@@ -37,10 +37,15 @@ def require(condition: bool, message: str) -> None:
         raise RuntimeError(message)
 
 
-codex_session = _load_module("ownward_suite_codex_session", HERE / "codex_session.py")
+session_trace = _load_module("ownward_suite_external_intelligence_session", HERE / "external_intelligence_session.py")
 resource = _load_module("ownward_suite_resource", SUITE / "adapters" / "product_resource" / "verify.py")
 support = _load_module("ownward_suite_mcp_support", REPOSITORY / "benchmarks" / "support" / "ownward_mcp.py")
 process_control = _load_module("ownward_suite_process_control", SUITE / "process_control.py")
+for dependency_root in (REPOSITORY / "benchmarks" / "support", REPOSITORY / "benchmarks" / "longmemeval_s"):
+    if str(dependency_root) not in sys.path:
+        sys.path.insert(0, str(dependency_root))
+import external_intelligence  # noqa: E402
+import external_intelligence_runtime  # noqa: E402
 
 SCENARIO_WORKERS = 4
 PREFLIGHT_SAFETY_FACTOR = 1.25
@@ -51,7 +56,7 @@ QUERY_TOOLS = ("ownward_search", "ownward_read", "ownward_navigate")
 MAX_SEMANTIC_STAGE_ATTEMPTS = 3
 MAX_QUERY_ATTEMPTS = 3
 MAX_PREFLIGHT_INFRASTRUCTURE_RECOVERIES = 1
-CODEX_INFRASTRUCTURE_FAILURE_SIGNATURES = {
+KNOWN_INFRASTRUCTURE_FAILURE_SIGNATURES = {
     "models-manager-child-exit-timeout": (
         "codex_models_manager",
         "timeout waiting for child process to exit",
@@ -66,7 +71,7 @@ WARM_READINESS_PROBE_STEMS = (
 )
 
 
-class CodexStageTimeout(RuntimeError):
+class ExternalIntelligenceStageTimeout(RuntimeError):
     def __init__(self, message: str, trace: Any, elapsed_seconds: float) -> None:
         super().__init__(message)
         self.trace = trace
@@ -140,7 +145,7 @@ def _cleanup_temporary(path: Path) -> None:
     raise last_error
 
 
-def _scrub_ephemeral_codex_roots(root: Path) -> None:
+def _scrub_ephemeral_runtime_roots(root: Path) -> None:
     if not root.exists():
         return
     resolved_root = root.resolve()
@@ -153,46 +158,15 @@ def _scrub_ephemeral_codex_roots(root: Path) -> None:
         resolved = path.resolve()
         require(
             not path.is_symlink() and resolved != resolved_root and resolved_root in resolved.parents,
-            f"refusing to scrub unexpected Codex temporary root: {resolved}",
+            f"refusing to scrub unexpected external-intelligence temporary root: {resolved}",
         )
         _cleanup_temporary(resolved)
 
 
-def _codex_command(
+def _run_external_intelligence(
     args: argparse.Namespace,
     *,
-    work_dir: Path,
-    schema_path: Path,
-    output_path: Path,
-    endpoint: str,
-    enabled_tools: tuple[str, ...],
-) -> list[str]:
-    command = codex_session.command_prefix(args.codex_binary) + [
-        "exec", "--ephemeral", "--json", "--color", "never", "--skip-git-repo-check",
-        "-C", str(work_dir), "--sandbox", "read-only", "-m", args.codex_model,
-        "-c", f"model_reasoning_effort={json.dumps(args.codex_reasoning_effort)}",
-        "-c", "project_doc_max_bytes=0",
-    ]
-    for feature in (
-        "apply_patch_freeform", "apps", "image_generation", "js_repl", "memories", "multi_agent",
-        "personality", "plugins", "request_permissions_tool", "search_tool", "shell_snapshot",
-        "shell_tool", "tool_search", "tool_suggest",
-    ):
-        command.extend(["-c", f"features.{feature}=false"])
-    command.extend([
-        "-c", 'web_search="disabled"',
-        "-c", f"mcp_servers.ownward.url={json.dumps(endpoint)}",
-        "-c", 'mcp_servers.ownward.bearer_token_env_var="OWNWARD_MCP_BEARER_TOKEN"',
-        "-c", f"mcp_servers.ownward.enabled_tools={json.dumps(enabled_tools, separators=(',', ':'))}",
-        "-c", 'mcp_servers.ownward.tools.ownward_semantic_submit.approval_mode="approve"',
-        "--output-schema", str(schema_path), "-o", str(output_path), "-",
-    ])
-    return command
-
-
-def _run_codex(
-    args: argparse.Namespace,
-    *,
+    client: Any,
     stage: Path,
     prompt: str,
     schema: dict[str, Any],
@@ -205,54 +179,46 @@ def _run_codex(
     output = stage / "output.json"
     events = stage / "events.jsonl"
     work = stage / "work"
-    require(not output.exists() and not events.exists() and not work.exists(), f"Codex stage is not blank: {stage}")
-    work.mkdir()
-    temporary_root = Path(tempfile.mkdtemp(prefix="codex-", dir=stage))
-    failed = False
+    require(not output.exists() and not events.exists() and not work.exists(), f"external-intelligence stage is not blank: {stage}")
+    tool_session = session_trace.DynamicToolSession(client, enabled_tools)
+    role = "semantic" if set(enabled_tools) == set(SEMANTIC_TOOLS) else "reader"
+    profile = args.external_roles[role]
+    lifecycle = external_intelligence.InvocationLifecycle(
+        retrieval_mode="external-agent-progressive/v1",
+        tool_manifest_identity=tool_session.tool_manifest_identity,
+        dynamic_tools=tool_session.dynamic_tools,
+        tool_handler=tool_session.call,
+        base_instructions="Use only the supplied Ownward tools and return the requested structured JSON.",
+        reset_attempt=tool_session.reset,
+        restore=tool_session.restore,
+        report=tool_session.report,
+    )
+    lifecycle_root = stage / "external-intelligence"
+    started = time.perf_counter()
     try:
-        schema_path = temporary_root / "schema.json"
-        schema_path.write_text(json.dumps(schema, ensure_ascii=False), encoding="utf-8")
-        environment = codex_session.isolated_environment(args.codex_auth_file, temporary_root / "codex-home")
-        environment["OWNWARD_MCP_BEARER_TOKEN"] = bearer_token
-        started = time.perf_counter()
-        try:
-            completed = process_control.run(
-                _codex_command(
-                    args,
-                    work_dir=work,
-                    schema_path=schema_path,
-                    output_path=output,
-                    endpoint=endpoint,
-                    enabled_tools=enabled_tools,
-                ),
-                cwd=work,
-                input_text=prompt,
-                timeout=timeout_seconds,
-                env=environment,
-                stdout_path=events,
-                stderr_path=stage / "stderr.txt",
-            )
-        except process_control.ProcessTimeout as error:
-            elapsed = time.perf_counter() - started
-            detail = error.stderr[-1000:].strip()
-            message = "Codex stage exceeded its wall-clock budget and its process tree was stopped"
-            trace = codex_session.load_exec_events(error.stdout)
-            if output.is_file():
-                return load_json(output), trace, elapsed
-            raise CodexStageTimeout(f"{message}: {detail}" if detail else message, trace, elapsed) from error
+        value, _usage = external_intelligence.ExternalIntelligenceExecutor(args.external_transport).invoke(
+            role=role, prompt=prompt, schema=schema, stage=lifecycle_root,
+            model=profile["model"], effort=profile["reasoning_effort"],
+            timeout_seconds=timeout_seconds, attempts=3, lifecycle=lifecycle,
+        )
         elapsed = time.perf_counter() - started
-    except Exception:
-        failed = True
-        raise
+        write_json(output, value)
+        session_id = external_intelligence.canonical_sha256({
+            "stage": str(stage.resolve()), "request": load_json(lifecycle_root / "request.json")["identity"]
+        })
+        events.write_text(tool_session.events(session_id), encoding="utf-8")
+        (stage / "stderr.txt").write_text("", encoding="utf-8")
+        work.mkdir()
+        return value, tool_session.trace(session_id), elapsed
+    except external_intelligence.ExternalIntelligenceError as error:
+        elapsed = time.perf_counter() - started
+        session_id = external_intelligence.canonical_sha256({"stage": str(stage.resolve()), "failed": True})
+        events.write_text(tool_session.events(session_id), encoding="utf-8")
+        (stage / "stderr.txt").write_text(str(error), encoding="utf-8")
+        work.mkdir(exist_ok=True)
+        raise ExternalIntelligenceStageTimeout(str(error), tool_session.trace(session_id), elapsed) from error
     finally:
-        try:
-            _cleanup_temporary(temporary_root)
-        except OSError:
-            if not failed:
-                raise
-    require(completed.returncode == 0, f"Codex stage failed: {completed.stderr[-2000:]}")
-    require(output.is_file(), "Codex stage produced no structured output")
-    return load_json(output), codex_session.load_exec_events(completed.stdout), elapsed
+        del endpoint, bearer_token
 
 
 RELATION_CONTRACT = {
@@ -273,13 +239,20 @@ RELATION_CONTRACT = {
 
 
 def _semantic_prompt(asset_id: str, args: argparse.Namespace) -> str:
+    provider = str(getattr(args, "external_provider", "legacy-provider"))
+    roles = getattr(args, "external_roles", None)
+    semantic_model = (
+        str(roles["semantic"]["model"])
+        if isinstance(roles, dict)
+        else str(getattr(args, "codex_model", "legacy-model"))
+    )
     return f"""Act only as Ownward's external semantic capability. The tool definitions are already loaded. Immediately use the semantic tools; do not use shell, files, web, query, read, navigation, status, mutation, or any other product capability. The only valid product calls in this stage are one `ownward_semantic_work` followed by one successful `ownward_semantic_submit` (plus at most two corrected submit retries after schema rejection).
 
 Call `ownward_semantic_work` once with exactly this one asset ID:
 {json.dumps([asset_id], ensure_ascii=False)}
 
 Analyze only the returned asset and candidate contexts. Do not infer from a query, expected answer, test truth, or outside knowledge. Do one bounded pass over the strongest candidate evidence; do not exhaustively compare every candidate. Immediately call `ownward_semantic_submit` with exactly one top-level argument named `submission`. Its value must use this exact field nesting; replace placeholders only with values copied from the work item and your analysis:
-{{"submission":{{"schema":"ownward.semantic-submission/v1","work_id":"<work.id>","asset_id":"<work.asset.id>","asset_revision":<work.asset.revision>,"capability":{{"id":"codex","version":"{args.codex_model}","execution":"ownward-product-dataset-v1"}},"status":"complete","analysis":{{"summary":"<summary>","topics":[],"cues":[],"inferred_contexts":[],"relations":[]}}}}}}
+{{"submission":{{"schema":"ownward.semantic-submission/v1","work_id":"<work.id>","asset_id":"<work.asset.id>","asset_revision":<work.asset.revision>,"capability":{{"id":"external-intelligence/{provider}","version":"{semantic_model}","execution":"ownward-product-dataset-v1"}},"status":"complete","analysis":{{"summary":"<summary>","topics":[],"cues":[],"inferred_contexts":[],"relations":[]}}}}}}
 Keep `schema`, `work_id`, `asset_id`, `asset_revision`, `capability`, and `status` inside `submission`; keep `summary`, `topics`, `cues`, `inferred_contexts`, and `relations` inside `submission.analysis`. Never move those fields to the tool-call root or alongside `analysis`. Correct and retry a rejected submission at most twice.
 
 Do not create a plan or todo list. After `ownward_semantic_work`, inspect each returned candidate once. If no explicit relation is already justified by the asset and those candidates, immediately submit complete with no relation; do not keep deliberating over the relation taxonomy.
@@ -472,14 +445,28 @@ def _scenario_binding(args: argparse.Namespace, task: dict[str, Any], binding: d
     query = task.get("query")
     question = query.get("question") if isinstance(query, dict) else None
     require(isinstance(question, str) and question, "scenario query question is invalid")
+    roles = getattr(args, "external_roles", None)
+    if not isinstance(roles, dict):
+        model = str(getattr(args, "codex_model", "legacy-model"))
+        effort = str(getattr(args, "codex_reasoning_effort", "legacy-effort"))
+        roles = {name: {"model": model, "reasoning_effort": effort} for name in ("semantic", "reader")}
+    external_identity = getattr(args, "external_intelligence_identity", None)
+    if not isinstance(external_identity, dict):
+        external_identity = {
+            "schema": "ownward.external-intelligence-runtime-identity/v1",
+            "driver": "legacy-test-adapter",
+            "roles": roles,
+        }
     return {
         "suite_version": binding["suite_version"], "candidate": binding["candidate"],
         "binary_sha256": binding["binary_sha256"], "environment_sha256": binding["environment_sha256"],
         "input_manifest_sha256": binding["input_manifest_sha256"], "tool_sha256": binding["tool_sha256"],
         "task_sha256": json_sha256(task), "resource_report_sha256": resource_sha,
         "question_sha256": json_sha256(question), "question_chars": len(question),
-        "codex_binary_sha256": sha256(args.codex_binary), "codex_model": args.codex_model,
-        "codex_reasoning_effort": args.codex_reasoning_effort,
+        "external_intelligence": external_identity,
+        "external_intelligence_roles": {
+            name: roles[name] for name in ("semantic", "reader")
+        },
     }
 
 
@@ -804,7 +791,7 @@ def _sealed_scenario_valid(
 
 
 def _archive_incomplete(scenario_root: Path, evidence_root: Path, reason: str) -> None:
-    _scrub_ephemeral_codex_roots(scenario_root)
+    _scrub_ephemeral_runtime_roots(scenario_root)
     audit = evidence_root / "_audit"
     audit.mkdir(parents=True, exist_ok=True)
     destination = audit / f"{scenario_root.name}-{time.time_ns()}"
@@ -928,7 +915,7 @@ def _recoverable_semantic_rejection(trace: Any) -> bool:
     )
 
 
-def _codex_infrastructure_failure_signature(
+def _external_infrastructure_failure_signature(
     stage: Path,
     trace: Any,
     elapsed_seconds: float,
@@ -949,7 +936,7 @@ def _codex_infrastructure_failure_signature(
     if not stderr_path.is_file():
         return None
     stderr = stderr_path.read_text(encoding="utf-8", errors="replace")
-    for signature, markers in CODEX_INFRASTRUCTURE_FAILURE_SIGNATURES.items():
+    for signature, markers in KNOWN_INFRASTRUCTURE_FAILURE_SIGNATURES.items():
         if all(marker in stderr for marker in markers):
             return signature
     return None
@@ -981,8 +968,8 @@ def _preflight_infrastructure_failures(scenario_root: Path, stage_timeout: float
         stderr_path = stage / "stderr.txt"
         if not events_path.is_file() or not stderr_path.is_file():
             continue
-        trace = codex_session.load_exec_events(events_path.read_text(encoding="utf-8"))
-        signature = _codex_infrastructure_failure_signature(
+        trace = session_trace.load_exec_events(events_path.read_text(encoding="utf-8"))
+        signature = _external_infrastructure_failure_signature(
             stage,
             trace,
             float(record.get("elapsed_seconds", 0)),
@@ -1038,13 +1025,13 @@ def _archive_preflight_infrastructure_failure(
     binding: dict[str, Any],
     failures: list[dict[str, Any]],
 ) -> Path:
-    _scrub_ephemeral_codex_roots(scenario_root)
+    _scrub_ephemeral_runtime_roots(scenario_root)
     audit = evidence_root / "_audit"
     audit.mkdir(parents=True, exist_ok=True)
     destination = audit / f"{scenario_root.name}-{time.time_ns()}"
     write_json(scenario_root / "archive.json", {
         "schema": "ownward.product-preflight-infrastructure-recovery/v1",
-        "reason": "bounded recovery of a Codex infrastructure timeout before semantic submit",
+        "reason": "bounded recovery of a selected external-intelligence infrastructure timeout before semantic submit",
         "scenario_id": scenario_root.name,
         "binding": binding,
         "failures": failures,
@@ -1075,7 +1062,7 @@ def _recover_preflight_infrastructure_samples(
         failures = _preflight_infrastructure_failures(scenario_root, float(args.stage_timeout))
         if not failures:
             continue
-        require(args.resume, "product preflight contains a Codex infrastructure timeout; use --resume for bounded recovery")
+        require(args.resume, "product preflight contains an external-intelligence infrastructure timeout; use --resume for bounded recovery")
         require(
             len(archives) < MAX_PREFLIGHT_INFRASTRUCTURE_RECOVERIES,
             f"product preflight infrastructure recovery exhausted for {scenario_id}; preserved evidence requires investigation",
@@ -1119,7 +1106,7 @@ def _complete_semantic_unit(
         events_path = attempt / "events.jsonl"
         stderr_path = attempt / "stderr.txt"
         require(events_path.is_file() and stderr_path.is_file(), "interrupted semantic attempt lacks raw process evidence")
-        trace = codex_session.load_exec_events(events_path.read_text(encoding="utf-8"))
+        trace = session_trace.load_exec_events(events_path.read_text(encoding="utf-8"))
         current_protocol = list(getattr(trace, "protocol_operations", ()))
         protocol_operations.extend(current_protocol)
         if (not trace.bypassed and not trace.calls) or _recoverable_semantic_rejection(trace):
@@ -1178,8 +1165,9 @@ def _complete_semantic_unit(
         attempts.append(stage)
         recovered_timeout = False
         try:
-            semantic, semantic_trace, elapsed = _run_codex(
+            semantic, semantic_trace, elapsed = _run_external_intelligence(
                 args,
+                client=runtime.client,
                 stage=stage,
                 prompt=_semantic_prompt(asset_id, args),
                 schema=SEMANTIC_SCHEMA,
@@ -1188,7 +1176,7 @@ def _complete_semantic_unit(
                 timeout_seconds=min(args.stage_timeout, remaining),
                 enabled_tools=SEMANTIC_TOOLS,
             )
-        except CodexStageTimeout as error:
+        except ExternalIntelligenceStageTimeout as error:
             semantic = None
             semantic_trace = error.trace
             elapsed = error.elapsed_seconds
@@ -1228,7 +1216,7 @@ def _complete_semantic_unit(
                 "protocol_operations": current_protocol,
             }
             if recovered_timeout:
-                signature = _codex_infrastructure_failure_signature(
+                signature = _external_infrastructure_failure_signature(
                     stage,
                     semantic_trace,
                     elapsed,
@@ -1236,7 +1224,7 @@ def _complete_semantic_unit(
                 )
                 if signature is not None:
                     attempt_record.update({
-                        "failure_class": "codex-infrastructure",
+                        "failure_class": "external-intelligence-infrastructure",
                         "infrastructure_signature": signature,
                     })
             write_json(stage / "attempt.json", attempt_record)
@@ -1426,8 +1414,8 @@ def _run_scenario(
                 remaining = deadline - time.monotonic()
                 require(remaining > 0, "product execution exceeded its total budget")
                 query_stage = _next_attempt(scenario_root / "query")
-                answer, query_trace, elapsed = _run_codex(
-                    args, stage=query_stage, prompt=_query_prompt(task["query"]["question"]),
+                answer, query_trace, elapsed = _run_external_intelligence(
+                    args, client=runtime.client, stage=query_stage, prompt=_query_prompt(task["query"]["question"]),
                     schema=ANSWER_SCHEMA, endpoint=runtime.binding.endpoint, bearer_token=runtime.binding.bearer_token,
                     timeout_seconds=min(args.stage_timeout, remaining),
                     enabled_tools=QUERY_TOOLS,
@@ -2061,10 +2049,10 @@ def _run_product_preflight(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--binary", type=Path, required=True)
-    parser.add_argument("--codex-binary", type=Path, required=True)
-    parser.add_argument("--codex-auth-file", type=Path, required=True)
-    parser.add_argument("--codex-model", default="gpt-5.4-mini")
-    parser.add_argument("--codex-reasoning-effort", default="xhigh")
+    parser.add_argument("--external-intelligence-driver", required=True)
+    parser.add_argument("--external-intelligence-binary", type=Path, required=True)
+    parser.add_argument("--external-intelligence-credential-file", type=Path, required=True)
+    parser.add_argument("--external-intelligence-roles-json", required=True)
     parser.add_argument("--tasks", type=Path, required=True)
     parser.add_argument("--binding", type=Path, required=True)
     parser.add_argument("--resource-report", type=Path, required=True)
@@ -2080,12 +2068,36 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    for name in ("binary", "codex_binary", "codex_auth_file", "tasks", "binding", "resource_report", "evidence_dir", "output"):
+    for name in ("binary", "external_intelligence_binary", "external_intelligence_credential_file", "tasks", "binding", "resource_report", "evidence_dir", "output"):
         setattr(args, name, getattr(args, name).resolve())
-    for path, label in ((args.binary, "binary"), (args.codex_binary, "Codex"), (args.codex_auth_file, "Codex auth")):
+    for path, label in ((args.binary, "binary"), (args.external_intelligence_binary, "external intelligence"), (args.external_intelligence_credential_file, "external-intelligence credential locator")):
         require(path.is_file(), f"{label} file does not exist: {path}")
+    roles = json.loads(args.external_intelligence_roles_json)
+    require(isinstance(roles, dict) and {"semantic", "reader"} <= set(roles), "external-intelligence role profile is incomplete")
+    args.external_roles = roles
+    implementation = external_intelligence_runtime.selected_implementation(args.external_intelligence_driver)
+    args.external_provider = implementation["provider"]
     args.evidence_dir.mkdir(parents=True, exist_ok=True)
-    _scrub_ephemeral_codex_roots(args.evidence_dir)
+    _scrub_ephemeral_runtime_roots(args.evidence_dir)
+    external_intelligence_runtime.clean_stale_runtime_roots(args.evidence_dir.parent)
+    configuration = external_intelligence_runtime.RuntimeConfiguration(
+        args.external_intelligence_driver,
+        args.external_intelligence_binary,
+        args.external_intelligence_credential_file,
+    )
+    external_intelligence_runtime.validate_configuration(configuration)
+    with external_intelligence_runtime.open_external_intelligence_runtime(
+        driver=configuration.driver, binary=configuration.binary,
+        credential_file=configuration.credential_file,
+        max_active=SCENARIO_WORKERS, worker_processes=SCENARIO_WORKERS,
+        runtime_parent=args.evidence_dir.parent / ".external-intelligence-runtime",
+    ) as transport:
+        args.external_transport = transport
+        args.external_intelligence_identity = transport.identity
+        _execute(args)
+
+
+def _execute(args: argparse.Namespace) -> None:
     tasks = load_json(args.tasks)
     binding = load_json(args.binding)
     require(tasks.get("schema") == "ownward.product-tasks/v1", "product tasks schema is invalid")

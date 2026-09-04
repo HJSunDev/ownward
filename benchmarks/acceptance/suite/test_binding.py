@@ -11,6 +11,10 @@ import binding
 import evidence_identity
 
 
+def external_intelligence(binary: str = "external", credential: str = "credential") -> dict:
+    return {"external_intelligence": {"binary": binary, "credential_file": credential}}
+
+
 class BindingManifestTests(unittest.TestCase):
     def setUp(self) -> None:
         self.root = Path(__file__).resolve().parent
@@ -39,9 +43,10 @@ class BindingManifestTests(unittest.TestCase):
         self.assertEqual("ownward.acceptance-tool-manifest/v5", manifests["product"]["schema"])
         self.assertTrue(all("repository_commit" not in manifest for manifest in manifests.values()))
         self.assertIn("cmd/ownward-frontier/main.go", frontier)
-        self.assertIn("benchmarks/acceptance/suite/execution.py", community & frontier & product)
+        self.assertIn("benchmarks/acceptance/suite/evidence.py", community & frontier & product)
+        self.assertNotIn("benchmarks/acceptance/suite/execution.py", community | frontier | core)
         self.assertIn("benchmarks/acceptance/suite/adapters/product/verify.py", product)
-        self.assertIn("benchmarks/acceptance/suite/adapters/product/codex_transport.py", product)
+        self.assertIn("benchmarks/acceptance/suite/adapters/product/external_intelligence_session.py", product)
         self.assertIn("benchmarks/acceptance/suite/product_scoring.py", product)
         self.assertIn("benchmarks/longmemeval_s/run.py", community)
         self.assertIn("benchmarks/longmemeval_s/external_intelligence_runtime.py", community)
@@ -63,7 +68,7 @@ class BindingManifestTests(unittest.TestCase):
         derivation = {item["path"] for item in responsibilities["derivation"]["files"]}
         self.assertIn("benchmarks/acceptance/suite/execution_product.py", raw)
         self.assertIn("benchmarks/acceptance/suite/adapters/product/verify.py", raw)
-        self.assertIn("benchmarks/acceptance/suite/adapters/product/codex_transport.py", raw)
+        self.assertIn("benchmarks/acceptance/suite/adapters/product/external_intelligence_session.py", raw)
         self.assertIn("benchmarks/acceptance/suite/adapters/product/codex_session.py", derivation)
         self.assertIn("benchmarks/acceptance/suite/product_scoring.py", derivation)
         self.assertNotIn("benchmarks/acceptance/suite/adapters/product/replay.py", derivation)
@@ -92,7 +97,7 @@ class BindingManifestTests(unittest.TestCase):
             "product": {
                 "production_storage_report": str(external),
                 "package": str(self.root / "materials" / "core" / "v1"),
-                "codex_model": "fixed-model", "codex_reasoning_effort": "fixed-effort",
+                **external_intelligence(),
             },
             "community": {"web_arguments": arguments, "enterprise_arguments": arguments},
         }
@@ -122,7 +127,7 @@ class BindingManifestTests(unittest.TestCase):
             config = {
                 "product": {
                     "production_storage_report": str(external), "package": str(package),
-                    "codex_model": "fixed-model", "codex_reasoning_effort": "fixed-effort",
+                    **external_intelligence(),
                 },
                 "community": {"web_arguments": arguments, "enterprise_arguments": arguments},
             }
@@ -164,8 +169,8 @@ class BindingManifestTests(unittest.TestCase):
             codex.write_bytes(b"codex")
             frontier.write_bytes(b"frontier")
             completed = SimpleNamespace(returncode=0, stdout="codex 1.0\n")
-            config = {"candidate": {"binary": str(root / "ownward.exe"), "embedding_bundle_dir": str(runtime)}, "product": {"codex_binary": str(codex)}}
-            with patch.object(binding.subprocess, "run", return_value=completed):
+            config = {"candidate": {"binary": str(root / "ownward.exe"), "embedding_bundle_dir": str(runtime)}, "product": external_intelligence(str(codex), str(root / "auth.json"))}
+            with patch.object(binding.external_intelligence_runtime, "probe", return_value={"version": "fixture", "artifact_sha256": "a" * 64}):
                 environment = binding._environment_manifest(config, "product")
                 self.assertEqual(2, len(environment["embedding"]["runtime_files"]))
                 model.write_bytes(b"changed")
@@ -275,10 +280,8 @@ class BindingManifestTests(unittest.TestCase):
                 "candidate": {"binary": str(binary), "embedding_bundle_dir": str(runtime)},
                 "frontier": {"tool": str(frontier), "targeted_stages": []},
                 "product": {
-                    "package": str(package), "production_storage_report": str(production), "codex_binary": str(codex),
-                    "codex_auth_file": str(auth),
-                    "codex_model": binding.ACTIVE_CODEX_MODEL,
-                    "codex_reasoning_effort": binding.ACTIVE_CODEX_REASONING_EFFORT,
+                    "package": str(package), "production_storage_report": str(production),
+                    **external_intelligence(str(codex), str(auth)),
                 },
             }
             candidate = "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8"
@@ -288,6 +291,7 @@ class BindingManifestTests(unittest.TestCase):
                 patch.object(binding, "_go_binary_revision", return_value=candidate),
                 patch.object(binding, "_verify_go_binary"),
                 patch.object(binding.subprocess, "run", return_value=version),
+                patch.object(binding.external_intelligence_runtime, "validate_configuration"),
                 patch.object(binding, "_environment_manifest", side_effect=environment),
             ):
                 result = binding.create(self.root, self._write_config(root, config), output)
@@ -470,7 +474,7 @@ class BindingManifestTests(unittest.TestCase):
                 "enabled_scopes": ["frontier", "core", "product"],
                 "candidate": {"binary": str(binary), "embedding_bundle_dir": str(embedding)},
                 "frontier": {"tool": str(binary), "targeted_stages": []},
-                "product": {"package": str(root), "production_storage_report": str(binary), "codex_binary": str(binary), "codex_auth_file": str(binary), "codex_model": binding.ACTIVE_CODEX_MODEL, "codex_reasoning_effort": binding.ACTIVE_CODEX_REASONING_EFFORT},
+                "product": {"package": str(root), "production_storage_report": str(binary), **external_intelligence(str(binary), str(binary))},
             }
             config_path = self._write_config(root, config)
             replacement = self._tool_fixture("product", 2)

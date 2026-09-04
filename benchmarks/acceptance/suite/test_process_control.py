@@ -4,6 +4,8 @@ import time
 import unittest
 from pathlib import Path
 import os
+import io
+from unittest import mock
 
 import process_control
 
@@ -63,6 +65,21 @@ class ProcessControlTests(unittest.TestCase):
                 )
             self.assertIn("durable-out", stdout_path.read_text(encoding="utf-8"))
             self.assertIn("durable-err", stderr_path.read_text(encoding="utf-8"))
+
+    def test_interrupt_always_stops_owned_process_tree(self) -> None:
+        process = mock.Mock()
+        process.stdout = io.StringIO("")
+        process.stderr = io.StringIO("")
+        process.stdin = None
+        process.wait.side_effect = [KeyboardInterrupt(), None]
+        process.poll.return_value = None
+        process.returncode = -9
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(
+            process_control.subprocess, "Popen", return_value=process
+        ), mock.patch.object(process_control, "_terminate_tree") as terminate:
+            with self.assertRaises(KeyboardInterrupt):
+                process_control.run([*PYTHON, "-c", "pass"], cwd=Path(directory), timeout=5)
+        terminate.assert_called_once_with(process)
 
 
 if __name__ == "__main__":

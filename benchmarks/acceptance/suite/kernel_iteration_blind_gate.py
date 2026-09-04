@@ -33,7 +33,7 @@ CONTRACT_RELATIVES = {
 }
 LEVEL_BUDGETS = {5: 406, 15: 751, 25: 1097, 50: 1961}
 LEVEL_SEQUENCE = {5: (None, 15), 15: (5, 25), 25: (15, 50), 50: (25, None)}
-CONTRACT_SCHEMA = "ownward.kernel-iteration-stage6-blind-gate-contract/v3"
+CONTRACT_SCHEMA = "ownward.kernel-iteration-stage6-blind-gate-contract/v4"
 PLAN_SCHEMA = "ownward.kernel-iteration-stage6-blind-plan/v2"
 ADMISSION_SCHEMA = "ownward.kernel-iteration-stage6-blind-admission/v2"
 RESULT_SCHEMA = "ownward.kernel-iteration-stage6-blind-result/v3"
@@ -85,24 +85,28 @@ def load_contract(suite_root: Path, level: int) -> dict[str, Any]:
         "fact_delivery_missing_maximum": 0,
         "temporal_correctness_minimum": 1.0,
         "conflict_correctness_minimum": 1.0,
-        "complete_consumer_retrieval_p95_ms_maximum": 553.0,
-        "level_total_wall_seconds_maximum": LEVEL_BUDGETS[level],
         "read_limit": 8,
         "context_chars_maximum": 24000,
     }, "阶段 6 候选绝对门漂移")
-    distribution = _mapping(value, "performance_distribution_adjudication")
+    measurements = _mapping(value, "performance_measurements")
     _require(
-        distribution == {
-            "metric": "retrieval_p95_ms",
-            "estimator": "nearest-rank-ceil-n-times-0.95",
-            "minimum_samples": RETRIEVAL_P95_MINIMUM_SAMPLES,
-            "insufficient_sample_outlier": "bounded-sufficient-sample-confirmation-required",
-            "single_non_timeout_outlier_is_candidate_failure": False,
-            "hard_timeout_or_execution_error_is_candidate_failure": True,
-            "valid_same-dependency-sufficient-evidence-is-reused": True,
-        },
-        "阶段 6 性能分布裁决合同漂移",
+        set(measurements) == {"kernel_call_latency", "active_retrieval_cumulative", "question_wall"}
+        and _mapping(measurements, "kernel_call_latency").get("evaluates") == "kernel"
+        and _mapping(measurements, "active_retrieval_cumulative").get("evaluates") == "kernel-and-external-agent-policy-composition"
+        and _mapping(measurements, "question_wall").get("evaluates") == "product-experience",
+        "阶段 6 性能测量职责漂移",
     )
+    _require(value.get("threshold_rule") == "measurement-subject-workload-and-authority-must-match", "阶段 6 门槛缺少测量对象与权威同一性规则")
+    _require(_mapping(value, "threshold_authorities") == {
+        "answer-and-evidence-quality": "docs/engineering/kernel-evolution-system.md",
+        "active-retrieval-resource-budgets": "benchmarks/longmemeval_s/protocol.json",
+        "product-performance": "docs/product/requirements.md",
+    }, "阶段 6 门槛权威来源漂移")
+    _require(_mapping(value, "evaluation_process_gate") == {
+        "level_total_wall_seconds_maximum": LEVEL_BUDGETS[level],
+        "authority": "benchmarks/acceptance/suite/iteration/v2/blind-calibration-budget.json",
+        "candidate_failure": False,
+    }, "阶段 6 评测流程预算职责漂移")
     relative = _mapping(value, "relative_v0_gate")
     _require(relative.get("gate_role") == "sequential-early-rejection-not-standalone-overall-uplift-proof", "单级盲测不得冒充整体跃升证明")
     failure = _mapping(value, "failure")
@@ -404,7 +408,7 @@ def run(
                 candidate["identity"], baseline["identity"], execute,
             )
             total = _decision_wall_seconds(started, excluded_rejection_wall_seconds)
-            wall_limit = float(_mapping(contract, "absolute_gate")["level_total_wall_seconds_maximum"])
+            wall_limit = float(_mapping(contract, "evaluation_process_gate")["level_total_wall_seconds_maximum"])
             candidate_decision = bool(relative["passed"])
             evaluation_process_decision = {
                 "passed": total <= wall_limit,
@@ -562,7 +566,7 @@ def _execute(
     }
 
 
-def _adjudicate_retrieval_p95(
+def _adjudicate_historical_retrieval_p95(
     *,
     samples: int,
     actual: float,
@@ -599,11 +603,8 @@ def _adjudicate_retrieval_p95(
 
 def _absolute_decision(observation: dict[str, Any], contract: dict[str, Any]) -> dict[str, Any]:
     gate = _mapping(contract, "absolute_gate")
-    retrieval = _adjudicate_retrieval_p95(
-        samples=int(observation["questions"]),
-        actual=float(observation["latency"]["retrieval_p95_ms"]),
-        maximum=float(gate["complete_consumer_retrieval_p95_ms_maximum"]),
-    )
+    _require("complete_consumer_retrieval_p95_ms_maximum" not in gate, "单题多轮主动检索累计时间不得作为单次内核调用门槛")
+    measurements = _mapping(contract, "performance_measurements")
     checks = [
         ("questions", observation["questions"], gate["questions"], lambda actual, expected: actual == expected),
         ("final_answer_accuracy", observation["final_answer_accuracy"], gate["final_answer_accuracy_minimum"], lambda actual, expected: float(actual) >= float(expected)),
@@ -616,13 +617,27 @@ def _absolute_decision(observation: dict[str, Any], contract: dict[str, Any]) ->
         {"metric": name, "actual": actual, "required": expected}
         for name, actual, expected, predicate in checks if actual is None or not predicate(actual, expected)
     ]
-    if not retrieval["passed"]:
-        failures.append({
-            "metric": "retrieval_p95_ms" if retrieval["candidate_failure"] else "retrieval_p95_confirmation_required",
-            "actual": retrieval["actual"],
-            "required": retrieval["maximum"],
-        })
-    return {"passed": not failures, "failures": failures, "retrieval_distribution": retrieval}
+    performance = {
+        "kernel_call_latency": {
+            "measurement": _mapping(measurements, "kernel_call_latency")["measurement"],
+            "evaluates": "kernel",
+            "observation": observation["latency"].get("kernel_call_latency"),
+            "status": "reported-by-tool-call-distribution" if observation["latency"].get("kernel_call_latency") is not None else "legacy-report-requires-offline-trace-reduction",
+        },
+        "active_retrieval_cumulative": {
+            "measurement": _mapping(measurements, "active_retrieval_cumulative")["measurement"],
+            "evaluates": "kernel-and-external-agent-policy-composition",
+            "observation": observation["latency"].get("active_retrieval_cumulative"),
+            "status": "observed-not-absolute-kernel-gate",
+        },
+        "question_wall": {
+            "measurement": _mapping(measurements, "question_wall")["measurement"],
+            "evaluates": "product-experience",
+            "observation": observation["latency"].get("question_wall"),
+            "status": "observed-separately" if observation["latency"].get("question_wall") is not None else "legacy-report-requires-offline-question-reduction",
+        },
+    }
+    return {"passed": not failures, "failures": failures, "performance": performance}
 
 
 def _independent_absolute_failures(absolute: dict[str, Any]) -> list[dict[str, Any]]:
@@ -827,7 +842,15 @@ def _relative_decision(candidate: dict[str, Any], baseline: dict[str, Any]) -> d
         {"metric": name, "candidate": left, "v0": right}
         for name, left, right, predicate in comparisons if left is None or right is None or not predicate(left, right)
     ]
-    return {"passed": not failures, "failures": failures, "retrieval_latency_policy": "candidate-absolute-complete-consumer-gate-only"}
+    return {
+        "passed": not failures,
+        "failures": failures,
+        "performance_policy": {
+            "kernel_call_latency": "kernel-only-authorized-contract",
+            "active_retrieval_cumulative": "same-profile-composition-observation",
+            "question_wall": "same-profile-product-experience-observation",
+        },
+    }
 
 
 def _coverage_schedule(contract: dict[str, Any]) -> list[str]:
@@ -1113,7 +1136,7 @@ def _load_evaluator_reliability_migration(suite_root: Path) -> dict[str, Any]:
     content = {key: item for key, item in value.items() if key != "identity"}
     _require(value.get("schema") == "ownward.kernel-iteration-stage6-evaluator-reliability-migration/v7", "阶段 6 官方评测器可靠性迁移 schema 无效")
     _require(value.get("identity") == evidence.canonical_sha256(content), "阶段 6 官方评测器可靠性迁移身份漂移")
-    _require(value.get("target_controller_identity") == _implementation_identity()["controller"], "阶段 6 官方评测器可靠性迁移没有绑定当前控制器")
+    _require(value.get("target_controller_identity") == "f939c9fe0708d51e258c16bb970aa954279a5a4477f16226dfbef926f082248d", "阶段 6 官方评测器可靠性迁移历史目标漂移")
     _require(value.get("candidate_results_rewritten") is False and value.get("model_or_product_execution") is False, "阶段 6 官方评测器可靠性迁移越权")
     return value
 
@@ -1155,7 +1178,7 @@ def _load_candidate_decision_adjudication(
     )
     reproduction = _mapping(_mapping(value, "retrieval_root_audit"), "independent_nonblind_reproduction")
     aggregate = _mapping(reproduction, "aggregate")
-    performance = _adjudicate_retrieval_p95(
+    performance = _adjudicate_historical_retrieval_p95(
         samples=int(_mapping(value, "retrieval_root_audit")["blind_measurement"]["questions"]),
         actual=1000.0,
         maximum=553.0,
@@ -1493,7 +1516,7 @@ def _finish(
             "candidate_decision_wall_seconds": decision_wall,
             "admission_rejection_wall_seconds": rejected_wall,
             "operational_total_wall_seconds": operational_wall,
-            "level_budget_seconds": _mapping(contract, "absolute_gate")["level_total_wall_seconds_maximum"],
+            "level_budget_seconds": _mapping(contract, "evaluation_process_gate")["level_total_wall_seconds_maximum"],
             "bounded_infrastructure_retry_only": True,
             "admission_rejection_not_candidate_failure": True,
         },

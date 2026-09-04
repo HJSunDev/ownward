@@ -256,14 +256,13 @@ class EvidenceLifecycleTests(unittest.TestCase):
         with self.assertRaisesRegex(lifecycle.LifecycleError, "落盘报告"):
             lifecycle.record(self.contract, state, "targeted", report, "f" * 64, 1)
 
-    def test_summary_is_blocked_when_community_quality_is_not_determined(self):
+    def test_summary_accepts_complete_community_evidence_without_inventing_a_quality_threshold(self):
         state = self.state()
         with tempfile.TemporaryDirectory() as directory:
             self.checkpoint(state, "core", report=self.core_report(), directory=directory)
             self.checkpoint(state, "full", report=self.product_report("full"), directory=directory)
-            self.checkpoint(state, "longmemeval", passed=False, report=self.community_report(), directory=directory)
-            with self.assertRaisesRegex(lifecycle.LifecycleError, "未通过"):
-                lifecycle.summarize(self.contract, state)
+            self.checkpoint(state, "longmemeval", report=self.community_report(), directory=directory)
+            self.assertTrue(lifecycle.summarize(self.contract, state)["passed"])
 
     def test_summary_rejects_missing_or_changed_evidence(self):
         state = self.state()
@@ -272,14 +271,15 @@ class EvidenceLifecycleTests(unittest.TestCase):
         with self.assertRaisesRegex(lifecycle.LifecycleError, "报告缺失"):
             lifecycle.summarize(self.contract, state)
 
-    def test_summary_cannot_be_recorded_from_undetermined_community_quality(self):
+    def test_summary_preserves_undetermined_community_quality_as_reported_evidence(self):
         state = self.state()
         with tempfile.TemporaryDirectory() as directory:
             self.checkpoint(state, "core", report=self.core_report(), directory=directory)
             self.checkpoint(state, "full", report=self.product_report("full"), directory=directory)
-            self.checkpoint(state, "longmemeval", passed=False, report=self.community_report(), directory=directory)
-            with self.assertRaisesRegex(lifecycle.LifecycleError, "未通过"):
-                lifecycle.summarize(self.contract, state)
+            self.checkpoint(state, "longmemeval", report=self.community_report(), directory=directory)
+            summary = lifecycle.summarize(self.contract, state)
+            self.assertTrue(summary["passed"])
+            self.assertIsNone(self.community_report()["quality"]["passed"])
 
     def test_promotion_requires_core_frontier_and_qualification(self):
         state = self.state()
@@ -424,14 +424,17 @@ class EvidenceLifecycleTests(unittest.TestCase):
             "candidate": evidence_identity.source_git(self.binding), "binary_sha256": active["binary_sha256"],
             "environment": {"sha256": active["environment_sha256"]},
             "inputs": {"sha256": active["input_manifest_sha256"]},
-            "capabilities": self.contract["evidence_layers"]["community"]["capabilities"],
+            "capabilities": {
+                name: {"source": "test-provider", "model": f"test-{name}", "reasoning_effort": "high"}
+                for name in self.contract["evidence_layers"]["community"]["external_intelligence"]["roles"]
+            },
             "benchmark": {"questions": 500, "complete": True, "question_types": list(self.contract["evidence_layers"]["community"]["question_types"])},
             "execution": {"complete": True, "protocol_valid": True, "evidence_complete": True, "passed": True},
             "quality": {
                 "accuracy": 0.83, "comparison_policy": "equivalent-profile-only", "hard_accuracy_threshold": None,
                 "score_complete": True, "assessment_status": "not_determined",
                 "assessment_basis": "no-equivalent-production-profile-reference",
-                "first_version_condition_satisfied": False, "passed": None,
+                "first_version_condition_satisfied": None, "passed": None,
             },
             "retrieval": {"mean_ms": 10.0, "p95_ms": 20.0, "max_ms": 30.0},
             "cost": {"wall_seconds": 14400.0, "within_budget": True},
@@ -441,8 +444,8 @@ class EvidenceLifecycleTests(unittest.TestCase):
                 "hypotheses_sha256": "d" * 64, "diagnostics_sha256": "b" * 64,
                 "diagnostic_summary_sha256": "a" * 64, "checkpoint_manifest_sha256": "c" * 64,
             },
-            "completion": {"status": "not_satisfied", "reason": "community-quality-not-determined"},
-            "passed": False,
+            "completion": {"status": "completed", "reason": "official-benchmark-evidence-complete"},
+            "passed": True,
             "started_at": "x", "finished_at": "y",
         }
 

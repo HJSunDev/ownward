@@ -52,42 +52,30 @@ def validate_contract(value: dict[str, Any]) -> None:
     _require("minimum_accuracy" not in community, "LongMemEval-S 不得保留跨口径质量硬门槛")
     _require(_mapping(community, "quality_assessment") == {
         "status": "not_determined", "basis": "no-equivalent-production-profile-reference",
-        "first_version_condition_satisfied": False,
+        "first_version_condition_satisfied": None,
     }, "LongMemEval-S 质量判定状态无效")
-    _require(community.get("capabilities") == {
-        "semantic": {"source": "codex", "model": "gpt-5.6-luna", "reasoning_effort": "low"},
-        "reader": {
-            "source": "codex", "model": "gpt-5.6-luna", "reasoning_effort": "xhigh",
-            "selection_profile_identity": "401aa7962b5ecd3d283093a2d5eee0fe76da941d20ce4aa317ef21216d55c83c",
-            "selection_contract_identity": "841ab01d016bf0c987527061dad95e2ba23e069f4b32642c7a3276b7cff75805",
-            "selection_result_identity": "25f4954169249c92af6001813dca81ac04c0e70a75499bd1e1bcf9dc45ae5824",
-        },
-        "judge": {"source": "codex", "model": "gpt-5.6-terra", "reasoning_effort": "medium"},
-    }, "LongMemEval-S 能力来源无效")
+    _require(_mapping(community, "external_intelligence") == {
+        "contract": "ownward.external-intelligence/v1",
+        "roles": ["semantic", "reader", "judge"],
+        "identity_source": "frozen-execution-binding",
+    }, "LongMemEval-S 外部智能角色合同无效")
     _require(_mapping(community, "expected_wall_seconds") == {
         "calibration_status": "cost-proof-passed-community-preflight-pending", "projected": 12339.62081875,
         "required_ceiling": 19635.8501625, "target_ceiling": 20400,
         "max": 20400, "formal_ready": False,
     }, "LongMemEval-S 时间边界无效")
     _require(_mapping(community, "concurrency") == {
-        "question_workers": 4, "codex_max_active": 8, "semantic_batch_size": 20,
-        "semantic_analysis_max_works": 20, "codex_transport": "app-server-pool-stdio",
+        "question_workers": 4, "external_intelligence_max_active": 8, "semantic_batch_size": 20,
+        "semantic_analysis_max_works": 20, "transport": "selected-implementation",
     }, "LongMemEval-S 并发边界无效")
     _require(_mapping(community, "cost_calibration") == {
         "questions": 4, "semantic_batches_per_question": 3, "official_dry_plan_questions": 500,
-        "pool_candidates": [8, 12], "selected_pool_size": 8,
+        "selected_max_active": 8,
         "selection_rule": "lowest-stable-required-ceiling-at-most-20400",
-        "measurement_status": "reader-xhigh-migrated-community-preflight-required",
-        "legacy_medium_representative_wall_seconds": 132.359,
-        "legacy_medium_representative_codex_calls": 20,
-        "representative_retries": 0, "representative_transport_timeouts": 0,
-        "representative_interruptions": 0, "representative_worker_restarts": 0,
+        "measurement_status": "selected-runtime-community-preflight-required",
         "maximum_retry_ratio": 0.1,
         "requires_zero_rate_limits": True, "normal_variation_reserve_ratio": 0.2,
         "bounded_retry_reserve_ratio": 0.1, "checkpoint_recovery_reserve_seconds": 3600,
-        "reader_profile_identity": "401aa7962b5ecd3d283093a2d5eee0fe76da941d20ce4aa317ef21216d55c83c",
-        "reader_selection_result_identity": "25f4954169249c92af6001813dca81ac04c0e70a75499bd1e1bcf9dc45ae5824",
-        "formal_reader_cost_migration_identity": "8ec2dc562df78d8f9be646e55d6759f5c10601c81299550bc1748af25fc75e96",
     }, "LongMemEval-S 成本校准边界无效")
 
     execution = _mapping(value, "execution")

@@ -27,10 +27,10 @@ START_ELIGIBILITY = {
 SUMMARY_AGGREGATES = ("core", "full", "longmemeval")
 
 SCOPE_CONFIG = {
-    "frontier": {"sections": ("frontier",), "candidate_binary": False, "embedding": False, "codex": False},
-    "core": {"sections": ("candidate",), "candidate_binary": True, "embedding": True, "codex": False},
-    "product": {"sections": ("candidate", "product"), "candidate_binary": True, "embedding": True, "codex": True},
-    "community": {"sections": ("candidate", "community"), "candidate_binary": True, "embedding": True, "codex": True},
+    "frontier": {"sections": ("frontier",), "candidate_binary": False, "embedding": False, "external_intelligence": False},
+    "core": {"sections": ("candidate",), "candidate_binary": True, "embedding": True, "external_intelligence": False},
+    "product": {"sections": ("candidate", "product"), "candidate_binary": True, "embedding": True, "external_intelligence": True},
+    "community": {"sections": ("candidate", "community"), "candidate_binary": True, "embedding": True, "external_intelligence": True},
 }
 
 SCOPE_MATERIALS = {

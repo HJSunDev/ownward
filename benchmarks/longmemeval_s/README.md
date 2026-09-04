@@ -16,6 +16,8 @@
 
 正式结果标识为 `Ownward LongMemEval-S Production Profile`。官方数据、500 题、问答协议、提示和计分语义保持不变；由于 Reader、裁判与检索预算不同的公开成绩不具备直接可比性，本口径不设置跨 profile 准确率硬阈值。产品答案先独立冻结，评测层随后才接触官方答案与证据标识；逐题诊断封存语义组织、search/read、Reader、裁判、Token、重试、限流和时延证据，并与产品执行和正式计分单向隔离。
 
+时延报告分为三层：`kernel_call_latency` 是单次 Ownward 工具调用墙钟，评价内核；`active_retrieval_cumulative` 是单题所有 Ownward 工具调用之和，评价内核与外部智能策略组合；`question_wall` 是问题开始至最终计分答案的整题墙钟，评价产品体验。三者不得共用不同测量对象的门槛。
+
 正式机器固定在 E 盘：
 
 ```powershell

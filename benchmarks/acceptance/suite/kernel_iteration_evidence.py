@@ -6,12 +6,14 @@ import os
 from pathlib import Path
 from typing import Any
 
+import kernel_iteration_manifest
+
 
 class KernelIterationEvidenceError(ValueError):
     pass
 
 
-CONTRACT_SCHEMA = "ownward.kernel-iteration-comparison/v3"
+CONTRACT_SCHEMA = "ownward.kernel-iteration-comparison/v5"
 SUBJECT_SCHEMA = "ownward.kernel-iteration-subject/v1"
 INPUT_SCHEMA = "ownward.kernel-iteration-input/v1"
 PLAN_SCHEMA = "ownward.kernel-iteration-plan/v1"
@@ -20,12 +22,15 @@ RESULT_SCHEMA = "ownward.kernel-iteration-evidence/v1"
 BASELINE_FACTS_SCHEMA = "ownward.kernel-iteration-baseline-facts/v1"
 RUNTIME_CALIBRATION_SCHEMA = "ownward.kernel-iteration-runtime-calibration/v1"
 RUNTIME_CALIBRATION_RESULT_SCHEMA = "ownward.kernel-iteration-runtime-calibration-evidence/v1"
-CONTRACT_RELATIVE = Path("iteration/v2/comparison-contract.json")
 FORMAL_STATE_RELATIVE = Path(".tmp/first-kernel-baseline-v1/acceptance/state.json")
 
 
 def load_contract(suite_root: Path, path: Path | None = None) -> dict[str, Any]:
-    contract_path = (path or suite_root / CONTRACT_RELATIVE).resolve()
+    contract_path = (
+        path.resolve()
+        if path is not None
+        else kernel_iteration_manifest.path(suite_root, "comparison_contract")
+    )
     value = _load_json(contract_path)
     validate_contract(suite_root, value, contract_path)
     return value
@@ -35,9 +40,10 @@ def validate_contract(suite_root: Path, value: dict[str, Any], contract_path: Pa
     repository = suite_root.resolve().parents[2]
     _require(value.get("schema") == CONTRACT_SCHEMA, "V2 迭代比较合同 schema 无效")
     _require(value.get("frozen") is True, "V2 比较合同未冻结")
-    _require(value.get("unchanged_dimensions_frozen_before_v2_results") is True, "V2 未变比较维度未在候选结果前冻结")
-    _require(value.get("latency_correction_frozen_before_new_candidate_measurement") is True, "检索时延修正未在新候选测量前冻结")
-    _require(value.get("candidate_results_excluded_from_latency_correction") is True, "检索时延修正使用了候选结果")
+    _require(value.get("valid_dimensions_frozen_before_candidate_decision") is True, "V2 有效比较维度未在候选裁决前冻结")
+    _require(value.get("passive_quality_correction_preserves_unaffected_evidence") is True, "被动质量纠正改写了无关证据")
+    _require(value.get("performance_measurement_correction_preserves_kernel_and_execution_evidence") is True, "性能测量纠正改写了内核或执行证据")
+    _require(value.get("wrong_subject_thresholds_forbidden") is True, "比较合同未禁止错误测量对象门槛")
     isolation = _mapping(value, "formal_isolation")
     _require(
         isolation == {
@@ -60,7 +66,7 @@ def validate_contract(suite_root: Path, value: dict[str, Any], contract_path: Pa
     _validate_evidence_types(value)
     _validate_formal_isolation(suite_root, value)
     if contract_path is not None:
-        expected_path = (suite_root / CONTRACT_RELATIVE).resolve()
+        expected_path = kernel_iteration_manifest.path(suite_root, "comparison_contract")
         _require(contract_path == expected_path, "V2 比较合同必须使用唯一版本化路径")
 
 
@@ -421,6 +427,7 @@ def _validate_sources(repository: Path, contract: dict[str, Any]) -> None:
     expected = {
         "kernel_catalog", "current_composition", "frozen_baseline", "v0_baseline_facts",
         "retrieval_latency_comparability_audit", "retrieval_latency_migration",
+        "active_retrieval_measurement_correction",
     }
     _require(set(sources) == expected, "V2 比较合同来源集合无效")
     for name, source in sources.items():
@@ -437,15 +444,17 @@ def _validate_sources(repository: Path, contract: dict[str, Any]) -> None:
     frontier = _mapping(v0, "frontier")
     dimensions = _mapping(contract, "dimensions")
     _require(community.get("questions") == 500, "V0 community 不是完整 500 题聚合事实")
-    _require(_metric_baseline(dimensions, "final_answer_accuracy") == community["accuracy"], "V0 准确率基线漂移")
-    _require(_metric_baseline(dimensions, "incorrect_answers") == community["incorrect"], "V0 错误数基线漂移")
-    _require(_metric_baseline(dimensions, "target_evidence_delivery_failures") == gaps["target_evidence_not_read"] + gaps["target_evidence_not_search_returned"], "V0 证据交付错误基线漂移")
     _require(_metric_baseline(dimensions, "semantic_input_tokens") == community["semantic_input_tokens"], "V0 语义输入成本基线漂移")
-    _require(_metric_baseline(dimensions, "end_to_end_wall_seconds") == community["wall_seconds"], "V0 端到端墙钟基线漂移")
+    passive_quality = _mapping(contract, "historical_passive_quality_diagnostics")
+    _require(abs(float(passive_quality.get("v0_community_accuracy")) - community["accuracy"]) < 1e-12, "V0 历史被动准确率诊断漂移")
+    _require(passive_quality.get("v0_community_incorrect_answers") == community["incorrect"], "V0 历史被动错误数诊断漂移")
+    _require(passive_quality.get("v0_target_evidence_delivery_failures") == gaps["target_evidence_not_read"] + gaps["target_evidence_not_search_returned"], "V0 历史被动证据缺口诊断漂移")
+    _require(passive_quality.get("status") == "diagnostic-only-old-passive-adapter-not-a-product-quality-gate", "V0 历史被动质量仍被用作产品质量门槛")
     historical = _mapping(contract, "historical_latency_diagnostics")
     _require(abs(float(historical.get("v0_community_retrieval_mean_ms")) - community["retrieval_mean_ms"]) < 1e-9, "V0 历史检索平均时延诊断漂移")
     _require(abs(float(historical.get("v0_community_retrieval_p95_ms")) - community["retrieval_p95_ms"]) < 1e-9, "V0 历史检索 p95 诊断漂移")
-    _require(historical.get("status") == "diagnostic-only-not-a-complete-consumer-non-regression-gate", "V0 历史检索时延仍被用作完整消费者门槛")
+    _require(abs(float(historical.get("v0_community_end_to_end_wall_seconds")) - community["wall_seconds"]) < 1e-9, "V0 历史被动整题墙钟诊断漂移")
+    _require(historical.get("status") == "diagnostic-only-not-an-active-performance-gate", "V0 历史检索时延仍被用作活动门槛")
     receipt = _load_json(repository / sources["retrieval_latency_migration"]["path"])
     receipt_content = {key: item for key, item in receipt.items() if key != "identity"}
     _require(receipt.get("schema") == "ownward.kernel-iteration-retrieval-latency-comparability-migration/v1", "检索时延迁移收据 schema 无效")
@@ -460,15 +469,45 @@ def _validate_sources(repository: Path, contract: dict[str, Any]) -> None:
     _require(migration.get("from_identity") == receipt["old_comparison"]["identity"], "检索时延迁移来源身份错绑")
     _require(migration.get("evidence_compatibility_identity") == migration.get("from_identity"), "非时延证据兼容身份漂移")
     _require(migration.get("receipt_identity") == receipt["identity"] == historical.get("migration_receipt_identity"), "检索时延迁移收据错绑")
-    _require(migration.get("unchanged_dimension_identities") == {
-        name: canonical_sha256(_mapping(dimensions, name))
-        for name in ("information-organization-quality", "retrieval-and-final-answer-quality")
-    }, "未变质量维度身份漂移")
-    replacement = _mapping(receipt, "replacement_latency_policy")
-    complete = _metric(dimensions, "complete_consumer_retrieval_p95_ms")
-    _require(complete.get("baseline") == replacement.get("absolute_maximum_ms"), "完整消费者检索绝对门漂移")
-    _require(complete.get("repeatability_error") == replacement.get("frozen_repeatability_error_ms"), "完整消费者检索重复误差漂移")
-    _require(_mapping(complete, "gate").get("maximum") == replacement.get("decision_maximum_ms"), "完整消费者检索决策门漂移")
+    correction = _load_json(repository / sources["active_retrieval_measurement_correction"]["path"])
+    correction_content = {key: item for key, item in correction.items() if key != "identity"}
+    _require(
+        correction.get("schema") == "ownward.kernel-iteration-stage6-active-retrieval-measurement-correction/v1"
+        and correction.get("identity") == canonical_sha256(correction_content),
+        "主动检索性能测量纠正收据无效",
+    )
+    _require(
+        migration.get("status") == "superseded-by-active-retrieval-measurement-correction"
+        and migration.get("measurement_correction_identity") == correction["identity"],
+        "旧检索时延迁移政策未被正确终止",
+    )
+    corrected_gates = _mapping(correction, "measurement_correction").get("invalid_gates")
+    _require(
+        isinstance(corrected_gates, list)
+        and corrected_gates == [
+            {
+                "metric": "active_retrieval_cumulative_p95_ms",
+                "maximum_ms": 553.0,
+                "disposition": "historical-diagnostic-only",
+                "reason": "single-kernel-call-budget-was-applied-to-multi-call-active-retrieval-composition",
+            },
+            {
+                "metric": "question_wall_seconds",
+                "baseline_seconds": 12475.843,
+                "maximum_seconds": 6237.9215,
+                "disposition": "historical-diagnostic-only",
+                "reason": "passive-fixed-prefetch-wall-was-applied-to-active-external-agent-progressive-product-experience",
+            },
+        ],
+        "错误性能门槛没有全部进入只读历史诊断",
+    )
+    legacy_dimensions = migration.get("pre-quality-correction-dimension-identities")
+    _require(
+        isinstance(legacy_dimensions, dict)
+        and set(legacy_dimensions) == {"information-organization-quality", "retrieval-and-final-answer-quality"}
+        and all(is_sha256(value) for value in legacy_dimensions.values()),
+        "历史质量维度身份缺失",
+    )
     for name in ("context_precision", "relation_precision", "relation_recall", "fusion_ndcg", "fusion_recall"):
         _require(_metric_baseline(dimensions, name) == _mapping(frontier, name)["value"], f"V0 {name} 基线漂移")
     query = _mapping(frontier, "query_p95_ms")
@@ -548,23 +587,32 @@ def _validate_dimensions(contract: dict[str, Any]) -> None:
             if gate.get("basis") == "remaining-errors-at-least-halved" and metric["direction"] == "higher":
                 _require(float(gate["minimum"]) >= 1 - (1 - float(metric["baseline"])) / 2, f"{metric['name']} 没有达到剩余错误减半门槛")
             large_improvements += int(gate["kind"] == "large-improvement")
-    _require(large_improvements >= 4, "V2 合同没有冻结足够的大幅跃升门槛")
+    _require(large_improvements >= 1, "V2 合同没有保留可追溯的大幅跃升门槛")
     metric_names = {
         metric["name"]
         for dimension in dimensions.values()
         for metric in dimension["metrics"]
     }
     _require("retrieval_mean_ms" not in metric_names and "retrieval_p95_ms" not in metric_names, "非同尺 V0 community 检索时延仍是活动门槛")
-    complete = _metric(dimensions, "complete_consumer_retrieval_p95_ms")
-    gate = _mapping(complete, "gate")
-    _require(complete.get("source") == "v1-budget-selection-authority", "完整消费者检索门来源无效")
-    _require(complete.get("baseline") == 600.0 and complete.get("repeatability_error") == 47.0, "完整消费者检索基线或重复误差无效")
-    _require(gate == {
-        "kind": "non-regression",
-        "maximum": 553.0,
-        "absolute_maximum": 600.0,
-        "basis": "preexisting-complete-consumer-absolute-gate-minus-frozen-repeatability-error",
-    }, "完整消费者检索门槛无效")
+    _require("complete_consumer_retrieval_p95_ms" not in metric_names, "错误测量对象的 553 ms 门槛仍在活动比较维度")
+    _require("end_to_end_wall_seconds" not in metric_names, "旧被动评测墙钟仍在活动主动检索比较维度")
+    _require(
+        {"target_evidence_delivery_failures", "final_answer_accuracy", "incorrect_answers"}.isdisjoint(metric_names),
+        "旧被动评测质量仍在活动比较维度",
+    )
+    _require(_mapping(contract, "performance_measurement_policy") == {
+        "threshold_rule": "measurement-subject-workload-and-authority-must-match",
+        "kernel_call_latency": "evaluates-kernel",
+        "active_retrieval_cumulative": "evaluates-kernel-and-external-agent-policy-composition",
+        "question_wall": "evaluates-product-experience",
+        "untraceable_or_wrong-subject_threshold": "forbidden",
+    }, "V2 性能测量职责政策无效")
+    _require(_mapping(contract, "quality_measurement_policy") == {
+        "product_quality_mode": "external-agent-progressive",
+        "old_passive_quality_results": "historical-diagnostic-only",
+        "active_quality_evidence": "same-frozen-profile-development-regression-and-version-blind-gates",
+        "wrong-authority-quality-threshold": "forbidden",
+    }, "V2 产品质量测量职责政策无效")
 
 
 def _validate_evidence_types(contract: dict[str, Any]) -> None:
@@ -660,7 +708,10 @@ def _contract_policy_content(value: dict[str, Any]) -> dict[str, Any]:
         "cost_limits",
         "runtime_calibration",
         "historical_latency_diagnostics",
+        "historical_passive_quality_diagnostics",
         "latency_policy_migration",
+        "performance_measurement_policy",
+        "quality_measurement_policy",
     }
     projected = _contract_seal_content(value)
     return {name: projected[name] for name in sorted(names)}

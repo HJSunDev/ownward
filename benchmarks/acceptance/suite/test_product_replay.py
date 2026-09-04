@@ -396,13 +396,13 @@ class ProductReplayTests(unittest.TestCase):
                 self._sealed_scenario(args.evidence_dir, task, old_binding, args, "r" * 64)
                 events = next((args.evidence_dir / "scenario" / "semantic-initial").rglob("events.jsonl"))
                 parser = mock.patch.object(
-                    replay.verify.codex_session,
+                    replay.verify.session_trace,
                     "load_exec_events",
-                    return_value=replay.verify.codex_session.SessionTrace(
+                    return_value=replay.verify.session_trace.SessionTrace(
                         "session", [], True, ("unapproved",), (),
                     ),
                 ) if failure == "parser-mismatch" else mock.patch.object(
-                    replay.verify.codex_session, "load_exec_events", wraps=replay.verify.codex_session.load_exec_events,
+                    replay.verify.session_trace, "load_exec_events", wraps=replay.verify.session_trace.load_exec_events,
                 )
                 if failure == "missing":
                     events.unlink()

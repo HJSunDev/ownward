@@ -30,6 +30,11 @@ class Stage5GenericBoundaryTests(unittest.TestCase):
             {"quality", "complete_consumer_latency", "semantic_cost", "storage_cost", "controlled_wall", "recovery"},
             set(closure["dimensions"]),
         )
+        self.assertNotIn("maximum_consumer_p95_ms", contract["eligibility"])
+        self.assertEqual(
+            "diagnostic-only-wrong-measurement-subject",
+            contract["historical_complete_consumer_latency"],
+        )
 
     def test_high_level_controller_has_no_incident_specific_roles(self) -> None:
         source = (self.suite_root / "kernel_iteration_stage5.py").read_text(encoding="utf-8")

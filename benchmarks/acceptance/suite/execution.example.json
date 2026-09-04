@@ -15,14 +15,16 @@
   "product": {
     "package": "E:\\path\\to\\ownward-release",
     "production_storage_report": "E:\\path\\to\\ownward-evidence\\production-storage.json",
-    "codex_binary": "E:\\path\\to\\codex.exe",
-    "codex_auth_file": "C:\\Users\\USERNAME\\.codex\\auth.json",
-    "codex_model": "gpt-5.4-mini",
-    "codex_reasoning_effort": "xhigh"
+    "external_intelligence": {
+      "binary": "E:\\path\\to\\opencode.ps1",
+      "credential_file": "C:\\Users\\USERNAME\\.local\\share\\opencode\\auth.json"
+    }
   },
   "final_validation_gate": {
     "blind_suite_output": "E:\\path\\to\\ownward-evidence\\kernel-v2",
-    "suite_identity": "replace-with-the-sealed-blind-suite-identity"
+    "suite_identity": "replace-with-the-sealed-blind-suite-identity",
+    "evaluation_batch_identity": "replace-with-the-evaluation-batch-identity",
+    "terminal_plan_identity": "replace-with-the-50-question-plan-identity"
   },
   "community": {
     "environment_manifest": "E:\\Ownward\\acceptance\\longmemeval-s\\manifests\\v1.json",

@@ -77,6 +77,8 @@ class FinalValidationGateTests(unittest.TestCase):
             "final_validation_gate": {
                 "blind_suite_output": str(root / "evidence"),
                 "suite_identity": suite_identity,
+                "terminal_plan_identity": records[-1]["plan"]["identity"],
+                "evaluation_batch_identity": batch_identity,
             },
             "manifest": manifest,
         }
@@ -94,12 +96,12 @@ class FinalValidationGateTests(unittest.TestCase):
             root = Path(temporary)
             config, records = self._fixture(root)
             records[-1]["root"].joinpath("result.json").unlink()
-            with self.assertRaisesRegex(ExecutionError, "没有唯一完成"):
+            with self.assertRaisesRegex(ExecutionError, "终态不存在"):
                 gate.require_blind_completion(config)
             config, records = self._fixture(root / "other")
             manifest_path = Path(str(config["candidate"]["component_manifest"]))
             self._write(manifest_path, {"schema": "candidate-components/v1", "source_subject_identity": "9" * 64})
-            with self.assertRaisesRegex(ExecutionError, "没有唯一完成"):
+            with self.assertRaisesRegex(ExecutionError, "终态不存在"):
                 gate.require_blind_completion(config)
 
     def test_tampered_predecessor_is_rejected_even_with_valid_terminal(self) -> None:
@@ -135,6 +137,10 @@ class FinalValidationGateTests(unittest.TestCase):
                 "previous-partition-continuation": "b" * 64,
             }
             child["plan"] = self._write(child["root"] / "plan.json", child_plan_content)
+            updated_root = child["root"].parent / child["plan"]["identity"]
+            child["root"].rename(updated_root)
+            child["root"] = updated_root
+            config["final_validation_gate"]["terminal_plan_identity"] = child["plan"]["identity"]
             child_result_content = {name: value for name, value in child["result"].items() if name != "identity"}
             child_result_content["plan_identity"] = child["plan"]["identity"]
             child["result"] = self._write(child["root"] / "result.json", child_result_content)
@@ -165,6 +171,10 @@ class FinalValidationGateTests(unittest.TestCase):
                 "previous-partition-continuation": continuation,
             }
             child["plan"] = self._write(child["root"] / "plan.json", child_plan_content)
+            updated_root = child["root"].parent / child["plan"]["identity"]
+            child["root"].rename(updated_root)
+            child["root"] = updated_root
+            config["final_validation_gate"]["terminal_plan_identity"] = child["plan"]["identity"]
             child_result_content = {name: value for name, value in child["result"].items() if name != "identity"}
             child_result_content["plan_identity"] = child["plan"]["identity"]
             self._write(child["root"] / "result.json", child_result_content)

@@ -2,7 +2,7 @@
 
 本目录是第一版验收体系的唯一入口。体系包含一个内核前沿优化环和三层正式证据：固定内核基线、固定 Ownward 专项数据集、固定版本的官方清洗 LongMemEval‑S。仓库旧验收草案 `v1`～`v5` 只保留历史回归价值；候选冻结后生成数据、测试专用产品路径和其他并列完成轨道均不属于本体系。
 
-`community` 机器契约和 `longmemeval` 稳定执行层只实现官方清洗 LongMemEval‑S；旧 LongMemEval‑V2 已无活动入口。正式结果统一标识为 `Ownward LongMemEval-S Production Profile`；固定环境、批内正文去重表示、Luna 上下文边界、独立单 turn Codex App Server 池及当前成本门禁见 [`benchmarks/longmemeval_s/README.md`](../../longmemeval_s/README.md) 与 [`docs/tasks/longmemeval-s-community-benchmark.md`](../../../docs/tasks/longmemeval-s-community-benchmark.md)。并发 8 的代表预检、精确恢复和证据链已成立，包含全部安全余量的全量上界低于 20,400 秒硬上限，`community` 已具备正式运行条件。
+`community` 机器契约和 `longmemeval` 稳定执行层只实现官方清洗 LongMemEval‑S；旧 LongMemEval‑V2 已无活动入口。正式结果统一标识为 `Ownward LongMemEval-S Production Profile`。外部智能只经统一端口装配，合同记录实际选择的供应商、模型、档位和实现；业务控制器不绑定某个供应商。固定环境、批内正文去重表示、角色边界、独立单 turn worker 池及成本门禁见 [`benchmarks/longmemeval_s/README.md`](../../longmemeval_s/README.md) 与 [`docs/tasks/longmemeval-s-community-benchmark.md`](../../../docs/tasks/longmemeval-s-community-benchmark.md)。
 
 ## Ownward 专项材料版本
 
@@ -58,12 +58,12 @@ python benchmarks/acceptance/suite/kernel_iteration_run.py `
   --resume
 ```
 
-一次性盲测的生成、独立先验准入、Production Profile 执行/评价、不可逆摘要和销毁也由该入口管理。终态只保存身份、覆盖、聚合指标、判断和成本；题面、真值、证据及逐题输出在质量拒绝、失败或完成后销毁。运行中的 gate 只在临时 scratch 保存恢复 seed，并以活动定位文件连接 plan；终态删除两者后，保留一份不含秘密与盲测内容的当前依赖定位收据。新进程仅凭 plan identity 复用时会只读重算执行配置、环境、二进制、向量制品、模型协议和运行态校准等全部直接依赖，完全一致才返回零模型、零产品执行结果。历史终态可审计读取不等于当前预算仍有效。
+版本级盲测的生成、独立先验准入、Production Profile 执行/评价、不可逆摘要和失败批次保留也由该入口管理。一个大版本只封存一套 5/15/25/50 题材料；通过分区销毁原始执行现场，失败分区完整保留到根因提取或候选变更。原始测量与裁决政策分别寻址，测量对象未变时允许零模型、零产品执行的离线重判。新进程凭 plan identity 恢复时只复核真实直接依赖。
 
 ```powershell
 python benchmarks/acceptance/suite/kernel_iteration_run.py `
   --output .tmp\kernel-v2-major-iteration `
-  --blind-plan-identity <plan-sha256> `
+  --blind-suite-run-plan-identity <plan-sha256> `
   --resume
 ```
 
@@ -79,7 +79,7 @@ go build -trimpath -o <frontier-binary> ./cmd/ownward-frontier
 
 ## 候选绑定
 
-复制 `execution.example.json` 并填写当前阶段需要的真实路径。配置通过 `enabled_scopes` 显式选择本次要预检、绑定和执行的范围：`frontier` 只需要观察器，`core` 只需要候选二进制及其相邻向量能力包，`product` 才增加发布包、生产规模报告和 Codex；`community` 增加持久环境清单、冻结协议、候选运行目录以及现有 Codex 程序与认证文件路径。未启用范围不得被探测、下载、校验或写入绑定。Ownward 专项集仍固定使用 `gpt-5.4-mini` / `xhigh`；LongMemEval‑S 的语义组织固定使用 Codex `gpt-5.6-luna` / `low`，Reader 固定使用 Codex `gpt-5.6-luna` / `xhigh`，并与 Stage 6 绑定同一冻结 Reader 选择身份；裁判固定使用 Codex `gpt-5.6-terra` / `medium`。三者只复用现有 Codex 原生认证，不要求或探测额外 API Key；隔离预检真实调用三个冻结模型，但子集结果不形成正式成绩。当前 Reader 身份变化使 community binding 与 preflight 待重建，成本迁移收据不能替代它们。最多使用 24 条搜索线索和 8 条完整读取证据，具体机器值只以 `benchmarks/longmemeval_s/protocol.json` 为准。配置文件不进入仓库，不得把认证内容写入配置。候选代码稳定后，由唯一入口只生成当前启用范围的环境、输入、工具和候选执行制品绑定，再初始化或重新绑定状态：
+复制 `execution.example.json` 并填写当前阶段需要的真实路径。配置通过 `enabled_scopes` 显式选择本次要预检、绑定和执行的范围；未启用范围不得被探测、校验或写入绑定。`product` 与 `community` 都通过 `external_intelligence` 声明所选 driver、可执行程序、凭证定位及各角色模型/档位；角色以当前运行选择清单为默认值并在绑定中冻结。切换供应商只更换选择与适配器，不修改产品或评测控制器。凭证内容不得进入配置、日志或证据。资源上限只以相应机器合同为准。候选稳定后，由唯一入口生成当前启用范围的绑定：
 
 ```powershell
 python benchmarks/acceptance/suite/run.py bind --config <execution.json> --output <binding-directory>
@@ -87,7 +87,7 @@ python benchmarks/acceptance/suite/run.py init --binding <binding-directory>/bin
 python benchmarks/acceptance/suite/run.py rebind --binding <binding-directory>/binding.json --state <state.json>
 ```
 
-`ownward.acceptance-binding/v6` 以内容和声明依赖记录产品、权威基座、内核效果、内核世代、语义、向量与空间、接入、组合、二进制、发布制品、环境、观察者和验收工具身份；Git 提交只保留在 `audit.source_git` 供取回和审计，不参与产品、scope 或证据身份。`frontier` 使用冻结的语义/向量夹具，只绑定内核效果、环境、材料、观察者和验收工具；生产语义模型、向量模型、向量空间及权威持久化均不进入该报告身份。`core` 才绑定权威基座、内核、语义/向量能力、空间与候选二进制，`product` / `community` 进一步绑定完整产品、接入、组合和发布制品。纯 binding、状态迁移、失效与恢复代码由独立证据生命周期制品和 state 完整性保护，不是原始 scope 报告的直接依赖；报告接收/复核语义与执行关系语义则分别以 `report-reception`、`relationship-execution` 直接绑定其真实消费者。`summarize` 额外绑定独立 `summary-generation` 内容身份，因此汇总生成变化只失效汇总，不能隐藏在生命周期文件中或连带抹掉三份来源报告。某个直接依赖变化只失效真实消费它的 scope、实际嵌入该结果的汇总及相关基线，不按执行顺序或全仓提交传播；新增 `community` 不使内部检查点失效。`report_binding` 只保存旧报告逐字校验所需的兼容字段，不能代替新的直接依赖身份。
+`ownward.acceptance-binding/v6` 以内容和声明依赖记录产品、权威基座、内核效果、内核世代、语义、向量与空间、接入、组合、二进制、发布制品、环境、观察者和验收工具身份；Git 提交只保留在 `audit.source_git` 供取回和审计，不参与产品、scope 或证据身份。每个 scope 只绑定其实际消费的执行、观察和评分职责；所选外部智能只绑定当前实现及角色，未选择的供应商实现不使证据失效。纯 binding、状态迁移、失效与恢复代码不是原始 scope 报告的直接依赖。某个直接依赖变化只失效真实消费者，不按执行顺序或全仓提交传播。
 
 唯一正式 state 使用 `ownward.acceptance-state/v3`，每个检查点及基线记录都封存报告摘要与直接依赖图产生的证据身份；迁移历史与未来 `promote` 共用同一基线构造和只读校验合同。第 1 项冻结起点到 v3 的一次性入口如下；它也能把早期 v5/v2 的生命周期过度绑定原子收敛到唯一 v6/v3 结构。不带 `--write` 只读演练，带 `--write` 先封存不可变 binding 世代、再原子替换唯一 state、最后发布 binding 指针，任一源身份不符均不写状态。重复执行只校验已有迁移收据；报告、原始证据、检查点集合和基线历史均不重写，也不创建平行 state：
 
@@ -105,7 +105,7 @@ python benchmarks/acceptance/suite/run.py plan --impact <local|asset|retrieval|o
 python benchmarks/acceptance/suite/run.py plan --stage <kernel-baseline|stable-candidate|final-candidate>
 ```
 
-所有正式层级只由 `execute` 调用。它直接启动对应观察器或适配器，验证规范报告后原子写入检查点；不能用手工报告、手填耗时或独立评分命令绕过执行与成本控制。专项报告同时记录 Ownward 内核查询、外部语义协作、智能体查询和逐场景端到端耗时；只有冻结的内核查询前沿参与产品硬判定，其他耗时如实呈现并受阶段异常停止与总成本约束，不另造来源不明的产品门槛。专项工具清单把完整活动文件机械划分为原始执行与解析/评分派生两种职责，并分别持久化摘要；只有候选、输入、Codex 二进制与模型参数、冻结任务、资源报告以及原始执行摘要全部相同，才允许当前解析器离线重放不可变原始轨迹并留下凭据。旧版清单只能通过绑定精确源清单与当前原始执行摘要的一次性迁移证明进入该流程；不存在按文件路径放行的长期白名单。任一原始事件缺失或改变、当前解析结论不一致，或命令、隔离环境、重试/超时、MCP 工具范围与执行适配器发生变化，均拒绝重放。中断后使用同一命令加 `--resume`，只复用依赖未变且摘要仍有效的完整结果，并只补当前层缺失部分；资格集已经封存的八个逐场景结果由完整集直接复用，完整集只补其余十六个场景：
+所有正式层级只由 `execute` 调用。它直接启动对应观察器或适配器，验证规范报告后原子写入检查点；不能用手工报告、手填耗时或独立评分命令绕过执行与成本控制。专项报告分别记录单次内核调用、外部智能主动检索组合和逐场景端到端耗时；门槛必须与测量对象及权威来源一致。专项工具清单将原始执行与解析/评分派生职责分别寻址；只有候选、输入、所选外部智能实现与角色、冻结任务、资源报告及原始执行摘要全部相同，才允许离线重放。中断后使用同一命令加 `--resume`，只复用真实直接依赖未变的结果并补当前层缺口：
 
 ```powershell
 python benchmarks/acceptance/suite/run.py execute --state <state.json> --config <execution.json> --checkpoint-mode <targeted|core|frontier|qualification|full|longmemeval> [--resume]

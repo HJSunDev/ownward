@@ -1,7 +1,7 @@
 {
   "schema": "ownward.product-tool-responsibilities/v1",
   "raw_execution": [
-    "benchmarks/acceptance/suite/adapters/product/codex_transport.py",
+    "benchmarks/acceptance/suite/adapters/product/external_intelligence_session.py",
     "benchmarks/acceptance/suite/adapters/product/replay.py",
     "benchmarks/acceptance/suite/adapters/product/verify.py",
     "benchmarks/acceptance/suite/adapters/product_resource/verify.py",

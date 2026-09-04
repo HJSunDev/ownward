@@ -1,9 +1,10 @@
 {
-  "schema": "ownward.kernel-iteration-comparison/v3",
+  "schema": "ownward.kernel-iteration-comparison/v5",
   "frozen": true,
-  "unchanged_dimensions_frozen_before_v2_results": true,
-  "latency_correction_frozen_before_new_candidate_measurement": true,
-  "candidate_results_excluded_from_latency_correction": true,
+  "valid_dimensions_frozen_before_candidate_decision": true,
+  "passive_quality_correction_preserves_unaffected_evidence": true,
+  "performance_measurement_correction_preserves_kernel_and_execution_evidence": true,
+  "wrong_subject_thresholds_forbidden": true,
   "formal_isolation": {
     "formal_contract_mode": false,
     "formal_evidence_layer": false,
@@ -34,6 +35,10 @@
     "retrieval_latency_migration": {
       "path": "benchmarks/acceptance/suite/iteration/v2/retrieval-latency-comparability-migration.json",
       "sha256": "8a7fad77842cbcfc93e1844123203a8ae61a0d939fccef031a09585b0f416ba9"
+    },
+    "active_retrieval_measurement_correction": {
+      "path": "benchmarks/acceptance/suite/iteration/v2/stage6-active-retrieval-measurement-correction.json",
+      "sha256": "d47300df27950f8a4be904524bb2ca335084d87c238bddb3b41e195431324481"
     }
   },
   "subjects": {
@@ -135,39 +140,12 @@
           "repeatability_error": 0.0,
           "materiality": 0.005,
           "gate": {"kind": "non-regression", "minimum": 0.995}
-        },
-        {
-          "name": "target_evidence_delivery_failures",
-          "source": "v0-community-diagnostic-summary",
-          "baseline": 249,
-          "direction": "lower",
-          "repeatability_error": 0,
-          "materiality": 1,
-          "gate": {"kind": "large-improvement", "maximum": 124, "basis": "errors-at-least-halved"}
         }
       ]
     },
     "retrieval-and-final-answer-quality": {
       "cross_dimension_compensation": false,
       "metrics": [
-        {
-          "name": "final_answer_accuracy",
-          "source": "v0-community",
-          "baseline": 0.484,
-          "direction": "higher",
-          "repeatability_error": 0.0,
-          "materiality": 0.002,
-          "gate": {"kind": "large-improvement", "minimum": 0.742, "basis": "remaining-errors-at-least-halved"}
-        },
-        {
-          "name": "incorrect_answers",
-          "source": "v0-community",
-          "baseline": 258,
-          "direction": "lower",
-          "repeatability_error": 0,
-          "materiality": 1,
-          "gate": {"kind": "large-improvement", "maximum": 129, "basis": "errors-at-least-halved"}
-        },
         {
           "name": "fusion_ndcg",
           "source": "v0-frontier",
@@ -208,29 +186,6 @@
           "repeatability_error": 0,
           "materiality": 1,
           "gate": {"kind": "large-improvement", "maximum": 48454562, "basis": "cost-at-least-halved"}
-        },
-        {
-          "name": "end_to_end_wall_seconds",
-          "source": "v0-community",
-          "baseline": 12475.843,
-          "direction": "lower",
-          "repeatability_error": 0.0,
-          "materiality": 0.001,
-          "gate": {"kind": "large-improvement", "maximum": 6237.9215, "basis": "cost-at-least-halved"}
-        },
-        {
-          "name": "complete_consumer_retrieval_p95_ms",
-          "source": "v1-budget-selection-authority",
-          "baseline": 600.0,
-          "direction": "lower",
-          "repeatability_error": 47.0,
-          "materiality": 47.0,
-          "gate": {
-            "kind": "non-regression",
-            "maximum": 553.0,
-            "absolute_maximum": 600.0,
-            "basis": "preexisting-complete-consumer-absolute-gate-minus-frozen-repeatability-error"
-          }
         },
         {
           "name": "frontier_query_p95_ms",
@@ -291,22 +246,44 @@
   "historical_latency_diagnostics": {
     "v0_community_retrieval_mean_ms": 41.1999999999025,
     "v0_community_retrieval_p95_ms": 77.9999999977008,
-    "status": "diagnostic-only-not-a-complete-consumer-non-regression-gate",
+    "v0_community_end_to_end_wall_seconds": 12475.843,
+    "status": "diagnostic-only-not-an-active-performance-gate",
     "migration_receipt_identity": "55131b81ae6b14357cd7281f40cd86ddc7bb5d2de69399f631f178b064cc0cec"
+  },
+  "historical_passive_quality_diagnostics": {
+    "v0_community_accuracy": 0.484,
+    "v0_community_incorrect_answers": 258,
+    "v0_target_evidence_delivery_failures": 249,
+    "status": "diagnostic-only-old-passive-adapter-not-a-product-quality-gate"
   },
   "latency_policy_migration": {
     "from_schema": "ownward.kernel-iteration-comparison/v2",
     "from_identity": "b1e3b07abd5c9527dfbde5ea8d7fa5459c8b0b5da224ef2eb1aca29add22fbbe",
     "evidence_compatibility_identity": "b1e3b07abd5c9527dfbde5ea8d7fa5459c8b0b5da224ef2eb1aca29add22fbbe",
     "receipt_identity": "55131b81ae6b14357cd7281f40cd86ddc7bb5d2de69399f631f178b064cc0cec",
-    "unchanged_dimension_identities": {
+    "pre-quality-correction-dimension-identities": {
       "information-organization-quality": "5b856eb03dd15d1d9d62e87209280f661f08147db18c85011e2ff1e2abe83c8f",
       "retrieval-and-final-answer-quality": "7013f0705ef778225af06d35139c2c5015b5d5db8408448d90bf3358720656e2"
     },
-    "compatibility_scope": "preexisting-non-latency-evidence-only",
-    "new-latency-decisions-must-bind-current-policy-revision-identity": true
+    "compatibility_scope": "preexisting-evidence-that-does-not-depend-on-retired-passive-quality-or-latency-gates",
+    "new-latency-decisions-must-bind-current-policy-revision-identity": true,
+    "status": "superseded-by-active-retrieval-measurement-correction",
+    "measurement_correction_identity": "e53b1cc38f62b822a9ee8d19f5e6a545a741136fa5628d33365abebcffa0107a"
+  },
+  "performance_measurement_policy": {
+    "threshold_rule": "measurement-subject-workload-and-authority-must-match",
+    "kernel_call_latency": "evaluates-kernel",
+    "active_retrieval_cumulative": "evaluates-kernel-and-external-agent-policy-composition",
+    "question_wall": "evaluates-product-experience",
+    "untraceable_or_wrong-subject_threshold": "forbidden"
+  },
+  "quality_measurement_policy": {
+    "product_quality_mode": "external-agent-progressive",
+    "old_passive_quality_results": "historical-diagnostic-only",
+    "active_quality_evidence": "same-frozen-profile-development-regression-and-version-blind-gates",
+    "wrong-authority-quality-threshold": "forbidden"
   },
   "identity": "b1e3b07abd5c9527dfbde5ea8d7fa5459c8b0b5da224ef2eb1aca29add22fbbe",
-  "policy_revision_identity": "b5400416de89df4cc821f9827de72b20a25075f4d6e8b5e70e920743d43b198b",
-  "seal_sha256": "8235b67733e6b377439677f80125e0264fa19b908583a85e840dd8eabf73ea9d"
+  "policy_revision_identity": "bb5fb3b40439c070e1b95b9ca2cee4abc5f4d524f891be9897bfd1a96475bedb",
+  "seal_sha256": "5c99ce83064c01eced280d96a441adb1ab7722b5753dfc266b8171b66cb2c6c8"
 }

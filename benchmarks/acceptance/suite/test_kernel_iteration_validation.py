@@ -387,7 +387,7 @@ class KernelIterationValidationTests(unittest.TestCase):
                 captured.extend(arguments)
                 return mock.Mock(returncode=0, stderr="", stdout="")
 
-            with mock.patch.object(validation.subprocess, "run", side_effect=execute):
+            with mock.patch.object(validation.process_control, "run", side_effect=execute):
                 validation._run_longmemeval(
                     suite_root=HERE,
                     runtime=runtime,

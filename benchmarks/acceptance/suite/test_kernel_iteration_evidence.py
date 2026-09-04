@@ -36,9 +36,10 @@ class KernelIterationEvidenceTests(unittest.TestCase):
             self.assertTrue(iteration.text_file_matches(crlf, iteration.text_file_sha256(lf)))
 
     def test_contract_freezes_three_dimensions_before_any_v2_result(self) -> None:
-        self.assertTrue(self.contract["unchanged_dimensions_frozen_before_v2_results"])
-        self.assertTrue(self.contract["latency_correction_frozen_before_new_candidate_measurement"])
-        self.assertTrue(self.contract["candidate_results_excluded_from_latency_correction"])
+        self.assertTrue(self.contract["valid_dimensions_frozen_before_candidate_decision"])
+        self.assertTrue(self.contract["passive_quality_correction_preserves_unaffected_evidence"])
+        self.assertTrue(self.contract["performance_measurement_correction_preserves_kernel_and_execution_evidence"])
+        self.assertTrue(self.contract["wrong_subject_thresholds_forbidden"])
         self.assertEqual(
             {
                 "information-organization-quality",
@@ -64,10 +65,31 @@ class KernelIterationEvidenceTests(unittest.TestCase):
         }
         self.assertNotIn("retrieval_mean_ms", active_names)
         self.assertNotIn("retrieval_p95_ms", active_names)
-        self.assertIn("complete_consumer_retrieval_p95_ms", active_names)
+        self.assertNotIn("complete_consumer_retrieval_p95_ms", active_names)
+        self.assertNotIn("end_to_end_wall_seconds", active_names)
+        self.assertTrue({
+            "target_evidence_delivery_failures", "final_answer_accuracy", "incorrect_answers",
+        }.isdisjoint(active_names))
         self.assertEqual(
-            "diagnostic-only-not-a-complete-consumer-non-regression-gate",
+            "diagnostic-only-not-an-active-performance-gate",
             self.contract["historical_latency_diagnostics"]["status"],
+        )
+        self.assertEqual(
+            "diagnostic-only-old-passive-adapter-not-a-product-quality-gate",
+            self.contract["historical_passive_quality_diagnostics"]["status"],
+        )
+        correction_source = self.contract["sources"]["active_retrieval_measurement_correction"]
+        correction = json.loads((self.suite_root.parents[2] / correction_source["path"]).read_text(encoding="utf-8"))
+        self.assertEqual(
+            correction["identity"],
+            iteration.canonical_sha256({key: value for key, value in correction.items() if key != "identity"}),
+        )
+        self.assertTrue(correction["offline_rejudgment"]["candidate_absolute_quality_passed"])
+        self.assertEqual(0, correction["offline_rejudgment"]["model_calls"])
+        self.assertEqual("evaluation-process", correction["failure_boundary"]["original_rejection"])
+        self.assertEqual(
+            ["active_retrieval_cumulative_p95_ms", "question_wall_seconds"],
+            [item["metric"] for item in correction["measurement_correction"]["invalid_gates"]],
         )
         self.assertTrue(self.contract["subjects"]["v0"]["formal_evaluation_baseline"])
         self.assertEqual(
@@ -84,6 +106,8 @@ class KernelIterationEvidenceTests(unittest.TestCase):
             clean_repository = Path(temporary) / "clean-checkout"
             relative_files = [
                 Path("benchmarks/acceptance/suite/contract.json"),
+                Path("benchmarks/acceptance/suite/iteration/current.json"),
+                Path("benchmarks/acceptance/suite/iteration/v2/iteration-manifest.json"),
                 Path("benchmarks/acceptance/suite/iteration/v2/comparison-contract.json"),
                 *(Path(item["path"]) for item in self.contract["sources"].values()),
             ]
@@ -160,7 +184,7 @@ class KernelIterationEvidenceTests(unittest.TestCase):
                 check=False,
             )
             self.assertNotEqual(0, completed.returncode)
-            self.assertIn("已退出生产入口", completed.stderr)
+            self.assertIn("invalid choice", completed.stderr)
 
     def test_direct_dependency_change_only_creates_new_v2_evidence(self) -> None:
         with tempfile.TemporaryDirectory(dir=self.repository) as temporary:

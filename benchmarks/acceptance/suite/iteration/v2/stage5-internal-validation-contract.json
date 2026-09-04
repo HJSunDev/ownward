@@ -1,6 +1,6 @@
 {
   "schema": "ownward.kernel-iteration-stage5-contract/v1",
-  "identity": "2ce8bd01bc3bc189f4414ede2383f1938e042558df9b90a2530b0ddc3665ac12",
+  "identity": "f6e8d14e937a35b7076e5e1a3552edbe17b2f2577d40c2507ef6b359eebacb82",
   "audit_source_git": "67fdc76345c7655db9ab22aa40d5a95f2dfd6cc7",
   "frontier_evidence_source_git": "67fdc76345c7655db9ab22aa40d5a95f2dfd6cc7",
   "candidate": {
@@ -49,15 +49,15 @@
   },
   "stage4_closure": {
     "path": "benchmarks/acceptance/suite/iteration/v2/stage4-closure-summary.json",
-    "sha256": "20c817a84191927b7b20f822aa618d7c07e13d73d722c742c9792c44ce2f74c2",
-    "identity": "bcd3c1dfa788ccb0c4177b44b2844b5dd0ecf0d611ab8da4f5d8077faf8eedd8"
+    "sha256": "8ba7125aee4d3ace402c973c08bf6c990f6738322cd2d2386b5b92a8b960b5db",
+    "identity": "a3221cd357c7d7385efaa8fe87a71726388179d4375d99fc37219824d70c8eb3"
   },
+  "historical_complete_consumer_latency": "diagnostic-only-wrong-measurement-subject",
   "eligibility": {
     "development_accuracy": 1.0,
     "regression_accuracy": 1.0,
     "long_multifact_delivery": "5/5",
     "semantic_recall": 1.0,
-    "maximum_consumer_p95_ms": 553.0,
     "maximum_semantic_component_tokens": 10247.5,
     "maximum_controlled_wall_seconds": 6.711906625,
     "maximum_ownward_data_ratio_to_v0": 0.5,
