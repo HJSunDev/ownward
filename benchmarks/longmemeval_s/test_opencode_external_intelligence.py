@@ -203,6 +203,33 @@ class OpenCodeExternalIntelligenceTests(unittest.TestCase):
         self.assertEqual({"ok": True}, value)
         self.assertEqual(2, metadata["pool_worker_generation"])
 
+    def test_pool_replaces_worker_after_raw_connection_reset(self) -> None:
+        class Worker:
+            def __init__(self, generation: int) -> None:
+                self.generation = generation
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args: object) -> None:
+                return None
+
+            def invoke(self, **_request: object):
+                if self.generation == 0:
+                    raise ConnectionResetError("reset")
+                return {"ok": True}, {}, {"transport": "fixture"}
+
+            def diagnostics(self):
+                return {"rate_limit_observed": False}
+
+        pool = subject.OpenCodePool(1, lambda _index, generation: Worker(generation))
+        with pool:
+            with self.assertRaises(ConnectionResetError):
+                pool.invoke()
+            value, _usage, metadata = pool.invoke()
+        self.assertEqual({"ok": True}, value)
+        self.assertEqual(1, metadata["pool_worker_generation"])
+
     def test_qualification_selects_reasoning_effort_for_each_role_independently(self) -> None:
         calls: list[tuple[str, str]] = []
 

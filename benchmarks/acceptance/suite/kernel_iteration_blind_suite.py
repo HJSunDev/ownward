@@ -52,7 +52,6 @@ FAILED_BATCH_RETENTION_SCHEMA = "ownward.kernel-iteration-blind-suite-failed-bat
 EVALUATION_BATCH_SCHEMA = "ownward.kernel-iteration-blind-suite-evaluation-batch/v1"
 EVALUATION_FREEZE_SCHEMA = "ownward.kernel-iteration-blind-suite-evaluation-freeze/v1"
 READER_PROCESS_RECOVERY_SCHEMA = "ownward.kernel-iteration-blind-suite-reader-process-recovery/v1"
-BASELINE_RESULT_SCHEMA = "ownward.kernel-iteration-blind-suite-baseline-result/v1"
 REJUDGMENT_RESULT_SCHEMA = "ownward.kernel-iteration-blind-suite-rejudgment/v1"
 MATERIALS_SCHEMA = validation.MATERIALS_SCHEMA
 NO_ANSWER = "I don't have enough information to answer that."
@@ -559,17 +558,6 @@ def level_contract(
             "next_level": sequence["next"],
             "terminal": sequence["terminal"],
         },
-        "relative_baseline_gate": {
-            "final_answer_accuracy": "candidate-greater-than-or-equal-to-baseline",
-            "fact_delivery_missing": "candidate-less-than-or-equal-to-baseline",
-            "temporal_correctness": "candidate-greater-than-or-equal-to-baseline-when-applicable",
-            "conflict_correctness": "candidate-greater-than-or-equal-to-baseline-when-applicable",
-            "semantic_input_tokens": "candidate-less-than-or-equal-to-baseline",
-            "ownward_data_bytes": "candidate-less-than-or-equal-to-baseline",
-            "active_retrieval_cumulative": "equivalent-profile-observation-not-kernel-gate",
-            "question_wall": "product-experience-observation-not-kernel-gate",
-            "gate_role": "sequential-early-rejection-not-standalone-overall-uplift-proof",
-        },
     }
     return {**content, "identity": evidence.canonical_sha256(content)}
 
@@ -580,7 +568,7 @@ def load_evaluation_batch(path: Path, major_version: str, suite_identity: str) -
     _require(value.get("schema") == EVALUATION_BATCH_SCHEMA, "版本级盲测评测批次 schema 无效")
     _require(value.get("identity") == evidence.canonical_sha256(content), "版本级盲测评测批次身份漂移")
     _require(value.get("major_version") == major_version and value.get("suite_identity") == suite_identity, "版本级盲测评测批次与套题错绑")
-    for role in ("candidate", "baseline"):
+    for role in ("candidate",):
         item = _mapping(value, role)
         for name in ("subject_manifest", "execution_config"):
             target = Path(str(item.get(name, ""))).resolve()
@@ -596,19 +584,18 @@ def load_evaluation_batch(path: Path, major_version: str, suite_identity: str) -
     _require(frozen.get("schema") == EVALUATION_FREEZE_SCHEMA, "版本级盲测冻结收据 schema 无效")
     _require(frozen.get("identity") == evidence.canonical_sha256(frozen_content), "版本级盲测冻结收据内容身份漂移")
     _require(frozen.get("major_version") == major_version and frozen.get("suite_identity") == suite_identity, "版本级盲测冻结收据与套题错绑")
-    for role in ("candidate", "baseline"):
+    for role in ("candidate",):
         _require(frozen.get(f"{role}_subject_identity") == value[role]["subject_identity"], f"版本级盲测冻结收据与 {role} subject 错绑")
     sources = frozen.get("source_freezes")
-    _require(isinstance(sources, list) and len(sources) == 2, "版本级盲测冻结收据缺少双 subject 来源")
+    _require(isinstance(sources, list), "版本级盲测冻结收据缺少 candidate 来源")
     by_role = {str(item.get("role", "")): item for item in sources if isinstance(item, dict)}
-    _require(set(by_role) == {"candidate", "baseline"}, "版本级盲测冻结收据 subject 来源角色无效")
-    for role, source in by_role.items():
+    _require("candidate" in by_role, "版本级盲测冻结收据缺少 candidate 来源")
+    for role, source in (("candidate", by_role["candidate"]),):
         source_path = Path(str(source.get("path", ""))).resolve()
         _require(source_path.is_file(), f"版本级盲测冻结收据缺少 {role} 来源")
         _require(source.get("sha256") == evidence.file_sha256(source_path), f"版本级盲测冻结收据 {role} 来源漂移")
         source_value = _load_json(source_path)
         _require(source.get("identity") == source_value.get("identity") and evidence.is_sha256(str(source.get("identity", ""))), f"版本级盲测冻结收据 {role} 来源身份错绑")
-    _require(value["candidate"]["subject_identity"] != value["baseline"]["subject_identity"], "版本级盲测候选与基线身份相同")
     return value
 
 
@@ -637,13 +624,11 @@ def run_partition(
     output_root: Path,
     vault_root: Path,
     evaluation_batch_path: Path,
-    formal_state_path: Path,
     *,
     major_version: str,
     suite_identity: str,
     level: int,
     previous_plan_identity: str | None = None,
-    measurement_rejudgment_path: Path | None = None,
     plan_identity: str | None = None,
     resume: bool = False,
     runner: Callable[..., dict[str, Any]] | None = None,
@@ -672,46 +657,24 @@ def run_partition(
     candidate_runtime = validation.validate_execution_config(
         suite_root, Path(batch["candidate"]["execution_config"]),
     )
-    baseline_runtime = validation.validate_execution_config(
-        suite_root, Path(batch["baseline"]["execution_config"]),
-    )
     reader_binding = validation.external_role_binding(candidate_runtime, "reader")
-    _require(
-        reader_binding == validation.external_role_binding(baseline_runtime, "reader"),
-        "版本级盲测候选与基线 Reader 角色不同",
-    )
     candidate = _load_evaluation_subject(comparison, Path(batch["candidate"]["subject_manifest"]))
-    baseline = _load_evaluation_subject(comparison, Path(batch["baseline"]["subject_manifest"]))
     _require(candidate["identity"] == batch["candidate"]["subject_identity"], "版本级盲测候选错绑")
-    _require(baseline["identity"] == batch["baseline"]["subject_identity"], "版本级盲测基线错绑")
-    _require(candidate["identity"] != baseline["identity"], "版本级盲测候选与基线不得相同")
     validation._verify_subject_binary(candidate, candidate_runtime["binary"])
-    validation._verify_subject_binary(baseline, baseline_runtime["binary"])
-    shared_conditions = evaluator._shared_conditions(candidate_runtime, baseline_runtime)
-    state_path = formal_state_path.resolve()
-    _require(state_path.is_file(), "版本级盲测执行缺少正式 state 只读基线")
-    state_before = state_path.read_bytes()
+    shared_conditions = evaluator._shared_conditions(candidate_runtime, candidate_runtime)
+    previous_policy = (
+        level_contract(suite_contract, int(_mapping(contract, "sequence")["previous_level"]), evaluation_contract=current_evaluation_contract)
+        if _mapping(contract, "sequence")["previous_level"] is not None else None
+    )
     previous_decision = _previous_partition_result(
         output_root, suite_identity, candidate["identity"], contract, previous_plan_identity,
+        previous_policy=previous_policy,
     )
     dependencies = _partition_execution_dependencies(
-        suite_root, suite_contract, contract, sealed, candidate, baseline,
-        candidate_runtime, baseline_runtime, shared_conditions,
+        suite_root, suite_contract, contract, sealed, candidate,
+        candidate_runtime, shared_conditions,
         reader_binding, batch,
     )
-    if measurement_rejudgment_path is None:
-        manifest = iteration_manifest.load(suite_root)
-        configured = manifest.get("resolved_paths", {}).get("measurement_rejudgment")
-        measurement_rejudgment_path = Path(configured) if isinstance(configured, str) else None
-    candidate_correction = _load_measurement_rejudgment(
-        measurement_rejudgment_path, output_root, candidate_runtime["runs"],
-        suite_identity=suite_identity, candidate_identity=candidate["identity"], level=level,
-    )
-    if candidate_correction is not None:
-        dependencies["adjudication-candidate-measurement-rejudgment"] = candidate_correction["receipt"]["identity"]
-    baseline_dependencies = _baseline_partition_dependencies(dependencies)
-    baseline_identity = _baseline_partition_identity(baseline_dependencies)
-    dependencies["baseline-partition-result"] = baseline_identity
     candidate_measurement_dependencies = {
         name: value for name, value in dependencies.items()
         if name.startswith("measurement-shared-") or name.startswith("measurement-candidate-")
@@ -733,14 +696,8 @@ def run_partition(
         "candidate_subject_identity": candidate["identity"],
         "candidate_kernel_generation_identity": candidate["content"]["kernel_generation_identity"],
         "candidate_kernel_effect_identity": candidate["content"]["kernel_effect_identity"],
-        "baseline_subject_identity": baseline["identity"],
         "evaluation_batch_identity": batch["identity"],
-        "candidate_measurement_identity": (
-            candidate_correction["source_measurement_identity"]
-            if candidate_correction is not None
-            else evidence.canonical_sha256(candidate_measurement_dependencies)
-        ),
-        "baseline_measurement_identity": baseline_identity,
+        "candidate_measurement_identity": evidence.canonical_sha256(candidate_measurement_dependencies),
         "adjudication_identity": evidence.canonical_sha256(adjudication_dependencies),
         "shared_conditions": shared_conditions,
         "direct_dependencies": dict(sorted(dependencies.items())),
@@ -759,17 +716,13 @@ def run_partition(
         _require(resume and plan_path.is_file() and _load_json(plan_path) == plan, "版本级盲测执行终态只能同身份恢复")
         result = _load_json(result_path)
         _validate_execution_result(result, plan_identity)
-        _require(state_path.read_bytes() == state_before, "版本级盲测执行终态复用改写正式 state")
         return _execution_reference(result_path, result, reused=True)
     if plan_path.is_file():
         _require(resume and _load_json(plan_path) == plan, "既有版本级盲测执行计划漂移")
     else:
         evidence.atomic_json(plan_path, plan)
-    _require(candidate_runtime["runs"] == baseline_runtime["runs"], "候选与当前基线没有共享持久运行根")
     scratch = _execution_scratch_path(candidate_runtime["runs"], suite_identity, plan_identity)
     scratch.mkdir(parents=True, exist_ok=True)
-    if candidate_correction is not None:
-        _copy_corrected_candidate_execution(candidate_correction, scratch / "candidate")
     locator_content = {
         "schema": EXECUTION_LOCATOR_SCHEMA,
         "plan_identity": plan_identity,
@@ -777,13 +730,9 @@ def run_partition(
         "suite_identity": suite_identity,
         "vault_root": str(vault_root),
         "evaluation_batch": str(evaluation_batch_path.resolve()),
-        "formal_state": str(state_path),
         "output_root": str(output_root),
         "level": level,
         "previous_plan_identity": previous_plan_identity,
-        "measurement_rejudgment": (
-            str(measurement_rejudgment_path.resolve()) if measurement_rejudgment_path is not None else None
-        ),
     }
     locator = {**locator_content, "identity": evidence.canonical_sha256(locator_content)}
     if (root / "locator.json").is_file():
@@ -796,19 +745,12 @@ def run_partition(
     execute = runner or validation._run_longmemeval
     started = time.perf_counter()
     candidate_execution = None
-    baseline_execution = None
     absolute = None
-    relative = None
     answer_attribution = None
-    resume_proof = None
     reader_process_recovery = _resume_reader_process_recovery(root, scratch, plan)
     try:
-        candidate_execution = (
-            _corrected_candidate_execution(candidate_correction, scratch / "candidate")
-            if candidate_correction is not None
-            else evaluator._execute(
-                suite_root, candidate_runtime, dataset_path, scratch / "candidate", candidate["identity"], sealed["materials"], resume=resume, runner=execute,
-            )
+        candidate_execution = evaluator._execute(
+            suite_root, candidate_runtime, dataset_path, scratch / "candidate", candidate["identity"], sealed["materials"], resume=resume, runner=execute,
         )
         absolute = evaluator._absolute_decision(candidate_execution["observation"], contract)
         if reader_process_recovery is not None and reader_process_recovery["status"] == "invalidated":
@@ -851,63 +793,29 @@ def run_partition(
             if not absolute["passed"]:
                 failure_status, failure_decision = _partition_failure_disposition(absolute, answer_attribution)
                 result = _finish_partition(
-                    root, scratch, candidate_runtime["runs"], state_path, state_before, plan, contract,
+                    root, scratch, candidate_runtime["runs"], plan, contract,
                     status=failure_status, passed=False, candidate_decision=failure_decision,
-                    candidate_execution=candidate_execution, baseline_execution=None, absolute=absolute,
-                    relative=None, resume_proof=None,
+                    candidate_execution=candidate_execution, absolute=absolute,
                     general_root_cause=evaluator._general_root_cause(candidate_execution["observation"], absolute["failures"]),
                     answer_failure_attribution=answer_attribution,
                     reader_process_recovery=reader_process_recovery,
                     started=started,
                 )
                 return result
-        baseline_result = _load_baseline_partition_result(
-            output_root, suite_identity, sealed["partition_identity"], baseline_identity,
-            baseline_dependencies, baseline["identity"], level,
-        )
-        if baseline_result is None:
-            baseline_execution = evaluator._execute(
-                suite_root, baseline_runtime, dataset_path, scratch / "baseline", baseline["identity"], sealed["materials"], resume=resume, runner=execute,
-            )
-        else:
-            baseline_execution = baseline_result["execution"]
-        baseline_observation = baseline_execution.get("observation", baseline_execution)
-        relative = evaluator._relative_decision(candidate_observation, baseline_observation)
-        resume_proof = _partition_resume_proof(
-            suite_root, candidate_runtime, baseline_runtime, dataset_path, scratch,
-            candidate["identity"], baseline["identity"], execute,
-            baseline_result, candidate_execution,
-        )
-        if baseline_result is None:
-            baseline_result = _persist_baseline_partition_result(
-                output_root, suite_identity, sealed["partition_identity"], baseline_identity,
-                baseline_dependencies, baseline["identity"], level, baseline_execution,
-                next(item for item in resume_proof["subjects"] if item["subject"] == "baseline"),
-            )
         total = time.perf_counter() - started
         process_outcome = {
             "level_wall_seconds": total,
             "decision": "diagnostic-only",
         }
-        passed = bool(relative["passed"])
-        status = "passed" if passed else "relative-rejected"
-        root_cause = None if passed else evaluator._general_root_cause(
-            candidate_execution["observation"], relative["failures"],
-        )
         return _finish_partition(
-            root, scratch, candidate_runtime["runs"], state_path, state_before, plan, contract,
-            status=status, passed=passed, candidate_decision=bool(relative["passed"]),
-            candidate_execution=candidate_execution, baseline_execution=baseline_execution,
-            absolute=absolute, relative=relative, resume_proof=resume_proof,
-            general_root_cause=root_cause, answer_failure_attribution=answer_attribution, started=started,
+            root, scratch, candidate_runtime["runs"], plan, contract,
+            status="passed", passed=True, candidate_decision=True,
+            candidate_execution=candidate_execution, absolute=absolute,
+            general_root_cause=None, answer_failure_attribution=answer_attribution, started=started,
             reader_process_recovery=reader_process_recovery,
             process_observation=process_outcome, measured_wall_seconds=total,
         )
     except (KeyboardInterrupt, InterruptedError):
-        _require(state_path.read_bytes() == state_before, "版本级盲测执行中断改写正式 state")
-        raise
-    except Exception:
-        _require(state_path.read_bytes() == state_before, "版本级盲测执行失败改写正式 state")
         raise
 
 
@@ -918,13 +826,9 @@ def resume_partition_by_plan_identity(suite_root: Path, output_root: Path, plan_
     _require(len(matches) == 1, "版本级盲测执行 plan identity 定位不唯一")
     locator = _load_execution_locator(matches[0], plan_identity)
     return run_partition(
-        suite_root, output_root, Path(locator["vault_root"]),
-        Path(locator["evaluation_batch"]), Path(locator["formal_state"]),
+        suite_root, output_root, Path(locator["vault_root"]), Path(locator["evaluation_batch"]),
         major_version=locator["major_version"], suite_identity=locator["suite_identity"], level=int(locator["level"]),
         previous_plan_identity=locator.get("previous_plan_identity"),
-        measurement_rejudgment_path=(
-            Path(locator["measurement_rejudgment"]) if locator.get("measurement_rejudgment") else None
-        ),
         plan_identity=plan_identity, resume=True, runner=runner,
     )
 
@@ -935,6 +839,8 @@ def _previous_partition_result(
     candidate_identity: str,
     contract: dict[str, Any],
     previous_plan_identity: str | None,
+    *,
+    previous_policy: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     previous_level = _mapping(contract, "sequence")["previous_level"]
     if previous_level is None:
@@ -950,6 +856,11 @@ def _previous_partition_result(
     if result.get("passed") is True and result.get("candidate_decision") is True:
         _require(result.get("next_level") == contract["level"], "版本级盲测前级未授权当前分区")
         return {"result_identity": str(result["identity"])}
+    if previous_policy is not None and isinstance(result.get("candidate_execution"), dict):
+        import kernel_iteration_blind_gate as evaluator
+        observation = _observation_from_execution_aggregate(_mapping(result, "candidate_execution"))
+        if evaluator._absolute_decision(observation, previous_policy)["passed"] is True:
+            return {"result_identity": str(result["identity"]), "rejudged": True}
     raise BlindSuiteError("版本级盲测前级未通过；修复候选后必须从 5 题重新开始")
 
 
@@ -959,9 +870,7 @@ def _partition_execution_dependencies(
     contract: dict[str, Any],
     sealed: dict[str, Any],
     candidate: dict[str, Any],
-    baseline: dict[str, Any],
     candidate_runtime: dict[str, Any],
-    baseline_runtime: dict[str, Any],
     shared_conditions: dict[str, str],
     reader_binding: dict[str, Any],
     evaluation_batch: dict[str, Any],
@@ -989,8 +898,6 @@ def _partition_execution_dependencies(
         "measurement-shared-observer": measurement_roles["observer"],
         "measurement-candidate-subject": candidate["identity"],
         "measurement-candidate-binary": evidence.file_sha256(candidate_runtime["binary"]),
-        "measurement-baseline-subject": baseline["identity"],
-        "measurement-baseline-binary": evidence.file_sha256(baseline_runtime["binary"]),
         "adjudication-suite-contract": suite_contract["identity"],
         "adjudication-partition-contract": contract["identity"],
         "adjudication-evaluation-batch": evaluation_batch["identity"],
@@ -999,105 +906,6 @@ def _partition_execution_dependencies(
         "adjudication-controller": _implementation_identity()["adjudication-controller"],
     }
     return dependencies
-
-
-def _baseline_partition_dependencies(dependencies: dict[str, str]) -> dict[str, str]:
-    names = {
-        name for name in dependencies
-        if name.startswith("measurement-shared-") or name.startswith("measurement-baseline-")
-    }
-    _require(names <= set(dependencies), "V0 分区结果缺少真实直接依赖")
-    result = {name: dependencies[name] for name in sorted(names)}
-    _require(
-        not any("candidate" in name or "adjudication" in name for name in result),
-        "V0 分区结果错误绑定候选或裁决政策",
-    )
-    return result
-
-
-def _load_measurement_rejudgment(
-    path: Path | None,
-    output_root: Path,
-    runs_root: Path,
-    *,
-    suite_identity: str,
-    candidate_identity: str,
-    level: int,
-) -> dict[str, Any] | None:
-    if path is None or not path.resolve().is_file():
-        return None
-    receipt = _load_json(path.resolve())
-    content = {name: item for name, item in receipt.items() if name != "identity"}
-    _require(
-        receipt.get("schema") == "ownward.kernel-iteration-stage6-active-retrieval-measurement-correction/v1"
-        and receipt.get("identity") == evidence.canonical_sha256(content),
-        "主动检索性能测量纠正收据无效",
-    )
-    source = _mapping(receipt, "source")
-    if (
-        source.get("suite_identity") != suite_identity
-        or source.get("candidate_subject_identity") != candidate_identity
-        or source.get("level") != level
-    ):
-        return None
-    source_root = output_root / "blind-suite-runs" / suite_identity / candidate_identity / str(source["plan_identity"])
-    source_plan = source_root / "plan.json"
-    source_result = source_root / "result.json"
-    _require(
-        evidence.file_sha256(source_plan) == source["plan_file_sha256"]
-        and evidence.file_sha256(source_result) == source["result_file_sha256"],
-        "主动检索性能测量纠正来源文件漂移",
-    )
-    plan = _load_json(source_plan)
-    _require(
-        plan.get("identity") == source["plan_identity"]
-        and plan.get("suite_identity") == suite_identity
-        and plan.get("candidate_subject_identity") == candidate_identity
-        and plan.get("level") == level,
-        "主动检索性能测量纠正来源计划错绑",
-    )
-    source_measurement_dependencies = {
-        name: value for name, value in _mapping(plan, "direct_dependencies").items()
-        if name.startswith("measurement-shared-") or name.startswith("measurement-candidate-")
-    }
-    _require(
-        source_measurement_dependencies
-        and all(evidence.is_sha256(str(value)) for value in source_measurement_dependencies.values()),
-        "主动检索性能测量纠正缺少来源测量直接依赖",
-    )
-    result = _load_json(source_result)
-    _validate_execution_result(result, str(source["plan_identity"]))
-    _require(result.get("identity") == source["result_identity"], "主动检索性能测量纠正结果错绑")
-    execution = _mapping(result, "candidate_execution")
-    quality = _mapping(receipt, "offline_rejudgment")
-    _require(
-        execution.get("subject_identity") == candidate_identity
-        and execution.get("report_sha256") == source["candidate_report_sha256"]
-        and execution.get("checkpoint_sha256") == source["candidate_checkpoint_sha256"]
-        and quality.get("candidate_absolute_quality_passed") is True
-        and quality.get("model_calls") == 0
-        and quality.get("product_executions") == 0,
-        "主动检索性能测量纠正未证明候选执行可复用",
-    )
-    retained: list[Path] = []
-    for marker_path in runs_root.resolve().joinpath("kvs").glob("*/failed-batch-retention.json"):
-        marker = _load_json(marker_path)
-        if marker.get("plan_identity") == source["plan_identity"] and marker.get("suite_identity") == suite_identity:
-            retained.append(marker_path.parent)
-    _require(len(retained) == 1, "主动检索性能测量纠正无法唯一定位失败批次现场")
-    source_candidate = retained[0] / "candidate"
-    _require(
-        evidence.file_sha256(retained[0] / "failed-batch-retention.json") == source["failed_batch_retention_marker_sha256"]
-        and evidence.file_sha256(source_candidate / "report.json") == source["candidate_report_sha256"]
-        and evidence.file_sha256(source_candidate / "checkpoint-manifest.json") == source["candidate_checkpoint_sha256"],
-        "主动检索性能测量纠正候选现场漂移",
-    )
-    return {
-        "receipt": receipt,
-        "source_execution": execution,
-        "source_candidate": source_candidate,
-        "source_measurement_identity": evidence.canonical_sha256(source_measurement_dependencies),
-    }
 
 
 def rejudge_partition(suite_root: Path, output_root: Path, source_result_path: Path) -> dict[str, Any]:
@@ -1122,14 +930,7 @@ def rejudge_partition(suite_root: Path, output_root: Path, source_result_path: P
     candidate_execution = _mapping(source, "candidate_execution")
     candidate_observation = _observation_from_execution_aggregate(candidate_execution)
     absolute = evaluator._absolute_decision(candidate_observation, policy)
-    baseline_execution = source.get("baseline_execution")
-    relative = None
-    if isinstance(baseline_execution, dict):
-        relative = evaluator._relative_decision(
-            candidate_observation,
-            _observation_from_execution_aggregate(baseline_execution),
-        )
-    passed = bool(absolute["passed"] and relative is not None and relative["passed"])
+    passed = bool(absolute["passed"])
     content = {
         "schema": REJUDGMENT_RESULT_SCHEMA,
         "source_result_identity": source["identity"],
@@ -1140,9 +941,8 @@ def rejudge_partition(suite_root: Path, output_root: Path, source_result_path: P
         "level": level,
         "policy_identity": policy["identity"],
         "absolute_decision": absolute,
-        "relative_baseline_decision": relative,
         "passed": passed,
-        "status": "passed" if passed else ("awaiting-baseline" if relative is None and absolute["passed"] else "rejected"),
+        "status": "passed" if passed else "rejected",
         "model_calls": 0,
         "product_executions": 0,
         "source_result_rewritten": False,
@@ -1178,116 +978,6 @@ def _observation_from_execution_aggregate(value: dict[str, Any]) -> dict[str, An
     return observation
 
 
-def _copy_corrected_candidate_execution(correction: dict[str, Any], target: Path) -> None:
-    source = Path(correction["source_candidate"]).resolve()
-    target = target.resolve()
-    if target.is_dir():
-        _require(
-            evidence.file_sha256(target / "report.json") == _mapping(correction, "source_execution")["report_sha256"]
-            and evidence.file_sha256(target / "checkpoint-manifest.json") == _mapping(correction, "source_execution")["checkpoint_sha256"],
-            "已复制的候选执行现场漂移",
-        )
-        return
-    shutil.copytree(source, target)
-
-
-def _corrected_candidate_execution(correction: dict[str, Any], run_root: Path) -> dict[str, Any]:
-    source = _mapping(correction, "source_execution")
-    observation = {
-        name: source[name]
-        for name in (
-            "questions", "fact_delivery", "final_answer_accuracy", "temporal_correctness",
-            "conflict_correctness", "latency", "resources", "codex",
-        )
-    }
-    observation["active_reader_observation"] = {
-        "questions": 0, "best_rank_within_read_limit": 0, "best_rank_beyond_read_limit": 0,
-        "read_capacity_remaining": 0, "tool_capacity_remaining": 0,
-    }
-    observation["direct_question_retrieval_observation"] = {
-        "questions": 0, "direct_question_probe_questions": 0, "all_expected_returned": 0,
-    }
-    return {
-        "subject_identity": source["subject_identity"],
-        "report_sha256": source["report_sha256"],
-        "checkpoint_sha256": source["checkpoint_sha256"],
-        "diagnostic_summary_sha256": source["diagnostic_summary_sha256"],
-        "observation": observation,
-        "run_root": str(run_root.resolve()),
-        "measurement_correction_identity": _mapping(correction, "receipt")["identity"],
-    }
-
-
-def _partition_resume_proof(
-    suite_root: Path,
-    candidate_runtime: dict[str, Any],
-    baseline_runtime: dict[str, Any],
-    dataset_path: Path,
-    scratch: Path,
-    candidate_identity: str,
-    baseline_identity: str,
-    runner: Callable[..., dict[str, Any]],
-    baseline_cache: dict[str, Any] | None,
-    candidate_execution: dict[str, Any],
-) -> dict[str, Any]:
-    import kernel_iteration_blind_gate as evaluator
-
-    corrected = candidate_execution.get("measurement_correction_identity") is not None
-    if baseline_cache is None and not corrected:
-        return evaluator._resume_proof(
-            suite_root, candidate_runtime, baseline_runtime, dataset_path, scratch,
-            candidate_identity, baseline_identity, runner,
-        )
-    run_root = Path(candidate_execution["run_root"])
-    before_report = (run_root / "report.json").read_bytes()
-    before_checkpoint = (run_root / "checkpoint-manifest.json").read_bytes()
-    if not corrected:
-        runner(
-            suite_root=suite_root,
-            runtime=candidate_runtime,
-            dataset_path=dataset_path,
-            output_dir=run_root,
-            subject_identity=candidate_identity,
-            resume=True,
-        )
-    candidate_proof = {
-        "subject": "candidate",
-        "report_byte_identical": before_report == (run_root / "report.json").read_bytes(),
-        "checkpoint_byte_identical": before_checkpoint == (run_root / "checkpoint-manifest.json").read_bytes(),
-        "model_calls": 0,
-        "product_executions": 0,
-    }
-    if baseline_cache is None:
-        baseline_root = scratch / "baseline"
-        before_baseline_report = (baseline_root / "report.json").read_bytes()
-        before_baseline_checkpoint = (baseline_root / "checkpoint-manifest.json").read_bytes()
-        runner(
-            suite_root=suite_root,
-            runtime=baseline_runtime,
-            dataset_path=dataset_path,
-            output_dir=baseline_root,
-            subject_identity=baseline_identity,
-            resume=True,
-        )
-        baseline_proof = {
-            "subject": "baseline",
-            "report_byte_identical": before_baseline_report == (baseline_root / "report.json").read_bytes(),
-            "checkpoint_byte_identical": before_baseline_checkpoint == (baseline_root / "checkpoint-manifest.json").read_bytes(),
-            "model_calls": 0,
-            "product_executions": 0,
-        }
-    else:
-        baseline_proof = dict(_mapping(baseline_cache, "resume_proof"))
-        _require(baseline_proof.get("subject") == "baseline", "V0 分区缓存恢复证明错绑")
-        baseline_proof["cache_identity"] = baseline_cache["identity"]
-    proofs = [candidate_proof, baseline_proof]
-    _require(
-        all(item["report_byte_identical"] and item["checkpoint_byte_identical"] for item in proofs),
-        "版本级盲测恢复未逐字复用",
-    )
-    return {"subjects": proofs, "passed": True}
-
-
 def _partition_execution_aggregate(value: dict[str, Any] | None) -> dict[str, Any] | None:
     import kernel_iteration_blind_gate as evaluator
 
@@ -1299,100 +989,13 @@ def _partition_execution_aggregate(value: dict[str, Any] | None) -> dict[str, An
         "final_answer_accuracy", "temporal_correctness", "conflict_correctness",
         "latency", "resources", "codex",
     }
-    _require(required <= set(value), "V0 分区聚合执行证据不完整")
+    _require(required <= set(value), "版本级分区聚合执行证据不完整")
     return {name: value[name] for name in (
         "subject_identity", "report_sha256", "checkpoint_sha256",
         "diagnostic_summary_sha256", "questions", "fact_delivery",
         "final_answer_accuracy", "temporal_correctness", "conflict_correctness",
         "latency", "resources", "codex",
     )}
-
-
-def _baseline_partition_identity(dependencies: dict[str, str]) -> str:
-    return evidence.canonical_sha256({
-        "schema": BASELINE_RESULT_SCHEMA,
-        "direct_dependencies": dict(sorted(dependencies.items())),
-    })
-
-
-def _baseline_partition_root(
-    output_root: Path,
-    suite_identity: str,
-    partition_identity: str,
-    baseline_identity: str,
-) -> Path:
-    _require(all(evidence.is_sha256(value) for value in (suite_identity, partition_identity, baseline_identity)), "V0 分区结果定位身份无效")
-    return output_root / "blind-suite-baselines" / suite_identity / partition_identity / baseline_identity
-
-
-def _load_baseline_partition_result(
-    output_root: Path,
-    suite_identity: str,
-    partition_identity: str,
-    baseline_identity: str,
-    dependencies: dict[str, str],
-    baseline_subject_identity: str,
-    level: int,
-) -> dict[str, Any] | None:
-    path = _baseline_partition_root(output_root, suite_identity, partition_identity, baseline_identity) / "result.json"
-    if not path.is_file():
-        return None
-    value = _load_json(path)
-    content = {name: item for name, item in value.items() if name != "identity"}
-    _require(value.get("schema") == BASELINE_RESULT_SCHEMA, "V0 分区结果 schema 无效")
-    _require(value.get("identity") == evidence.canonical_sha256(content), "V0 分区结果身份漂移")
-    _require(value.get("baseline_identity") == baseline_identity, "V0 分区结果寻址错绑")
-    _require(value.get("suite_identity") == suite_identity and value.get("partition_identity") == partition_identity, "V0 分区结果套件错绑")
-    _require(value.get("level") == level and value.get("baseline_subject_identity") == baseline_subject_identity, "V0 分区结果对象错绑")
-    _require(value.get("direct_dependencies") == dict(sorted(dependencies.items())), "V0 分区结果直接依赖漂移")
-    _require(value.get("formal") is False and value.get("contains_reversible_question_answer_evidence_or_case_ids") is False, "V0 分区结果越权或泄露内容")
-    execution = _mapping(value, "execution")
-    _require(execution.get("subject_identity") == baseline_subject_identity, "V0 分区执行错绑")
-    proof = _mapping(value, "resume_proof")
-    _require(
-        proof.get("subject") == "baseline"
-        and proof.get("report_byte_identical") is True
-        and proof.get("checkpoint_byte_identical") is True
-        and proof.get("model_calls") == 0
-        and proof.get("product_executions") == 0,
-        "V0 分区结果没有逐字恢复证明",
-    )
-    return value
-
-
-def _persist_baseline_partition_result(
-    output_root: Path,
-    suite_identity: str,
-    partition_identity: str,
-    baseline_identity: str,
-    dependencies: dict[str, str],
-    baseline_subject_identity: str,
-    level: int,
-    execution: dict[str, Any],
-    resume_proof: dict[str, Any],
-) -> dict[str, Any]:
-    import kernel_iteration_blind_gate as evaluator
-
-    content = {
-        "schema": BASELINE_RESULT_SCHEMA,
-        "baseline_identity": baseline_identity,
-        "suite_identity": suite_identity,
-        "partition_identity": partition_identity,
-        "level": level,
-        "baseline_subject_identity": baseline_subject_identity,
-        "direct_dependencies": dict(sorted(dependencies.items())),
-        "execution": evaluator._execution_aggregate(execution),
-        "resume_proof": dict(resume_proof),
-        "formal": False,
-        "contains_reversible_question_answer_evidence_or_case_ids": False,
-    }
-    value = {**content, "identity": evidence.canonical_sha256(content)}
-    path = _baseline_partition_root(output_root, suite_identity, partition_identity, baseline_identity) / "result.json"
-    if path.is_file():
-        _require(_load_json(path) == value, "V0 分区结果发生选择性替换")
-    else:
-        evidence.atomic_json(path, value)
-    return value
 
 
 def _reader_process_recovery_path(root: Path) -> Path:
@@ -1813,8 +1416,6 @@ def _finish_partition(
     root: Path,
     scratch: Path,
     runs_root: Path,
-    state_path: Path,
-    state_before: bytes,
     plan: dict[str, Any],
     contract: dict[str, Any],
     *,
@@ -1822,10 +1423,7 @@ def _finish_partition(
     passed: bool,
     candidate_decision: bool | None,
     candidate_execution: dict[str, Any],
-    baseline_execution: dict[str, Any] | None,
     absolute: dict[str, Any],
-    relative: dict[str, Any] | None,
-    resume_proof: dict[str, Any] | None,
     general_root_cause: dict[str, Any] | None,
     answer_failure_attribution: dict[str, Any] | None,
     reader_process_recovery: dict[str, Any] | None,
@@ -1851,10 +1449,7 @@ def _finish_partition(
         "formal_state_written": False,
         "contains_reversible_question_answer_evidence_or_case_ids": False,
         "candidate_execution": _partition_execution_aggregate(candidate_execution),
-        "baseline_execution": _partition_execution_aggregate(baseline_execution),
         "absolute_decision": absolute,
-        "relative_baseline_decision": relative,
-        "resume_proof": resume_proof,
         "general_root_cause": general_root_cause,
         "answer_failure_attribution": answer_failure_attribution,
         "failure_boundary": _partition_failure_boundary(
@@ -1881,7 +1476,6 @@ def _finish_partition(
         scratch, runs_root, plan["suite_identity"], plan["identity"], passed=passed,
     )
     (root / "active.json").unlink(missing_ok=True)
-    _require(state_path.read_bytes() == state_before, "版本级盲测执行终态改写正式 state")
     return _execution_reference(root / "result.json", result, reused=False)
 
 
@@ -3071,15 +2665,7 @@ def _implementation_identity() -> dict[str, str]:
             resume_partition_by_plan_identity,
             _previous_partition_result,
             _partition_execution_dependencies,
-            _load_measurement_rejudgment,
-            _copy_corrected_candidate_execution,
-            _corrected_candidate_execution,
-            _partition_resume_proof,
             _partition_execution_aggregate,
-            _baseline_partition_dependencies,
-            _baseline_partition_identity,
-            _load_baseline_partition_result,
-            _persist_baseline_partition_result,
         ),
         "adjudication-controller": (
             rejudge_partition,
@@ -3123,7 +2709,6 @@ def _measurement_role_identities(evaluator: Any) -> dict[str, str]:
         "scorer": (
             evaluator._absolute_decision,
             evaluator._independent_absolute_failures,
-            evaluator._relative_decision,
             evaluator._general_root_cause,
         ),
     }

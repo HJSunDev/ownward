@@ -1,0 +1,593 @@
+{
+  "schema": "ownward.kernel-iteration-materials/v2",
+  "contains_formal_questions_answers_gold_or_content": false,
+  "cases": [
+    {
+      "case_id": "v2s-user-fact-natural-multiturn",
+      "coverage": "single-session-user-fact-natural-multiturn",
+      "question_type": "single-session-user",
+      "question_date": "2026-08-30",
+      "question": "If Leo needs an emergency pickup and the family cannot get home, which neighbor did the user say is authorized to collect him and also holds the spare apartment key?",
+      "answer": "Marta Chen.",
+      "answer_session_ids": ["v2s01-s03"],
+      "stale_session_ids": [],
+      "distractor_session_ids": ["v2s01-s01", "v2s01-s02", "v2s01-s04", "v2s01-s05"],
+      "truth_claims": [
+        {
+          "claim": "If I am delayed, Marta Chen is authorized to collect Leo, and she is the only neighbor who also has our spare apartment key.",
+          "evidence_session_ids": ["v2s01-s03"]
+        }
+      ],
+      "sessions": [
+        {
+          "session_id": "v2s01-s01",
+          "date": "2026-08-03",
+          "turns": [
+            {"role": "user", "content": "Leo's school now asks us to list two emergency contacts. My brother Daniel is first, but he works across town."},
+            {"role": "assistant", "content": "I can keep Daniel as the first contact and distinguish him from whoever is allowed to collect Leo."},
+            {"role": "user", "content": "Yes. Daniel can make medical decisions by phone, but he is not on the pickup list yet."},
+            {"role": "assistant", "content": "Understood: emergency contact authority does not imply pickup authorization."}
+          ]
+        },
+        {
+          "session_id": "v2s01-s02",
+          "date": "2026-08-08",
+          "turns": [
+            {"role": "user", "content": "Our downstairs neighbor Omar knows the building entry code and sometimes accepts parcels."},
+            {"role": "assistant", "content": "I will not treat parcel access or knowledge of the entry code as permission to collect Leo."}
+          ]
+        },
+        {
+          "session_id": "v2s01-s03",
+          "date": "2026-08-14",
+          "turns": [
+            {"role": "user", "content": "I finished the school authorization form this morning."},
+            {"role": "assistant", "content": "Who should I record as the local pickup contact?"},
+            {"role": "user", "content": "If I am delayed, Marta Chen is authorized to collect Leo, and she is the only neighbor who also has our spare apartment key."},
+            {"role": "assistant", "content": "I have separated that from Daniel's phone authority and Omar's building access."},
+            {"role": "user", "content": "Good. Marta's authorization lasts through the end of this school year."},
+            {"role": "assistant", "content": "Noted; the relevant person is the one satisfying both pickup permission and spare-key custody."}
+          ]
+        },
+        {
+          "session_id": "v2s01-s04",
+          "date": "2026-08-20",
+          "turns": [
+            {"role": "user", "content": "Marta's husband Jun can feed the cat if we are away, but he is not listed with the school."},
+            {"role": "assistant", "content": "I will keep Jun's pet-care role separate from Leo's pickup authorization."}
+          ]
+        },
+        {
+          "session_id": "v2s01-s05",
+          "date": "2026-08-26",
+          "turns": [
+            {"role": "user", "content": "Daniel now has a spare key to the storage cage in the basement."},
+            {"role": "assistant", "content": "That is not the apartment key, so it does not change the emergency-pickup record."}
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "v2s-stable-personal-preference",
+      "coverage": "stable-personal-preference-natural-context",
+      "question_type": "single-session-preference",
+      "question_date": "2026-07-28",
+      "question": "When planning the user's solo workdays, what focus-block and lunch-break pattern should be used?",
+      "answer": "Two uninterrupted 90-minute focus blocks before lunch, followed by at least 45 minutes away from screens.",
+      "answer_session_ids": ["v2s02-s02"],
+      "stale_session_ids": [],
+      "distractor_session_ids": ["v2s02-s01", "v2s02-s03", "v2s02-s04", "v2s02-s05"],
+      "truth_claims": [
+        {
+          "claim": "On solo workdays, I want two uninterrupted 90-minute focus blocks before lunch, then at least 45 minutes away from screens.",
+          "evidence_session_ids": ["v2s02-s02"]
+        }
+      ],
+      "sessions": [
+        {
+          "session_id": "v2s02-s01",
+          "date": "2026-07-02",
+          "turns": [
+            {"role": "user", "content": "Team days are noisy, so I usually leave the morning open for short reviews and calls."},
+            {"role": "assistant", "content": "That sounds like a team-day pattern, not necessarily your preference for working alone."}
+          ]
+        },
+        {
+          "session_id": "v2s02-s02",
+          "date": "2026-07-06",
+          "turns": [
+            {"role": "user", "content": "Help me settle a default schedule for the days when I work by myself."},
+            {"role": "assistant", "content": "Do you prefer one long stretch or several shorter blocks?"},
+            {"role": "user", "content": "On solo workdays, I want two uninterrupted 90-minute focus blocks before lunch, then at least 45 minutes away from screens."},
+            {"role": "assistant", "content": "Should I protect both blocks from messages and meetings?"},
+            {"role": "user", "content": "Yes. The break after lunch matters just as much; walking or reading on paper is fine."},
+            {"role": "assistant", "content": "I will use that as the default only for solo workdays."}
+          ]
+        },
+        {
+          "session_id": "v2s02-s03",
+          "date": "2026-07-11",
+          "turns": [
+            {"role": "user", "content": "For conference days, thirty-minute preparation slots between sessions are enough."},
+            {"role": "assistant", "content": "I will treat that as a conference-day exception."}
+          ]
+        },
+        {
+          "session_id": "v2s02-s04",
+          "date": "2026-07-18",
+          "turns": [
+            {"role": "user", "content": "My partner likes to eat lunch at the desk when we work together."},
+            {"role": "assistant", "content": "That is your partner's habit and does not replace your own solo-day break preference."}
+          ]
+        },
+        {
+          "session_id": "v2s02-s05",
+          "date": "2026-07-24",
+          "turns": [
+            {"role": "user", "content": "On Fridays I sometimes use the afternoon for errands instead of another work block."},
+            {"role": "assistant", "content": "That optional Friday choice does not alter the protected morning pattern."}
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "v2s-updated-conditional-preference",
+      "coverage": "preference-update-with-conditions",
+      "question_type": "knowledge-update",
+      "question_date": "2026-08-31",
+      "question": "What is the user's current berth preference for overnight train trips lasting more than six hours?",
+      "answer": "A lower berth near the middle of the carriage and away from the doors; a window is no longer required.",
+      "answer_session_ids": ["v2s03-s04"],
+      "stale_session_ids": ["v2s03-s01"],
+      "distractor_session_ids": ["v2s03-s02", "v2s03-s03", "v2s03-s05", "v2s03-s06"],
+      "truth_claims": [
+        {
+          "claim": "For overnight trains longer than six hours, please book a lower berth near the middle of the carriage and away from the doors; I no longer require a window.",
+          "evidence_session_ids": ["v2s03-s04"]
+        }
+      ],
+      "sessions": [
+        {
+          "session_id": "v2s03-s01",
+          "date": "2026-03-12",
+          "turns": [
+            {"role": "user", "content": "For sleeper trains I usually choose an upper berth by the window because it feels private."},
+            {"role": "assistant", "content": "I will record upper berth by the window as your current sleeper-train preference."}
+          ]
+        },
+        {
+          "session_id": "v2s03-s02",
+          "date": "2026-05-09",
+          "turns": [
+            {"role": "user", "content": "On short daytime trains, any forward-facing seat is fine."},
+            {"role": "assistant", "content": "That applies to short daytime travel, not overnight berths."}
+          ]
+        },
+        {
+          "session_id": "v2s03-s03",
+          "date": "2026-07-01",
+          "turns": [
+            {"role": "user", "content": "My sister prefers the compartment closest to the dining car."},
+            {"role": "assistant", "content": "I will not apply your sister's preference to your bookings."}
+          ]
+        },
+        {
+          "session_id": "v2s03-s04",
+          "date": "2026-07-19",
+          "turns": [
+            {"role": "user", "content": "I need to change the sleeper preference after the last trip."},
+            {"role": "assistant", "content": "Which parts should replace the old upper-window choice?"},
+            {"role": "user", "content": "For overnight trains longer than six hours, please book a lower berth near the middle of the carriage and away from the doors; I no longer require a window."},
+            {"role": "assistant", "content": "Does this supersede the March preference for that duration?"},
+            {"role": "user", "content": "Yes. The upper berth made my knee painful, and the doors kept waking me."},
+            {"role": "assistant", "content": "I will use the new conditional preference for future long overnight trips."}
+          ]
+        },
+        {
+          "session_id": "v2s03-s05",
+          "date": "2026-08-02",
+          "turns": [
+            {"role": "user", "content": "For the four-hour evening train next month, a regular aisle seat is enough."},
+            {"role": "assistant", "content": "Because it is not an overnight trip longer than six hours, the berth rule does not apply."}
+          ]
+        },
+        {
+          "session_id": "v2s03-s06",
+          "date": "2026-08-20",
+          "turns": [
+            {"role": "user", "content": "A travel blog says the first carriage has the best views."},
+            {"role": "assistant", "content": "That general recommendation does not change your personal long-overnight preference."}
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "v2s-user-assistant-role-provenance",
+      "coverage": "user-assistant-source-role-and-ordered-answer",
+      "question_type": "single-session-assistant",
+      "question_date": "2026-06-30",
+      "question": "For the family photo archive, what three-step backup sequence did the assistant recommend instead of the user's cloud-first proposal?",
+      "answer": "Make a local SSD copy, verify it against a checksum manifest, and only then start the cloud transfer.",
+      "answer_session_ids": ["v2s04-s03"],
+      "stale_session_ids": [],
+      "distractor_session_ids": ["v2s04-s01", "v2s04-s02", "v2s04-s04", "v2s04-s05"],
+      "truth_claims": [
+        {
+          "claim": "My recommendation is to make the local SSD copy first, verify that copy against a checksum manifest, and only then start the cloud transfer.",
+          "evidence_session_ids": ["v2s04-s03"]
+        }
+      ],
+      "sessions": [
+        {
+          "session_id": "v2s04-s01",
+          "date": "2026-06-03",
+          "turns": [
+            {"role": "user", "content": "I want to move the family photo archive. My first thought is to upload everything to the cloud and sort it afterward."},
+            {"role": "assistant", "content": "Before settling on that sequence, we should account for interrupted uploads and silent corruption."}
+          ]
+        },
+        {
+          "session_id": "v2s04-s02",
+          "date": "2026-06-07",
+          "turns": [
+            {"role": "user", "content": "A friend suggested copying directly from the old drive to two cloud services at once."},
+            {"role": "assistant", "content": "That is your friend's suggestion; parallel transfers would not establish a verified local recovery point."}
+          ]
+        },
+        {
+          "session_id": "v2s04-s03",
+          "date": "2026-06-12",
+          "turns": [
+            {"role": "user", "content": "Give me your preferred sequence, not just a list of storage options."},
+            {"role": "assistant", "content": "My recommendation is to make the local SSD copy first, verify that copy against a checksum manifest, and only then start the cloud transfer."},
+            {"role": "user", "content": "Why verify before uploading if the cloud provider also checks files?"},
+            {"role": "assistant", "content": "The local manifest gives you an independent reference for the source before another copy or transformation occurs."},
+            {"role": "user", "content": "All right; keep that as your recommended order."},
+            {"role": "assistant", "content": "I will preserve the ordering, not merely the three actions."}
+          ]
+        },
+        {
+          "session_id": "v2s04-s04",
+          "date": "2026-06-18",
+          "turns": [
+            {"role": "user", "content": "For phone snapshots, I still let the app upload immediately."},
+            {"role": "assistant", "content": "That routine concerns new phone snapshots, not migration of the existing family archive."}
+          ]
+        },
+        {
+          "session_id": "v2s04-s05",
+          "date": "2026-06-25",
+          "turns": [
+            {"role": "user", "content": "The empty replacement drive can be reformatted after the migration."},
+            {"role": "assistant", "content": "That later maintenance step does not alter the backup sequence."}
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "v2s-structured-table-row-column",
+      "coverage": "structured-table-row-column-binding",
+      "question_type": "single-session-assistant",
+      "question_date": "2026-05-31",
+      "question": "In the approved kitchen-renovation budget, who owns sign-off for the cabinetry line and what is its spending ceiling?",
+      "answer": "Nina Park owns sign-off, and the ceiling is $18,400.",
+      "answer_session_ids": ["v2s05-s03"],
+      "stale_session_ids": ["v2s05-s01"],
+      "distractor_session_ids": ["v2s05-s02", "v2s05-s04", "v2s05-s05"],
+      "truth_claims": [
+        {
+          "claim": "| Cabinetry | $18,400 | Nina Park | Approved |",
+          "evidence_session_ids": ["v2s05-s03"]
+        }
+      ],
+      "sessions": [
+        {
+          "session_id": "v2s05-s01",
+          "date": "2026-05-02",
+          "turns": [
+            {"role": "user", "content": "The first kitchen estimate put cabinetry at $16,900 and left sign-off with Rafael."},
+            {"role": "assistant", "content": "I will treat that as the preliminary estimate until an approved table replaces it."}
+          ]
+        },
+        {
+          "session_id": "v2s05-s02",
+          "date": "2026-05-08",
+          "turns": [
+            {"role": "user", "content": "Nina is also reviewing the $6,200 lighting line, but she does not own that approval."},
+            {"role": "assistant", "content": "Review participation and sign-off ownership are different fields."}
+          ]
+        },
+        {
+          "session_id": "v2s05-s03",
+          "date": "2026-05-14",
+          "turns": [
+            {"role": "user", "content": "Here is the approved budget after the contractor meeting. Preserve the row and column relationships."},
+            {"role": "assistant", "content": "| Workstream | Spending ceiling | Sign-off owner | Status |\n|---|---:|---|---|\n| Plumbing | $9,750 | Rafael Ortiz | Approved |\n| Cabinetry | $18,400 | Nina Park | Approved |\n| Lighting | $6,200 | Mei Wong | Approved |\n| Appliances | $11,300 | Dev Shah | Pending |"},
+            {"role": "user", "content": "Only approved rows should drive purchase authorization."},
+            {"role": "assistant", "content": "Understood. I will not combine a ceiling from one row with an owner from another."}
+          ]
+        },
+        {
+          "session_id": "v2s05-s04",
+          "date": "2026-05-19",
+          "turns": [
+            {"role": "user", "content": "Dev negotiated a cabinetry sample at $1,840."},
+            {"role": "assistant", "content": "That sample price is not the approved cabinetry spending ceiling."}
+          ]
+        },
+        {
+          "session_id": "v2s05-s05",
+          "date": "2026-05-27",
+          "turns": [
+            {"role": "user", "content": "Rafael will inspect the cabinets after installation."},
+            {"role": "assistant", "content": "Post-installation inspection does not transfer sign-off ownership."}
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "v2s-structured-footnote-exception",
+      "coverage": "structured-table-footnote-exception",
+      "question_type": "multi-session",
+      "question_date": "2026-09-01",
+      "question": "For the Harbor Clinic delivery scheduled Friday at 18:30, what temperature range must be maintained and where must the courier hand it over?",
+      "answer": "Maintain 2–8°C and hand it to the North security desk.",
+      "answer_session_ids": ["v2s06-s02", "v2s06-s04"],
+      "stale_session_ids": [],
+      "distractor_session_ids": ["v2s06-s01", "v2s06-s03", "v2s06-s05", "v2s06-s06"],
+      "truth_claims": [
+        {
+          "claim": "| Harbor Clinic | Refrigerated medicine | 2–8°C | Pharmacy intake |",
+          "evidence_session_ids": ["v2s06-s02"]
+        },
+        {
+          "claim": "Friday deliveries arriving after 18:00 must bypass the listed receiving point and be handed to the North security desk.",
+          "evidence_session_ids": ["v2s06-s04"]
+        }
+      ],
+      "sessions": [
+        {
+          "session_id": "v2s06-s01",
+          "date": "2026-08-05",
+          "turns": [
+            {"role": "user", "content": "The Lakeside practice accepts ordinary supplies at its loading bay until 19:00."},
+            {"role": "assistant", "content": "I will keep that site's rule separate from Harbor Clinic."}
+          ]
+        },
+        {
+          "session_id": "v2s06-s02",
+          "date": "2026-08-10",
+          "turns": [
+            {"role": "user", "content": "Please store the current clinical-delivery matrix."},
+            {"role": "assistant", "content": "| Site | Package class | Required temperature | Listed receiving point |\n|---|---|---|---|\n| Harbor Clinic | Refrigerated medicine | 2–8°C | Pharmacy intake |\n| Lakeside Practice | Sterile supplies | 15–25°C | Loading bay |\n| Hill Ward | Frozen samples | -25–-15°C | Laboratory hatch |"},
+            {"role": "user", "content": "The temperature column always applies; receiving exceptions may appear separately."},
+            {"role": "assistant", "content": "I will combine the site row with any applicable receiving exception."}
+          ]
+        },
+        {
+          "session_id": "v2s06-s03",
+          "date": "2026-08-14",
+          "turns": [
+            {"role": "user", "content": "A Tuesday 17:15 Harbor delivery went through pharmacy intake as listed."},
+            {"role": "assistant", "content": "That example is before the after-hours threshold."}
+          ]
+        },
+        {
+          "session_id": "v2s06-s04",
+          "date": "2026-08-18",
+          "turns": [
+            {"role": "user", "content": "Add this footnote to the matrix: Friday deliveries arriving after 18:00 must bypass the listed receiving point and be handed to the North security desk."},
+            {"role": "assistant", "content": "The footnote changes the handover location for that time window but not the row's temperature requirement."}
+          ]
+        },
+        {
+          "session_id": "v2s06-s05",
+          "date": "2026-08-23",
+          "turns": [
+            {"role": "user", "content": "North security also receives nonclinical stationery on weekends."},
+            {"role": "assistant", "content": "That does not change the cold-chain requirement for medicine."}
+          ]
+        },
+        {
+          "session_id": "v2s06-s06",
+          "date": "2026-08-28",
+          "turns": [
+            {"role": "user", "content": "Hill Ward's laboratory hatch closes at 18:30 on Fridays."},
+            {"role": "assistant", "content": "That is a different site and does not control the Harbor delivery."}
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "v2s-same-asset-distant-fragments",
+      "coverage": "same-long-asset-distant-multifact-sufficiency",
+      "question_type": "single-session-assistant",
+      "question_date": "2026-04-30",
+      "question": "Before the family archive migration can be considered complete, which two safeguards did the assistant require for the original photo drive and its folder structure?",
+      "answer": "Keep the original drive read-only until the checksum audit passes, and preserve every original folder name in the migration manifest.",
+      "answer_session_ids": ["v2s07-s03"],
+      "stale_session_ids": [],
+      "distractor_session_ids": ["v2s07-s01", "v2s07-s02", "v2s07-s04", "v2s07-s05"],
+      "truth_claims": [
+        {
+          "claim": "Keep the original photo drive mounted read-only until the checksum audit has passed for every migrated folder.",
+          "evidence_session_ids": ["v2s07-s03"]
+        },
+        {
+          "claim": "The second completion safeguard is to preserve every original folder name in the migration manifest, even when the destination folders are reorganized.",
+          "evidence_session_ids": ["v2s07-s03"]
+        }
+      ],
+      "sessions": [
+        {
+          "session_id": "v2s07-s01",
+          "date": "2026-04-02",
+          "turns": [
+            {"role": "user", "content": "I may rename the destination folders by year once the archive is searchable."},
+            {"role": "assistant", "content": "Destination naming can change if the migration still preserves a traceable relationship to the source."}
+          ]
+        },
+        {
+          "session_id": "v2s07-s02",
+          "date": "2026-04-06",
+          "turns": [
+            {"role": "user", "content": "The working copy on my laptop can be deleted after import because it is not the original drive."},
+            {"role": "assistant", "content": "That working copy has a different lifecycle from the original archive drive."}
+          ]
+        },
+        {
+          "session_id": "v2s07-s03",
+          "date": "2026-04-11",
+          "turns": [
+            {"role": "user", "content": "Let's define when the archive migration is actually complete."},
+            {"role": "assistant", "content": "Keep the original photo drive mounted read-only until the checksum audit has passed for every migrated folder."},
+            {"role": "user", "content": "I also want thumbnails rebuilt and faces re-indexed."},
+            {"role": "assistant", "content": "Those improve usability, but they are not safeguards for preserving the original source structure."},
+            {"role": "user", "content": "The destination will group events differently, so source names might disappear from view."},
+            {"role": "assistant", "content": "Then the manifest must carry the source structure independently of the destination layout."},
+            {"role": "user", "content": "Spell out that second completion condition."},
+            {"role": "assistant", "content": "The second completion safeguard is to preserve every original folder name in the migration manifest, even when the destination folders are reorganized."}
+          ]
+        },
+        {
+          "session_id": "v2s07-s04",
+          "date": "2026-04-17",
+          "turns": [
+            {"role": "user", "content": "The cloud copy can use compressed previews while the originals remain lossless."},
+            {"role": "assistant", "content": "Preview compression does not replace either completion safeguard."}
+          ]
+        },
+        {
+          "session_id": "v2s07-s05",
+          "date": "2026-04-24",
+          "turns": [
+            {"role": "user", "content": "We can recycle the empty shipping box before the audit."},
+            {"role": "assistant", "content": "The packaging is unrelated to the original drive and folder manifest."}
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "v2s-authority-over-recency",
+      "coverage": "multisession-authority-conflict-complete-answer",
+      "question_type": "knowledge-update",
+      "question_date": "2026-12-20",
+      "question": "What is the final holiday-care arrangement for Miso, including the authorized medication instruction?",
+      "answer": "Board Miso at Greenway Veterinary Center from December 23 through December 28, with authorization for one inhaler dose each morning and evening.",
+      "answer_session_ids": ["v2s08-s04", "v2s08-s05"],
+      "stale_session_ids": ["v2s08-s01", "v2s08-s02"],
+      "distractor_session_ids": ["v2s08-s01", "v2s08-s02", "v2s08-s03", "v2s08-s06", "v2s08-s07"],
+      "truth_claims": [
+        {
+          "claim": "Final decision: Miso will stay at Greenway Veterinary Center from December 23 through December 28.",
+          "evidence_session_ids": ["v2s08-s04"]
+        },
+        {
+          "claim": "The signed care authorization specifies one inhaler dose each morning and one each evening during that stay.",
+          "evidence_session_ids": ["v2s08-s05"]
+        }
+      ],
+      "sessions": [
+        {
+          "session_id": "v2s08-s01",
+          "date": "2026-10-04",
+          "turns": [
+            {"role": "user", "content": "My tentative holiday plan is to have Olivia visit Miso at home from December 22 to 29."},
+            {"role": "assistant", "content": "I will record that as tentative, pending the vet's advice about the inhaler."}
+          ]
+        },
+        {
+          "session_id": "v2s08-s02",
+          "date": "2026-10-18",
+          "turns": [
+            {"role": "user", "content": "Olivia said she could probably manage one inhaler dose at lunchtime."},
+            {"role": "assistant", "content": "That is an informal offer, not a finalized care or medication instruction."}
+          ]
+        },
+        {
+          "session_id": "v2s08-s03",
+          "date": "2026-11-07",
+          "turns": [
+            {"role": "user", "content": "The vet prefers supervised boarding if nobody can reliably give two daily doses."},
+            {"role": "assistant", "content": "That recommendation creates a condition but does not itself select a facility or dates."}
+          ]
+        },
+        {
+          "session_id": "v2s08-s04",
+          "date": "2026-11-22",
+          "turns": [
+            {"role": "user", "content": "Final decision: Miso will stay at Greenway Veterinary Center from December 23 through December 28."},
+            {"role": "assistant", "content": "I will treat that as the authoritative replacement for the tentative home-care plan."}
+          ]
+        },
+        {
+          "session_id": "v2s08-s05",
+          "date": "2026-11-24",
+          "turns": [
+            {"role": "user", "content": "The signed care authorization specifies one inhaler dose each morning and one each evening during that stay."},
+            {"role": "assistant", "content": "I have linked the signed medication instruction to the finalized Greenway stay."}
+          ]
+        },
+        {
+          "session_id": "v2s08-s06",
+          "date": "2026-12-02",
+          "turns": [
+            {"role": "user", "content": "A neighbor mentioned that Pine Street Kennels has a larger playroom."},
+            {"role": "assistant", "content": "That later mention is not a decision and does not supersede Greenway."}
+          ]
+        },
+        {
+          "session_id": "v2s08-s07",
+          "date": "2026-12-12",
+          "turns": [
+            {"role": "user", "content": "Olivia can still water the plants on December 26."},
+            {"role": "assistant", "content": "Her plant visit does not change Miso's boarding or medication plan."}
+          ]
+        }
+      ]
+    }
+  ],
+  "criteria": {
+    "minimum_accuracy": 1.0,
+    "require_complete_fact_delivery": true,
+    "category_minimums": {
+      "single-session-user-fact-natural-multiturn": 1,
+      "stable-personal-preference-natural-context": 1,
+      "preference-update-with-conditions": 1,
+      "user-assistant-source-role-and-ordered-answer": 1,
+      "structured-table-row-column-binding": 1,
+      "structured-table-footnote-exception": 1,
+      "same-long-asset-distant-multifact-sufficiency": 1,
+      "multisession-authority-conflict-complete-answer": 1
+    },
+    "coverage_basis": {
+      "single-session-user-memory": ["v2s-user-fact-natural-multiturn"],
+      "personal-preference": ["v2s-stable-personal-preference", "v2s-updated-conditional-preference"],
+      "natural-multiturn-and-role-provenance": ["v2s-user-fact-natural-multiturn", "v2s-user-assistant-role-provenance"],
+      "structured-table-and-footnote-boundary": ["v2s-structured-table-row-column", "v2s-structured-footnote-exception"],
+      "same-asset-fragment-completeness": ["v2s-same-asset-distant-fragments"],
+      "authority-update-and-multisource-sufficiency": ["v2s-updated-conditional-preference", "v2s-authority-over-recency"]
+    },
+    "provenance": {
+      "origin": "independent-handcrafted-v1-risk-coverage-supplement",
+      "candidate_subject_identity": "460e3f8205dab3f47c83d3620a89be447264ab81d9327e5602f06866fa4cb5fd",
+      "candidate_output_access": false,
+      "existing_blind_suite_content_reuse": false,
+      "formal_source_access": false,
+      "preservation": "persistent-v2-supplement"
+    },
+    "author_quality_review": {
+      "status": "passed",
+      "checks": [
+        "natural-user-scenario",
+        "difficulty-sufficient",
+        "unique-answer",
+        "evidence-sufficient",
+        "no-surface-shortcut",
+        "scoring-discriminative",
+        "v1-risk-coverage-complete"
+      ]
+    }
+  },
+  "identity": "d1cdeb82c51598d21e0ceaff0dcd2d7aa6e6b13343d305084562fff8991b9174"
+}

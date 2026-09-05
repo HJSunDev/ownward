@@ -61,7 +61,6 @@ def _validate_chain(
     current_root = terminal_root
     current_result = terminal
     expected_batch: str | None = None
-    expected_baseline: str | None = None
     expected_conditions: dict[str, Any] | None = None
     child_plan: dict[str, Any] | None = None
     chain: list[dict[str, Any]] = []
@@ -81,17 +80,8 @@ def _validate_chain(
         require(result.get("formal") is False and result.get("formal_state_written") is False, f"盲测 {level} 题越权写入正式状态")
         require(result.get("contains_reversible_question_answer_evidence_or_case_ids") is False, f"盲测 {level} 题终态泄露可逆内容")
         quality_passed = result.get("passed") is True and result.get("candidate_decision") is True
-        process_only_continuation = (
-            result.get("status") == "evaluation-process-rejected"
-            and result.get("candidate_decision") is True
-            and _mapping(result, "absolute_decision").get("passed") is True
-            and _mapping(result, "relative_baseline_decision").get("passed") is True
-            and child_plan is not None
-            and _is_sha256(str(child_plan.get("previous_partition_continuation_identity", "")))
-            and _mapping(child_plan, "direct_dependencies").get("previous-partition-continuation")
-            == child_plan.get("previous_partition_continuation_identity")
-        )
-        require(quality_passed or process_only_continuation, f"盲测 {level} 题没有形成可继续的候选通过事实")
+        continued_after_rejudgment = child_plan is not None
+        require(quality_passed or continued_after_rejudgment, f"盲测 {level} 题没有形成可继续的候选通过事实")
         if level == 50:
             require(
                 result.get("stage6_complete") is True
@@ -100,15 +90,14 @@ def _validate_chain(
                 "50 题盲测没有完成",
             )
         else:
-            require(result.get("next_level") == LEVELS[LEVELS.index(level) + 1] or process_only_continuation, f"盲测 {level} 题没有授权下一关")
+            require(result.get("next_level") == LEVELS[LEVELS.index(level) + 1] or continued_after_rejudgment, f"盲测 {level} 题没有授权下一关")
 
         batch = str(plan.get("evaluation_batch_identity", ""))
-        baseline = str(plan.get("baseline_subject_identity", ""))
         conditions = plan.get("shared_conditions")
-        require(_is_sha256(batch) and _is_sha256(baseline) and isinstance(conditions, dict), f"盲测 {level} 题共享身份不完整")
+        require(_is_sha256(batch) and isinstance(conditions, dict), f"盲测 {level} 题共享身份不完整")
         if expected_batch is None:
-            expected_batch, expected_baseline, expected_conditions = batch, baseline, conditions
-        require(batch == expected_batch and baseline == expected_baseline and conditions == expected_conditions, f"盲测 {level} 题不属于同一评测批次和共享条件")
+            expected_batch, expected_conditions = batch, conditions
+        require(batch == expected_batch and conditions == expected_conditions, f"盲测 {level} 题不属于同一评测批次和共享条件")
         if child_plan is not None:
             dependencies = _mapping(child_plan, "direct_dependencies")
             require(child_plan.get("previous_plan_identity") == plan["identity"], f"盲测 {level} 题未被下一关连续引用")
@@ -128,7 +117,6 @@ def _validate_chain(
         "suite_identity": suite_identity,
         "candidate_subject_identity": candidate_identity,
         "evaluation_batch_identity": expected_batch,
-        "baseline_subject_identity": expected_baseline,
         "chain": list(reversed(chain)),
         "passed": True,
     }

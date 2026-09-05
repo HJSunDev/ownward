@@ -427,7 +427,6 @@ def _validate_sources(repository: Path, contract: dict[str, Any]) -> None:
     expected = {
         "kernel_catalog", "current_composition", "frozen_baseline", "v0_baseline_facts",
         "retrieval_latency_comparability_audit", "retrieval_latency_migration",
-        "active_retrieval_measurement_correction",
     }
     _require(set(sources) == expected, "V2 比较合同来源集合无效")
     for name, source in sources.items():
@@ -469,38 +468,7 @@ def _validate_sources(repository: Path, contract: dict[str, Any]) -> None:
     _require(migration.get("from_identity") == receipt["old_comparison"]["identity"], "检索时延迁移来源身份错绑")
     _require(migration.get("evidence_compatibility_identity") == migration.get("from_identity"), "非时延证据兼容身份漂移")
     _require(migration.get("receipt_identity") == receipt["identity"] == historical.get("migration_receipt_identity"), "检索时延迁移收据错绑")
-    correction = _load_json(repository / sources["active_retrieval_measurement_correction"]["path"])
-    correction_content = {key: item for key, item in correction.items() if key != "identity"}
-    _require(
-        correction.get("schema") == "ownward.kernel-iteration-stage6-active-retrieval-measurement-correction/v1"
-        and correction.get("identity") == canonical_sha256(correction_content),
-        "主动检索性能测量纠正收据无效",
-    )
-    _require(
-        migration.get("status") == "superseded-by-active-retrieval-measurement-correction"
-        and migration.get("measurement_correction_identity") == correction["identity"],
-        "旧检索时延迁移政策未被正确终止",
-    )
-    corrected_gates = _mapping(correction, "measurement_correction").get("invalid_gates")
-    _require(
-        isinstance(corrected_gates, list)
-        and corrected_gates == [
-            {
-                "metric": "active_retrieval_cumulative_p95_ms",
-                "maximum_ms": 553.0,
-                "disposition": "historical-diagnostic-only",
-                "reason": "single-kernel-call-budget-was-applied-to-multi-call-active-retrieval-composition",
-            },
-            {
-                "metric": "question_wall_seconds",
-                "baseline_seconds": 12475.843,
-                "maximum_seconds": 6237.9215,
-                "disposition": "historical-diagnostic-only",
-                "reason": "passive-fixed-prefetch-wall-was-applied-to-active-external-agent-progressive-product-experience",
-            },
-        ],
-        "错误性能门槛没有全部进入只读历史诊断",
-    )
+    _require(migration.get("status") == "historical-diagnostic-only", "旧检索时延迁移政策仍在参与活动裁决")
     legacy_dimensions = migration.get("pre-quality-correction-dimension-identities")
     _require(
         isinstance(legacy_dimensions, dict)

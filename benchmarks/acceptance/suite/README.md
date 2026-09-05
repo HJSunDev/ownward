@@ -58,7 +58,7 @@ python benchmarks/acceptance/suite/kernel_iteration_run.py `
   --resume
 ```
 
-版本级盲测的生成、独立先验准入、Production Profile 执行/评价、不可逆摘要和失败批次保留也由该入口管理。一个大版本只封存一套 5/15/25/50 题材料；通过分区销毁原始执行现场，失败分区完整保留到根因提取或候选变更。原始测量与裁决政策分别寻址，测量对象未变时允许零模型、零产品执行的离线重判。新进程凭 plan identity 恢复时只复核真实直接依赖。
+版本级盲测的生成、独立先验准入、Production Profile 候选执行/评价、不可逆摘要和失败批次保留也由该入口管理。一个大版本只封存一套 5/15/25/50 题材料；通过分区只保留最小聚合结果，失败分区完整保留到根因提取或候选变更。原始测量与裁决政策分别寻址，测量对象未变时允许零模型、零产品执行的离线重判。关卡不运行基线、不绑定正式 state；新进程凭 plan identity 恢复时只复核真实直接依赖。
 
 ```powershell
 python benchmarks/acceptance/suite/kernel_iteration_run.py `
@@ -67,7 +67,7 @@ python benchmarks/acceptance/suite/kernel_iteration_run.py `
   --resume
 ```
 
-版本化合同为 `iteration/v2/validation-contract.json`，五题非候选校准预算为 `iteration/v2/blind-calibration-budget.json`：5/15/25/50 题正常路径分别冻结为 406/751/1097/1961 秒，失败路径为 320/492/665/1097 秒，包含 20% 波动、10% 有界重试和每级 60 秒恢复余量，正常路径总计 4215 秒。版本化预算可脱离运行现场作为历史事实读取；将其用于当前阶段判断时必须同时验证计划、结果、依赖定位收据及全部当前直接依赖。
+版本化合同为 `iteration/v2/validation-contract.json`，五题非候选校准预算为 `iteration/v2/blind-calibration-budget.json`：5/15/25/50 题正常路径分别冻结为 406/751/1097/1961 秒，失败路径为 320/492/665/1097 秒，包含 20% 波动、10% 有界重试和每级 60 秒恢复余量，正常路径总计 4215 秒。这些预算只约束评测流程成本，不裁决内核质量；当前阶段只校验真实直接依赖。
 
 V1 的 `materials/optimization/v1/` 及历史分析实现只保留审计与回归价值；旧 `run.py kernel-iteration`、`kernel-storage`、`kernel-execution` 会明确拒绝，不再构成第二条生产路径。
 

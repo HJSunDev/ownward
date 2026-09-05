@@ -20,7 +20,6 @@ class FinalValidationGateTests(unittest.TestCase):
     def _fixture(self, root: Path) -> tuple[dict[str, object], list[dict[str, object]]]:
         suite_identity = "1" * 64
         candidate_identity = "2" * 64
-        baseline_identity = "3" * 64
         batch_identity = "4" * 64
         manifest_content = {
             "schema": "candidate-components/v1",
@@ -38,12 +37,10 @@ class FinalValidationGateTests(unittest.TestCase):
                 "schema": gate.PLAN_SCHEMA,
                 "suite_identity": suite_identity,
                 "candidate_subject_identity": candidate_identity,
-                "baseline_subject_identity": baseline_identity,
                 "evaluation_batch_identity": batch_identity,
                 "shared_conditions": {"environment": "5" * 64, "reader": "6" * 64},
                 "level": level,
                 "previous_plan_identity": previous_plan["identity"] if previous_plan else None,
-                "previous_partition_continuation_identity": None,
                 "direct_dependencies": dependencies,
             }
             plan = {**plan_content, "identity": evidence_identity.canonical_sha256(plan_content)}
@@ -61,7 +58,6 @@ class FinalValidationGateTests(unittest.TestCase):
                 "formal_state_written": False,
                 "contains_reversible_question_answer_evidence_or_case_ids": False,
                 "absolute_decision": {"passed": True},
-                "relative_baseline_decision": {"passed": True},
                 "next_level": gate.LEVELS[index + 1] if index + 1 < len(gate.LEVELS) else None,
                 "stage6_complete": level == 50,
             }
@@ -114,11 +110,10 @@ class FinalValidationGateTests(unittest.TestCase):
             with self.assertRaisesRegex(ExecutionError, "身份漂移"):
                 gate.require_blind_completion(config)
 
-    def test_process_only_continuation_requires_bound_receipt(self) -> None:
+    def test_rejudged_predecessor_must_be_bound_by_the_next_plan(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             config, records = self._fixture(Path(temporary))
             predecessor = records[2]
-            continuation = "a" * 64
             result_content = {
                 name: value for name, value in predecessor["result"].items() if name != "identity"
             }
@@ -131,11 +126,10 @@ class FinalValidationGateTests(unittest.TestCase):
 
             child = records[3]
             child_plan_content = {name: value for name, value in child["plan"].items() if name != "identity"}
-            child_plan_content["previous_partition_continuation_identity"] = continuation
             child_plan_content["direct_dependencies"] = {
                 "previous-partition-result": predecessor["result"]["identity"],
-                "previous-partition-continuation": "b" * 64,
             }
+            child_plan_content["direct_dependencies"]["previous-partition-result"] = "b" * 64
             child["plan"] = self._write(child["root"] / "plan.json", child_plan_content)
             updated_root = child["root"].parent / child["plan"]["identity"]
             child["root"].rename(updated_root)
@@ -145,14 +139,13 @@ class FinalValidationGateTests(unittest.TestCase):
             child_result_content["plan_identity"] = child["plan"]["identity"]
             child["result"] = self._write(child["root"] / "result.json", child_result_content)
 
-            with self.assertRaisesRegex(ExecutionError, "没有形成可继续"):
+            with self.assertRaisesRegex(ExecutionError, "未被下一关绑定"):
                 gate.require_blind_completion(config)
 
-    def test_bound_process_only_continuation_preserves_a_quality_pass(self) -> None:
+    def test_next_plan_preserves_a_rejudged_predecessor(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             config, records = self._fixture(Path(temporary))
             predecessor = records[2]
-            continuation = "a" * 64
             result_content = {
                 name: value for name, value in predecessor["result"].items() if name != "identity"
             }
@@ -165,10 +158,8 @@ class FinalValidationGateTests(unittest.TestCase):
 
             child = records[3]
             child_plan_content = {name: value for name, value in child["plan"].items() if name != "identity"}
-            child_plan_content["previous_partition_continuation_identity"] = continuation
             child_plan_content["direct_dependencies"] = {
                 "previous-partition-result": predecessor["result"]["identity"],
-                "previous-partition-continuation": continuation,
             }
             child["plan"] = self._write(child["root"] / "plan.json", child_plan_content)
             updated_root = child["root"].parent / child["plan"]["identity"]

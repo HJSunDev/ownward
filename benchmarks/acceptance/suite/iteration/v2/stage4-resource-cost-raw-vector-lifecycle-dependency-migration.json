@@ -6,7 +6,7 @@
     {
       "path": "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_raw_vector_lifecycle.py",
       "frozen_sha256": "00acaf4cf0a92ef909f50812df708f340d7854ee86c3314279eac843da934e8f",
-      "current_sha256": "fb415fc71daddb40167e1009c5fe5b239ee6060ba4ae073f8241f977ccdabcb0",
+      "current_sha256": "0142860477fe1d4ff2ec9eb1e49ae2b16e04975e4755c012db70653f633946bc",
       "classification": "dependency-receipt-validation-only"
     },
     {
@@ -107,5 +107,5 @@
     "evidence_identities": true,
     "formal_state_sha256": true
   },
-  "identity": "eccbec08aa5e3824890cf3315abe45d29f26aec81d3a0ca9b4a7a47825e3b9c0"
+  "identity": "801c072f505a7dd399cf2bcf8ee556c82ba5ee39d484d326700358e024884c20"
 }

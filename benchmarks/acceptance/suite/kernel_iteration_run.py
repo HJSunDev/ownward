@@ -47,7 +47,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--blind-suite-identity")
     parser.add_argument("--blind-suite-level", type=int, choices=(5, 15, 25, 50))
     parser.add_argument("--blind-suite-previous-plan-identity")
-    parser.add_argument("--blind-suite-measurement-rejudgment", type=Path)
     parser.add_argument("--gate-seed")
     parser.add_argument("--resume", action="store_true")
     return parser.parse_args()
@@ -93,14 +92,12 @@ def main() -> None:
             (args.blind_suite_vault, "partition execution requires --blind-suite-vault"),
             (args.blind_suite_identity, "partition execution requires --blind-suite-identity"),
             (args.blind_suite_level, "partition execution requires --blind-suite-level"),
-            (args.formal_state, "partition execution requires --formal-state"),
         ):
             _need(value, message)
         result = blind_suite.run_partition(
-            HERE, args.output, args.blind_suite_vault, args.blind_suite_evaluation_batch, args.formal_state,
+            HERE, args.output, args.blind_suite_vault, args.blind_suite_evaluation_batch,
             major_version=version, suite_identity=args.blind_suite_identity, level=args.blind_suite_level,
             previous_plan_identity=args.blind_suite_previous_plan_identity,
-            measurement_rejudgment_path=args.blind_suite_measurement_rejudgment,
             resume=args.resume,
         )
     elif args.blind_suite_run_plan_identity is not None:

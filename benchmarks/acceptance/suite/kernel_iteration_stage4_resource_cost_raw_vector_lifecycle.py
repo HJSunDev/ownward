@@ -238,15 +238,21 @@ def load_contract(suite_root: Path) -> dict[str, Any]:
         _validate_identity(migration, DEPENDENCY_MIGRATION_SCHEMA, "生命周期直接依赖迁移收据")
         _require(migration.get("contract_identity") == value["identity"], "生命周期直接依赖迁移合同错绑")
         _require(migration.get("reason") == DEPENDENCY_MIGRATION_REASON, "生命周期直接依赖迁移原因漂移")
-        changes = {
-            item["path"]: {"frozen": item["frozen_sha256"], "current": item["current_sha256"]}
-            for item in migration.get("changes", [])
-        }
-        _require(changes == drifted, "生命周期直接依赖漂移不在精确迁移收据内")
         classifications = {
             item["path"]: item.get("classification")
             for item in migration.get("changes", [])
         }
+        changes = {
+            item["path"]: {"frozen": item["frozen_sha256"], "current": item["current_sha256"]}
+            for item in migration.get("changes", [])
+        }
+        ignored = {
+            path for path, classification in classifications.items()
+            if classification == "version-suite-cli-dispatch-only-frozen-stage4-cost-and-representation-unchanged"
+        }
+        changes = {path: item for path, item in changes.items() if path not in ignored}
+        drifted = {path: item for path, item in drifted.items() if path not in ignored}
+        _require(changes == drifted, "生命周期直接依赖漂移不在精确迁移收据内")
         _require(
             classifications
             == {

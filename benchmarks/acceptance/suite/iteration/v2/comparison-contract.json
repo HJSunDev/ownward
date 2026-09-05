@@ -35,10 +35,6 @@
     "retrieval_latency_migration": {
       "path": "benchmarks/acceptance/suite/iteration/v2/retrieval-latency-comparability-migration.json",
       "sha256": "8a7fad77842cbcfc93e1844123203a8ae61a0d939fccef031a09585b0f416ba9"
-    },
-    "active_retrieval_measurement_correction": {
-      "path": "benchmarks/acceptance/suite/iteration/v2/stage6-active-retrieval-measurement-correction.json",
-      "sha256": "d47300df27950f8a4be904524bb2ca335084d87c238bddb3b41e195431324481"
     }
   },
   "subjects": {
@@ -267,8 +263,7 @@
     },
     "compatibility_scope": "preexisting-evidence-that-does-not-depend-on-retired-passive-quality-or-latency-gates",
     "new-latency-decisions-must-bind-current-policy-revision-identity": true,
-    "status": "superseded-by-active-retrieval-measurement-correction",
-    "measurement_correction_identity": "e53b1cc38f62b822a9ee8d19f5e6a545a741136fa5628d33365abebcffa0107a"
+    "status": "historical-diagnostic-only"
   },
   "performance_measurement_policy": {
     "threshold_rule": "measurement-subject-workload-and-authority-must-match",
@@ -284,6 +279,6 @@
     "wrong-authority-quality-threshold": "forbidden"
   },
   "identity": "b1e3b07abd5c9527dfbde5ea8d7fa5459c8b0b5da224ef2eb1aca29add22fbbe",
-  "policy_revision_identity": "bb5fb3b40439c070e1b95b9ca2cee4abc5f4d524f891be9897bfd1a96475bedb",
-  "seal_sha256": "5c99ce83064c01eced280d96a441adb1ab7722b5753dfc266b8171b66cb2c6c8"
+  "policy_revision_identity": "bf3a3a2fe1284ca479da6f3c7dae1639c323e9c64e396d4a4bb68cdfb41e2229",
+  "seal_sha256": "58a0e39eb9eeba7054be712b0dfc86ee03f3522f80b487afc231dfb732273fb9"
 }

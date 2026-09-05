@@ -558,6 +558,8 @@ class OpenCodePool:
         self._generations = [0] * size
         self._available: queue.Queue[int] = queue.Queue()
         self._lock = threading.Lock()
+        self._idle = threading.Condition(self._lock)
+        self._closing = False
         self._active = 0
         self._maximum = 0
         self._restarts = 0
@@ -583,8 +585,14 @@ class OpenCodePool:
         self._restarts += 1
 
     def invoke(self, **request_value: Any) -> tuple[dict[str, Any], dict[str, int], dict[str, Any]]:
+        with self._lock:
+            if self._closing:
+                raise OpenCodeError("OpenCode pool is closing")
         index = self._available.get()
         with self._lock:
+            if self._closing:
+                self._available.put(index)
+                raise OpenCodeError("OpenCode pool is closing")
             self._active += 1
             self._maximum = max(self._maximum, self._active)
         try:
@@ -592,7 +600,7 @@ class OpenCodePool:
                 if index not in self._workers:
                     self._restart(index)
                 value, usage, metadata = self._workers[index].invoke(**request_value)
-            except OpenCodeError:
+            except (OpenCodeError, OSError):
                 self._restart(index)
                 raise
             return value, usage, {
@@ -605,6 +613,7 @@ class OpenCodePool:
         finally:
             with self._lock:
                 self._active -= 1
+                self._idle.notify_all()
             self._available.put(index)
 
     def diagnostics(self) -> dict[str, Any]:
@@ -624,6 +633,10 @@ class OpenCodePool:
         }
 
     def __exit__(self, *_args: object) -> None:
+        with self._idle:
+            self._closing = True
+            while self._active:
+                self._idle.wait()
         failures = []
         for index, worker in list(self._workers.items()):
             try:

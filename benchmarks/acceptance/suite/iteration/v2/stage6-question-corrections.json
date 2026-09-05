@@ -1,0 +1,27 @@
+{
+  "original_dataset": "E:\\Ownward\\acceptance\\longmemeval-s\\runs\\kvs\\8e1500b3630384e4d4230d54ed74f509392fce64d29d88c65cfbbca113139980\\accepted\\dataset.json",
+  "corrected_dataset": "E:\\Ownward\\acceptance\\kernel-iteration\\blind-suites\\v2\\346852e3dae39becd4a21c33725332783b3d2376bc89680c3bedede0dff26ed5\\corrections\\dataset-50-v2.json",
+  "corrected_dataset_sha256": "ebcc75f1b74f6e67d35267de65ac23a176563aa226fabf0055e7e76f8d134b2c",
+  "reason": "Correct two independently established question/answer inconsistencies. Histories, gold answers, evidence and distractors are unchanged. Original executions are not relabeled as passing.",
+  "corrections": [
+    {
+      "question_id": "vs-c051",
+      "previous_question": "Daria is closing out Pinebridge's outreach packet after the committee's rework. What entry should appear on the authority line?",
+      "corrected_question": "Daria is updating Pinebridge's committee archive worksheet after the committee's rework. Which current authority designation belongs on that committee record?",
+      "answer": "Atlas Protocol—Revision Seven",
+      "answer_session_ids": [
+        "c051-s03",
+        "c051-s07"
+      ]
+    },
+    {
+      "question_id": "vs-c064",
+      "previous_question": "At the Orchard Annex, recalling the thermal shutters' street-facing surfaces, what did I say they should receive—not the option you had put forward?",
+      "corrected_question": "At the Orchard Annex, recalling the thermal shutters' street-facing surfaces, what did you say they should receive—not my earlier proposal?",
+      "answer": "harbor-slate varnish",
+      "answer_session_ids": [
+        "c064-s06"
+      ]
+    }
+  ]
+}

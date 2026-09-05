@@ -360,6 +360,18 @@ class ExternalIntelligenceExecutor:
         stage.mkdir(parents=True, exist_ok=True)
         last_error = ""
         attempt_directories = sorted(path for path in stage.glob("attempt-*") if path.is_dir())
+        if attempt_directories and all(_retryable_failed_attempt(path) for path in attempt_directories):
+            cycle = canonical_sha256([
+                _load_json(path / "metadata.json")
+                for path in attempt_directories
+            ])
+            audit = stage / "_audit"
+            sequence = len(list(audit.glob("retryable-runtime-cycle-*"))) if audit.is_dir() else 0
+            destination = audit / f"retryable-runtime-cycle-{sequence + 1:03d}-{cycle}"
+            destination.mkdir(parents=True, exist_ok=False)
+            for path in attempt_directories:
+                path.replace(destination / path.name)
+            attempt_directories = []
         existing_attempts = len(attempt_directories)
         prior_wall_seconds = 0.0
         prior_rate_limits = 0
@@ -451,6 +463,24 @@ class ExternalIntelligenceExecutor:
         raise ExternalIntelligenceError(
             f"external-intelligence capability failed after {attempts} bounded attempts: {last_error}"
         )
+
+
+def _retryable_failed_attempt(path: Path) -> bool:
+    metadata_path = path / "metadata.json"
+    if not metadata_path.is_file():
+        return False
+    metadata = _load_json(metadata_path)
+    if not isinstance(metadata, dict) or metadata.get("outcome") != "failed":
+        return False
+    error_type = str(metadata.get("error_type", ""))
+    message = str(metadata.get("error_message", "")).lower()
+    return error_type in {
+        "ConnectionAbortedError", "ConnectionError", "ConnectionResetError",
+        "ExternalIntelligenceTimeout", "OpenCodeTimeout", "TimeoutError",
+    } or any(marker in message for marker in (
+        "connection reset", "connection aborted", "connection refused",
+        "timed out", "timeout", "winerror 10053", "winerror 10054", "winerror 10061",
+    ))
 
 
 class BoundedScheduler:

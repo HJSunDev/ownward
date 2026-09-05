@@ -22,11 +22,9 @@ def load(suite_root: Path, path: Path | None = None) -> dict[str, Any]:
     _require(isinstance(value.get("major_version"), str) and value["major_version"], "kernel-iteration major version is missing")
     paths = value.get("paths")
     required = {"validation_contract", "blind_budget", "comparison_contract"}
-    optional = {"measurement_rejudgment"}
     _require(
         isinstance(paths, dict)
-        and required <= set(paths)
-        and set(paths) <= required | optional,
+        and set(paths) == required,
         "kernel-iteration manifest paths are incomplete",
     )
     resolved: dict[str, str] = {}

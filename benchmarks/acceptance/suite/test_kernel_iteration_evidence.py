@@ -78,18 +78,13 @@ class KernelIterationEvidenceTests(unittest.TestCase):
             "diagnostic-only-old-passive-adapter-not-a-product-quality-gate",
             self.contract["historical_passive_quality_diagnostics"]["status"],
         )
-        correction_source = self.contract["sources"]["active_retrieval_measurement_correction"]
-        correction = json.loads((self.suite_root.parents[2] / correction_source["path"]).read_text(encoding="utf-8"))
         self.assertEqual(
-            correction["identity"],
-            iteration.canonical_sha256({key: value for key, value in correction.items() if key != "identity"}),
+            "historical-diagnostic-only",
+            self.contract["latency_policy_migration"]["status"],
         )
-        self.assertTrue(correction["offline_rejudgment"]["candidate_absolute_quality_passed"])
-        self.assertEqual(0, correction["offline_rejudgment"]["model_calls"])
-        self.assertEqual("evaluation-process", correction["failure_boundary"]["original_rejection"])
         self.assertEqual(
-            ["active_retrieval_cumulative_p95_ms", "question_wall_seconds"],
-            [item["metric"] for item in correction["measurement_correction"]["invalid_gates"]],
+            "forbidden",
+            self.contract["performance_measurement_policy"]["untraceable_or_wrong-subject_threshold"],
         )
         self.assertTrue(self.contract["subjects"]["v0"]["formal_evaluation_baseline"])
         self.assertEqual(

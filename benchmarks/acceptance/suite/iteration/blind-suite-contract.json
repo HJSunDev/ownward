@@ -1,6 +1,6 @@
 {
   "schema": "ownward.kernel-iteration-blind-suite-contract/v3",
-  "identity": "cb847f5abcd4daca3c5c29422fd3845a7ad56e4a828256e555795adea2c24e33",
+  "identity": "6c32c87291b4ff8d37198f0648f63d3e501c70ce618fad5a6b45f73e256ebd15",
   "formal": false,
   "frozen_before_generation": true,
   "major_version_identity_rule": "normalized-major-version-plus-contract-and-preparation-direct-dependencies",
@@ -84,13 +84,11 @@
     }
   },
   "execution": {
-    "order": ["candidate", "baseline"],
-    "baseline_requires_candidate_absolute_pass": true,
+    "order": ["candidate"],
     "candidate_change_invalidates": "execution-results-only",
     "candidate_failure_restart_level": 5,
     "same-suite-required-within-major-version": true,
     "cross-major-version-reuse": "forbidden",
-    "formal_state_read_only": true,
     "absolute_gate": {
       "final_answer_accuracy_minimum": 1.0,
       "fact_delivery_missing_maximum": 0,

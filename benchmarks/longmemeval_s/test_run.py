@@ -1009,6 +1009,23 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             self.assertEqual(3, transport.calls)
             self.assertEqual(3, len(list((root / "stage").glob("attempt-*"))))
 
+    def test_explicit_recovery_reopens_only_exhausted_transport_failures(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            stage = Path(directory) / "stage"
+            with self.assertRaisesRegex(adapter.AdapterError, "after 2 bounded attempts"):
+                adapter.ExternalIntelligenceCapability(FakeTransport(error=ConnectionResetError("reset")))._invoke(
+                    role="test", prompt="prompt", schema={"type": "object"}, stage=stage,
+                    model="model", effort="low", timeout_seconds=1, attempts=2,
+                )
+            value, usage = adapter.ExternalIntelligenceCapability(FakeTransport())._invoke(
+                role="test", prompt="prompt", schema={"type": "object"}, stage=stage,
+                model="model", effort="low", timeout_seconds=1, attempts=2,
+            )
+            self.assertEqual({"items": ["ok"]}, value)
+            self.assertEqual(1, usage["attempts"])
+            archived = list((stage / "_audit").glob("retryable-runtime-cycle-*/attempt-*"))
+            self.assertEqual(2, len(archived))
+
     def test_codex_output_validation_retries_inside_the_frozen_bound(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

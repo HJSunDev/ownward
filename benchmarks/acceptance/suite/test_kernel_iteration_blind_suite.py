@@ -493,30 +493,22 @@ class BlindVersionSuiteTests(unittest.TestCase):
                 )
             self.assertEqual(5, len(opened["materials"]["cases"]))
 
-    def test_evaluation_batch_accepts_arbitrary_future_version_and_explicit_baseline(self) -> None:
+    def test_evaluation_batch_requires_only_the_frozen_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             candidate = root / "candidate.json"
-            baseline = root / "baseline.json"
             candidate.write_text('{"kind":"v3-candidate"}\n', encoding="utf-8")
-            baseline.write_text('{"kind":"v2-baseline"}\n', encoding="utf-8")
             candidate_config = root / "candidate-execution.json"
-            baseline_config = root / "baseline-execution.json"
             candidate_config.write_text('{"config":"candidate"}\n', encoding="utf-8")
-            baseline_config.write_text('{"config":"baseline"}\n', encoding="utf-8")
             candidate_freeze = root / "candidate-freeze.json"
             candidate_freeze.write_text(json.dumps({"identity": "5" * 64}) + "\n", encoding="utf-8")
-            baseline_freeze = root / "baseline-freeze.json"
-            baseline_freeze.write_text(json.dumps({"identity": "6" * 64}) + "\n", encoding="utf-8")
             freeze_content = {
                 "schema": suite.EVALUATION_FREEZE_SCHEMA,
                 "major_version": "v3",
                 "suite_identity": "8" * 64,
                 "candidate_subject_identity": "3" * 64,
-                "baseline_subject_identity": "2" * 64,
                 "source_freezes": [
                     {"role": "candidate", "path": str(candidate_freeze), "sha256": suite.evidence.file_sha256(candidate_freeze), "identity": "5" * 64},
-                    {"role": "baseline", "path": str(baseline_freeze), "sha256": suite.evidence.file_sha256(baseline_freeze), "identity": "6" * 64},
                 ],
             }
             freeze = {**freeze_content, "identity": suite.evidence.canonical_sha256(freeze_content)}
@@ -531,32 +523,27 @@ class BlindVersionSuiteTests(unittest.TestCase):
                     "subject_identity": "3" * 64,
                     "execution_config": str(candidate_config), "execution_config_sha256": suite.evidence.file_sha256(candidate_config),
                 },
-                "baseline": {
-                    "subject_manifest": str(baseline), "subject_manifest_sha256": suite.evidence.file_sha256(baseline),
-                    "subject_identity": "2" * 64,
-                    "execution_config": str(baseline_config), "execution_config_sha256": suite.evidence.file_sha256(baseline_config),
-                },
                 "freeze_receipt": {"path": str(freeze_path), "sha256": suite.evidence.file_sha256(freeze_path), "identity": freeze["identity"]},
             }
             batch = {**content, "identity": suite.evidence.canonical_sha256(content)}
             path = root / "batch.json"
             path.write_text(json.dumps(batch) + "\n", encoding="utf-8")
             loaded = suite.load_evaluation_batch(path, "v3", "8" * 64)
-            self.assertEqual("2" * 64, loaded["baseline"]["subject_identity"])
+            self.assertEqual("3" * 64, loaded["candidate"]["subject_identity"])
             contract = suite.load_contract(self.suite_root)
             level = suite.level_contract(contract, 5)
             self.assertNotIn("v0", json.dumps(contract).lower())
             self.assertNotIn("v0", json.dumps(level).lower())
-            self.assertIn("relative_baseline_gate", level)
+            self.assertNotIn("relative_baseline_gate", level)
 
-            freeze["baseline_subject_identity"] = "4" * 64
+            freeze["candidate_subject_identity"] = "4" * 64
             frozen_content = {key: item for key, item in freeze.items() if key != "identity"}
             freeze["identity"] = suite.evidence.canonical_sha256(frozen_content)
             freeze_path.write_text(json.dumps(freeze) + "\n", encoding="utf-8")
             content["freeze_receipt"] = {"path": str(freeze_path), "sha256": suite.evidence.file_sha256(freeze_path), "identity": freeze["identity"]}
             changed = {**content, "identity": suite.evidence.canonical_sha256(content)}
             path.write_text(json.dumps(changed) + "\n", encoding="utf-8")
-            with self.assertRaisesRegex(suite.BlindSuiteError, "baseline subject"):
+            with self.assertRaisesRegex(suite.BlindSuiteError, "candidate subject"):
                 suite.load_evaluation_batch(path, "v3", "8" * 64)
 
     def test_evaluation_subject_accepts_only_exact_frozen_contract_subject(self) -> None:
@@ -608,6 +595,50 @@ class BlindVersionSuiteTests(unittest.TestCase):
                     output, suite_identity, candidate_identity, contract, previous_plan_identity,
                 )
 
+    def test_previous_partition_can_be_rejudged_from_immutable_candidate_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            suite_identity = "1" * 64
+            candidate_identity = "2" * 64
+            previous_plan_identity = "3" * 64
+            root = output / "blind-suite-runs" / suite_identity / candidate_identity / previous_plan_identity
+            root.mkdir(parents=True)
+            (root / "plan.json").write_text(json.dumps({
+                "schema": suite.EXECUTION_PLAN_SCHEMA,
+                "suite_identity": suite_identity,
+                "candidate_subject_identity": candidate_identity,
+                "level": 5,
+            }) + "\n", encoding="utf-8")
+            observation = {
+                "questions": 5,
+                "fact_delivery": {"complete": True, "missing_questions": 0},
+                "final_answer_accuracy": 1.0,
+                "temporal_correctness": 1.0,
+                "conflict_correctness": 1.0,
+                "latency": {"kernel_call_latency": {"p95_ms": 10.0}},
+                "resources": {"semantic_input_tokens": 10, "ownward_data_bytes": 20},
+                "codex": {"calls": 0},
+            }
+            result_content = {
+                "schema": suite.EXECUTION_RESULT_SCHEMA,
+                "plan_identity": previous_plan_identity,
+                "status": "candidate-rejected",
+                "passed": False,
+                "candidate_decision": False,
+                "candidate_execution": observation,
+                "formal_state_written": False,
+                "contains_reversible_question_answer_evidence_or_case_ids": False,
+            }
+            result = {**result_content, "identity": suite.evidence.canonical_sha256(result_content)}
+            (root / "result.json").write_text(json.dumps(result) + "\n", encoding="utf-8")
+            contract = suite.level_contract(suite.load_contract(self.suite_root), 15)
+            with mock.patch("kernel_iteration_blind_gate._absolute_decision", return_value={"passed": True}):
+                decision = suite._previous_partition_result(
+                    output, suite_identity, candidate_identity, contract, previous_plan_identity,
+                    previous_policy={"identity": "4" * 64},
+                )
+            self.assertEqual({"result_identity": result["identity"], "rejudged": True}, decision)
+
     def test_execution_scratch_is_short_suite_bound_and_exactly_cleaned(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             runs = Path(temporary) / ("persistent-runs-" + "x" * 80)
@@ -643,117 +674,6 @@ class BlindVersionSuiteTests(unittest.TestCase):
                 replacement, runs, suite_identity, replacement_plan, passed=True,
             )
             self.assertFalse(replacement.exists())
-
-    def test_v0_partition_result_is_candidate_independent_and_dependency_bound(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            output = Path(temporary)
-            suite_identity = "1" * 64
-            partition_identity = "2" * 64
-            baseline_subject = "3" * 64
-            dependencies = {
-                "measurement-shared-suite-partition": partition_identity,
-                "measurement-shared-conditions": "9" * 64,
-                "measurement-shared-external-intelligence-reader-role": "a" * 64,
-                "measurement-shared-executor": "b" * 64,
-                "measurement-shared-observer": "c" * 64,
-                "measurement-candidate-subject": "6" * 64,
-                "measurement-candidate-binary": "7" * 64,
-                "measurement-baseline-subject": baseline_subject,
-                "measurement-baseline-binary": "8" * 64,
-                "adjudication-suite-contract": "4" * 64,
-                "adjudication-partition-contract": "5" * 64,
-                "adjudication-scorer": "d" * 64,
-            }
-            baseline_dependencies = suite._baseline_partition_dependencies(dependencies)
-            self.assertEqual(7, len(baseline_dependencies))
-            changed_candidate = dict(dependencies)
-            changed_candidate["measurement-candidate-subject"] = "f" * 64
-            changed_candidate["measurement-candidate-binary"] = "0" * 64
-            changed_candidate["adjudication-suite-contract"] = "f" * 64
-            self.assertEqual(baseline_dependencies, suite._baseline_partition_dependencies(changed_candidate))
-            changed_shared = dict(dependencies)
-            changed_shared["measurement-shared-executor"] = "f" * 64
-            self.assertNotEqual(baseline_dependencies, suite._baseline_partition_dependencies(changed_shared))
-            identity = suite._baseline_partition_identity(baseline_dependencies)
-            observation = {
-                "questions": 5,
-                "fact_delivery": {"complete": True, "missing_questions": 0},
-                "final_answer_accuracy": 1.0,
-                "temporal_correctness": 1.0,
-                "conflict_correctness": 1.0,
-                "latency": {"retrieval_p95_ms": 10.0},
-                "resources": {"semantic_input_tokens": 1, "ownward_data_bytes": 2},
-                "codex": {"calls": 1},
-            }
-            execution = {
-                "subject_identity": baseline_subject,
-                "report_sha256": "1" * 64,
-                "checkpoint_sha256": "2" * 64,
-                "diagnostic_summary_sha256": "3" * 64,
-                "observation": observation,
-            }
-            proof = {
-                "subject": "baseline", "report_byte_identical": True,
-                "checkpoint_byte_identical": True, "model_calls": 0, "product_executions": 0,
-            }
-            stored = suite._persist_baseline_partition_result(
-                output, suite_identity, partition_identity, identity, baseline_dependencies,
-                baseline_subject, 5, execution, proof,
-            )
-            loaded = suite._load_baseline_partition_result(
-                output, suite_identity, partition_identity, identity, baseline_dependencies,
-                baseline_subject, 5,
-            )
-            self.assertEqual(stored, loaded)
-            serialized = json.dumps(stored)
-            self.assertNotIn("6" * 64, serialized)
-            self.assertNotIn("candidate", serialized)
-            drifted = dict(baseline_dependencies)
-            drifted["shared-conditions"] = "0" * 64
-            drifted_identity = suite._baseline_partition_identity(drifted)
-            self.assertIsNone(suite._load_baseline_partition_result(
-                output, suite_identity, partition_identity, drifted_identity, drifted,
-                baseline_subject, 5,
-            ))
-
-    def test_cached_v0_resume_never_invokes_the_baseline_runner(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            scratch = Path(temporary)
-            candidate_root = scratch / "candidate"
-            candidate_root.mkdir()
-            (candidate_root / "report.json").write_bytes(b"candidate-report")
-            (candidate_root / "checkpoint-manifest.json").write_bytes(b"candidate-checkpoint")
-            calls: list[str] = []
-
-            def runner(**kwargs: object) -> dict[str, object]:
-                calls.append(Path(str(kwargs["output_dir"])).name)
-                return {}
-
-            cache = {
-                "identity": "a" * 64,
-                "resume_proof": {
-                    "subject": "baseline",
-                    "report_byte_identical": True,
-                    "checkpoint_byte_identical": True,
-                    "model_calls": 0,
-                    "product_executions": 0,
-                },
-            }
-            proof = suite._partition_resume_proof(
-                self.suite_root,
-                {},
-                {},
-                scratch / "dataset.json",
-                scratch,
-                "b" * 64,
-                "c" * 64,
-                runner,
-                cache,
-                {"run_root": str(candidate_root)},
-            )
-            self.assertTrue(proof["passed"])
-            self.assertEqual(calls, ["candidate"])
-            self.assertEqual(proof["subjects"][1]["cache_identity"], cache["identity"])
 
     def test_public_suite_evidence_has_no_v0_baseline_assumption(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -801,7 +721,6 @@ class BlindVersionSuiteTests(unittest.TestCase):
                 "major_version": "v2",
                 "level": 5,
                 "candidate_execution": observation,
-                "baseline_execution": observation,
                 "formal_state_written": False,
                 "contains_reversible_question_answer_evidence_or_case_ids": False,
             }
@@ -814,7 +733,6 @@ class BlindVersionSuiteTests(unittest.TestCase):
                 mock.patch.object(suite, "load_contract", return_value={}),
                 mock.patch.object(suite, "level_contract", return_value=policy),
                 mock.patch("kernel_iteration_blind_gate._absolute_decision", return_value={"passed": True}),
-                mock.patch("kernel_iteration_blind_gate._relative_decision", return_value={"passed": True}),
             ):
                 result = suite.rejudge_partition(self.suite_root, output, source_path)
             self.assertTrue(result["passed"])
