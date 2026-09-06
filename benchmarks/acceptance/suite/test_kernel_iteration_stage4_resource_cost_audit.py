@@ -17,7 +17,7 @@ import kernel_iteration_stage4_resource_cost_audit as audit  # noqa: E402
 
 
 class Stage4ResourceCostAuditTests(unittest.TestCase):
-    def test_frozen_contract_accepts_only_exact_non_stage4_dependency_migration(self) -> None:
+    def test_historical_inspection_is_independent_of_live_execution_dependencies(self) -> None:
         contract = audit.load_contract(HERE)
         self.assertEqual("84d30456e65da337f32d73769deafb26bf8f61f4a82053d87cd14e19843887bb", contract["identity"])
         original = audit.evidence.text_file_sha256
@@ -28,8 +28,9 @@ class Stage4ResourceCostAuditTests(unittest.TestCase):
             return original(path)
 
         with mock.patch.object(audit.evidence, "text_file_sha256", side_effect=drift):
+            self.assertEqual(contract, audit.load_contract(HERE))
             with self.assertRaisesRegex(audit.validation.KernelIterationValidationError, "不在精确迁移收据内"):
-                audit.load_contract(HERE)
+                audit.load_contract(HERE, for_execution=True)
 
     def test_semantic_token_ownership_fails_closed_while_total_closes(self) -> None:
         semantic = {

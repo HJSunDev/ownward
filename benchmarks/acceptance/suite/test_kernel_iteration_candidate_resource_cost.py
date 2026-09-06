@@ -98,8 +98,9 @@ class ResourceCostCandidateTests(unittest.TestCase):
         self.assertNotIn("s.authority.ReadCurrent, len(sourceIDs)", rendered_service)
         self.assertIn("kernelv2candidate.FixedSourceOrder", rendered_service)
         self.assertIn("s.index.SourceMetadata", rendered_service)
-        self.assertIn("summary != value.Content", rendered_service)
-        self.assertIn("Preserve the exact authoritative source", rendered_service)
+        self.assertIn("kernelv2candidate.SourcePreview(value.Content, query, 240, s.candidateSourceCues(value)...)", rendered_service)
+        self.assertIn("kernelv2candidate.SearchEvidence(value, query, s.candidateSourceCues(value))", rendered_service)
+        self.assertNotIn("summary = record.Analysis.Summary", rendered_service)
         self.assertIn("func (l *Lexical) SourceMetadata", rendered_lexical)
         self.assertIn("diversity   coverage.Sketch", rendered_lexical)
         self.assertNotIn("func (l *Lexical) SourceMetadata", (repository / "internal/retrieval/lexical.go").read_text(encoding="utf-8"))
@@ -110,10 +111,10 @@ class ResourceCostCandidateTests(unittest.TestCase):
 
     def test_semantic_representation_manifest_is_content_addressed_and_composition_declared(self) -> None:
         repository = HERE.parents[2]
-        path = repository / "manifests/kernel-candidates/v2/resource-cost/semantic-representation.json"
+        path = repository / "manifests/kernel-candidates/v2/source-ownership/semantic-representation.json"
         contract = semantic_representation.load_contract(path)
         value = json.loads(path.read_text(encoding="utf-8"))
-        self.assertEqual(contract.representation, semantic_representation.COMPACT_REPRESENTATION)
+        self.assertEqual(contract.representation, semantic_representation.GROUNDED_REPRESENTATION)
         self.assertEqual(value["selection"], "candidate-composition-declared")
         self.assertTrue(value["formal_requires_bound_candidate"])
 

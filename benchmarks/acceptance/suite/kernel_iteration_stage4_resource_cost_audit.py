@@ -7,6 +7,7 @@ import zlib
 from pathlib import Path
 from typing import Any
 
+import frozen_inputs
 import kernel_iteration_evidence as evidence
 import kernel_iteration_stage4_resource_cost as resource_cost
 import kernel_iteration_validation as validation
@@ -43,7 +44,7 @@ def run(
     suite_root = suite_root.resolve()
     output_root = output_root.resolve()
     result_path = output_root / "audit.json"
-    contract = load_contract(suite_root)
+    contract = load_contract(suite_root, for_execution=True)
     paired = _load_json(paired_result_path.resolve())
     _validate_identity(paired, resource_cost.RESULT_SCHEMA, "同尺资源结果")
     _require(paired["identity"] == contract["paired_result"]["identity"], "审计与冻结成对结果错绑")
@@ -93,19 +94,22 @@ def run(
     return {**value, "path": str(result_path), "reused": False}
 
 
-def load_contract(suite_root: Path) -> dict[str, Any]:
+def load_contract(suite_root: Path, *, for_execution: bool = False) -> dict[str, Any]:
     path = suite_root / CONTRACT_PATH
     value = _load_json(path)
     _validate_identity(value, CONTRACT_SCHEMA, "资源同尺审计合同")
     repository = suite_root.parents[2]
-    drifted = {}
-    for item in value["direct_dependencies"]:
-        dependency = repository / item["path"]
-        current = evidence.text_file_sha256(dependency) if dependency.is_file() else None
-        if not dependency.is_file() or not evidence.text_file_matches(dependency, item["sha256"]):
-            drifted[item["path"]] = {"frozen": item["sha256"], "current": current}
-    if drifted:
-        _verify_dependency_migration(suite_root, value["identity"], drifted)
+    if for_execution:
+        drifted = {}
+        for item in value["direct_dependencies"]:
+            dependency = repository / item["path"]
+            current = evidence.text_file_sha256(dependency) if dependency.is_file() else None
+            if not dependency.is_file() or not evidence.text_file_matches(dependency, item["sha256"]):
+                drifted[item["path"]] = {"frozen": item["sha256"], "current": current}
+        if drifted:
+            _verify_dependency_migration(suite_root, value["identity"], drifted)
+    else:
+        frozen_inputs.verify_files(repository, value["direct_dependencies"])
     return value
 
 

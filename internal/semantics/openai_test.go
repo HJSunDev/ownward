@@ -6,12 +6,22 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/HJSunDev/ownward/internal/domain"
 )
+
+func TestNormalizeAnalysisPreservesBoundedSourceQuote(t *testing.T) {
+	quote := "The archive inspection was deferred. " + strings.Repeat("Context for the decision. ", 9) + "Only the south wing was reopened."
+	source := domain.Information{Content: quote}
+	analysis := NormalizeAnalysis(source, Analysis{Cues: []Cue{{Text: quote, Kind: "decision"}}})
+	if len(analysis.Cues) != 1 || analysis.Cues[0].Text != quote {
+		t.Fatal("normalization detached a bounded quote from its original condition")
+	}
+}
 
 func TestOpenAIRequiresGroundedSemanticOutput(t *testing.T) {
 	var inputHasKind atomic.Bool

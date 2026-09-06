@@ -90,13 +90,16 @@ class OpenCodeExternalIntelligenceTests(unittest.TestCase):
                         "properties": {"status": {"type": "string", "enum": ["ok"]}},
                     }, model="opencode-go/qwen3.8-flash", effort="xhigh", work_dir=root,
                     timeout_seconds=10,
+                    base_instructions="服务端下发的 Ownward 协作规则。",
                 )
             self.assertEqual({"status": "ok"}, value)
             self.assertEqual(4, usage["cached_input_tokens"])
             message = next(body for method, path, body in requests if method == "POST" and path.endswith("/message"))
             self.assertEqual({"providerID": "opencode-go", "modelID": "qwen3.8-flash"}, message["model"])
             self.assertEqual("xhigh", message["variant"])
+            self.assertTrue(message["system"].startswith("服务端下发的 Ownward 协作规则。"))
             self.assertEqual({"bash": False, "read": False, "write": False}, message["tools"])
+            self.assertNotIn("format", message)
             self.assertFalse(metadata["dynamic_tools_enabled"])
 
     def test_turn_rejects_unsupported_model_effort_and_schema_drift(self) -> None:
@@ -128,12 +131,18 @@ class OpenCodeExternalIntelligenceTests(unittest.TestCase):
                     }
                 return True
 
-            with mock.patch.object(server, "_http", side_effect=http):
+            with mock.patch.object(server, "_http", side_effect=http) as requests:
                 with self.assertRaisesRegex(subject.OpenCodeError, "expected string"):
                     server.invoke(
-                        model="qwen3.8-flash", effort="xhigh", prompt="x", work_dir=root, timeout_seconds=10,
+                        model="qwen3.8-flash", effort="xhigh", prompt="x", work_dir=root / "work", timeout_seconds=10,
                         schema={"type": "object", "required": ["answer"], "properties": {"answer": {"type": "string"}}},
                     )
+                self.assertEqual(2, sum(
+                    call.args[0] == "POST" and call.args[1].endswith("/message")
+                    for call in requests.call_args_list
+                ))
+            rejected = json.loads((root / "work" / "response.json").read_text(encoding="utf-8"))
+            self.assertEqual('{"answer":7}', rejected["parts"][0]["text"])
 
     def test_schema_validation_covers_generation_constraints(self) -> None:
         schema = {
@@ -151,6 +160,49 @@ class OpenCodeExternalIntelligenceTests(unittest.TestCase):
         ):
             with self.assertRaises(subject.OpenCodeError):
                 subject._validate_schema(invalid, schema)
+
+    def test_format_correction_is_bounded_preserves_evidence_and_shares_deadline(self) -> None:
+        for rejected in ('{"items":["a","b"]}', '{"items":["a"]} trailing prose'):
+            with self.subTest(rejected=rejected), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                server = subject.OpenCodeServer(
+                    Path("opencode.exe"), Path("auth.json"), root / "runtime", provider="opencode-go",
+                    models=("qwen3.8-flash",), reasoning_efforts=("medium",),
+                )
+                messages = []
+
+                def http(method, path, body=None, **kwargs):
+                    if path.startswith("/experimental/tool/ids"):
+                        return ["read", "bash"]
+                    if path == "/session":
+                        return {"id": "session-1"}
+                    if method == "POST" and path.endswith("/message"):
+                        messages.append((path, body, kwargs["timeout"]))
+                        return {
+                            "info": {"providerID": "opencode-go", "modelID": "qwen3.8-flash",
+                                     "variant": "medium", "finish": "stop", "tokens": {"output": 4}},
+                            "parts": [{"type": "text", "text": rejected if len(messages) == 1 else '{"items":["a"]}'}],
+                        }
+                    return True
+
+                with mock.patch.object(server, "_http", side_effect=http), mock.patch.object(
+                    subject.time, "perf_counter", side_effect=[100, 101, 106],
+                ):
+                    value, usage, metadata = server.invoke(
+                        prompt="pick one item", schema={"type": "object", "properties": {
+                            "items": {"type": "array", "maxItems": 1, "items": {"type": "string"}},
+                        }}, model="qwen3.8-flash", effort="medium", work_dir=root, timeout_seconds=10,
+                    )
+                self.assertEqual({"items": ["a"]}, value)
+                self.assertEqual(8, usage["output_tokens"])
+                self.assertEqual(1, usage["format_corrections"])
+                self.assertEqual(1, metadata["format_corrections"])
+                self.assertEqual([9, 4], [message[2] for message in messages])
+                self.assertEqual(messages[0][0], messages[1][0])
+                self.assertIn("failed JSON Schema validation", messages[1][1]["parts"][0]["text"])
+                self.assertTrue(all(enabled is False for enabled in messages[1][1]["tools"].values()))
+                self.assertEqual(rejected, json.loads((root / "response.json").read_text())["parts"][0]["text"])
+                self.assertTrue((root / "response-correction-001.json").is_file())
 
     def test_mcp_manifest_projects_only_declared_dynamic_tools(self) -> None:
         tools = subject.OpenCodeServer._mcp_tools([{

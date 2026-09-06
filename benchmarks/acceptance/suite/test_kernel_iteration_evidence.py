@@ -110,6 +110,9 @@ class KernelIterationEvidenceTests(unittest.TestCase):
                 target = clean_repository / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(self.repository / relative, target)
+            for item in self.contract["sources"].values():
+                text = iteration.frozen_inputs.read_text(self.repository, item["path"], item["sha256"])
+                (clean_repository / item["path"]).write_bytes(text.encode("utf-8"))
             clean_suite = clean_repository / "benchmarks/acceptance/suite"
             original = iteration._load_json
 

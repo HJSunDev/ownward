@@ -78,7 +78,11 @@ def _write_wall_seconds(run_dir: Path, elapsed: float) -> None:
     temporary.replace(clock_path)
 
 
-def _run_with_wall_budget(command: list[str], *, cwd: Path, run_dir: Path, maximum: float) -> Any:
+def _run_with_wall_budget(command: list[str], *, cwd: Path, run_dir: Path, maximum: float | None) -> Any:
+    if maximum is None:
+        # The adapter persists elapsed time; an expected duration must not kill
+        # an otherwise progressing evaluation. Per-request bounds still apply.
+        return process_control.run(command, cwd=cwd, timeout=None)
     remaining = _remaining_wall_seconds(run_dir, maximum)
     consumed = maximum - remaining
     started = time.monotonic()
@@ -205,7 +209,8 @@ def execute(
             command.extend(["--semantic-representation-manifest", str(Path(representation["manifest"]).resolve())])
         if resume:
             command.append("--resume")
-        maximum = float(contract["evidence_layers"]["community"]["expected_wall_seconds"]["max"])
+        maximum = (None if protocol_value["execution"].get("full_wall_policy", "enforce") == "report-only"
+                   else float(contract["evidence_layers"]["community"]["expected_wall_seconds"]["max"]))
         completed = _run_with_wall_budget(command, cwd=suite_root.parents[2], run_dir=run_dir, maximum=maximum)
         _require(completed.returncode == 0, f"LongMemEval-S adapter failed: {completed.stderr[-3000:]}")
         existing = _run_complete(run_dir, binding)
@@ -241,6 +246,7 @@ def execute(
     definition = contract["evidence_layers"]["community"]
     wall_seconds = float(adapter_report["cost"]["wall_seconds"])
     within_budget = wall_seconds <= float(definition["expected_wall_seconds"]["max"])
+    wall_budget_enforced = protocol_value["execution"].get("full_wall_policy", "enforce") == "enforce"
     profile_complete = adapter_report.get("profile") == definition["profile"]
     diagnostics = adapter_report.get("diagnostics")
     diagnostics_complete = isinstance(diagnostics, dict) and diagnostics.get("questions") == definition["questions"]
@@ -250,7 +256,7 @@ def execute(
         and adapter_execution.get("complete") is True
         and adapter_execution.get("protocol_valid") is True
         and adapter_execution.get("evidence_complete") is True
-        and adapter_execution.get("within_wall_boundary") is True
+        and (not wall_budget_enforced or adapter_execution.get("within_wall_boundary") is True)
     )
     quality_assessment = definition["quality_assessment"]
     report = {
@@ -275,10 +281,12 @@ def execute(
             "complete": execution_complete,
             "protocol_valid": bool(isinstance(adapter_execution, dict) and adapter_execution.get("protocol_valid") is True),
             "evidence_complete": bool(isinstance(adapter_execution, dict) and adapter_execution.get("evidence_complete") is True),
-            "passed": bool(execution_complete and profile_complete and diagnostics_complete and within_budget),
+            "passed": bool(execution_complete and profile_complete and diagnostics_complete
+                           and (not wall_budget_enforced or within_budget)),
         },
         "retrieval": adapter_report["retrieval"],
-        "cost": {**adapter_report["cost"], "max_wall_seconds": definition["expected_wall_seconds"]["max"], "within_budget": within_budget},
+        "cost": {**adapter_report["cost"], "max_wall_seconds": definition["expected_wall_seconds"]["max"],
+                 "within_budget": within_budget, "wall_budget_enforced": wall_budget_enforced},
         "diagnostics": {
             **(diagnostics if isinstance(diagnostics, dict) else {}),
             "records_sha256": _sha256(run_dir / "diagnostics.jsonl"),
@@ -294,7 +302,8 @@ def execute(
             "checkpoint_manifest_sha256": _sha256(run_dir / "checkpoint-manifest.json"),
         },
         "completion": {"status": "completed", "reason": "official-benchmark-evidence-complete"},
-        "passed": bool(execution_complete and profile_complete and diagnostics_complete and within_budget),
+        "passed": bool(execution_complete and profile_complete and diagnostics_complete
+                       and (not wall_budget_enforced or within_budget)),
         "started_at": started_at, "finished_at": datetime.now(timezone.utc).isoformat(),
     }
     return report

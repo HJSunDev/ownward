@@ -10,6 +10,8 @@ from typing import Any
 MANIFEST_SCHEMA = "ownward.kernel-iteration-semantic-representation/v1"
 DEFAULT_REPRESENTATION = "ownward.semantic-deduplicated-body-table/v1"
 COMPACT_REPRESENTATION = "ownward.semantic-indexed-body-context-table/v2"
+LEGACY_GROUNDED_REPRESENTATION = "ownward.semantic-source-spans/v1"
+GROUNDED_REPRESENTATION = "ownward.semantic-source-spans/v2"
 
 
 class SemanticRepresentationError(RuntimeError):
@@ -53,6 +55,76 @@ def compact_instruction() -> str:
         "answer-bearing facts, entities, preferences, events or decisions. Do not turn source IDs, conversation dates or "
         "acknowledgements into cues.\n\nSemantic input:\n"
     )
+
+
+def grounded_instruction(representation: str = GROUNDED_REPRESENTATION) -> str:
+    if representation == LEGACY_GROUNDED_REPRESENTATION:
+        return (
+            "Prepare source-owned retrieval metadata for every work item, in order. Return its explicit index, "
+            "one summary passage index, up to 4 short topics, and up to 4 nonredundant cues {passage,kind}. "
+            "Passage indices are the numbered keys in that item's target.passages, never another source. These passages "
+            "concatenate to the complete source; select answer-bearing statements, preferences, events or decisions, "
+            "preserving speaker, negation, conditions and changes. The host copies selected original passages; do not "
+            "rewrite them. No cues for question-only or acknowledgement sources. Do not index source IDs or dates "
+            "as facts. Related sources are reference context only. No query, answer or evaluation label is supplied."
+            "\n\nSemantic input:\n"
+        )
+    return (
+        "Prepare source-owned retrieval metadata for every work item, in order. Return its explicit index, "
+        "one summary passage index, up to 4 short topics, and up to 8 nonredundant cues {passage,kind}. "
+        "Passage indices are the numbered keys in that item's target.passages, never another source. These passages "
+        "concatenate to the complete source; select answer-bearing statements, preferences, events or decisions, "
+        "preserving speaker, negation, conditions and changes. The host copies selected original passages; do not "
+        "rewrite them. Cover distinct stated facts across the source, including facts embedded in questions; "
+        "do not spend cues on advice requests, acknowledgements or repeated topic mentions alone. Do not index source IDs or dates "
+        "as facts. Related sources are reference context only. No query, answer or evaluation label is supplied."
+        "\n\nSemantic input:\n"
+    )
+
+
+def source_passages(content: str, representation: str = GROUNDED_REPRESENTATION) -> list[str]:
+    # Stable, lossless source slices. Whitespace stays in its original position;
+    # Keep a speaker's paragraph together, including abbreviations and the
+    # conditions following a sentence. Long paragraphs split only at words.
+    passages = []
+    legacy = representation == LEGACY_GROUNDED_REPRESENTATION
+    while content:
+        end = min(200 if legacy else 384, len(content))
+        boundaries = [i + 1 for i, char in enumerate(content[:end])
+                      if char == "\n" or (legacy and char in ".!?。！？" and (i + 1 == len(content) or content[i + 1].isspace()))]
+        boundaries = [i for i in boundaries if content[:i].strip()]
+        if boundaries:
+            end = boundaries[0]
+        elif end < len(content):
+            space = content.rfind(" ", 0, end)
+            if space > 0:
+                end = space + 1
+        if not content[:end].strip() and passages:
+            passages[-1] += content[:end]
+        else:
+            passages.append(content[:end])
+        content = content[end:]
+    return passages or [""]
+
+
+def grounded_input(original: dict[str, Any], representation: str = GROUNDED_REPRESENTATION) -> dict[str, Any]:
+    bodies = {body["body_ref"]: body for body in original["bodies"]}
+    targets = {item["asset"]["body_ref"] for item in original["work"]}
+    return {
+        "representation": representation,
+        "work": [{
+            "index": index,
+            "work_id": item["work_id"],
+            "target": {"source_ref": item["asset"]["body_ref"],
+                       **{k: v for k, v in bodies[item["asset"]["body_ref"]].items() if k not in {"body_ref", "content"}},
+                       "passages": {str(i): text for i, text in enumerate(source_passages(bodies[item["asset"]["body_ref"]]["content"], representation))},
+                       "explicit_contexts": item["asset"]["explicit_contexts"]},
+            "related_sources": [{"source_ref": c["body_ref"], **{k: v for k, v in c.items() if k != "body_ref"}}
+                                for c in item["candidates"]],
+        } for index, item in enumerate(original["work"])],
+        "reference_sources": [{"source_ref": ref, **{k: v for k, v in body.items() if k != "body_ref"}}
+                              for ref, body in bodies.items() if ref not in targets],
+    }
 
 
 def default_semantic_input(work: list[dict[str, Any]]) -> dict[str, Any]:
@@ -262,16 +334,35 @@ class SemanticInputContract:
     representation: str
     manifest_identity: str
     manifest_path: str | None
+    body_order: str = "discovery"
+
+    def ordered_input(self, work: list[dict[str, Any]]) -> dict[str, Any]:
+        value = default_semantic_input(work)
+        if self.body_order == "targets-first":
+            # Keep primary sources in work order; append reference-only bodies.
+            # No content or candidate metadata is discarded, and all indices are
+            # rebuilt from the resulting table rather than inferred by position.
+            by_ref = {body["body_ref"]: body for body in value["bodies"]}
+            refs = list(dict.fromkeys([item["asset"]["body_ref"] for item in value["work"]] + list(by_ref)))
+            value["bodies"] = [by_ref[ref] for ref in refs]
+        return value
 
     def instruction(self) -> str:
+        if self.representation in {LEGACY_GROUNDED_REPRESENTATION, GROUNDED_REPRESENTATION}:
+            return grounded_instruction(self.representation)
         return compact_instruction() if self.representation == COMPACT_REPRESENTATION else default_instruction()
 
     def encode(self, work: list[dict[str, Any]]) -> dict[str, Any]:
-        original = default_semantic_input(work)
+        original = self.ordered_input(work)
+        if self.representation in {LEGACY_GROUNDED_REPRESENTATION, GROUNDED_REPRESENTATION}:
+            return grounded_input(original, self.representation)
         return compact_semantic_input(original) if self.representation == COMPACT_REPRESENTATION else original
 
     def validate(self, work: list[dict[str, Any]], value: dict[str, Any]) -> dict[str, Any]:
-        original = default_semantic_input(work)
+        original = self.ordered_input(work)
+        if self.representation in {LEGACY_GROUNDED_REPRESENTATION, GROUNDED_REPRESENTATION}:
+            _require(value == grounded_input(original, self.representation), "grounded source identity or content changed")
+            return {**validate_default_input(work, original), "representation": self.representation}
         if self.representation == COMPACT_REPRESENTATION:
             validate_compact_equivalence(original, value)
             baseline = validate_default_input(work, original)
@@ -282,9 +373,49 @@ class SemanticInputContract:
         return fact_equivalence_sha256(work)
 
     def body_chars(self, value: dict[str, Any]) -> int:
+        if self.representation in {LEGACY_GROUNDED_REPRESENTATION, GROUNDED_REPRESENTATION}:
+            return sum(sum(map(len, item["target"]["passages"].values())) for item in value["work"]) + sum(len(item["content"]) for item in value["reference_sources"])
         if self.representation == COMPACT_REPRESENTATION:
             return sum(len(item[2]) for item in value["bodies"])
         return sum(len(item["content"]) for item in value["bodies"])
+
+    def output_schema(self, work: list[dict[str, Any]], legacy: dict[str, Any]) -> dict[str, Any]:
+        if self.representation not in {LEGACY_GROUNDED_REPRESENTATION, GROUNDED_REPRESENTATION}:
+            return legacy
+        return {"type": "object", "additionalProperties": False, "required": ["analyses"], "properties": {
+            "analyses": {"type": "array", "minItems": len(work), "maxItems": len(work), "items": {
+                "type": "object", "additionalProperties": False, "required": ["index", "summary", "topics", "cues"],
+                "properties": {
+                    "index": {"type": "integer", "minimum": 0, "maximum": len(work)-1},
+                    "summary": {"type": "integer", "minimum": 0},
+                    "topics": {"type": "array", "maxItems": 4, "items": {"type": "string", "maxLength": 100}},
+                    "cues": {"type": "array", "maxItems": 4 if self.representation == LEGACY_GROUNDED_REPRESENTATION else 8, "items": {"type": "object", "additionalProperties": False,
+                        "required": ["passage", "kind"], "properties": {"passage": {"type": "integer", "minimum": 0},
+                                                                       "kind": {"type": "string", "maxLength": 40}}}},
+                },
+            }},
+        }}
+
+    def decode_analyses(self, work: list[dict[str, Any]], value: dict[str, Any]) -> list[dict[str, Any]]:
+        analyses = value.get("analyses")
+        _require(isinstance(analyses, list) and len(analyses) == len(work), "semantic output omitted work items")
+        if self.representation not in {LEGACY_GROUNDED_REPRESENTATION, GROUNDED_REPRESENTATION}:
+            _require([item.get("work_id") for item in analyses if isinstance(item, dict)] == [item["id"] for item in work],
+                     "semantic output reordered work items")
+            return analyses
+        _require([item.get("index") for item in analyses if isinstance(item, dict)] == list(range(len(work))),
+                 "semantic output reordered work items")
+        decoded = []
+        for item, analysis in zip(work, analyses):
+            passages = source_passages(item["asset"]["content"], self.representation)
+            def passage(index: Any) -> str:
+                _require(type(index) is int and 0 <= index < len(passages), "semantic passage is outside its own source")
+                return passages[index].strip()
+            summary = passage(analysis.get("summary"))
+            cues = [{"text": passage(cue.get("passage")), "kind": cue["kind"]} for cue in analysis.get("cues", [])]
+            _require(bool(summary) and all(cue["text"] for cue in cues), "semantic passage is empty")
+            decoded.append({"work_id": item["id"], "summary": summary, "topics": analysis["topics"], "cues": cues})
+        return decoded
 
 
 def load_contract(path: Path | None) -> SemanticInputContract:
@@ -296,9 +427,13 @@ def load_contract(path: Path | None) -> SemanticInputContract:
     _require(isinstance(value, dict) and value.get("schema") == MANIFEST_SCHEMA, "semantic representation manifest schema is invalid")
     content = {key: item for key, item in value.items() if key != "identity"}
     _require(value.get("identity") == canonical_sha256(content), "semantic representation manifest identity changed")
-    _require(value.get("representation") == COMPACT_REPRESENTATION, "unknown semantic representation")
-    _require(value.get("instruction_identity") == canonical_sha256(compact_instruction()), "semantic representation instruction changed")
+    representation = value.get("representation")
+    _require(representation in {COMPACT_REPRESENTATION, LEGACY_GROUNDED_REPRESENTATION, GROUNDED_REPRESENTATION}, "unknown semantic representation")
+    instruction = compact_instruction() if representation == COMPACT_REPRESENTATION else grounded_instruction(representation)
+    _require(value.get("instruction_identity") == canonical_sha256(instruction), "semantic representation instruction changed")
     _require(value.get("fact_equivalence") == "lossless-roundtrip-to-ownward.semantic-deduplicated-body-table/v1", "semantic representation equivalence contract changed")
     _require(value.get("selection") == "candidate-composition-declared", "semantic representation is not composition declared")
     _require(value.get("formal_requires_bound_candidate") is True, "semantic representation formal binding rule changed")
-    return SemanticInputContract(COMPACT_REPRESENTATION, str(value["identity"]), str(resolved))
+    body_order = value.get("body_order", "discovery")
+    _require(body_order in {"discovery", "targets-first"}, "unknown semantic body order")
+    return SemanticInputContract(str(representation), str(value["identity"]), str(resolved), str(body_order))

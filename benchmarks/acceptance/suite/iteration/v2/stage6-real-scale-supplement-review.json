@@ -1,0 +1,350 @@
+{
+  "dataset": "stage6-real-scale-supplement.json",
+  "sha256": "0e70bb5c9f6e155e874a61357f8e625e3adbd405fd3c3d8d049d9b692c246cee",
+  "questions": 6,
+  "purpose": "Supplement the already-passed V2 gates with long-history, source-distance and confusable-history pressure; not a statistical estimate of official accuracy.",
+  "authorship": "Six task/answer/evidence chains hand-authored by the current architect; surrounding fact-bearing conversations deterministically expanded from independently authored templates.",
+  "formal_benchmark_text_reused": false,
+  "prior_gate_text_reused": false,
+  "generation_seed": 20260905,
+  "token_measurement": "tiktoken cl100k_base over role-labelled full histories; not a claim about exact Qwen tokenization.",
+  "candidate_for_later_run": "5a1de835011cd7d931b68107a387b8b57a7b47aa88489bc4ae96c376e6d41cce",
+  "candidate_binary_sha256": "7f0648684f4d5e7aa1d80b3f375a94fa8054e7d47d0eb5f8ef5ef4a5834b6458",
+  "execution": "Existing LongMemEval-S adapter run --non-formal --dataset; same frozen V2, semantic/Reader/Judge roles, prompts and 12-call/8-read/24000-character budgets. This construction task does not run the kernel.",
+  "judgment": "Report the original six answer scores. Attribute every failure to material, kernel, external Reader or evaluator before deciding kernel readiness. Full pass closes this targeted supplement, not a promise of perfect official accuracy.",
+  "scope_limit": "Synthetic stress fixtures deliberately model the identified pressures; they do not reproduce the full natural-language distribution of LongMemEval-S.",
+  "cases": [
+    {
+      "question_id": "rs6-01",
+      "title": "长会话首中尾三项必要事实",
+      "coverage": "long-session-separated-completion-facts",
+      "sessions": 48,
+      "messages": 2156,
+      "history_body_characters": 600217,
+      "history_tokens_cl100k_base": 124528,
+      "largest_session_body_characters": 72675,
+      "largest_session_messages": 262,
+      "exact_duplicate_message_fraction": 0.004638,
+      "answer_session_ids": [
+        "h-ca30089a2a29a317"
+      ],
+      "hard_distractor_session_ids": [
+        "h-79d8534fe5c0de64",
+        "h-0c703ae9a002b902",
+        "h-f9e0a4fb8379af50"
+      ],
+      "required_evidence": [
+        {
+          "session_id": "h-ca30089a2a29a317",
+          "date": "2026-04-09",
+          "start_char": 5792,
+          "end_char": 6164,
+          "user_statement": "We are recording the completion conditions for the Juniper oral-history handover. I am tempted to release the master reels when the first listening batch is usable.",
+          "assistant_statement": "For the Juniper handover, keep the master reels under read-only custody until the byte-for-byte verification of all 47 reels has been signed. A usable listening batch does not release the masters."
+        },
+        {
+          "session_id": "h-ca30089a2a29a317",
+          "date": "2026-04-09",
+          "start_char": 37385,
+          "end_char": 37752,
+          "user_statement": "Returning to Juniper: several donor labels use old place names. I would like to standardize them in the new catalog. What must survive in the handover record?",
+          "assistant_statement": "Retain every donor label verbatim in the Juniper transfer register. You may add standardized catalog terms in another field, but the register must preserve the original wording of each donor label."
+        },
+        {
+          "session_id": "h-ca30089a2a29a317",
+          "date": "2026-04-09",
+          "start_char": 69698,
+          "end_char": 69988,
+          "user_statement": "We still need the third Juniper completion condition: the delivered listening-copy format. The stereo festival files were only a listening demonstration.",
+          "assistant_statement": "The Juniper listening copies must be 48 kHz mono PCM WAV. The stereo festival demonstration does not set the delivery format."
+        }
+      ],
+      "answer_components": [
+        "all 47 reels",
+        "every donor label verbatim",
+        "48 kHz mono PCM WAV"
+      ],
+      "difficulty_reason": "Three necessary conditions occur far apart in one source too large for a full-source read within the unchanged 24,000-character budget.",
+      "expected_answer": "Keep the master reels under read-only custody until byte-for-byte verification of all 47 reels is signed; retain every donor label verbatim in the transfer register; make the listening copies 48 kHz mono PCM WAV.",
+      "review_status": "author-reviewed; product and Reader not executed",
+      "necessary_evidence_characters": 1029,
+      "required_same_source_span_characters": 64196
+    },
+    {
+      "question_id": "rs6-02",
+      "title": "长文档表格与远端例外共同决定答案",
+      "coverage": "long-session-table-remote-exception",
+      "sessions": 48,
+      "messages": 2150,
+      "history_body_characters": 595846,
+      "history_tokens_cl100k_base": 124795,
+      "largest_session_body_characters": 71952,
+      "largest_session_messages": 260,
+      "exact_duplicate_message_fraction": 0.003721,
+      "answer_session_ids": [
+        "h-5b464de1f5264f8d"
+      ],
+      "hard_distractor_session_ids": [
+        "h-06808d02b5254ea4",
+        "h-cdb615407e100d09",
+        "h-2aa5a41f62626555"
+      ],
+      "required_evidence": [
+        {
+          "session_id": "h-5b464de1f5264f8d",
+          "date": "2026-07-03",
+          "start_char": 8587,
+          "end_char": 9117,
+          "user_statement": "Here is the approved Cassia traveling-print transport schedule. Please preserve the row and column labels when you copy it into our packing discussion.",
+          "assistant_statement": "Approved Cassia carriage schedule, revision 6.\n| Crate | Carriage temperature | Declared-value ceiling | Standard handover | Note |\n| P-12 | 10–14°C | 19,800 credits | Gallery desk | B |\n| P-23 | 14–18°C | 27,600 credits | East loading desk | F |\n| P-32 | 18–22°C | 31,400 credits | Stonegate intake desk | C |\n| P-41 | 12–16°C | 22,700 credits | West reception | B |"
+        },
+        {
+          "session_id": "h-5b464de1f5264f8d",
+          "date": "2026-07-03",
+          "start_char": 66348,
+          "end_char": 66845,
+          "user_statement": "The Cassia schedule notes were on a separate page after the handling discussion. I need the actual notes attached, including the after-hours rule.",
+          "assistant_statement": "Notes to approved Cassia carriage schedule revision 6: B — call the listed desk before unloading. C — oversized-frame handling requires two staff. F — on Fridays after 18:00, crates bearing F bypass their standard desk and must be handed over at the Stonegate intake desk; their row temperature and declared-value ceiling remain unchanged."
+        }
+      ],
+      "answer_components": [
+        "14–18°C",
+        "27,600 credits",
+        "Stonegate intake desk"
+      ],
+      "difficulty_reason": "Reading the relevant table row alone gives the wrong desk; reading the late footnote alone does not provide the two numeric conditions.",
+      "expected_answer": "Keep it at 14–18°C, with a declared-value ceiling of 27,600 credits, and hand it over at the Stonegate intake desk.",
+      "review_status": "author-reviewed; product and Reader not executed",
+      "necessary_evidence_characters": 1027,
+      "required_same_source_span_characters": 58258
+    },
+    {
+      "question_id": "rs6-03",
+      "title": "大量近似会话中的实体与职责区分",
+      "coverage": "large-history-near-duplicate-role-entity",
+      "sessions": 48,
+      "messages": 1938,
+      "history_body_characters": 532604,
+      "history_tokens_cl100k_base": 112397,
+      "largest_session_body_characters": 12385,
+      "largest_session_messages": 46,
+      "exact_duplicate_message_fraction": 0.003612,
+      "answer_session_ids": [
+        "h-6d2e6e2a67d175a7"
+      ],
+      "hard_distractor_session_ids": [
+        "h-553969f7ea6993ba",
+        "h-d2ded3b1c493623d",
+        "h-2e788795d7171b50",
+        "h-441b165ec9c909f4",
+        "h-ef15dd4a33db3c7f",
+        "h-b45be97d7c2b108a"
+      ],
+      "required_evidence": [
+        {
+          "session_id": "h-6d2e6e2a67d175a7",
+          "date": "2026-06-19",
+          "start_char": 7640,
+          "end_char": 8062,
+          "user_statement": "I have the signed revision 9 of the Marshbank North Annex access register. In the adult evening ceramics row, the approver for an after-hours kiln opening is Iris Venn. Jonas Pike holds the physical key, and Iris Vale hosts the class; neither of those duties grants approval authority.",
+          "assistant_statement": "I have filed revision 9 with the access records and kept its adult evening row distinct from the youth and daytime schedules."
+        }
+      ],
+      "answer_components": [
+        "Iris Venn"
+      ],
+      "difficulty_reason": "Same venue, near-identical names, age group, time of day and keyholding create plausible alternatives; only the current approval row satisfies all requested attributes.",
+      "expected_answer": "Iris Venn.",
+      "review_status": "author-reviewed; product and Reader not executed",
+      "necessary_evidence_characters": 422
+    },
+    {
+      "question_id": "rs6-04",
+      "title": "强干扰下三来源链式检索",
+      "coverage": "large-history-three-source-link-chain",
+      "sessions": 48,
+      "messages": 1942,
+      "history_body_characters": 534673,
+      "history_tokens_cl100k_base": 112260,
+      "largest_session_body_characters": 12147,
+      "largest_session_messages": 44,
+      "exact_duplicate_message_fraction": 0.002575,
+      "answer_session_ids": [
+        "h-3748263b440814a1",
+        "h-929dd679857212c0",
+        "h-e4a64cc4b1af69e2"
+      ],
+      "hard_distractor_session_ids": [
+        "h-ddff58c026bed724",
+        "h-96bf18d8fae8fdbb",
+        "h-d59d0fb3ce3ffa09",
+        "h-3baf2e723f078438"
+      ],
+      "required_evidence": [
+        {
+          "session_id": "h-3748263b440814a1",
+          "date": "2026-05-08",
+          "start_char": 5141,
+          "end_char": 5491,
+          "user_statement": "For the Tideglass island traveling-print run, our assigned cargo trailer is now registration MU-72. The mainland library route keeps MU-27; their trailer assignment should not be copied onto our island paperwork.",
+          "assistant_statement": "I recorded the route allocation with the trailer registration rather than using the vehicle nickname from the first rehearsal."
+        },
+        {
+          "session_id": "h-929dd679857212c0",
+          "date": "2026-05-21",
+          "start_char": 8095,
+          "end_char": 8428,
+          "user_statement": "The equipment-service ledger says the spare battery for trailer MU-72 is held in the Plover locker. MU-27 uses the Clover locker. The MU-72 pack has a different connector, so these lockers are not interchangeable.",
+          "assistant_statement": "I copied the registration-to-locker mapping into the maintenance notes along with the connector distinction."
+        },
+        {
+          "session_id": "h-e4a64cc4b1af69e2",
+          "date": "2026-06-04",
+          "start_char": 3422,
+          "end_char": 3750,
+          "user_statement": "I received the current locker duty sheet. For collections from the Plover locker, contact Lena Orwick. Clover locker collections go to Lena Orr, and Plover tool-cage repairs are handled by Leo Orwick.",
+          "assistant_statement": "The collection contact is recorded by locker duty, separately from the person who repairs its surrounding tool cage."
+        }
+      ],
+      "answer_components": [
+        "registration MU-72",
+        "Plover locker",
+        "Lena Orwick"
+      ],
+      "difficulty_reason": "The question names the team, the second source names a trailer, and the final source names a locker; all three links are required to select the collection contact.",
+      "expected_answer": "Lena Orwick.",
+      "review_status": "author-reviewed; product and Reader not executed",
+      "necessary_evidence_characters": 1011
+    },
+    {
+      "question_id": "rs6-05",
+      "title": "长历史多次更新与生效条件",
+      "coverage": "long-history-multiple-effective-updates",
+      "sessions": 48,
+      "messages": 1944,
+      "history_body_characters": 537204,
+      "history_tokens_cl100k_base": 111795,
+      "largest_session_body_characters": 12619,
+      "largest_session_messages": 46,
+      "exact_duplicate_message_fraction": 0.003086,
+      "answer_session_ids": [
+        "h-95a9ecc79ea7eb04",
+        "h-8d8e231725098f3f",
+        "h-afce6f26fcbb18c1"
+      ],
+      "hard_distractor_session_ids": [
+        "h-e8b3190969b6eb5d",
+        "h-7239fd1595685d37",
+        "h-5b3b4c23f5633303"
+      ],
+      "required_evidence": [
+        {
+          "session_id": "h-95a9ecc79ea7eb04",
+          "date": "2026-04-17",
+          "start_char": 3452,
+          "end_char": 3797,
+          "user_statement": "Our signed community-screening equipment agreement is now effective for pickups from 1 May onward: West dock at 18:20, authorization code WT-62. The March North lobby arrangement and code AL-19 are replaced.",
+          "assistant_statement": "I stored the signed agreement with its effective date, including both the replaced arrangement and the new collection details."
+        },
+        {
+          "session_id": "h-8d8e231725098f3f",
+          "date": "2026-05-10",
+          "start_char": 8581,
+          "end_char": 8969,
+          "user_statement": "The facilities notice for community-screening equipment collections temporarily moves the collection place to Elm courtyard for 21–25 May, inclusive, because the West dock is being resurfaced. All other agreement terms remain in force.",
+          "assistant_statement": "I attached the dated facilities notice to the pickup record rather than treating the location change as a replacement of the whole agreement."
+        },
+        {
+          "session_id": "h-afce6f26fcbb18c1",
+          "date": "2026-05-22",
+          "start_char": 4574,
+          "end_char": 4954,
+          "user_statement": "The equipment office signed an adjustment for our Saturday 23 May community-screening pickup: collection time is 17:45 instead of 18:20 for that date only. The temporary collection place and the agreement authorization code are unchanged.",
+          "assistant_statement": "I recorded this as the date-specific time amendment; the other conditions still come from the agreement and the facilities notice."
+        }
+      ],
+      "answer_components": [
+        "authorization code WT-62",
+        "Elm courtyard",
+        "17:45"
+      ],
+      "difficulty_reason": "No source states all current fields together. A base agreement, a temporary location notice and a one-day time amendment must be composed; the newest publication is future-effective.",
+      "expected_answer": "Elm courtyard at 17:45, using authorization code WT-62.",
+      "review_status": "author-reviewed; product and Reader not executed",
+      "necessary_evidence_characters": 1113
+    },
+    {
+      "question_id": "rs6-06",
+      "title": "权威、条件与最新建议交织",
+      "coverage": "long-history-authority-conditions-over-recency",
+      "sessions": 48,
+      "messages": 1942,
+      "history_body_characters": 534750,
+      "history_tokens_cl100k_base": 111930,
+      "largest_session_body_characters": 12260,
+      "largest_session_messages": 46,
+      "exact_duplicate_message_fraction": 0.001545,
+      "answer_session_ids": [
+        "h-121b8009e3d2c48a",
+        "h-8a0296be88a2337f",
+        "h-e46197820a10bee1"
+      ],
+      "hard_distractor_session_ids": [
+        "h-32df66f9e7af8b1b",
+        "h-4bcbfd7ebc2aed3b",
+        "h-67c656a2f991b74e",
+        "h-c2057619447554eb"
+      ],
+      "required_evidence": [
+        {
+          "session_id": "h-121b8009e3d2c48a",
+          "date": "2026-07-14",
+          "start_char": 7421,
+          "end_char": 7849,
+          "user_statement": "The observatory equipment office has signed the loan conditions for the late-August workshops. For after-dark wet-weather use, the approved recording kit is E-12 and collection must happen at the west vestibule equipment desk. M-07 is approved for covered daytime sessions only.",
+          "assistant_statement": "I retained the lighting and weather conditions with the kit allocation; a kit appearing in the inventory does not extend its approved use."
+        },
+        {
+          "session_id": "h-8a0296be88a2337f",
+          "date": "2026-08-18",
+          "start_char": 2866,
+          "end_char": 3262,
+          "user_statement": "Our confirmed observatory workshop on 29 August starts after dark and retains the wet-weather plan. Its loan application is OR-581. The equipment office says the signed July loan conditions apply to this booking. The early daytime rehearsal has a separate booking.",
+          "assistant_statement": "The final booking conditions are now attached to the loan request, including the distinction from the daytime rehearsal."
+        },
+        {
+          "session_id": "h-e46197820a10bee1",
+          "date": "2026-08-21",
+          "start_char": 6909,
+          "end_char": 7219,
+          "user_statement": "The equipment-office approval register records Sora Mendel as the authorizing approver for loan application OR-581. Tessa Morin is the volunteer carrying lead, and Rafael Dene operates the equipment desk.",
+          "assistant_statement": "I kept approval, carrying and desk operation as separate responsibilities in the booking file."
+        }
+      ],
+      "answer_components": [
+        "approved recording kit is E-12",
+        "west vestibule equipment desk",
+        "Sora Mendel"
+      ],
+      "difficulty_reason": "The event conditions, conditional loan policy and authorizing register are separate sources; later volunteer suggestions and a public brochure have neither the right scope nor authority.",
+      "expected_answer": "Kit E-12, collected at the west vestibule equipment desk, with Sora Mendel as the authorizing approver.",
+      "review_status": "author-reviewed; product and Reader not executed",
+      "necessary_evidence_characters": 1134
+    }
+  ],
+  "validation": {
+    "existing_adapter_validate_dataset": "6/6 passed (formal=False)",
+    "product_question_gold_isolation": "6/6 passed; answer and answer_session_ids excluded",
+    "source_bound_evidence_offsets": "6/6 passed against generated histories",
+    "session_identity_and_dates": "6/6 passed; unique session IDs, no future sessions",
+    "questions_distinct_from_existing_95_plus_8": "6/6 passed exact normalized question comparison",
+    "full_history_size": "all six exceed 100000 cl100k_base tokens",
+    "long_source_pressure": "two cases require evidence spanning more than 30000 characters; source exceeds 50000 characters",
+    "evidence_fits_existing_budget": "all necessary quoted evidence under 1200 characters per case; no budget increase required",
+    "author_semantic_review": "six answer derivations checked; case 6 uses application OR-581 to keep all three sources necessary",
+    "kernel_execution": "not_run",
+    "official_dataset_execution": "not_run",
+    "independent_model_review": "not_run",
+    "classification": "fixed original synthetic targeted supplement, not a newly blind suite"
+  }
+}

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+from contextlib import ExitStack
 import json
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -16,6 +18,7 @@ import run as adapter
 
 class FakeToolClient:
     def __init__(self) -> None:
+        self.instructions = "来自当前 Ownward 的协作规则。"
         self.contents: dict[str, str] = {}
         self.evidence: dict[str, tuple[str, str]] = {}
         self.operations: list[tuple[str, list[str]]] = []
@@ -188,6 +191,217 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
     def setUp(self) -> None:
         self.protocol = adapter.load_json(Path(adapter.__file__).with_name("protocol.json"))
 
+    def test_public_source_references_hide_dataset_labels_without_changing_turns(self):
+        source = 'answer_family_1'
+        turns = [{'role': 'user', 'content': 'Keep the blue original label, not the later green suggestion.'},
+                 {'role': 'assistant', 'content': 'The earlier wording remains authoritative.'}]
+        content = adapter.session_content(source, '2024-05-16', turns)
+        self.assertNotIn(source, content)
+        self.assertIn('2024-05-16', content)
+        for turn in turns:
+            self.assertIn(turn['content'], content)
+        reference = adapter.session_reference(source)
+        self.assertIn(reference, content)
+        self.assertEqual(reference, adapter.session_reference(source))
+        self.assertNotEqual(reference, adapter.session_reference('answer_family_2'))
+
+    def test_selected_provider_resume_preserves_results_and_detects_logic_changes(self):
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+            root = Path(directory)
+            protocol_path = root / "protocol.json"
+            adapter.write_json(protocol_path, self.protocol)
+            binary, dataset, evaluator = (root / name for name in ("binary", "dataset", "evaluator"))
+            for path in (binary, dataset, evaluator):
+                path.write_text("fixture")
+            output = root / "run"
+            questions = [{"question_id": name} for name in ("old", "pending", "unstarted")]
+            live_identity = {"provider": "old", "driver": "same/v1", "contract": "contract", "credential_content_read": False}
+            logic = ["v1"]
+            calls = []
+            def dependencies(**kwargs):
+                runtime = kwargs.get("external_intelligence_runtime_identity") or {}
+                return {name: runtime.get("provider", "neutral") + logic[0]
+                        for name in ("semantic", "retrieval", "reader", "judge", "diagnostic")}
+            def process(question, output_dir, *_args):
+                calls.append(question["question_id"])
+                result = {"question_id": question["question_id"], "complete": True}
+                adapter.write_json(output_dir / "questions" / question["question_id"] / "result.json", result)
+                return result
+            for name, value in {
+                "validate_environment": {"value": {"layout": {"runs": str(root)}}, "evaluator": evaluator},
+                "validate_protocol": None, "validate_dataset": questions,
+            }.items():
+                stack.enter_context(mock.patch.object(adapter, name, return_value=value))
+            stack.enter_context(mock.patch.object(adapter, "current_runtime_identity", side_effect=lambda **_: dict(live_identity)))
+            stack.enter_context(mock.patch.object(adapter, "stage_dependency_identities", side_effect=dependencies))
+            stack.enter_context(mock.patch.object(adapter, "process_question", side_effect=process))
+            stack.enter_context(mock.patch.object(adapter, "open_external_intelligence_runtime"))
+            kwargs = dict(environment_manifest=root / "environment.json", protocol_path=protocol_path,
+                          dataset_path=dataset, output_dir=output, binary=binary, embedding=root,
+                          external_intelligence_driver="opencode-go-api/v1", external_intelligence_binary=binary,
+                          external_intelligence_credential_file=root / "unused.json", candidate="fixture",
+                          environment_sha256="fixture", input_manifest_sha256="fixture", tool_sha256="fixture", formal=True)
+            adapter.execute(**kwargs, resume=False, question_ids=["old"])
+            legacy = adapter.load_json(output / "identity.json")
+            legacy.pop("stage_logic_dependencies")
+            legacy.pop("sha256")
+            adapter.write_json(output / "identity.json", {**legacy, "sha256": adapter.canonical_sha256(legacy)})
+            original = (output / "questions/old/result.json").read_bytes()
+            live_identity["provider"] = "new"
+            report = adapter.execute(**kwargs, resume=True, question_ids=["pending"], resume_compatible_transport=True)
+            self.assertTrue(report["complete"])
+            self.assertFalse(report["full_report_published"])
+            self.assertEqual(["old", "pending"], calls)
+            self.assertEqual(original, (output / "questions/old/result.json").read_bytes())
+            self.assertFalse((output / "questions/unstarted").exists())
+            self.assertFalse((output / "report.json").exists())
+            # A later full resume accepts the established namespace without reimporting old work.
+            with mock.patch.object(adapter, "complete_report", return_value={"cached": True}):
+                self.assertEqual({"cached": True}, adapter.execute(**kwargs, resume=True))
+            identity_before = (output / "identity.json").read_bytes()
+            logic[0] = "v2"
+            with self.assertRaisesRegex(adapter.AdapterError, "execution logic changed"):
+                adapter.execute(**kwargs, resume=True, question_ids=["pending"], resume_compatible_transport=True)
+            self.assertEqual(identity_before, (output / "identity.json").read_bytes())
+
+    def test_selected_questions_rejects_unknown_and_duplicate_ids(self):
+        questions = [{"question_id": "a"}, {"question_id": "b"}]
+        self.assertEqual([questions[1]], adapter.selected_questions(questions, ["b"]))
+        for invalid in ([], ["a", "a"], ["missing"]):
+            with self.assertRaises(adapter.AdapterError):
+                adapter.selected_questions(questions, invalid)
+
+    def test_failure_batch_stop_drains_inflight_and_keeps_service_errors_separate(self):
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+            root = Path(directory)
+            protocol = copy.deepcopy(self.protocol)
+            protocol['execution']['max_workers'] = 2
+            adapter.write_json(root/'protocol.json', protocol)
+            for name in ('binary', 'dataset', 'evaluator'):
+                (root/name).write_text('fixture')
+            questions = [{'question_id': str(i)} for i in range(20)]
+            started = []
+            def process(question, output, *_args):
+                identifier = question['question_id']
+                started.append(identifier)
+                if identifier == '0':
+                    raise RuntimeError('temporary service failure')
+                time.sleep(.01)
+                result = {'question_id': identifier, 'complete': True, 'autoeval_label': {'label': False}}
+                adapter.write_json(output/'questions'/identifier/'result.json', result)
+                return result
+            for name, value in {
+                'validate_environment': {'value': {'layout': {'runs': str(root)}}, 'evaluator': root/'evaluator'},
+                'validate_protocol': None, 'validate_dataset': questions,
+                'current_runtime_identity': {'provider': 'fixture'},
+                'stage_dependency_identities': {name: 'fixture' for name in ('semantic','retrieval','reader','judge','diagnostic')},
+            }.items():
+                stack.enter_context(mock.patch.object(adapter, name, return_value=value))
+            stack.enter_context(mock.patch.object(adapter, 'process_question', side_effect=process))
+            stack.enter_context(mock.patch.object(adapter, 'open_external_intelligence_runtime'))
+            result = adapter.execute(environment_manifest=root/'environment',protocol_path=root/'protocol.json',
+                dataset_path=root/'dataset',output_dir=root/'run',binary=root/'binary',embedding=root,
+                external_intelligence_driver='opencode-go-api/v1',external_intelligence_binary=root/'binary',
+                external_intelligence_credential_file=root/'unused',candidate='fixture',environment_sha256='fixture',
+                input_manifest_sha256='fixture',tool_sha256='fixture',formal=True,resume=False,stop_after_failures=2)
+            self.assertEqual('failure_batch_ready', result['reason'])
+            self.assertIn('0', result['execution_failures'])
+            self.assertNotIn('0', result['wrong_question_ids'])
+            self.assertGreaterEqual(len(result['wrong_question_ids']), 2)
+            self.assertLessEqual(len(result['wrong_question_ids']), 3)
+            self.assertEqual(len(started)-1, result['completed'])
+            self.assertLess(len(started), len(questions))
+            self.assertFalse((root/'run/report.json').exists())
+            for identifier in started:
+                if identifier != '0':
+                    self.assertTrue((root/'run/questions'/identifier/'result.json').is_file())
+
+    def test_transport_recovery_archives_only_incomplete_attempts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            failed = root / "questions/pending/reader/codex/attempt-001/error.txt"
+            failed.parent.mkdir(parents=True)
+            failed.write_text("HTTP 429")
+            complete = root / "questions/pending/judge/codex/complete.json"
+            adapter.write_json(complete, {"completed": True})
+            done = root / "questions/done/result.json"
+            adapter.write_json(done, {"complete": True})
+            request_only = root / "questions/interrupted/reader/codex/request.json"
+            adapter.write_json(request_only, {"provider": "old"})
+            adapter.archive_incomplete_transport_attempts(root, ["pending", "done", "interrupted"], "old")
+            self.assertFalse(failed.exists())
+            self.assertEqual("HTTP 429", (root / "_audit/old/transport-resume/questions/pending/reader/codex/attempt-001/error.txt").read_text())
+            self.assertTrue(complete.is_file())
+            self.assertTrue(done.is_file())
+            self.assertFalse(request_only.exists())
+            self.assertTrue((root / "_audit/old/transport-resume/questions/interrupted/reader/codex/request.json").is_file())
+
+    def test_question_failure_preserves_other_work_without_publishing_partial_score(self) -> None:
+        for formal in (False, True):
+            with self.subTest(formal=formal), tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+                root = Path(directory)
+                protocol = copy.deepcopy(self.protocol)
+                protocol["execution"]["max_workers"] = 1
+                protocol_path = root / "protocol.json"
+                adapter.write_json(protocol_path, protocol)
+                binary, dataset, evaluator = (root / name for name in ("binary", "dataset", "evaluator"))
+                for path in (binary, dataset, evaluator):
+                    path.write_text("fixture", encoding="utf-8")
+                output = root / "run"
+                questions = [{"question_id": name, "haystack_session_ids": []} for name in ("failed", "good")]
+                completed = []
+
+                def process(question, output_dir, *_args):
+                    if question["question_id"] == "failed":
+                        raise adapter.AdapterError("Go API HTTP 500")
+                    value = {"question_id": "good", "complete": True}
+                    adapter.write_json(output_dir / "questions/good/result.json", value)
+                    completed.append("good")
+                    return value
+
+                replacements = {
+                    "validate_environment": {"value": {"layout": {"runs": str(root)}}, "evaluator": evaluator},
+                    "validate_protocol": None,
+                    "validate_dataset": questions,
+                    "current_runtime_identity": {"provider": "fixture"},
+                    "stage_dependency_identities": {"semantic": "fixture"},
+                }
+                for name, value in replacements.items():
+                    stack.enter_context(mock.patch.object(adapter, name, return_value=value))
+                stack.enter_context(mock.patch.object(adapter, "process_question", side_effect=process))
+                stack.enter_context(mock.patch.object(adapter, "open_external_intelligence_runtime"))
+                with self.assertRaisesRegex(adapter.AdapterError, "question execution failures"):
+                    adapter.execute(
+                        environment_manifest=root / "environment.json", protocol_path=protocol_path,
+                        dataset_path=dataset, output_dir=output, binary=binary, embedding=root,
+                        external_intelligence_driver="opencode-go-api/v1", external_intelligence_binary=binary,
+                        external_intelligence_credential_file=root / "unused-auth.json", candidate="fixture",
+                        environment_sha256="fixture", input_manifest_sha256="fixture", tool_sha256="fixture",
+                        formal=formal, resume=False,
+                    )
+                self.assertEqual(["good"], completed)
+                self.assertTrue((output / "questions/good/result.json").is_file())
+                self.assertTrue((output / "questions/failed/failure.json").is_file())
+                self.assertFalse((output / "report.json").exists())
+
+    def test_source_owned_semantics_decodes_before_submission_and_retries_bad_reference(self) -> None:
+        contract = adapter.semantic_representation.load_contract(
+            Path(adapter.__file__).resolve().parents[2] / "manifests/kernel-candidates/v2/source-ownership/semantic-representation.json")
+        work = [{"id": "work-a", "asset": {"id": "asset-a", "revision": 3,
+                 "content": "User: Choose violet.\nAssistant: Amber is not approved."}, "candidates": []}]
+        good = {"analyses": [{"index": 0, "summary": 0, "topics": ["choice"],
+                             "cues": [{"passage": 1, "kind": "constraint"}]}]}
+        bad = copy.deepcopy(good)
+        bad["analyses"][0]["summary"] = 99
+        transport = FakeTransport([bad, good])
+        capability = adapter.ExternalIntelligenceCapability(transport, contract)
+        settings = {**self.protocol["memory"], "semantic_attempts": 2}
+        with tempfile.TemporaryDirectory() as directory:
+            decoded, _ = capability.semantics(work, settings, Path(directory))
+        self.assertEqual(transport.calls, 2)
+        self.assertEqual(decoded, [{"work_id": "work-a", "summary": "User: Choose violet.",
+                                   "topics": ["choice"], "cues": [{"text": "Assistant: Amber is not approved.", "kind": "constraint"}]}])
+
     def test_protocol_freezes_official_identity_models_and_cost_inventory(self) -> None:
         adapter.validate_protocol(self.protocol)
         self.assertEqual(adapter.OFFICIAL_DATA_SHA256, self.protocol["official"]["data_sha256"])
@@ -205,9 +419,9 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
         self.assertEqual(1498, self.protocol["execution"]["semantic_work_requests"])
         selection = adapter.load_json(adapter.SUPPORT_ROOT / "external-intelligence-runtime.json")
         self.assertEqual("ownward.external-intelligence/v1", selection["contract"])
-        self.assertEqual("opencode-server/v1", selection["default_driver"])
+        self.assertEqual("opencode-go-api/v1", selection["default_driver"])
         self.assertEqual(
-            {"codex-app-server/v1", "opencode-server/v1"},
+            {"codex-app-server/v1", "opencode-server/v1", "opencode-go-api/v1"},
             {item["driver"] for item in selection["implementations"]},
         )
         self.assertEqual(8, self.protocol["execution"]["codex_max_active"])
@@ -264,15 +478,19 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
         with self.assertRaisesRegex(adapter.AdapterError, "Reader identity changed"):
             adapter.validate_protocol(no_tools)
 
-    def test_active_reader_prompt_preserves_budget_for_returned_evidence(self) -> None:
-        prompt = adapter._active_answer_prompt(
-            {"question": "Which detail is current?", "question_date": "2026-09-03"},
-            self.protocol["retrieval"],
-        )
-        self.assertIn("Start with a direct question-focused search", prompt)
-        self.assertIn("read high-value returned evidence before broadening", prompt)
-        self.assertIn("Preserve enough tool calls for the reads needed to support the answer", prompt)
-        self.assertIn("do not spend the final available call on discovery", prompt)
+    def test_active_reader_requires_product_rules_before_invoking_the_model(self) -> None:
+        client = FakeToolClient()
+        client.instructions = ""
+        transport = FakeTransport()
+        with tempfile.TemporaryDirectory() as directory:
+            with mock.patch.object(client, "call_tool", return_value={"rules": ""}) as call:
+                with self.assertRaisesRegex(adapter.MCPError, "collaboration rules"):
+                    adapter.ExternalIntelligenceCapability(transport).active_answer(
+                        {"question": "Which detail is current?"}, client,
+                        self.protocol["reader"], self.protocol["retrieval"], Path(directory),
+                    )
+                call.assert_called_once_with("ownward_rules", {})
+        self.assertEqual(0, transport.calls)
 
     def test_nonformal_comparison_accepts_only_the_common_active_tools(self) -> None:
         comparison = json.loads(json.dumps(self.protocol))
@@ -293,6 +511,8 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
         self.assertEqual("external-agent-progressive/v1", report["mode"])
         self.assertEqual(["info-1"], report["read_ids"])
         self.assertEqual(2, len(report["selection_steps"]))
+        self.assertEqual({"query": "selected city", "limit": 1}, report["selection_steps"][0]["arguments"])
+        self.assertEqual(search, report["selection_steps"][0]["result"])
 
     def test_active_retrieval_rejects_unobserved_ids(self) -> None:
         client = FakeToolClient()
@@ -301,10 +521,74 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             session.call("ownward_read", {"id": "invented"})
         self.assertEqual(1, len(session.report()["selection_steps"]))
         self.assertFalse(session.report()["selection_steps"][0]["success"])
+        self.assertEqual({"id": "invented"}, session.report()["selection_steps"][0]["arguments"])
+        self.assertIsNone(session.report()["selection_steps"][0]["result"])
+
+    def test_reader_tool_limits_match_execution_without_mutating_product_schema(self) -> None:
+        client = FakeToolClient()
+        client.contents['info-1'] = 'A remembered event. ' * 50
+        manifest = client.list_tools()
+        evidence_tool = next(t for t in manifest if t['name'] == 'ownward_evidence_search')
+        evidence_tool['inputSchema']['properties'] = {
+            'limit': {'type': 'integer', 'minimum': 1, 'maximum': 8, 'default': 8}}
+        original = json.loads(json.dumps(manifest))
+        with mock.patch.object(client, 'list_tools', return_value=manifest):
+            session = adapter.ActiveRetrievalSession(client, self.protocol['retrieval'])
+        exposed = next(t for t in session.dynamic_tools if t['name'] == 'ownward_evidence_search')
+        limit = exposed['inputSchema']['properties']['limit']
+        self.assertEqual(3, limit['maximum'])
+        self.assertLessEqual(limit['default'], limit['maximum'])
+        self.assertEqual(original, manifest)
+        session.call('ownward_search', {'query': 'event', 'limit': 1})
+        session.call('ownward_evidence_search', {'source_id': 'info-1', 'query': 'event', 'limit': limit['maximum']})
+        with self.assertRaises(adapter.AdapterError):
+            session.call('ownward_evidence_search', {'source_id': 'info-1', 'query': 'event', 'limit': limit['maximum'] + 1})
+
+    def test_search_evidence_can_be_read_directly_with_normal_read_budget(self) -> None:
+        client = FakeToolClient()
+        client.evidence['ref-a'] = ('info-1', 'The archive opens at noon.')
+        call = client.call_tool
+        def serve(name, arguments):
+            if name == 'ownward_search':
+                return {'results': [{'id': 'info-1', 'evidence': [
+                    {'id': 'ref-a', 'source_id': 'info-1'},
+                    {'id': 'ref-foreign', 'source_id': 'info-2'}]}]}
+            return call(name, arguments)
+        client.call_tool = serve
+        session = adapter.ActiveRetrievalSession(client, self.protocol['retrieval'])
+        session.call('ownward_search', {'query': 'archive opening'})
+        session.call('ownward_evidence_read', {'id': 'ref-a'})
+        session.validate()
+        self.assertEqual(len('The archive opens at noon.'), session.report()['context_chars'])
+        with self.assertRaisesRegex(adapter.AdapterError, 'not observed'):
+            session.call('ownward_evidence_read', {'id': 'ref-foreign'})
+
+    def test_source_backed_search_excerpt_needs_no_redundant_read(self) -> None:
+        for preview, source_id, accepted in [('The archive opens at noon.', 'info-1', True),
+                                              ('', 'info-1', False),
+                                              ('A foreign claim.', 'info-2', False)]:
+            with self.subTest(preview=preview, source_id=source_id):
+                client = FakeToolClient()
+                response = {'results': [{'id': 'info-1', 'summary': 'Unverified summary alone is not evidence.',
+                    'evidence': [{'id': 'ref-a', 'source_id': source_id, 'preview': preview}]}]}
+                with mock.patch.object(client, 'call_tool', return_value=response):
+                    session = adapter.ActiveRetrievalSession(client, self.protocol['retrieval'])
+                    session.call('ownward_search', {'query': 'archive opening'})
+                if accepted:
+                    session.validate()
+                    self.assertEqual(['info-1'], session.report()['preview_source_ids'])
+                    self.assertEqual(len(preview), session.report()['preview_chars'])
+                    self.assertEqual(0, session.report()['context_chars'])
+                    self.assertEqual([], session.report()['read_ids'])
+                else:
+                    with self.assertRaisesRegex(adapter.AdapterError, 'without reading'):
+                        session.validate()
 
     def test_active_capability_exposes_tools_and_checkpoints_the_agent_trace(self) -> None:
         class ActiveTransport(FakeTransport):
             def invoke(self, **request):
+                self.calls += 1
+                self.test_case.assertEqual(self.expected_instructions, request["base_instructions"])
                 names = [item["name"] for item in request["dynamic_tools"]]
                 self.test_case.assertEqual(list(adapter.ACTIVE_RETRIEVAL_TOOLS), names)
                 search = request["tool_handler"]("ownward_search", {"query": "selected city", "limit": 1})
@@ -322,6 +606,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             client.contents["info-1"] = "The selected city is Kyoto."
             transport = ActiveTransport()
             transport.test_case = self
+            transport.expected_instructions = client.instructions
             answer, _usage, report = adapter.ExternalIntelligenceCapability(transport).active_answer(
                 {"question": "Which city?", "question_date": "today"},
                 client,
@@ -333,6 +618,17 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             self.assertEqual("external-agent-progressive/v1", report["mode"])
             checkpoint = adapter.load_json(Path(directory) / "complete.json")
             self.assertEqual("external-agent-progressive/v1", checkpoint["active_retrieval"]["mode"])
+            request = adapter.load_json(Path(directory) / "request.json")
+            self.assertEqual(client.instructions, request["base_instructions"])
+            self.assertEqual(2, len(report["selection_steps"]))
+
+            client.instructions = "更新后的服务端规则。"
+            with self.assertRaisesRegex(adapter.AdapterError, "request identity changed"):
+                adapter.ExternalIntelligenceCapability(transport).active_answer(
+                    {"question": "Which city?", "question_date": "today"}, client,
+                    self.protocol["reader"], self.protocol["retrieval"], Path(directory),
+                )
+            self.assertEqual(1, transport.calls)
 
     def test_app_server_returns_dynamic_tool_results_on_the_protocol_channel(self) -> None:
         server = concrete_transport.CodexAppServer(Path("codex.exe"), Path("auth.json"), Path("runtime"), ["codex"], {})
@@ -385,7 +681,9 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
                 "haystack_sessions": [[{"role": "user", "content": "I chose Kyoto."}]],
             }
             FakeRuntime.starts = 0
-            with mock.patch.object(adapter, "OwnwardRuntime", FakeRuntime), adapter.ExternalIntelligenceScheduler(8) as scheduler:
+            with mock.patch.object(adapter, "OwnwardRuntime", FakeRuntime), \
+                    mock.patch.object(FakeToolClient, "call_tool", autospec=True, side_effect=FakeToolClient.call_tool) as calls, \
+                    adapter.ExternalIntelligenceScheduler(8) as scheduler:
                 result = adapter.process_question(
                     question, root / "run", "identity", binary, embedding,
                     self.protocol, evaluator, lambda: FakeCodex(), scheduler,
@@ -401,6 +699,9 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             self.assertEqual(1, FakeRuntime.starts)
             checkpoint = adapter.load_json(root / "run" / "questions" / "fixture" / "checkpoint.json")
             self.assertEqual(1, checkpoint["organized_batches"])
+            created = next(call.args[2]['items'][0] for call in calls.call_args_list if call.args[1] == 'ownward_create_batch')
+            self.assertEqual(adapter.session_reference('session-1'), created['source']['ref'])
+            self.assertEqual('session-1', checkpoint['asset_sources'][0]['session_id'])
             reader_input = adapter.load_json(root / "run" / "questions" / "fixture" / "reader" / "input.json")
             judge_input = adapter.load_json(root / "run" / "questions" / "fixture" / "judge" / "input.json")
             diagnostic = adapter.load_json(root / "run" / "questions" / "fixture" / "diagnostic.json")
@@ -785,6 +1086,13 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             adapter.record_question_failure(output, question, RuntimeError("stopped"))
             failure = adapter.load_json(output / "questions" / "q" / "failure.json")
             self.assertEqual("semantic_work_not_fully_submitted", failure["first_observed_gap"])
+            adapter.write_json(output / "questions/q/reader/input.json", {"question": "q?"})
+            partial = output / "questions/q/reader/codex/attempt-001/active-retrieval.json"
+            adapter.write_json(partial, {"selection_steps": [{"tool": "ownward_search", "success": True}]})
+            adapter.record_question_failure(output, question, RuntimeError("Reader timed out"))
+            failure = adapter.load_json(output / "questions/q/failure.json")
+            self.assertEqual("reader_execution_failed", failure["first_observed_gap"])
+            self.assertEqual(adapter.sha256(partial), failure["artifacts"]["reader_attempt-001_retrieval"]["sha256"])
 
     def test_semantic_host_uses_public_work_and_submit_paths_with_codex_output(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -928,6 +1236,28 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             self.assertFalse(judge.exists())
             self.assertTrue((root / "_audit" / "old" / "questions" / "q" / "retrieval.json").is_file())
             self.assertEqual(current, adapter.load_json(root / "identity.json"))
+
+    def test_run_only_change_reuses_complete_result_with_original_timings(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            question = {"question_id": "q", "question": "What changed?"}
+            stages = dict.fromkeys(("semantic", "retrieval", "reader", "judge", "diagnostic"), "stage")
+            previous = {"sha256": "old", "stage_dependencies": stages}
+            current = {"sha256": "new", "stage_dependencies": stages}
+            result = {"identity": adapter._question_identity(question, "old"), "complete": True,
+                      "wall_seconds": 123.4, "hypothesis": "Original answer"}
+            checkpoint = {"identity": result["identity"], "stage_identities": {
+                name: adapter._question_identity(question, value) for name, value in stages.items()}}
+            adapter.write_json(root / "identity.json", previous)
+            adapter.write_json(root / "questions/q/result.json", result)
+            adapter.write_json(root / "questions/q/checkpoint.json", checkpoint)
+            adapter.rebind_run_identity(root, previous, current)
+            with mock.patch.object(adapter, "OwnwardRuntime", side_effect=AssertionError("must reuse result")):
+                resumed = adapter.process_question(
+                    question, root, "new", root, root, self.protocol, root,
+                    mock.Mock(side_effect=AssertionError("must not call model")), mock.Mock(), stages)
+            self.assertEqual({**result, "identity": adapter._question_identity(question, "new")}, resumed)
+            self.assertEqual(result, adapter.load_json(root / "_audit/old/questions/q/result.json"))
 
     def test_interrupted_app_server_runtime_is_cleaned_without_reading_credentials(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

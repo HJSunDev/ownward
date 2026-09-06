@@ -1,0 +1,51 @@
+{
+  "schema": "ownward.fixed-capability-regression/v1",
+  "question_count": 24,
+  "sources": [
+    {
+      "path": "E:\\Ownward\\acceptance\\kernel-iteration\\blind-suites\\v2\\346852e3dae39becd4a21c33725332783b3d2376bc89680c3bedede0dff26ed5\\suite.json",
+      "sha256": "9fdaa2a5f052ef4dcf3c2ac30a25f0fe6cdd83b96f4f0446e424ae44915d3a11",
+      "question_ids": [
+        "vs-c002",
+        "vs-c003",
+        "vs-c004",
+        "vs-c006",
+        "vs-c010",
+        "vs-c011",
+        "vs-c012",
+        "vs-c013",
+        "vs-c014",
+        "vs-c023",
+        "vs-c027",
+        "vs-c055",
+        "vs-c066",
+        "vs-c076"
+      ]
+    },
+    {
+      "path": "E:\\Dev\\ownward\\benchmarks\\acceptance\\suite\\iteration\\v2\\stage6-v1-risk-coverage-supplement-materials.json",
+      "sha256": "77ba396722acaee780aec5a5e8ab659b1949ff53bdcb4de31d3cee9c62e6681e",
+      "question_ids": [
+        "v2s-user-fact-natural-multiturn",
+        "v2s-stable-personal-preference",
+        "v2s-updated-conditional-preference",
+        "v2s-user-assistant-role-provenance",
+        "v2s-structured-table-row-column",
+        "v2s-structured-footnote-exception",
+        "v2s-same-asset-distant-fragments",
+        "v2s-authority-over-recency"
+      ]
+    },
+    {
+      "path": "E:\\Dev\\ownward\\benchmarks\\acceptance\\suite\\iteration\\v2\\stage6-real-scale-supplement.json",
+      "sha256": "0e70bb5c9f6e155e874a61357f8e625e3adbd405fd3c3d8d049d9b692c246cee",
+      "question_ids": [
+        "rs6-01",
+        "rs6-04"
+      ]
+    }
+  ],
+  "dataset": "E:\\Ownward\\acceptance\\kernel-iteration\\regression\\v2-fixed-24\\questions.json",
+  "dataset_sha256": "8ffb6ac4339647b151685c2584122e940303a208ed1d275592f36e2bb104c5e3",
+  "preserves_original_histories_answers_and_limits": true
+}

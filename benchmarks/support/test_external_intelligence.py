@@ -25,6 +25,78 @@ def runtime_identity() -> dict[str, object]:
 
 
 class ExternalIntelligenceContractTests(unittest.TestCase):
+    def test_instructions_reach_transport_with_and_without_tools(self) -> None:
+        class Transport:
+            identity = runtime_identity()
+
+            def invoke(self, **request):
+                captured.append(request)
+                return {"answer": "done"}, {}, {"transport": "fixture"}
+
+            def diagnostics(self):
+                return {"rate_limit_observed": False}
+
+        for with_tools in (False, True):
+            with self.subTest(with_tools=with_tools), tempfile.TemporaryDirectory() as directory:
+                captured = []
+                subject.ExternalIntelligenceExecutor(Transport()).invoke(
+                    role="reader", prompt="task", schema={"type": "object"}, stage=Path(directory),
+                    model="model", effort="high", timeout_seconds=10, attempts=1,
+                    lifecycle=subject.InvocationLifecycle(
+                        retrieval_mode="tools/v1" if with_tools else "no-tools",
+                        base_instructions="Follow the source evidence contract.",
+                        dynamic_tools=[] if with_tools else None,
+                        tool_handler=(lambda name, args: {}) if with_tools else None,
+                    ),
+                )
+                self.assertEqual("Follow the source evidence contract.", captured[0]["base_instructions"])
+                self.assertEqual(with_tools, "dynamic_tools" in captured[0])
+
+    def test_tool_evidence_survives_timeout_and_is_separate_for_each_attempt(self) -> None:
+        calls = []
+
+        def tool(name, arguments):
+            calls.append({"tool": name, "arguments": arguments})
+            if arguments.get("fail"):
+                raise ValueError("read budget exhausted")
+            return {"content": "source evidence"}
+
+        class Transport:
+            identity = runtime_identity()
+            count = 0
+
+            def invoke(self, **request):
+                self.count += 1
+                request["tool_handler"]("search", {"attempt": self.count})
+                trace = request["work_dir"].parent / "active-retrieval.json"
+                self_test.assertTrue(trace.is_file())
+                if self.count == 1:
+                    with self_test.assertRaisesRegex(ValueError, "read budget"):
+                        request["tool_handler"]("read", {"fail": True})
+                    self_test.assertEqual(2, len(json.loads(trace.read_text())["selection_steps"]))
+                    raise subject.ExternalIntelligenceTimeout("model timed out after reading")
+                return {"answer": "done"}, {}, {"transport": "fixture"}
+
+            def diagnostics(self):
+                return {"rate_limit_observed": False, "transport": "fixture"}
+
+        self_test = self
+        with tempfile.TemporaryDirectory() as directory:
+            stage = Path(directory)
+            subject.ExternalIntelligenceExecutor(Transport()).invoke(
+                role="reader", prompt="task", schema={"type": "object"}, stage=stage,
+                model="model", effort="high", timeout_seconds=10, attempts=2,
+                lifecycle=subject.InvocationLifecycle(
+                    retrieval_mode="tools/v1", dynamic_tools=[], tool_handler=tool,
+                    reset_attempt=calls.clear, report=lambda: {"selection_steps": list(calls)},
+                ),
+            )
+            first = json.loads((stage / "attempt-001/active-retrieval.json").read_text())
+            second = json.loads((stage / "attempt-002/active-retrieval.json").read_text())
+            self.assertEqual(2, len(first["selection_steps"]))
+            self.assertEqual(1, first["selection_steps"][0]["arguments"]["attempt"])
+            self.assertEqual(2, second["selection_steps"][0]["arguments"]["attempt"])
+
     def test_executor_preserves_role_and_reuses_atomic_checkpoint(self) -> None:
         class Transport:
             def __init__(self) -> None:
@@ -61,6 +133,45 @@ class ExternalIntelligenceContractTests(unittest.TestCase):
             request = json.loads((Path(directory) / "stage" / "request.json").read_text(encoding="utf-8"))
             self.assertEqual("generator", request["role"])
 
+    def test_provider_server_failure_resumes_without_losing_failed_attempts(self) -> None:
+        class Transport:
+            identity = runtime_identity()
+            unavailable = True
+            calls = 0
+
+            def invoke(self, **request):
+                self.calls += 1
+                if self.unavailable:
+                    raise subject.ExternalIntelligenceError('OpenCode turn failed: {"data":{"statusCode":500}}')
+                return {"answer": "stable"}, {}, {"transport": "fixture"}
+
+            def diagnostics(self):
+                return {"rate_limit_observed": False, "transport": "fixture"}
+
+        with tempfile.TemporaryDirectory() as directory:
+            stage = Path(directory)
+            transport = Transport()
+            executor = subject.ExternalIntelligenceExecutor(transport)
+            arguments = dict(role="reader", prompt="prompt", schema={"type": "object"}, stage=stage,
+                             model="model", effort="high", timeout_seconds=10, attempts=3)
+            with self.assertRaisesRegex(subject.ExternalIntelligenceError, "after 3 bounded attempts"):
+                executor.invoke(**arguments)
+            self.assertEqual(3, transport.calls)
+            failed = {p.parent.name: p.read_bytes() for p in stage.glob("attempt-*/metadata.json")}
+            transport.unavailable = False
+            value, _usage = executor.invoke(**arguments)
+            self.assertEqual({"answer": "stable"}, value)
+            self.assertEqual(4, transport.calls)
+            archived = next((stage / "_audit").iterdir())
+            self.assertEqual(failed, {p.parent.name: p.read_bytes() for p in archived.glob("attempt-*/metadata.json")})
+            executor.invoke(**arguments)
+            self.assertEqual(4, transport.calls)
+            subject._write_json(stage / "attempt-001/metadata.json", {
+                "outcome": "failed", "error_type": "ExternalIntelligenceError",
+                "error_message": "OpenCode structured output is not strict JSON",
+            })
+            self.assertFalse(subject._retryable_failed_attempt(stage / "attempt-001"))
+
     def test_request_identity_binds_runtime_role_and_tools_without_credentials(self) -> None:
         identity, request = subject.request_identity(
             role="reader",
@@ -78,6 +189,7 @@ class ExternalIntelligenceContractTests(unittest.TestCase):
         self.assertEqual(identity, request["identity"])
         self.assertEqual(subject.REQUEST_SCHEMA, request["schema"])
         self.assertEqual("reader", request["role"])
+        self.assertEqual("instructions", request["base_instructions"])
         self.assertEqual(120, request["timeout_seconds"])
         self.assertEqual(3, request["maximum_attempts"])
         self.assertFalse(request["runtime_identity"]["credential_content_read"])
@@ -126,9 +238,9 @@ class ExternalIntelligenceContractTests(unittest.TestCase):
     def test_runtime_selection_is_versioned_and_provider_explicit(self) -> None:
         selection = subject.load_runtime_selection(Path(__file__).with_name("external-intelligence-runtime.json"))
         self.assertEqual(subject.CONTRACT_SCHEMA, selection["contract"])
-        self.assertEqual("opencode-server/v1", selection["default_driver"])
-        self.assertEqual("opencode-server/v1", selection["driver"])
-        self.assertEqual("opencode-go", selection["provider"])
+        self.assertEqual("opencode-go-api/v1", selection["default_driver"])
+        self.assertEqual("opencode-go-api/v1", selection["driver"])
+        self.assertEqual("aliyun-bailian", selection["provider"])
         self.assertEqual("opencode-server/v1", subject.select_runtime_implementation(selection, "opencode-server/v1")["driver"])
         qwen = subject.select_runtime_role_profile(selection)
         self.assertEqual({"model": "qwen3.8-flash", "reasoning_effort": "xhigh"}, qwen["reader"])
@@ -186,6 +298,8 @@ class ExternalIntelligenceContractTests(unittest.TestCase):
             source = path.read_text(encoding="utf-8")
             self.assertNotIn("import codex_app_server", source, path.name)
             self.assertNotIn("from codex_app_server import", source, path.name)
+            for provider in ("codex", "opencode", "go_api"):
+                self.assertNotIn(f"import {provider}_external_intelligence", source, path.name)
             if path.name == "kernel_iteration_validation.py":
                 self.assertNotIn("module.ExternalIntelligenceCapability", source)
             self.assertNotIn('community.get("codex_binary"', source, path.name)
@@ -195,8 +309,6 @@ class ExternalIntelligenceContractTests(unittest.TestCase):
         adapter_source = (
             repository / "benchmarks" / "longmemeval_s" / "external_intelligence_runtime.py"
         ).read_text(encoding="utf-8")
-        self.assertIn("import codex_external_intelligence", adapter_source)
-        self.assertIn("import opencode_external_intelligence", adapter_source)
         self.assertNotIn("CodexAppServer(", adapter_source)
         self.assertNotIn("OpenCodeServer(", adapter_source)
 

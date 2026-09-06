@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+import frozen_inputs
 import kernel_iteration_evidence as evidence
 import kernel_iteration_validation as validation
 
@@ -34,7 +35,7 @@ def run(
         output_root.is_relative_to(repository / ".tmp" / "kernel-v2-major-iteration"),
         "pending/ready 表示可行性证据必须位于非正式 V2 边界",
     )
-    contract = load_contract(suite_root)
+    contract = load_contract(suite_root, for_execution=True)
     formal_state = formal_state.resolve()
     _require(formal_state == repository / contract["formal_state"]["path"], "正式 state 路径错绑")
     state_sha256 = evidence.file_sha256(formal_state)
@@ -196,24 +197,27 @@ def evaluate(
     return {**content, "identity": evidence.canonical_sha256(content)}
 
 
-def load_contract(suite_root: Path) -> dict[str, Any]:
+def load_contract(suite_root: Path, *, for_execution: bool = False) -> dict[str, Any]:
     repository = suite_root.parents[2]
     value = _load_json(suite_root / CONTRACT_PATH)
     _validate_identity(value, CONTRACT_SCHEMA, "pending/ready 表示生命周期合同")
     _require(value.get("frozen_before_candidate_implementation") is True, "表示生命周期合同未在候选实现前冻结")
     _require(value.get("frozen_before_candidate_measurement") is True, "表示生命周期合同未在候选测量前冻结")
     _require(value.get("candidate_results_seen") is False, "表示生命周期合同错误声明已看到候选结果")
-    drifted = {}
-    for item in value["source_files"].values():
-        path = repository / item["path"]
-        current = evidence.text_file_sha256(path) if path.is_file() else None
-        if not path.is_file() or not evidence.text_file_matches(path, item["sha256"]):
-            drifted[item["path"]] = {"frozen": item["sha256"], "current": current}
-    if drifted:
-        _verify_dependency_migration(
-            suite_root, value["identity"], drifted,
-            {"benchmarks/longmemeval_s/run.py": "external-intelligence-port-and-reader-profile-only-frozen-stage4-semantic-request-and-cost-unchanged"},
-        )
+    if for_execution:
+        drifted = {}
+        for item in value["source_files"].values():
+            path = repository / item["path"]
+            current = evidence.text_file_sha256(path) if path.is_file() else None
+            if not path.is_file() or not evidence.text_file_matches(path, item["sha256"]):
+                drifted[item["path"]] = {"frozen": item["sha256"], "current": current}
+        if drifted:
+            _verify_dependency_migration(
+                suite_root, value["identity"], drifted,
+                {"benchmarks/longmemeval_s/run.py": "external-intelligence-port-and-reader-profile-only-frozen-stage4-semantic-request-and-cost-unchanged"},
+            )
+    else:
+        frozen_inputs.verify_files(repository, list(value["source_files"].values()))
     return value
 
 
@@ -360,16 +364,7 @@ def _verify_source_boundaries(sources: dict[str, str]) -> None:
 
 
 def _verified_text(repository: Path, item: dict[str, Any], name: str) -> str:
-    path = repository / item["path"]
-    current = evidence.text_file_sha256(path) if path.is_file() else None
-    if not path.is_file() or not evidence.text_file_matches(path, item["sha256"]):
-        _verify_dependency_migration(
-            repository / "benchmarks" / "acceptance" / "suite",
-            "e39272da7f832ed8275f99284aa03ad8fdf1b68b7833a368b9bece116ef93ce8",
-            {item["path"]: {"frozen": item["sha256"], "current": current}},
-            {"benchmarks/longmemeval_s/run.py": "external-intelligence-port-and-reader-profile-only-frozen-stage4-semantic-request-and-cost-unchanged"},
-        )
-    return path.read_text(encoding="utf-8")
+    return frozen_inputs.read_text(repository, item["path"], item["sha256"])
 
 
 def _verified_json(repository: Path, item: dict[str, Any], name: str) -> dict[str, Any]:

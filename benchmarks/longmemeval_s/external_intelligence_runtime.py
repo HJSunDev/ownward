@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import dataclass
 import hashlib
+import importlib
 import json
 from pathlib import Path
 import sys
@@ -22,8 +23,6 @@ from external_intelligence import (  # noqa: E402
     select_runtime_implementation,
     select_runtime_role_profile,
 )
-import codex_external_intelligence  # noqa: E402
-import opencode_external_intelligence  # noqa: E402
 from codex_app_server import remove_runtime_root  # noqa: E402
 
 
@@ -35,11 +34,12 @@ CURRENT_TRANSPORT = _CURRENT_SELECTION["transport"]
 CURRENT_WORKER_ISOLATION = _CURRENT_SELECTION["worker_isolation"]
 
 _ADAPTERS = {
-    codex_external_intelligence.DRIVER: codex_external_intelligence,
-    opencode_external_intelligence.DRIVER: opencode_external_intelligence,
+    "codex-app-server/v1": "codex_external_intelligence",
+    "opencode-server/v1": "opencode_external_intelligence",
+    "opencode-go-api/v1": "go_api_external_intelligence",
 }
 EXPLICIT_ROLE_KEYS = ("generator", "quality_admission", "semantic", "reader", "judge")
-LEGACY_CODEX_DRIVER = codex_external_intelligence.DRIVER
+LEGACY_CODEX_DRIVER = "codex-app-server/v1"
 
 
 @dataclass(frozen=True)
@@ -143,7 +143,7 @@ def _adapter(driver: str) -> Any:
     adapter = _ADAPTERS.get(driver)
     if adapter is None:
         raise ExternalIntelligenceError(f"external-intelligence driver has no implementation: {driver}")
-    return adapter
+    return importlib.import_module(adapter)
 
 
 def implementation_files(driver: str) -> tuple[Path, ...]:
@@ -184,7 +184,8 @@ def current_runtime_identity(
     adapter = _adapter(driver)
     configuration = RuntimeConfiguration(driver, binary.resolve(), credential_file.resolve())
     validate_configuration(configuration)
-    if max_active < 1 or worker_processes != max_active:
+    in_process = getattr(adapter, "IN_PROCESS", False)
+    if max_active < 1 or (not in_process and worker_processes != max_active):
         raise ExternalIntelligenceError("external-intelligence driver requires one isolated worker per active turn")
     return RuntimeIdentity(
         driver=driver,
@@ -195,15 +196,16 @@ def current_runtime_identity(
         implementation_sha256=_implementation_identity(adapter),
         credential_locator_sha256=_locator_identity(configuration.credential_file),
         max_active=max_active,
-        worker_processes=worker_processes,
+        worker_processes=1 if in_process else worker_processes,
     ).value()
 
 
 class _StableTransport:
     """Translate provider failures at the port, before the shared retry loop sees them."""
 
-    def __init__(self, transport: Any) -> None:
+    def __init__(self, transport: Any, adapter: Any) -> None:
         self._transport = transport
+        self._adapter = adapter
 
     @property
     def identity(self) -> dict[str, Any]:
@@ -212,13 +214,17 @@ class _StableTransport:
     def invoke(self, **request: Any) -> Any:
         try:
             return self._transport.invoke(**request)
-        except (codex_external_intelligence.AppServerTimeout, opencode_external_intelligence.OpenCodeTimeout) as error:
+        except self._adapter.TransportTimeout as error:
             raise ExternalIntelligenceTimeout(str(error)) from error
-        except (codex_external_intelligence.AppServerError, opencode_external_intelligence.OpenCodeError) as error:
+        except self._adapter.TransportError as error:
             raise ExternalIntelligenceError(str(error)) from error
 
     def diagnostics(self) -> dict[str, Any]:
         return self._transport.diagnostics()
+
+    def new_scope(self) -> _StableTransport:
+        factory = getattr(self._transport, "new_scope", None)
+        return _StableTransport(factory(), self._adapter) if callable(factory) else self
 
 
 @contextmanager
@@ -238,10 +244,10 @@ def open_external_intelligence_runtime(
             runtime_parent=runtime_parent.resolve(), identity=identity, provider=implementation["provider"],
             models=tuple(implementation["models"]), reasoning_efforts=tuple(implementation["reasoning_efforts"]),
         ) as transport:
-            yield _StableTransport(transport)
-    except (codex_external_intelligence.AppServerTimeout, opencode_external_intelligence.OpenCodeTimeout) as error:
+            yield _StableTransport(transport, adapter)
+    except adapter.TransportTimeout as error:
         raise ExternalIntelligenceTimeout(str(error)) from error
-    except (codex_external_intelligence.AppServerError, opencode_external_intelligence.OpenCodeError) as error:
+    except adapter.TransportError as error:
         raise ExternalIntelligenceError(str(error)) from error
 
 

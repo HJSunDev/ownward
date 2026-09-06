@@ -18,6 +18,7 @@ type EvidenceReference struct {
 	StartRune      int    `json:"start_rune"`
 	EndRune        int    `json:"end_rune"`
 	ContentRunes   int    `json:"content_runes"`
+	Preview        string `json:"preview,omitempty"`
 }
 
 func (r EvidenceReference) Validate() error {

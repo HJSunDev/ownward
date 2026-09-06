@@ -20,10 +20,10 @@ import kernel_iteration_validation as validation
 CANDIDATE_RECEIPT_SCHEMA = "ownward.kernel-iteration-v2-candidate/v23"
 CANDIDATE_POLICY = "sealed-current-revision-raw-to-ready-with-candidate-isolated-bounded-fused-rank-query-relevance-two-lane-and-fixed-source-sketch-lossless-bounded-authority-summary-formal-release-with-exact-query-vector-lazy-evidence-budget-fit-complete-source-quiescent-compaction-and-compact-semantic-transport/v30"
 STORAGE_POLICY = "quiescent-lossless-derived-compaction/v1"
-SEMANTIC_REPRESENTATION = "ownward.semantic-indexed-body-context-table/v2"
+SEMANTIC_REPRESENTATION = "ownward.semantic-source-spans/v2"
 REPRESENTATION_LIFECYCLE = "sealed-current-revision-raw-to-ready-formal-release/v2"
 READ_FRONTIER_SCHEDULING_POLICY = "bounded-fused-rank-query-relevance-two-lane-and-fixed-source-sketch/v2"
-SEARCH_SUMMARY_POLICY = "lossless-authority-when-within-public-bound-semantic-summary-for-long-source/v1"
+SEARCH_SUMMARY_POLICY = "query-aware-authoritative-source-preview/v2"
 
 
 def prepare(
@@ -80,6 +80,7 @@ def prepare(
             "read_frontier_service_transform_sha256": evidence.file_sha256(repository / "manifests/kernel-candidates/v2/read-frontier/service-transform.json"),
             "read_frontier_lexical_transform_sha256": evidence.file_sha256(repository / "manifests/kernel-candidates/v2/read-frontier/lexical-transform.json"),
             "search_summary_transform_sha256": evidence.file_sha256(repository / "manifests/kernel-candidates/v2/final-answer-sufficiency/service-transform.json"),
+            "source_preview_sha256": evidence.file_sha256(repository / "internal/kernelv2candidate/preview.go"),
             "representation_collaboration_transform_sha256": evidence.file_sha256(repository / "manifests/kernel-candidates/v2/resource-cost/representation-collaboration-transform.json"),
             "representation_generation_transform_sha256": evidence.file_sha256(repository / "manifests/kernel-candidates/v2/resource-cost/representation-generation-transform.json"),
             "representation_lifecycle_source_sha256": evidence.file_sha256(repository / "internal/kernelv2candidate/representation.go"),
@@ -99,7 +100,7 @@ def prepare(
     representation_collaboration_transform_relative = "manifests/kernel-candidates/v2/resource-cost/representation-collaboration-transform.json"
     representation_generation_transform_relative = "manifests/kernel-candidates/v2/resource-cost/representation-generation-transform.json"
     access_transform_relative = "manifests/kernel-candidates/v2/final-answer-sufficiency/mcpserver-transform.json"
-    semantic_manifest_relative = "manifests/kernel-candidates/v2/resource-cost/semantic-representation.json"
+    semantic_manifest_relative = "manifests/kernel-candidates/v2/source-ownership/semantic-representation.json"
     semantic_runtime_relative = "benchmarks/longmemeval_s/semantic_representation.py"
     semantic_executor_relative = "benchmarks/longmemeval_s/run.py"
     with tempfile.TemporaryDirectory(dir=output_root) as staging:
@@ -159,6 +160,7 @@ def prepare(
         {"name": "v2-read-frontier-service-transform", "path": read_frontier_service_transform_relative, "sha256": ""},
         {"name": "v2-read-frontier-lexical-transform", "path": read_frontier_lexical_transform_relative, "sha256": ""},
         {"name": "v2-lossless-bounded-authority-summary", "path": search_summary_transform_relative, "sha256": ""},
+        {"name": "v2-authority-preview", "path": "internal/kernelv2candidate/preview.go", "sha256": ""},
         {"name": "v2-representation-collaboration-transform", "path": representation_collaboration_transform_relative, "sha256": ""},
         {"name": "v2-representation-generation-transform", "path": representation_generation_transform_relative, "sha256": ""},
     ])
@@ -255,6 +257,7 @@ def prepare(
             "read-frontier-service-transform": evidence.file_sha256(repository / read_frontier_service_transform_relative),
             "read-frontier-lexical-transform": evidence.file_sha256(repository / read_frontier_lexical_transform_relative),
             "search-summary-transform": evidence.file_sha256(repository / search_summary_transform_relative),
+            "source-preview": evidence.file_sha256(repository / "internal/kernelv2candidate/preview.go"),
             "read-frontier-coverage-contract": evidence.file_sha256(repository / "internal/kernelv2candidate/coverage/coverage.go"),
             "representation-collaboration-transform": evidence.file_sha256(repository / representation_collaboration_transform_relative),
             "representation-generation-transform": evidence.file_sha256(repository / representation_generation_transform_relative),
@@ -311,6 +314,7 @@ def prepare(
         "read_frontier_service_transform_sha256": evidence.file_sha256(repository / read_frontier_service_transform_relative),
         "read_frontier_lexical_transform_sha256": evidence.file_sha256(repository / read_frontier_lexical_transform_relative),
         "search_summary_transform_sha256": evidence.file_sha256(repository / search_summary_transform_relative),
+        "source_preview_sha256": evidence.file_sha256(repository / "internal/kernelv2candidate/preview.go"),
         "representation_collaboration_transform_sha256": evidence.file_sha256(repository / representation_collaboration_transform_relative),
         "representation_generation_transform_sha256": evidence.file_sha256(repository / representation_generation_transform_relative),
         "access_source_transform_sha256": evidence.file_sha256(repository / access_transform_relative),

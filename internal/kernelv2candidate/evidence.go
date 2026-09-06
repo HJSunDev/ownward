@@ -6,6 +6,7 @@ package kernelv2candidate
 
 import (
 	"sort"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/HJSunDev/ownward/internal/derived"
@@ -32,7 +33,40 @@ type scoredEvidenceUnit struct {
 // ranges nor vectors and keeps the number of scored ranges unchanged.
 func RankEvidence(value domain.Information, query string, limit int) []domain.EvidenceReference {
 	selected := rankedEvidence(value, query, limit)
-	return materializeReferences(value, selected)
+	return materializeReferences(value, query, selected)
+}
+
+func RankEvidenceWithCues(value domain.Information, query string, limit int, cues []string) []domain.EvidenceReference {
+	return materializeReferences(value, query, rankedEvidence(value, query, limit, cues...))
+}
+
+// SearchEvidence offers direct reading entry points from both semantic cues
+// and the original text, so incomplete metadata cannot hide the raw-text path.
+func SearchEvidence(value domain.Information, query string, cues []string) []domain.EvidenceReference {
+	if strings.TrimSpace(query) == "" {
+		return nil
+	}
+	refs := RankEvidenceWithCues(value, query, 2, cues)
+	for _, raw := range RankEvidence(value, query, 1) {
+		duplicate := false
+		for _, ref := range refs {
+			if ref.ID == raw.ID {
+				duplicate = true
+			}
+		}
+		if !duplicate {
+			refs = append(refs, raw)
+		}
+	}
+	return refs
+}
+
+func ProbeEvidenceWithCues(value domain.Information, query string, cues []string) ([]domain.EvidenceReference, bool) {
+	selected := rankedEvidence(value, query, 2, cues...)
+	if len(selected) == 0 {
+		return nil, false
+	}
+	return materializeReferences(value, query, selected[:1]), len(selected) > 1
 }
 
 // ProbeEvidence proves whether a source has repeated useful depth while
@@ -44,10 +78,10 @@ func ProbeEvidence(value domain.Information, query string) ([]domain.EvidenceRef
 	if len(selected) == 0 {
 		return nil, false
 	}
-	return materializeReferences(value, selected[:1]), len(selected) > 1
+	return materializeReferences(value, query, selected[:1]), len(selected) > 1
 }
 
-func rankedEvidence(value domain.Information, query string, limit int) []scoredEvidenceUnit {
+func rankedEvidence(value domain.Information, query string, limit int, cues ...string) []scoredEvidenceUnit {
 	units := continuityRanges(value)
 	if len(units) == 0 || limit <= 0 {
 		return nil
@@ -59,6 +93,26 @@ func rankedEvidence(value domain.Information, query string, limit int) []scoredE
 			scored = append(scored, scoredEvidenceUnit{unit: unit, score: score})
 		}
 	}
+	for _, cue := range queryCues(value.Content, query, cues) {
+		startByte := strings.Index(value.Content, cue)
+		startRune := utf8.RuneCountInString(value.Content[:startByte])
+		endByte, endRune := startByte+len(cue), startRune+utf8.RuneCountInString(cue)
+		for n := 0; n < 96 && startByte > 0; n++ {
+			_, size := utf8.DecodeLastRuneInString(value.Content[:startByte])
+			startByte -= size
+			startRune--
+		}
+		for n := 0; n < 64 && endByte < len(value.Content); n++ {
+			_, size := utf8.DecodeRuneInString(value.Content[endByte:])
+			endByte += size
+			endRune++
+		}
+		unit := derived.EvidenceUnit{Schema: derived.EvidenceUnitSchema, SourceID: value.ID, SourceRevision: value.Revision,
+			StartRune: startRune, EndRune: endRune, StartByte: startByte, EndByte: endByte, Content: value.Content[startByte:endByte]}
+		// A source-grounded semantic cue supplies a second relevance signal;
+		// lexical-only candidates remain available for facts absent from analysis.
+		scored = append(scored, scoredEvidenceUnit{unit: unit, score: scorer.Score(query) + scorer.Score(cue)})
+	}
 	sort.Slice(scored, func(left, right int) bool {
 		if scored[left].score == scored[right].score {
 			return scored[left].unit.StartRune < scored[right].unit.StartRune
@@ -68,12 +122,14 @@ func rankedEvidence(value domain.Information, query string, limit int) []scoredE
 	return selectMarginalCoverage(scored, limit)
 }
 
-func materializeReferences(value domain.Information, selected []scoredEvidenceUnit) []domain.EvidenceReference {
+func materializeReferences(value domain.Information, query string, selected []scoredEvidenceUnit) []domain.EvidenceReference {
 	result := make([]domain.EvidenceReference, 0, len(selected))
 	for _, selected := range selected {
 		unit, err := derived.MaterializeEvidenceUnit(value, selected.unit)
 		if err == nil {
-			result = append(result, unit.Reference())
+			reference := unit.Reference()
+			reference.Preview = SourcePreview(unit.Content, query, 240)
+			result = append(result, reference)
 		}
 	}
 	return result

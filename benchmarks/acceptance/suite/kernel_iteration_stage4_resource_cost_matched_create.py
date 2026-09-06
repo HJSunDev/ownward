@@ -11,6 +11,7 @@ import time
 from typing import Any
 import zipfile
 
+import frozen_inputs
 import kernel_iteration_evidence as evidence
 import kernel_iteration_stage4_resource_cost_create_probe as create_probe
 import kernel_iteration_validation as validation
@@ -27,7 +28,7 @@ def run(suite_root: Path, output_root: Path, formal_state: Path, *, resume: bool
     repository = suite_root.parents[2]
     output_root = output_root.resolve()
     _require(output_root.is_relative_to(repository / ".tmp" / "kernel-v2-major-iteration"), "匹配 CreateBatch 证据必须位于非正式 V2 边界")
-    contract = load_contract(suite_root)
+    contract = load_contract(suite_root, for_execution=True)
     formal_state = formal_state.resolve()
     _require(formal_state == repository / contract["formal_state"]["path"], "正式 state 路径错绑")
     state_before = evidence.file_sha256(formal_state)
@@ -83,14 +84,17 @@ def run(suite_root: Path, output_root: Path, formal_state: Path, *, resume: bool
     return {**result, "path": str(result_path), "reused": False, "model_executions": 0}
 
 
-def load_contract(suite_root: Path) -> dict[str, Any]:
+def load_contract(suite_root: Path, *, for_execution: bool = False) -> dict[str, Any]:
     repository = suite_root.parents[2]
     value = _load_json(suite_root / CONTRACT_PATH)
     _validate_identity(value, CONTRACT_SCHEMA, "匹配 CreateBatch 合同")
     _require(value.get("frozen_before_results") is True and value.get("results_seen") is False, "匹配 CreateBatch 合同没有在结果前冻结")
-    for item in value["direct_dependencies"]:
-        path = repository / item["path"]
-        _require(path.is_file() and evidence.file_sha256(path) == item["sha256"], f"匹配 CreateBatch 直接依赖漂移: {item['path']}")
+    if for_execution:
+        for item in value["direct_dependencies"]:
+            path = repository / item["path"]
+            _require(path.is_file() and evidence.file_sha256(path) == item["sha256"], f"匹配 CreateBatch 直接依赖漂移: {item['path']}")
+    else:
+        frozen_inputs.verify_files(repository, value["direct_dependencies"])
     return value
 
 

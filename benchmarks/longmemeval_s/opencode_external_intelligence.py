@@ -8,7 +8,6 @@ import json
 import os
 from pathlib import Path
 import queue
-import re
 import secrets
 import shutil
 import socket
@@ -18,6 +17,14 @@ import threading
 import time
 from typing import Any, Callable, Iterator
 from urllib import error, parse, request
+
+
+SUPPORT_ROOT = Path(__file__).resolve().parents[1] / "support"
+if str(SUPPORT_ROOT) not in sys.path:
+    sys.path.insert(0, str(SUPPORT_ROOT))
+from external_intelligence import (  # noqa: E402
+    ExternalIntelligenceError, _write_json as _atomic_json, validate_structured_output,
+)
 
 
 DRIVER = "opencode-server/v1"
@@ -31,6 +38,10 @@ class OpenCodeError(RuntimeError):
 
 class OpenCodeTimeout(OpenCodeError):
     pass
+
+
+TransportError = OpenCodeError
+TransportTimeout = OpenCodeTimeout
 
 
 def _sha256(path: Path) -> str:
@@ -49,7 +60,7 @@ def implementation_sha256() -> str:
 
 
 def identity_files() -> tuple[Path, ...]:
-    return (Path(__file__), BRIDGE_PATH)
+    return (Path(__file__), BRIDGE_PATH, SUPPORT_ROOT / "external_intelligence.py")
 
 
 def artifact_sha256(binary: Path) -> str:
@@ -84,13 +95,6 @@ def probe(binary: Path, credential_file: Path) -> dict[str, str]:
     return {"version": completed.stdout.strip(), "artifact_sha256": _sha256(native)}
 
 
-def _atomic_json(path: Path, value: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.{os.getpid()}.{time.time_ns()}.tmp")
-    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    temporary.replace(path)
-
-
 def _available_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
         listener.bind(("127.0.0.1", 0))
@@ -98,82 +102,10 @@ def _available_port() -> int:
 
 
 def _validate_schema(value: Any, schema: dict[str, Any], path: str = "$") -> None:
-    expected = schema.get("type")
-    matches = {
-        "object": isinstance(value, dict),
-        "array": isinstance(value, list),
-        "string": isinstance(value, str),
-        "integer": isinstance(value, int) and not isinstance(value, bool),
-        "number": isinstance(value, (int, float)) and not isinstance(value, bool),
-        "boolean": isinstance(value, bool),
-        "null": value is None,
-    }
-    expected_types = [expected] if isinstance(expected, str) else expected if isinstance(expected, list) else []
-    if expected_types and not any(matches.get(item, False) for item in expected_types):
-        raise OpenCodeError(f"OpenCode structured output violates schema at {path}: expected {expected}")
-    for name in ("allOf",):
-        clauses = schema.get(name)
-        if isinstance(clauses, list):
-            for clause in clauses:
-                if isinstance(clause, dict):
-                    _validate_schema(value, clause, path)
-    for name, exact in (("anyOf", False), ("oneOf", True)):
-        clauses = schema.get(name)
-        if isinstance(clauses, list):
-            matches_count = 0
-            for clause in clauses:
-                try:
-                    if isinstance(clause, dict):
-                        _validate_schema(value, clause, path)
-                    else:
-                        continue
-                except OpenCodeError:
-                    continue
-                matches_count += 1
-            if matches_count == 0 or (exact and matches_count != 1):
-                raise OpenCodeError(f"OpenCode structured output violates {name} at {path}")
-    if "enum" in schema and value not in schema["enum"]:
-        raise OpenCodeError(f"OpenCode structured output violates enum at {path}")
-    if "const" in schema and value != schema["const"]:
-        raise OpenCodeError(f"OpenCode structured output violates const at {path}")
-    if isinstance(value, dict):
-        properties = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
-        missing = [name for name in schema.get("required", []) if name not in value]
-        if missing:
-            raise OpenCodeError(f"OpenCode structured output is missing {path}.{missing[0]}")
-        if schema.get("additionalProperties") is False:
-            extras = sorted(set(value) - set(properties))
-            if extras:
-                raise OpenCodeError(f"OpenCode structured output has an extra field at {path}.{extras[0]}")
-        for name, child in value.items():
-            if name in properties and isinstance(properties[name], dict):
-                _validate_schema(child, properties[name], f"{path}.{name}")
-    if isinstance(value, list):
-        if isinstance(schema.get("minItems"), int) and len(value) < schema["minItems"]:
-            raise OpenCodeError(f"OpenCode structured output has too few items at {path}")
-        if isinstance(schema.get("maxItems"), int) and len(value) > schema["maxItems"]:
-            raise OpenCodeError(f"OpenCode structured output has too many items at {path}")
-        child_schema = schema.get("items")
-        if isinstance(child_schema, dict):
-            for index, child in enumerate(value):
-                _validate_schema(child, child_schema, f"{path}[{index}]")
-        if schema.get("uniqueItems") is True:
-            serialized = [json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(",", ":")) for item in value]
-            if len(serialized) != len(set(serialized)):
-                raise OpenCodeError(f"OpenCode structured output has duplicate items at {path}")
-    if isinstance(value, str):
-        if isinstance(schema.get("minLength"), int) and len(value) < schema["minLength"]:
-            raise OpenCodeError(f"OpenCode structured output string is too short at {path}")
-        if isinstance(schema.get("maxLength"), int) and len(value) > schema["maxLength"]:
-            raise OpenCodeError(f"OpenCode structured output string is too long at {path}")
-        pattern = schema.get("pattern")
-        if isinstance(pattern, str) and re.search(pattern, value) is None:
-            raise OpenCodeError(f"OpenCode structured output violates pattern at {path}")
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
-        if isinstance(schema.get("minimum"), (int, float)) and value < schema["minimum"]:
-            raise OpenCodeError(f"OpenCode structured output is below minimum at {path}")
-        if isinstance(schema.get("maximum"), (int, float)) and value > schema["maximum"]:
-            raise OpenCodeError(f"OpenCode structured output is above maximum at {path}")
+    try:
+        validate_structured_output(value, schema, path)
+    except ExternalIntelligenceError as error:
+        raise OpenCodeError(f"OpenCode {error}") from error
 
 
 class _CallbackServer:
@@ -286,6 +218,7 @@ class OpenCodeServer:
                 "OPENCODE_CONFIG_DIR": str(self.runtime_root / "config"),
                 "OPENCODE_SERVER_USERNAME": self._username,
                 "OPENCODE_SERVER_PASSWORD": self._password,
+                "OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX": "128000",
                 "NO_PROXY": "127.0.0.1,localhost",
             })
             port = _available_port()
@@ -407,7 +340,6 @@ class OpenCodeServer:
         timeout_seconds: float, dynamic_tools: list[dict[str, Any]] | None = None,
         tool_handler: Callable[[str, Any], Any] | None = None, base_instructions: str | None = None,
     ) -> tuple[dict[str, Any], dict[str, int], dict[str, Any]]:
-        del work_dir  # The isolated server has no filesystem tools; work is checkpoint-owned by the caller.
         if (dynamic_tools is None) != (tool_handler is None):
             raise OpenCodeError("dynamic tools and their handler must be enabled together")
         model_id = self._normalize_model(model)
@@ -445,40 +377,65 @@ class OpenCodeServer:
                     + " Return only one strict JSON object matching this JSON Schema; do not use Markdown or commentary: "
                     + schema_text
                 )
-                result = self._http("POST", f"/session/{parse.quote(session_id)}/message", {
+                message = {
                     "model": {"providerID": self.provider, "modelID": model_id},
                     "variant": effort,
                     "tools": tools,
                     "system": system,
                     "parts": [{"type": "text", "text": prompt}],
-                }, timeout=timeout_seconds)
-                info = result.get("info") if isinstance(result, dict) and isinstance(result.get("info"), dict) else {}
-                if isinstance(info.get("error"), dict):
-                    detail = json.dumps(info["error"], ensure_ascii=False, separators=(",", ":"))
-                    if "429" in detail or "rate limit" in detail.lower():
-                        self._rate_limit_observed = True
-                    raise OpenCodeError(f"OpenCode turn failed: {detail[:1000]}")
-                if info.get("providerID") != self.provider or info.get("modelID") != model_id or info.get("variant") != effort:
-                    raise OpenCodeError("OpenCode turn identity drifted")
-                parts = result.get("parts") if isinstance(result, dict) and isinstance(result.get("parts"), list) else []
-                texts = [str(part.get("text")) for part in parts if isinstance(part, dict) and part.get("type") == "text"]
-                if not texts:
-                    raise OpenCodeError("OpenCode turn produced no final text")
-                try:
-                    value = json.loads(texts[-1])
-                except json.JSONDecodeError as caught:
-                    raise OpenCodeError("OpenCode structured output is not strict JSON") from caught
-                if not isinstance(value, dict):
-                    raise OpenCodeError("OpenCode structured output is not an object")
-                _validate_schema(value, schema)
-                tokens = info.get("tokens") if isinstance(info.get("tokens"), dict) else {}
-                cache = tokens.get("cache") if isinstance(tokens.get("cache"), dict) else {}
-                usage = {
-                    "input_tokens": int(tokens.get("input", 0)),
-                    "cached_input_tokens": int(cache.get("read", 0)),
-                    "output_tokens": int(tokens.get("output", 0)),
-                    "reasoning_output_tokens": int(tokens.get("reasoning", 0)),
                 }
+                deadline = time.perf_counter() + timeout_seconds
+                usage = dict(input_tokens=0, cached_input_tokens=0, output_tokens=0, reasoning_output_tokens=0)
+                for correction in range(2):
+                    remaining = deadline - time.perf_counter()
+                    if remaining <= 0:
+                        raise OpenCodeTimeout("OpenCode structured output exhausted the request timeout")
+                    result = self._http("POST", f"/session/{parse.quote(session_id)}/message", message, timeout=remaining)
+                    response_name = "response.json" if correction == 0 else "response-correction-001.json"
+                    _atomic_json(work_dir / response_name, result)
+                    info = result.get("info") if isinstance(result, dict) and isinstance(result.get("info"), dict) else {}
+                    if isinstance(info.get("error"), dict):
+                        detail = json.dumps(info["error"], ensure_ascii=False, separators=(",", ":"))
+                        if "429" in detail or "rate limit" in detail.lower():
+                            self._rate_limit_observed = True
+                        raise OpenCodeError(f"OpenCode turn failed: {detail[:1000]}")
+                    if info.get("providerID") != self.provider or info.get("modelID") != model_id or info.get("variant") != effort:
+                        raise OpenCodeError("OpenCode turn identity drifted")
+                    tokens = info.get("tokens") if isinstance(info.get("tokens"), dict) else {}
+                    cache = tokens.get("cache") if isinstance(tokens.get("cache"), dict) else {}
+                    for key, count in {
+                        "input_tokens": tokens.get("input", 0), "cached_input_tokens": cache.get("read", 0),
+                        "output_tokens": tokens.get("output", 0), "reasoning_output_tokens": tokens.get("reasoning", 0),
+                    }.items():
+                        usage[key] += int(count)
+                    parts = result.get("parts") if isinstance(result, dict) and isinstance(result.get("parts"), list) else []
+                    texts = [str(part.get("text")) for part in parts if isinstance(part, dict) and part.get("type") == "text"]
+                    try:
+                        if not texts:
+                            raise OpenCodeError("OpenCode turn produced no final text")
+                        try:
+                            value = json.loads(texts[-1])
+                        except json.JSONDecodeError as caught:
+                            raise OpenCodeError("OpenCode structured output is not strict JSON") from caught
+                        if not isinstance(value, dict):
+                            raise OpenCodeError("OpenCode structured output is not an object")
+                        _validate_schema(value, schema)
+                    except OpenCodeError as caught:
+                        if correction:
+                            raise
+                        # Correct only the rejected representation, in the same context
+                        # and original time budget. Never silently trim or accept it.
+                        message = {**message, "tools": {name: False for name in tools}, "parts": [{
+                            "type": "text",
+                            "text": "Your previous result failed JSON Schema validation: " + str(caught)
+                            + ". Return the corrected complete JSON object under the original schema. "
+                            "Use only the existing evidence; do not add facts or call tools. "
+                            "Check required fields, allowed keys, array limits and JSON syntax. No commentary.",
+                        }]}
+                        _atomic_json(work_dir / "correction-request.json", message)
+                        continue
+                    break
+                usage["format_corrections"] = correction
                 return value, usage, {
                     "transport": "opencode-server-http",
                     "server_instance": self.instance_id,
@@ -488,6 +445,8 @@ class OpenCodeServer:
                     "thread_ephemeral": True,
                     "sandbox": "read-only",
                     "status": str(info.get("finish", "")),
+                    "format_corrections": correction,
+                    "response_artifact": response_name,
                     "dynamic_tools_enabled": dynamic_tools is not None,
                     "dynamic_tool_names": sorted(tool_ids),
                     "external_intelligence_driver": DRIVER,
@@ -497,6 +456,13 @@ class OpenCodeServer:
                 if self._callback is not None:
                     self._callback.bind(None)
                 if session_id:
+                    if not (work_dir / "response.json").is_file():
+                        try:
+                            _atomic_json(work_dir / "interrupted-messages.json", self._http(
+                                "GET", f"/session/{parse.quote(session_id)}/message", timeout=5,
+                            ))
+                        except (OpenCodeError, OSError, ValueError):
+                            pass
                     try:
                         self._http("DELETE", f"/session/{parse.quote(session_id)}", timeout=5)
                     except OpenCodeError:

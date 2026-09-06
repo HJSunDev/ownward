@@ -12,7 +12,7 @@ import evidence_identity
 
 
 def external_intelligence(binary: str = "external", credential: str = "credential") -> dict:
-    return {"external_intelligence": {"binary": binary, "credential_file": credential}}
+    return {"external_intelligence": {"driver": "codex-app-server/v1", "binary": binary, "credential_file": credential}}
 
 
 class BindingManifestTests(unittest.TestCase):
@@ -50,11 +50,13 @@ class BindingManifestTests(unittest.TestCase):
         self.assertIn("benchmarks/acceptance/suite/product_scoring.py", product)
         self.assertIn("benchmarks/longmemeval_s/run.py", community)
         self.assertIn("benchmarks/longmemeval_s/external_intelligence_runtime.py", community)
-        self.assertIn("benchmarks/longmemeval_s/opencode_external_intelligence.py", community)
-        self.assertIn("benchmarks/longmemeval_s/opencode_mcp_bridge.py", community)
+        driver = binding.external_intelligence_runtime.CURRENT_DRIVER
+        selected_files = binding.external_intelligence_runtime.implementation_files(driver)
+        for path in selected_files:
+            self.assertIn(path.relative_to(self.root.parents[2]).as_posix(), community)
         self.assertIn("benchmarks/support/external_intelligence.py", community)
         self.assertNotIn("benchmarks/support/external-intelligence-runtime.json", community)
-        self.assertEqual("opencode-server/v1", manifests["community"]["external_intelligence_selection"]["driver"])
+        self.assertEqual(driver, manifests["community"]["external_intelligence_selection"]["driver"])
         self.assertIn("benchmarks/longmemeval_s/protocol.json", community)
         self.assertNotIn("benchmarks/acceptance/suite/adapters/product/codex_session.py", community)
         self.assertFalse(any("longmemeval_v2" in path for path in community))
@@ -84,6 +86,20 @@ class BindingManifestTests(unittest.TestCase):
         self.assertIn("benchmarks/longmemeval_s/opencode_mcp_bridge.py", paths)
         self.assertNotIn("benchmarks/longmemeval_s/codex_app_server.py", paths)
         self.assertNotIn("benchmarks/acceptance/suite/adapters/product/codex_session.py", paths)
+
+    def test_all_drivers_support_product_and_community_without_parser_coupling(self) -> None:
+        runtime = binding.external_intelligence_runtime
+        for driver in runtime._ADAPTERS:
+            for scope in ("product", "community"):
+                with self.subTest(driver=driver, scope=scope):
+                    config = {scope: {"external_intelligence": {
+                        "driver": driver, "binary": "fixture", "credential_file": "fixture",
+                    }}}
+                    manifest = binding._tool_manifest(self.root, scope, config)
+                    self.assertEqual(driver, manifest["external_intelligence_selection"]["driver"])
+                    if scope == "product":
+                        raw = {item["path"] for item in manifest["responsibilities"]["raw_execution"]["files"]}
+                        self.assertNotIn("benchmarks/acceptance/suite/adapters/product/codex_session.py", raw)
 
     def test_targeted_scope_is_not_a_frozen_input(self) -> None:
         external = self.root / "contract.json"
@@ -362,7 +378,8 @@ class BindingManifestTests(unittest.TestCase):
         community = config["community"]
         self.assertEqual("E:\\Ownward\\acceptance\\longmemeval-s\\manifests\\v1.json", community["environment_manifest"])
         self.assertNotIn("driver", community["external_intelligence"])
-        self.assertIn("opencode", community["external_intelligence"]["binary"])
+        selected = binding.external_intelligence_runtime._adapter(binding.external_intelligence_runtime.CURRENT_DRIVER)
+        self.assertEqual(Path(selected.__file__).name, Path(community["external_intelligence"]["binary"]).name)
         roles = binding.external_intelligence_runtime.role_profile_from_execution(community)
         self.assertEqual("qwen3.8-flash", roles["semantic"]["model"])
         self.assertEqual("xhigh", roles["reader"]["reasoning_effort"])

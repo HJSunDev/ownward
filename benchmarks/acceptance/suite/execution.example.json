@@ -3,21 +3,32 @@
   "repository": "E:\\path\\to\\ownward",
   "workspace": "E:\\path\\to\\ownward-acceptance\\candidate-commit",
   "binding_dir": "E:\\path\\to\\ownward-acceptance\\candidate-commit\\binding",
-  "enabled_scopes": ["frontier", "core", "product", "community"],
+  "enabled_scopes": [
+    "frontier",
+    "core",
+    "product",
+    "community"
+  ],
   "candidate": {
     "binary": "E:\\path\\to\\candidate\\ownward.exe",
     "embedding_bundle_dir": "E:\\path\\to\\candidate\\embedding"
   },
   "frontier": {
     "tool": "E:\\path\\to\\ownward-acceptance\\tools\\ownward-frontier.exe",
-    "targeted_stages": ["lexical", "vector", "graph", "context", "fusion"]
+    "targeted_stages": [
+      "lexical",
+      "vector",
+      "graph",
+      "context",
+      "fusion"
+    ]
   },
   "product": {
     "package": "E:\\path\\to\\ownward-release",
     "production_storage_report": "E:\\path\\to\\ownward-evidence\\production-storage.json",
     "external_intelligence": {
-      "binary": "E:\\path\\to\\opencode.ps1",
-      "credential_file": "C:\\Users\\USERNAME\\.local\\share\\opencode\\auth.json"
+      "binary": "E:/path/to/ownward/benchmarks/longmemeval_s/go_api_external_intelligence.py",
+      "credential_file": "E:/Ownward/credentials/bailian.json"
     }
   },
   "final_validation_gate": {
@@ -31,8 +42,8 @@
     "protocol": "E:\\path\\to\\ownward\\benchmarks\\longmemeval_s\\protocol.json",
     "output_dir": "E:\\Ownward\\acceptance\\longmemeval-s\\runs\\candidate-commit\\formal",
     "external_intelligence": {
-      "binary": "E:\\path\\to\\opencode.ps1",
-      "credential_file": "C:\\Users\\USERNAME\\.local\\share\\opencode\\auth.json"
+      "binary": "E:/path/to/ownward/benchmarks/longmemeval_s/go_api_external_intelligence.py",
+      "credential_file": "E:/Ownward/credentials/bailian.json"
     }
   }
 }

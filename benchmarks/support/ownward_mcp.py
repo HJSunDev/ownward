@@ -20,6 +20,17 @@ class MCPError(RuntimeError):
     pass
 
 
+def product_instructions(client: Any) -> str:
+    """Read the connected product's rules, without a test-owned policy copy."""
+    instructions = getattr(client, "instructions", "")
+    if instructions is None or instructions == "":
+        result = client.call_tool("ownward_rules", {})
+        instructions = result.get("rules") if isinstance(result, dict) else None
+    if not isinstance(instructions, str) or not instructions.strip():
+        raise MCPError("Ownward did not provide valid collaboration rules")
+    return instructions
+
+
 class StreamableHTTPClient:
     def __init__(self, endpoint: str, timeout_seconds: float, bearer_token: str = "") -> None:
         self.endpoint = endpoint
@@ -47,6 +58,7 @@ class StreamableHTTPClient:
         )
         if not isinstance(initialized, dict) or not isinstance(initialized.get("serverInfo"), dict):
             raise MCPError("Ownward MCP initialization returned invalid metadata")
+        self.instructions = initialized.get("instructions", "")
         self._notification("notifications/initialized", {})
 
     def _headers(self) -> dict[str, str]:
@@ -70,6 +82,10 @@ class StreamableHTTPClient:
                 assert connection.sock is not None
                 connection.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                 self._connection = connection
+            # A reused connection must follow the current operation budget too.
+            connection.timeout = self.timeout_seconds
+            if connection.sock is not None:
+                connection.sock.settimeout(self.timeout_seconds)
             try:
                 connection.request("POST", self._path, body=encoded, headers=self._headers())
                 response = connection.getresponse()

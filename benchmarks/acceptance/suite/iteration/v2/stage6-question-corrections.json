@@ -1,4 +1,6 @@
 {
+  "suite_identity": "346852e3dae39becd4a21c33725332783b3d2376bc89680c3bedede0dff26ed5",
+  "level": 50,
   "original_dataset": "E:\\Ownward\\acceptance\\longmemeval-s\\runs\\kvs\\8e1500b3630384e4d4230d54ed74f509392fce64d29d88c65cfbbca113139980\\accepted\\dataset.json",
   "corrected_dataset": "E:\\Ownward\\acceptance\\kernel-iteration\\blind-suites\\v2\\346852e3dae39becd4a21c33725332783b3d2376bc89680c3bedede0dff26ed5\\corrections\\dataset-50-v2.json",
   "corrected_dataset_sha256": "ebcc75f1b74f6e67d35267de65ac23a176563aa226fabf0055e7e76f8d134b2c",

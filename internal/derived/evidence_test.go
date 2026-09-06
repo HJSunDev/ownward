@@ -1,12 +1,48 @@
 package derived
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/HJSunDev/ownward/internal/domain"
 )
+
+func TestCompactEvidenceKeepsFullIntegrityAndLegacyReads(t *testing.T) {
+	asset := domain.Information{ID: "01a07212-3b1a-71b2-91d5-d403c03cd965", Revision: 9,
+		Content: strings.Repeat("多语言 evidence source. ", 60)}
+	unit := BuildEvidenceUnits(asset)[0]
+	if !strings.HasPrefix(unit.ID, "e2-") || len(unit.ID) > 120 {
+		t.Fatalf("reference remains too long: %d", len(unit.ID))
+	}
+	hash := sha256.Sum256([]byte(unit.Content))
+	payload, _ := json.Marshal(evidenceIdentity{SourceID: unit.SourceID, SourceRevision: unit.SourceRevision,
+		StartRune: unit.StartRune, EndRune: unit.EndRune, StartByte: unit.StartByte, EndByte: unit.EndByte, ContentSHA256: hex.EncodeToString(hash[:])})
+	legacy := "e1-" + base64.RawURLEncoding.EncodeToString(payload)
+	for _, id := range []string{unit.ID, legacy} {
+		parsed, err := ParseEvidenceUnitID(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ResolveEvidence(asset, parsed); err != nil {
+			t.Fatal(err)
+		}
+		changed := asset
+		changed.Content = strings.Replace(asset.Content, "evidence", "altered!", 1)
+		if _, err := ResolveEvidence(changed, parsed); err == nil {
+			t.Fatal("content tampering was accepted")
+		}
+		changed = asset
+		changed.Revision++
+		if _, err := ResolveEvidence(changed, parsed); err == nil {
+			t.Fatal("stale source revision was accepted")
+		}
+	}
+}
 
 func TestEvidenceUnitsPartitionAndRebuildWithoutCopyingSource(t *testing.T) {
 	content := "first fact. " + strings.Repeat("long source paragraph; ", 80)

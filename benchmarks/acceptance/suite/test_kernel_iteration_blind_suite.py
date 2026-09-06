@@ -20,6 +20,84 @@ class BlindVersionSuiteTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.suite_root = Path(__file__).resolve().parent
 
+    def test_registered_question_correction_reaches_real_partition_without_rewriting_seal(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture = _PreparationFixture(self.suite_root, root, reject_once=False)
+            reference = fixture.prepare()
+            sealed_path = fixture.vault_root / "v2" / reference["suite_identity"] / "suite.json"
+            original = sealed_path.read_bytes()
+            isolated_suite = root / "correction-suite"
+            record_path = isolated_suite / "iteration/v2/stage6-question-corrections.json"
+            record_path.parent.mkdir(parents=True)
+            with mock.patch.object(suite, "_validate_suite_case", side_effect=fixture._validate_case):
+                before = suite.open_partition_for_evaluation(
+                    isolated_suite, fixture.output_root, fixture.vault_root,
+                    major_version="v2", suite_identity=reference["suite_identity"], level=50,
+                )
+                dataset = [validation._longmemeval_case(case) for case in before["materials"]["cases"]]
+                first = dataset[0]
+                record = {
+                    "suite_identity": reference["suite_identity"], "level": 50,
+                    "corrected_dataset": str(root / "corrected.json"),
+                    "corrections": [{
+                        "question_id": first["question_id"], "previous_question": first["question"],
+                        "corrected_question": first["question"] + " Clarified scope.",
+                        "answer": first["answer"], "answer_session_ids": first["answer_session_ids"],
+                    }],
+                }
+                dataset[0] = {**first, "question": record["corrections"][0]["corrected_question"]}
+
+                def save() -> None:
+                    path = Path(record["corrected_dataset"])
+                    path.write_text(json.dumps(dataset), encoding="utf-8")
+                    record["corrected_dataset_sha256"] = suite.evidence.file_sha256(path)
+                    record_path.write_text(json.dumps(record), encoding="utf-8")
+
+                def opened(level: int = 50) -> dict:
+                    return suite.open_partition_for_evaluation(
+                        isolated_suite, fixture.output_root, fixture.vault_root,
+                        major_version="v2", suite_identity=reference["suite_identity"], level=level,
+                    )
+
+                save()
+                after = opened()
+                self.assertEqual(dataset, [validation._longmemeval_case(case) for case in after["materials"]["cases"]])
+                self.assertNotEqual(before["partition_identity"], after["partition_identity"])
+                self.assertNotEqual(before["materials"]["identity"], after["materials"]["identity"])
+                self.assertEqual(before["materials"]["cases"][1:], after["materials"]["cases"][1:])
+                self.assertEqual(original, sealed_path.read_bytes())
+                self.assertEqual(25, len(opened(25)["materials"]["cases"]))
+                with self.subTest("dataset hash drift"):
+                    Path(record["corrected_dataset"]).write_text("[]", encoding="utf-8")
+                    with self.assertRaisesRegex(suite.BlindSuiteError, "摘要漂移"):
+                        opened()
+                    save()
+                with self.subTest("correction must bind the old wording"):
+                    record["corrections"][0]["previous_question"] = "another question"
+                    save()
+                    with self.assertRaisesRegex(suite.BlindSuiteError, "封存原题不一致"):
+                        opened()
+                    record["corrections"][0]["previous_question"] = first["question"]
+                    save()
+                with self.subTest("changed answer despite recomputed hash"):
+                    dataset[1]["answer"] = "tampered answer"
+                    save()
+                    with self.assertRaisesRegex(suite.BlindSuiteError, "不得改变原文"):
+                        opened()
+                dataset[1]["answer"] = before["materials"]["cases"][1]["answer"]
+                with self.subTest("unregistered question change"):
+                    dataset[1]["question"] += " changed"
+                    save()
+                    with self.assertRaisesRegex(suite.BlindSuiteError, "不得改变原文"):
+                        opened()
+                dataset[1]["question"] = before["materials"]["cases"][1]["question"]
+                save()
+                with self.subTest("missing correction must not silently use old question"):
+                    Path(record["corrected_dataset"]).unlink()
+                    with self.assertRaisesRegex(suite.BlindSuiteError, "禁止退回旧题"):
+                        opened()
+
     def test_contract_freezes_one_complete_version_suite_before_candidates(self) -> None:
         contract = suite.load_contract(self.suite_root)
         specs = suite._suite_specs(contract)

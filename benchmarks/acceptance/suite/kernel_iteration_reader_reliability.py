@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import kernel_iteration_answer_sufficiency as answer_sufficiency
+import frozen_inputs
 import kernel_iteration_evidence as evidence
 import kernel_iteration_validation as validation
 
@@ -175,8 +176,9 @@ def load_active_retrieval_cost_migration(suite_root: Path, source_cost: dict[str
     _require(value.get("source_reader_cost_migration_identity") == source_cost.get("identity"), "主动检索成本迁移源错绑")
     target = _mapping(value, "target_protocol")
     target_path = suite_root.parents[2] / str(target["path"])
-    _require(target_path.is_file() and evidence.text_file_matches(target_path, target["sha256"]), "主动检索正式协议与成本迁移错绑")
-    protocol = _load_json(target_path)
+    # This receipt proves the historical projection, not today's execution
+    # settings. Current runs validate and bind their own selected protocol.
+    protocol = json.loads(frozen_inputs.read_text(suite_root.parents[2], target["path"], target["sha256"]))
     retrieval = _mapping(protocol, "retrieval")
     reader = _mapping(protocol, "reader")
     _require(

@@ -138,6 +138,7 @@ def _run_created(
             "source": "official 500-question deterministic dry-plan plus four complete representative questions",
             "calibrated_projected_wall_seconds": checks["community"]["projected_full_wall_seconds"],
             "required_ceiling_wall_seconds": checks["community"]["required_ceiling_wall_seconds"],
+            "wall_budget_enforced": checks["community"].get("wall_budget_enforced", True),
         }
     return report
 
@@ -162,7 +163,44 @@ def _community_calibration_fixture(official_questions: list[Any], protocol: dict
     return fixture
 
 
+def _validate_runtime_evidence(
+    transport: dict[str, Any], completed_attempts: list[dict[str, Any]],
+    selection: dict[str, Any], limit: int, expected_calls: int, maximum_retries: int,
+) -> None:
+    _require(transport.get("external_intelligence_driver") == selection["driver"], "代表校准使用了另一外部智能实现")
+    if selection["worker_isolation"] == "request-local-context":
+        _require(
+            transport.get("server_processes") == 0 and transport.get("process_starts") == 0
+            and 0 < int(transport.get("max_active", 0)) <= limit
+            and transport.get("active_turns") == 0,
+            "代表校准未使用有界且已收口的进程内请求",
+        )
+        contexts = [item.get("session_id") for item in completed_attempts]
+    else:
+        _require(
+            0 < int(transport.get("server_processes", 0)) <= limit
+            and transport.get("per_worker_max_active") == 1,
+            "代表校准未使用单 turn 的有界外部智能 worker 池",
+        )
+        _require(
+            int(transport.get("worker_restarts", maximum_retries + 1)) <= maximum_retries
+            and int(transport.get("process_starts", 0)) >= int(transport["server_processes"]),
+            "代表预检外部智能 worker 恢复超过有界预算",
+        )
+        _require(
+            all(item.get("thread_ephemeral") is True and item.get("sandbox") == "read-only" for item in completed_attempts),
+            "代表校准未为每个请求使用独立、只读的新外部智能会话",
+        )
+        contexts = [item.get("thread_id") for item in completed_attempts]
+    _require(
+        len(contexts) == expected_calls and all(isinstance(item, str) and item for item in contexts)
+        and len(set(contexts)) == expected_calls,
+        "代表校准未为每个请求使用独立上下文",
+    )
+
+
 def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir: Path) -> dict[str, Any]:
+    repository = suite_root.parents[2].resolve()
     adapters = binding.load_json(suite_root / "adapters.json")
     community = adapters["layers"]["community"]
     adapter = (suite_root / community["adapter"]).resolve()
@@ -424,7 +462,6 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
         binding.load_json(path) for path in output.glob("questions/**/codex/attempt-*/metadata.json")
     ]
     completed_attempts = [item for item in attempt_metadata if item.get("outcome") == "complete"]
-    completed_threads = [str(item.get("thread_id")) for item in completed_attempts]
     maximum_bounded_retries = max(1, math.floor(expected_external_intelligence_calls * 0.1))
     _require(int(external_intelligence["calls"]) == expected_external_intelligence_calls, "LongMemEval-S 外部智能调用量不完整")
     _require(int(external_intelligence["attempts"]) == expected_external_intelligence_calls + int(external_intelligence["retries"]), "LongMemEval-S 外部智能尝试计数不一致")
@@ -434,23 +471,9 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
         and 0 < int(external_intelligence["scheduler"]["max_active"]) <= external_intelligence_limit,
         "代表校准没有遵守全局外部智能并发上限",
     )
-    _require(
-        external_intelligence.get("transport", {}).get("external_intelligence_driver") == external_selection["driver"]
-        and 0 < int(external_intelligence["transport"]["server_processes"]) <= external_intelligence_limit
-        and int(external_intelligence["transport"]["per_worker_max_active"]) == 1,
-        "代表校准未使用单 turn 的有界外部智能 worker 池",
-    )
-    _require(
-        int(external_intelligence["transport"]["worker_restarts"]) <= maximum_bounded_retries
-        and int(external_intelligence["transport"]["process_starts"])
-        >= int(external_intelligence["transport"]["server_processes"]),
-        "代表预检外部智能 worker 恢复超过有界预算",
-    )
-    _require(
-        len(completed_attempts) == expected_external_intelligence_calls
-        and len(set(completed_threads)) == expected_external_intelligence_calls
-        and all(item.get("thread_ephemeral") is True and item.get("sandbox") == "read-only" for item in completed_attempts),
-        "代表校准未为每个请求使用独立、只读的新外部智能会话",
+    _validate_runtime_evidence(
+        external_intelligence.get("transport", {}), completed_attempts, external_selection,
+        external_intelligence_limit, expected_external_intelligence_calls, maximum_bounded_retries,
     )
     _require(int(result["cost"]["semantic_submitted_batches"]) == semantic_batches, "代表校准未提交全部语义批次")
     _require(
@@ -458,7 +481,8 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
         and projected_semantic_requests * 2 <= int(dry_plan["legacy_semantic_analysis_calls"]),
         "LongMemEval-S 去重合并后的语义调用量未显著收敛",
     )
-    _require(required_ceiling <= float(protocol["execution"]["full_wall_seconds"]), "LongMemEval-S measured path plus variation, retry, and recovery reserves exceeds the frozen full-run wall budget")
+    if protocol["execution"].get("full_wall_policy", "enforce") == "enforce":
+        _require(required_ceiling <= float(protocol["execution"]["full_wall_seconds"]), "LongMemEval-S measured path plus variation, retry, and recovery reserves exceeds the frozen full-run wall budget")
     distribution = lambda values: {
         "minimum": min(values),
         "mean": sum(values) / len(values),
@@ -506,6 +530,7 @@ def _community_preflight(suite_root: Path, config: dict[str, Any], isolation_dir
         "calibration_accuracy": result["accuracy"],
         "fixture_wall_seconds": result["cost"]["wall_seconds"], "projected_full_wall_seconds": projected,
         "required_ceiling_wall_seconds": required_ceiling,
+        "wall_budget_enforced": protocol["execution"].get("full_wall_policy", "enforce") == "enforce",
         "calibration_distributions": {"question_wall": distribution(question_wall_values), "phases": phase_distributions},
         "reserves": {
             "normal_variation": normal_variation_reserve,

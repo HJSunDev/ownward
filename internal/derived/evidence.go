@@ -3,6 +3,7 @@ package derived
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -18,6 +19,7 @@ const (
 	DefaultEvidenceUnitRunes = 384
 	minimumEvidenceUnitRunes = DefaultEvidenceUnitRunes / 2
 	evidenceIDPrefix         = "e1-"
+	compactEvidenceIDPrefix  = "e2-"
 )
 
 // EvidenceUnit is an ephemeral, rebuildable source-range identity. It is
@@ -150,31 +152,77 @@ func evidenceUnitID(unit EvidenceUnit, content string) string {
 	// authoritative bytes directly; converting a long passage to []rune and
 	// immediately back to the same bytes only adds allocation and query latency.
 	digest := sha256.Sum256([]byte(content))
-	payload, _ := json.Marshal(evidenceIdentity{
+	identity := evidenceIdentity{
 		SourceID: unit.SourceID, SourceRevision: unit.SourceRevision,
 		StartRune: unit.StartRune, EndRune: unit.EndRune, StartByte: unit.StartByte, EndByte: unit.EndByte,
 		ContentSHA256: hex.EncodeToString(digest[:]),
-	})
-	return evidenceIDPrefix + base64.RawURLEncoding.EncodeToString(payload)
+	}
+	return encodeEvidenceIdentity(identity, strings.HasPrefix(unit.ID, evidenceIDPrefix))
+}
+
+func encodeEvidenceIdentity(identity evidenceIdentity, legacy bool) string {
+	if legacy {
+		payload, _ := json.Marshal(identity)
+		return evidenceIDPrefix + base64.RawURLEncoding.EncodeToString(payload)
+	}
+	payload := binary.AppendUvarint(nil, uint64(len(identity.SourceID)))
+	payload = append(payload, []byte(identity.SourceID)...)
+	for _, value := range []uint64{identity.SourceRevision, uint64(identity.StartRune), uint64(identity.EndRune), uint64(identity.StartByte), uint64(identity.EndByte)} {
+		payload = binary.AppendUvarint(payload, value)
+	}
+	digest, _ := hex.DecodeString(identity.ContentSHA256)
+	payload = append(payload, digest...)
+	return compactEvidenceIDPrefix + base64.RawURLEncoding.EncodeToString(payload)
+}
+
+func decodeCompactEvidence(payload []byte) (evidenceIdentity, error) {
+	invalid := errors.New("证据单元身份无效")
+	length, n := binary.Uvarint(payload)
+	if n <= 0 || length > uint64(len(payload)-n) {
+		return evidenceIdentity{}, invalid
+	}
+	identity := evidenceIdentity{SourceID: string(payload[n : n+int(length)])}
+	payload = payload[n+int(length):]
+	values := make([]uint64, 5)
+	for index := range values {
+		value, n := binary.Uvarint(payload)
+		if n <= 0 {
+			return evidenceIdentity{}, invalid
+		}
+		values[index], payload = value, payload[n:]
+	}
+	if len(payload) != sha256.Size {
+		return evidenceIdentity{}, invalid
+	}
+	identity.SourceRevision = values[0]
+	identity.StartRune, identity.EndRune = int(values[1]), int(values[2])
+	identity.StartByte, identity.EndByte = int(values[3]), int(values[4])
+	identity.ContentSHA256 = hex.EncodeToString(payload)
+	return identity, nil
 }
 
 // ParseEvidenceUnitID restores a source range without a persisted lookup
 // table. ResolveEvidence still validates it against the current source bytes.
 func ParseEvidenceUnitID(id string) (EvidenceUnit, error) {
-	if !strings.HasPrefix(id, evidenceIDPrefix) || len(id) > 4096 {
+	legacy := strings.HasPrefix(id, evidenceIDPrefix)
+	if (!legacy && !strings.HasPrefix(id, compactEvidenceIDPrefix)) || len(id) > 4096 {
 		return EvidenceUnit{}, errors.New("证据单元身份无效")
 	}
-	payload, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(id, evidenceIDPrefix))
+	payload, err := base64.RawURLEncoding.DecodeString(id[3:])
 	if err != nil {
 		return EvidenceUnit{}, errors.New("证据单元身份无效")
 	}
 	var identity evidenceIdentity
-	if err := json.Unmarshal(payload, &identity); err != nil || strings.TrimSpace(identity.SourceID) == "" || identity.SourceRevision == 0 ||
+	if legacy {
+		err = json.Unmarshal(payload, &identity)
+	} else {
+		identity, err = decodeCompactEvidence(payload)
+	}
+	if err != nil || strings.TrimSpace(identity.SourceID) == "" || !utf8.ValidString(identity.SourceID) || identity.SourceRevision == 0 ||
 		identity.StartRune < 0 || identity.EndRune <= identity.StartRune || identity.StartByte < 0 || identity.EndByte <= identity.StartByte || len(identity.ContentSHA256) != sha256.Size*2 {
 		return EvidenceUnit{}, errors.New("证据单元身份无效")
 	}
-	canonical, _ := json.Marshal(identity)
-	if evidenceIDPrefix+base64.RawURLEncoding.EncodeToString(canonical) != id {
+	if encodeEvidenceIdentity(identity, legacy) != id {
 		return EvidenceUnit{}, errors.New("证据单元身份非规范")
 	}
 	return EvidenceUnit{

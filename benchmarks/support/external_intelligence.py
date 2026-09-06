@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import threading
 import time
 from typing import Any, Callable, Protocol
@@ -24,6 +25,85 @@ class ExternalIntelligenceError(RuntimeError):
 
 class ExternalIntelligenceTimeout(ExternalIntelligenceError):
     pass
+
+
+def validate_structured_output(value: Any, schema: dict[str, Any], path: str = "$") -> None:
+    expected = schema.get("type")
+    matches = {
+        "object": isinstance(value, dict),
+        "array": isinstance(value, list),
+        "string": isinstance(value, str),
+        "integer": isinstance(value, int) and not isinstance(value, bool),
+        "number": isinstance(value, (int, float)) and not isinstance(value, bool),
+        "boolean": isinstance(value, bool),
+        "null": value is None,
+    }
+    expected_types = [expected] if isinstance(expected, str) else expected if isinstance(expected, list) else []
+    if expected_types and not any(matches.get(item, False) for item in expected_types):
+        raise ExternalIntelligenceError(f"structured output violates schema at {path}: expected {expected}")
+    for name in ("allOf",):
+        clauses = schema.get(name)
+        if isinstance(clauses, list):
+            for clause in clauses:
+                if isinstance(clause, dict):
+                    validate_structured_output(value, clause, path)
+    for name, exact in (("anyOf", False), ("oneOf", True)):
+        clauses = schema.get(name)
+        if isinstance(clauses, list):
+            matches_count = 0
+            for clause in clauses:
+                try:
+                    if isinstance(clause, dict):
+                        validate_structured_output(value, clause, path)
+                    else:
+                        continue
+                except ExternalIntelligenceError:
+                    continue
+                matches_count += 1
+            if matches_count == 0 or (exact and matches_count != 1):
+                raise ExternalIntelligenceError(f"structured output violates {name} at {path}")
+    if "enum" in schema and value not in schema["enum"]:
+        raise ExternalIntelligenceError(f"structured output violates enum at {path}")
+    if "const" in schema and value != schema["const"]:
+        raise ExternalIntelligenceError(f"structured output violates const at {path}")
+    if isinstance(value, dict):
+        properties = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
+        missing = [name for name in schema.get("required", []) if name not in value]
+        if missing:
+            raise ExternalIntelligenceError(f"structured output is missing {path}.{missing[0]}")
+        if schema.get("additionalProperties") is False:
+            extras = sorted(set(value) - set(properties))
+            if extras:
+                raise ExternalIntelligenceError(f"structured output has an extra field at {path}.{extras[0]}")
+        for name, child in value.items():
+            if name in properties and isinstance(properties[name], dict):
+                validate_structured_output(child, properties[name], f"{path}.{name}")
+    if isinstance(value, list):
+        if isinstance(schema.get("minItems"), int) and len(value) < schema["minItems"]:
+            raise ExternalIntelligenceError(f"structured output has too few items at {path}")
+        if isinstance(schema.get("maxItems"), int) and len(value) > schema["maxItems"]:
+            raise ExternalIntelligenceError(f"structured output has too many items at {path}")
+        child_schema = schema.get("items")
+        if isinstance(child_schema, dict):
+            for index, child in enumerate(value):
+                validate_structured_output(child, child_schema, f"{path}[{index}]")
+        if schema.get("uniqueItems") is True:
+            serialized = [json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(",", ":")) for item in value]
+            if len(serialized) != len(set(serialized)):
+                raise ExternalIntelligenceError(f"structured output has duplicate items at {path}")
+    if isinstance(value, str):
+        if isinstance(schema.get("minLength"), int) and len(value) < schema["minLength"]:
+            raise ExternalIntelligenceError(f"structured output string is too short at {path}")
+        if isinstance(schema.get("maxLength"), int) and len(value) > schema["maxLength"]:
+            raise ExternalIntelligenceError(f"structured output string is too long at {path}")
+        pattern = schema.get("pattern")
+        if isinstance(pattern, str) and re.search(pattern, value) is None:
+            raise ExternalIntelligenceError(f"structured output violates pattern at {path}")
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if isinstance(schema.get("minimum"), (int, float)) and value < schema["minimum"]:
+            raise ExternalIntelligenceError(f"structured output is below minimum at {path}")
+        if isinstance(schema.get("maximum"), (int, float)) and value > schema["maximum"]:
+            raise ExternalIntelligenceError(f"structured output is above maximum at {path}")
 
 
 class ExternalIntelligenceTransport(Protocol):
@@ -266,6 +346,7 @@ def request_identity(
         "timeout_seconds": timeout_seconds,
         "maximum_attempts": maximum_attempts,
         "runtime_identity": runtime_identity,
+        **({"base_instructions": base_instructions} if base_instructions is not None else {}),
     }
 
 
@@ -404,10 +485,27 @@ class ExternalIntelligenceExecutor:
                     "work_dir": work,
                     "timeout_seconds": timeout_seconds,
                 }
+                if lifecycle.base_instructions is not None:
+                    invoke_arguments["base_instructions"] = lifecycle.base_instructions
                 if lifecycle.dynamic_tools is not None:
+                    handler = lifecycle.tool_handler
+                    if handler is not None and lifecycle.report is not None:
+                        def traced_call(
+                            name: str, arguments: Any, *, callback=handler, report=lifecycle.report,
+                            path=attempt / "active-retrieval.json", lock=threading.Lock(),
+                        ) -> Any:
+                            # Persist completed calls before the model continues. A timeout,
+                            # retry or process stop must not erase the evidence already read.
+                            with lock:
+                                try:
+                                    return callback(name, arguments)
+                                finally:
+                                    _write_json(path, report())
+
+                        handler = traced_call
                     invoke_arguments.update({
                         "dynamic_tools": lifecycle.dynamic_tools,
-                        "tool_handler": lifecycle.tool_handler,
+                        "tool_handler": handler,
                         "base_instructions": lifecycle.base_instructions,
                     })
                 value, usage, transport = self.transport.invoke(**invoke_arguments)
@@ -477,7 +575,9 @@ def _retryable_failed_attempt(path: Path) -> bool:
     return error_type in {
         "ConnectionAbortedError", "ConnectionError", "ConnectionResetError",
         "ExternalIntelligenceTimeout", "OpenCodeTimeout", "TimeoutError",
-    } or any(marker in message for marker in (
+    } or _is_rate_limit(message) or bool(re.search(
+        r'(?:\bhttp\s+|"statuscode"\s*:\s*)(?:500|502|503|504)\b', message,
+    )) or any(marker in message for marker in (
         "connection reset", "connection aborted", "connection refused",
         "timed out", "timeout", "winerror 10053", "winerror 10054", "winerror 10061",
     ))

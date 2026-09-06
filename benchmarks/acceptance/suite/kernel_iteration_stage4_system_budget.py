@@ -7,6 +7,7 @@ import shutil
 from typing import Any
 
 import kernel_iteration_candidate_system_budget as system_candidate
+import frozen_inputs
 import kernel_iteration_evidence as evidence
 import kernel_iteration_stage4_latency_real_scale as real_scale
 import kernel_iteration_validation as validation
@@ -30,7 +31,7 @@ def run(
     suite_root, output_root = suite_root.resolve(), output_root.resolve()
     repository = suite_root.parents[2]
     _require(output_root.is_relative_to(repository / ".tmp"), "系统线程预算证据只能写入非正式 .tmp 边界")
-    contract = load_contract(suite_root)
+    contract = load_contract(suite_root, for_execution=True)
     state_path = formal_state_path.resolve()
     state_before = evidence.file_sha256(state_path)
     _require(state_before == contract["formal_state_sha256"], "系统线程预算测量前正式 state 漂移")
@@ -265,7 +266,7 @@ def evaluate(summary: dict[str, Any], contract: dict[str, Any]) -> dict[str, Any
     }
 
 
-def load_contract(suite_root: Path) -> dict[str, Any]:
+def load_contract(suite_root: Path, *, for_execution: bool = False) -> dict[str, Any]:
     value = _load_json(suite_root / "iteration" / "v2" / "stage4-retrieval-latency-system-budget-contract.json")
     _validate_identity(value, CONTRACT_SCHEMA, "系统线程预算合同")
     _require(value.get("frozen_before_measurement") is True and value.get("candidate_results_seen") is False, "系统线程预算门槛未在结果前冻结")
@@ -278,7 +279,10 @@ def load_contract(suite_root: Path) -> dict[str, Any]:
         "embedding_runtime_source_sha256": repository / "internal" / "embedding" / "llama.go",
     }
     for field, path in paths.items():
-        _require(value.get(field) == evidence.file_sha256(path), f"系统线程预算合同直接依赖漂移: {field}")
+        if for_execution:
+            _require(value.get(field) == evidence.file_sha256(path), f"系统线程预算合同直接依赖漂移: {field}")
+        else:
+            frozen_inputs.read_text(repository, path.relative_to(repository).as_posix(), value[field])
     _require(value.get("materials_identity") == real_scale.load_materials(suite_root)["identity"], "系统线程预算材料错绑")
     _require(value.get("runtime_configuration") == {"threads": 2, "threads_batch": 2, "parallel": 1}, "系统线程预算合同不是产品原生 2/1")
     budget = value.get("system_thread_budget")

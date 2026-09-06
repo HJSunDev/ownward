@@ -7,6 +7,7 @@ import unittest
 from unittest import mock
 
 import kernel_iteration_evidence as evidence
+import frozen_inputs
 import kernel_iteration_stage4_resource_cost_raw_vector_lifecycle as lifecycle
 import kernel_iteration_validation as validation
 
@@ -123,7 +124,7 @@ class RawVectorLifecycleTests(unittest.TestCase):
             changes[run_path]["classification"],
         )
         self.assertEqual("dependency-receipt-validation-only", changes[validator_path]["classification"])
-        self.assertEqual(evidence.text_file_sha256(self.repository / validator_path), changes[validator_path]["current_sha256"])
+        frozen_inputs.read_text(self.repository, validator_path, changes[validator_path]["current_sha256"])
         related = receipt["related_contract_migrations"]
         self.assertEqual(
             {
@@ -143,10 +144,7 @@ class RawVectorLifecycleTests(unittest.TestCase):
                 "external-intelligence-port-and-reader-profile-only-frozen-stage4-semantic-request-and-cost-unchanged",
                 runner["classification"],
             )
-            self.assertEqual(
-                evidence.text_file_sha256(self.repository / runner["path"]),
-                runner["current_sha256"],
-            )
+            frozen_inputs.read_text(self.repository, runner["path"], runner["current_sha256"])
         self.assertEqual(
             {
                 "contract_identity": True,

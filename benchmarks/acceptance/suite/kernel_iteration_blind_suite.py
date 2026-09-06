@@ -513,15 +513,70 @@ def open_partition_for_evaluation(
     _require(materials["identity"] == partition["material_identity"], "封存套题分区材料身份漂移")
     receipt = _load_json(output_root.resolve() / "blind-suite" / version / "suite-receipt.json")
     _validate_public_receipt(receipt, version, suite_identity)
+    cases, partition_identity = _correct_partition_questions(
+        cases, partition["identity"],
+        suite_root / "iteration" / version / "stage6-question-corrections.json",
+        suite_identity=suite_identity, level=level,
+    )
+    materials = _materials(cases, expected_profiles=[case["suite_profile"] for case in cases])
     return {
         "suite_identity": suite_identity,
         "major_version": version,
         "level": level,
-        "partition_identity": partition["identity"],
+        "partition_identity": partition_identity,
         "materials": materials,
         "admission": sealed["admission_summary"],
         "contract": contract,
     }
+
+
+def _correct_partition_questions(
+    cases: list[dict[str, Any]],
+    partition_identity: str,
+    correction_path: Path,
+    *,
+    suite_identity: str,
+    level: int,
+) -> tuple[list[dict[str, Any]], str]:
+    """只应用已登记的提问修正，保留封存原件并使旧执行身份失效。"""
+    if not correction_path.is_file():
+        return cases, partition_identity
+    correction = _load_json(correction_path)
+    if correction.get("suite_identity") != suite_identity or correction.get("level") != level:
+        return cases, partition_identity
+    corrected_path = Path(str(correction.get("corrected_dataset", ""))).resolve()
+    _require(corrected_path.is_file(), "提问修正数据缺失，禁止退回旧题")
+    _require(evidence.file_sha256(corrected_path) == correction.get("corrected_dataset_sha256"), "提问修正数据摘要漂移")
+    try:
+        dataset = json.loads(corrected_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise BlindSuiteError("无法读取提问修正数据") from error
+    _require(isinstance(dataset, list) and len(dataset) == len(cases), "提问修正不得改变分区题量")
+    entries = correction.get("corrections")
+    _require(isinstance(entries, list) and entries, "提问修正缺少逐题记录")
+    _require(all(isinstance(item, dict) and isinstance(item.get("question_id"), str) for item in entries), "提问修正记录无效")
+    by_id = {item["question_id"]: item for item in entries}
+    _require(len(by_id) == len(entries), "提问修正题号重复")
+    changed = set()
+    result = []
+    for case, row in zip(cases, dataset):
+        expected = validation._longmemeval_case(case)
+        item = by_id.get(case["case_id"])
+        if item is not None:
+            _require(item.get("previous_question") == case["question"], "提问修正与封存原题不一致")
+            question = item.get("corrected_question")
+            _require(isinstance(question, str) and question.strip() and question != case["question"], "修正后的提问无效")
+            _require(item.get("answer") == case["answer"] and item.get("answer_session_ids") == case["answer_session_ids"], "提问修正不得改变答案或证据")
+            expected["question"] = question
+            changed.add(case["case_id"])
+        _require(row == expected, "提问修正不得改变原文、答案、顺序或未登记题目")
+        result.append({**case, "question": expected["question"]})
+    _require(changed == set(by_id), "提问修正包含分区外题号")
+    identity = evidence.canonical_sha256({
+        "original_partition_identity": partition_identity,
+        "corrected_dataset_sha256": correction["corrected_dataset_sha256"],
+    })
+    return result, identity
 
 
 def level_contract(
@@ -2656,7 +2711,7 @@ def _implementation_identity() -> dict[str, str]:
             _sealed_suite, _validate_complete_suite_deterministically,
         ),
         "suite-storage": (
-            inspect_suite, retire, open_partition_for_evaluation, _install_sealed_suite,
+            inspect_suite, retire, open_partition_for_evaluation, _correct_partition_questions, _install_sealed_suite,
             _load_frozen_suite_contract, _validate_sealed_suite, _load_slot,
             _load_slot_certificate, _load_preparation_state,
         ),

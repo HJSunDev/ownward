@@ -7,6 +7,7 @@ from pathlib import Path
 import time
 from typing import Any
 
+import frozen_inputs
 import kernel_iteration_evidence as evidence
 import kernel_iteration_stage4_resource_cost_create_probe as create_probe
 import kernel_iteration_stage4_resource_cost_matched_create as matched_create
@@ -26,7 +27,7 @@ def run(suite_root: Path, output_root: Path, formal_state: Path, *, resume: bool
     repository = suite_root.parents[2]
     output_root = output_root.resolve()
     _require(output_root.is_relative_to(repository / ".tmp" / "kernel-v2-major-iteration"), "表示生命周期终态必须位于非正式 V2 边界")
-    contract = load_contract(suite_root)
+    contract = load_contract(suite_root, for_execution=True)
     formal_state = formal_state.resolve()
     _require(formal_state == repository / contract["formal_state"]["path"], "表示生命周期正式 state 路径错绑")
     state_before = evidence.file_sha256(formal_state)
@@ -66,21 +67,24 @@ def run(suite_root: Path, output_root: Path, formal_state: Path, *, resume: bool
     return {**result, "path": str(result_path), "reused": False, "model_executions": 0, "product_executions": 12}
 
 
-def load_contract(suite_root: Path) -> dict[str, Any]:
+def load_contract(suite_root: Path, *, for_execution: bool = False) -> dict[str, Any]:
     repository = suite_root.parents[2]
     value = _load_json(suite_root / CONTRACT_PATH)
     _validate_identity(value, CONTRACT_SCHEMA, "表示生命周期终测合同")
     _require(value.get("frozen_before_results") is True and value.get("results_seen") is False, "表示生命周期终测合同未在结果前冻结")
-    drifted = {}
-    for item in value["direct_dependencies"]:
-        path = repository / item["path"]
-        current = evidence.text_file_sha256(path) if path.is_file() else None
-        if not path.is_file() or not evidence.text_file_matches(path, item["sha256"]):
-            drifted[item["path"]] = {"frozen": item["sha256"], "current": current}
-        elif "identity" in item:
-            _verified(repository, item, "表示生命周期终测直接依赖")
-    if drifted:
-        _verify_dependency_migration(suite_root, value["identity"], drifted)
+    if for_execution:
+        drifted = {}
+        for item in value["direct_dependencies"]:
+            path = repository / item["path"]
+            current = evidence.text_file_sha256(path) if path.is_file() else None
+            if not path.is_file() or not evidence.text_file_matches(path, item["sha256"]):
+                drifted[item["path"]] = {"frozen": item["sha256"], "current": current}
+            elif "identity" in item:
+                _verified(repository, item, "表示生命周期终测直接依赖")
+        if drifted:
+            _verify_dependency_migration(suite_root, value["identity"], drifted)
+    else:
+        frozen_inputs.verify_files(repository, value["direct_dependencies"])
     _require(value["gate"] == {
         "v0_controlled_baseline_seconds": 13.42381325,
         "controlled_half_maximum_seconds": 6.711906625,

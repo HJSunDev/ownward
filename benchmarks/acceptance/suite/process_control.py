@@ -19,13 +19,13 @@ def run(
     command: list[str],
     *,
     cwd: Path,
-    timeout: float,
+    timeout: float | None,
     input_text: str | None = None,
     env: Mapping[str, str] | None = None,
     stdout_path: Path | None = None,
     stderr_path: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    if timeout <= 0:
+    if timeout is not None and timeout <= 0:
         raise ProcessTimeout("process wall-clock budget is exhausted")
     process = subprocess.Popen(
         command,

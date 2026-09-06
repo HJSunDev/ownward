@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import tempfile
+import subprocess
+import sys
 from pathlib import Path
 import unittest
 from unittest import mock
@@ -9,6 +11,37 @@ import external_intelligence_runtime as subject
 
 
 class ExternalIntelligenceRuntimeTests(unittest.TestCase):
+    def test_each_driver_loads_without_other_implementations(self) -> None:
+        for driver, module in subject._ADAPTERS.items():
+            unavailable = [name for name in subject._ADAPTERS.values() if name != module]
+            code = (
+                "import sys; "
+                f"sys.modules.update(dict.fromkeys({unavailable!r})); "
+                "import external_intelligence_runtime as runtime; "
+                f"assert runtime._adapter({driver!r}).DRIVER == {driver!r}"
+            )
+            with self.subTest(driver=driver):
+                completed = subprocess.run(
+                    [sys.executable, "-c", code], cwd=Path(subject.__file__).parent,
+                    capture_output=True, text=True, timeout=30,
+                )
+                self.assertEqual(0, completed.returncode, completed.stderr)
+
+    def test_unselected_implementation_changes_do_not_change_selected_identity(self) -> None:
+        original = Path.read_bytes
+        for driver, module in subject._ADAPTERS.items():
+            adapter = subject._adapter(driver)
+            baseline = subject._implementation_identity(adapter)
+            unrelated = {name + ".py" for name in subject._ADAPTERS.values() if name != module}
+            def changed(path):
+                return b"unrelated implementation changed" if path.name in unrelated else original(path)
+            with self.subTest(driver=driver), mock.patch.object(Path, "read_bytes", changed):
+                self.assertEqual(baseline, subject._implementation_identity(adapter))
+            def selected_changed(path):
+                return b"selected implementation changed" if path.name == module + ".py" else original(path)
+            with self.subTest(driver=driver), mock.patch.object(Path, "read_bytes", selected_changed):
+                self.assertNotEqual(baseline, subject._implementation_identity(adapter))
+
     def test_current_adapter_owns_legacy_execution_field_translation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -44,13 +77,14 @@ class ExternalIntelligenceRuntimeTests(unittest.TestCase):
             for role in subject.EXPLICIT_ROLE_KEYS
         }
         roles["judge"] = {"model": "qwen3.8-flash", "reasoning_effort": "medium"}
+        roles["semantic"] = {"model": "qwen3.8-flash", "reasoning_effort": "medium"}
         value = {
             "external_intelligence": {
                 "binary": "opencode.cmd", "credential_file": "auth.json",
             },
         }
         configuration = subject.configuration_from_execution(value)
-        self.assertEqual("opencode-server/v1", configuration.driver)
+        self.assertEqual("opencode-go-api/v1", configuration.driver)
         self.assertEqual(roles, subject.role_profile_from_execution(value))
 
     def test_explicit_codex_selection_remains_available(self) -> None:
@@ -63,17 +97,16 @@ class ExternalIntelligenceRuntimeTests(unittest.TestCase):
         self.assertEqual("gpt-5.6-luna", subject.role_profile_from_execution(value)["reader"]["model"])
 
     def test_current_adapter_selection_is_exact_and_auditable(self) -> None:
-        self.assertEqual("opencode-server/v1", subject.CURRENT_DRIVER)
-        self.assertEqual("opencode-go", subject.CURRENT_PROVIDER)
-        self.assertEqual("persistent-independent-worker-pool/v1", subject.CURRENT_TRANSPORT)
-        self.assertEqual("one-active-turn-per-worker", subject.CURRENT_WORKER_ISOLATION)
+        self.assertEqual("opencode-go-api/v1", subject.CURRENT_DRIVER)
+        self.assertEqual("aliyun-bailian", subject.CURRENT_PROVIDER)
+        self.assertEqual("in-process-http/v1", subject.CURRENT_TRANSPORT)
+        self.assertEqual("request-local-context", subject.CURRENT_WORKER_ISOLATION)
 
     def test_current_runtime_identity_binds_driver_artifact_and_credential_locator(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            binary = root / "codex.exe"
+            binary = Path(subject._adapter(subject.CURRENT_DRIVER).__file__)
             credential = root / "auth.json"
-            binary.write_bytes(b"binary")
             credential.write_bytes(b"secret-one")
             value = subject.current_runtime_identity(
                 driver=subject.CURRENT_DRIVER,
@@ -113,10 +146,10 @@ class ExternalIntelligenceRuntimeTests(unittest.TestCase):
     def test_adapter_translates_provider_failure_at_the_boundary(self) -> None:
         pool = mock.Mock()
         codex = subject.selected_implementation("codex-app-server/v1")
-        adapter = subject.codex_external_intelligence.CodexTransport(pool, {"driver": codex["driver"]}, codex["provider"])
-        pool.invoke.side_effect = subject.codex_external_intelligence.AppServerError("provider failed")
+        adapter = subject._adapter("codex-app-server/v1").CodexTransport(pool, {"driver": codex["driver"]}, codex["provider"])
+        pool.invoke.side_effect = subject._adapter("codex-app-server/v1").AppServerError("provider failed")
         with self.assertRaisesRegex(subject.ExternalIntelligenceError, "provider failed"):
-            subject._StableTransport(adapter).invoke(prompt="test")
+            subject._StableTransport(adapter, subject._adapter("codex-app-server/v1")).invoke(prompt="test")
 
 
 if __name__ == "__main__":

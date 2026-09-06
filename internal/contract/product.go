@@ -53,12 +53,13 @@ type SearchInput struct {
 }
 
 type SearchResult struct {
-	ID       string                 `json:"id"`
-	Kind     domain.InformationKind `json:"kind"`
-	Summary  string                 `json:"summary"`
-	Contexts []domain.Context       `json:"contexts,omitempty"`
-	Score    float64                `json:"score"`
-	Signals  []string               `json:"signals"`
+	ID       string                     `json:"id"`
+	Kind     domain.InformationKind     `json:"kind"`
+	Summary  string                     `json:"summary"`
+	Evidence []domain.EvidenceReference `json:"evidence,omitempty"`
+	Contexts []domain.Context           `json:"contexts,omitempty"`
+	Score    float64                    `json:"score"`
+	Signals  []string                   `json:"signals"`
 }
 
 type EvidenceSearchInput struct {

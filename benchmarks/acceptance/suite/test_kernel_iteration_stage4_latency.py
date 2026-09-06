@@ -127,7 +127,9 @@ class Stage4RetrievalLatencyTests(unittest.TestCase):
             "exact-query-vector-plus-persistent-loopback-and-lazy-bounded-parallel-evidence-read-through/v18",
             route["implementation"]["policy"],
         )
-        self.assertEqual(evidence.file_sha256(HERE.parents[1] / "support" / "ownward_mcp.py"), route["implementation"]["mcp_transport_sha256"])
+        # The route records a historical measurement, not a pin on today's client.
+        import frozen_inputs
+        frozen_inputs.read_text(REPOSITORY, "benchmarks/support/ownward_mcp.py", route["implementation"]["mcp_transport_sha256"])
         self.assertEqual(evidence.file_sha256(HERE / "kernel_iteration_stage4_latency_candidate_data.py"), route["candidate_preparer_sha256"])
         self.assertEqual(600.0, route["gates"]["complete_consumer_retrieval_p95_absolute_maximum_ms"])
         self.assertEqual(553.0, route["gates"]["complete_consumer_retrieval_p95_decision_maximum_ms"])

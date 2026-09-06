@@ -53,6 +53,20 @@ class CommunityExecutionTests(unittest.TestCase):
             }), encoding="utf-8")
             self.assertEqual(13199.5, community._remaining_wall_seconds(root, 20400))
 
+    def test_report_only_timing_allows_resume_after_expected_duration(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            clock = root / "wall-clock.json"
+            clock.write_text(json.dumps({
+                "schema": "ownward.longmemeval-s-wall-clock/v1", "elapsed_seconds": 25000,
+            }), encoding="utf-8")
+            before = clock.read_bytes()
+            with mock.patch.object(community.process_control, "run", return_value="completed") as execute:
+                result = community._run_with_wall_budget(["adapter"], cwd=root, run_dir=root, maximum=None)
+            self.assertEqual("completed", result)
+            self.assertIsNone(execute.call_args.kwargs["timeout"])
+            self.assertEqual(before, clock.read_bytes())
+
     def test_resume_rejects_an_exhausted_or_invalid_persistent_wall_budget(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

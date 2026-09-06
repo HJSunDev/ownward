@@ -1,0 +1,15 @@
+{
+  "schema": "ownward.kernel-iteration-semantic-representation/v1",
+  "representation": "ownward.semantic-source-spans/v2",
+  "instruction_identity": "0247c03f4ff2a9670cfc7b1172ebb48087956255747ae302f2af9498a9e66dba",
+  "fact_equivalence": "lossless-roundtrip-to-ownward.semantic-deduplicated-body-table/v1",
+  "body_content_once_per_analysis_scope": true,
+  "work_identity_revision_context_similarity_and_relations_preserved": true,
+  "output_schema_changed": true,
+  "model_role_changed": false,
+  "cross_question_or_user_batching": false,
+  "selection": "candidate-composition-declared",
+  "formal_requires_bound_candidate": true,
+  "identity": "82fafc935974f780d5e2b020a6e0c3e61e36ace6f2f167bd6383ce4a06e9d5f2",
+  "source_text_grounded": true
+}

@@ -14,6 +14,15 @@ PYTHON = [sys.executable, "-I", "-S"]
 
 
 class ProcessControlTests(unittest.TestCase):
+    def test_no_total_deadline_preserves_output_and_exit_status(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            completed = process_control.run(
+                [*PYTHON, "-c", "print('completed'); raise SystemExit(7)"],
+                cwd=Path(directory), timeout=None,
+            )
+        self.assertEqual(7, completed.returncode)
+        self.assertEqual("completed", completed.stdout.strip())
+
     def test_forwards_input_and_environment(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             environment = os.environ.copy()

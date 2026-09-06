@@ -14,7 +14,7 @@ PRODUCT_ADAPTER_ROOT = SUITE_ROOT / "adapters" / "product"
 if str(PRODUCT_ADAPTER_ROOT) not in sys.path:
     sys.path.insert(0, str(PRODUCT_ADAPTER_ROOT))
 
-import codex_session  # noqa: E402
+import codex_transport  # noqa: E402
 from codex_app_server import (  # noqa: E402
     AppServerError,
     AppServerTimeout,
@@ -25,6 +25,8 @@ from codex_app_server import (  # noqa: E402
 
 
 DRIVER = "codex-app-server/v1"
+TransportError = AppServerError
+TransportTimeout = AppServerTimeout
 
 
 def _sha256(path: Path) -> str:
@@ -44,7 +46,7 @@ def implementation_sha256() -> str:
 
 def identity_files() -> tuple[Path, ...]:
     return (
-        Path(__file__), BENCHMARK_ROOT / "codex_app_server.py", PRODUCT_ADAPTER_ROOT / "codex_session.py",
+        Path(__file__), BENCHMARK_ROOT / "codex_app_server.py",
         PRODUCT_ADAPTER_ROOT / "codex_transport.py",
     )
 
@@ -61,7 +63,7 @@ def validate(binary: Path, credential_file: Path) -> None:
 def probe(binary: Path, credential_file: Path) -> dict[str, str]:
     validate(binary, credential_file)
     completed = subprocess.run(
-        [*CodexAppServer.direct_command_prefix(binary.resolve(), codex_session.command_prefix(binary.resolve())), "--version"],
+        [*CodexAppServer.direct_command_prefix(binary.resolve(), codex_transport.command_prefix(binary.resolve())), "--version"],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -106,11 +108,11 @@ def open_runtime(
     identity: dict[str, Any], provider: str, models: tuple[str, ...], reasoning_efforts: tuple[str, ...],
 ) -> Iterator[CodexTransport]:
     del models, reasoning_efforts  # Codex validates caller-frozen model and effort at its own protocol boundary.
-    command_prefix = CodexAppServer.direct_command_prefix(binary.resolve(), codex_session.command_prefix(binary.resolve()))
+    command_prefix = CodexAppServer.direct_command_prefix(binary.resolve(), codex_transport.command_prefix(binary.resolve()))
 
     def factory(_worker_index: int, _generation: int) -> CodexAppServer:
         runtime_root = isolated_runtime_root(runtime_parent)
-        environment = codex_session.isolated_environment(credential_file.resolve(), runtime_root / "codex-home")
+        environment = codex_transport.isolated_environment(credential_file.resolve(), runtime_root / "codex-home")
         return CodexAppServer(binary.resolve(), credential_file.resolve(), runtime_root, command_prefix, environment)
 
     with CodexAppServerPool(max_active, factory) as pool:

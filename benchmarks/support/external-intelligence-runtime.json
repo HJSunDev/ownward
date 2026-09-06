@@ -1,7 +1,7 @@
 {
   "schema": "ownward.external-intelligence-selection/v2",
   "contract": "ownward.external-intelligence/v1",
-  "default_driver": "opencode-server/v1",
+  "default_driver": "opencode-go-api/v1",
   "implementations": [
     {
       "driver": "codex-app-server/v1",
@@ -13,29 +13,100 @@
       "reasoning_fallback": "caller-frozen"
     },
     {
+      "driver": "opencode-go-api/v1",
+      "provider": "aliyun-bailian",
+      "transport": "in-process-http/v1",
+      "worker_isolation": "request-local-context",
+      "models": [
+        "qwen3.8-flash"
+      ],
+      "reasoning_efforts": [
+        "medium",
+        "xhigh"
+      ],
+      "reasoning_fallback": "fixed-qualified-per-role"
+    },
+    {
       "driver": "opencode-server/v1",
       "provider": "opencode-go",
       "transport": "persistent-independent-worker-pool/v1",
       "worker_isolation": "one-active-turn-per-worker",
-      "models": ["qwen3.8-flash"],
-      "reasoning_efforts": ["medium", "xhigh"],
+      "models": [
+        "qwen3.8-flash"
+      ],
+      "reasoning_efforts": [
+        "medium",
+        "xhigh"
+      ],
       "reasoning_fallback": "fixed-qualified-per-role"
     }
   ],
   "role_profiles": {
+    "opencode-go-api/v1": {
+      "generator": {
+        "model": "qwen3.8-flash",
+        "reasoning_effort": "xhigh"
+      },
+      "quality_admission": {
+        "model": "qwen3.8-flash",
+        "reasoning_effort": "xhigh"
+      },
+      "semantic": {
+        "model": "qwen3.8-flash",
+        "reasoning_effort": "medium"
+      },
+      "reader": {
+        "model": "qwen3.8-flash",
+        "reasoning_effort": "xhigh"
+      },
+      "judge": {
+        "model": "qwen3.8-flash",
+        "reasoning_effort": "medium"
+      }
+    },
     "codex-app-server/v1": {
-      "generator": {"model": "gpt-5.6-terra", "reasoning_effort": "xhigh"},
-      "quality_admission": {"model": "gpt-5.6-terra", "reasoning_effort": "medium"},
-      "semantic": {"model": "gpt-5.6-luna", "reasoning_effort": "low"},
-      "reader": {"model": "gpt-5.6-luna", "reasoning_effort": "xhigh"},
-      "judge": {"model": "gpt-5.6-terra", "reasoning_effort": "medium"}
+      "generator": {
+        "model": "gpt-5.6-terra",
+        "reasoning_effort": "xhigh"
+      },
+      "quality_admission": {
+        "model": "gpt-5.6-terra",
+        "reasoning_effort": "medium"
+      },
+      "semantic": {
+        "model": "gpt-5.6-luna",
+        "reasoning_effort": "low"
+      },
+      "reader": {
+        "model": "gpt-5.6-luna",
+        "reasoning_effort": "xhigh"
+      },
+      "judge": {
+        "model": "gpt-5.6-terra",
+        "reasoning_effort": "medium"
+      }
     },
     "opencode-server/v1": {
-      "generator": {"model": "qwen3.8-flash", "reasoning_effort": "xhigh"},
-      "quality_admission": {"model": "qwen3.8-flash", "reasoning_effort": "xhigh"},
-      "semantic": {"model": "qwen3.8-flash", "reasoning_effort": "xhigh"},
-      "reader": {"model": "qwen3.8-flash", "reasoning_effort": "xhigh"},
-      "judge": {"model": "qwen3.8-flash", "reasoning_effort": "medium"}
+      "generator": {
+        "model": "qwen3.8-flash",
+        "reasoning_effort": "xhigh"
+      },
+      "quality_admission": {
+        "model": "qwen3.8-flash",
+        "reasoning_effort": "xhigh"
+      },
+      "semantic": {
+        "model": "qwen3.8-flash",
+        "reasoning_effort": "xhigh"
+      },
+      "reader": {
+        "model": "qwen3.8-flash",
+        "reasoning_effort": "xhigh"
+      },
+      "judge": {
+        "model": "qwen3.8-flash",
+        "reasoning_effort": "medium"
+      }
     }
   }
 }

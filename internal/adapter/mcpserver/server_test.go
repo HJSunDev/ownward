@@ -81,7 +81,7 @@ func TestServerExposesUnifiedCoreOperations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result := clientSession.InitializeResult(); result == nil || !strings.Contains(result.Instructions, "复杂问题") {
+	if result := clientSession.InitializeResult(); result == nil || result.Instructions != core.CollaborationRules {
 		t.Fatalf("collaboration rules were not delivered by the server: %#v", result)
 	}
 	tools, err := clientSession.ListTools(ctx, nil)

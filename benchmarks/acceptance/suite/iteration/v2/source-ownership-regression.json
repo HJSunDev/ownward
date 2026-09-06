@@ -1,0 +1,705 @@
+[
+  {
+    "question_id": "own-gen-01",
+    "question_type": "multi-session",
+    "question": "Which organization should receive the reimbursement for the team supervising children after the museum closes?",
+    "answer": "Marlow Cooperative",
+    "question_date": "2026-09-05",
+    "haystack_session_ids": [
+      "own-gen-01-s1",
+      "own-gen-01-s2",
+      "own-gen-01-s3",
+      "own-gen-01-s4",
+      "own-gen-01-s5",
+      "own-gen-01-s6",
+      "own-gen-01-s7",
+      "own-gen-01-s8"
+    ],
+    "haystack_dates": [
+      "2026-08-01",
+      "2026-08-02",
+      "2026-08-03",
+      "2026-08-04",
+      "2026-08-05",
+      "2026-08-06",
+      "2026-08-07",
+      "2026-08-08"
+    ],
+    "haystack_sessions": [
+      [
+        {
+          "role": "user",
+          "content": "The museum's school-day guides are reimbursed through account R-82, administered by Caraway Trust."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "The supervisors who stay with children after the museum closes use reimbursement account T-53. The account is shared with neither cleaners nor daytime guides."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "The night cleaning staff use account V-21, administered by Rookfield Services; they do not supervise children."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "The first proposal associated the after-closing supervisors with T-52. That proposal was rejected before anyone was paid."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "Rookfield Services also offers child-care services to other institutions. This is not evidence that it manages this museum team's money."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "An audit corrected the T-53 reimbursement account: its administrator is now Marlow Cooperative. The previous administrator, Rowan Trust, must no longer receive transfers."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "The gift-shop closing team uses T-35; its administrator is Mossbank Association."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "There is a public tour on Saturday, guided by temporary volunteers; their reimbursements use separate arrangements."
+        }
+      ]
+    ],
+    "answer_session_ids": [
+      "own-gen-01-s2",
+      "own-gen-01-s6"
+    ]
+  },
+  {
+    "question_id": "own-gen-02",
+    "question_type": "single-session-assistant",
+    "question": "For the outdoor exhibit, which protective finish did you recommend for the plaques, as distinct from my suggestion?",
+    "answer": "ceramic matte sealant",
+    "question_date": "2026-09-05",
+    "haystack_session_ids": [
+      "own-gen-02-s1",
+      "own-gen-02-s2",
+      "own-gen-02-s3",
+      "own-gen-02-s4",
+      "own-gen-02-s5",
+      "own-gen-02-s6",
+      "own-gen-02-s7",
+      "own-gen-02-s8"
+    ],
+    "haystack_dates": [
+      "2026-08-01",
+      "2026-08-02",
+      "2026-08-03",
+      "2026-08-04",
+      "2026-08-05",
+      "2026-08-06",
+      "2026-08-07",
+      "2026-08-08"
+    ],
+    "haystack_sessions": [
+      [
+        {
+          "role": "user",
+          "content": "I suggested brushed brass for the indoor labels."
+        },
+        {
+          "role": "assistant",
+          "content": "That concerns labels inside the main gallery, not the outdoor exhibit."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "The visitor desk will have a high-gloss laminate finish."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "The mounting brackets outside are stainless steel; that is a material decision, not a finish for the plaques."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "For the outdoor exhibit's plaques I was thinking of wax polish."
+        },
+        {
+          "role": "assistant",
+          "content": "My recommendation is ceramic matte sealant. Wax polish is your proposal, not mine."
+        },
+        {
+          "role": "user",
+          "content": "Please keep the two proposals distinct while I ask the conservator."
+        },
+        {
+          "role": "assistant",
+          "content": "Neither has been formally approved; my recommendation remains ceramic matte sealant."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "The conservator approved the bracket material but has not yet selected the plaque coating."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "Wax polish was previously used on furniture in the indoor lounge."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "We decided not to change the indoor labels during this exhibition."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "The outdoor paths must remain accessible during installation."
+        }
+      ]
+    ],
+    "answer_session_ids": [
+      "own-gen-02-s4"
+    ]
+  },
+  {
+    "question_id": "own-gen-03",
+    "question_type": "multi-session",
+    "question": "Which two places can store the traveling display overnight while keeping it refrigerated?",
+    "answer": "Quayside Depot and Elmbridge Store",
+    "question_date": "2026-09-05",
+    "haystack_session_ids": [
+      "own-gen-03-s1",
+      "own-gen-03-s2",
+      "own-gen-03-s3",
+      "own-gen-03-s4",
+      "own-gen-03-s5",
+      "own-gen-03-s6",
+      "own-gen-03-s7",
+      "own-gen-03-s8"
+    ],
+    "haystack_dates": [
+      "2026-08-01",
+      "2026-08-02",
+      "2026-08-03",
+      "2026-08-04",
+      "2026-08-05",
+      "2026-08-06",
+      "2026-08-07",
+      "2026-08-08"
+    ],
+    "haystack_sessions": [
+      [
+        {
+          "role": "user",
+          "content": "Traveling display storage eligibility: locations must accept overnight deliveries and maintain refrigeration. A security guard alone does not qualify a location."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "Meadow Rooms accepts overnight displays, but has no refrigeration."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "Quayside Depot accepts the traveling display overnight and keeps its storage bay refrigerated."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "Cedar Hall keeps a refrigerated cabinet but accepts display deliveries only between 09:00 and 17:00; overnight storage is prohibited."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "An old brochure said Elmbridge Store lacks refrigeration. That brochure is obsolete following last month's renovation."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "Southcourt Garage can store equipment overnight, but the traveling display is excluded from its lease."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "Elmbridge Store's renovation is complete. It now accepts the traveling display for refrigerated overnight storage."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "Meadow Rooms plans to install a refrigerator next year; it is not available now."
+        }
+      ]
+    ],
+    "answer_session_ids": [
+      "own-gen-03-s1",
+      "own-gen-03-s3",
+      "own-gen-03-s7"
+    ]
+  },
+  {
+    "question_id": "own-gen-04",
+    "question_type": "knowledge-update",
+    "question": "夜间负责保管借出相机的那组人，现在应把损坏报告交给谁？",
+    "answer": "岚桥中心",
+    "question_date": "2026-09-05",
+    "haystack_session_ids": [
+      "own-gen-04-s1",
+      "own-gen-04-s2",
+      "own-gen-04-s3",
+      "own-gen-04-s4",
+      "own-gen-04-s5",
+      "own-gen-04-s6",
+      "own-gen-04-s7",
+      "own-gen-04-s8"
+    ],
+    "haystack_dates": [
+      "2026-08-01",
+      "2026-08-02",
+      "2026-08-03",
+      "2026-08-04",
+      "2026-08-05",
+      "2026-08-06",
+      "2026-08-07",
+      "2026-08-08"
+    ],
+    "haystack_sessions": [
+      [
+        {
+          "role": "user",
+          "content": "夜间负责打扫摄影教室的清洁组使用编号 L-30，事故交给青石服务站。"
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "负责夜间保管借出相机的小组登记在 K-71 名下。白天出借窗口不是这个小组。"
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "白天出借窗口登记在 K-17 名下，负责人仍是河湾站。"
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "旧的 K-71 联系单写的是松林站，发布日期为今年五月。"
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "岚桥中心也负责别的设备；不能仅凭设备名称判断所属小组。"
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "K-71 的联系单已经替换：损坏报告从即日起交给岚桥中心，五月的松林站记录作废。"
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "K-70 是布景器材管理组，损坏报告交给榆树站。"
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "相机借出时必须记录电池编号；清洁组不负责登记电池。"
+        }
+      ]
+    ],
+    "answer_session_ids": [
+      "own-gen-04-s2",
+      "own-gen-04-s6"
+    ]
+  },
+  {
+    "question_id": "own-gen-05",
+    "question_type": "unanswerable",
+    "question": "Who is the newly appointed weekend keyholder for the shoreline studio?",
+    "answer": "The records do not name a newly appointed weekend keyholder.",
+    "question_date": "2026-09-05",
+    "haystack_session_ids": [
+      "own-gen-05-s1",
+      "own-gen-05-s2",
+      "own-gen-05-s3",
+      "own-gen-05-s4",
+      "own-gen-05-s5",
+      "own-gen-05-s6",
+      "own-gen-05-s7",
+      "own-gen-05-s8"
+    ],
+    "haystack_dates": [
+      "2026-08-01",
+      "2026-08-02",
+      "2026-08-03",
+      "2026-08-04",
+      "2026-08-05",
+      "2026-08-06",
+      "2026-08-07",
+      "2026-08-08"
+    ],
+    "haystack_sessions": [
+      [
+        {
+          "role": "user",
+          "content": "The shoreline studio's weekend keyholder used to be Nella. Her authorization expired last Friday."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "A replacement weekend keyholder will be chosen next week; no appointment has yet been announced."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "Dorian is the weekday keyholder and cannot cover weekends."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "The inland studio appointed Mira as weekend keyholder. That is a different studio."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "Nella still coordinates bookings but cannot unlock the shoreline studio after her authorization expired."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "The shoreline studio has two spare keys kept in the office safe."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "Mira sometimes attends events at the shoreline studio but has no keyholder authorization there."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "Security staff can open the building in an emergency but are not the appointed weekend keyholder."
+        }
+      ]
+    ],
+    "answer_session_ids": []
+  },
+  {
+    "question_id": "own-gen-06",
+    "question_type": "temporal-reasoning",
+    "question": "What route code applied to the restoration deliveries in the period after the pier closure but before the canal reopened?",
+    "answer": "Silver Fern",
+    "question_date": "2026-09-05",
+    "haystack_session_ids": [
+      "own-gen-06-s1",
+      "own-gen-06-s2",
+      "own-gen-06-s3",
+      "own-gen-06-s4",
+      "own-gen-06-s5",
+      "own-gen-06-s6",
+      "own-gen-06-s7",
+      "own-gen-06-s8"
+    ],
+    "haystack_dates": [
+      "2026-08-01",
+      "2026-08-02",
+      "2026-08-03",
+      "2026-08-04",
+      "2026-08-05",
+      "2026-08-06",
+      "2026-08-07",
+      "2026-08-08"
+    ],
+    "haystack_sessions": [
+      [
+        {
+          "role": "user",
+          "content": "Before the pier closure, restoration deliveries used the old code Amber Loom."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "The interval between the pier closing and the canal reopening is recorded under routing order Z-46. The order's code is recorded in the dispatch ledger."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "The canal is now open again, and current deliveries use routing order Z-64."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "The dispatch ledger maps order Z-46 to code Silver Fern. Order Z-64 maps to code Indigo Kite."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "During the same interval, catering deliveries followed Silver Reed, a different code from restoration supplies."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "Amber Loom remains the code for unrelated construction at the northern warehouse."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "A planning draft suggested another restoration route but was never authorized."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "The closure and reopening dates apply to harbor infrastructure, not to the public gallery's opening hours."
+        }
+      ]
+    ],
+    "answer_session_ids": [
+      "own-gen-06-s2",
+      "own-gen-06-s4"
+    ]
+  },
+  {
+    "question_id": "owned-unseen-01",
+    "question_type": "temporal-reasoning",
+    "question": "For the rented spectrometer arriving at Cedar Pier on September 3, which courier and handover desk were authorized?",
+    "answer": "Osprey Courier, at the west survey desk.",
+    "question_date": "2026-09-05",
+    "haystack_session_ids": [
+      "ou1-a",
+      "ou1-b",
+      "ou1-c",
+      "ou1-d",
+      "ou1-e",
+      "ou1-f"
+    ],
+    "haystack_dates": [
+      "2026-08-01",
+      "2026-08-10",
+      "2026-08-18",
+      "2026-08-25",
+      "2026-08-29",
+      "2026-09-04"
+    ],
+    "haystack_sessions": [
+      [
+        {
+          "role": "user",
+          "content": "Our borrowed survey instruments at Cedar Pier normally travel with Bramble Freight and are collected at the east equipment desk. Purchased instruments follow a separate stores procedure."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "The spectrometer for the water survey is rented, not purchased. It is due at Cedar Pier on September 3. The shipping label currently still shows the normal route."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "An approved temporary procedure applies to rented survey instruments arriving from September 1 through September 7 inclusive: use Osprey Courier and the west survey desk. It replaces the normal courier and desk for that period only."
+        }
+      ],
+      [
+        {
+          "role": "assistant",
+          "content": "I suggest sending all instruments with Heron Express to the north desk to simplify handover."
+        },
+        {
+          "role": "user",
+          "content": "No, that proposal is not approved. Keep the authorized temporary procedure for rented survey instruments."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "Purchased spectrometers arriving during September 1–7 still use Bramble Freight, but go to the south stores desk. Those are not rented survey instruments."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "This note was written September 4: from September 8 onward, rented survey instruments return to Bramble Freight and the east equipment desk. Do not apply that change retroactively to earlier arrivals."
+        }
+      ]
+    ],
+    "answer_session_ids": [
+      "ou1-b",
+      "ou1-c"
+    ]
+  },
+  {
+    "question_id": "owned-unseen-02",
+    "question_type": "multi-session",
+    "question": "Which two lodges can I book for the October workshop under my final requirements?",
+    "answer": "Pine Lantern Lodge and Mossbank Lodge.",
+    "question_date": "2026-09-05",
+    "haystack_session_ids": [
+      "ou2-a",
+      "ou2-b",
+      "ou2-c",
+      "ou2-d",
+      "ou2-e",
+      "ou2-f"
+    ],
+    "haystack_dates": [
+      "2026-08-01",
+      "2026-08-03",
+      "2026-08-08",
+      "2026-08-13",
+      "2026-08-18",
+      "2026-08-24"
+    ],
+    "haystack_sessions": [
+      [
+        {
+          "role": "user",
+          "content": "For the October workshop, the accommodation must offer both step-free access and a quiet room away from the road. I initially also required an on-site kitchen."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "Pine Lantern Lodge has step-free access and a quiet rear room. It has no guest kitchen. Moor Gate Lodge has a kitchen and quiet rooms, but all its rooms require stairs."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "Mossbank Lodge has step-free access, quiet garden rooms and a guest kitchen. Copper Ridge Lodge is step-free with a kitchen, but every room faces a noisy road."
+        }
+      ],
+      [
+        {
+          "role": "assistant",
+          "content": "I would drop the step-free requirement and choose Moor Gate."
+        },
+        {
+          "role": "user",
+          "content": "No. Step-free access and a quiet room are both non-negotiable."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "Final change: a kitchen is optional because the workshop supplies meals. My two non-negotiable requirements still apply. This replaces my initial kitchen requirement."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "Pine Lantern's restaurant closes in October, but its quiet rear room remains available. Mossbank's October garden rooms are also available. No other lodge in these notes meets both non-negotiable requirements."
+        }
+      ]
+    ],
+    "answer_session_ids": [
+      "ou2-b",
+      "ou2-c",
+      "ou2-d",
+      "ou2-e",
+      "ou2-f"
+    ]
+  },
+  {
+    "question_id": "owned-unseen-03",
+    "question_type": "multi-session",
+    "question": "What is the approved return address for the borrowed humidity logger, and who must be named as recipient?",
+    "answer": "18 Birch Crescent, addressed to Dr. Elian Vale.",
+    "question_date": "2026-09-05",
+    "haystack_session_ids": [
+      "ou3-a",
+      "ou3-b",
+      "ou3-c",
+      "ou3-d",
+      "ou3-e"
+    ],
+    "haystack_dates": [
+      "2026-08-02",
+      "2026-08-11",
+      "2026-08-19",
+      "2026-08-25",
+      "2026-09-02"
+    ],
+    "haystack_sessions": [
+      [
+        {
+          "role": "user",
+          "content": "The borrowed humidity logger belongs to the Fenfield conservation laboratory. The purchase order for our own pressure gauge is unrelated. Our last shipment went to the laboratory's public front desk at 6 Market Lane."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "Fenfield's lending agreement for the humidity logger requires return to the equipment custodian personally. The public visitor address printed on the lab website is not a return address."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "Custodian details for instrument loans: Dr. Elian Vale, 18 Birch Crescent. This is the authorized instrument-return address. The conservation samples manager, Dr. Liora Marsh, works at 42 Grove Street; sample deliveries are a separate service."
+        }
+      ],
+      [
+        {
+          "role": "assistant",
+          "content": "The laboratory website is newer, so perhaps we should return the humidity logger to the public front desk."
+        },
+        {
+          "role": "user",
+          "content": "Do not do that. The lending agreement and instrument custodian's instructions control the return, regardless of the website publication date."
+        }
+      ],
+      [
+        {
+          "role": "user",
+          "content": "I saved a fresh webpage today. It still lists 6 Market Lane for public visits and 42 Grove Street for sample deliveries. It says nothing about changing the instrument loan agreement or its custodian."
+        }
+      ]
+    ],
+    "answer_session_ids": [
+      "ou3-a",
+      "ou3-b",
+      "ou3-c",
+      "ou3-d"
+    ]
+  }
+]

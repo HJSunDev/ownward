@@ -63,7 +63,7 @@ class PreflightTests(unittest.TestCase):
             config = self._config(root, ["product"], binary, runtime)
             config["product"] = {
                 "package": str(package), "production_storage_report": str(production),
-                "external_intelligence": {"binary": str(codex), "credential_file": str(auth)},
+                "external_intelligence": {"driver": "codex-app-server/v1", "binary": str(codex), "credential_file": str(auth)},
             }
             with mock.patch.object(preflight.external_intelligence_runtime, "probe", return_value={"version": "fixture", "artifact_sha256": "a" * 64}):
                 report = preflight.run(self.suite_root, config, root / "new-isolation")
@@ -109,6 +109,28 @@ class PreflightTests(unittest.TestCase):
         self.assertEqual(50.0, projected["judge"])
         self.assertEqual(80.0, projected["host"])
         self.assertEqual(5191.0, projected["required_ceiling"])
+
+    def test_runtime_evidence_accepts_both_execution_forms_and_rejects_shared_contexts(self) -> None:
+        for driver in ("codex-app-server/v1", "opencode-server/v1", "opencode-go-api/v1"):
+            selection = preflight.external_intelligence_runtime.selected_implementation(driver)
+            local = selection["worker_isolation"] == "request-local-context"
+            transport = {
+                "external_intelligence_driver": driver, "server_processes": 0 if local else 8,
+                "process_starts": 0 if local else 8, "max_active": 8, "active_turns": 0,
+                "worker_restarts": 0, "per_worker_max_active": 1,
+            }
+            attempts = [{"session_id": f"s{i}", "thread_id": f"t{i}", "thread_ephemeral": True, "sandbox": "read-only"} for i in range(20)]
+            with self.subTest(driver=driver):
+                preflight._validate_runtime_evidence(transport, attempts, selection, 8, 20, 2)
+                shared = [dict(attempts[0]) for _ in attempts]
+                with self.assertRaises(preflight.PreflightError):
+                    preflight._validate_runtime_evidence(transport, shared, selection, 8, 20, 2)
+                invalid = dict(transport, max_active=9) if local else dict(transport, per_worker_max_active=2)
+                with self.assertRaises(preflight.PreflightError):
+                    preflight._validate_runtime_evidence(invalid, attempts, selection, 8, 20, 2)
+                invalid = dict(transport, active_turns=1) if local else dict(transport, worker_restarts=3)
+                with self.assertRaises(preflight.PreflightError):
+                    preflight._validate_runtime_evidence(invalid, attempts, selection, 8, 20, 2)
 
     def _candidate(self, root: Path) -> tuple[Path, Path]:
         binary = root / "ownward.exe"

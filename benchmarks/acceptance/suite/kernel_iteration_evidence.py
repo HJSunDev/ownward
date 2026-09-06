@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any
+import frozen_inputs
 
 import kernel_iteration_manifest
 
@@ -422,6 +423,11 @@ def _load_iteration_input(contract: dict[str, Any], evidence_type: str, path: Pa
     return {**content, "identity": value["identity"]}
 
 
+def _source_json(repository: Path, contract: dict[str, Any], name: str) -> dict[str, Any]:
+    reference = _mapping(_mapping(contract, "sources"), name)
+    return json.loads(frozen_inputs.read_text(repository, reference["path"], reference["sha256"]))
+
+
 def _validate_sources(repository: Path, contract: dict[str, Any]) -> None:
     sources = _mapping(contract, "sources")
     expected = {
@@ -433,9 +439,9 @@ def _validate_sources(repository: Path, contract: dict[str, Any]) -> None:
         _require(isinstance(source, dict) and isinstance(source.get("path"), str) and is_sha256(source.get("sha256")), f"{name} 来源无效")
         _require(".tmp" not in Path(source["path"]).parts, f"{name} 不得依赖运行态 .tmp")
         path = (repository / source["path"]).resolve()
-        _require(path.is_relative_to(repository) and path.is_file(), f"{name} 来源缺失")
-        _require(file_sha256(path) == source["sha256"], f"{name} 来源摘要漂移")
-    facts = _load_json(repository / sources["v0_baseline_facts"]["path"])
+        _require(path.is_relative_to(repository), f"{name} 来源路径越界")
+        frozen_inputs.read_text(repository, source["path"], source["sha256"])
+    facts = _source_json(repository, contract, "v0_baseline_facts")
     _validate_baseline_facts(facts)
     v0 = _mapping(facts, "v0")
     community = _mapping(v0, "community")
@@ -454,11 +460,11 @@ def _validate_sources(repository: Path, contract: dict[str, Any]) -> None:
     _require(abs(float(historical.get("v0_community_retrieval_p95_ms")) - community["retrieval_p95_ms"]) < 1e-9, "V0 历史检索 p95 诊断漂移")
     _require(abs(float(historical.get("v0_community_end_to_end_wall_seconds")) - community["wall_seconds"]) < 1e-9, "V0 历史被动整题墙钟诊断漂移")
     _require(historical.get("status") == "diagnostic-only-not-an-active-performance-gate", "V0 历史检索时延仍被用作活动门槛")
-    receipt = _load_json(repository / sources["retrieval_latency_migration"]["path"])
+    receipt = _source_json(repository, contract, "retrieval_latency_migration")
     receipt_content = {key: item for key, item in receipt.items() if key != "identity"}
     _require(receipt.get("schema") == "ownward.kernel-iteration-retrieval-latency-comparability-migration/v1", "检索时延迁移收据 schema 无效")
     _require(receipt.get("identity") == canonical_sha256(receipt_content), "检索时延迁移收据身份漂移")
-    audit = _load_json(repository / sources["retrieval_latency_comparability_audit"]["path"])
+    audit = _source_json(repository, contract, "retrieval_latency_comparability_audit")
     audit_content = {key: item for key, item in audit.items() if key != "identity"}
     _require(audit.get("schema") == "ownward.kernel-iteration-stage4-retrieval-latency-comparability-audit-contract/v1", "检索时延同尺审计合同 schema 无效")
     _require(audit.get("identity") == canonical_sha256(audit_content), "检索时延同尺审计合同身份漂移")
@@ -503,18 +509,18 @@ def _validate_baseline_facts(facts: dict[str, Any]) -> None:
 def _validate_subjects(repository: Path, contract: dict[str, Any]) -> None:
     subjects = _mapping(contract, "subjects")
     _require(set(subjects) == {"v0", "current-product"}, "冻结 subject 必须且只能包含 V0 与当前产品")
-    catalog = _load_json(repository / _mapping(_mapping(contract, "sources"), "kernel_catalog")["path"])
+    catalog = _source_json(repository, contract, "kernel_catalog")
     generations = {item["name"]: item for item in catalog.get("generations", [])}
     _require(set(generations) == {"v0", "v1"}, "内核世代目录不等于冻结 V0/V1")
     v0 = _mapping(subjects, "v0")
     _require(v0["kernel_generation_identity"] == generations["v0"]["kernel"]["identity"], "V0 世代身份漂移")
     _require(v0["binary_identity"] == generations["v0"]["mapping"]["binary_sha256"], "V0 二进制身份漂移")
     _require(v0["direct_dependencies"] == {item["role"]: item["identity"] for item in generations["v0"]["kernel"]["dependencies"]}, "V0 直接依赖漂移")
-    facts = _mapping(_load_json(repository / _mapping(_mapping(contract, "sources"), "v0_baseline_facts")["path"]), "v0")
+    facts = _mapping(_source_json(repository, contract, "v0_baseline_facts"), "v0")
     _require(v0["kernel_generation_identity"] == facts["kernel_generation_identity"], "V0 世代与版本化聚合事实不一致")
     _require(v0["kernel_effect_identity"] == facts["kernel_effect_identity"], "V0 效果身份与版本化聚合事实不一致")
     _require(v0["binary_identity"] == facts["binary_sha256"], "V0 二进制与版本化聚合事实不一致")
-    composition = _load_json(repository / _mapping(_mapping(contract, "sources"), "current_composition")["path"])
+    composition = _source_json(repository, contract, "current_composition")
     current = _mapping(subjects, "current-product")
     components = {item["role"]: item for item in composition.get("components", [])}
     _require(current["composition_identity"] == composition["identity"], "当前产品组合身份漂移")

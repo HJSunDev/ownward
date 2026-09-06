@@ -54,14 +54,14 @@
       "dependencies": [
         {
           "role": "kernel",
-          "identity": "db18a3a1e42ca48d23757deef53c822c813ace62ff57db666f692a04dc1c2684"
+          "identity": "aabf2fb8cfbfd0adb1028e30edf550ab5c0d031e635ca3003b31842b9b39481a"
         },
         {
           "role": "product-rules",
-          "identity": "80919d7ce74ea5a443c1c0c0d2b957ae3e2f1e1adb559f7b761e2e38e2e713f9"
+          "identity": "46113cdb2a366c833095dc80ac56e74892d93d3b548790e523cd76c4fa3da974"
         }
       ],
-      "identity": "53bf4f66e72aba5dc307c5988289e17867909bae95359ab2c2ba22e41c9a31d0"
+      "identity": "4f451e8c49110b6f4ec915deff492331092b1e030b7bae50e9ce38dfed6df4b7"
     },
     {
       "role": "assembly",
@@ -109,7 +109,7 @@
       "dependencies": [
         {
           "role": "access",
-          "identity": "53bf4f66e72aba5dc307c5988289e17867909bae95359ab2c2ba22e41c9a31d0"
+          "identity": "4f451e8c49110b6f4ec915deff492331092b1e030b7bae50e9ce38dfed6df4b7"
         },
         {
           "role": "authority-substrate",
@@ -117,22 +117,22 @@
         },
         {
           "role": "kernel",
-          "identity": "db18a3a1e42ca48d23757deef53c822c813ace62ff57db666f692a04dc1c2684"
+          "identity": "aabf2fb8cfbfd0adb1028e30edf550ab5c0d031e635ca3003b31842b9b39481a"
         },
         {
           "role": "product-rules",
-          "identity": "80919d7ce74ea5a443c1c0c0d2b957ae3e2f1e1adb559f7b761e2e38e2e713f9"
+          "identity": "46113cdb2a366c833095dc80ac56e74892d93d3b548790e523cd76c4fa3da974"
         },
         {
           "role": "semantic",
-          "identity": "ed65006fa7f4fa10dc267b19bd9986f3248111b6e139d584f54bc89260008e34"
+          "identity": "670bb2d133ac8b26c34d39dac856fd0d9d875ad45a10aee50c49e8ee24b15774"
         },
         {
           "role": "vector",
           "identity": "391b5aa1f4bb3a25d522a4d59c7af1a9aa1150a06480f64d23cfd73f86c808c5"
         }
       ],
-      "identity": "32fa22dcf6dfe2f9d68e0df1e9e3652165b6c64fa5ebd9564b79db084a288015"
+      "identity": "9fd9df31dcca4071c72fff295037731e2e58ac5889ef9369a401a51ce91532ba"
     },
     {
       "role": "authority-substrate",
@@ -230,7 +230,7 @@
         {
           "id": "ownward.product-capability",
           "version": 1,
-          "definition_sha256": "0dd352caa94263dbcdc6df71f2a452cbf0894bd07ecb832055845fc518f48e98"
+          "definition_sha256": "4aee372094a09e07fd872d64d43bc290e27d91ae4298b580143403034e0d6935"
         }
       ],
       "content": [
@@ -257,7 +257,7 @@
         {
           "name": "derived-evidence",
           "path": "internal/derived/evidence.go",
-          "sha256": "053c7a8c3371a32aa06b87c9bbe18764a53f49cd8693ec7caf7e5bb4e5cb6d05"
+          "sha256": "f40a85e125aa3c0566a170c904f30ddf8840cd46ef61aa3f2291b27150e4105d"
         },
         {
           "name": "derived-generation",
@@ -287,7 +287,7 @@
         {
           "name": "evidence-domain",
           "path": "internal/domain/evidence.go",
-          "sha256": "39b7f556feeb35005de12a96f4e97b91f8ba2a1b009213dad54ee59d681d7174"
+          "sha256": "b2374c0bbf6843737f379f10d3a54aa5ef42edb28e98992883a64286b4505194"
         },
         {
           "name": "lexical-retrieval",
@@ -308,18 +308,18 @@
         },
         {
           "role": "product-rules",
-          "identity": "80919d7ce74ea5a443c1c0c0d2b957ae3e2f1e1adb559f7b761e2e38e2e713f9"
+          "identity": "46113cdb2a366c833095dc80ac56e74892d93d3b548790e523cd76c4fa3da974"
         },
         {
           "role": "semantic",
-          "identity": "ed65006fa7f4fa10dc267b19bd9986f3248111b6e139d584f54bc89260008e34"
+          "identity": "670bb2d133ac8b26c34d39dac856fd0d9d875ad45a10aee50c49e8ee24b15774"
         },
         {
           "role": "vector",
           "identity": "391b5aa1f4bb3a25d522a4d59c7af1a9aa1150a06480f64d23cfd73f86c808c5"
         }
       ],
-      "identity": "db18a3a1e42ca48d23757deef53c822c813ace62ff57db666f692a04dc1c2684"
+      "identity": "aabf2fb8cfbfd0adb1028e30edf550ab5c0d031e635ca3003b31842b9b39481a"
     },
     {
       "role": "product-rules",
@@ -334,14 +334,14 @@
         {
           "name": "collaboration-rules",
           "path": "internal/productrules/rules.go",
-          "sha256": "6f2721c6cbae43dd7221c9109984338841bd86efee718dac6988df701f31aefc"
+          "sha256": "c646b5c72ae7ad6f0ea8f1caf7e9ae85637821d614d12ad26497859d11e94262"
         }
       ],
       "config": {
         "version": "ownward.product-rules/v1"
       },
       "dependencies": [],
-      "identity": "80919d7ce74ea5a443c1c0c0d2b957ae3e2f1e1adb559f7b761e2e38e2e713f9"
+      "identity": "46113cdb2a366c833095dc80ac56e74892d93d3b548790e523cd76c4fa3da974"
     },
     {
       "role": "semantic",
@@ -356,7 +356,7 @@
         {
           "name": "semantic-analysis",
           "path": "internal/semantics/provider.go",
-          "sha256": "efd87760bd164d9fe3fb6fb0e1b9292285460b2dcaf7d7d5bb6b419ab88151bc"
+          "sha256": "dc1ff2a648217cf5bdc5ad4b716dec1be2fdb1bfcaa43815efa0aed03fd606d3"
         },
         {
           "name": "semantic-work",
@@ -370,7 +370,7 @@
         "writes_authority": false
       },
       "dependencies": [],
-      "identity": "ed65006fa7f4fa10dc267b19bd9986f3248111b6e139d584f54bc89260008e34"
+      "identity": "670bb2d133ac8b26c34d39dac856fd0d9d875ad45a10aee50c49e8ee24b15774"
     },
     {
       "role": "vector",
@@ -543,7 +543,7 @@
       "identity": "391b5aa1f4bb3a25d522a4d59c7af1a9aa1150a06480f64d23cfd73f86c808c5"
     }
   ],
-  "identity": "c068ae206a89df9dd2146e98fa875dca80bb05c3ecdafe0343cd825ddd6d751e",
+  "identity": "78f81b8232459036d001d4dea65484e0f881b9c062cfda236cb8a836ac87b834",
   "audit": {
     "described_product_candidate": "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8",
     "migration_source_git": "dc2c7a09e67f06cfaacbe0a201c7ff27b20d6182"

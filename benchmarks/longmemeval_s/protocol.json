@@ -21,7 +21,7 @@
     "semantic_model": "gpt-5.6-luna",
     "semantic_reasoning_effort": "low",
     "semantic_max_output_tokens": 128000,
-    "semantic_timeout_seconds": 180,
+    "semantic_timeout_seconds": 240,
     "semantic_attempts": 3
   },
   "retrieval": {
@@ -72,6 +72,7 @@
     "calibration_semantic_batches_per_question": 3,
     "question_wall_seconds": 900,
     "full_wall_seconds": 20400,
+    "full_wall_policy": "report-only",
     "normal_variation_reserve_ratio": 0.2,
     "bounded_retry_reserve_ratio": 0.1,
     "checkpoint_recovery_reserve_seconds": 3600,

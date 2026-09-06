@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import frozen_inputs
 import kernel_iteration_evidence as evidence
 import kernel_iteration_validation as validation
 
@@ -24,7 +25,7 @@ def run(suite_root: Path, output_root: Path, formal_state: Path, *, resume: bool
         output_root.is_relative_to(repository / ".tmp" / "kernel-v2-major-iteration"),
         "原始正文向量生命周期证据必须位于非正式 V2 边界",
     )
-    contract = load_contract(suite_root)
+    contract = load_contract(suite_root, for_execution=True)
     formal_state = formal_state.resolve()
     _require(formal_state == repository / contract["formal_state"]["path"], "正式 state 路径错绑")
     state_before = evidence.file_sha256(formal_state)
@@ -215,63 +216,66 @@ def evaluate(
     return {**content, "identity": evidence.canonical_sha256(content)}
 
 
-def load_contract(suite_root: Path) -> dict[str, Any]:
+def load_contract(suite_root: Path, *, for_execution: bool = False) -> dict[str, Any]:
     repository = suite_root.parents[2]
     value = _load_json(suite_root / CONTRACT_PATH)
     _validate_identity(value, CONTRACT_SCHEMA, "原始正文向量生命周期合同")
     _require(value.get("frozen_before_implementation") is True, "生命周期合同未在实现前冻结")
     _require(value.get("frozen_before_new_measurement") is True, "生命周期合同未在新测量前冻结")
     _require(value.get("candidate_results_seen") is False, "生命周期合同错误声明已看到候选结果")
-    actual = {
-        item["path"]: evidence.text_file_sha256(repository / item["path"])
-        for item in value["direct_dependencies"]
-        if (repository / item["path"]).is_file()
-    }
-    drifted = {
-        item["path"]: {"frozen": item["sha256"], "current": actual.get(item["path"])}
-        for item in value["direct_dependencies"]
-        if not (repository / item["path"]).is_file()
-        or not evidence.text_file_matches(repository / item["path"], item["sha256"])
-    }
-    if drifted:
-        migration = _load_json(suite_root / DEPENDENCY_MIGRATION_PATH)
-        _validate_identity(migration, DEPENDENCY_MIGRATION_SCHEMA, "生命周期直接依赖迁移收据")
-        _require(migration.get("contract_identity") == value["identity"], "生命周期直接依赖迁移合同错绑")
-        _require(migration.get("reason") == DEPENDENCY_MIGRATION_REASON, "生命周期直接依赖迁移原因漂移")
-        classifications = {
-            item["path"]: item.get("classification")
-            for item in migration.get("changes", [])
+    if for_execution:
+        actual = {
+            item["path"]: evidence.text_file_sha256(repository / item["path"])
+            for item in value["direct_dependencies"]
+            if (repository / item["path"]).is_file()
         }
-        changes = {
-            item["path"]: {"frozen": item["frozen_sha256"], "current": item["current_sha256"]}
-            for item in migration.get("changes", [])
+        drifted = {
+            item["path"]: {"frozen": item["sha256"], "current": actual.get(item["path"])}
+            for item in value["direct_dependencies"]
+            if not (repository / item["path"]).is_file()
+            or not evidence.text_file_matches(repository / item["path"], item["sha256"])
         }
-        ignored = {
-            path for path, classification in classifications.items()
-            if classification == "version-suite-cli-dispatch-only-frozen-stage4-cost-and-representation-unchanged"
-        }
-        changes = {path: item for path, item in changes.items() if path not in ignored}
-        drifted = {path: item for path, item in drifted.items() if path not in ignored}
-        _require(changes == drifted, "生命周期直接依赖漂移不在精确迁移收据内")
-        _require(
-            classifications
-            == {
-                "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_raw_vector_lifecycle.py": "dependency-receipt-validation-only",
-                "benchmarks/acceptance/suite/kernel_iteration_run.py": "version-suite-cli-dispatch-only-frozen-stage4-cost-and-representation-unchanged",
-            },
-            "生命周期直接依赖迁移分类漂移",
-        )
-        _require(
-            migration.get("preserved")
-            == {
-                "contract_identity": True,
-                "source_files": True,
-                "thresholds": True,
-                "evidence_identities": True,
-                "formal_state_sha256": True,
-            },
-            "生命周期直接依赖迁移保护边界漂移",
-        )
+        if drifted:
+            migration = _load_json(suite_root / DEPENDENCY_MIGRATION_PATH)
+            _validate_identity(migration, DEPENDENCY_MIGRATION_SCHEMA, "生命周期直接依赖迁移收据")
+            _require(migration.get("contract_identity") == value["identity"], "生命周期直接依赖迁移合同错绑")
+            _require(migration.get("reason") == DEPENDENCY_MIGRATION_REASON, "生命周期直接依赖迁移原因漂移")
+            classifications = {
+                item["path"]: item.get("classification")
+                for item in migration.get("changes", [])
+            }
+            changes = {
+                item["path"]: {"frozen": item["frozen_sha256"], "current": item["current_sha256"]}
+                for item in migration.get("changes", [])
+            }
+            ignored = {
+                path for path, classification in classifications.items()
+                if classification == "version-suite-cli-dispatch-only-frozen-stage4-cost-and-representation-unchanged"
+            }
+            changes = {path: item for path, item in changes.items() if path not in ignored}
+            drifted = {path: item for path, item in drifted.items() if path not in ignored}
+            _require(changes == drifted, "生命周期直接依赖漂移不在精确迁移收据内")
+            _require(
+                classifications
+                == {
+                    "benchmarks/acceptance/suite/kernel_iteration_stage4_resource_cost_raw_vector_lifecycle.py": "dependency-receipt-validation-only",
+                    "benchmarks/acceptance/suite/kernel_iteration_run.py": "version-suite-cli-dispatch-only-frozen-stage4-cost-and-representation-unchanged",
+                },
+                "生命周期直接依赖迁移分类漂移",
+            )
+            _require(
+                migration.get("preserved")
+                == {
+                    "contract_identity": True,
+                    "source_files": True,
+                    "thresholds": True,
+                    "evidence_identities": True,
+                    "formal_state_sha256": True,
+                },
+                "生命周期直接依赖迁移保护边界漂移",
+            )
+    else:
+        frozen_inputs.verify_files(repository, value["direct_dependencies"])
     return value
 
 
@@ -309,39 +313,7 @@ def _verify_source_lifecycle(sources: dict[str, str]) -> None:
 
 
 def _verified_text(repository: Path, item: dict[str, Any], name: str) -> str:
-    path = repository / item["path"]
-    current = evidence.text_file_sha256(path) if path.is_file() else None
-    if not path.is_file() or not evidence.text_file_matches(path, item["sha256"]):
-        _verify_related_source_migration(
-            repository / "benchmarks" / "acceptance" / "suite",
-            "125278c6aa9d6a34dc91bfe1ced32b22b93dad60ce6b5bc34aa14c3c2561abb7",
-            {item["path"]: {"frozen": item["sha256"], "current": current}},
-        )
-    try:
-        return path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError) as error:
-        raise validation.KernelIterationValidationError(f"无法读取{name}源码 {path}: {error}") from error
-
-
-def _verify_related_source_migration(
-    suite_root: Path,
-    contract_identity: str,
-    drifted: dict[str, dict[str, str | None]],
-) -> None:
-    migration = _load_json(suite_root / DEPENDENCY_MIGRATION_PATH)
-    _validate_identity(migration, DEPENDENCY_MIGRATION_SCHEMA, "Stage 4 精确依赖迁移收据")
-    _require(migration.get("reason") == DEPENDENCY_MIGRATION_REASON, "Stage 4 精确依赖迁移原因漂移")
-    related = migration.get("related_contract_migrations", {}).get(contract_identity, {})
-    changes = {
-        item["path"]: {"frozen": item["frozen_sha256"], "current": item["current_sha256"]}
-        for item in related.get("changes", [])
-    }
-    _require(changes == drifted, "生命周期源码漂移不在精确迁移收据内")
-    _require(
-        {item["path"]: item.get("classification") for item in related.get("changes", [])}
-        == {"benchmarks/longmemeval_s/run.py": "external-intelligence-port-and-reader-profile-only-frozen-stage4-semantic-request-and-cost-unchanged"},
-        "生命周期源码迁移分类漂移",
-    )
+    return frozen_inputs.read_text(repository, item["path"], item["sha256"])
 
 
 def _verified_json(repository: Path, item: dict[str, Any], name: str) -> dict[str, Any]:

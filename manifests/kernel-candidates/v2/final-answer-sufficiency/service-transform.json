@@ -3,10 +3,70 @@
   "source": "generated-read-frontier-service",
   "replacements": [
     {
-      "name": "preserve-lossless-authority-summary-when-it-fits",
+      "name": "source-owned-search-preview",
       "count": 1,
-      "before": "\t\t\tif record.AssetRevision == value.Revision && strings.TrimSpace(record.Analysis.Summary) != \"\" {\n\t\t\t\tsummary = record.Analysis.Summary\n\t\t\t}",
-      "after": "\t\t\tif record.AssetRevision == value.Revision && strings.TrimSpace(record.Analysis.Summary) != \"\" && summary != value.Content {\n\t\t\t\t// A semantic record may summarize related candidates as well as this asset.\n\t\t\t\t// Preserve the exact authoritative source whenever it already fits the\n\t\t\t\t// public summary bound; only long sources require lossy summarization.\n\t\t\t\tsummary = record.Analysis.Summary\n\t\t\t}"
+      "before": "\tsummary := truncate(value.Content, 240)\n\tkind := value.Kind\n\tif s.semantic != nil {\n\t\tif record, ok := s.semantic.Get(value.ID); ok {\n\t\t\tif record.AssetRevision == value.Revision && strings.TrimSpace(record.Analysis.Summary) != \"\" {\n\t\t\t\tsummary = record.Analysis.Summary\n\t\t\t}\n\t\t}\n\t}",
+      "after": "\tquery := \"\"\n\tif len(queries) > 0 { query = queries[0] }\n\tsummary := kernelv2candidate.SourcePreview(value.Content, query, 240, s.candidateSourceCues(value)...)\n\tkind := value.Kind"
+    },
+    {
+      "name": "query-aware-preview-signature",
+      "count": 1,
+      "before": "score float64, signals []string) SearchResult {",
+      "after": "score float64, signals []string, queries ...string) SearchResult {"
+    },
+    {
+      "name": "query-aware-lexical-results",
+      "count": 1,
+      "before": "func (s *Service) compactResults(values []retrieval.Result) []SearchResult {",
+      "after": "func (s *Service) compactResults(values []retrieval.Result, queries ...string) []SearchResult {"
+    },
+    {
+      "name": "pass-lexical-query",
+      "count": 1,
+      "before": "s.compactResult(value.Information, contexts, value.Score, value.Signals)",
+      "after": "s.compactResult(value.Information, contexts, value.Score, value.Signals, queries...)"
+    },
+    {
+      "name": "pass-search-query",
+      "count": 2,
+      "before": "s.compactResults(lexical), nil",
+      "after": "s.compactResults(lexical, input.Query), nil"
+    },
+    {
+      "name": "pass-fused-query",
+      "count": 1,
+      "before": "s.compactResult(value, effectiveContexts, item.score, signals)",
+      "after": "s.compactResult(value, effectiveContexts, item.score, signals, input.Query)"
+    },
+    {
+      "name": "source-owned-navigation-preview",
+      "count": 1,
+      "before": "\t\t\tif strings.TrimSpace(record.Analysis.Summary) != \"\" {\n\t\t\t\tsummary = record.Analysis.Summary\n\t\t\t}",
+      "after": "\t\t\t// Semantic cues remain separate from this source's authoritative excerpt."
+    },
+    {
+      "name": "source-grounded-cue-access",
+      "count": 1,
+      "before": "func (s *Service) compactResults(",
+      "after": "func (s *Service) candidateSourceCues(value domain.Information) []string {\n if s.semantic == nil { return nil }\n record, ok := s.semantic.Get(value.ID)\n if !ok || record.AssetRevision != value.Revision { return nil }\n cues := []string{record.Analysis.Summary}\n for _, cue := range record.Analysis.Cues { cues = append(cues, cue.Text) }\n return cues\n}\n\nfunc (s *Service) rankSourceEvidence(value domain.Information, query string, limit int) []domain.EvidenceReference {\n return kernelv2candidate.RankEvidenceWithCues(value, query, limit, s.candidateSourceCues(value))\n}\n\nfunc (s *Service) probeSourceEvidence(value domain.Information, query string) ([]domain.EvidenceReference, bool) {\n return kernelv2candidate.ProbeEvidenceWithCues(value, query, s.candidateSourceCues(value))\n}\n\nfunc (s *Service) compactResults("
+    },
+    {
+      "name": "cue-aware-evidence-planning",
+      "count": 1,
+      "before": "s.authority.ReadCurrent, rankEvidence, kernelv2candidate.ProbeEvidence)",
+      "after": "s.authority.ReadCurrent, s.rankSourceEvidence, s.probeSourceEvidence)"
+    },
+    {
+      "name": "cue-aware-direct-evidence",
+      "count": 1,
+      "before": "return rankEvidence(value, input.Query, input.Limit), nil",
+      "after": "return s.rankSourceEvidence(value, input.Query, input.Limit), nil"
+    },
+    {
+      "name": "direct-search-evidence",
+      "count": 1,
+      "before": "ID: value.ID, Kind: kind, Summary: summary, Contexts: append([]domain.Context(nil), contexts...),",
+      "after": "ID: value.ID, Kind: kind, Summary: summary, Contexts: append([]domain.Context(nil), contexts...),\n Evidence: kernelv2candidate.SearchEvidence(value, query, s.candidateSourceCues(value)),"
     }
   ]
 }

@@ -246,7 +246,7 @@ func normalizeCues(values []Cue, limit int) []Cue {
 	result := make([]Cue, 0, minInt(len(values), limit))
 	seen := make(map[string]struct{}, len(values))
 	for _, value := range values {
-		value.Text = truncate(strings.TrimSpace(value.Text), 128)
+		value.Text = truncate(strings.TrimSpace(value.Text), 384)
 		value.Kind = truncate(strings.TrimSpace(value.Kind), 64)
 		if value.Text == "" || value.Kind == "" {
 			continue
