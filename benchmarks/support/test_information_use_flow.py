@@ -11,12 +11,18 @@ class InformationUseFlowTests(unittest.TestCase):
         self.observations = {'task': 'Plan the requested work.',
                              'sources': [{'id': 's1', 'origin': 'original', 'content': 'A record.'}]}
 
-    def run_flow(self, selected, edits=None, existing=None):
+    def run_flow(self, selected, edits=None, existing=None, addition="", accepted=True):
         calls = {}
         def invoke(stage, instruction, payload, schema):
             self.assertEqual(payload['task'], self.observations['task'])
             self.assertEqual(payload['sources'], self.observations['sources'])
             calls[stage] = payload
+            if stage == "admit-addition":
+                self.assertNotIn("completed_work", payload)
+                self.assertNotIn("considered_alternatives", payload)
+                return {"accepted": accepted, "basis": "Independent source check"}
+            if stage == "supplement":
+                return {"addition": addition}
             if stage == 'understand':
                 return {'finding': 'A fallible reading.'}
             if stage == 'draft':
@@ -34,7 +40,7 @@ class InformationUseFlowTests(unittest.TestCase):
             with self.subTest(selected=selected):
                 result, calls = self.run_flow(selected)
                 self.assertEqual(result['answer'], selected)
-                self.assertEqual(set(calls), {'understand', 'draft', 'alternative', 'compare'})
+                self.assertEqual(set(calls), {'understand', 'draft', 'alternative', 'compare', 'supplement'})
                 self.assertEqual(calls['alternative']['existing_proposal'], 'Initial plan')
                 self.assertEqual(calls['alternative']['fallible_reading'], 'A fallible reading.')
                 self.assertEqual(set(calls['compare']), {'task', 'sources', 'candidates'})
@@ -51,7 +57,26 @@ class InformationUseFlowTests(unittest.TestCase):
         edits = [{'before': 'Alternative', 'after': 'Revised', 'basis': 'External assessment'}]
         result, calls = self.run_flow('Alternative plan', edits)
         self.assertEqual(result['answer'], 'Revised plan')
-        self.assertEqual(len(calls), 4)
+        self.assertEqual(len(calls), 5)
+
+    def test_supplement_preserves_the_completed_result_verbatim(self):
+        result, calls = self.run_flow('Alternative plan', addition='A supported condition.')
+        self.assertEqual(calls['supplement']['completed_work'], 'Alternative plan')
+        self.assertEqual(result['base_answer'], 'Alternative plan')
+        self.assertEqual(result['answer'], 'Alternative plan\n\nA supported condition.')
+        self.assertEqual(result['addition'], 'A supported condition.')
+
+    def test_rejected_addition_never_changes_completed_work(self):
+        result, calls = self.run_flow('Alternative plan', addition='Unsupported result.', accepted=False)
+        self.assertEqual(result['answer'], result['base_answer'])
+        self.assertEqual(result['addition'], '')
+        self.assertFalse(result['addition_review']['accepted'])
+        self.assertEqual(calls['admit-addition']['proposed_result'], 'Unsupported result.')
+
+    def test_empty_supplement_does_not_change_the_completed_result(self):
+        result, _ = self.run_flow('Alternative plan')
+        self.assertEqual(result['answer'], result['base_answer'])
+        self.assertEqual(result['addition'], '')
 
     def test_ambiguous_overlapping_or_missing_edits_fail(self):
         for text, edits in [
