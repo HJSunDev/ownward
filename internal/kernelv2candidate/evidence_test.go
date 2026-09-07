@@ -8,6 +8,30 @@ import (
 	"github.com/HJSunDev/ownward/internal/domain"
 )
 
+func TestCueContextPreservesTheFollowingSentence(t *testing.T) {
+	for _, ending := range []string{"48 kHz mono PCM WAV.", "每份记录保留原始编号与校验码。"} {
+		cue := "User: What delivery format is required for the archive?"
+		answer := "Assistant: The approved format for the delivered copy must be " + ending
+		asset := domain.Information{ID: "cue-boundary", Revision: 1,
+			Content: strings.Repeat("Unrelated background. ", 30) + cue + "\n\n" + answer + "\n\nOther: unrelated follow-up."}
+		refs := RankEvidenceWithCues(asset, "delivery format archive", 1, []string{cue})
+		if len(refs) != 1 {
+			t.Fatal("missing reference")
+		}
+		unit, err := derived.ParseEvidenceUnitID(refs[0].ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		evidence, err := derived.ResolveEvidence(asset, unit)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(evidence.Content, answer) {
+			t.Fatalf("following answer was cut off: %q", evidence.Content)
+		}
+	}
+}
+
 func TestBoundaryFactsRemainCompleteWithinExistingReadLimit(t *testing.T) {
 	fields := []struct{ label, value string }{
 		{"orchard vessel", "Lark"},

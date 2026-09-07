@@ -7,6 +7,7 @@ package kernelv2candidate
 import (
 	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/HJSunDev/ownward/internal/derived"
@@ -104,6 +105,17 @@ func rankedEvidence(value domain.Information, query string, limit int, cues ...s
 		}
 		for n := 0; n < 64 && endByte < len(value.Content); n++ {
 			_, size := utf8.DecodeRuneInString(value.Content[endByte:])
+			endByte += size
+			endRune++
+		}
+		// A fixed context window may end inside the value following a cue.
+		// Finish that sentence within a bounded allowance, retaining exact source offsets.
+		for n := 0; n < SuccessorRunes && endByte < len(value.Content); n++ {
+			previous, _ := utf8.DecodeLastRuneInString(value.Content[:endByte])
+			next, size := utf8.DecodeRuneInString(value.Content[endByte:])
+			if strings.ContainsRune("\n\r。！？!?;；", previous) || (previous == '.' && unicode.IsSpace(next)) {
+				break
+			}
 			endByte += size
 			endRune++
 		}
