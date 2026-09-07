@@ -141,3 +141,34 @@ def complete(observations, invoke, *, draft=None):
     else:
         reading = invoke('understand', READ, observations, READING)['finding']
     return reconsider(observations, draft, reading, invoke)
+
+
+OFFER = (
+    'Ownward information-use collaboration is available after obtaining the needed information. '
+    'Choose use_information_use=true when combining evidence, resolving conflicting accounts or '
+    'weighing interpretations would benefit from an independent alternative and source comparison. '
+    'Decide from the task and evidence, not confidence alone. For straightforward work, choose false '
+    'and deliver it directly. The answer field contains your current work, reused if collaboration is '
+    'chosen. Collaboration uses your own intelligence in separate contexts; it obtains no new sources.'
+)
+RESPONSE = object_schema({
+    'answer': {'type': 'string'},
+    'use_information_use': {'type': 'boolean'},
+})
+
+
+def finish(observations, response, invoke):
+    """执行智能体的显式选择；直接路径不调用模型，协作路径复用现有工作。"""
+    if type(response.get('use_information_use')) is not bool:
+        raise ValueError('The agent must explicitly choose whether to use collaboration')
+    if not isinstance(response.get('answer'), str) or not response['answer'].strip():
+        raise ValueError('The agent must supply its current work')
+    if not response['use_information_use']:
+        return {'answer': response['answer'], 'used_information_use': False}
+    return {**complete(observations, invoke, draft=response['answer']), 'used_information_use': True}
+
+
+def respond(observations, invoke):
+    """标准入口默认提供能力，由调用方智能在第一次响应中决定是否启动。"""
+    response = invoke('respond', DRAFT + '\n\n' + OFFER, observations, RESPONSE)
+    return finish(observations, response, invoke)

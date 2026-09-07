@@ -112,6 +112,45 @@ class InformationUseFlowTests(unittest.TestCase):
             flow.complete(self.observations, invoke, draft='Existing')
         self.assertEqual(calls, ['understand'])
 
+    def test_standard_entry_offers_capability_without_forcing_it(self):
+        calls = []
+        def invoke(stage, instruction, payload, schema):
+            calls.append(stage)
+            self.assertIn(flow.OFFER, instruction)
+            self.assertEqual(payload, self.observations)
+            self.assertEqual(schema, flow.RESPONSE)
+            return {'answer': 'Direct result', 'use_information_use': False}
+        result = flow.respond(self.observations, invoke)
+        self.assertEqual(calls, ['respond'])
+        self.assertEqual(result, {'answer': 'Direct result', 'used_information_use': False})
+
+    def test_agent_can_choose_collaboration_and_reuse_its_work(self):
+        calls = []
+        def invoke(stage, instruction, payload, schema):
+            calls.append(stage)
+            if stage == 'respond':
+                return {'answer': 'Original work', 'use_information_use': True}
+            if stage == 'understand':
+                return {'finding': 'Reading'}
+            if stage == 'alternative':
+                self.assertEqual(payload['existing_proposal'], 'Original work')
+                return {'answer': 'Better work'}
+            if stage == 'compare':
+                selected = next(c['id'] for c in payload['candidates'] if c['content'] == 'Better work')
+                return {'selected_id': selected, 'basis': 'Sources', 'edits': []}
+            if stage == 'supplement':
+                return {'addition': ''}
+            self.fail('Unexpected stage: ' + stage)
+        result = flow.respond(self.observations, invoke)
+        self.assertEqual(result['answer'], 'Better work')
+        self.assertTrue(result['used_information_use'])
+        self.assertEqual(calls, ['respond', 'understand', 'alternative', 'compare', 'supplement'])
+
+    def test_missing_or_nonboolean_choice_is_not_silently_treated_as_direct(self):
+        for response in [{'answer': 'Work'}, {'answer': 'Work', 'use_information_use': 'false'}]:
+            with self.assertRaises(ValueError):
+                flow.finish(self.observations, response, lambda *args: self.fail('Must not call model'))
+
 
 if __name__ == '__main__':
     unittest.main()

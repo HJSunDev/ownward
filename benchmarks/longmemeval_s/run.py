@@ -40,6 +40,7 @@ from external_intelligence import (  # noqa: E402
     InvocationLifecycle,
 )
 import semantic_representation  # noqa: E402
+import information_use_flow  # noqa: E402
 from external_intelligence_runtime import (  # noqa: E402
     CURRENT_DRIVER,
     clean_stale_runtime_roots,
@@ -1011,8 +1012,9 @@ class ExternalIntelligenceCapability:
         self, *, role: str, prompt: str, schema: dict[str, Any], stage: Path, model: str, effort: str,
         timeout_seconds: float, attempts: int, validate: Callable[[dict[str, Any]], None] | None = None,
         active_retrieval: ActiveRetrievalSession | None = None,
+        base_instructions: str | None = None,
     ) -> tuple[dict[str, Any], dict[str, int]]:
-        base_instructions = active_retrieval.instructions if active_retrieval is not None else None
+        base_instructions = active_retrieval.instructions if active_retrieval is not None else base_instructions
         lifecycle = InvocationLifecycle(
             retrieval_mode="external-agent-progressive/v1" if active_retrieval is not None else "no-tools",
             tool_manifest_identity=(active_retrieval.tool_manifest_identity if active_retrieval is not None else None),
@@ -1160,15 +1162,31 @@ class ExternalIntelligenceCapability:
         return analyses, usage
 
     def answer(self, prompt: str, settings: dict[str, Any], stage: Path) -> tuple[str, dict[str, int]]:
-        schema = {"type": "object", "additionalProperties": False, "required": ["answer"], "properties": {"answer": {"type": "string"}}}
+        schema = information_use_flow.RESPONSE
         value, usage = self._invoke(
-            role="reader", prompt=prompt + "\n\nReturn only the structured answer object.", schema=schema, stage=stage,
+            role="reader", prompt=prompt + "\n\n" + information_use_flow.OFFER, schema=schema, stage=stage,
             model=settings["model"], effort=settings["reasoning_effort"],
             timeout_seconds=float(settings["timeout_seconds"]), attempts=int(settings["attempts"]),
         )
-        answer = value.get("answer")
-        require(isinstance(answer, str) and answer.strip(), "external-intelligence Reader returned no answer")
-        return answer.strip(), usage
+        result, usage = self._finish_information_use(
+            {"task": prompt, "sources": []}, value, usage, settings, stage, None)
+        return result['answer'].strip(), usage
+
+    def _finish_information_use(self, observations, response, usage, settings, stage, instructions):
+        total = dict(usage)
+        def invoke(step, instruction, payload, schema):
+            value, consumed = self._invoke(
+                role="reader", prompt=instruction + "\n\n" + json.dumps(payload, ensure_ascii=False),
+                schema=schema, stage=stage / "information-use" / step,
+                model=settings['model'], effort=settings['reasoning_effort'],
+                timeout_seconds=float(settings['timeout_seconds']), attempts=int(settings['attempts']),
+                base_instructions=instructions,
+            )
+            _add_usage(total, consumed)
+            return value
+        result = information_use_flow.finish(observations, response, invoke)
+        write_json(stage / "information-use-result.json", result)
+        return result, total
 
     def active_answer(
         self,
@@ -1179,15 +1197,10 @@ class ExternalIntelligenceCapability:
         stage: Path,
     ) -> tuple[str, dict[str, int], dict[str, Any]]:
         session = ActiveRetrievalSession(client, retrieval_settings)
-        schema = {
-            "type": "object",
-            "additionalProperties": False,
-            "required": ["answer"],
-            "properties": {"answer": {"type": "string"}},
-        }
+        schema = information_use_flow.RESPONSE
         value, usage = self._invoke(
             role="reader",
-            prompt=_active_answer_prompt(question, retrieval_settings),
+            prompt=_active_answer_prompt(question, retrieval_settings) + "\n\n" + information_use_flow.OFFER,
             schema=schema,
             stage=stage,
             model=reader_settings["model"],
@@ -1196,10 +1209,22 @@ class ExternalIntelligenceCapability:
             attempts=int(reader_settings["attempts"]),
             active_retrieval=session,
         )
-        answer = value.get("answer")
-        require(isinstance(answer, str) and answer.strip(), "external-intelligence active retrieval agent returned no answer")
         session.validate()
-        return answer.strip(), usage, session.report()
+        report = session.report()
+        # Preserve exactly what the agent received, including provenance and context.
+        # Never consult dataset source labels or fetch additional evidence here.
+        observations = {
+            'task': f"Question date: {question.get('question_date', '')}\n{question['question']}",
+            'sources': [
+                {'id': str(index), 'origin': call['tool'],
+                 'content': json.dumps(call['result'], ensure_ascii=False)}
+                for index, call in enumerate(report['selection_steps']) if call.get('success')
+            ],
+        }
+        result, usage = self._finish_information_use(
+            observations, value, usage, reader_settings, stage, session.instructions)
+        report['information_use'] = {'used': result['used_information_use']}
+        return result['answer'].strip(), usage, report
 
     def judge(self, prompt: str, settings: dict[str, Any], stage: Path) -> tuple[bool, str, dict[str, int]]:
         schema = {
@@ -1514,6 +1539,8 @@ def stage_dependency_identities(
             "runtime_adapter": sha256(Path(__file__).with_name("external_intelligence_runtime.py")),
             "invoke": inspect.getsource(ExternalIntelligenceCapability._invoke),
             "answer": inspect.getsource(ExternalIntelligenceCapability.active_answer),
+            "information_use_adapter": inspect.getsource(ExternalIntelligenceCapability._finish_information_use),
+            "information_use": sha256(Path(information_use_flow.complete.__code__.co_filename)),
         }),
         "judge": canonical_sha256({
             "external_intelligence_contract": EXTERNAL_INTELLIGENCE_CONTRACT_SCHEMA,

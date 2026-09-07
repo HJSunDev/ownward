@@ -9,3 +9,7 @@ _SPEC.loader.exec_module(_MODULE)
 
 complete = _MODULE.complete
 reconsider = _MODULE.reconsider
+respond = _MODULE.respond
+finish = _MODULE.finish
+OFFER = _MODULE.OFFER
+RESPONSE = _MODULE.RESPONSE

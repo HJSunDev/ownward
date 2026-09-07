@@ -584,6 +584,49 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
                     with self.assertRaisesRegex(adapter.AdapterError, 'without reading'):
                         session.validate()
 
+    def test_active_reader_uses_shared_collaboration_on_agent_choice(self) -> None:
+        requests = []
+        def invoke(**request):
+            requests.append(request)
+            active = request.get('active_retrieval')
+            if active is not None:
+                active.call('ownward_search', {'query': 'selected city', 'limit': 1})
+                active.call('ownward_read', {'id': 'info-1'})
+                self.assertIn(adapter.information_use_flow.OFFER, request['prompt'])
+                return {'answer': 'Initial work', 'use_information_use': True}, {'calls': 1}
+            self.assertEqual(request['base_instructions'], client.instructions)
+            self.assertEqual(request['model'], self.protocol['reader']['model'])
+            self.assertEqual(request['effort'], self.protocol['reader']['reasoning_effort'])
+            self.assertNotIn('dynamic_tools', request)
+            self.assertIn('The selected city is Kyoto.', request['prompt'])
+            self.assertNotIn('SECRET GOLD', request['prompt'])
+            step = request['stage'].name
+            if step == 'understand':
+                output = {'finding': 'The selected city is Kyoto.'}
+            elif step == 'alternative':
+                output = {'answer': 'Kyoto'}
+            elif step == 'compare':
+                payload = json.loads(request['prompt'].split('\n\n', 1)[1])
+                selected = next(c['id'] for c in payload['candidates'] if c['content'] == 'Kyoto')
+                output = {'selected_id': selected, 'basis': 'Original source', 'edits': []}
+            else:
+                self.assertEqual(step, 'supplement')
+                output = {'addition': ''}
+            return output, {'calls': 1}
+        with tempfile.TemporaryDirectory() as directory:
+            client = FakeToolClient()
+            client.contents['info-1'] = 'The selected city is Kyoto.'
+            capability = adapter.ExternalIntelligenceCapability(FakeTransport())
+            with mock.patch.object(capability, '_invoke', side_effect=invoke):
+                answer, usage, report = capability.active_answer(
+                    {'question': 'Which city?', 'question_date': 'today', 'answer': 'SECRET GOLD'},
+                    client, self.protocol['reader'], self.protocol['retrieval'], Path(directory))
+            self.assertEqual(answer, 'Kyoto')
+            self.assertEqual(usage['calls'], 5)
+            self.assertTrue(report['information_use']['used'])
+            self.assertEqual(len(report['selection_steps']), 2)
+            self.assertTrue((Path(directory) / 'information-use-result.json').is_file())
+
     def test_active_capability_exposes_tools_and_checkpoints_the_agent_trace(self) -> None:
         class ActiveTransport(FakeTransport):
             def invoke(self, **request):
@@ -593,7 +636,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
                 self.test_case.assertEqual(list(adapter.ACTIVE_RETRIEVAL_TOOLS), names)
                 search = request["tool_handler"]("ownward_search", {"query": "selected city", "limit": 1})
                 request["tool_handler"]("ownward_read", {"id": search["results"][0]["id"]})
-                return {"answer": "Kyoto"}, {
+                return {"answer": "Kyoto", "use_information_use": False}, {
                     "input_tokens": 1, "cached_input_tokens": 0, "output_tokens": 1, "reasoning_output_tokens": 0,
                 }, {
                     "transport": "codex-app-server-stdio", "server_instance": "fixture",
