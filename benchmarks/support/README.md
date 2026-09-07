@@ -2,6 +2,8 @@
 
 本目录只放多个评测入口共享、但不属于任何具体供应商的执行契约。
 
+`information_use_flow.py` 仅转接[产品接入组件](../../integrations/python/ownward_information_use.py)，真实智能体与模拟 Reader 复用同一实现，不维护另一套流程。调用方提供原任务、全部已获材料及独立上下文的 `invoke` 回调；组件衔接忠实理解、初稿、有依据的竞争方案和比较，语义判断与模型调用仍属于外部智能体。该能力为显式可选接入，未修改关卡或最终测试默认；使用契约与实测边界见[模块说明](../../docs/modules/information-use/README.md)。
+
 `external_intelligence.py` 是生成、语义组织、Reader 和 Judge 共用的稳定外部智能端口。业务编排只能依赖它提供的结构化 turn、动态工具回调、用量、超时、错误和有界并发语义，不能导入供应商进程、认证或事件类型。该端口同时统一有界重试、原子检查点、失效归档和字节级恢复；具体业务只提供自己的提示、Schema、校验和可选工具会话钩子，不再复制执行生命周期。
 
 唯一装配入口是 `benchmarks/longmemeval_s/external_intelligence_runtime.py`。它从 `external-intelligence-runtime.json` 的版本化实现目录中选择一个 driver；Codex 与 OpenCode 的进程、认证、事件和清理分别留在各自适配器。供应商、模型、推理档位、适配器实现、执行制品、工具清单、超时/重试和并发都进入请求或运行身份，认证内容永不进入证据。目录默认是 `opencode-go-api/v1`（轻量客户端 / 阿里百炼 / Qwen3.8 Flash，driver 保留历史兼容标识）；旧 `codex_*` 配置仍被解释为显式 Codex 选择，行为不变。
