@@ -42,7 +42,7 @@ ROLE_EFFORT_ORDER = {
     "quality-admission": ("xhigh",),
     "semantic-organization": ("xhigh",),
     "reader": ("xhigh",),
-    "judge": ("medium",),
+    "judge": ("xhigh",),
 }
 
 
@@ -440,7 +440,7 @@ def qualify(binary: Path, credential_file: Path, output_dir: Path) -> dict[str, 
         "driver": DRIVER,
         "provider": PROVIDER,
         "model": MODEL,
-        "selection_rule": "qualified-fixed-profile:intelligence-heavy-xhigh;judge-medium",
+        "selection_rule": "qualified-fixed-profile:intelligence-heavy-xhigh;judge-xhigh",
         "validation_contract_identity": validation["identity"],
         "runtime_identity": runtime_identity,
         "roles": public_roles,

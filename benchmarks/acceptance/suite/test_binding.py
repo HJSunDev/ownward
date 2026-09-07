@@ -383,7 +383,7 @@ class BindingManifestTests(unittest.TestCase):
         roles = binding.external_intelligence_runtime.role_profile_from_execution(community)
         self.assertEqual("qwen3.8-flash", roles["semantic"]["model"])
         self.assertEqual("xhigh", roles["reader"]["reasoning_effort"])
-        self.assertEqual("medium", roles["judge"]["reasoning_effort"])
+        self.assertEqual("xhigh", roles["judge"]["reasoning_effort"])
         self.assertNotIn("judge_api_key_env", community)
         protocol = binding.load_json(self.root.parents[1] / "longmemeval_s" / "protocol.json")
         self.assertEqual(binding.LONGMEMEVAL_S_CODE_REVISION, protocol["official"]["code_revision"])

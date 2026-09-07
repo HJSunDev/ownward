@@ -6,6 +6,7 @@
 
 `external_intelligence.py` 是生成、语义组织、Reader 和 Judge 共用的稳定外部智能端口。业务编排只能依赖它提供的结构化 turn、动态工具回调、用量、超时、错误和有界并发语义，不能导入供应商进程、认证或事件类型。该端口同时统一有界重试、原子检查点、失效归档和字节级恢复；具体业务只提供自己的提示、Schema、校验和可选工具会话钩子，不再复制执行生命周期。
 
+所有新判分（含关卡、最终测试、临时实验和质量准入）统一使用 **xhigh**；共享执行入口覆盖旧配置中的较低档位，并按实际档位保存请求身份。历史判分记录不改写。
 
 唯一装配入口是 `benchmarks/longmemeval_s/external_intelligence_runtime.py`。它从 `external-intelligence-runtime.json` 的版本化实现目录中选择一个 driver；Codex 与 OpenCode 的进程、认证、事件和清理分别留在各自适配器。供应商、模型、推理档位、适配器实现、执行制品、工具清单、超时/重试和并发都进入请求或运行身份，认证内容永不进入证据。目录默认是 `opencode-go-api/v1`（轻量客户端 / 阿里百炼 / Qwen3.8 Flash，driver 保留历史兼容标识）；旧 `codex_*` 配置仍被解释为显式 Codex 选择，行为不变。
 

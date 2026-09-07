@@ -446,7 +446,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
         self.assertEqual(before, self.protocol)
         self.assertEqual("qwen3.8-flash", effective["memory"]["semantic_model"])
         self.assertEqual("xhigh", effective["reader"]["reasoning_effort"])
-        self.assertEqual("medium", effective["judge"]["reasoning_effort"])
+        self.assertEqual("xhigh", effective["judge"]["reasoning_effort"])
         self.assertEqual("external-intelligence", effective["memory"]["capability_source"])
         self.assertEqual("external-intelligence", effective["reader"]["capability_source"])
         self.assertEqual("external-intelligence", effective["judge"]["capability_source"])

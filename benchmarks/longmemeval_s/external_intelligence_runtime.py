@@ -20,6 +20,7 @@ from external_intelligence import (  # noqa: E402
     ExternalIntelligenceTimeout,
     RuntimeIdentity,
     load_runtime_selection,
+    effective_reasoning_effort,
     select_runtime_implementation,
     select_runtime_role_profile,
 )
@@ -100,7 +101,7 @@ def role_profile_from_execution(section: dict[str, Any]) -> dict[str, dict[str, 
             model, effort = value.get("model"), value.get("reasoning_effort")
             if not isinstance(model, str) or not model.strip() or not isinstance(effort, str) or not effort.strip():
                 raise ExternalIntelligenceError(f"external-intelligence {role} role configuration is missing")
-            result[role] = {"model": model, "reasoning_effort": effort}
+            result[role] = {"model": model, "reasoning_effort": effective_reasoning_effort(role, effort)}
         implementation = selected_implementation(driver if isinstance(driver, str) else None)
         allowed_models = set(implementation["models"])
         allowed_efforts = set(implementation["reasoning_efforts"])
@@ -126,7 +127,7 @@ def role_profile_from_execution(section: dict[str, Any]) -> dict[str, dict[str, 
         effort = section.get(effort_field)
         if not isinstance(model, str) or not model.strip() or not isinstance(effort, str) or not effort.strip():
             raise ExternalIntelligenceError(f"external-intelligence {role} role configuration is missing")
-        result[role] = {"model": model, "reasoning_effort": effort}
+        result[role] = {"model": model, "reasoning_effort": effective_reasoning_effort(role, effort)}
     return result
 
 

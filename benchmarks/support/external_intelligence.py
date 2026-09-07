@@ -264,6 +264,13 @@ def select_runtime_implementation(selection: dict[str, Any], driver: str | None 
     raise ExternalIntelligenceError(f"unsupported external-intelligence driver: {selected_driver}")
 
 
+def effective_reasoning_effort(role: str, effort: str) -> str:
+    """All new judging uses xhigh, including callers with older saved profiles."""
+    if role.replace("_", "-") in {"judge", "quality-admission", "quality-admission-qualification"}:
+        return "xhigh"
+    return effort
+
+
 def select_runtime_role_profile(selection: dict[str, Any], driver: str | None = None) -> dict[str, dict[str, str]]:
     """Resolve the qualified role profile for one implementation without reading credentials."""
     selected_driver = driver or selection.get("default_driver")
@@ -271,7 +278,8 @@ def select_runtime_role_profile(selection: dict[str, Any], driver: str | None = 
     profile = selection.get("role_profiles", {}).get(selected_driver)
     if not isinstance(profile, dict):
         raise ExternalIntelligenceError(f"external-intelligence role profile is missing: {selected_driver}")
-    return {role: dict(settings) for role, settings in profile.items()}
+    return {role: {**settings, "reasoning_effort": effective_reasoning_effort(role, settings["reasoning_effort"])}
+            for role, settings in profile.items()}
 
 
 def validate_runtime_identity(value: dict[str, Any]) -> None:
@@ -394,6 +402,7 @@ class ExternalIntelligenceExecutor:
         validate: Callable[[dict[str, Any]], None] | None = None,
         lifecycle: InvocationLifecycle | None = None,
     ) -> tuple[dict[str, Any], dict[str, int]]:
+        effort = effective_reasoning_effort(role, effort)
         lifecycle = lifecycle or InvocationLifecycle(retrieval_mode="no-tools")
         identity, request_value = request_identity(
             role=role,

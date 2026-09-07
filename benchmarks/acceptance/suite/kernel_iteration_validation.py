@@ -514,7 +514,8 @@ def validate_execution_config(
             f"{protocol_contract_value['memory']['semantic_model']}/{protocol_contract_value['memory']['semantic_reasoning_effort']}" == expected_roles["semantic"]
             and protocol_contract_value["reader"]["model"] == "gpt-5.6-luna"
             and protocol_contract_value["reader"]["reasoning_effort"] == expected_reader_effort
-            and f"{protocol_contract_value['judge']['model']}/{protocol_contract_value['judge']['reasoning_effort']}" == expected_roles["judge"],
+            and protocol_contract_value["judge"]["model"] == expected_roles["judge"].rsplit("/", 1)[0]
+            and protocol_contract_value["judge"]["reasoning_effort"] == external_intelligence.effective_reasoning_effort("judge", expected_roles["judge"].rsplit("/", 1)[1]),
             "执行配置没有使用冻结的 Luna/Luna/Terra 角色",
         )
         _require(

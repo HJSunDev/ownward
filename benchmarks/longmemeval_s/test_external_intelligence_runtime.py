@@ -69,14 +69,14 @@ class ExternalIntelligenceRuntimeTests(unittest.TestCase):
         })
         self.assertEqual({"model": "semantic", "reasoning_effort": "low"}, roles["semantic"])
         self.assertEqual({"model": "reader", "reasoning_effort": "medium"}, roles["reader"])
-        self.assertEqual({"model": "judge", "reasoning_effort": "high"}, roles["judge"])
+        self.assertEqual({"model": "judge", "reasoning_effort": "xhigh"}, roles["judge"])
 
     def test_default_opencode_go_configuration_uses_qualified_qwen_profile(self) -> None:
         roles = {
             role: {"model": "qwen3.8-flash", "reasoning_effort": "xhigh"}
             for role in subject.EXPLICIT_ROLE_KEYS
         }
-        roles["judge"] = {"model": "qwen3.8-flash", "reasoning_effort": "medium"}
+        roles["judge"] = {"model": "qwen3.8-flash", "reasoning_effort": "xhigh"}
         roles["semantic"] = {"model": "qwen3.8-flash", "reasoning_effort": "medium"}
         value = {
             "external_intelligence": {

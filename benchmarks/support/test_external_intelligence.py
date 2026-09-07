@@ -25,6 +25,31 @@ def runtime_identity() -> dict[str, object]:
 
 
 class ExternalIntelligenceContractTests(unittest.TestCase):
+    def test_judges_use_xhigh_in_transport_and_checkpoint(self) -> None:
+        class Transport:
+            identity = runtime_identity()
+
+            def invoke(self, **request):
+                captured.append(request)
+                return {"answer": "done"}, {}, {}
+
+            def diagnostics(self):
+                return {"rate_limit_observed": False}
+
+        for role in ("judge", "quality-admission", "quality_admission", "quality-admission-qualification", "reader", "semantic"):
+            with self.subTest(role=role), tempfile.TemporaryDirectory() as directory:
+                captured = []
+                executor = subject.ExternalIntelligenceExecutor(Transport())
+                arguments = dict(role=role, prompt="task", schema={"type": "object"},
+                                 stage=Path(directory), model="model", effort="medium", timeout_seconds=10, attempts=1)
+                executor.invoke(**arguments)
+                expected = "medium" if role in {"reader", "semantic"} else "xhigh"
+                self.assertEqual(expected, captured[0]["effort"])
+                request = json.loads((Path(directory) / "request.json").read_text())
+                self.assertEqual(expected, request["reasoning_effort"])
+                executor.invoke(**arguments)
+                self.assertEqual(1, len(captured))
+
     def test_instructions_reach_transport_with_and_without_tools(self) -> None:
         class Transport:
             identity = runtime_identity()
@@ -244,7 +269,7 @@ class ExternalIntelligenceContractTests(unittest.TestCase):
         self.assertEqual("opencode-server/v1", subject.select_runtime_implementation(selection, "opencode-server/v1")["driver"])
         qwen = subject.select_runtime_role_profile(selection)
         self.assertEqual({"model": "qwen3.8-flash", "reasoning_effort": "xhigh"}, qwen["reader"])
-        self.assertEqual({"model": "qwen3.8-flash", "reasoning_effort": "medium"}, qwen["judge"])
+        self.assertEqual({"model": "qwen3.8-flash", "reasoning_effort": "xhigh"}, qwen["judge"])
         self.assertEqual(64, len(selection["selection_sha256"]))
 
     def test_implementation_identity_changes_only_for_its_direct_selection(self) -> None:

@@ -187,7 +187,7 @@ def validate_protocol(value: dict[str, Any], *, formal: bool | None = None) -> N
     require(
         judge.get("capability_source") == "codex"
         and judge["model"] == "gpt-5.6-terra"
-        and judge["reasoning_effort"] == "medium",
+        and judge["reasoning_effort"] == "xhigh",
         "judge identity changed",
     )
     require(
@@ -251,7 +251,7 @@ def apply_external_intelligence_roles(
         effective["reader"].pop(field, None)
     effective["judge"]["capability_source"] = "external-intelligence"
     effective["judge"]["model"] = roles["judge"]["model"]
-    effective["judge"]["reasoning_effort"] = roles["judge"]["reasoning_effort"]
+    effective["judge"]["reasoning_effort"] = "xhigh"
     return effective
 
 

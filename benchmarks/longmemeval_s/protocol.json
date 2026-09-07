@@ -58,7 +58,7 @@
   "judge": {
     "capability_source": "codex",
     "model": "gpt-5.6-terra",
-    "reasoning_effort": "medium",
+    "reasoning_effort": "xhigh",
     "max_output_tokens": 64,
     "timeout_seconds": 240,
     "attempts": 3

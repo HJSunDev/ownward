@@ -298,9 +298,9 @@ class OpenCodeExternalIntelligenceTests(unittest.TestCase):
 
         self.assertEqual("xhigh", generator_effort)
         self.assertEqual({}, generator_failures)
-        self.assertEqual("medium", judge_effort)
+        self.assertEqual("xhigh", judge_effort)
         self.assertEqual({}, judge_failures)
-        self.assertEqual([("generator", "xhigh"), ("judge", "medium")], calls)
+        self.assertEqual([("generator", "xhigh"), ("judge", "xhigh")], calls)
 
     def test_terminal_selection_requires_current_qualification_identity_and_is_read_only(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -96,7 +96,7 @@ class KernelIterationValidationTests(unittest.TestCase):
         self.assertEqual({"answer": "ok"}, value)
         self.assertEqual("quality-admission", usage["role"])
         self.assertEqual("selected-model", transport.requests[0]["model"])
-        self.assertEqual("max", transport.requests[0]["effort"])
+        self.assertEqual("xhigh", transport.requests[0]["effort"])
 
     def test_versioned_blind_budget_is_clean_checkout_safe_and_bound_to_calibration(self) -> None:
         value = validation.load_blind_budget_archive(HERE)

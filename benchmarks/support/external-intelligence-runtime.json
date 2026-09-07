@@ -61,7 +61,7 @@
       },
       "judge": {
         "model": "qwen3.8-flash",
-        "reasoning_effort": "medium"
+        "reasoning_effort": "xhigh"
       }
     },
     "codex-app-server/v1": {
@@ -71,7 +71,7 @@
       },
       "quality_admission": {
         "model": "gpt-5.6-terra",
-        "reasoning_effort": "medium"
+        "reasoning_effort": "xhigh"
       },
       "semantic": {
         "model": "gpt-5.6-luna",
@@ -83,7 +83,7 @@
       },
       "judge": {
         "model": "gpt-5.6-terra",
-        "reasoning_effort": "medium"
+        "reasoning_effort": "xhigh"
       }
     },
     "opencode-server/v1": {
@@ -105,7 +105,7 @@
       },
       "judge": {
         "model": "qwen3.8-flash",
-        "reasoning_effort": "medium"
+        "reasoning_effort": "xhigh"
       }
     }
   }
