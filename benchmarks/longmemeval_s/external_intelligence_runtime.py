@@ -201,6 +201,14 @@ def current_runtime_identity(
     ).value()
 
 
+def _translate_timeout(error: Exception) -> ExternalIntelligenceTimeout:
+    translated = ExternalIntelligenceTimeout(str(error))
+    notes = getattr(error, "working_notes", None)
+    if isinstance(notes, str) and notes:
+        translated.working_notes = notes
+    return translated
+
+
 class _StableTransport:
     """Translate provider failures at the port, before the shared retry loop sees them."""
 
@@ -216,7 +224,7 @@ class _StableTransport:
         try:
             return self._transport.invoke(**request)
         except self._adapter.TransportTimeout as error:
-            raise ExternalIntelligenceTimeout(str(error)) from error
+            raise _translate_timeout(error) from error
         except self._adapter.TransportError as error:
             raise ExternalIntelligenceError(str(error)) from error
 
@@ -247,7 +255,7 @@ def open_external_intelligence_runtime(
         ) as transport:
             yield _StableTransport(transport, adapter)
     except adapter.TransportTimeout as error:
-        raise ExternalIntelligenceTimeout(str(error)) from error
+        raise _translate_timeout(error) from error
     except adapter.TransportError as error:
         raise ExternalIntelligenceError(str(error)) from error
 

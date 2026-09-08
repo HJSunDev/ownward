@@ -21,12 +21,20 @@ class InformationUseFlowTests(unittest.TestCase):
         self.observations = {'task': 'Plan the requested work.',
                              'sources': [{'id': 's1', 'origin': 'original', 'content': 'A record.'}]}
 
-    def run_flow(self, selected, edits=None, existing=None, addition="", accepted=True):
+    def run_flow(self, selected, edits=None, existing=None, addition="", accepted=True, dependency_edits=None):
         calls = {}
         def invoke(stage, instruction, payload, schema):
             self.assertEqual(payload['task'], self.observations['task'])
+            if stage == 'route-dependency-check':
+                self.assertNotIn('sources', payload)
+                self.assertIn('existing_reasoning', payload)
+                calls[stage] = payload
+                return {'basis': 'Working decision', 'check': dependency_edits is not None}
             self.assertEqual(payload['sources'], self.observations['sources'])
             calls[stage] = payload
+            if stage == 'check-dependencies':
+                return {'unsupported_bridge': '', 'result_without_bridge': '',
+                        'edits': dependency_edits or []}
             if stage == "admit-addition":
                 self.assertNotIn("completed_work", payload)
                 self.assertNotIn("considered_alternatives", payload)
@@ -50,7 +58,7 @@ class InformationUseFlowTests(unittest.TestCase):
             with self.subTest(selected=selected):
                 result, calls = self.run_flow(selected)
                 self.assertEqual(result['answer'], selected)
-                self.assertEqual(set(calls), {'understand', 'draft', 'alternative', 'compare', 'supplement'})
+                self.assertEqual(set(calls), {'understand', 'draft', 'alternative', 'compare', 'supplement', 'route-dependency-check'})
                 self.assertEqual(calls['alternative']['existing_proposal'], 'Initial plan')
                 self.assertEqual(calls['alternative']['fallible_reading'], 'A fallible reading.')
                 self.assertEqual(set(calls['compare']), {'task', 'sources', 'candidates'})
@@ -67,7 +75,54 @@ class InformationUseFlowTests(unittest.TestCase):
         edits = [{'before': 'Alternative', 'after': 'Revised', 'basis': 'External assessment'}]
         result, calls = self.run_flow('Alternative plan', edits)
         self.assertEqual(result['answer'], 'Revised plan')
-        self.assertEqual(len(calls), 5)
+        self.assertEqual(len(calls), 6)
+
+    def test_dependency_review_receives_accepted_addition_and_preserves_other_work(self):
+        edits = [{'before': 'Unconfirmed outcome', 'after': 'Conditional outcome', 'basis': 'Missing link'}]
+        result, calls = self.run_flow('Alternative plan', addition='Unconfirmed outcome', dependency_edits=edits)
+        original = 'Alternative plan\n\nUnconfirmed outcome'
+        self.assertEqual(calls['check-dependencies'], {**self.observations, 'completed_work': original})
+        self.assertEqual(result['work_before_dependency_check'], original)
+        self.assertEqual(result['answer'], 'Alternative plan\n\nConditional outcome')
+        self.assertEqual(result['dependency_edits'], edits)
+        self.assertEqual(list(calls)[-1], 'check-dependencies')
+
+    def test_dependency_routing_cannot_silently_skip_or_reinterpret_a_choice(self):
+        for route in ({}, {'check': 'false'}, {'check': 0}):
+            with self.subTest(route=route), self.assertRaises(ValueError):
+                flow._finish_dependencies(self.observations, {'answer': 'Work'}, lambda *args: route)
+
+    def test_declined_dependency_check_preserves_result_without_reading_or_modifying_it(self):
+        work = {'answer': 'A qualified result', 'decision': {'basis': 'Already considered'}}
+        calls = []
+        def invoke(stage, instruction, payload, schema):
+            calls.append(stage)
+            self.assertEqual(payload, {'task': self.observations['task'], 'completed_work': work['answer'],
+                                     'existing_reasoning': {'decision': work['decision']}})
+            return {'basis': 'Already qualified', 'check': False}
+        result = flow._finish_dependencies(self.observations, work, invoke)
+        self.assertEqual(result['answer'], 'A qualified result')
+        self.assertEqual(calls, ['route-dependency-check'])
+        self.assertNotIn('dependency_review', result)
+
+    def test_dependency_anchor_repair_has_a_separate_checkpoint_from_comparison_repair(self):
+        calls = []
+        def invoke(stage, instruction, payload, schema):
+            calls.append(stage)
+            if stage == 'check-dependencies':
+                return {'unsupported_bridge': 'Missing condition', 'result_without_bridge': 'Conditional',
+                        'edits': [{'before': 'the result', 'after': 'conditional result', 'basis': 'Sources'}]}
+            self.assertEqual(stage, 'repair-dependency-edit-anchors')
+            return {'anchors': [{'first': 0, 'last': 0}]}
+        result = flow.check_dependencies(self.observations, 'Result remains usable.', invoke)
+        self.assertEqual(result['answer'], 'conditional result remains usable.')
+        self.assertEqual(calls, ['check-dependencies', 'repair-dependency-edit-anchors'])
+        self.assertEqual(result['dependency_edits'][0]['basis'], 'Sources')
+
+    def test_dependency_review_failure_does_not_silently_release_unchecked_work(self):
+        with self.assertRaisesRegex(RuntimeError, 'Unavailable'):
+            flow.check_dependencies(self.observations, 'Prior work',
+                                    lambda *args: (_ for _ in ()).throw(RuntimeError('Unavailable')))
 
     def test_supplement_preserves_the_completed_result_verbatim(self):
         result, calls = self.run_flow('Alternative plan', addition='A supported condition.')
@@ -104,6 +159,49 @@ class InformationUseFlowTests(unittest.TestCase):
             {'before': 'last', 'after': 'ending'},
             {'before': 'first', 'after': 'a longer beginning'}]),
             'a longer beginning + ending')
+
+    def test_valid_edits_need_no_location_repair(self):
+        edits = [{'before': 'old', 'after': 'new', 'basis': 'Evidence'}]
+        answer, applied = flow.apply_reviewed_edits(
+            'An old result', edits, lambda *args: self.fail('Valid edits need no extra invocation'))
+        self.assertEqual(answer, 'An new result')
+        self.assertEqual(applied, edits)
+
+    def test_location_repair_preserves_the_external_decision_and_original_record(self):
+        edits = [{'before': 'pairing by order', 'after': 'chronological pairing', 'basis': 'Evidence'}]
+        calls = []
+        def invoke(stage, instruction, payload, schema):
+            calls.append(stage)
+            self.assertEqual(payload['work'], 'Use pairing them by order.')
+            self.assertEqual(payload['requested_edits'], edits)
+            self.assertEqual(payload['tokens'][1], {'id': 1, 'text': 'pairing'})
+            return {'anchors': [{'first': 1, 'last': 4}]}
+        answer, applied = flow.apply_reviewed_edits('Use pairing them by order.', edits, invoke)
+        self.assertEqual(answer, 'Use chronological pairing.')
+        self.assertEqual(applied, [{**edits[0], 'before': 'pairing them by order'}])
+        self.assertEqual(edits[0]['before'], 'pairing by order')
+        self.assertEqual(calls, ['repair-edit-anchors'])
+
+    def test_invalid_location_repair_never_silently_drops_or_guesses_an_edit(self):
+        for text, anchors in [('abc', [{'first': -1, 'last': -1}]),
+                              ('same same', [{'first': 0, 'last': 0}]),
+                              ('abc', [{'first': 0, 'last': 1}]), ('abc', []),
+                              ('abc', [{'first': 0, 'last': 0}] * 2),
+                              ('abc', [{'first': True, 'last': 0}])]:
+            calls = []
+            def invoke(*args):
+                calls.append(args[0])
+                return {'anchors': anchors}
+            with self.subTest(text=text, anchors=anchors), self.assertRaises(ValueError):
+                flow.apply_reviewed_edits(text, [{'before': 'wrong', 'after': 'new'}], invoke)
+            self.assertEqual(calls, ['repair-edit-anchors'])
+
+    def test_location_repair_cannot_create_overlapping_edits(self):
+        with self.assertRaisesRegex(ValueError, 'overlap'):
+            flow.apply_reviewed_edits('a b c', [{'before': 'x', 'after': '1'},
+                                               {'before': 'y', 'after': '2'}],
+                                     lambda *args: {'anchors': [{'first': 0, 'last': 1},
+                                                               {'first': 1, 'last': 2}]})
 
     def test_invalid_choice_never_falls_back_to_a_silent_answer(self):
         def invoke(stage, instruction, payload, schema):
@@ -174,11 +272,15 @@ class InformationUseFlowTests(unittest.TestCase):
                 return {'selected_id': selected, 'basis': 'Sources', 'edits': []}
             if stage == 'supplement':
                 return {'addition': ''}
+            if stage == 'check-dependencies':
+                return {'unsupported_bridge': '', 'result_without_bridge': '', 'edits': []}
+            if stage == 'route-dependency-check':
+                return {'basis': 'No gap', 'check': False}
             self.fail('Unexpected stage: ' + stage)
         result = flow.respond(self.observations, invoke)
         self.assertEqual(result['answer'], 'Better work')
         self.assertTrue(result['used_information_use'])
-        self.assertEqual(calls, ['respond', 'understand', 'alternative', 'compare', 'supplement'])
+        self.assertEqual(calls, ['respond', 'understand', 'alternative', 'compare', 'supplement', 'route-dependency-check'])
 
     def test_missing_or_nonboolean_choice_is_not_silently_treated_as_direct(self):
         for response in [{'answer': 'Work'}, {'answer': 'Work', 'use_information_use': 'false'}]:

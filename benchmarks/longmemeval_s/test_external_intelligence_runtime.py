@@ -8,9 +8,36 @@ import unittest
 from unittest import mock
 
 import external_intelligence_runtime as subject
+from external_intelligence import ExternalIntelligenceExecutor, InvocationLifecycle
 
 
 class ExternalIntelligenceRuntimeTests(unittest.TestCase):
+    def test_adapter_timeout_progress_reaches_the_shared_retry_loop(self):
+        for timeout_type in (TimeoutError, subject.ExternalIntelligenceTimeout):
+            with self.subTest(timeout_type=timeout_type), tempfile.TemporaryDirectory() as directory:
+                transport = mock.Mock()
+                transport.identity = subject.RuntimeIdentity(
+                    driver='test/v1', provider='test', transport='in-process-test/v1',
+                    selection_sha256='d'*64, artifact_sha256='a'*64, implementation_sha256='e'*64,
+                    credential_locator_sha256='b'*64, max_active=1, worker_processes=1).value()
+                transport.new_scope.return_value = transport
+                transport.diagnostics.return_value = {'rate_limit_observed': False}
+                error = timeout_type('interrupted')
+                error.working_notes = 'preserved work'
+                transport.invoke.side_effect = [error, ({'answer': 'done'}, {}, {})]
+                adapter = mock.Mock(TransportTimeout=timeout_type, TransportError=RuntimeError)
+                stable = subject._StableTransport(transport, adapter).new_scope()
+                value, usage = ExternalIntelligenceExecutor(stable).invoke(
+                    role='reader', prompt='original', schema={'type': 'object'}, stage=Path(directory),
+                    model='model', effort='xhigh', timeout_seconds=240, attempts=2,
+                    lifecycle=InvocationLifecycle(retrieval_mode='no-tools',
+                        resume_prompt=lambda notes: 'original\n' + notes))
+                self.assertEqual({'answer': 'done'}, value)
+                self.assertEqual(['original', 'original\npreserved work'],
+                                 [call.kwargs['prompt'] for call in transport.invoke.call_args_list])
+                self.assertEqual(2, usage['attempts'])
+                self.assertTrue((Path(directory)/'attempt-001/interrupted-work.json').is_file())
+
     def test_each_driver_loads_without_other_implementations(self) -> None:
         for driver, module in subject._ADAPTERS.items():
             unavailable = [name for name in subject._ADAPTERS.values() if name != module]

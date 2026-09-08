@@ -598,7 +598,8 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             self.assertEqual(request['model'], self.protocol['reader']['model'])
             self.assertEqual(request['effort'], self.protocol['reader']['reasoning_effort'])
             self.assertNotIn('dynamic_tools', request)
-            self.assertIn('The selected city is Kyoto.', request['prompt'])
+            if request['stage'].name != 'route-dependency-check':
+                self.assertIn('The selected city is Kyoto.', request['prompt'])
             self.assertNotIn('SECRET GOLD', request['prompt'])
             step = request['stage'].name
             if step == 'understand':
@@ -609,6 +610,10 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
                 payload = json.loads(request['prompt'].split('\n\n', 1)[1])
                 selected = next(c['id'] for c in payload['candidates'] if c['content'] == 'Kyoto')
                 output = {'selected_id': selected, 'basis': 'Original source', 'edits': []}
+            elif step == 'check-dependencies':
+                output = {'unsupported_bridge': '', 'result_without_bridge': '', 'edits': []}
+            elif step == 'route-dependency-check':
+                output = {'basis': 'No unresolved link', 'check': False}
             else:
                 self.assertEqual(step, 'supplement')
                 output = {'addition': ''}
@@ -622,7 +627,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
                     {'question': 'Which city?', 'question_date': 'today', 'answer': 'SECRET GOLD'},
                     client, self.protocol['reader'], self.protocol['retrieval'], Path(directory))
             self.assertEqual(answer, 'Kyoto')
-            self.assertEqual(usage['calls'], 5)
+            self.assertEqual(usage['calls'], 6)
             self.assertTrue(report['information_use']['used'])
             self.assertEqual(len(report['selection_steps']), 2)
             self.assertTrue((Path(directory) / 'information-use-result.json').is_file())
