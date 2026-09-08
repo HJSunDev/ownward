@@ -149,6 +149,28 @@ class GoAPIClientTests(unittest.TestCase):
         with self.assertRaises(subject.ExternalIntelligenceTimeout):
             self.client._remaining(time.monotonic()-1)
 
+    def test_timeout_exposes_only_unfinished_thinking_and_keeps_trace(self):
+        for failure in (subject.socket.timeout(), subject.ExternalIntelligenceTimeout('deadline')):
+            with self.subTest(failure=type(failure).__name__):
+                events = [
+                    {'type': 'content_block_start', 'index': 0,
+                     'content_block': {'type': 'thinking', 'thinking': '', 'signature': 'private-signature'}},
+                    {'type': 'content_block_delta', 'index': 0,
+                     'delta': {'type': 'thinking_delta', 'thinking': 'useful test-key progress'}},
+                ]
+                response = mock.Mock(status=200)
+                response.readline.side_effect = [
+                    b'data: '+json.dumps(event).encode()+b'\n' for event in events] + [failure]
+                connection = mock.Mock(sock=None)
+                connection.getresponse.return_value = response
+                with mock.patch.object(subject.http.client, 'HTTPSConnection', return_value=connection):
+                    with self.assertRaises(subject.ExternalIntelligenceTimeout) as raised:
+                        self.invoke()
+                self.assertEqual('useful [redacted] progress', raised.exception.working_notes)
+                self.assertTrue((self.root/'work/response-001.events.jsonl').exists())
+                self.assertFalse((self.root/'work/response-001.json').exists())
+                self.assertEqual(0, self.client.diagnostics()['active_turns'])
+
     def test_sse_http_error_records_service_reason_without_key(self):
         response = io.BytesIO(b'event:error\ndata:{"code":"InvalidParameter","message":"inspection rejected test-key"}\n\n')
         response.status = 400

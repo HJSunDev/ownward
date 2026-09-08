@@ -1,4 +1,5 @@
 import sys
+import json
 import unittest
 from pathlib import Path
 
@@ -7,6 +8,15 @@ import ownward_information_use as flow
 
 
 class InformationUseFlowTests(unittest.TestCase):
+    def test_stage_recovery_preserves_original_input_and_marks_notes_as_fallible(self):
+        payload = {'task': 'Use the records.', 'sources': ['original']}
+        plain = flow.stage_prompt('instruction', payload)
+        self.assertEqual('instruction\n\n' + json.dumps(payload, ensure_ascii=False), plain)
+        resumed = flow.stage_prompt('instruction', payload, 'unfinished work')
+        self.assertEqual({'task': 'Use the records.', 'sources': ['original']}, payload)
+        self.assertEqual('instruction\n\n' + flow.RESUME + '\n\n' + json.dumps(
+            {**payload, 'interrupted_working_notes': 'unfinished work'}, ensure_ascii=False), resumed)
+
     def setUp(self):
         self.observations = {'task': 'Plan the requested work.',
                              'sources': [{'id': 's1', 'origin': 'original', 'content': 'A record.'}]}
@@ -116,13 +126,37 @@ class InformationUseFlowTests(unittest.TestCase):
         calls = []
         def invoke(stage, instruction, payload, schema):
             calls.append(stage)
-            self.assertIn(flow.OFFER, instruction)
+            if stage == 'route':
+                self.assertEqual(payload, {**self.observations, 'proposed_work': 'Direct result'})
+                return {'basis': 'Directly stated.', 'mode': 'direct'}
             self.assertEqual(payload, self.observations)
+            self.assertIn(flow.OFFER, instruction)
             self.assertEqual(schema, flow.RESPONSE)
             return {'answer': 'Direct result', 'use_information_use': False}
         result = flow.respond(self.observations, invoke)
-        self.assertEqual(calls, ['respond'])
-        self.assertEqual(result, {'answer': 'Direct result', 'used_information_use': False})
+        self.assertEqual(calls, ['respond', 'route'])
+        self.assertEqual(result['answer'], 'Direct result')
+        self.assertFalse(result['used_information_use'])
+
+    def test_independent_routing_sees_originals_and_fallible_work_before_starting(self):
+        calls = []
+        def invoke(stage, instruction, payload, schema):
+            calls.append(stage)
+            if stage == 'route':
+                self.assertEqual(payload, {**self.observations, 'proposed_work': 'Unchanged draft'})
+                return {'basis': 'Interpretive choice.', 'mode': 'collaborate'}
+            self.assertEqual(stage, 'understand')
+            self.assertEqual(payload, self.observations)
+            raise RuntimeError('Observed component entry')
+        with self.assertRaisesRegex(RuntimeError, 'Observed component entry'):
+            flow.finish(self.observations, {'answer': 'Unchanged draft', 'use_information_use': False}, invoke)
+        self.assertEqual(calls, ['route', 'understand'])
+
+    def test_invalid_routing_never_silently_bypasses_collaboration(self):
+        for decision in ({}, {'mode': 'unknown'}):
+            with self.subTest(decision=decision), self.assertRaises(ValueError):
+                flow.finish(self.observations, {'answer': 'Work', 'use_information_use': False},
+                            lambda *args: decision)
 
     def test_agent_can_choose_collaboration_and_reuse_its_work(self):
         calls = []

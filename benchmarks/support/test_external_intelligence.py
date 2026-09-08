@@ -25,6 +25,58 @@ def runtime_identity() -> dict[str, object]:
 
 
 class ExternalIntelligenceContractTests(unittest.TestCase):
+    def test_interrupted_work_is_request_local_and_retry_budget_is_unchanged(self):
+        class Transport:
+            identity = runtime_identity()
+            def invoke(self, **request):
+                captured.append(request)
+                if len(captured) < 3:
+                    error = subject.ExternalIntelligenceTimeout('interrupted')
+                    error.working_notes = f'progress {len(captured)}'
+                    raise error
+                return {'answer': 'done'}, {}, {}
+            def diagnostics(self):
+                return {'rate_limit_observed': False}
+        with tempfile.TemporaryDirectory() as directory:
+            captured = []
+            executor = subject.ExternalIntelligenceExecutor(Transport())
+            arguments = dict(role='reader', prompt='original task', schema={'type': 'object'},
+                             model='model', effort='xhigh', timeout_seconds=240, attempts=3,
+                             lifecycle=subject.InvocationLifecycle(retrieval_mode='no-tools',
+                                 resume_prompt=lambda notes: 'original task\n' + notes))
+            _, usage = executor.invoke(stage=Path(directory)/'first', **arguments)
+            self.assertEqual(['original task', 'original task\nprogress 1',
+                              'original task\nprogress 1\n\nprogress 2'], [r['prompt'] for r in captured])
+            self.assertEqual(3, usage['attempts'])
+            self.assertTrue(all(r['timeout_seconds'] == 240 and r['effort'] == 'xhigh' for r in captured))
+            self.assertTrue((Path(directory)/'first/attempt-001/interrupted-work.json').is_file())
+            executor.invoke(stage=Path(directory)/'second', **arguments)
+            self.assertEqual('original task', captured[-1]['prompt'])
+
+    def test_ordinary_errors_empty_progress_and_tool_turns_do_not_resume(self):
+        for kind in ('ordinary', 'empty', 'tools', 'no-hook'):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as directory:
+                captured = []
+                class Transport:
+                    identity = runtime_identity()
+                    def invoke(self, **request):
+                        captured.append(request)
+                        if len(captured) == 1:
+                            error = (subject.ExternalIntelligenceError('failed') if kind == 'ordinary'
+                                     else subject.ExternalIntelligenceTimeout('interrupted'))
+                            error.working_notes = '' if kind == 'empty' else 'progress'
+                            raise error
+                        return {'answer': 'done'}, {}, {}
+                    def diagnostics(self):
+                        return {'rate_limit_observed': False}
+                subject.ExternalIntelligenceExecutor(Transport()).invoke(
+                    role='reader', prompt='original', schema={'type': 'object'}, stage=Path(directory),
+                    model='model', effort='xhigh', timeout_seconds=240, attempts=2,
+                    lifecycle=subject.InvocationLifecycle(retrieval_mode='no-tools',
+                        dynamic_tools=[] if kind == 'tools' else None,
+                        resume_prompt=None if kind == 'no-hook' else lambda _: 'resumed'))
+                self.assertEqual(['original', 'original'], [r['prompt'] for r in captured])
+
     def test_judges_use_xhigh_in_transport_and_checkpoint(self) -> None:
         class Transport:
             identity = runtime_identity()

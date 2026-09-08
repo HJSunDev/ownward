@@ -1013,6 +1013,7 @@ class ExternalIntelligenceCapability:
         timeout_seconds: float, attempts: int, validate: Callable[[dict[str, Any]], None] | None = None,
         active_retrieval: ActiveRetrievalSession | None = None,
         base_instructions: str | None = None,
+        resume_prompt: Callable[[str], str] | None = None,
     ) -> tuple[dict[str, Any], dict[str, int]]:
         base_instructions = active_retrieval.instructions if active_retrieval is not None else base_instructions
         lifecycle = InvocationLifecycle(
@@ -1025,6 +1026,7 @@ class ExternalIntelligenceCapability:
             restore=(active_retrieval.restore if active_retrieval is not None else None),
             validate=(active_retrieval.validate if active_retrieval is not None else None),
             report=(active_retrieval.report if active_retrieval is not None else None),
+            resume_prompt=resume_prompt,
         )
         try:
             return ExternalIntelligenceExecutor(self.transport).invoke(
@@ -1176,11 +1178,12 @@ class ExternalIntelligenceCapability:
         total = dict(usage)
         def invoke(step, instruction, payload, schema):
             value, consumed = self._invoke(
-                role="reader", prompt=instruction + "\n\n" + json.dumps(payload, ensure_ascii=False),
+                role="reader", prompt=information_use_flow.stage_prompt(instruction, payload),
                 schema=schema, stage=stage / "information-use" / step,
                 model=settings['model'], effort=settings['reasoning_effort'],
                 timeout_seconds=float(settings['timeout_seconds']), attempts=int(settings['attempts']),
                 base_instructions=instructions,
+                resume_prompt=lambda notes: information_use_flow.stage_prompt(instruction, payload, notes),
             )
             _add_usage(total, consumed)
             return value

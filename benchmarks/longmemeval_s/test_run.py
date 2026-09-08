@@ -632,6 +632,11 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             def invoke(self, **request):
                 self.calls += 1
                 self.test_case.assertEqual(self.expected_instructions, request["base_instructions"])
+                if "dynamic_tools" not in request:
+                    self.test_case.assertIn("Decide how to handle", request["prompt"])
+                    return {"basis": "Directly stated city.", "mode": "direct"}, {
+                        "input_tokens": 1, "output_tokens": 1,
+                    }, {"status": "completed"}
                 names = [item["name"] for item in request["dynamic_tools"]]
                 self.test_case.assertEqual(list(adapter.ACTIVE_RETRIEVAL_TOOLS), names)
                 search = request["tool_handler"]("ownward_search", {"query": "selected city", "limit": 1})
@@ -671,7 +676,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
                     {"question": "Which city?", "question_date": "today"}, client,
                     self.protocol["reader"], self.protocol["retrieval"], Path(directory),
                 )
-            self.assertEqual(1, transport.calls)
+            self.assertEqual(2, transport.calls)
 
     def test_app_server_returns_dynamic_tool_results_on_the_protocol_channel(self) -> None:
         server = concrete_transport.CodexAppServer(Path("codex.exe"), Path("auth.json"), Path("runtime"), ["codex"], {})

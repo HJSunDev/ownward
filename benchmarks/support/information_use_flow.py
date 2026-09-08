@@ -11,5 +11,6 @@ complete = _MODULE.complete
 reconsider = _MODULE.reconsider
 respond = _MODULE.respond
 finish = _MODULE.finish
+stage_prompt = _MODULE.stage_prompt
 OFFER = _MODULE.OFFER
 RESPONSE = _MODULE.RESPONSE

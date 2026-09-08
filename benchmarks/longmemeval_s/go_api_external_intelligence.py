@@ -161,6 +161,7 @@ class GoAPIClient:
               *, service: str | None = None) -> dict[str, Any]:
         service = service or self._route.primary
         destination = self._services[service]
+        blocks: dict[int, dict[str, Any]] = {}
         connection = http.client.HTTPSConnection(destination.host, timeout=self._remaining(deadline))
         try:
             connection_failures = []
@@ -256,8 +257,11 @@ class GoAPIClient:
             message["content"] = [blocks[index] for index in sorted(blocks)]
             _atomic_json(path, message)
             return message
-        except (socket.timeout, TimeoutError):
-            raise ExternalIntelligenceTimeout("Bailian API request timed out") from None
+        except (socket.timeout, TimeoutError, ExternalIntelligenceTimeout):
+            error = ExternalIntelligenceTimeout("Bailian API request timed out")
+            # Incomplete reasoning is recoverable work, never a completed answer.
+            error.working_notes = "".join(blocks[index].get("thinking", "") for index in sorted(blocks))
+            raise error from None
         except (OSError, http.client.HTTPException, ValueError) as error:
             details = {"error_type": type(error).__name__, "errno": getattr(error, "errno", None),
                        "filename": getattr(error, "filename", None),

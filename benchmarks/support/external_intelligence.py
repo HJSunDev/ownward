@@ -145,6 +145,7 @@ class InvocationLifecycle:
     restore: Callable[[Any], None] | None = None
     validate: Callable[[], None] | None = None
     report: Callable[[], Any] | None = None
+    resume_prompt: Callable[[str], str] | None = None
 
 
 @dataclass(frozen=True)
@@ -476,6 +477,7 @@ class ExternalIntelligenceExecutor:
                 raise ExternalIntelligenceError("external-intelligence attempt metadata is invalid")
             prior_wall_seconds += float(metadata.get("wall_seconds", 0.0))
             prior_rate_limits += int(bool(metadata.get("rate_limited", False)))
+        working_notes: list[str] = []
         for number in range(existing_attempts + 1, attempts + 1):
             attempt = stage / f"attempt-{number:03d}"
             attempt.mkdir()
@@ -487,7 +489,7 @@ class ExternalIntelligenceExecutor:
                     lifecycle.reset_attempt()
                 started = time.perf_counter()
                 invoke_arguments: dict[str, Any] = {
-                    "prompt": prompt,
+                    "prompt": lifecycle.resume_prompt("\n\n".join(working_notes)) if working_notes else prompt,
                     "schema": schema,
                     "model": model,
                     "effort": effort,
@@ -552,6 +554,11 @@ class ExternalIntelligenceExecutor:
                 })
                 return value, usage
             except (ExternalIntelligenceError, OSError, ValueError) as error:
+                notes = getattr(error, "working_notes", "")
+                if (isinstance(error, ExternalIntelligenceTimeout) and isinstance(notes, str) and notes
+                        and lifecycle.resume_prompt is not None and lifecycle.dynamic_tools is None):
+                    working_notes.append(notes)
+                    _write_json(attempt / "interrupted-work.json", {"working_notes": notes})
                 last_error = str(error)
                 elapsed = time.perf_counter() - attempt_started
                 rate_limited = _is_rate_limit(last_error) or bool(self.transport.diagnostics()["rate_limit_observed"])
