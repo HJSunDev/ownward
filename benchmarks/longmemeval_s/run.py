@@ -2803,12 +2803,16 @@ def execute(
     external_intelligence_roles: dict[str, dict[str, str]] | None = None,
     question_ids: list[str] | None = None, resume_compatible_transport: bool = False,
     stop_after_failures: int | None = None,
+    stop_requested: Callable[[], bool] | None = None,
+    question_workers: int | None = None,
 ) -> dict[str, Any]:
     require(stop_after_failures is None or stop_after_failures > 0, "failure stop threshold must be positive")
     environment = validate_environment(environment_manifest, smoke=False)
     protocol = load_json(protocol_path)
     require(isinstance(protocol, dict), "protocol is not an object")
     validate_protocol(protocol, formal=formal)
+    worker_count = int(protocol['execution']['max_workers']) if question_workers is None else question_workers
+    require(type(worker_count) is int and worker_count > 0, 'question concurrency must be positive')
     effective_roles = external_intelligence_roles or selected_role_profile(external_intelligence_driver)
     protocol = apply_external_intelligence_roles(protocol, {
         name: effective_roles[name] for name in ("semantic", "reader", "judge")
@@ -2928,14 +2932,15 @@ def execute(
             ) as transport:
                 capability_factory = lambda: ExternalIntelligenceCapability(transport, semantic_contract)
                 with PersistentWallClock(output_dir / "wall-clock.json") as clock:
-                    pool = ThreadPoolExecutor(max_workers=int(protocol["execution"]["max_workers"]), thread_name_prefix="longmemeval-question")
+                    write_json(output_dir / 'question-concurrency.json', {'max_workers': worker_count})
+                    pool = ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="longmemeval-question")
                     try:
                         remaining = iter(scheduled_questions)
                         futures: dict[Future, dict[str, Any]] = {}
                         exhausted = False
                         while True:
-                            while not exhausted and len(futures) < int(protocol["execution"]["max_workers"]):
-                                if stop_after_failures is not None and len(wrong_ids) >= stop_after_failures:
+                            while not exhausted and len(futures) < worker_count:
+                                if (stop_requested is not None and stop_requested()) or (stop_after_failures is not None and len(wrong_ids) >= stop_after_failures):
                                     stopped_for_review = True
                                     break
                                 question = next(remaining, None)
