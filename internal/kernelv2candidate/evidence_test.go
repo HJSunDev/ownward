@@ -3,10 +3,36 @@ package kernelv2candidate
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/HJSunDev/ownward/internal/derived"
 	"github.com/HJSunDev/ownward/internal/domain"
 )
+
+func TestSelectedRawRangeCompletesSentenceWithoutRequiringSemanticCue(t *testing.T) {
+	for _, ending := range []string{"mono PCM WAV.", "原始编号与校验码。"} {
+		content := "The required archival format is " + ending + "\nUnrelated later material."
+		cut := len("The required archival format is ") + 1
+		if ending[0] >= 128 {
+			cut += 2 // Keep the original cut on a UTF-8 boundary.
+		}
+		asset := domain.Information{ID: "raw-boundary", Revision: 1, Content: content}
+		unit := derived.EvidenceUnit{Schema: derived.EvidenceUnitSchema, SourceID: asset.ID, SourceRevision: 1,
+			EndByte: cut, EndRune: utf8.RuneCountInString(content[:cut]), Content: content[:cut]}
+		refs := materializeReferences(asset, "archival format", []scoredEvidenceUnit{{unit: unit, score: 1, needsTailCompletion: true}})
+		if len(refs) != 1 || refs[0].EndRune > unit.EndRune+SuccessorRunes {
+			t.Fatal("selected range must remain bounded")
+		}
+		resolved, err := derived.ParseEvidenceUnitID(refs[0].ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		value, err := derived.ResolveEvidence(asset, resolved)
+		if err != nil || !strings.Contains(value.Content, ending) || strings.Contains(value.Content, "Unrelated") {
+			t.Fatalf("raw path did not preserve the complete value: %#v %v", value, err)
+		}
+	}
+}
 
 func TestCueContextPreservesTheFollowingSentence(t *testing.T) {
 	for _, ending := range []string{"48 kHz mono PCM WAV.", "每份记录保留原始编号与校验码。"} {
@@ -59,7 +85,7 @@ func TestBoundaryFactsRemainCompleteWithinExistingReadLimit(t *testing.T) {
 	}
 	var delivered strings.Builder
 	for _, reference := range references {
-		if reference.ContentRunes > derived.DefaultEvidenceUnitRunes+PredecessorRunes+SuccessorRunes {
+		if reference.ContentRunes > derived.DefaultEvidenceUnitRunes+PredecessorRunes+2*SuccessorRunes {
 			t.Fatalf("continuity range exceeded its bound: %#v", reference)
 		}
 		unit, err := derived.ParseEvidenceUnitID(reference.ID)

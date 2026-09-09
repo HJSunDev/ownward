@@ -22,8 +22,9 @@ const (
 )
 
 type scoredEvidenceUnit struct {
-	unit  derived.EvidenceUnit
-	score float64
+	unit                derived.EvidenceUnit
+	score               float64
+	needsTailCompletion bool
 }
 
 // RankEvidence preserves the current query ranking, read limit, authoritative
@@ -91,7 +92,7 @@ func rankedEvidence(value domain.Information, query string, limit int, cues ...s
 	scored := make([]scoredEvidenceUnit, 0, len(units))
 	for _, unit := range units {
 		if score := scorer.Score(unit.Content); score > 0 {
-			scored = append(scored, scoredEvidenceUnit{unit: unit, score: score})
+			scored = append(scored, scoredEvidenceUnit{unit: unit, score: score, needsTailCompletion: true})
 		}
 	}
 	for _, cue := range queryCues(value.Content, query, cues) {
@@ -108,19 +109,10 @@ func rankedEvidence(value domain.Information, query string, limit int, cues ...s
 			endByte += size
 			endRune++
 		}
-		// A fixed context window may end inside the value following a cue.
-		// Finish that sentence within a bounded allowance, retaining exact source offsets.
-		for n := 0; n < SuccessorRunes && endByte < len(value.Content); n++ {
-			previous, _ := utf8.DecodeLastRuneInString(value.Content[:endByte])
-			next, size := utf8.DecodeRuneInString(value.Content[endByte:])
-			if strings.ContainsRune("\n\r。！？!?;；", previous) || (previous == '.' && unicode.IsSpace(next)) {
-				break
-			}
-			endByte += size
-			endRune++
-		}
 		unit := derived.EvidenceUnit{Schema: derived.EvidenceUnitSchema, SourceID: value.ID, SourceRevision: value.Revision,
 			StartRune: startRune, EndRune: endRune, StartByte: startByte, EndByte: endByte, Content: value.Content[startByte:endByte]}
+		// Keep the existing cue range during marginal-coverage selection.
+		unit = completeEvidenceTail(value.Content, unit)
 		// A source-grounded semantic cue supplies a second relevance signal;
 		// lexical-only candidates remain available for facts absent from analysis.
 		scored = append(scored, scoredEvidenceUnit{unit: unit, score: scorer.Score(query) + scorer.Score(cue)})
@@ -137,7 +129,13 @@ func rankedEvidence(value domain.Information, query string, limit int, cues ...s
 func materializeReferences(value domain.Information, query string, selected []scoredEvidenceUnit) []domain.EvidenceReference {
 	result := make([]domain.EvidenceReference, 0, len(selected))
 	for _, selected := range selected {
-		unit, err := derived.MaterializeEvidenceUnit(value, selected.unit)
+		unit := selected.unit
+		// Extend selected lexical evidence without changing how it was ranked;
+		// cue evidence already received its bounded completion before selection.
+		if selected.needsTailCompletion {
+			unit = completeEvidenceTail(value.Content, unit)
+		}
+		unit, err := derived.MaterializeEvidenceUnit(value, unit)
 		if err == nil {
 			reference := unit.Reference()
 			reference.Preview = SourcePreview(unit.Content, query, 240)
@@ -145,6 +143,20 @@ func materializeReferences(value domain.Information, query string, selected []sc
 		}
 	}
 	return result
+}
+
+func completeEvidenceTail(content string, unit derived.EvidenceUnit) derived.EvidenceUnit {
+	for n := 0; n < SuccessorRunes && unit.EndByte < len(content); n++ {
+		previous, _ := utf8.DecodeLastRuneInString(content[:unit.EndByte])
+		next, size := utf8.DecodeRuneInString(content[unit.EndByte:])
+		if strings.ContainsRune("\n\r。！？!?;；", previous) || (previous == '.' && unicode.IsSpace(next)) {
+			break
+		}
+		unit.EndByte += size
+		unit.EndRune++
+	}
+	unit.Content = content[unit.StartByte:unit.EndByte]
+	return unit
 }
 
 // selectMarginalCoverage keeps the strongest passage first, then discounts
