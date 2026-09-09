@@ -688,9 +688,9 @@ def _answer_prompt(question: dict[str, Any], evidence: list[dict[str, Any]]) -> 
 
 def _active_answer_prompt(question: dict[str, Any], retrieval: dict[str, Any]) -> str:
     return (
-        "Answer the question using only personal information obtained through the connected Ownward tools. "
+        "Help the user with the request below, using only personal information obtained through the connected Ownward tools and the ordinary meaning of what the speakers communicate. "
         "This task is read-only; do not create or update information. "
-        "Return a concise answer containing every requested fact, stating any information you could not establish.\n\n"
+        "Deliver a concise, useful result for this request; reflect uncertainty that materially affects it.\n\n"
         f"Question date: {question.get('question_date', '')}\n"
         f"Question: {question['question']}\n\n"
         f"Hard budget: at most {retrieval['max_tool_calls']} tool calls, {retrieval['read_limit']} successful reads, "
@@ -1012,6 +1012,7 @@ class ExternalIntelligenceCapability:
         self, *, role: str, prompt: str, schema: dict[str, Any], stage: Path, model: str, effort: str,
         timeout_seconds: float, attempts: int, validate: Callable[[dict[str, Any]], None] | None = None,
         active_retrieval: ActiveRetrievalSession | None = None,
+        prepare_context: Callable[[Callable[[str, Any], Any]], str] | None = None,
         base_instructions: str | None = None,
         resume_prompt: Callable[[str], str] | None = None,
     ) -> tuple[dict[str, Any], dict[str, int]]:
@@ -1023,6 +1024,7 @@ class ExternalIntelligenceCapability:
             tool_handler=(active_retrieval.call if active_retrieval is not None else None),
             base_instructions=base_instructions,
             reset_attempt=(active_retrieval.reset_attempt if active_retrieval is not None else None),
+            prepare_context=prepare_context,
             restore=(active_retrieval.restore if active_retrieval is not None else None),
             validate=(active_retrieval.validate if active_retrieval is not None else None),
             report=(active_retrieval.report if active_retrieval is not None else None),
@@ -1170,26 +1172,14 @@ class ExternalIntelligenceCapability:
             model=settings["model"], effort=settings["reasoning_effort"],
             timeout_seconds=float(settings["timeout_seconds"]), attempts=int(settings["attempts"]),
         )
-        result, usage = self._finish_information_use(
-            {"task": prompt, "sources": []}, value, usage, settings, stage, None)
+        result = self._finish_information_use(value, stage)
         return result['answer'].strip(), usage
 
-    def _finish_information_use(self, observations, response, usage, settings, stage, instructions):
-        total = dict(usage)
-        def invoke(step, instruction, payload, schema):
-            value, consumed = self._invoke(
-                role="reader", prompt=information_use_flow.stage_prompt(instruction, payload),
-                schema=schema, stage=stage / "information-use" / step,
-                model=settings['model'], effort=settings['reasoning_effort'],
-                timeout_seconds=float(settings['timeout_seconds']), attempts=int(settings['attempts']),
-                base_instructions=instructions,
-                resume_prompt=lambda notes: information_use_flow.stage_prompt(instruction, payload, notes),
-            )
-            _add_usage(total, consumed)
-            return value
-        result = information_use_flow.finish(observations, response, invoke)
+    @staticmethod
+    def _finish_information_use(response, stage):
+        result = information_use_flow.finish(response)
         write_json(stage / "information-use-result.json", result)
-        return result, total
+        return result
 
     def active_answer(
         self,
@@ -1200,10 +1190,19 @@ class ExternalIntelligenceCapability:
         stage: Path,
     ) -> tuple[str, dict[str, int], dict[str, Any]]:
         session = ActiveRetrievalSession(client, retrieval_settings)
-        schema = information_use_flow.RESPONSE
+        task_payload = {"task": question["question"], "date": question.get("question_date", "")}
+        frame, frame_usage = self._invoke(
+            role="reader", prompt=information_use_flow.stage_prompt(information_use_flow.FRAME, task_payload),
+            schema=information_use_flow.FRAME_SCHEMA, stage=stage / "task-basis",
+            model=reader_settings["model"], effort=reader_settings["reasoning_effort"],
+            timeout_seconds=reader_settings["timeout_seconds"], attempts=reader_settings["attempts"],
+            base_instructions=session.instructions,
+            resume_prompt=lambda notes: information_use_flow.stage_prompt(information_use_flow.FRAME, task_payload, notes),
+        )
+        instruction, schema = information_use_flow.task_contract(frame)
         value, usage = self._invoke(
             role="reader",
-            prompt=_active_answer_prompt(question, retrieval_settings) + "\n\n" + information_use_flow.OFFER,
+            prompt=_active_answer_prompt(question, retrieval_settings) + "\n\n" + instruction,
             schema=schema,
             stage=stage,
             model=reader_settings["model"],
@@ -1211,21 +1210,12 @@ class ExternalIntelligenceCapability:
             timeout_seconds=float(reader_settings["timeout_seconds"]),
             attempts=int(reader_settings["attempts"]),
             active_retrieval=session,
+            prepare_context=lambda call: information_use_flow.initial_context(question["question"], call),
         )
+        _add_usage(usage, frame_usage)
         session.validate()
         report = session.report()
-        # Preserve exactly what the agent received, including provenance and context.
-        # Never consult dataset source labels or fetch additional evidence here.
-        observations = {
-            'task': f"Question date: {question.get('question_date', '')}\n{question['question']}",
-            'sources': [
-                {'id': str(index), 'origin': call['tool'],
-                 'content': json.dumps(call['result'], ensure_ascii=False)}
-                for index, call in enumerate(report['selection_steps']) if call.get('success')
-            ],
-        }
-        result, usage = self._finish_information_use(
-            observations, value, usage, reader_settings, stage, session.instructions)
+        result = self._finish_information_use(value, stage)
         report['information_use'] = {'used': result['used_information_use']}
         return result['answer'].strip(), usage, report
 

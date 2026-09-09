@@ -2,6 +2,8 @@
 
 记录日期：2026-09-08。本文保留探索依据与实验结论；产品职责以[核心需求](../product/requirements.md#信息使用能力)为准。
 
+以下交付状态属于2026-09-08的历史方案；机制与停用原因见[多阶段方案记录](information-use-multistage.md)，现行实现见[模块说明](../modules/information-use/README.md)。
+
 探索方法见[持续探索方法](../engineering/information-use-exploration.md)。当前已交付：**132、222的修订定位与中断交接修复，以及231的按需依赖核验；233仍待解决。** 231两次核验产物均判对，固定六题82、114、116、123、361、370及132、222在最终按需分派下保留原结果；未改上游与相同条件的判分复用，不冒充全新整题运行。未解决问题以[固定登记](../tasks/kernel-v2-final-test-failure-analysis.md#尚未解决的问题登记)为准，续跑位置以[续跑问题收集](../tasks/final-test-continuation-issues.md)为准。
 
 ## 一、背景

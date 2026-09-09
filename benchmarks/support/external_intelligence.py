@@ -125,6 +125,7 @@ class ExternalIntelligenceTransport(Protocol):
         dynamic_tools: list[dict[str, Any]] | None = None,
         tool_handler: Callable[[str, Any], Any] | None = None,
         base_instructions: str | None = None,
+        initial_context: str | None = None,
     ) -> tuple[dict[str, Any], dict[str, int], dict[str, Any]]:
         ...
 
@@ -142,6 +143,7 @@ class InvocationLifecycle:
     tool_handler: Callable[[str, Any], Any] | None = None
     base_instructions: str | None = None
     reset_attempt: Callable[[], None] | None = None
+    prepare_context: Callable[[Callable[[str, Any], Any]], str] | None = None
     restore: Callable[[Any], None] | None = None
     validate: Callable[[], None] | None = None
     report: Callable[[], Any] | None = None
@@ -519,6 +521,16 @@ class ExternalIntelligenceExecutor:
                         "tool_handler": handler,
                         "base_instructions": lifecycle.base_instructions,
                     })
+                if lifecycle.prepare_context is not None:
+                    if lifecycle.dynamic_tools is None or handler is None:
+                        raise ExternalIntelligenceError("initial retrieval requires tool access")
+                    context = lifecycle.prepare_context(handler)
+                    _write_json(attempt / "initial-context.json", {"text": context})
+                    invoke_arguments["initial_context"] = context
+                    remaining = timeout_seconds - (time.perf_counter() - started)
+                    if remaining <= 0:
+                        raise ExternalIntelligenceTimeout("initial retrieval exhausted the request timeout")
+                    invoke_arguments["timeout_seconds"] = remaining
                 value, usage, transport = self.transport.invoke(**invoke_arguments)
                 elapsed = time.perf_counter() - started
                 if not isinstance(value, dict):

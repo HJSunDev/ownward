@@ -90,13 +90,14 @@ class OpenCodeExternalIntelligenceTests(unittest.TestCase):
                         "properties": {"status": {"type": "string", "enum": ["ok"]}},
                     }, model="opencode-go/qwen3.8-flash", effort="xhigh", work_dir=root,
                     timeout_seconds=10,
-                    base_instructions="服务端下发的 Ownward 协作规则。",
+                    base_instructions="服务端下发的 Ownward 协作规则。", initial_context="Original evidence",
                 )
             self.assertEqual({"status": "ok"}, value)
             self.assertEqual(4, usage["cached_input_tokens"])
             message = next(body for method, path, body in requests if method == "POST" and path.endswith("/message"))
             self.assertEqual({"providerID": "opencode-go", "modelID": "qwen3.8-flash"}, message["model"])
             self.assertEqual("xhigh", message["variant"])
+            self.assertEqual([{"type":"text","text":"return status"},{"type":"text","text":"Original evidence"}], message["parts"])
             self.assertTrue(message["system"].startswith("服务端下发的 Ownward 协作规则。"))
             self.assertEqual({"bash": False, "read": False, "write": False}, message["tools"])
             self.assertNotIn("format", message)

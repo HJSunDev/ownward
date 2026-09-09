@@ -226,6 +226,7 @@ class CodexAppServer:
         dynamic_tools: list[dict[str, Any]] | None = None,
         tool_handler: Callable[[str, Any], Any] | None = None,
         base_instructions: str | None = None,
+        initial_context: str | None = None,
     ) -> tuple[dict[str, Any], dict[str, int], dict[str, Any]]:
         if (dynamic_tools is None) != (tool_handler is None):
             raise AppServerError("dynamic tools and their handler must be enabled together")
@@ -265,7 +266,8 @@ class CodexAppServer:
         try:
             turn_result = self.request("turn/start", {
                 "threadId": thread_id,
-                "input": [{"type": "text", "text": prompt}],
+                "input": [{"type": "text", "text": prompt}]
+                + ([{"type": "text", "text": initial_context}] if initial_context is not None else []),
                 "model": model,
                 "effort": effort,
                 "approvalPolicy": "never",

@@ -584,40 +584,25 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
                     with self.assertRaisesRegex(adapter.AdapterError, 'without reading'):
                         session.validate()
 
-    def test_active_reader_uses_shared_collaboration_on_agent_choice(self) -> None:
+    def test_active_reader_delivers_with_shared_contract_without_postprocessing_calls(self) -> None:
         requests = []
         def invoke(**request):
             requests.append(request)
-            active = request.get('active_retrieval')
-            if active is not None:
-                active.call('ownward_search', {'query': 'selected city', 'limit': 1})
-                active.call('ownward_read', {'id': 'info-1'})
-                self.assertIn(adapter.information_use_flow.OFFER, request['prompt'])
-                return {'answer': 'Initial work', 'use_information_use': True}, {'calls': 1}
-            self.assertEqual(request['base_instructions'], client.instructions)
+            if request['schema'] == adapter.information_use_flow.FRAME_SCHEMA:
+                self.assertNotIn('active_retrieval', request)
+                self.assertNotIn('SECRET GOLD', request['prompt'])
+                return {'purpose': 'Find the city', 'needs': ['Which city is selected?']}, {'calls': 1}
+            active = request['active_retrieval']
+            context = request['prepare_context'](active.call)
+            self.assertIn('ownward_search', context)
+            active.call('ownward_read', {'id': 'info-1'})
+            self.assertIn(adapter.information_use_flow.OFFER, request['prompt'])
+            self.assertNotIn('SECRET GOLD', request['prompt'])
             self.assertEqual(request['model'], self.protocol['reader']['model'])
             self.assertEqual(request['effort'], self.protocol['reader']['reasoning_effort'])
-            self.assertNotIn('dynamic_tools', request)
-            if request['stage'].name != 'route-dependency-check':
-                self.assertIn('The selected city is Kyoto.', request['prompt'])
-            self.assertNotIn('SECRET GOLD', request['prompt'])
-            step = request['stage'].name
-            if step == 'understand':
-                output = {'finding': 'The selected city is Kyoto.'}
-            elif step == 'alternative':
-                output = {'answer': 'Kyoto'}
-            elif step == 'compare':
-                payload = json.loads(request['prompt'].split('\n\n', 1)[1])
-                selected = next(c['id'] for c in payload['candidates'] if c['content'] == 'Kyoto')
-                output = {'selected_id': selected, 'basis': 'Original source', 'edits': []}
-            elif step == 'check-dependencies':
-                output = {'unsupported_bridge': '', 'result_without_bridge': '', 'edits': []}
-            elif step == 'route-dependency-check':
-                output = {'basis': 'No unresolved link', 'check': False}
-            else:
-                self.assertEqual(step, 'supplement')
-                output = {'addition': ''}
-            return output, {'calls': 1}
+            return {'intended_outcome': 'Find the city',
+                    'basis': {'established': 'City is Kyoto', 'unresolved': ''},
+                    'answer': 'Kyoto', 'conditional_results': []}, {'calls': 1}
         with tempfile.TemporaryDirectory() as directory:
             client = FakeToolClient()
             client.contents['info-1'] = 'The selected city is Kyoto.'
@@ -627,7 +612,8 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
                     {'question': 'Which city?', 'question_date': 'today', 'answer': 'SECRET GOLD'},
                     client, self.protocol['reader'], self.protocol['retrieval'], Path(directory))
             self.assertEqual(answer, 'Kyoto')
-            self.assertEqual(usage['calls'], 6)
+            self.assertEqual(usage['calls'], 2)
+            self.assertEqual(len(requests), 2)
             self.assertTrue(report['information_use']['used'])
             self.assertEqual(len(report['selection_steps']), 2)
             self.assertTrue((Path(directory) / 'information-use-result.json').is_file())
@@ -637,16 +623,17 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             def invoke(self, **request):
                 self.calls += 1
                 self.test_case.assertEqual(self.expected_instructions, request["base_instructions"])
-                if "dynamic_tools" not in request:
-                    self.test_case.assertIn("Decide how to handle", request["prompt"])
-                    return {"basis": "Directly stated city.", "mode": "direct"}, {
-                        "input_tokens": 1, "output_tokens": 1,
-                    }, {"status": "completed"}
+                if request['schema'] == adapter.information_use_flow.FRAME_SCHEMA:
+                    self.test_case.assertNotIn('dynamic_tools', request)
+                    return {'purpose': 'Find the city', 'needs': ['Which city is selected?']}, {'input_tokens': 1, 'output_tokens': 1}, {'transport': 'fixture'}
+                self.test_case.assertIn("initial_context", request)
+                self.test_case.assertIn("ownward_search", request["initial_context"])
                 names = [item["name"] for item in request["dynamic_tools"]]
                 self.test_case.assertEqual(list(adapter.ACTIVE_RETRIEVAL_TOOLS), names)
                 search = request["tool_handler"]("ownward_search", {"query": "selected city", "limit": 1})
                 request["tool_handler"]("ownward_read", {"id": search["results"][0]["id"]})
-                return {"answer": "Kyoto", "use_information_use": False}, {
+                return {"answer": "Kyoto", "intended_outcome": "Find the city",
+                        "basis": {"1": {"supported": "Kyoto", "unresolved": ""}}, "conditional_results": []}, {
                     "input_tokens": 1, "cached_input_tokens": 0, "output_tokens": 1, "reasoning_output_tokens": 0,
                 }, {
                     "transport": "codex-app-server-stdio", "server_instance": "fixture",
@@ -673,7 +660,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             self.assertEqual("external-agent-progressive/v1", checkpoint["active_retrieval"]["mode"])
             request = adapter.load_json(Path(directory) / "request.json")
             self.assertEqual(client.instructions, request["base_instructions"])
-            self.assertEqual(2, len(report["selection_steps"]))
+            self.assertEqual(3, len(report["selection_steps"]))
 
             client.instructions = "更新后的服务端规则。"
             with self.assertRaisesRegex(adapter.AdapterError, "request identity changed"):
@@ -1560,8 +1547,10 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
                 with self.assertRaisesRegex(concrete_transport.AppServerTimeout, "timed out"):
                     server.invoke(
                         prompt="prompt", schema={"type": "object"}, model="model", effort="low",
-                        work_dir=work, timeout_seconds=1,
+                        work_dir=work, timeout_seconds=1, initial_context="Original evidence",
                     )
+            turn_input = request.call_args_list[1].args[1]["input"]
+            self.assertEqual([{"type":"text","text":"prompt"},{"type":"text","text":"Original evidence"}], turn_input)
             self.assertEqual(
                 mock.call("turn/interrupt", {"threadId": "thread-1", "turnId": "turn-1"}, timeout_seconds=10),
                 request.call_args_list[-1],

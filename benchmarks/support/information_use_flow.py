@@ -14,3 +14,8 @@ finish = _MODULE.finish
 stage_prompt = _MODULE.stage_prompt
 OFFER = _MODULE.OFFER
 RESPONSE = _MODULE.RESPONSE
+initial_context = _MODULE.initial_context
+
+FRAME = _MODULE.FRAME
+FRAME_SCHEMA = _MODULE.FRAME_SCHEMA
+task_contract = _MODULE.task_contract

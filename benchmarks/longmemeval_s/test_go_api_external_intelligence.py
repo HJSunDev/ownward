@@ -91,6 +91,35 @@ class GoAPIClientTests(unittest.TestCase):
                 self.invoke(dynamic_tools=TOOLS, tool_handler=handler)
         handler.assert_not_called()
 
+    def test_initial_context_is_a_separate_block_without_schema_or_rule_changes(self):
+        with mock.patch.object(self.client, '_post', return_value=answer('{"answer":"ok"}')) as post:
+            self.invoke(initial_context='Original source', base_instructions='product rules')
+        body = post.call_args.args[0]
+        self.assertEqual('test', body['messages'][0]['content'][0]['text'])
+        self.assertEqual('Original source', body['messages'][0]['content'][1]['text'])
+        self.assertNotIn('Original source', body['system'][0]['text'])
+
+    def test_typed_tool_arrays_are_decoded_without_rewriting_strings(self):
+        tools = [{'name':'read', 'description':'read', 'inputSchema': {'type':'object', 'properties': {
+            'ids': {'type':'array', 'items':{'type':'string'}}, 'query': {'type':'string'}}}}]
+        reply = answer('', content=[{'type':'tool_use','id':'t','name':'read',
+                                     'input':{'ids':'["a","b"]','query':'["literal"]'}}])
+        handler = mock.Mock(return_value={})
+        with mock.patch.object(self.client, '_post', side_effect=[reply, answer('{"answer":"ok"}')]):
+            self.invoke(dynamic_tools=tools, tool_handler=handler)
+        handler.assert_called_once_with('read', {'ids':['a','b'], 'query':'["literal"]'})
+
+    def test_completed_text_with_unknown_empty_tool_is_repaired_without_retrieval(self):
+        reply = answer('', content=[{'type':'text','text':'completed work'},
+                                    {'type':'tool_use','id':'t','name':'unknown','input':{}}])
+        handler = mock.Mock()
+        with mock.patch.object(self.client, '_post', side_effect=[reply, answer('{"answer":"done"}')]) as post:
+            _, usage, _ = self.invoke(dynamic_tools=TOOLS, tool_handler=handler)
+        handler.assert_not_called()
+        self.assertEqual(1, usage['format_corrections'])
+        self.assertNotIn('tools', post.call_args_list[1].args[0])
+        self.assertIn('completed work', str(post.call_args_list[1].args[0]['messages']))
+
     def test_eight_concurrent_contexts_are_isolated_without_processes(self):
         barrier = threading.Barrier(8)
         sessions = set()

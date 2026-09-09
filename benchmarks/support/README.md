@@ -2,7 +2,7 @@
 
 本目录只放多个评测入口共享、但不属于任何具体供应商的执行契约。
 
-`information_use_flow.py` 仅转接[产品接入组件](../../integrations/python/ownward_information_use.py)，真实智能体与模拟 Reader 复用同一实现。标准 `respond` 默认提供能力说明；已有检索循环使用同一 `OFFER`、`RESPONSE` 与 `finish`，由智能体在原响应中选择是否协作，直接路径不增加调用。关卡与最终测试的公共 Reader 已接入此选择；调用方交付原任务、实际已获材料及独立上下文的 `invoke`，沿用模型、档位、规则和留痕，不按题号分派。使用契约与验证边界见[模块说明](../../docs/modules/information-use/README.md)。
+`information_use_flow.py`只转接[产品信息使用组件](../../integrations/python/ownward_information_use.py)，真实宿主与模拟Reader复用同一实现。外部智能先独立明确原任务所需依据，`task_contract`将其对应到交付字段；以原始需求取得少量线索后继续自主取证，最后由`finish`原样组合结果，不追加后处理。已有材料可调用`respond`完成同样的任务准备与交付。初始取证通过公共执行生命周期共享原有预算、权限、留痕与恢复，关卡和最终测试不维护不同处理分支。契约见[模块说明](../../docs/modules/information-use/README.md)。
 
 `external_intelligence.py` 是生成、语义组织、Reader 和 Judge 共用的稳定外部智能端口。业务编排只能依赖它提供的结构化 turn、动态工具回调、用量、超时、错误和有界并发语义，不能导入供应商进程、认证或事件类型。该端口同时统一有界重试、原子检查点、失效归档和字节级恢复；具体业务只提供自己的提示、Schema、校验和可选工具会话钩子，不再复制执行生命周期。
 

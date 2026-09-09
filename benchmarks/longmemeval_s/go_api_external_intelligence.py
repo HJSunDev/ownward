@@ -134,6 +134,26 @@ def _error_code(error: dict[str, Any]) -> str:
     return str(error.get("code", error.get("type", "")))
 
 
+def normalize_tool_arguments(value, schema):
+    """Restore explicitly declared container types without changing string values."""
+    kinds = schema.get("type", [])
+    if isinstance(kinds, str):
+        kinds = [kinds]
+    if isinstance(value, str) and "string" not in kinds and any(k in kinds for k in ("object", "array")):
+        try:
+            decoded = json.loads(value)
+        except (ValueError, TypeError):
+            return value
+        if (isinstance(decoded, dict) and "object" in kinds) or (isinstance(decoded, list) and "array" in kinds):
+            value = decoded
+    if isinstance(value, dict) and "object" in kinds:
+        properties = schema.get("properties", {})
+        return {key: normalize_tool_arguments(item, properties.get(key, {})) for key, item in value.items()}
+    if isinstance(value, list) and "array" in kinds:
+        return [normalize_tool_arguments(item, schema.get("items", {})) for item in value]
+    return value
+
+
 class GoAPIClient:
     def __init__(self, credential_file: Path, max_active: int, identity: dict[str, Any]) -> None:
         self._services, self._route = _load_services(credential_file)
@@ -278,7 +298,7 @@ class GoAPIClient:
     def invoke(self, *, prompt: str, schema: dict[str, Any], model: str, effort: str,
                work_dir: Path, timeout_seconds: float, dynamic_tools: list[dict[str, Any]] | None = None,
                tool_handler: Any = None, base_instructions: str | None = None,
-               _route: ServiceRoute | None = None) -> tuple[dict, dict, dict]:
+               _route: ServiceRoute | None = None, initial_context: str | None = None) -> tuple[dict, dict, dict]:
         if model.removeprefix(f"{PROVIDER}/").removeprefix("opencode-go/") != MODEL or effort not in {"medium", "xhigh"}:
             raise ExternalIntelligenceError("Bailian API model or reasoning effort is unsupported")
         if (dynamic_tools is None) != (tool_handler is None):
@@ -292,18 +312,20 @@ class GoAPIClient:
             self._maximum = max(self._maximum, self._active)
         try:
             return self._turn(prompt, schema, model, effort, Path(work_dir), deadline,
-                              dynamic_tools, tool_handler, base_instructions, _route or self._route.new_scope())
+                              dynamic_tools, tool_handler, base_instructions, _route or self._route.new_scope(), initial_context)
         finally:
             with self._lock:
                 self._active -= 1
             self._slots.release()
 
-    def _turn(self, prompt, schema, model, effort, work_dir, deadline, tools, handler, instructions, route):
+    def _turn(self, prompt, schema, model, effort, work_dir, deadline, tools, handler, instructions, route, initial_context=None):
         work_dir.mkdir(parents=True, exist_ok=True)
         session = str(uuid.uuid4())
         allowed = {t["name"] for t in tools or []}
         declarations = [{"name": t["name"], "description": t["description"], "input_schema": t["inputSchema"]} for t in tools or []]
         messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
+        if initial_context is not None:
+            messages[0]["content"].append({"type": "text", "text": initial_context})
         system = (instructions or "Do not use tools.") + " Return only one strict JSON object matching this JSON Schema; do not use Markdown or commentary: " + json.dumps(schema, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         usage = dict(input_tokens=0, cached_input_tokens=0, output_tokens=0, reasoning_output_tokens=0,
                      cache_write_tokens=0, format_corrections=0)
@@ -353,12 +375,23 @@ class GoAPIClient:
             calls = [block for block in content if block["type"] == "tool_use"]
             if calls:
                 if not declarations or any(call["name"] not in allowed for call in calls):
+                    if (not usage["format_corrections"] and len(calls) == 1 and not calls[0].get("input")
+                            and any(b.get("type") == "text" and b.get("text", "").strip() for b in content)):
+                        usage["format_corrections"] = 1
+                        declarations = []
+                        messages.append({"role":"user","content":[{"type":"tool_result","tool_use_id":calls[0]["id"],"is_error":True,"content":"This tool is not available; no action was executed."}]})
+                        messages.append({"role":"user","content":[{"type":"text","text":"Preserve your completed work and return it as the required JSON object. This is delivery-format repair; use the evidence already obtained and do not call tools."}]})
+                        continue
                     raise ExternalIntelligenceError("Bailian API requested an unavailable tool")
                 replies = []
                 for call in calls:
                     self._remaining(deadline)
                     try:
-                        value = handler(call["name"], call["input"])
+                        definition = next(t["input_schema"] for t in declarations if t["name"] == call["name"])
+                        arguments = normalize_tool_arguments(call["input"], definition)
+                        if arguments != call["input"]:
+                            _atomic_json(work_dir / f"argument-normalization-{step:03d}-{len(replies):02d}.json", {"tool": call["name"], "original": call["input"], "normalized": arguments})
+                        value = handler(call["name"], arguments)
                         reply = {"type": "tool_result", "tool_use_id": call["id"], "content": json.dumps(value, ensure_ascii=False)}
                     except Exception as error:
                         reply = {"type": "tool_result", "tool_use_id": call["id"], "content": str(error), "is_error": True}
@@ -406,6 +439,7 @@ class ScopedClient:
 
     def new_scope(self) -> ScopedClient:
         return self._client.new_scope()
+
 
     def diagnostics(self) -> dict[str, Any]:
         return self._client.diagnostics()

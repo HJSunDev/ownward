@@ -174,6 +174,39 @@ class ExternalIntelligenceContractTests(unittest.TestCase):
             self.assertEqual(1, first["selection_steps"][0]["arguments"]["attempt"])
             self.assertEqual(2, second["selection_steps"][0]["arguments"]["attempt"])
 
+    def test_initial_context_uses_traced_budget_after_reset_and_is_reused_on_resume(self):
+        calls, requests = ['old attempt'], []
+        def tool(name, args):
+            calls.append(name)
+            return {'content': 'Original source'}
+        def prepare(call):
+            self.assertEqual([], calls)
+            return str(call('search', {'query': 'original task'}))
+        class Transport:
+            identity = runtime_identity()
+            def invoke(self, **request):
+                requests.append(request)
+                self_test.assertIn('Original source', request['initial_context'])
+                self_test.assertEqual(['search'], calls)
+                self_test.assertLessEqual(request['timeout_seconds'], 10)
+                self_test.assertEqual('xhigh', request['effort'])
+                return {'answer': 'done'}, {}, {}
+            def diagnostics(self):
+                return {'rate_limit_observed': False}
+        self_test = self
+        with tempfile.TemporaryDirectory() as directory:
+            args = dict(role='reader', prompt='original task', schema={'type':'object'},
+                model='unchanged', effort='xhigh', timeout_seconds=10, attempts=1, stage=Path(directory),
+                lifecycle=subject.InvocationLifecycle(retrieval_mode='tools/v1', dynamic_tools=[],
+                    tool_handler=tool, reset_attempt=calls.clear, prepare_context=prepare,
+                    report=lambda: {'steps': list(calls)}))
+            executor = subject.ExternalIntelligenceExecutor(Transport())
+            executor.invoke(**args)
+            executor.invoke(**args)
+            self.assertEqual(1, len(requests))
+            trace = json.loads((Path(directory)/'attempt-001/active-retrieval.json').read_text())
+            self.assertEqual({'steps': ['search']}, trace)
+
     def test_executor_preserves_role_and_reuses_atomic_checkpoint(self) -> None:
         class Transport:
             def __init__(self) -> None:
