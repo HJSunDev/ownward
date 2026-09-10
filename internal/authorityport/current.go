@@ -134,3 +134,11 @@ func scope(value domain.Information) contract.ChangeScope {
 }
 
 var Restore contract.AssetRestore = assetlog.Restore
+
+func (c *Current) OperationGeneration() uint64 { return c.store.OperationGeneration() }
+func (c *Current) MutationReceipt(op contract.OperationIdentity) (contract.MutationReceipt, bool, error) {
+	return c.store.MutationReceipt(op)
+}
+func (c *Current) CommitMutation(r contract.MutationReceipt, values []domain.Information, expected []uint64) error {
+	return c.store.CommitMutation(r, values, expected)
+}

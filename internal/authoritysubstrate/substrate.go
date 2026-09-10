@@ -174,6 +174,12 @@ func (s *controlStore) CompareAndSwapControl(expectedRevision uint64, next contr
 }
 
 func cloneControl(state contract.ControlState) contract.ControlState {
+	if state.Access != nil {
+		encoded, _ := json.Marshal(state.Access)
+		var copied contract.AccessState
+		_ = json.Unmarshal(encoded, &copied)
+		state.Access = &copied
+	}
 	if state.InformationControl != nil {
 		encoded, _ := json.Marshal(state.InformationControl)
 		var copied contract.InformationControlState

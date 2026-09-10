@@ -19,7 +19,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"strconv"
 )
 
 const (
@@ -31,6 +33,7 @@ const (
 )
 
 type sharedMCPDescriptor struct {
+	ManagedRoot     string `json:"managed_root,omitempty"`
 	Schema          string `json:"schema"`
 	PID             int    `json:"pid"`
 	Endpoint        string `json:"endpoint"`
@@ -52,6 +55,10 @@ func (transport bearerTransport) RoundTrip(request *http.Request) (*http.Respons
 	clone.Header.Set("Authorization", "Bearer "+transport.token)
 	if transport.credential != nil {
 		clone.Header.Set(principalHeader, transport.credential())
+	}
+	if op, ok := contract.Operation(request.Context()); ok {
+		clone.Header.Set("X-Ownward-Operation", op.ID)
+		clone.Header.Set("X-Ownward-Generation", strconv.FormatUint(op.Generation, 10))
 	}
 	return transport.base.RoundTrip(clone)
 }
@@ -117,7 +124,13 @@ func ensureSharedMCPService(ctx context.Context, dataDir, binaryVersion, composi
 		if probeErr == nil && existing.ServiceIdentity == identity && aliveIdentity == identity && existing.DataIdentity == dataIdentity {
 			return existing, nil
 		}
+		if existing.ManagedRoot != "" && probeErr != nil {
+			return nil, errors.New("系统托管服务暂不可用，请保留原连接等待服务恢复")
+		}
 		if probeErr == nil {
+			if existing.ManagedRoot != "" {
+				return nil, errors.New("此信息体系由系统服务托管，请通过部署入口更新服务")
+			}
 			if shutdownErr := shutdownSharedMCP(ctx, existing); shutdownErr != nil {
 				return nil, fmt.Errorf("已有 Ownward 内核身份不兼容且无法安全切换: %w", shutdownErr)
 			}

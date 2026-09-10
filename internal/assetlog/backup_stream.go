@@ -24,7 +24,7 @@ func (s *Store) WriteBackup(destination io.Writer) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.logFile == nil {
+	if s.logFile == nil || s.poisoned {
 		return errors.New("信息资产日志已关闭")
 	}
 	if err := s.logFile.Sync(); err != nil {

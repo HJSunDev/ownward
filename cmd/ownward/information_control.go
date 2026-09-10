@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/HJSunDev/ownward/internal/adapter/localowner"
@@ -30,12 +31,13 @@ func ownerRecoveryScope(dataDir string) string {
 }
 
 type controlHTTPServer struct {
-	server   httpMCPServer
-	control  *informationcontrol.Control
-	product  *informationcontrol.Product
-	kernel   contract.ProductCapability
-	vault    localowner.Vault
-	recovery string
+	server     httpMCPServer
+	control    *informationcontrol.Control
+	product    *informationcontrol.Product
+	kernel     contract.ProductCapability
+	vault      localowner.Vault
+	recovery   string
+	generation func() uint64
 }
 
 // 独立恢复通道只在当前 OS 用户受保护的凭据区交付；服务启动令牌没有恢复权。
@@ -58,8 +60,18 @@ func (s controlHTTPServer) HTTPHandler() http.Handler {
 		server.MCP().AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
 			return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
 				credential := ""
+				if call, ok := req.(*mcp.CallToolRequest); ok && isAssetMutation(call.Params.Name) {
+					if id, ok := call.Params.Meta["ownward/operation"].(string); ok {
+						generation, _ := strconv.ParseUint(fmt.Sprint(call.Params.Meta["ownward/generation"]), 10, 64)
+						ctx = contract.WithOperation(ctx, contract.OperationIdentity{ID: id, Generation: generation, Kind: call.Params.Name, Digest: mutationDigest(call.Params.Name, call.Params.Arguments)})
+					}
+				}
 				if extra := req.GetExtra(); extra != nil {
 					credential = extra.Header.Get(principalHeader)
+					if call, ok := req.(*mcp.CallToolRequest); ok && isAssetMutation(call.Params.Name) && extra.Header.Get("X-Ownward-Operation") != "" {
+						generation, _ := strconv.ParseUint(extra.Header.Get("X-Ownward-Generation"), 10, 64)
+						ctx = contract.WithOperation(ctx, contract.OperationIdentity{ID: extra.Header.Get("X-Ownward-Operation"), Generation: generation, Kind: call.Params.Name, Digest: mutationDigest(call.Params.Name, call.Params.Arguments)})
+					}
 				}
 				return next(informationcontrol.Authenticate(ctx, credential), method, req)
 			}
@@ -95,6 +107,14 @@ func (s controlHTTPServer) HTTPHandler() http.Handler {
 		switch strings.TrimPrefix(r.URL.Path, controlPrefix) {
 		case "identity":
 			value = map[string]string{"system_id": s.control.SystemID()}
+		case "generation":
+			if _, err = s.control.Self(ctx); err == nil {
+				if s.generation != nil {
+					value = map[string]uint64{"generation": s.generation()}
+				} else if k, ok := s.kernel.(interface{ OperationGeneration() uint64 }); ok {
+					value = map[string]uint64{"generation": k.OperationGeneration()}
+				}
+			}
 		case "recover":
 			provided := r.Header.Get(principalHeader)
 			if r.Method != http.MethodPost || s.recovery == "" || subtle.ConstantTimeCompare([]byte(provided), []byte(s.recovery)) != 1 {

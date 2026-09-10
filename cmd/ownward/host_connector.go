@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"slices"
 	"sync"
 	"time"
@@ -18,22 +19,30 @@ import (
 )
 
 type connectorRecord struct {
-	Credential    string   `json:"credential"`
-	Principal     string   `json:"principal"`
-	Pending       []string `json:"pending,omitempty"`
-	Connected     bool     `json:"connected,omitempty"`
-	LastDelivered []string `json:"last_delivered,omitempty"`
+	Decisions     map[string]savedDecision              `json:"decisions,omitempty"`
+	MigrationID   string                                `json:"migration_id,omitempty"`
+	Credential    string                                `json:"credential"`
+	Principal     string                                `json:"principal"`
+	Pending       []string                              `json:"pending,omitempty"`
+	Connected     bool                                  `json:"connected,omitempty"`
+	LastDelivered []string                              `json:"last_delivered,omitempty"`
+	Mutations     map[string]contract.OperationIdentity `json:"mutations,omitempty"`
+	JoinProof     string                                `json:"join_proof,omitempty"`
+	NextLocation  *contract.Location                    `json:"next_location,omitempty"`
 }
 
 type hostConnector struct {
+	routeMu       sync.RWMutex
 	mu            sync.Mutex
 	initMu        sync.Mutex
+	operationMu   sync.Mutex
 	descriptor    *sharedMCPDescriptor
 	vault         localowner.Vault
 	system        string
 	profile       string
 	record        connectorRecord
 	recoveryScope string
+	remote        *remoteConnection
 }
 
 func newHostConnector(ctx context.Context, descriptor *sharedMCPDescriptor, dataDir string) (*hostConnector, error) {
@@ -69,7 +78,10 @@ func (h *hostConnector) save() error {
 }
 
 func (h *hostConnector) owner() (string, error) {
-	credential, err := h.vault.Load(h.system, "owner")
+	if h.remote != nil {
+		return h.credential(), nil
+	}
+	credential, err := h.ownerVault().Load(h.system, "owner")
 	if err != nil {
 		return "", errors.New("所有者管理连接需要由受保护入口恢复，请求已保留")
 	}
@@ -79,6 +91,9 @@ func (h *hostConnector) owner() (string, error) {
 func (h *hostConnector) initialize(ctx context.Context, request *mcp.CallToolRequest) error {
 	h.initMu.Lock()
 	defer h.initMu.Unlock()
+	if h.remote != nil {
+		return h.remoteInitialize(ctx, request)
+	}
 	if h.credential() != "" {
 		return nil
 	}
@@ -244,7 +259,7 @@ func (h *hostConnector) call(ctx context.Context, request *mcp.CallToolRequest, 
 		}
 		return h.ownerTool(ctx, request.Params.Name, request.Params.Arguments)
 	}
-	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: request.Params.Name, Arguments: request.Params.Arguments})
+	result, err := h.callProduct(ctx, request, session)
 	if err != nil || result.IsError {
 		return result, err
 	}
@@ -318,6 +333,9 @@ func hostConfirm(ctx context.Context, session *mcp.ServerSession, message string
 }
 
 func (h *hostConnector) controlCall(ctx context.Context, path, credential string, input, output any) error {
+	if h.remote != nil {
+		return remoteCall(ctx, h.remote.Client, h.remote.Material.Location, controlPrefix+path, credential, input, output)
+	}
 	method := http.MethodGet
 	var data []byte
 	var err error
@@ -350,9 +368,15 @@ func (h *hostConnector) controlCall(ctx context.Context, path, credential string
 	return nil
 }
 
-type controlError struct{ Status int }
+type controlError struct {
+	Status  int
+	Message string
+}
 
 func (e *controlError) Error() string {
+	if e.Message != "" {
+		return e.Message
+	}
 	return fmt.Sprintf("管理入口拒绝操作（HTTP %d）", e.Status)
 }
 
@@ -385,6 +409,9 @@ func (h *hostConnector) ensureOwner(ctx context.Context, session *mcp.ServerSess
 }
 
 func (h *hostConnector) restoreOwner(ctx context.Context, session *mcp.ServerSession) error {
+	if h.remote != nil {
+		return errors.New("此操作等待已授权管理宿主批准，不能在普通远程连接中恢复所有者")
+	}
 	message := "使用当前受保护的系统账户恢复你的 Ownward 管理连接吗？资料和接入者身份保留，旧管理凭据失效，然后继续原任务。"
 	if h.system == "" {
 		message = "在当前系统账户下建立属于你的 Ownward 信息体系，并继续原任务吗？"
@@ -396,7 +423,7 @@ func (h *hostConnector) restoreOwner(ctx context.Context, session *mcp.ServerSes
 	if !accepted {
 		return errors.New("用户未批准建立管理连接")
 	}
-	proof, err := h.vault.Load(h.recoveryScope, "owner-recovery")
+	proof, err := h.ownerVault().Load(h.recoveryScope, "owner-recovery")
 	if err != nil {
 		return errors.New("当前系统账户无法打开受保护的所有者恢复入口")
 	}
@@ -424,6 +451,13 @@ func decodeTool(result *mcp.CallToolResult, out any) error {
 		}
 	}
 	return errors.New("管理工具未返回结构化回执")
+}
+
+func (h *hostConnector) ownerVault() localowner.Vault {
+	if h.descriptor != nil && h.descriptor.ManagedRoot != "" {
+		return localowner.Vault{Root: filepath.Join(h.descriptor.ManagedRoot, "protected"), Machine: true}
+	}
+	return h.vault
 }
 
 func receiptResult(op contract.ManagementReceipt) *mcp.CallToolResult {

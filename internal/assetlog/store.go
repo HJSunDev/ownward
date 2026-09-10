@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/domain"
 )
 
@@ -32,19 +33,26 @@ type backupManifest struct {
 }
 
 type event struct {
-	Operation string             `json:"operation"`
-	Recorded  time.Time          `json:"recorded_at"`
-	Value     domain.Information `json:"value"`
-	Deleted   []Deletion         `json:"deleted,omitempty"`
+	Operation  string                    `json:"operation"`
+	Recorded   time.Time                 `json:"recorded_at"`
+	Value      domain.Information        `json:"value"`
+	Deleted    []Deletion                `json:"deleted,omitempty"`
+	Receipt    *contract.MutationReceipt `json:"receipt,omitempty"`
+	Values     []domain.Information      `json:"values,omitempty"`
+	Expected   []uint64                  `json:"expected,omitempty"`
+	Generation uint64                    `json:"generation,omitempty"`
 }
 
 type Store struct {
-	mu      sync.RWMutex
-	dir     string
-	logFile *os.File
-	lock    *directoryLock
-	items   map[string]domain.Information
-	deleted map[string]uint64
+	mu         sync.RWMutex
+	dir        string
+	logFile    *os.File
+	lock       *directoryLock
+	items      map[string]domain.Information
+	deleted    map[string]uint64
+	receipts   map[string]contract.MutationReceipt
+	generation uint64
+	poisoned   bool
 }
 
 func Open(dir string) (*Store, error) {
@@ -69,7 +77,7 @@ func Open(dir string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("打开信息资产日志: %w", err)
 	}
-	store := &Store{dir: dir, logFile: file, lock: lock, items: make(map[string]domain.Information), deleted: make(map[string]uint64)}
+	store := &Store{dir: dir, logFile: file, lock: lock, items: make(map[string]domain.Information), deleted: make(map[string]uint64), receipts: make(map[string]contract.MutationReceipt), generation: 1}
 	if err := store.replay(); err != nil {
 		_ = file.Close()
 		return nil, err
@@ -117,7 +125,7 @@ func (s *Store) CreateBatch(values []domain.Information) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.logFile == nil {
+	if s.logFile == nil || s.poisoned {
 		return errors.New("信息资产日志已关闭")
 	}
 	seen := make(map[string]struct{}, len(values))
@@ -216,6 +224,9 @@ func (s *Store) All() []domain.Information {
 func (s *Store) Sync() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.poisoned {
+		return errors.New("资产提交结果不确定，须重新打开后核对")
+	}
 	if s.logFile == nil {
 		return errors.New("信息资产日志已关闭")
 	}
@@ -233,7 +244,7 @@ func (s *Store) Compact() error {
 }
 
 func (s *Store) compactLocked() error {
-	if s.logFile == nil {
+	if s.logFile == nil || s.poisoned {
 		return errors.New("信息资产日志已关闭")
 	}
 	values := make([]domain.Information, 0, len(s.items))
@@ -320,7 +331,7 @@ func (s *Store) appendLocked(operation string, value domain.Information) error {
 	if err := value.Validate(); err != nil {
 		return err
 	}
-	if s.logFile == nil {
+	if s.logFile == nil || s.poisoned {
 		return errors.New("信息资产日志已关闭")
 	}
 	encoded, err := json.Marshal(event{Operation: operation, Recorded: time.Now().UTC(), Value: value})
@@ -385,6 +396,13 @@ func (s *Store) replay() error {
 			committedEnd += int64(len(encoded))
 			continue
 		}
+		if entry.Operation == "mutation" || entry.Operation == "operation_receipt" || entry.Operation == "operation_generation" {
+			if err := s.replayOperation(entry); err != nil {
+				return fmt.Errorf("信息资产日志第 %d 行回执无效: %w", line, err)
+			}
+			committedEnd += int64(len(encoded))
+			continue
+		}
 		if err := entry.Value.Validate(); err != nil {
 			return fmt.Errorf("信息资产日志第 %d 行无效: %w", line, err)
 		}
@@ -433,7 +451,7 @@ func ensureManifest(dir string) error {
 		if err := json.Unmarshal(data, &value); err != nil {
 			return fmt.Errorf("解析信息资产清单: %w", err)
 		}
-		if value.Format != domain.AssetSchema {
+		if value.Format != domain.AssetSchema && value.Format != operationFormat {
 			return errors.New("不支持的信息资产清单格式")
 		}
 		return nil

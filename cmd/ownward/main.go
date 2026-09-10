@@ -48,6 +48,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return nil
 	}
 	command := args[0]
+	if command == "connect" || strings.HasPrefix(command, "service-") {
+		return runAccessCommand(ctx, args, stdout, stderr)
+	}
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	dataDir := flags.String("data-dir", "", "Ownward 数据目录")
@@ -195,7 +198,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		if resolvedToken == "" {
 			resolvedToken = strings.TrimSpace(os.Getenv(sharedMCPTokenEnvironment))
 		}
-		secured := controlHTTPServer{server: mcpserver.New(service, version), control: runtime.UserControl(), product: runtime.Management(), kernel: runtime.Service()}
+		secured := controlHTTPServer{server: mcpserver.New(service, version), control: runtime.UserControl(), product: runtime.Management(), kernel: runtime.Service(), generation: runtime.OperationGeneration}
 		if err := secured.prepareRecovery(ownerRecoveryScope(loaded.DataDir)); err != nil {
 			return err
 		}

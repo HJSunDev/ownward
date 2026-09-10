@@ -79,6 +79,13 @@ func (r *Runtime) Product() contract.ProductCapability {
 func (r *Runtime) UserControl() *informationcontrol.Control { return r.userControl }
 func (r *Runtime) Management() *informationcontrol.Product  { return r.product }
 
+func (r *Runtime) OperationGeneration() uint64 {
+	if a, ok := r.authority.Assets().(contract.MutationAuthority); ok {
+		return a.OperationGeneration()
+	}
+	return 0
+}
+
 // Kernel exposes only the stable lifecycle waist to operational commands.
 func (r *Runtime) Kernel() contract.KernelLifecycle {
 	if r == nil {
@@ -106,6 +113,10 @@ func (r *Runtime) Backup(destination string) error {
 		return errors.New("装配运行时尚未打开资产权威")
 	}
 	return r.backup(destination)
+}
+
+func (r *Runtime) ExportHandoff(destination string) error {
+	return r.service.ExportSnapshot(destination, func() error { return r.Backup(filepath.Join(destination, "authority.zip")) })
 }
 
 func (r *Runtime) Close() error {
@@ -230,6 +241,10 @@ func openWith(request Request, manifest composition.Manifest, resource resources
 	authority, err := resource.openAuthority(normalized.DataDir, initial)
 	if err != nil {
 		return nil, err
+	}
+	if state := authority.Control().ReadControl(); state.Access != nil && state.Access.Handoff != nil && state.Access.Handoff.Phase == "retired" {
+		_ = authority.Close()
+		return nil, informationcontrol.ErrInactive
 	}
 	closeAuthority := true
 	defer func() {

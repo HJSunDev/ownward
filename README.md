@@ -91,6 +91,41 @@ enter tool results. Direct CLI use initializes the local owner with `setup`;
 belong to the trusted OS-user boundary. See [user control](docs/modules/information-control/README.md)
 for authorization, revocation and forgetting guarantees.
 
+### Connect from another location
+
+Install the Windows release on a user-controlled, reachable host. Run the installation
+command with that host's administrator authorization; network ingress remains a
+deployment responsibility. Installation reports local readiness, not Internet reachability.
+
+```sh
+ownward.exe service-install --data-dir <service-dir> --endpoint https://ownward.example:8443 --listen :8443 --output source.json
+ownward.exe service-invite --data-dir <service-dir> --output connection.json
+```
+
+On the agent's host, configure the MCP stdio command as
+`ownward.exe connect --connection connection.json`. Only the connector binary is
+needed there. For the first management connection, run
+`ownward.exe service-approve --data-dir <service-dir>` on the service host, compare
+the marker displayed on the requesting host, then approve with
+`--id <request-id> --marker <marker> --approve`. Subsequent connections and decisions
+use the trusted agent host's `ownward_connect` tool and MCP confirmation form.
+Connection files contain public trust information, never credentials; deliver them
+through a channel the user controls.
+
+To move, install the same release at an empty destination with
+`service-install --data-dir <new-dir> --endpoint <new-https-address> --receive-from source.json --output destination.json`.
+The trusted agent host's `ownward_migrate` tool accepts that destination descriptor
+and handles confirmation, transfer and continuation. It preserves assets, grants,
+valid organization results and unfinished operations without model calls. The old
+service permanently stops serving data before the destination activates. If a device
+missed the location handoff, retain its original `--connection` file and add
+`--location destination.json`; its existing identity and permissions remain intact.
+
+The OS service restarts after failure; rerunning the identical installation command
+resumes a partial installation. `service-recover --data-dir <service-dir>` restores
+the protected local management entry. See [access and migration](docs/modules/access/README.md)
+for interruption, cancellation and cleanup guarantees.
+
 ## Verify
 
 ```sh

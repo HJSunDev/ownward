@@ -20,6 +20,8 @@ var ErrDenied = errors.New("该连接未获准执行此操作")
 type Control struct {
 	mu        sync.Mutex
 	authority contract.ControlAuthority
+	deferred  map[string]contract.ManagementReceipt
+	changed   chan struct{}
 }
 
 type credentialKey struct{}
@@ -91,6 +93,9 @@ func (c *Control) RecoverOwner() (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	state := c.authority.ReadControl()
+	if err := mutable(state); err != nil {
+		return "", err
+	}
 	if state.InformationControl == nil {
 		return "", errors.New("尚未初始化所有者")
 	}
@@ -115,6 +120,9 @@ func (c *Control) Enroll(ctx context.Context, name string) (contract.Principal, 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	state := c.authority.ReadControl()
+	if err := mutable(state); err != nil {
+		return contract.Principal{}, "", err
+	}
 	if _, err := principal(ctx, state, contract.ManagePermission); err != nil {
 		return contract.Principal{}, "", err
 	}
@@ -139,6 +147,9 @@ func (c *Control) Enroll(ctx context.Context, name string) (contract.Principal, 
 }
 
 func principal(ctx context.Context, state contract.ControlState, permission contract.Permission) (contract.Principal, error) {
+	if inactive(state) {
+		return contract.Principal{}, ErrInactive
+	}
 	hash, _ := ctx.Value(credentialKey{}).(string)
 	if hash == "" || state.InformationControl == nil {
 		return contract.Principal{}, ErrDenied
@@ -158,7 +169,22 @@ func (c *Control) save(state contract.ControlState) error {
 	expected := state.Revision
 	state.Revision++
 	_, err := c.authority.CompareAndSwapControl(expected, state)
+	if err == nil {
+		if c.changed != nil {
+			close(c.changed)
+		}
+		c.changed = make(chan struct{})
+	}
 	return err
+}
+
+func (c *Control) Changed() <-chan struct{} {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.changed == nil {
+		c.changed = make(chan struct{})
+	}
+	return c.changed
 }
 
 // Begin 将请求开始时的许可绑定到后续提交与交付；撤销再授权不能复活旧请求。
@@ -170,6 +196,14 @@ func (c *Control) Begin(ctx context.Context, permission contract.Permission) (co
 	if err != nil {
 		return ctx, nil, err
 	}
+	if permission == contract.MaintainPermission && frozen(state) {
+		return ctx, nil, ErrMoving
+	}
+	if op, ok := contract.Operation(ctx); ok {
+		op.System = state.InformationControl.SystemID
+		op.Principal = p.ID
+		ctx = contract.WithOperation(ctx, op)
+	}
 	for _, op := range state.InformationControl.Operations {
 		if op.Status == "stopping" {
 			return ctx, nil, errors.New("遗忘屏障正在恢复，请稍后继续")
@@ -178,6 +212,9 @@ func (c *Control) Begin(ctx context.Context, permission contract.Permission) (co
 	epoch := state.InformationControl.DeletionRevision
 	check := func() error {
 		current := c.authority.ReadControl()
+		if permission == contract.MaintainPermission && frozen(current) {
+			return ErrMoving
+		}
 		now, err := principal(ctx, current, permission)
 		if err != nil || now.ID != p.ID || now.Revision != p.Revision {
 			return ErrDenied
@@ -226,6 +263,9 @@ func (c *Control) Reissue(ctx context.Context, id string) (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	state := c.authority.ReadControl()
+	if err := mutable(state); err != nil {
+		return "", err
+	}
 	if _, err := principal(ctx, state, contract.ManagePermission); err != nil {
 		return "", err
 	}
@@ -263,6 +303,14 @@ func (c *Control) SetPermissions(ctx context.Context, id string, permissions []c
 		p := &state.InformationControl.Principals[i]
 		if p.ID != id {
 			continue
+		}
+		if frozen(state) {
+			for _, permission := range permissions {
+				if !slices.Contains(p.Permissions, permission) {
+					return ErrMoving
+				}
+			}
+			cancelHandoff(&state)
 		}
 		p.Permissions = slices.Clone(permissions)
 		p.Revision++

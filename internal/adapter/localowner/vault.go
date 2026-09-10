@@ -9,7 +9,10 @@ import (
 )
 
 // Vault 属于部署适配，不进入资产备份；Windows 使用当前用户 DPAPI 保护秘密。
-type Vault struct{ Root string }
+type Vault struct {
+	Root    string
+	Machine bool
+}
 
 func Default() (Vault, error) {
 	dir, err := os.UserConfigDir()
@@ -51,12 +54,22 @@ func (v Vault) Save(system, connection, credential string) error {
 	if credential == "" {
 		return errors.New("连接凭据不能为空")
 	}
-	data, err := protect([]byte(credential))
+	var data []byte
+	if v.Machine {
+		data, err = protectMachine([]byte(credential))
+	} else {
+		data, err = protect([]byte(credential))
+	}
 	if err != nil {
 		return err
 	}
 	if err := os.MkdirAll(v.Root, 0o700); err != nil {
 		return err
+	}
+	if v.Machine {
+		if err := ProtectServiceDirectory(v.Root); err != nil {
+			return err
+		}
 	}
 	tmp, err := os.CreateTemp(v.Root, ".connection-*")
 	if err != nil {

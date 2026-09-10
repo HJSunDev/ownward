@@ -20,7 +20,7 @@ type Deletion struct {
 func (s *Store) Delete(values []Deletion) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.logFile == nil {
+	if s.logFile == nil || s.poisoned {
 		return errors.New("信息资产日志已关闭")
 	}
 	entry := event{Operation: "forget", Recorded: time.Now().UTC(), Deleted: values}
@@ -88,6 +88,9 @@ func (s *Store) replayDeletion(entry event) error {
 }
 
 func (s *Store) writeDeletedSnapshot(w io.Writer) error {
+	if err := s.writeOperationSnapshot(w); err != nil {
+		return err
+	}
 	if len(s.deleted) == 0 {
 		return nil
 	}

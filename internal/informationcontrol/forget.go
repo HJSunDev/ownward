@@ -45,6 +45,7 @@ func (p *Product) Receipt(ctx context.Context, id string) (contract.ManagementRe
 }
 
 func (p *Product) execute(op contract.ManagementReceipt) error {
+	defer p.signal()
 	p.workMu.Lock()
 	defer p.workMu.Unlock()
 	var err error
@@ -114,6 +115,9 @@ func (p *Product) cleanLoop() {
 				err = kernel.CleanForgotten()
 			}
 			if err == nil {
+				err = p.cleanRelated()
+			}
+			if err == nil {
 				err = p.control.mark(op.Request.ID, "completed", nil)
 			}
 			p.workMu.Unlock()
@@ -121,6 +125,9 @@ func (p *Product) cleanLoop() {
 				failed = true
 				_ = p.control.mark(op.Request.ID, "cleaning", err)
 			}
+		}
+		if err := p.cleanRelated(); err != nil {
+			failed = true
 		}
 		if failed {
 			timer := time.NewTimer(delay)

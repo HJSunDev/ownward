@@ -3,21 +3,24 @@ package informationcontrol
 import (
 	"context"
 	"errors"
+	"sync"
+
 	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/domain"
 	"github.com/HJSunDev/ownward/internal/semantics"
-	"sync"
 )
 
 // Product 是全部协议共用的授权边界；内核内部的提交沿用同一请求许可。
 type Product struct {
-	kernel    contract.ProductCapability
-	control   *Control
-	workMu    sync.Mutex
-	wake      chan struct{}
-	stop      chan struct{}
-	done      chan struct{}
-	closeOnce sync.Once
+	kernel         contract.ProductCapability
+	control        *Control
+	workMu         sync.Mutex
+	wake           chan struct{}
+	stop           chan struct{}
+	done           chan struct{}
+	closeOnce      sync.Once
+	cleanupMu      sync.RWMutex
+	relatedCleanup func() error
 }
 
 func NewProduct(kernel contract.ProductCapability, control *Control) *Product {
@@ -39,6 +42,22 @@ func authorized[T any](ctx context.Context, c *Control, permission contract.Perm
 	return value, runErr
 }
 func (p *Product) Rules(ctx context.Context) string { return p.kernel.Rules(ctx) }
+
+func (p *Product) SetRelatedCleanup(clean func() error) {
+	p.cleanupMu.Lock()
+	p.relatedCleanup = clean
+	p.cleanupMu.Unlock()
+	p.signal()
+}
+func (p *Product) cleanRelated() error {
+	p.cleanupMu.RLock()
+	fn := p.relatedCleanup
+	p.cleanupMu.RUnlock()
+	if fn != nil {
+		return fn()
+	}
+	return nil
+}
 
 func (p *Product) Create(ctx context.Context, input contract.CreateInput) (contract.MutationResult, error) {
 	return authorized(ctx, p.control, contract.MaintainPermission, func(bound context.Context) (contract.MutationResult, error) {

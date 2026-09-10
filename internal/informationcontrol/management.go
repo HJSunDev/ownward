@@ -79,6 +79,19 @@ func (c *Control) Propose(ctx context.Context, request contract.ManagementReques
 		op.ApproverRevision = p.Revision
 	}
 	state.InformationControl.Operations = append(state.InformationControl.Operations, op)
+	if frozen(state) {
+		if c.deferred == nil {
+			c.deferred = map[string]contract.ManagementReceipt{}
+		}
+		if previous, ok := c.deferred[request.ID]; ok {
+			if previous.Requester != p.ID || !reflect.DeepEqual(previous.Request, request) {
+				return contract.ManagementReceipt{}, ErrDenied
+			}
+			return previous, nil
+		}
+		c.deferred[request.ID] = op
+		return op, nil
+	}
 	return op, c.save(state)
 }
 
@@ -87,6 +100,7 @@ func (c *Control) Decide(ctx context.Context, id string, accept bool) (contract.
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	state := c.authority.ReadControl()
+	c.mergeDeferred(&state, id)
 	p, err := principal(ctx, state, contract.ManagePermission)
 	if err != nil {
 		return contract.ManagementReceipt{}, err
@@ -104,6 +118,13 @@ func (c *Control) Decide(ctx context.Context, id string, accept bool) (contract.
 			op.Status = "approved"
 			op.Approver = p.ID
 			op.ApproverRevision = p.Revision
+		}
+		if frozen(state) {
+			if c.deferred == nil {
+				c.deferred = map[string]contract.ManagementReceipt{}
+			}
+			c.deferred[id] = *op
+			return *op, nil
 		}
 		return *op, c.save(state)
 	}
@@ -123,6 +144,10 @@ func (c *Control) ApplyPermissions(id string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	state := c.authority.ReadControl()
+	if inactive(state) {
+		return ErrInactive
+	}
+	c.mergeDeferred(&state, id)
 	for i := range state.InformationControl.Operations {
 		op := &state.InformationControl.Operations[i]
 		if op.Request.ID != id {
@@ -142,6 +167,14 @@ func (c *Control) ApplyPermissions(id string) error {
 			if p.ID != op.Request.SubjectID {
 				continue
 			}
+			if frozen(state) {
+				for _, permission := range op.Request.Permissions {
+					if !slices.Contains(p.Permissions, permission) {
+						return ErrMoving
+					}
+				}
+				cancelHandoff(&state)
+			}
 			p.Permissions = slices.Clone(op.Request.Permissions)
 			p.Revision++
 			op.Status = "completed"
@@ -157,6 +190,10 @@ func (c *Control) StartForget(id string, affected []contract.AssetVersion) error
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	state := c.authority.ReadControl()
+	if inactive(state) {
+		return ErrInactive
+	}
+	c.mergeDeferred(&state, id)
 	for i := range state.InformationControl.Operations {
 		op := &state.InformationControl.Operations[i]
 		if op.Request.ID != id {
@@ -169,6 +206,9 @@ func (c *Control) StartForget(id string, affected []contract.AssetVersion) error
 			return ErrDenied
 		}
 		op.Affected = slices.Clone(affected)
+		if frozen(state) {
+			cancelHandoff(&state)
+		}
 		op.Status = "stopping"
 		state.InformationControl.DeletionRevision++
 		return c.save(state)
@@ -205,6 +245,7 @@ func (c *Control) Receipt(ctx context.Context, id string) (contract.ManagementRe
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	state := c.authority.ReadControl()
+	c.mergeDeferred(&state, id)
 	p, err := principal(ctx, state, "")
 	if err != nil {
 		return contract.ManagementReceipt{}, err
@@ -245,6 +286,7 @@ func (c *Control) operation(id string) (contract.ManagementReceipt, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	state := c.authority.ReadControl()
+	c.mergeDeferred(&state, id)
 	if state.InformationControl != nil {
 		for _, op := range state.InformationControl.Operations {
 			if op.Request.ID == id {
@@ -253,4 +295,22 @@ func (c *Control) operation(id string) (contract.ManagementReceipt, error) {
 		}
 	}
 	return contract.ManagementReceipt{}, errors.New("管理请求不存在")
+}
+
+// Unapproved work cannot invalidate a frozen snapshot; the connector durably
+// retains the request until its authorized decision can join a control commit.
+func (c *Control) mergeDeferred(s *contract.ControlState, id string) {
+	op, ok := c.deferred[id]
+	if !ok || s.InformationControl == nil {
+		return
+	}
+	for i, current := range s.InformationControl.Operations {
+		if current.Request.ID == id {
+			if current.Status == "awaiting_approval" || current.Status == "approved" {
+				s.InformationControl.Operations[i] = op
+			}
+			return
+		}
+	}
+	s.InformationControl.Operations = append(s.InformationControl.Operations, op)
 }

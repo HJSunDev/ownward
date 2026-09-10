@@ -34,6 +34,7 @@ type Service struct {
 	collaborative bool
 	now           func() time.Time
 	mutationMu    [256]sync.Mutex
+	operationMu   [256]sync.Mutex
 	graphMu       sync.Mutex
 	stateMu       sync.RWMutex
 }
@@ -165,8 +166,15 @@ func NewCollaborativeWithAuthority(authority contract.AssetAuthority, derivedSto
 }
 
 func (s *Service) Create(ctx context.Context, input CreateInput) (MutationResult, error) {
+	unlockOperation := s.lockOperation(ctx)
+	defer unlockOperation()
 	s.stateMu.RLock()
 	defer s.stateMu.RUnlock()
+	if results, found, err := s.replayMutation(ctx); err != nil {
+		return MutationResult{}, err
+	} else if found {
+		return replaySingle(results)
+	}
 	value, err := s.createAsset(ctx, input)
 	if err != nil {
 		return MutationResult{}, err
@@ -178,11 +186,16 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (MutationResult
 }
 
 func (s *Service) CreateBatch(ctx context.Context, inputs []CreateInput) ([]MutationBatchResult, error) {
+	unlockOperation := s.lockOperation(ctx)
+	defer unlockOperation()
 	if len(inputs) == 0 || len(inputs) > 20 {
 		return nil, errors.New("批量创建数量必须介于一和二十之间")
 	}
 	s.stateMu.RLock()
 	defer s.stateMu.RUnlock()
+	if results, found, err := s.replayMutation(ctx); err != nil || found {
+		return results, err
+	}
 	results := make([]MutationBatchResult, len(inputs))
 	values := make([]domain.Information, 0, len(inputs))
 	positions := make([]int, 0, len(inputs))
@@ -195,8 +208,9 @@ func (s *Service) CreateBatch(ctx context.Context, inputs []CreateInput) ([]Muta
 		values = append(values, value)
 		positions = append(positions, index)
 	}
-	if len(values) > 0 {
-		if err := contract.Commit(ctx, func() error { _, err := s.authority.CreateAssets(values); return err }); err != nil {
+	_, hasOperation := contract.Operation(ctx)
+	if len(values) > 0 || hasOperation {
+		if err := s.commitMutation(ctx, values, make([]uint64, len(values)), results, positions, func() error { _, err := s.authority.CreateAssets(values); return err }); err != nil {
 			for _, position := range positions {
 				results[position].Error = err.Error()
 			}
@@ -226,7 +240,7 @@ func (s *Service) createAsset(ctx context.Context, input CreateInput) (domain.In
 	if err != nil {
 		return domain.Information{}, err
 	}
-	if err := contract.Commit(ctx, func() error { _, err := s.authority.CreateAsset(value); return err }); err != nil {
+	if err := s.commitMutation(ctx, []domain.Information{value}, []uint64{0}, make([]MutationBatchResult, 1), []int{0}, func() error { _, err := s.authority.CreateAsset(value); return err }); err != nil {
 		return domain.Information{}, err
 	}
 	s.index.Upsert(value)
@@ -267,8 +281,15 @@ func (s *Service) newAsset(input CreateInput) (domain.Information, error) {
 }
 
 func (s *Service) Update(ctx context.Context, input UpdateInput) (MutationResult, error) {
+	unlockOperation := s.lockOperation(ctx)
+	defer unlockOperation()
 	s.stateMu.RLock()
 	defer s.stateMu.RUnlock()
+	if results, found, err := s.replayMutation(ctx); err != nil {
+		return MutationResult{}, err
+	} else if found {
+		return replaySingle(results)
+	}
 	unlock := s.lockMutation(input.ID)
 	released := false
 	defer func() {
@@ -315,7 +336,7 @@ func (s *Service) Update(ctx context.Context, input UpdateInput) (MutationResult
 		dependents = s.semantic.Dependents(updated.ID)
 		dependents = appendUniqueIDs(dependents, s.semantic.PendingDependents(updated.ID)...)
 	}
-	if err := contract.Commit(ctx, func() error { _, err := s.authority.UpdateAsset(updated, input.ExpectedRevision); return err }); err != nil {
+	if err := s.commitMutation(ctx, []domain.Information{updated}, []uint64{input.ExpectedRevision}, make([]MutationBatchResult, 1), []int{0}, func() error { _, err := s.authority.UpdateAsset(updated, input.ExpectedRevision); return err }); err != nil {
 		return MutationResult{}, err
 	}
 	s.index.Upsert(updated)
