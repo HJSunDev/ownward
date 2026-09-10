@@ -1,0 +1,18 @@
+{
+  "name": "ownward",
+  "version": "0.1.0",
+  "description": "查用和维护用户的长期信息，并在继续任务时核对旧材料的变化。",
+  "author": {
+    "name": "Ownward"
+  },
+  "interface": {
+    "displayName": "Ownward",
+    "shortDescription": "让长期信息随用户和任务持续更新。",
+    "longDescription": "连接用户自己的 Ownward 信息体系，在继续任务时自动核对近期来源变化。",
+    "developerName": "Ownward",
+    "category": "Productivity",
+    "capabilities": [],
+    "defaultPrompt": "使用我的 Ownward 信息继续工作。"
+  },
+  "mcpServers": "./.mcp.json"
+}

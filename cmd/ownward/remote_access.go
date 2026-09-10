@@ -376,6 +376,28 @@ func runRemoteConnector(ctx context.Context, material connectionMaterial) error 
 	}
 	defer func() { session.Close() }()
 	proxy := mcp.NewServer(&mcp.Implementation{Name: "ownward", Version: version}, &mcp.ServerOptions{Instructions: session.InitializeResult().Instructions, Capabilities: &mcp.ServerCapabilities{}})
+	host.addMaterialTool(proxy, func(ctx context.Context, refs []string) ([]contract.InformationCheck, error) {
+		host.routeMu.Lock()
+		err := host.refreshRemote(ctx, &session)
+		host.routeMu.Unlock()
+		if err != nil {
+			return nil, err
+		}
+		host.routeMu.RLock()
+		defer host.routeMu.RUnlock()
+		result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "ownward_check", Arguments: map[string]any{"bases": refs}})
+		if err != nil {
+			return nil, err
+		}
+		if result.IsError {
+			return nil, errors.New("来源核对未完成")
+		}
+		var out struct {
+			Results []contract.InformationCheck `json:"results"`
+		}
+		err = decodeTool(result, &out)
+		return out.Results, err
+	})
 	for tool, err := range session.Tools(ctx, nil) {
 		if err != nil {
 			return err

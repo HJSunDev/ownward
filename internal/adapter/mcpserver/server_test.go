@@ -88,7 +88,7 @@ func TestServerExposesUnifiedCoreOperations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(tools.Tools) != 13 {
+	if len(tools.Tools) != 14 {
 		t.Fatalf("unexpected tool count: %d", len(tools.Tools))
 	}
 	toolsByName := make(map[string]*mcp.Tool, len(tools.Tools))

@@ -44,15 +44,17 @@ type event struct {
 }
 
 type Store struct {
-	mu         sync.RWMutex
-	dir        string
-	logFile    *os.File
-	lock       *directoryLock
-	items      map[string]domain.Information
-	deleted    map[string]uint64
-	receipts   map[string]contract.MutationReceipt
-	generation uint64
-	poisoned   bool
+	mu           sync.RWMutex
+	dir          string
+	logFile      *os.File
+	lock         *directoryLock
+	items        map[string]domain.Information
+	fingerprints map[string]string
+	qualifiers   map[string]map[string]bool
+	deleted      map[string]uint64
+	receipts     map[string]contract.MutationReceipt
+	generation   uint64
+	poisoned     bool
 }
 
 func Open(dir string) (*Store, error) {
@@ -144,6 +146,9 @@ func (s *Store) CreateBatch(values []domain.Information) error {
 		}
 		seen[value.ID] = struct{}{}
 	}
+	if err := s.enableClarifications(values); err != nil {
+		return err
+	}
 	start, err := s.logFile.Seek(0, io.SeekEnd)
 	if err != nil {
 		return fmt.Errorf("定位信息资产日志: %w", err)
@@ -174,7 +179,7 @@ func (s *Store) CreateBatch(values []domain.Information) error {
 		return fmt.Errorf("批量持久化信息资产: %w", err)
 	}
 	for _, value := range values {
-		s.items[value.ID] = clone(value)
+		s.setItem(value)
 	}
 	return nil
 }
@@ -339,6 +344,9 @@ func (s *Store) appendLocked(operation string, value domain.Information) error {
 		return fmt.Errorf("编码信息资产: %w", err)
 	}
 	encoded = append(encoded, '\n')
+	if err := s.enableClarifications([]domain.Information{value}); err != nil {
+		return err
+	}
 	start, err := s.logFile.Seek(0, io.SeekEnd)
 	if err != nil {
 		return fmt.Errorf("定位信息资产日志: %w", err)
@@ -360,7 +368,7 @@ func (s *Store) appendLocked(operation string, value domain.Information) error {
 		}
 		return fmt.Errorf("持久化信息资产: %w", err)
 	}
-	s.items[value.ID] = clone(value)
+	s.setItem(value)
 	return nil
 }
 
@@ -426,7 +434,7 @@ func (s *Store) replay() error {
 		default:
 			return fmt.Errorf("信息资产日志第 %d 行操作未知", line)
 		}
-		s.items[entry.Value.ID] = clone(entry.Value)
+		s.setItem(entry.Value)
 		committedEnd += int64(len(encoded))
 	}
 	_, err := s.logFile.Seek(0, io.SeekEnd)
@@ -451,7 +459,7 @@ func ensureManifest(dir string) error {
 		if err := json.Unmarshal(data, &value); err != nil {
 			return fmt.Errorf("解析信息资产清单: %w", err)
 		}
-		if value.Format != domain.AssetSchema && value.Format != operationFormat {
+		if value.Format != domain.AssetSchema && value.Format != operationFormat && value.Format != clarificationFormat {
 			return errors.New("不支持的信息资产清单格式")
 		}
 		return nil
@@ -477,5 +485,11 @@ func ensureManifest(dir string) error {
 func clone(value domain.Information) domain.Information {
 	value.Contexts = append([]domain.Context(nil), value.Contexts...)
 	value.Relations = append([]domain.ExplicitRelation(nil), value.Relations...)
+	for i := range value.Relations {
+		if value.Relations[i].Selector != nil {
+			selector := *value.Relations[i].Selector
+			value.Relations[i].Selector = &selector
+		}
+	}
 	return value
 }

@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "ownward": {
+      "command": "./bin/ownward.exe",
+      "cwd": ".",
+      "args": ["codex-connect"],
+      "env_vars": ["OWNWARD_DATA_DIR", "OWNWARD_HOST_STATE", "APPDATA", "XDG_CONFIG_HOME"]
+    }
+  }
+}

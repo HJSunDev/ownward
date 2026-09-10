@@ -68,6 +68,17 @@ func (f hostFixture) connect(t *testing.T, name string, approve func(string) boo
 	}
 	t.Cleanup(func() { _ = us.Close() })
 	proxy := mcp.NewServer(&mcp.Implementation{Name: "ownward"}, nil)
+	h.addMaterialTool(proxy, func(ctx context.Context, refs []string) ([]contract.InformationCheck, error) {
+		result, err := us.CallTool(ctx, &mcp.CallToolParams{Name: "ownward_check", Arguments: map[string]any{"bases": refs}})
+		if err != nil {
+			return nil, err
+		}
+		var out struct {
+			Results []contract.InformationCheck `json:"results"`
+		}
+		err = decodeTool(result, &out)
+		return out.Results, err
+	})
 	for tool, err := range us.Tools(ctx, nil) {
 		if err != nil {
 			t.Fatal(err)

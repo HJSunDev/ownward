@@ -26,10 +26,11 @@ type RulesOutput struct {
 }
 
 type CreateInput struct {
-	Content  string           `json:"content" jsonschema:"属于用户且可长期复用的完整信息"`
-	Kind     string           `json:"kind,omitempty" jsonschema:"兼容既有资产的可选字段；通常省略，不参与自主语义组织"`
-	Contexts []domain.Context `json:"contexts,omitempty" jsonschema:"仅在信息含义或适用性依赖场景时提供"`
-	Source   domain.Source    `json:"source,omitempty" jsonschema:"信息来源"`
+	Relations []domain.ExplicitRelation `json:"explicit_relations,omitempty" jsonschema:"明确说明以 qualifies 绑定原资料，selector 以唯一原文定位说明。"`
+	Content   string                    `json:"content" jsonschema:"属于用户且可长期复用的完整信息"`
+	Kind      string                    `json:"kind,omitempty" jsonschema:"兼容既有资产的可选字段；通常省略，不参与自主语义组织"`
+	Contexts  []domain.Context          `json:"contexts,omitempty" jsonschema:"仅在信息含义或适用性依赖场景时提供"`
+	Source    domain.Source             `json:"source,omitempty" jsonschema:"信息来源"`
 }
 
 type CreateOutput struct {
@@ -48,16 +49,19 @@ type ReadInput struct {
 	ID string `json:"id" jsonschema:"稳定的信息标识"`
 }
 
-type ReadOutput struct {
-	Information domain.Information `json:"information"`
-}
+type ReadOutput = contract.InformationRead
 
 type EvidenceReadInput struct {
 	ID string `json:"id" jsonschema:"从检索结果取得的细粒度证据引用标识"`
 }
 
-type EvidenceReadOutput struct {
-	Evidence domain.Evidence `json:"evidence"`
+type EvidenceReadOutput = contract.EvidenceRead
+
+type CheckInput struct {
+	Bases []string `json:"bases" jsonschema:"实际读取取得的依据引用，每批最多 64 项。"`
+}
+type CheckOutput struct {
+	Results []contract.InformationCheck `json:"results"`
 }
 
 type EvidenceSearchInput struct {
@@ -79,12 +83,13 @@ type StatusOutput struct {
 }
 
 type UpdateInput struct {
-	ID               string            `json:"id" jsonschema:"稳定的信息标识"`
-	ExpectedRevision uint64            `json:"expected_revision" jsonschema:"调用方最后读取到的版本，用于避免覆盖并发更新"`
-	Content          *string           `json:"content,omitempty" jsonschema:"更新后的完整信息内容"`
-	Kind             *string           `json:"kind,omitempty" jsonschema:"兼容既有资产的可选字段；通常省略，不参与自主语义组织"`
-	Contexts         *[]domain.Context `json:"contexts,omitempty" jsonschema:"更新后的完整场景集合；空数组表示清除场景"`
-	Source           *domain.Source    `json:"source,omitempty" jsonschema:"更新后的来源"`
+	Relations        *[]domain.ExplicitRelation `json:"explicit_relations,omitempty" jsonschema:"完整明确关系列表；同资料附加说明以 qualifies 指向自身并提供 selector。"`
+	ID               string                     `json:"id" jsonschema:"稳定的信息标识"`
+	ExpectedRevision uint64                     `json:"expected_revision" jsonschema:"调用方最后读取到的版本，用于避免覆盖并发更新"`
+	Content          *string                    `json:"content,omitempty" jsonschema:"更新后的完整信息内容"`
+	Kind             *string                    `json:"kind,omitempty" jsonschema:"兼容既有资产的可选字段；通常省略，不参与自主语义组织"`
+	Contexts         *[]domain.Context          `json:"contexts,omitempty" jsonschema:"更新后的完整场景集合；空数组表示清除场景"`
+	Source           *domain.Source             `json:"source,omitempty" jsonschema:"更新后的来源"`
 }
 
 type UpdateOutput struct {
@@ -144,6 +149,7 @@ func New(service contract.ProductCapability, version string) *Server {
 	)
 	value := &Server{service: service, server: server}
 	value.addManagementTools()
+	mcp.AddTool(server, &mcp.Tool{Name: "ownward_check", Description: "重新使用旧材料前批量核对实际取得的 basis。变化则重新读取来源及相关说明；未变仅证明来源状态，不能证明当前适用性或信息完整。", Annotations: closedWorldAnnotations(true, false, true)}, value.check)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ownward_rules",
 		Description: "读取 Ownward 的信息范围、使用、维护和主动补充规则。首次使用或不确定是否应保存、如何检索时调用。",
@@ -319,23 +325,28 @@ func coreCreateInput(input CreateInput) (contract.CreateInput, error) {
 		}
 		kind = parsed
 	}
-	return contract.CreateInput{Kind: kind, Content: input.Content, Contexts: input.Contexts, Source: input.Source}, nil
+	return contract.CreateInput{Kind: kind, Content: input.Content, Contexts: input.Contexts, Relations: input.Relations, Source: input.Source}, nil
 }
 
 func (s *Server) read(ctx context.Context, _ *mcp.CallToolRequest, input ReadInput) (*mcp.CallToolResult, ReadOutput, error) {
-	value, err := s.service.Read(ctx, input.ID)
+	value, err := s.service.ReadInformation(ctx, input.ID)
 	if err != nil {
 		return nil, ReadOutput{}, err
 	}
-	return nil, ReadOutput{Information: value}, nil
+	return nil, value, nil
 }
 
 func (s *Server) evidenceRead(ctx context.Context, _ *mcp.CallToolRequest, input EvidenceReadInput) (*mcp.CallToolResult, EvidenceReadOutput, error) {
-	value, err := s.service.ReadEvidence(ctx, input.ID)
+	value, err := s.service.ReadEvidenceWithBasis(ctx, input.ID)
 	if err != nil {
 		return nil, EvidenceReadOutput{}, err
 	}
-	return nil, EvidenceReadOutput{Evidence: value}, nil
+	return nil, value, nil
+}
+
+func (s *Server) check(ctx context.Context, _ *mcp.CallToolRequest, input CheckInput) (*mcp.CallToolResult, CheckOutput, error) {
+	results, err := s.service.CheckInformation(ctx, input.Bases)
+	return nil, CheckOutput{Results: results}, err
 }
 
 func (s *Server) evidenceSearch(ctx context.Context, _ *mcp.CallToolRequest, input EvidenceSearchInput) (*mcp.CallToolResult, EvidenceSearchOutput, error) {
@@ -366,6 +377,7 @@ func (s *Server) status(ctx context.Context, _ *mcp.CallToolRequest, input Statu
 
 func (s *Server) update(ctx context.Context, _ *mcp.CallToolRequest, input UpdateInput) (*mcp.CallToolResult, UpdateOutput, error) {
 	update := contract.UpdateInput{
+		Relations:        input.Relations,
 		ID:               input.ID,
 		ExpectedRevision: input.ExpectedRevision,
 		Content:          input.Content,

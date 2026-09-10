@@ -44,8 +44,9 @@ type Context struct {
 }
 
 type ExplicitRelation struct {
-	Type     string `json:"type"`
-	TargetID string `json:"target_id"`
+	Type     string        `json:"type"`
+	TargetID string        `json:"target_id"`
+	Selector *TextSelector `json:"selector,omitempty"`
 }
 
 type Source struct {
@@ -91,10 +92,18 @@ func (i Information) Validate() error {
 		}
 	}
 	for _, relation := range i.Relations {
+		if relation.Selector != nil {
+			if relation.Type != "qualifies" {
+				return errors.New("原文定位仅用于明确说明")
+			}
+			if _, _, err := relation.Selector.Resolve(i.Content); err != nil {
+				return err
+			}
+		}
 		if strings.TrimSpace(relation.Type) == "" || strings.TrimSpace(relation.TargetID) == "" {
 			return errors.New("关系类型和目标均不能为空")
 		}
-		if relation.TargetID == i.ID {
+		if relation.TargetID == i.ID && (relation.Type != "qualifies" || relation.Selector == nil) {
 			return errors.New("信息不能显式关联自身")
 		}
 	}

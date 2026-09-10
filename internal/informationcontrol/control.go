@@ -210,6 +210,7 @@ func (c *Control) Begin(ctx context.Context, permission contract.Permission) (co
 		}
 	}
 	epoch := state.InformationControl.DeletionRevision
+	ctx = contract.WithInformationSystem(ctx, state.InformationControl.SystemID)
 	check := func() error {
 		current := c.authority.ReadControl()
 		if permission == contract.MaintainPermission && frozen(current) {

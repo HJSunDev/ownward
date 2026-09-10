@@ -20,7 +20,7 @@ func TestContractCatalogIsVersionedAndDeterministic(t *testing.T) {
 	seen := make(map[string]struct{}, len(definitions))
 	for _, definition := range definitions {
 		key := definition.ID
-		if definition.Version != 1 || definition.Responsibility == "" || len(definition.Operations) == 0 || len(definition.Schemas) == 0 || definition.Source == "" {
+		if definition.Version < 1 || definition.Responsibility == "" || len(definition.Operations) == 0 || len(definition.Schemas) == 0 || definition.Source == "" {
 			t.Fatalf("incomplete contract definition: %#v", definition)
 		}
 		if _, exists := seen[key]; exists {

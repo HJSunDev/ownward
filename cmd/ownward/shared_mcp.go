@@ -85,6 +85,20 @@ func runSharedMCPConnector(ctx context.Context, dataDir, binaryVersion, composit
 		instructions = initialize.Instructions
 	}
 	proxy := mcp.NewServer(&mcp.Implementation{Name: "ownward", Version: binaryVersion}, &mcp.ServerOptions{Instructions: instructions, Capabilities: &mcp.ServerCapabilities{}})
+	host.addMaterialTool(proxy, func(ctx context.Context, refs []string) ([]contract.InformationCheck, error) {
+		result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "ownward_check", Arguments: map[string]any{"bases": refs}})
+		if err != nil {
+			return nil, err
+		}
+		if result.IsError {
+			return nil, errors.New("来源核对未完成")
+		}
+		var out struct {
+			Results []contract.InformationCheck `json:"results"`
+		}
+		err = decodeTool(result, &out)
+		return out.Results, err
+	})
 	for tool, toolErr := range session.Tools(ctx, nil) {
 		if toolErr != nil {
 			return fmt.Errorf("读取共享 Ownward 工具契约失败: %w", toolErr)

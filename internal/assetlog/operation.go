@@ -17,8 +17,24 @@ import (
 
 const operationLimit = 4096
 const operationFormat = "ownward.asset-log/v2"
+const clarificationFormat = "ownward.asset-log/v3"
 
 func (s *Store) enableOperationFormat() error {
+	return s.enableFormat(operationFormat)
+}
+
+func (s *Store) enableClarifications(values []domain.Information) error {
+	for _, v := range values {
+		for _, r := range v.Relations {
+			if r.Type == "qualifies" {
+				return s.enableFormat(clarificationFormat)
+			}
+		}
+	}
+	return nil
+}
+
+func (s *Store) enableFormat(format string) error {
 	path := filepath.Join(s.dir, manifestName)
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -28,10 +44,10 @@ func (s *Store) enableOperationFormat() error {
 	if err := json.Unmarshal(data, &m); err != nil {
 		return err
 	}
-	if m.Format == operationFormat {
+	if m.Format == format || m.Format == clarificationFormat {
 		return nil
 	}
-	m.Format = operationFormat
+	m.Format = format
 	data, err = json.Marshal(m)
 	if err != nil {
 		return err
@@ -101,6 +117,9 @@ func (s *Store) CommitMutation(receipt contract.MutationReceipt, values []domain
 	}
 	entry := event{Operation: "mutation", Recorded: time.Now().UTC(), Receipt: &receipt, Values: values, Expected: expected}
 	if err := s.validateMutation(entry); err != nil {
+		return err
+	}
+	if err := s.enableClarifications(values); err != nil {
 		return err
 	}
 	if err := s.appendOperationEvent(entry); err != nil {
@@ -199,7 +218,7 @@ func (s *Store) replayOperation(e event) error {
 			return err
 		}
 		for _, v := range e.Values {
-			s.items[v.ID] = clone(v)
+			s.setItem(v)
 		}
 	}
 	r := *e.Receipt

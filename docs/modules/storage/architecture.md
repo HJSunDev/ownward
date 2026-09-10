@@ -122,3 +122,7 @@ Ownward 的存储首先服务于产品本质，而不是服务于某一种数据
 - [产品需求](../../product/requirements.md)
 - [第一版交付定义](../../delivery/first-version-delivery-definition.md)
 - [当前存储状态与体积](README.md)
+
+## 明确说明与来源核对
+
+`qualifies` 关系及可选原文定位随正文原子保存；首次保存该关系时，资产日志清单升级为 `ownward.asset-log/v3`，旧程序拒绝打开，避免静默丢失定位语义。完整资产指纹与直接说明的反向索引在提交、回放和删除时同步维护，可从资产重建；读取在同一锁内取得正文与说明快照，核对不扫描全库、不另存历史。对外语义见[信息变化架构](../information-change/README.md)。

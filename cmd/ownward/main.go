@@ -48,6 +48,12 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return nil
 	}
 	command := args[0]
+	if command == "codex-configure" {
+		return configureCodex(args[1:], stdout, stderr)
+	}
+	if command == "codex-connect" {
+		return runCodexConnect(ctx, stdout, stderr)
+	}
 	if command == "connect" || strings.HasPrefix(command, "service-") {
 		return runAccessCommand(ctx, args, stdout, stderr)
 	}
@@ -63,6 +69,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	depth := flags.Int("depth", 1, "关系导航深度")
 	output := flags.String("output", "", "备份输出文件")
 	backup := flags.String("backup", "", "待恢复的备份文件")
+	explicitRelations := flags.String("explicit-relations", "", "完整明确关系的 JSON 数组；新建时 $self 表示本资产")
+	bases := flags.String("bases", "", "check 使用的 basis JSON 数组")
 	listen := flags.String("listen", "127.0.0.1:0", "Streamable HTTP MCP 监听地址，仅允许本机回环地址")
 	token := flags.String("token", "", "Streamable HTTP MCP 可选的 Bearer Token")
 	contexts := stringList{}
@@ -71,6 +79,12 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	flags.Var(&relations, "relation", "关系类型，可重复")
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
+	}
+	var qualified []domain.ExplicitRelation
+	if *explicitRelations != "" {
+		if err := json.Unmarshal([]byte(*explicitRelations), &qualified); err != nil {
+			return fmt.Errorf("明确关系无效: %w", err)
+		}
 	}
 	loaded, err := config.Load(*dataDir)
 	if err != nil {
@@ -208,7 +222,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		if err != nil {
 			return err
 		}
-		value, err := service.Create(ctx, contract.CreateInput{Kind: kind, Content: *content, Contexts: parsedContexts, Source: domain.Source{Actor: "cli"}})
+		value, err := service.Create(ctx, contract.CreateInput{Kind: kind, Content: *content, Contexts: parsedContexts, Relations: qualified, Source: domain.Source{Actor: "cli"}})
 		if err != nil {
 			return err
 		}
@@ -218,6 +232,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 			return errors.New("update 必须提供 --revision")
 		}
 		input := contract.UpdateInput{ID: *id, ExpectedRevision: *revision}
+		if flagsWasSet(flags, "explicit-relations") {
+			input.Relations = &qualified
+		}
 		if *content != "" {
 			input.Content = content
 		}
@@ -237,11 +254,31 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		}
 		return writeJSON(stdout, value)
 	case "read":
-		value, err := service.Read(ctx, *id)
+		value, err := service.ReadInformation(ctx, *id)
+		if err != nil {
+			return err
+		}
+		return writeJSON(stdout, struct {
+			domain.Information
+			Basis          string                   `json:"basis"`
+			Clarifications []contract.Clarification `json:"clarifications"`
+		}{value.Information, value.Basis, value.Clarifications})
+	case "evidence-read":
+		value, err := service.ReadEvidenceWithBasis(ctx, *id)
 		if err != nil {
 			return err
 		}
 		return writeJSON(stdout, value)
+	case "check":
+		var refs []string
+		if err := json.Unmarshal([]byte(*bases), &refs); err != nil {
+			return err
+		}
+		results, err := service.CheckInformation(ctx, refs)
+		if err != nil {
+			return err
+		}
+		return writeJSON(stdout, map[string]any{"results": results})
 	case "search":
 		values, err := service.Search(ctx, contract.SearchInput{Query: *query, Contexts: parsedContexts, Limit: *limit})
 		if err != nil {
@@ -417,7 +454,7 @@ func bearerTokenHandler(next http.Handler, token string) http.Handler {
 }
 
 func printUsage(writer io.Writer) {
-	fmt.Fprintln(writer, "用法: ownward <setup|recover-owner|mcp|mcp-http|create|update|read|search|navigate|rules|backup|restore|maintain|rebuild|version> [选项]")
+	fmt.Fprintln(writer, "用法: ownward <setup|recover-owner|mcp|mcp-http|codex-configure|codex-connect|create|update|read|evidence-read|check|search|navigate|rules|backup|restore|maintain|rebuild|version> [选项]")
 	fmt.Fprintln(writer, "信息类型:", strings.Join(kindNames(), ", "))
 }
 

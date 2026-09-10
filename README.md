@@ -91,6 +91,36 @@ enter tool results. Direct CLI use initializes the local owner with `setup`;
 belong to the trusted OS-user boundary. See [user control](docs/modules/information-control/README.md)
 for authorization, revocation and forgetting guarantees.
 
+### Codex integration
+
+The Windows release is also a native Codex plugin. Install from its extracted
+directory using Codex's normal plugin flow:
+
+```sh
+codex plugin marketplace add <release-directory>
+codex plugin add ownward@ownward
+```
+
+Open Codex and review the three Ownward hooks in its normal trust dialog. This
+integration has been verified with Codex CLI 0.149.0; a host must support native
+plugins, MCP tool hooks and MCP confirmation forms. An unsupported host or an
+untrusted hook does not provide automatic material checking. `/hooks` shows the
+enabled state. Configure this connection once, using the plugin instead of a
+duplicate manual MCP entry.
+
+The plugin supplies the existing tools and rules, remembers a bounded set of
+recent source references, and checks them when work resumes or a new user turn
+starts. Changed sources are reread in the original task; checks require no model
+call and do not rescan the corpus. Full and fragment reads include explicit
+clarification locations, so a current fragment cannot silently hide a correction
+elsewhere in its source. See [information changes](docs/modules/information-change/README.md).
+
+Local use needs no connection file. To select a remote information system, run
+`bin/ownward.exe codex-configure --connection connection.json` from the release
+directory, then reopen Codex. The file supplies public trust information only;
+the existing connector handles authorization. Run `codex-configure` without
+options to return to local use. Source references remain independent of location.
+
 ### Connect from another location
 
 Install the Windows release on a user-controlled, reachable host. Run the installation

@@ -10,6 +10,23 @@ import ownward_information_use as flow
 
 
 class InformationUseTests(unittest.TestCase):
+    def test_reuse_checks_batches_and_preserves_missing_or_failed_status(self):
+        materials = [{'basis': str(i), 'content': 'kept original'} for i in range(70)]
+        before = copy.deepcopy(materials)
+        call = mock.Mock(side_effect=[{'results': [{'basis': '0', 'status': 'changed', 'source_id': 'a'}, None]}, RuntimeError('offline')])
+        checked = flow.check_materials(materials, call)
+        self.assertEqual([64, 6], [len(c.args[1]['bases']) for c in call.call_args_list])
+        self.assertEqual('changed', checked[0]['status'])
+        self.assertTrue(all(x['status'] == 'unverifiable' for x in checked[1:]))
+        self.assertEqual(before, materials)
+        call.reset_mock()
+        self.assertEqual('', flow.reuse_context([], call))
+        call.assert_not_called()
+
+    def test_reuse_does_not_treat_malformed_results_as_verified(self):
+        call = mock.Mock(return_value={'results': {'0': {'status': 'unchanged'}}})
+        self.assertIn('unverifiable', flow.reuse_context([{'basis': 'b'}], call))
+
     def setUp(self):
         self.observations = {'task': 'Compare the options', 'sources': [
             {'id': '1', 'origin': 'ownward_read', 'content': 'Original source, including qualifications.'}]}

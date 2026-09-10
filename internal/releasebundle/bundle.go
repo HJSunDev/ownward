@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/HJSunDev/ownward/internal/codexplugin"
 	"github.com/HJSunDev/ownward/internal/embedding"
 )
 
@@ -92,6 +93,9 @@ func Assemble(options Options) (Manifest, error) {
 		return Manifest{}, err
 	}
 	if err := copyFile(readme, filepath.Join(temporary, "README.md"), 0o644); err != nil {
+		return Manifest{}, err
+	}
+	if err := codexplugin.Write(temporary); err != nil {
 		return Manifest{}, err
 	}
 	files, err := fileManifest(temporary)

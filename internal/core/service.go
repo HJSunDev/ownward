@@ -257,9 +257,6 @@ func (s *Service) newAsset(input CreateInput) (domain.Information, error) {
 	if _, err := domain.ParseKind(string(input.Kind)); err != nil {
 		return domain.Information{}, err
 	}
-	if err := s.validateRelationTargets("", input.Relations); err != nil {
-		return domain.Information{}, err
-	}
 	now := s.now().UTC()
 	id, err := newID(now)
 	if err != nil {
@@ -277,7 +274,15 @@ func (s *Service) newAsset(input CreateInput) (domain.Information, error) {
 		Relations: append([]domain.ExplicitRelation(nil), input.Relations...),
 		Source:    input.Source,
 	}
-	return value, nil
+	for i := range value.Relations {
+		if value.Relations[i].TargetID == "$self" {
+			value.Relations[i].TargetID = value.ID
+		}
+	}
+	if err := s.validateRelationTargets(value.ID, value.Relations); err != nil {
+		return domain.Information{}, err
+	}
+	return value, value.Validate()
 }
 
 func (s *Service) Update(ctx context.Context, input UpdateInput) (MutationResult, error) {
@@ -818,6 +823,9 @@ func (s *Service) organize(ctx context.Context, value domain.Information) Organi
 	outgoing := make([]semantics.Relation, 0, len(analysis.Relations))
 	explicitTargets := make(map[string]struct{}, len(value.Relations))
 	for _, relation := range value.Relations {
+		if relation.TargetID == value.ID {
+			continue
+		}
 		explicitTargets[relation.TargetID] = struct{}{}
 	}
 	for _, relation := range analysis.Relations {
@@ -1148,6 +1156,9 @@ func (s *Service) hasStaleRelation(record derived.Record) bool {
 func (s *Service) validateRelationTargets(sourceID string, relations []domain.ExplicitRelation) error {
 	for _, relation := range relations {
 		if relation.TargetID == sourceID {
+			if relation.Type == "qualifies" && relation.Selector != nil {
+				continue
+			}
 			return errors.New("信息不能显式关联自身")
 		}
 		if _, exists := s.authority.ReadCurrent(relation.TargetID); !exists {

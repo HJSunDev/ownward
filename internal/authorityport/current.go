@@ -67,6 +67,14 @@ func (c *Current) ReadCurrent(id string) (domain.Information, bool) {
 	return c.store.Get(id)
 }
 
+func (c *Current) ReadSource(id string) (contract.SourceSnapshot, bool, error) {
+	store, err := c.requireStore()
+	if err != nil {
+		return contract.SourceSnapshot{}, false, err
+	}
+	return store.ReadSource(id)
+}
+
 func (c *Current) ReadVersion(id string, revision uint64) (domain.Information, bool) {
 	value, exists := c.ReadCurrent(id)
 	return value, exists && value.Revision == revision

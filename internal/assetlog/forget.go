@@ -81,6 +81,7 @@ func (s *Store) replayDeletion(entry event) error {
 		return err
 	}
 	for _, v := range entry.Deleted {
+		s.removeSource(v.ID)
 		delete(s.items, v.ID)
 		s.deleted[v.ID] = v.Revision
 	}

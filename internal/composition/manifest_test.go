@@ -140,7 +140,7 @@ func TestVerifyRejectsInvalidCompositionsWithoutWritingState(t *testing.T) {
 			return value
 		},
 		"incompatible version": func(value Manifest) Manifest {
-			value.Components[0].Contracts[0].Version = 2
+			value.Components[0].Contracts[0].Version++
 			return value
 		},
 		"misbound dependency": func(value Manifest) Manifest {
