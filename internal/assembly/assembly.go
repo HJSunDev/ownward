@@ -18,6 +18,7 @@ import (
 	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/core"
 	"github.com/HJSunDev/ownward/internal/embedding"
+	"github.com/HJSunDev/ownward/internal/informationcontrol"
 	"github.com/HJSunDev/ownward/internal/kernelgeneration"
 	"github.com/HJSunDev/ownward/internal/semantics"
 	compositionv1 "github.com/HJSunDev/ownward/manifests/compositions/v1"
@@ -50,6 +51,8 @@ type Request struct {
 
 type Runtime struct {
 	service      *core.Service
+	product      *informationcontrol.Product
+	userControl  *informationcontrol.Control
 	authority    contract.AuthoritySubstrate
 	backup       func(string) error
 	verification composition.Verification
@@ -70,8 +73,11 @@ func (r *Runtime) Product() contract.ProductCapability {
 	if r == nil {
 		return nil
 	}
-	return r.service
+	return r.product
 }
+
+func (r *Runtime) UserControl() *informationcontrol.Control { return r.userControl }
+func (r *Runtime) Management() *informationcontrol.Product  { return r.product }
 
 // Kernel exposes only the stable lifecycle waist to operational commands.
 func (r *Runtime) Kernel() contract.KernelLifecycle {
@@ -107,6 +113,9 @@ func (r *Runtime) Close() error {
 		return nil
 	}
 	r.closeOnce.Do(func() {
+		if r.product != nil {
+			r.product.Close()
+		}
 		if r.service != nil {
 			r.closeErr = r.service.Close()
 		}
@@ -238,7 +247,9 @@ func openWith(request Request, manifest composition.Manifest, resource resources
 	}
 	closeAuthority = false
 	vectorOwned = normalized.ProductSemantics == Collaborative
-	return &Runtime{service: service, authority: authority, backup: authority.Backup, verification: verification, semantics: normalized.ProductSemantics}, nil
+	userControl := informationcontrol.New(authority.Control())
+	product := informationcontrol.NewProduct(service, userControl)
+	return &Runtime{service: service, product: product, userControl: userControl, authority: authority, backup: authority.Backup, verification: verification, semantics: normalized.ProductSemantics}, nil
 }
 
 func currentManifest() (composition.Manifest, error) {

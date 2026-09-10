@@ -87,12 +87,27 @@ func (c *Current) Sync() error {
 	return store.Sync()
 }
 
+func (c *Current) DeleteAssets(targets []contract.AssetVersion) error {
+	store, err := c.requireStore()
+	if err != nil {
+		return err
+	}
+	values := make([]assetlog.Deletion, len(targets))
+	for i, target := range targets {
+		values[i] = assetlog.Deletion{ID: target.ID, Revision: target.Revision}
+	}
+	return store.Delete(values)
+}
+
 func (c *Current) Compact() error {
 	store, err := c.requireStore()
 	if err != nil {
 		return err
 	}
-	return store.Compact()
+	if err := store.Compact(); err != nil {
+		return err
+	}
+	return store.PurgeTemporary()
 }
 
 func (c *Current) Backup(destination string) error {

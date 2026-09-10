@@ -63,6 +63,7 @@ assets.
 
 ```sh
 bin/ownward rules
+bin/ownward setup
 bin/ownward create --content "A durable piece of user information"
 bin/ownward search --query "What should I remember?"
 bin/ownward backup --output ownward-backup.zip
@@ -81,6 +82,14 @@ core for that data directory, and later clients connect to the same authoritativ
 core. Client exit does not create or destroy private product state. The MCP server
 supplies agents with Ownward's collaboration rules; adapter-private prompts are not
 required.
+
+On a host that supports MCP form elicitation, the connector handles owner setup,
+access approval and management confirmation inside the host, then resumes the
+original operation. Credentials stay in the OS-protected connector store and never
+enter tool results. Direct CLI use initializes the local owner with `setup`;
+`recover-owner` restores that protected management connection. These local commands
+belong to the trusted OS-user boundary. See [user control](docs/modules/information-control/README.md)
+for authorization, revocation and forgetting guarantees.
 
 ## Verify
 

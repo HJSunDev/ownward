@@ -18,11 +18,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/HJSunDev/ownward/internal/adapter/localowner"
 	"github.com/HJSunDev/ownward/internal/adapter/mcpserver"
 	"github.com/HJSunDev/ownward/internal/assembly"
 	"github.com/HJSunDev/ownward/internal/config"
 	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/domain"
+	"github.com/HJSunDev/ownward/internal/informationcontrol"
 )
 
 var version = "0.1.0-dev"
@@ -82,6 +84,27 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		}
 		return runSharedMCPConnector(ctx, loaded.DataDir, version, verification.Composition, stdout, stderr)
 	}
+	if command == "recover-owner" {
+		// 活动服务仍持有资产锁；通过独立 OS 保护通道恢复，不杀进程或争夺写入权。
+		if descriptor, readErr := readSharedMCPDescriptor(filepath.Join(loaded.DataDir, "runtime", "mcp-service.json")); readErr == nil {
+			if _, probeErr := probeSharedMCP(ctx, descriptor); probeErr == nil {
+				vault, err := localowner.Default()
+				if err != nil {
+					return err
+				}
+				proof, err := vault.Load(ownerRecoveryScope(loaded.DataDir), "owner-recovery")
+				if err != nil {
+					return err
+				}
+				h := hostConnector{descriptor: descriptor}
+				var result map[string]string
+				if err := h.controlCall(ctx, "recover", proof, struct{}{}, &result); err != nil {
+					return err
+				}
+				return writeJSON(stdout, map[string]string{"status": "ready", "message": "管理连接已恢复"})
+			}
+		}
+	}
 	restoreBackup := ""
 	if command == "restore" {
 		if strings.TrimSpace(*backup) == "" {
@@ -102,6 +125,65 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	defer runtime.Close()
 	service := runtime.Product()
 	kernel := runtime.Kernel()
+	if command == "restore" {
+		// 显式本机恢复属于 OS 保护的所有者入口；资产恢复已使旧凭据失效。
+		vault, err := localowner.Default()
+		if err != nil {
+			return err
+		}
+		var credential string
+		if runtime.UserControl().SystemID() == "" {
+			credential, err = runtime.UserControl().InitializeOwner("所有者")
+		} else {
+			credential, err = runtime.UserControl().RecoverOwner()
+		}
+		if err != nil {
+			return err
+		}
+		if err := vault.Save(runtime.UserControl().SystemID(), "owner", credential); err != nil {
+			return err
+		}
+	}
+	if command == "setup" || command == "recover-owner" {
+		vault, err := localowner.Default()
+		if err != nil {
+			return err
+		}
+		var credential string
+		if command == "setup" {
+			credential, err = runtime.UserControl().InitializeOwner("所有者")
+		} else {
+			credential, err = runtime.UserControl().RecoverOwner()
+		}
+		if err != nil {
+			return err
+		}
+		if err := vault.Save(runtime.UserControl().SystemID(), "owner", credential); err != nil {
+			return err
+		}
+		return writeJSON(stdout, map[string]string{"status": "ready", "message": "管理连接已建立"})
+	}
+	if command != "mcp-http" && command != "rules" {
+		vault, err := localowner.Default()
+		if err != nil {
+			return err
+		}
+		credential, err := vault.Load(runtime.UserControl().SystemID(), "owner")
+		if err != nil {
+			return errors.New("管理连接尚未建立或需要恢复")
+		}
+		ctx = informationcontrol.Authenticate(ctx, credential)
+		if command == "backup" || command == "restore" || command == "maintain" || command == "rebuild" {
+			bound, finish, err := runtime.UserControl().Begin(ctx, contract.ManagePermission)
+			if err != nil {
+				return err
+			}
+			ctx = bound
+			if err := finish(); err != nil {
+				return err
+			}
+		}
+	}
 	parsedContexts, err := parseContexts(contexts)
 	if err != nil {
 		return err
@@ -113,7 +195,11 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		if resolvedToken == "" {
 			resolvedToken = strings.TrimSpace(os.Getenv(sharedMCPTokenEnvironment))
 		}
-		return runHTTPMCP(ctx, mcpserver.New(service, version), *listen, resolvedToken, stdout)
+		secured := controlHTTPServer{server: mcpserver.New(service, version), control: runtime.UserControl(), product: runtime.Management(), kernel: runtime.Service()}
+		if err := secured.prepareRecovery(ownerRecoveryScope(loaded.DataDir)); err != nil {
+			return err
+		}
+		return runHTTPMCP(ctx, secured, *listen, resolvedToken, stdout)
 	case "create":
 		kind, err := domain.ParseKind(*kindValue)
 		if err != nil {
@@ -328,7 +414,7 @@ func bearerTokenHandler(next http.Handler, token string) http.Handler {
 }
 
 func printUsage(writer io.Writer) {
-	fmt.Fprintln(writer, "用法: ownward <mcp|mcp-http|create|update|read|search|navigate|rules|backup|restore|maintain|rebuild|version> [选项]")
+	fmt.Fprintln(writer, "用法: ownward <setup|recover-owner|mcp|mcp-http|create|update|read|search|navigate|rules|backup|restore|maintain|rebuild|version> [选项]")
 	fmt.Fprintln(writer, "信息类型:", strings.Join(kindNames(), ", "))
 }
 

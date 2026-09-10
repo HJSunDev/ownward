@@ -8,6 +8,7 @@ import (
 	"errors"
 	"sort"
 
+	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/derived"
 	"github.com/HJSunDev/ownward/internal/domain"
 	"github.com/HJSunDev/ownward/internal/retrieval"
@@ -55,8 +56,10 @@ func (s *Service) rebuildCollaborative(ctx context.Context) (map[string]int, err
 			}
 			s.graphMu.Lock()
 			defer s.graphMu.Unlock()
-			if err = s.derivedStore.CommitGeneration(next, derived.GenerationMetadata{
-				AssetCount: len(assets), AssetSnapshot: assetDigest, EmbeddingSpace: s.embedder.Space().ID,
+			if err = contract.Commit(ctx, func() error {
+				return s.derivedStore.CommitGeneration(next, derived.GenerationMetadata{
+					AssetCount: len(assets), AssetSnapshot: assetDigest, EmbeddingSpace: s.embedder.Space().ID,
+				})
 			}); err != nil {
 				return
 			}
@@ -147,7 +150,7 @@ func (s *Service) buildCollaborativeGeneration(ctx context.Context, generation s
 		record := derived.Record{
 			AssetID: asset.ID, AssetRevision: asset.Revision, GeneratedAt: s.now().UTC(),
 			Provider: s.embedder.Name(), Status: "pending", EmbeddingSpace: s.embedder.Space().ID,
-			Embedding: append([]float32(nil), vector...),
+			Embedding: append([]float32(nil), vector...), InputsKnown: true,
 		}
 		if embeddingErrors[index] != nil {
 			record.Error = embeddingErrors[index].Error()
@@ -156,6 +159,8 @@ func (s *Service) buildCollaborativeGeneration(ctx context.Context, generation s
 			record.Analysis = previous.Analysis
 			record.SemanticWorkReference = previous.SemanticWorkReference
 			record.SemanticReceipt = previous.SemanticReceipt
+			record.InputAssets = derived.Inputs(previous)
+			record.InputsKnown = previous.InputsKnown
 			if previous.HasSemanticResult() {
 				record.Provider = previous.Provider
 				record.Status = "ready"
@@ -195,6 +200,7 @@ func (s *Service) buildCollaborativeGeneration(ctx context.Context, generation s
 				return fail(referenceErr)
 			}
 			records[index].SemanticWorkReference = &workReference
+			records[index].InputAssets = append(records[index].InputAssets, workReference.Candidates...)
 			records[index].SemanticReceipt = nil
 			records[index].Status = "pending"
 			records[index].Provider = s.embedder.Name()

@@ -6,18 +6,15 @@ import (
 )
 
 const ControlStateSchema = "ownward.control-state/v1"
+const UserControlStateSchema = "ownward.control-state/v2"
 
-// ControlState is the minimum durable authority decision. It deliberately does
-// not contain process, network, candidate-promotion or Acceptance state. The
-// current product has no established authorization decisions, so v1 does not
-// invent an authorization field; if such a product decision is established,
-// only the authority substrate may persist and execute it through a versioned
-// control contract.
+// ControlState 保存唯一权威决定；启用用户控制后使用 v2，旧程序不能忽略权限继续打开。
 type ControlState struct {
-	Schema                 string `json:"schema"`
-	Revision               uint64 `json:"revision"`
-	ActiveComposition      string `json:"active_composition"`
-	ActiveKernelGeneration string `json:"active_kernel_generation"`
+	Schema                 string                   `json:"schema"`
+	Revision               uint64                   `json:"revision"`
+	ActiveComposition      string                   `json:"active_composition"`
+	ActiveKernelGeneration string                   `json:"active_kernel_generation"`
+	InformationControl     *InformationControlState `json:"information_control,omitempty"`
 }
 
 // ControlAuthority owns the one durable control decision. Mutations use a
@@ -28,8 +25,17 @@ type ControlAuthority interface {
 }
 
 func (s ControlState) Validate() error {
-	if s.Schema != ControlStateSchema || s.Revision == 0 || strings.TrimSpace(s.ActiveComposition) == "" || strings.TrimSpace(s.ActiveKernelGeneration) == "" {
+	if (s.Schema != ControlStateSchema && s.Schema != UserControlStateSchema) || s.Revision == 0 || strings.TrimSpace(s.ActiveComposition) == "" || strings.TrimSpace(s.ActiveKernelGeneration) == "" {
 		return errors.New("权威控制状态无效")
+	}
+	if s.InformationControl != nil {
+		if s.Schema != UserControlStateSchema {
+			return errors.New("用户控制状态必须采用 v2 契约")
+		}
+		return s.InformationControl.Validate()
+	}
+	if s.Schema == UserControlStateSchema {
+		return errors.New("用户控制状态缺失")
 	}
 	return nil
 }

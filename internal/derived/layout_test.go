@@ -32,8 +32,13 @@ type previousIndexedRecordLayout struct {
 func TestRecordRuntimeFootprint(t *testing.T) {
 	actual := unsafe.Sizeof(Record{})
 	v0 := unsafe.Sizeof(v0RecordLayout{})
-	if actual > v0 {
-		t.Fatalf("current runtime record grew beyond V0: current=%d V0=%d", actual, v0)
+	// 遗忘新增完整输入引用与已知性标记；不允许除此以外恢复冗余运行态。
+	provenance := unsafe.Sizeof(struct {
+		Inputs []semantics.CandidateReference
+		Known  bool
+	}{})
+	if actual > v0+provenance {
+		t.Fatalf("current runtime record exceeded provenance budget: current=%d budget=%d", actual, v0+provenance)
 	}
 }
 

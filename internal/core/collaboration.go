@@ -122,7 +122,7 @@ func (s *Service) resolveSemanticWork(record derived.Record) (semantics.Work, er
 
 func (s *Service) SubmitSemantic(ctx context.Context, input semantics.Submission) (OrganizationState, error) {
 	recoveries := s.prepareSemanticVectorRecoveries(ctx, []semantics.Submission{input})
-	return s.submitSemanticWithRecovery(input, recoveries[0])
+	return s.submitSemanticWithRecovery(ctx, input, recoveries[0])
 }
 
 type semanticVectorRecovery struct {
@@ -130,7 +130,7 @@ type semanticVectorRecovery struct {
 	err    error
 }
 
-func (s *Service) submitSemanticWithRecovery(input semantics.Submission, recovery semanticVectorRecovery) (OrganizationState, error) {
+func (s *Service) submitSemanticWithRecovery(ctx context.Context, input semantics.Submission, recovery semanticVectorRecovery) (OrganizationState, error) {
 	s.stateMu.RLock()
 	defer s.stateMu.RUnlock()
 	if !s.collaborative || s.derivedStore == nil || s.semantic == nil {
@@ -167,7 +167,7 @@ func (s *Service) submitSemanticWithRecovery(input semantics.Submission, recover
 		}
 		s.graphMu.Lock()
 		defer s.graphMu.Unlock()
-		if err := s.derivedStore.Put(record); err != nil {
+		if err := contract.Commit(ctx, func() error { return s.derivedStore.Put(record) }); err != nil {
 			return OrganizationState{}, err
 		}
 		s.semantic.Upsert(record)
@@ -224,11 +224,13 @@ func (s *Service) submitSemanticWithRecovery(input semantics.Submission, recover
 	s.graphMu.Lock()
 	defer s.graphMu.Unlock()
 	previousDependents := s.semantic.Dependents(asset.ID)
-	if err := s.derivedStore.Put(record); err != nil {
-		return OrganizationState{}, err
-	}
-	s.semantic.Upsert(record)
-	if err := s.applyIncomingRelationsLocked(asset, previousDependents, incoming); err != nil {
+	if err := contract.Commit(ctx, func() error {
+		if err := s.derivedStore.Put(record); err != nil {
+			return err
+		}
+		s.semantic.Upsert(record)
+		return s.applyIncomingRelationsLocked(asset, previousDependents, incoming)
+	}); err != nil {
 		return OrganizationState{}, err
 	}
 	return organizationState(record), nil
@@ -241,7 +243,7 @@ func (s *Service) SubmitSemanticBatch(ctx context.Context, inputs []semantics.Su
 	recoveries := s.prepareSemanticVectorRecoveries(ctx, inputs)
 	results := make([]SemanticSubmissionResult, len(inputs))
 	for index, input := range inputs {
-		state, err := s.submitSemanticWithRecovery(input, recoveries[index])
+		state, err := s.submitSemanticWithRecovery(ctx, input, recoveries[index])
 		results[index] = SemanticSubmissionResult{WorkID: input.WorkID, Organization: state}
 		if err != nil {
 			results[index].Error = err.Error()
@@ -585,7 +587,14 @@ func (s *Service) newPendingSemanticRecord(value domain.Information, vector []fl
 	}
 	record := derived.Record{
 		AssetID: value.ID, AssetRevision: value.Revision, GeneratedAt: s.now().UTC(), Provider: s.embedder.Name(),
-		Status: "pending", SemanticWorkReference: &workReference, EmbeddingSpace: s.embedder.Space().ID,
+		Status: "pending", SemanticWorkReference: &workReference, EmbeddingSpace: s.embedder.Space().ID, InputsKnown: true,
+	}
+	record.InputAssets = append(record.InputAssets, workReference.Candidates...)
+	if previous != nil {
+		if current, ok := s.derivedStore.Get(value.ID); ok {
+			record.InputAssets = append(record.InputAssets, derived.Inputs(current)...)
+			record.InputsKnown = current.InputsKnown
+		}
 	}
 	if len(vector) > 0 {
 		record.Embedding = vector

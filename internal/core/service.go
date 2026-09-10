@@ -167,7 +167,7 @@ func NewCollaborativeWithAuthority(authority contract.AssetAuthority, derivedSto
 func (s *Service) Create(ctx context.Context, input CreateInput) (MutationResult, error) {
 	s.stateMu.RLock()
 	defer s.stateMu.RUnlock()
-	value, err := s.createAsset(input)
+	value, err := s.createAsset(ctx, input)
 	if err != nil {
 		return MutationResult{}, err
 	}
@@ -196,7 +196,7 @@ func (s *Service) CreateBatch(ctx context.Context, inputs []CreateInput) ([]Muta
 		positions = append(positions, index)
 	}
 	if len(values) > 0 {
-		if _, err := s.authority.CreateAssets(values); err != nil {
+		if err := contract.Commit(ctx, func() error { _, err := s.authority.CreateAssets(values); return err }); err != nil {
 			for _, position := range positions {
 				results[position].Error = err.Error()
 			}
@@ -221,12 +221,12 @@ func (s *Service) CreateBatch(ctx context.Context, inputs []CreateInput) ([]Muta
 	return results, nil
 }
 
-func (s *Service) createAsset(input CreateInput) (domain.Information, error) {
+func (s *Service) createAsset(ctx context.Context, input CreateInput) (domain.Information, error) {
 	value, err := s.newAsset(input)
 	if err != nil {
 		return domain.Information{}, err
 	}
-	if _, err := s.authority.CreateAsset(value); err != nil {
+	if err := contract.Commit(ctx, func() error { _, err := s.authority.CreateAsset(value); return err }); err != nil {
 		return domain.Information{}, err
 	}
 	s.index.Upsert(value)
@@ -315,7 +315,7 @@ func (s *Service) Update(ctx context.Context, input UpdateInput) (MutationResult
 		dependents = s.semantic.Dependents(updated.ID)
 		dependents = appendUniqueIDs(dependents, s.semantic.PendingDependents(updated.ID)...)
 	}
-	if _, err := s.authority.UpdateAsset(updated, input.ExpectedRevision); err != nil {
+	if err := contract.Commit(ctx, func() error { _, err := s.authority.UpdateAsset(updated, input.ExpectedRevision); return err }); err != nil {
 		return MutationResult{}, err
 	}
 	s.index.Upsert(updated)
@@ -838,6 +838,10 @@ func (s *Service) organize(ctx context.Context, value domain.Information) Organi
 		Status:        status,
 		Error:         errorText,
 		Analysis:      analysis,
+		InputsKnown:   true,
+	}
+	for _, candidate := range candidates {
+		record.InputAssets = append(record.InputAssets, semantics.CandidateReference{ID: candidate.ID, Revision: candidate.Revision})
 	}
 	if len(vectors) == 1 {
 		record.Embedding = vectors[0]
@@ -851,16 +855,21 @@ func (s *Service) organize(ctx context.Context, value domain.Information) Organi
 	if previous, ok := s.derivedStore.Get(value.ID); ok {
 		record.Analysis.Relations = preserveExternalRelations(record.Analysis.Relations, previous.Analysis.Relations, value.ID, value.Relations)
 	}
-	if err := s.derivedStore.Put(record); err != nil {
-		return OrganizationState{Status: "pending", Provider: providerName, Error: err.Error()}
-	}
-	s.semantic.Upsert(record)
-	if err := s.applyIncomingRelationsLocked(value, previousDependents, incoming); err != nil {
-		record.Status = "pending"
-		record.Error = strings.Trim(strings.Join([]string{record.Error, err.Error()}, "; "), "; ")
-		_ = s.derivedStore.Put(record)
+	if err := contract.Commit(ctx, func() error {
+		if err := s.derivedStore.Put(record); err != nil {
+			return err
+		}
 		s.semantic.Upsert(record)
-		return OrganizationState{Status: "pending", Provider: record.Provider, Error: record.Error}
+		if err := s.applyIncomingRelationsLocked(value, previousDependents, incoming); err != nil {
+			record.Status = "pending"
+			record.Error = strings.Trim(strings.Join([]string{record.Error, err.Error()}, "; "), "; ")
+			_ = s.derivedStore.Put(record)
+			s.semantic.Upsert(record)
+			return err
+		}
+		return nil
+	}); err != nil {
+		return OrganizationState{Status: "pending", Provider: providerName, Error: err.Error()}
 	}
 	return OrganizationState{Status: status, Provider: record.Provider, Error: errorText}
 }
@@ -1093,6 +1102,7 @@ func (s *Service) applyIncomingRelationsLocked(value domain.Information, previou
 			continue
 		}
 		record.Analysis.Relations = relations
+		record.InputAssets = append(record.InputAssets, semantics.CandidateReference{ID: value.ID, Revision: value.Revision})
 		if err := s.derivedStore.Put(record); err != nil {
 			return fmt.Errorf("维护反向推导关系: %w", err)
 		}

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -305,7 +306,7 @@ func PromoteAuthorityStore(plan AuthorityPlan, source contract.AssetAuthority, c
 	if record.Phase != AuthorityPhaseReady && record.Phase != AuthorityPhaseSwitching {
 		return AuthorityRecord{}, errors.New("权威候选阶段不能晋升")
 	}
-	if latest.Control != state || state.ActiveComposition != plan.Baseline.Identity {
+	if !reflect.DeepEqual(latest.Control, state) || state.ActiveComposition != plan.Baseline.Identity {
 		return AuthorityRecord{}, errors.New("最终权威屏障快照与控制状态不一致")
 	}
 	candidateSnapshot, _, err := CaptureAuthorityPersistence(candidate, latest.Control)
@@ -430,7 +431,7 @@ func ReconcileAuthoritySwitch(plan AuthorityPlan, control contract.ControlAuthor
 		return AuthorityRecord{}, errors.New("没有可恢复的权威持久化切换")
 	}
 	state := control.ReadControl()
-	if state.ActiveComposition != plan.Target.Identity || !sameAuthorityAssets(record.Candidate, active) || active.Control != state {
+	if state.ActiveComposition != plan.Target.Identity || !sameAuthorityAssets(record.Candidate, active) || !reflect.DeepEqual(active.Control, state) {
 		return AuthorityRecord{}, errors.New("权威持久化切换后的活动状态不一致")
 	}
 	record.Revision++
@@ -445,7 +446,7 @@ func ReconcileAuthorityRollback(plan AuthorityPlan, control contract.ControlAuth
 		return AuthorityRecord{}, errors.New("没有可恢复的权威持久化回退")
 	}
 	state := control.ReadControl()
-	if state.ActiveComposition != plan.Baseline.Identity || !sameAuthorityAssets(record.Baseline, active) || active.Control != state {
+	if state.ActiveComposition != plan.Baseline.Identity || !sameAuthorityAssets(record.Baseline, active) || !reflect.DeepEqual(active.Control, state) {
 		return AuthorityRecord{}, errors.New("权威持久化回退后的活动状态不一致")
 	}
 	record.Revision++

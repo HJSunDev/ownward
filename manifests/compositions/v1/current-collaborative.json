@@ -13,9 +13,39 @@
       ],
       "content": [
         {
+          "name": "cmd-ownward-host_connector",
+          "path": "cmd/ownward/host_connector.go",
+          "sha256": "2f54df85a6115e377741907140a2aa08410db610505a617bc2b61f843f54c5cc"
+        },
+        {
+          "name": "cmd-ownward-information_control",
+          "path": "cmd/ownward/information_control.go",
+          "sha256": "1458e4de4025ede1ba83d8f4c0998c8782b4b616da49dae3e49c2365d6595a50"
+        },
+        {
+          "name": "internal-adapter-localowner-protect_unix",
+          "path": "internal/adapter/localowner/protect_unix.go",
+          "sha256": "8147d19575c99dfed10b8818a193ef692606c169d183741b31987d97a8952004"
+        },
+        {
+          "name": "internal-adapter-localowner-protect_windows",
+          "path": "internal/adapter/localowner/protect_windows.go",
+          "sha256": "b41c24fbc1d4915bb6046bf37d0c6a0e3c3c7dff51db529a105e88e90d0f5b31"
+        },
+        {
+          "name": "internal-adapter-localowner-vault",
+          "path": "internal/adapter/localowner/vault.go",
+          "sha256": "588f68735f490f0cff062f6e0656f3d71eabaf77110e434bd74bd8351f3eef97"
+        },
+        {
+          "name": "internal-adapter-mcpserver-management",
+          "path": "internal/adapter/mcpserver/management.go",
+          "sha256": "15eea7a93faa534818435afaa44f2352ceb5b109fbde3720d54e67a61028f11c"
+        },
+        {
           "name": "mcp-adapter",
           "path": "internal/adapter/mcpserver/server.go",
-          "sha256": "86ed11af044bdeb8a9cb87f2ad5e3c4272dc330291ba8a03a9e907e6b42bd809"
+          "sha256": "bccf2bf415d989de91c7491dfe0587d4bc1ee7317bee384860e00d82259c2164"
         },
         {
           "name": "shared-lock-unix",
@@ -30,7 +60,7 @@
         {
           "name": "shared-mcp",
           "path": "cmd/ownward/shared_mcp.go",
-          "sha256": "76b851b24f7424bcda8794ac9c4ce31b4bd7657ec0f3deff2a04053998443872"
+          "sha256": "e2da47ba6e540c76723c4faa8ba5d5a668a0e43f40e04d617e2b85d67d82e8b4"
         },
         {
           "name": "shared-process-unix",
@@ -54,14 +84,14 @@
       "dependencies": [
         {
           "role": "kernel",
-          "identity": "aabf2fb8cfbfd0adb1028e30edf550ab5c0d031e635ca3003b31842b9b39481a"
+          "identity": "3362d2d5d0ec2bfec8273a2f818f47fbc92329efa82a4dd6e00195b4735c1821"
         },
         {
           "role": "product-rules",
-          "identity": "46113cdb2a366c833095dc80ac56e74892d93d3b548790e523cd76c4fa3da974"
+          "identity": "92d22084afadbf6fc126deb10d42e51e89acdb7fc6de1fdc367b276f7053d25f"
         }
       ],
-      "identity": "4f451e8c49110b6f4ec915deff492331092b1e030b7bae50e9ce38dfed6df4b7"
+      "identity": "af8bea383aa1279f120635aa37ce9affe2e21b830009c9d2e06be53edfc20be0"
     },
     {
       "role": "assembly",
@@ -76,12 +106,12 @@
         {
           "name": "current-command-assembly",
           "path": "cmd/ownward/main.go",
-          "sha256": "4f019335fdc94f4e74dddd90db5345543e7167ad20c0707790bbc6b3716bf09b"
+          "sha256": "c87a5ed54c78a286ce4e3f3e11951b33b565ce839b499da0e6996cb7d81f7c4b"
         },
         {
           "name": "explicit-assembly",
           "path": "internal/assembly/assembly.go",
-          "sha256": "907b50632d628a95ab9ad26e3a30020452810f4d849f4ea19edbed2a603c3cd3"
+          "sha256": "f583ba891fcdbe674e51f4c0878fc466ff4e1bd0db766a1fba97c799f9762c57"
         },
         {
           "name": "kernel-generation-runtime",
@@ -109,19 +139,19 @@
       "dependencies": [
         {
           "role": "access",
-          "identity": "4f451e8c49110b6f4ec915deff492331092b1e030b7bae50e9ce38dfed6df4b7"
+          "identity": "af8bea383aa1279f120635aa37ce9affe2e21b830009c9d2e06be53edfc20be0"
         },
         {
           "role": "authority-substrate",
-          "identity": "dc4539c88ad3fdcd99bc686ebbfc9e47df8190a44b65a19867b2a44636276607"
+          "identity": "b4f32dfe4005d1ea6bb45ee951a9f47f72feba19501185f7e79b494d737bee15"
         },
         {
           "role": "kernel",
-          "identity": "aabf2fb8cfbfd0adb1028e30edf550ab5c0d031e635ca3003b31842b9b39481a"
+          "identity": "3362d2d5d0ec2bfec8273a2f818f47fbc92329efa82a4dd6e00195b4735c1821"
         },
         {
           "role": "product-rules",
-          "identity": "46113cdb2a366c833095dc80ac56e74892d93d3b548790e523cd76c4fa3da974"
+          "identity": "92d22084afadbf6fc126deb10d42e51e89acdb7fc6de1fdc367b276f7053d25f"
         },
         {
           "role": "semantic",
@@ -132,7 +162,7 @@
           "identity": "391b5aa1f4bb3a25d522a4d59c7af1a9aa1150a06480f64d23cfd73f86c808c5"
         }
       ],
-      "identity": "9fd9df31dcca4071c72fff295037731e2e58ac5889ef9369a401a51ce91532ba"
+      "identity": "42ebfdf5967c7df031cd89dfb665f754987dfb37e3abd73c12aac7e494a66835"
     },
     {
       "role": "authority-substrate",
@@ -140,24 +170,24 @@
         {
           "id": "ownward.asset-authority",
           "version": 1,
-          "definition_sha256": "9843d36cb1ef1398cb448b47976cec20b997889fc6535de98d106470ebdf7705"
+          "definition_sha256": "9ce2bf79b4abc659ce2ef3fd720a80490f7d65d6f68b200a64d6895ed9bd644d"
         },
         {
           "id": "ownward.control-state",
           "version": 1,
-          "definition_sha256": "e7fbcc97ee33a9801fae435ed395345de331a0f2cdf1cb3c240d14d683218ca2"
+          "definition_sha256": "e326c9d92e61a0f0b5761854487f7a6e841f6c006e2e40f15026b99f417c5a4b"
         }
       ],
       "content": [
         {
           "name": "asset-authority-port",
           "path": "internal/authorityport/current.go",
-          "sha256": "049ffa64ed869624452b46308df9767047dfc9dbd748946b6a0de2c9bbf4f331"
+          "sha256": "2aabb368645667d83ea4e9da1b007a4c00a85b15e42a7bf275172c6b9a5f0627"
         },
         {
           "name": "asset-backup-stream",
           "path": "internal/assetlog/backup_stream.go",
-          "sha256": "7479eb4e9e0d9708be086035f0b1f8e9979252fc2cbb0f115ea9ba313c9ca789"
+          "sha256": "7b74520ef0726e3f3ca355c5bff624c92e141cd20b1b82757bf0c6a43dbb5277"
         },
         {
           "name": "asset-domain",
@@ -167,17 +197,17 @@
         {
           "name": "asset-store",
           "path": "internal/assetlog/store.go",
-          "sha256": "b8bf0ab47a6a078b9cd71ebf2f893580b3d152af66e0ee84200b2a35218302e2"
+          "sha256": "b14d9421a86a7e550ff5ab778c22715a3c4511cf60efa66241951f424f33fe0f"
         },
         {
           "name": "authority-backup",
           "path": "internal/authoritysubstrate/backup.go",
-          "sha256": "bc47a182e73d107c94be248226b8167395b77647a70c8da8ff5a984aa523b462"
+          "sha256": "ac4ef90fc05b9bdfcc605080f63edc9285c60f1aae8cea6a0ebe55427530b63c"
         },
         {
           "name": "authority-control",
           "path": "internal/authoritysubstrate/substrate.go",
-          "sha256": "f78ff2e4602ba32f087e04e029bb8fad8e2f7683460db7ed2152fe7f956d30cf"
+          "sha256": "973f2add237cb0d7a495025fab7da2232b2e79645fec32f49daa683006c69593"
         },
         {
           "name": "directory-lock-unix",
@@ -188,6 +218,36 @@
           "name": "directory-lock-windows",
           "path": "internal/assetlog/directory_lock_windows.go",
           "sha256": "2ed618e808ab9144973f8af00856c9365a1885858862ff75e09a43362c742388"
+        },
+        {
+          "name": "internal-assetlog-forget",
+          "path": "internal/assetlog/forget.go",
+          "sha256": "273590203487633ba102eb572462c0c1ccfe1bce44af13d4a0bc6bc9a3794339"
+        },
+        {
+          "name": "internal-contract-information_control",
+          "path": "internal/contract/information_control.go",
+          "sha256": "51f919e66edc145b79a201d54b34b8e3681eb2ed3ca346c6ed894d4b6b141618"
+        },
+        {
+          "name": "internal-informationcontrol-control",
+          "path": "internal/informationcontrol/control.go",
+          "sha256": "657f1faeffafd5675667bd1040ddb2f88d95bf11f9b392e3d9bed5b9434426b5"
+        },
+        {
+          "name": "internal-informationcontrol-forget",
+          "path": "internal/informationcontrol/forget.go",
+          "sha256": "dc83ff37841aa03bbf4f2b3aa0283e8e04ca46645992c82b21645f38c696a120"
+        },
+        {
+          "name": "internal-informationcontrol-management",
+          "path": "internal/informationcontrol/management.go",
+          "sha256": "28215cd7d0ebd0d113d88bd1f39708650779e56a614ed980fc16ffff8259363e"
+        },
+        {
+          "name": "internal-informationcontrol-product",
+          "path": "internal/informationcontrol/product.go",
+          "sha256": "99d3f59a1c4ab34a9b56042b1e60a5f8f98ccbf2fe076a2b4a9221cb04aa8a25"
         },
         {
           "name": "replace-other",
@@ -217,7 +277,7 @@
         "control_schema": "ownward.control-state/v1"
       },
       "dependencies": [],
-      "identity": "dc4539c88ad3fdcd99bc686ebbfc9e47df8190a44b65a19867b2a44636276607"
+      "identity": "b4f32dfe4005d1ea6bb45ee951a9f47f72feba19501185f7e79b494d737bee15"
     },
     {
       "role": "kernel",
@@ -237,7 +297,7 @@
         {
           "name": "core-collaboration",
           "path": "internal/core/collaboration.go",
-          "sha256": "7e3b685601eaf7c7989b9f0cfb5d7ec2f37c49561f5587ad4d32009d4e6db9ad"
+          "sha256": "ad4ac0d254ab91fa3ea4eb1fb73bf92737722d8b90140731d2d6021aeec4cf5b"
         },
         {
           "name": "core-evidence",
@@ -247,12 +307,12 @@
         {
           "name": "core-generation",
           "path": "internal/core/generation.go",
-          "sha256": "d0576e2519cd1c3ba207e2480e15304247e5720b79056f3daa05e3fc9e15a35c"
+          "sha256": "888a15fc9fa2903b7cfed07995acc881263bf2bd542c1611985f76f5fe6cbe8c"
         },
         {
           "name": "core-service",
           "path": "internal/core/service.go",
-          "sha256": "c1ff24050194826fc5ec6db5c46681bbf780a8d6e0a514a73fcd81dfe9b045ae"
+          "sha256": "43a4921bc01860eb7725eccce5d0a47baa13e52c144913c58510fd2cdcfd5bbb"
         },
         {
           "name": "derived-evidence",
@@ -282,12 +342,22 @@
         {
           "name": "derived-store",
           "path": "internal/derived/store.go",
-          "sha256": "90482a26b332eabda6dcc391a60460cff622b044c4d0e6799490ebfe70a2579e"
+          "sha256": "e228b393cd1b03b2071ced05fae51c5a8447f9362db4401723f6f2bd4105f465"
         },
         {
           "name": "evidence-domain",
           "path": "internal/domain/evidence.go",
           "sha256": "b2374c0bbf6843737f379f10d3a54aa5ef42edb28e98992883a64286b4505194"
+        },
+        {
+          "name": "internal-core-forget",
+          "path": "internal/core/forget.go",
+          "sha256": "c11c0ce164f5cc27a29358b0081504d2770b3bd143690bb0de550e35991a917b"
+        },
+        {
+          "name": "internal-derived-forget",
+          "path": "internal/derived/forget.go",
+          "sha256": "a81854c7a2ff3fe4c52762355613bd50443c77a2c594c2734ca59e1beefed0d2"
         },
         {
           "name": "lexical-retrieval",
@@ -304,11 +374,11 @@
       "dependencies": [
         {
           "role": "authority-substrate",
-          "identity": "dc4539c88ad3fdcd99bc686ebbfc9e47df8190a44b65a19867b2a44636276607"
+          "identity": "b4f32dfe4005d1ea6bb45ee951a9f47f72feba19501185f7e79b494d737bee15"
         },
         {
           "role": "product-rules",
-          "identity": "46113cdb2a366c833095dc80ac56e74892d93d3b548790e523cd76c4fa3da974"
+          "identity": "92d22084afadbf6fc126deb10d42e51e89acdb7fc6de1fdc367b276f7053d25f"
         },
         {
           "role": "semantic",
@@ -319,7 +389,7 @@
           "identity": "391b5aa1f4bb3a25d522a4d59c7af1a9aa1150a06480f64d23cfd73f86c808c5"
         }
       ],
-      "identity": "aabf2fb8cfbfd0adb1028e30edf550ab5c0d031e635ca3003b31842b9b39481a"
+      "identity": "3362d2d5d0ec2bfec8273a2f818f47fbc92329efa82a4dd6e00195b4735c1821"
     },
     {
       "role": "product-rules",
@@ -334,14 +404,14 @@
         {
           "name": "collaboration-rules",
           "path": "internal/productrules/rules.go",
-          "sha256": "c646b5c72ae7ad6f0ea8f1caf7e9ae85637821d614d12ad26497859d11e94262"
+          "sha256": "5e748f56179326836874562c70a5546933d51eaf7b42cdac543f35395092178a"
         }
       ],
       "config": {
         "version": "ownward.product-rules/v1"
       },
       "dependencies": [],
-      "identity": "46113cdb2a366c833095dc80ac56e74892d93d3b548790e523cd76c4fa3da974"
+      "identity": "92d22084afadbf6fc126deb10d42e51e89acdb7fc6de1fdc367b276f7053d25f"
     },
     {
       "role": "semantic",
@@ -543,7 +613,7 @@
       "identity": "391b5aa1f4bb3a25d522a4d59c7af1a9aa1150a06480f64d23cfd73f86c808c5"
     }
   ],
-  "identity": "78f81b8232459036d001d4dea65484e0f881b9c062cfda236cb8a836ac87b834",
+  "identity": "ff4f3c9977f139ce3d8e873e178be8a3f4b15247b79cbf81dd47032d1975a4f2",
   "audit": {
     "described_product_candidate": "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8",
     "migration_source_git": "dc2c7a09e67f06cfaacbe0a201c7ff27b20d6182"

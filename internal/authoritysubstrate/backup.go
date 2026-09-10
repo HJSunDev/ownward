@@ -58,6 +58,13 @@ func (s *Substrate) Backup(destination string) error {
 	}
 	for attempt := 0; attempt < backupSnapshotRetries; attempt++ {
 		before := s.control.ReadControl()
+		if before.InformationControl != nil {
+			for _, operation := range before.InformationControl.Operations {
+				if operation.Status == "stopping" {
+					return errors.New("遗忘屏障正在恢复，暂不生成备份")
+				}
+			}
+		}
 		assetsFile, err := os.CreateTemp(parent, ".assets-snapshot-*.zip")
 		if err != nil {
 			return err
@@ -217,6 +224,22 @@ func Restore(archivePath, dataDir string, initialState contract.ControlState) er
 		return err
 	}
 	controlDir := filepath.Join(staged, controlDirectory)
+	restoredState, err := decodeControl(control)
+	if err != nil {
+		return err
+	}
+	if restoredState.InformationControl != nil {
+		// 旧快照恢复保留所有权，不自动重新激活备份时的连接。
+		for i := range restoredState.InformationControl.Principals {
+			restoredState.InformationControl.Principals[i].CredentialDigest = ""
+			restoredState.InformationControl.Principals[i].Revision++
+		}
+		restoredState.Revision++
+		control, err = encodeControl(restoredState)
+		if err != nil {
+			return err
+		}
+	}
 	if err := os.MkdirAll(controlDir, 0o700); err != nil {
 		return err
 	}

@@ -37,18 +37,20 @@ var (
 var ErrStaleRecord = errors.New("派生状态版本早于当前版本")
 
 type Record struct {
-	Schema                string                       `json:"schema"`
-	AssetID               string                       `json:"asset_id"`
-	AssetRevision         uint64                       `json:"asset_revision"`
-	GeneratedAt           time.Time                    `json:"generated_at"`
-	Provider              string                       `json:"provider"`
-	Status                string                       `json:"status"`
-	Error                 string                       `json:"error,omitempty"`
-	Analysis              semantics.Analysis           `json:"analysis"`
-	SemanticWorkReference *semantics.WorkReference     `json:"semantic_work_reference,omitempty"`
-	SemanticReceipt       *semantics.SubmissionReceipt `json:"semantic_receipt,omitempty"`
-	EmbeddingSpace        string                       `json:"embedding_space,omitempty"`
-	Embedding             []float32                    `json:"embedding,omitempty"`
+	InputsKnown           bool                           `json:"inputs_known,omitempty"`
+	InputAssets           []semantics.CandidateReference `json:"input_assets,omitempty"`
+	Schema                string                         `json:"schema"`
+	AssetID               string                         `json:"asset_id"`
+	AssetRevision         uint64                         `json:"asset_revision"`
+	GeneratedAt           time.Time                      `json:"generated_at"`
+	Provider              string                         `json:"provider"`
+	Status                string                         `json:"status"`
+	Error                 string                         `json:"error,omitempty"`
+	Analysis              semantics.Analysis             `json:"analysis"`
+	SemanticWorkReference *semantics.WorkReference       `json:"semantic_work_reference,omitempty"`
+	SemanticReceipt       *semantics.SubmissionReceipt   `json:"semantic_receipt,omitempty"`
+	EmbeddingSpace        string                         `json:"embedding_space,omitempty"`
+	Embedding             []float32                      `json:"embedding,omitempty"`
 }
 
 type persistedRecord struct {
@@ -67,17 +69,19 @@ type persistedRecord struct {
 }
 
 type recordMetadata struct {
-	Schema                string                       `json:"schema"`
-	AssetID               string                       `json:"asset_id"`
-	AssetRevision         uint64                       `json:"asset_revision"`
-	GeneratedAt           time.Time                    `json:"generated_at"`
-	Provider              string                       `json:"provider"`
-	Status                string                       `json:"status"`
-	Error                 string                       `json:"error,omitempty"`
-	Analysis              semantics.Analysis           `json:"analysis"`
-	SemanticWorkReference *semantics.WorkReference     `json:"semantic_work_reference,omitempty"`
-	SemanticReceipt       *semantics.SubmissionReceipt `json:"semantic_receipt,omitempty"`
-	EmbeddingSpace        string                       `json:"embedding_space,omitempty"`
+	InputsKnown           bool                           `json:"inputs_known,omitempty"`
+	InputAssets           []semantics.CandidateReference `json:"input_assets,omitempty"`
+	Schema                string                         `json:"schema"`
+	AssetID               string                         `json:"asset_id"`
+	AssetRevision         uint64                         `json:"asset_revision"`
+	GeneratedAt           time.Time                      `json:"generated_at"`
+	Provider              string                         `json:"provider"`
+	Status                string                         `json:"status"`
+	Error                 string                         `json:"error,omitempty"`
+	Analysis              semantics.Analysis             `json:"analysis"`
+	SemanticWorkReference *semantics.WorkReference       `json:"semantic_work_reference,omitempty"`
+	SemanticReceipt       *semantics.SubmissionReceipt   `json:"semantic_receipt,omitempty"`
+	EmbeddingSpace        string                         `json:"embedding_space,omitempty"`
 }
 
 type previousRecordMetadata struct {
@@ -714,7 +718,9 @@ func encodeRecord(record Record) ([]byte, error) {
 		return nil, err
 	}
 	metadata, err := json.Marshal(recordMetadata{
-		Schema: record.Schema, AssetID: record.AssetID, AssetRevision: record.AssetRevision,
+		InputsKnown: record.InputsKnown,
+		InputAssets: record.InputAssets,
+		Schema:      record.Schema, AssetID: record.AssetID, AssetRevision: record.AssetRevision,
 		GeneratedAt: record.GeneratedAt, Provider: record.Provider, Status: record.Status,
 		Error: record.Error, Analysis: record.Analysis, SemanticWorkReference: record.SemanticWorkReference,
 		SemanticReceipt: record.SemanticReceipt, EmbeddingSpace: record.EmbeddingSpace,
@@ -847,6 +853,7 @@ func decodeRecordWithVersion(encoded []byte, withEmbedding bool) (Record, bool, 
 	}
 	record := Record{
 		Schema: recordSchema, AssetID: metadata.AssetID, AssetRevision: metadata.AssetRevision,
+		InputAssets: metadata.InputAssets, InputsKnown: metadata.InputsKnown,
 		GeneratedAt: metadata.GeneratedAt, Provider: metadata.Provider, Status: metadata.Status,
 		Error: metadata.Error, Analysis: metadata.Analysis, SemanticWorkReference: metadata.SemanticWorkReference,
 		SemanticReceipt: metadata.SemanticReceipt, EmbeddingSpace: metadata.EmbeddingSpace, Embedding: embedding,
@@ -906,6 +913,7 @@ func (r Record) HasSemanticResult() bool {
 }
 
 func clone(record Record) Record {
+	record.InputAssets = append([]semantics.CandidateReference(nil), record.InputAssets...)
 	record.Embedding = append([]float32(nil), record.Embedding...)
 	record.Analysis.Cues = append([]semantics.Cue(nil), record.Analysis.Cues...)
 	record.Analysis.Topics = append([]string(nil), record.Analysis.Topics...)

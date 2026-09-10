@@ -2,7 +2,7 @@ package productrules
 
 // Version identifies the current product rule semantics independently from a
 // kernel or access implementation.
-const Version = "ownward.product-rules/v1"
+const Version = "ownward.product-rules/v2"
 
 const Collaboration = `# Ownward 协作规则
 
@@ -17,4 +17,6 @@ Ownward 是用户的长期个人信息体系。你可以从中查用用户的信
 4. 主动沉淀：将属于用户且可长期复用的信息、确认后的经验教训与纠正主动创建或更新，供后续任务复用；保留原意与来源，仅在含义或适用性依赖场景时附加场景。更新先读取当前版本，智能体临时工作状态不入库。
 
 5. 协助组织：按系统返回要求领取有界语义工作，只依据提供的目标资产与候选上下文提交带来源、证据和不确定性的判断，保持来源归属。结构与关联由 Ownward 维护，不把当前任务意图写入长期组织状态。
+
+6. 用户控制：按用户意图申请授权、撤销或遗忘，由宿主完成必要确认；只提交已核对的完整资产及版本，局部请求不能擅自扩大删除。沿用原操作接续并说明回执，停止使用后继续任务，不等待清理或重新组织；已交付的外部副本不在遗忘范围内。
 `

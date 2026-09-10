@@ -41,14 +41,18 @@ type sharedMCPDescriptor struct {
 }
 
 type bearerTransport struct {
-	token string
-	base  http.RoundTripper
+	token      string
+	base       http.RoundTripper
+	credential func() string
 }
 
 func (transport bearerTransport) RoundTrip(request *http.Request) (*http.Response, error) {
 	clone := request.Clone(request.Context())
 	clone.Header = request.Header.Clone()
 	clone.Header.Set("Authorization", "Bearer "+transport.token)
+	if transport.credential != nil {
+		clone.Header.Set(principalHeader, transport.credential())
+	}
 	return transport.base.RoundTrip(clone)
 }
 
@@ -57,7 +61,11 @@ func runSharedMCPConnector(ctx context.Context, dataDir, binaryVersion, composit
 	if err != nil {
 		return err
 	}
-	httpClient := &http.Client{Transport: bearerTransport{token: descriptor.BearerToken, base: http.DefaultTransport}, Timeout: 2 * time.Minute}
+	host, err := newHostConnector(ctx, descriptor, dataDir)
+	if err != nil {
+		return err
+	}
+	httpClient := &http.Client{Transport: bearerTransport{token: descriptor.BearerToken, base: http.DefaultTransport, credential: host.credential}, Timeout: 2 * time.Minute}
 	client := mcp.NewClient(&mcp.Implementation{Name: "ownward-connect-or-start", Version: binaryVersion}, nil)
 	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: descriptor.Endpoint, HTTPClient: httpClient, MaxRetries: 1, DisableStandaloneSSE: true}, nil)
 	if err != nil {
@@ -76,7 +84,7 @@ func runSharedMCPConnector(ctx context.Context, dataDir, binaryVersion, composit
 		}
 		copyOfTool := *tool
 		proxy.AddTool(&copyOfTool, func(callContext context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			return session.CallTool(callContext, &mcp.CallToolParams{Name: request.Params.Name, Arguments: request.Params.Arguments})
+			return host.call(callContext, request, session)
 		})
 	}
 	if err := proxy.Run(ctx, &mcp.StdioTransport{}); err != nil {

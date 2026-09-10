@@ -29,6 +29,11 @@ type AssetVersion struct {
 	Revision uint64 `json:"revision"`
 }
 
+// AssetDeletion 由权威存储提供；只读候选快照不暴露管理变更。
+type AssetDeletion interface {
+	DeleteAssets([]AssetVersion) error
+}
+
 type ChangeScope struct {
 	Schema string         `json:"schema"`
 	Assets []AssetVersion `json:"assets"`

@@ -143,6 +143,7 @@ func New(service contract.ProductCapability, version string) *Server {
 		&mcp.ServerOptions{Instructions: service.Rules(context.Background()), Capabilities: &mcp.ServerCapabilities{}},
 	)
 	value := &Server{service: service, server: server}
+	value.addManagementTools()
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ownward_rules",
 		Description: "读取 Ownward 的信息范围、使用、维护和主动补充规则。首次使用或不确定是否应保存、如何检索时调用。",
@@ -350,6 +351,12 @@ func (s *Server) evidenceSearch(ctx context.Context, _ *mcp.CallToolRequest, inp
 }
 
 func (s *Server) status(ctx context.Context, _ *mcp.CallToolRequest, input StatusInput) (*mcp.CallToolResult, StatusOutput, error) {
+	if contextual, ok := s.service.(interface {
+		OrganizationFor(context.Context, string) (contract.OrganizationState, error)
+	}); ok {
+		state, err := contextual.OrganizationFor(ctx, input.ID)
+		return nil, StatusOutput{Organization: state}, err
+	}
 	value, err := s.service.Organization(input.ID)
 	if err != nil {
 		return nil, StatusOutput{}, err

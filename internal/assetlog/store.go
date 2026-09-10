@@ -35,6 +35,7 @@ type event struct {
 	Operation string             `json:"operation"`
 	Recorded  time.Time          `json:"recorded_at"`
 	Value     domain.Information `json:"value"`
+	Deleted   []Deletion         `json:"deleted,omitempty"`
 }
 
 type Store struct {
@@ -43,6 +44,7 @@ type Store struct {
 	logFile *os.File
 	lock    *directoryLock
 	items   map[string]domain.Information
+	deleted map[string]uint64
 }
 
 func Open(dir string) (*Store, error) {
@@ -67,7 +69,7 @@ func Open(dir string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("打开信息资产日志: %w", err)
 	}
-	store := &Store{dir: dir, logFile: file, lock: lock, items: make(map[string]domain.Information)}
+	store := &Store{dir: dir, logFile: file, lock: lock, items: make(map[string]domain.Information), deleted: make(map[string]uint64)}
 	if err := store.replay(); err != nil {
 		_ = file.Close()
 		return nil, err
@@ -96,7 +98,7 @@ func (s *Store) Close() error {
 func (s *Store) Create(value domain.Information) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, exists := s.items[value.ID]; exists {
+	if _, exists := s.items[value.ID]; exists || s.deleted[value.ID] != 0 {
 		return errors.New("信息标识已经存在")
 	}
 	if value.Revision != 1 {
@@ -126,7 +128,7 @@ func (s *Store) CreateBatch(values []domain.Information) error {
 		if value.Revision != 1 {
 			return errors.New("新信息必须从版本一开始")
 		}
-		if _, exists := s.items[value.ID]; exists {
+		if _, exists := s.items[value.ID]; exists || s.deleted[value.ID] != 0 {
 			return errors.New("信息标识已经存在")
 		}
 		if _, duplicate := seen[value.ID]; duplicate {
@@ -227,6 +229,10 @@ func (s *Store) Sync() error {
 func (s *Store) Compact() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.compactLocked()
+}
+
+func (s *Store) compactLocked() error {
 	if s.logFile == nil {
 		return errors.New("信息资产日志已关闭")
 	}
@@ -251,6 +257,9 @@ func (s *Store) Compact() error {
 		return err
 	}
 	writer := bufio.NewWriterSize(temporary, 1024*1024)
+	if err := s.writeDeletedSnapshot(writer); err != nil {
+		return err
+	}
 	for _, value := range values {
 		encoded, encodeErr := json.Marshal(event{Operation: "snapshot", Recorded: value.UpdatedAt.UTC(), Value: value})
 		if encodeErr != nil {
@@ -369,8 +378,18 @@ func (s *Store) replay() error {
 		if err := json.Unmarshal(encoded, &entry); err != nil {
 			return fmt.Errorf("信息资产日志第 %d 行损坏: %w", line, err)
 		}
+		if entry.Operation == "forget" || entry.Operation == "forgotten" {
+			if err := s.replayDeletion(entry); err != nil {
+				return fmt.Errorf("信息资产日志第 %d 行删除事件无效: %w", line, err)
+			}
+			committedEnd += int64(len(encoded))
+			continue
+		}
 		if err := entry.Value.Validate(); err != nil {
 			return fmt.Errorf("信息资产日志第 %d 行无效: %w", line, err)
+		}
+		if s.deleted[entry.Value.ID] != 0 {
+			return fmt.Errorf("信息资产日志第 %d 行试图恢复已遗忘标识", line)
 		}
 		current, exists := s.items[entry.Value.ID]
 		switch entry.Operation {

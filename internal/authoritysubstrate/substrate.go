@@ -148,7 +148,7 @@ func openControl(dir string, initial contract.ControlState) (*controlStore, erro
 func (s *controlStore) ReadControl() contract.ControlState {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.state
+	return cloneControl(s.state)
 }
 
 func (s *controlStore) CompareAndSwapControl(expectedRevision uint64, next contract.ControlState) (contract.ControlState, error) {
@@ -169,8 +169,18 @@ func (s *controlStore) CompareAndSwapControl(expectedRevision uint64, next contr
 	if err := s.write(next, false); err != nil {
 		return contract.ControlState{}, err
 	}
-	s.state = next
-	return next, nil
+	s.state = cloneControl(next)
+	return cloneControl(next), nil
+}
+
+func cloneControl(state contract.ControlState) contract.ControlState {
+	if state.InformationControl != nil {
+		encoded, _ := json.Marshal(state.InformationControl)
+		var copied contract.InformationControlState
+		_ = json.Unmarshal(encoded, &copied)
+		state.InformationControl = &copied
+	}
+	return state
 }
 
 func (s *controlStore) write(state contract.ControlState, createOnly bool) error {

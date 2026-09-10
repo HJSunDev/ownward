@@ -33,6 +33,20 @@ func (s *Store) WriteBackup(destination io.Writer) error {
 	archive := zip.NewWriter(destination)
 	digests := make(map[string]string, 2)
 	for _, name := range []string{manifestName, logName} {
+		if name == logName && len(s.deleted) > 0 {
+			writer, err := archive.CreateHeader(&zip.FileHeader{Name: name, Method: zip.Deflate})
+			if err != nil {
+				_ = archive.Close()
+				return err
+			}
+			hasher := sha256.New()
+			if err := s.writeLiveSnapshot(io.MultiWriter(writer, hasher)); err != nil {
+				_ = archive.Close()
+				return err
+			}
+			digests[name] = hex.EncodeToString(hasher.Sum(nil))
+			continue
+		}
 		digest, err := streamAssetFile(archive, name, filepath.Join(s.dir, name))
 		if err != nil {
 			_ = archive.Close()

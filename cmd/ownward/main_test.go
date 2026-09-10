@@ -29,6 +29,7 @@ func TestIsolatedReleaseCLIAndMCPAssembleWithoutRepository(t *testing.T) {
 	}
 
 	mcpData := filepath.Join(root, "mcp-data")
+	runPackagedCLI(t, binary, root, "setup", "--data-dir", mcpData)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	client := mcp.NewClient(&mcp.Implementation{Name: "isolated-release-test", Version: "1"}, nil)
@@ -307,6 +308,10 @@ func runPackagedCLI(t *testing.T, binary, directory string, args ...string) []by
 
 func buildIsolatedRelease(t *testing.T) (string, string, string) {
 	t.Helper()
+	// 发布测试的所有者凭据同样隔离，不写入开发者的真实凭据区。
+	configuration := t.TempDir()
+	t.Setenv("APPDATA", configuration)
+	t.Setenv("XDG_CONFIG_HOME", configuration)
 	repository, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
