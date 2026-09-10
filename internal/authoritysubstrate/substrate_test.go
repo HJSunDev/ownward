@@ -71,6 +71,55 @@ func TestControlStateInitializesOnceAndCASIsDurable(t *testing.T) {
 	}
 }
 
+func TestClosedControlCannotOverwriteTheNewAuthorityOwner(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "data")
+	first, err := Open(root, testInitial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+	oldControl := first.Control()
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+	current, err := Open(root, testInitial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer current.Close()
+	next := testInitial
+	next.Revision++
+	next.ActiveKernelGeneration = strings.Repeat("c", 64)
+	if _, err := current.Control().CompareAndSwapControl(1, next); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, controlDirectory, controlFile)
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale := testInitial
+	stale.Revision++
+	if _, err := oldControl.CompareAndSwapControl(1, stale); err == nil {
+		t.Fatal("已关闭实例的控制接口仍能覆盖新实例的权威状态")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil || string(before) != string(after) {
+		t.Fatalf("拒绝旧实例写入后，权威文件发生变化: %v", err)
+	}
+	if err := current.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(root, next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if got := reopened.Control().ReadControl(); got != next {
+		t.Fatalf("重新打开后未保留新实例状态: %#v", got)
+	}
+}
+
 func TestControlStateCASAllowsOnlyOneConcurrentDecision(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "data")
 	substrate, err := Open(root, testInitial)

@@ -96,6 +96,12 @@ func (s *Substrate) Close() error {
 		return nil
 	}
 	s.once.Do(func() {
+		if s.control != nil {
+			// 先终止控制写入，再释放资产锁，避免旧接口覆盖下一实例的状态。
+			s.control.mu.Lock()
+			s.control.closed = true
+			s.control.mu.Unlock()
+		}
 		if s.assets != nil {
 			s.err = s.assets.Close()
 		}
@@ -110,9 +116,10 @@ type controlEnvelope struct {
 }
 
 type controlStore struct {
-	mu    sync.RWMutex
-	path  string
-	state contract.ControlState
+	mu     sync.RWMutex
+	path   string
+	state  contract.ControlState
+	closed bool
 }
 
 func openControl(dir string, initial contract.ControlState) (*controlStore, error) {
@@ -147,6 +154,9 @@ func (s *controlStore) ReadControl() contract.ControlState {
 func (s *controlStore) CompareAndSwapControl(expectedRevision uint64, next contract.ControlState) (contract.ControlState, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.closed {
+		return contract.ControlState{}, errors.New("权威控制状态已关闭")
+	}
 	if expectedRevision != s.state.Revision {
 		return contract.ControlState{}, fmt.Errorf("权威控制状态已更新，当前修订为 %d", s.state.Revision)
 	}

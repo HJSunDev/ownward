@@ -2,6 +2,7 @@
 
 ## 工作依据
 
+- [项目哲学](philosophy.md)：产品、架构与使用体验的长期取舍依据。
 - [要什么](delivery/goal.md)：开发智能体首先读取的凝练目标，已封版。
 - [产品需求](product/requirements.md)：产品判断的唯一权威。
 - [架构总纲](architecture/overview.md)：整体结构、职责边界与长期不变量。
