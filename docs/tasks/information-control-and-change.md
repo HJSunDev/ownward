@@ -10,9 +10,9 @@
 | --- | --- | --- |
 | 1 | 工作包一已完成：授权、撤销、遗忘及真实宿主接续已实现并验收。 | 工作包二 |
 | 2 | 工作包二已完成：跨地点接入、断线接续和计划性迁移已实现并验收。 | 工作包三 |
-| 3 | 工作包三第1—5项：完成信息变化的产品设计、专项审查、架构、实现与验收。 | 本任务关闭 |
+| 3 | 工作包三前3项已完成设计与专项审查；完成第4—5项实现与验收。 | 本任务关闭 |
 
-工作包一、二已关闭；下一项为工作包三的产品设计，复用仍有效的审查与验证证据。
+工作包一、二已关闭；工作包三前3项已完成，下一项为按设计实现，再验证与关闭，复用仍有效的审查与验证证据。
 
 ## 共同准备
 
@@ -76,11 +76,29 @@
 
 目标：用户纠正或改变信息后，后续使用能够采用有效依据，同时保留有用的历史含义。
 
-1. [ ] **产品设计。** 区分纠错、现实变化与停止使用；定义用户更新信息及智能体交接、恢复、重新使用旧材料时的行为与完成标准。
-2. [ ] **专项审查。** 对照上述行为审查版本保护、证据有效性、关联刷新和宿主协作，找出实际缺口；共同审查已经成立的证据直接复用。
-3. [ ] **架构设计。** 在统一的共享边界下，明确变化状态、依据核对和宿主协作的职责；独立演进信息使用能力，保住已确认的内核质量。
-4. [ ] **实现。** 补齐缺失的变化语义及按需核对能力；智能体仅重新获取受影响的信息，再自主判断和行动。
+1. [x] **产品设计。** [信息随用户变化](../product/information-change.md)明确自然表达更正与现实变化、保存有用历史、旧材料按需核对及新增依据的行为；停止使用沿用工作包一，完成标准纳入[第一版交付定义](../delivery/first-version-delivery-definition.md#信息随用户变化)。
+2. [x] **专项审查。** 已核查真实读取、版本和证据保护、关联刷新、恢复及宿主材料接续；8项基础定向测试通过。保留与补齐结论见下方专项审查，不据此宣称新增能力已实现。
+3. [x] **架构设计。** [信息变化架构](../modules/information-change/README.md)确定两种保存方式共用的说明定位与交付、时间参照、来源核对及有界宿主工作集；复用统一身份、授权、版本及停止使用状态，不增加平行历史、推送平台或模型复核链。
+4. [ ] **实现。** 依次补齐明确更正的保存与读取交付、统一来源依据及批量核对、正式 Codex 接入包和必要协作规则；保留通用契约，智能体只重新获取受影响信息，再自主判断和行动。
 5. [ ] **验证与关闭。** 验证并发更新、旧证据失效、关联刷新、交接与恢复，并覆盖与用户控制、跨地点访问及迁移共同使用的路径；确认质量和用户等待未退化，保存证据后关闭工作包三。
+
+### 工作包三专项审查
+
+2026-09-10，基于 `bd282a4` 的源码与既有测试核对。前3项的结论是设计已形成、基础复用边界已查清；新增引用、核对与真实宿主接续尚未实现或验收。
+
+| 用户流程与源码依据 | 已确认行为与处理 |
+| --- | --- |
+| 更正后重新读取：[核心更新与读取](../../internal/core/service.go)、[资产端口](../../internal/authorityport/current.go) | 更新按预期版本提交，读取返回当前资产；保留，不重建更新功能。`ReadVersion` 只支持当前匹配版本，不能当作历史读取。 |
+| 纠错与现实变化：[资产模型](../../internal/domain/information.go)、[协作规则](../../internal/productrules/rules.go) | 正文能够保存更正、经历及生效条件；创建、更新时间不是表达时间。需保留已知时间参照并补齐规则，覆盖跨月、延迟导入及无关编辑；不新增时态引擎，也不将最后写入视为真相。 |
+| 旧证据及派生：[证据读取](../../internal/core/evidence.go)、[证据身份](../../internal/derived/evidence.go)、[核心测试](../../internal/core/service_test.go) | 保留修订、片段校验和旧派生隔离；它们不能证明其他片段没有更正，也不会核对已交付正文。补齐同一资料内的明确说明定位，随全文及片段统一交付，不靠最新版本号或检索排序掩盖缺失。 |
+| 宿主继续旧材料：[信息使用接入](../../integrations/python/ownward_information_use.py)、[MCP读取](../../internal/adapter/mcpserver/server.go)、[宿主连接](../../cmd/ownward/host_connector.go) | 设计采用 Codex 原生 Hook 和有界材料工作集；明确去重、替换、退出及重入核对，自动检查不续期，不永久检查会话全部历史。官方事件契约已核实，正式安装、跨轮接续及长对话成本仍须实现验收，不能以辅助函数或模拟 Reader 代替。 |
+| 明确更正关系：[资产关系](../../internal/domain/information.go)、[产品契约](../../internal/contract/product.go)、[MCP入口](../../internal/adapter/mcpserver/server.go) | 资产及核心已有明确关系，但缺少说明定位，禁止自指，MCP 尚未传递关系。仅为带有效定位的 `qualifies` 开放本资产说明，补齐关系传递、同次校验提交及反向索引；另存说明共用同一契约，不另建标注库。任意未关联信息仍按需求检索。 |
+| 旧备份恢复与位置迁移：[恢复](../../internal/authoritysubstrate/backup.go)、[迁移](../../internal/assembly/handoff.go) | 恢复保留资产身份与修订、失效旧凭据；迁移保留当前权威。来源依据需绑定体系与完整资产指纹，防止恢复分支相同修订被误认；不因地址、进程或派生世代变化全量失效。 |
+| 撤销与遗忘：[授权产品入口](../../internal/informationcontrol/product.go)、[控制校验](../../internal/informationcontrol/control.go) | 已有调用前后权限、删除屏障和活动资格检查。新核对能力必须复用，不能依据宿主缓存的旧授权交付，也不新增正文副本清理负担。 |
+
+定向验证：`go test ./internal/core -run '^(TestServiceCreateUpdateAndSearch|TestCurrentAssetDoesNotUseStaleDerivedSemantics|TestServicePreservesCandidateBoundRelationsAndRefreshesStaleInferences|TestServiceAppliesAndRemovesRelationsInferredTowardCurrentInformation|TestUpdateOrganizesAssetAndDependentsConcurrently|TestServiceNeverLoadsDerivedStateForAnOlderAssetRevision|TestConcurrentUpdatesCannotOverwriteTheSameRevision|TestCollaborativeLongAssetUsesTraceableEvidenceUnits)$' -count=1 -v`，8项全部通过。使用隔离数据与测试语义实现，只证明版本、证据及关联机制，不作为外部智能理解变化语义或新增宿主能力的产品实测。
+
+第4项按上方顺序实施，随后按交付定义验证自然表达、实际接续、共同边界及质量成本。设计补齐不等于功能已通过；只修这些明确缺口，不重做已通过且用途未变的内核能力。
 
 ## 执行约束
 
