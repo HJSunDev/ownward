@@ -11,6 +11,7 @@ import (
 // OrganizationState is the stable product-level view of derived organization.
 // It deliberately exposes neither the derived store nor a kernel implementation.
 type OrganizationState struct {
+	Relations      string `json:"relations,omitempty"`
 	Status         string `json:"status"`
 	Provider       string `json:"provider,omitempty"`
 	Error          string `json:"error,omitempty"`
@@ -53,13 +54,14 @@ type SearchInput struct {
 }
 
 type SearchResult struct {
-	ID       string                     `json:"id"`
-	Kind     domain.InformationKind     `json:"kind"`
-	Summary  string                     `json:"summary"`
-	Evidence []domain.EvidenceReference `json:"evidence,omitempty"`
-	Contexts []domain.Context           `json:"contexts,omitempty"`
-	Score    float64                    `json:"score"`
-	Signals  []string                   `json:"signals"`
+	Relations []RelationEvidence         `json:"relations,omitempty"`
+	ID        string                     `json:"id"`
+	Kind      domain.InformationKind     `json:"kind"`
+	Summary   string                     `json:"summary"`
+	Evidence  []domain.EvidenceReference `json:"evidence,omitempty"`
+	Contexts  []domain.Context           `json:"contexts,omitempty"`
+	Score     float64                    `json:"score"`
+	Signals   []string                   `json:"signals"`
 }
 
 type EvidenceSearchInput struct {
@@ -79,17 +81,33 @@ type NavigationNode struct {
 
 // NavigationEdge is a product result, not a derived-index record.
 type NavigationEdge struct {
-	SourceID   string  `json:"source_id"`
-	TargetID   string  `json:"target_id"`
-	Type       string  `json:"type"`
-	Confidence float64 `json:"confidence"`
-	Evidence   string  `json:"evidence,omitempty"`
-	Depth      int     `json:"depth"`
+	Grounded   *RelationEvidence `json:"grounded,omitempty"`
+	SourceID   string            `json:"source_id"`
+	TargetID   string            `json:"target_id"`
+	Type       string            `json:"type"`
+	Confidence float64           `json:"confidence,omitempty"`
+	Evidence   string            `json:"evidence,omitempty"`
+	Depth      int               `json:"depth"`
 }
 
 type NavigationResult struct {
-	Nodes []NavigationNode `json:"nodes"`
-	Edges []NavigationEdge `json:"edges"`
+	Continuation string           `json:"continuation,omitempty"`
+	Incomplete   bool             `json:"incomplete,omitempty"`
+	Nodes        []NavigationNode `json:"nodes"`
+	Edges        []NavigationEdge `json:"edges"`
+}
+
+// RelationEvidence keeps the same source-read contract as ordinary evidence.
+// A path locates material; it does not assert a transitive conclusion.
+type RelationEvidence struct {
+	ID         string                     `json:"id"`
+	Origin     string                     `json:"origin"`
+	Type       string                     `json:"type"`
+	Meaning    string                     `json:"meaning"`
+	Source     domain.EvidenceReference   `json:"source"`
+	Target     domain.EvidenceReference   `json:"target"`
+	Context    []domain.EvidenceReference `json:"context,omitempty"`
+	Conditions []domain.EvidenceReference `json:"conditions,omitempty"`
 }
 
 type SemanticSubmissionResult struct {

@@ -23,14 +23,14 @@
     {
       "name": "release-existing-receipt-representation-after-durable-index",
       "count": 1,
-      "before": "\t\tif err := s.derivedStore.Put(record); err != nil {\n\t\t\treturn OrganizationState{}, err\n\t\t}\n\t\ts.semantic.Upsert(record)\n\t\treturn organizationState(record), nil",
-      "after": "\t\tif err := s.derivedStore.Put(record); err != nil {\n\t\t\treturn OrganizationState{}, err\n\t\t}\n\t\ts.semantic.Upsert(record)\n\t\t_ = s.representations.Commit(record.AssetID, record.AssetRevision)\n\t\treturn organizationState(record), nil"
+      "before": "\t\ts.semantic.Upsert(record)\n\t\treturn organizationState(record), nil",
+      "after": "\t\ts.semantic.Upsert(record)\n\t\t_ = s.representations.Commit(record.AssetID, record.AssetRevision)\n\t\treturn organizationState(record), nil"
     },
     {
       "name": "release-accepted-representation-after-durable-index",
       "count": 1,
-      "before": "\ts.semantic.Upsert(record)\n\tif err := s.applyIncomingRelationsLocked(asset, previousDependents, incoming); err != nil {",
-      "after": "\ts.semantic.Upsert(record)\n\t_ = s.representations.Commit(record.AssetID, record.AssetRevision)\n\tif err := s.applyIncomingRelationsLocked(asset, previousDependents, incoming); err != nil {"
+      "before": "\t\ts.semantic.Upsert(record)\n\t\treturn s.applyIncomingRelationsLocked(asset, previousDependents, incoming)",
+      "after": "\t\ts.semantic.Upsert(record)\n\t\t_ = s.representations.Commit(record.AssetID, record.AssetRevision)\n\t\treturn s.applyIncomingRelationsLocked(asset, previousDependents, incoming)"
     },
     {
       "name": "seal-single-pending-representation-without-blocking-create",

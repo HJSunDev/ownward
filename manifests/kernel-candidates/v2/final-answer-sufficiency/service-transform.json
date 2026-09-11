@@ -5,8 +5,8 @@
     {
       "name": "source-owned-search-preview",
       "count": 1,
-      "before": "\tsummary := truncate(value.Content, 240)\n\tkind := value.Kind\n\tif s.semantic != nil {\n\t\tif record, ok := s.semantic.Get(value.ID); ok {\n\t\t\tif record.AssetRevision == value.Revision && strings.TrimSpace(record.Analysis.Summary) != \"\" {\n\t\t\t\tsummary = record.Analysis.Summary\n\t\t\t}\n\t\t}\n\t}",
-      "after": "\tquery := \"\"\n\tif len(queries) > 0 { query = queries[0] }\n\tsummary := kernelv2candidate.SourcePreview(value.Content, query, 240, s.candidateSourceCues(value)...)\n\tkind := value.Kind"
+      "before": "\tsummary := truncate(value.Content, 240)\n\tkind := value.Kind\n\tif s.semantic != nil {\n\t\tif record, ok := s.semantic.Get(value.ID); ok {\n\t\t\tif record.AssetRevision == value.Revision && strings.TrimSpace(record.Analysis.Summary) != \"\" && (record.Analysis.Organization == nil || s.organizationCurrent(record)) {\n\t\t\t\tsummary = record.Analysis.Summary\n\t\t\t}\n\t\t}\n\t}\n",
+      "after": "\tquery := \"\"\n\tif len(queries) > 0 { query = queries[0] }\n\tsummary := kernelv2candidate.SourcePreview(value.Content, query, 240, s.candidateSourceCues(value)...)\n\tkind := value.Kind\n"
     },
     {
       "name": "query-aware-preview-signature",
@@ -28,7 +28,7 @@
     },
     {
       "name": "pass-search-query",
-      "count": 2,
+      "count": 1,
       "before": "s.compactResults(lexical), nil",
       "after": "s.compactResults(lexical, input.Query), nil"
     },

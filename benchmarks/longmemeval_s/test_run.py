@@ -402,6 +402,26 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
         self.assertEqual(decoded, [{"work_id": "work-a", "summary": "User: Choose violet.",
                                    "topics": ["choice"], "cues": [{"text": "Assistant: Amber is not approved.", "kind": "constraint"}]}])
 
+    def test_organization_source_repair_preserves_valid_work_and_actual_inputs(self):
+        contract = adapter.semantic_representation.SemanticInputContract(adapter.semantic_representation.GROUNDED_REPRESENTATION, "test", None)
+        work = [{"id": f"w{i}", "organization_schema": "ownward.organization/v1",
+                 "asset": {"id": f"a{i}", "revision": 1, "content": text}, "candidates": []}
+                for i, text in enumerate(["Keep violet.\nOnly indoors.", "Use Beacon."])]
+        def row(index, passage):
+            return {"index": index, "summary": passage, "topics": [], "cues": [],
+                    "organization": {"schema": "ownward.organization/v1", "units": [], "links": []}}
+        transport = FakeTransport([{"analyses": [row(0, 0), row(1, 99)]}, {"analyses": [row(0, 0)]}])
+        capability = adapter.ExternalIntelligenceCapability(transport, contract)
+        with tempfile.TemporaryDirectory() as directory:
+            decoded, usage = capability.semantics(work, {**self.protocol["memory"], "semantic_attempts": 2}, Path(directory))
+            repeated, _ = capability.semantics(work, {**self.protocol["memory"], "semantic_attempts": 2}, Path(directory))
+        self.assertEqual(transport.calls, 2)
+        self.assertEqual(decoded, repeated)
+        self.assertEqual([x["work_id"] for x in decoded], ["w0", "w1"])
+        self.assertEqual({x["id"] for x in decoded[0]["input_assets"]}, {"a0", "a1"})
+        self.assertEqual({x["id"] for x in decoded[1]["input_assets"]}, {"a1"})
+        self.assertEqual(usage["retries"], 1)
+
     def test_protocol_freezes_official_identity_models_and_cost_inventory(self) -> None:
         adapter.validate_protocol(self.protocol)
         self.assertEqual(adapter.OFFICIAL_DATA_SHA256, self.protocol["official"]["data_sha256"])
@@ -1169,6 +1189,68 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             self.assertEqual(1, len([item for item in runtime.client.operations if item[0] == "ownward_semantic_work"]))
             self.assertFalse(any(item[0] == "ownward_semantic_submit_batch" for item in runtime.client.operations))
 
+    def test_semantic_submission_repairs_only_rejected_items_and_resumes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = FakeRuntime()
+            runtime.client.contents.update({"info-1": "Keep violet.", "info-2": "Beacon needs shelter."})
+            capability = FakeCodex()
+            frozen = adapter.freeze_semantic_batch(runtime, list(runtime.client.contents), root, "question", 0)
+            units = adapter.semantic_analysis_units(frozen, self.protocol["memory"], capability)
+            results = {u["unit_index"]: adapter.analyze_semantic_unit(u, root, self.protocol["memory"], capability) for u in units}
+            initial = adapter.combine_semantic_batch(frozen, units, results, root, self.protocol["memory"])
+            submitted = []
+            def submit(name, arguments):
+                self.assertEqual(name, "ownward_semantic_submit_batch")
+                submitted.append(copy.deepcopy(arguments["submissions"]))
+                return {"results": ([{"error": "unknown local unit"}] if len(submitted) == 2 else [{}])}
+            runtime.client.call_tool = submit
+            repaired = mock.Mock()
+            repaired.semantics.return_value = ([{"work_id": "work-info-2", "summary": "Beacon needs shelter.",
+                                                "topics": [], "cues": [], "input_assets": []}], {"calls": 1, "input_tokens": 7})
+            result = adapter.submit_semantic_batch(runtime, frozen, initial, root, repaired, self.protocol["memory"])
+            self.assertEqual([len(s) for s in submitted], [1, 1, 1])
+            self.assertEqual(submitted[0][0], result["submissions"][0])
+            self.assertEqual(submitted[1][0]["work_id"], "work-info-2")
+            self.assertEqual([w["id"] for w in repaired.semantics.call_args.args[0]], ["work-info-2"])
+            self.assertEqual(result["usage"]["input_tokens"], initial["usage"]["input_tokens"] + 7)
+            self.assertEqual(result, adapter.submit_semantic_batch(runtime, frozen, initial, root, repaired, self.protocol["memory"]))
+            self.assertEqual(repaired.semantics.call_count, 1)
+            self.assertEqual(len(submitted), 3)
+
+    def test_semantic_publication_resumes_after_transport_failure_without_repeating_completed_sources(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = FakeRuntime()
+            runtime.client.contents.update({"info-1": "Keep violet.", "info-2": "Beacon needs shelter."})
+            capability = FakeCodex()
+            frozen = adapter.freeze_semantic_batch(runtime, list(runtime.client.contents), root, "question", 0)
+            units = adapter.semantic_analysis_units(frozen, self.protocol["memory"], capability)
+            values = {u["unit_index"]: adapter.analyze_semantic_unit(u, root, self.protocol["memory"], capability) for u in units}
+            initial = adapter.combine_semantic_batch(frozen, units, values, root, self.protocol["memory"])
+            calls = []
+            def submit(name, arguments):
+                ids = [item['asset_id'] for item in arguments['submissions']]
+                calls.extend(ids)
+                if len(calls) == 2:
+                    raise adapter.MCPError('transport interrupted')
+                return {'results': [{}]}
+            runtime.client.call_tool = submit
+            with self.assertRaises(adapter.MCPError):
+                adapter.submit_semantic_batch(runtime, frozen, initial, root)
+            restored = adapter.submit_semantic_batch(runtime, frozen, initial, root)
+            self.assertEqual(calls, ['info-1', 'info-2', 'info-2'])
+            self.assertEqual(restored['submissions'], initial['submissions'])
+
+    def test_official_abstention_uses_declared_type_as_well_as_dataset_id(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evaluator = Path(directory) / 'evaluate_qa.py'
+            evaluator.write_text('def get_anscheck_prompt(task, question, answer, response, abstention=False):\n    return "abstention" if abstention else "ordinary"\n', encoding='utf-8')
+            base = {'question_id': 'case-6', 'question_type': 'unanswerable', 'question': 'Where?', 'answer': 'Unknown'}
+            self.assertEqual(adapter.official_prompt(evaluator, base, 'Not recorded'), 'abstention')
+            self.assertEqual(adapter.official_prompt(evaluator, {**base, 'question_id': 'x_abs', 'question_type': 'multi-session'}, 'Not recorded'), 'abstention')
+            self.assertEqual(adapter.official_prompt(evaluator, {**base, 'question_type': 'multi-session'}, 'Here'), 'ordinary')
+
     def test_analysis_units_preserve_every_work_item_and_request_contract(self) -> None:
         capability = FakeCodex()
         work = [
@@ -1335,7 +1417,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
                 )
             operations = FakeRuntime.last_client.operations
             self.assertEqual(["ownward_semantic_work"] * 3, [name for name, _ in operations[:3]])
-            self.assertEqual(["ownward_semantic_submit_batch"] * 3, [name for name, _ in operations[3:]])
+            self.assertEqual(["ownward_semantic_submit_batch"] * 45, [name for name, _ in operations[3:]])
             self.assertEqual(3, result["semantic_execution"]["analysis_units"])
             self.assertEqual([[0], [1], [2]], sorted(item["batch_indexes"] for item in result["semantic_execution"]["analysis_completion_order"]))
             self.assertEqual([0, 1, 2], result["semantic_execution"]["submission_order"])

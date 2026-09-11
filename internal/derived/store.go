@@ -20,13 +20,14 @@ import (
 )
 
 const (
-	recordSchema         = "ownward.derived/v4"
-	previousRecordSchema = "ownward.derived/v3"
-	legacyRecordSchema   = "ownward.derived/v2"
-	LogFileName          = "organization.binlog"
-	legacyLogFileName    = "organization.jsonl"
-	headerSize           = 16
-	footerSize           = 4
+	recordSchema           = "ownward.derived/v5"
+	compatibleRecordSchema = "ownward.derived/v4"
+	previousRecordSchema   = "ownward.derived/v3"
+	legacyRecordSchema     = "ownward.derived/v2"
+	LogFileName            = "organization.binlog"
+	legacyLogFileName      = "organization.jsonl"
+	headerSize             = 16
+	footerSize             = 4
 )
 
 var (
@@ -748,6 +749,9 @@ func encodeRecord(record Record) ([]byte, error) {
 }
 
 func validateRecord(record Record) error {
+	if organization := record.Analysis.Organization; organization != nil && (organization.Schema != semantics.OrganizationSchema || organization.Snapshot == "") {
+		return errors.New("派生组织格式无效")
+	}
 	if strings.TrimSpace(record.AssetID) == "" || record.AssetRevision == 0 {
 		return errors.New("派生状态缺少有效信息标识或版本")
 	}
@@ -819,7 +823,7 @@ func decodeRecordWithVersion(encoded []byte, withEmbedding bool) (Record, bool, 
 		return Record{}, false, err
 	}
 	previous := identity.Schema == previousRecordSchema
-	if identity.Schema != recordSchema && !previous {
+	if identity.Schema != recordSchema && identity.Schema != compatibleRecordSchema && !previous {
 		return Record{}, false, errors.New("派生状态记录格式无效")
 	}
 	var metadata recordMetadata
@@ -919,11 +923,13 @@ func clone(record Record) Record {
 	record.Analysis.Topics = append([]string(nil), record.Analysis.Topics...)
 	record.Analysis.Contexts = append([]semantics.InferredContext(nil), record.Analysis.Contexts...)
 	record.Analysis.Relations = append([]semantics.Relation(nil), record.Analysis.Relations...)
+	record.Analysis.Organization = semantics.CloneOrganization(record.Analysis.Organization)
 	if record.SemanticWorkReference != nil {
 		work := *record.SemanticWorkReference
 		work.Candidates = append([]semantics.CandidateReference(nil), work.Candidates...)
 		if work.Previous != nil {
 			previous := *work.Previous
+			previous.Organization = semantics.CloneOrganization(previous.Organization)
 			work.Previous = &previous
 		}
 		record.SemanticWorkReference = &work

@@ -1,0 +1,467 @@
+{
+  "schema": "ownward.organization/v1",
+  "instruction": "Process each work independently, comparing its source with its listed candidates. Organize reusable connections supported by that material; shared vocabulary alone is not a relation. Create units for connected passages and their necessary context, without recataloguing the whole source. Keep distinct events, participants and conditions separate. An unsplit source uses one unit covering the whole source. Omit statement because the original passage states the fact. A mention must locate an actual occurrence, with its role; use an exact selector when its literal name is ambiguous in the unit. Each relation connects the current source to another supplied source or two of its own units. Unit and mention IDs may refer only to this work's own output or a supplied candidate inventory, never another work's output; use a raw-source selector otherwise. same_object joins two grounded mentions, never whole events. Preserve the concrete meaning and necessary conditions; record a connection once since navigation works both ways. No useful connection means empty units and links are valid. Omit empty optional fields. Return organization alongside existing semantic fields in the same call.",
+  "output_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "schema",
+      "units",
+      "links"
+    ],
+    "properties": {
+      "schema": {
+        "type": "string",
+        "enum": [
+          "ownward.organization/v1"
+        ]
+      },
+      "units": {
+        "type": "array",
+        "maxItems": 128,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "selector"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "statement": {
+              "type": "string"
+            },
+            "selector": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "exact"
+                  ],
+                  "properties": {
+                    "exact": {
+                      "type": "string"
+                    },
+                    "prefix": {
+                      "type": "string"
+                    },
+                    "suffix": {
+                      "type": "string"
+                    }
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "context": {
+              "type": "array",
+              "maxItems": 16,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "exact"
+                ],
+                "properties": {
+                  "exact": {
+                    "type": "string"
+                  },
+                  "prefix": {
+                    "type": "string"
+                  },
+                  "suffix": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "mentions": {
+              "type": "array",
+              "maxItems": 32,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "name"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "role": {
+                    "type": "string"
+                  },
+                  "selector": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "exact"
+                        ],
+                        "properties": {
+                          "exact": {
+                            "type": "string"
+                          },
+                          "prefix": {
+                            "type": "string"
+                          },
+                          "suffix": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "links": {
+        "type": "array",
+        "maxItems": 128,
+        "items": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "type",
+                "meaning",
+                "source",
+                "target"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "same_as",
+                    "broader_than",
+                    "narrower_than",
+                    "part_of",
+                    "has_part",
+                    "supports",
+                    "contradicts",
+                    "derived_from",
+                    "applies_in",
+                    "related_to"
+                  ]
+                },
+                "meaning": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "asset_id"
+                  ],
+                  "properties": {
+                    "asset_id": {
+                      "type": "string"
+                    },
+                    "unit_id": {
+                      "type": "string"
+                    },
+                    "mention_id": {
+                      "type": "string"
+                    },
+                    "selector": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "exact"
+                          ],
+                          "properties": {
+                            "exact": {
+                              "type": "string"
+                            },
+                            "prefix": {
+                              "type": "string"
+                            },
+                            "suffix": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "target": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "asset_id"
+                  ],
+                  "properties": {
+                    "asset_id": {
+                      "type": "string"
+                    },
+                    "unit_id": {
+                      "type": "string"
+                    },
+                    "mention_id": {
+                      "type": "string"
+                    },
+                    "selector": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "exact"
+                          ],
+                          "properties": {
+                            "exact": {
+                              "type": "string"
+                            },
+                            "prefix": {
+                              "type": "string"
+                            },
+                            "suffix": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "conditions": {
+                  "type": "array",
+                  "maxItems": 16,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "asset_id"
+                    ],
+                    "properties": {
+                      "asset_id": {
+                        "type": "string"
+                      },
+                      "unit_id": {
+                        "type": "string"
+                      },
+                      "mention_id": {
+                        "type": "string"
+                      },
+                      "selector": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "exact"
+                            ],
+                            "properties": {
+                              "exact": {
+                                "type": "string"
+                              },
+                              "prefix": {
+                                "type": "string"
+                              },
+                              "suffix": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "type",
+                "meaning",
+                "source",
+                "target"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "same_object"
+                  ]
+                },
+                "meaning": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "asset_id",
+                    "unit_id",
+                    "mention_id"
+                  ],
+                  "properties": {
+                    "asset_id": {
+                      "type": "string"
+                    },
+                    "unit_id": {
+                      "type": "string"
+                    },
+                    "mention_id": {
+                      "type": "string"
+                    },
+                    "selector": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "exact"
+                          ],
+                          "properties": {
+                            "exact": {
+                              "type": "string"
+                            },
+                            "prefix": {
+                              "type": "string"
+                            },
+                            "suffix": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "target": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "asset_id",
+                    "unit_id",
+                    "mention_id"
+                  ],
+                  "properties": {
+                    "asset_id": {
+                      "type": "string"
+                    },
+                    "unit_id": {
+                      "type": "string"
+                    },
+                    "mention_id": {
+                      "type": "string"
+                    },
+                    "selector": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "exact"
+                          ],
+                          "properties": {
+                            "exact": {
+                              "type": "string"
+                            },
+                            "prefix": {
+                              "type": "string"
+                            },
+                            "suffix": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "conditions": {
+                  "type": "array",
+                  "maxItems": 16,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "asset_id"
+                    ],
+                    "properties": {
+                      "asset_id": {
+                        "type": "string"
+                      },
+                      "unit_id": {
+                        "type": "string"
+                      },
+                      "mention_id": {
+                        "type": "string"
+                      },
+                      "selector": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "exact"
+                            ],
+                            "properties": {
+                              "exact": {
+                                "type": "string"
+                              },
+                              "prefix": {
+                                "type": "string"
+                              },
+                              "suffix": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

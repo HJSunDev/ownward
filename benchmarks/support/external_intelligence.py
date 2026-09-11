@@ -51,17 +51,20 @@ def validate_structured_output(value: Any, schema: dict[str, Any], path: str = "
         clauses = schema.get(name)
         if isinstance(clauses, list):
             matches_count = 0
+            branch_errors = []
             for clause in clauses:
                 try:
                     if isinstance(clause, dict):
                         validate_structured_output(value, clause, path)
                     else:
                         continue
-                except ExternalIntelligenceError:
+                except ExternalIntelligenceError as error:
+                    branch_errors.append(str(error))
                     continue
                 matches_count += 1
             if matches_count == 0 or (exact and matches_count != 1):
-                raise ExternalIntelligenceError(f"structured output violates {name} at {path}")
+                details = "; ".join(dict.fromkeys(branch_errors)) if matches_count == 0 else "multiple alternatives matched"
+                raise ExternalIntelligenceError(f"structured output violates {name} at {path}: {details}")
     if "enum" in schema and value not in schema["enum"]:
         raise ExternalIntelligenceError(f"structured output violates enum at {path}")
     if "const" in schema and value != schema["const"]:
@@ -480,6 +483,7 @@ class ExternalIntelligenceExecutor:
             prior_wall_seconds += float(metadata.get("wall_seconds", 0.0))
             prior_rate_limits += int(bool(metadata.get("rate_limited", False)))
         working_notes: list[str] = []
+        validation_feedback = None
         for number in range(existing_attempts + 1, attempts + 1):
             attempt = stage / f"attempt-{number:03d}"
             attempt.mkdir()
@@ -498,6 +502,8 @@ class ExternalIntelligenceExecutor:
                     "work_dir": work,
                     "timeout_seconds": timeout_seconds,
                 }
+                if validation_feedback is not None:
+                    invoke_arguments["prompt"] += "\n\nCorrect the rejected output using the original task and sources. Validation feedback:\n" + json.dumps(validation_feedback, ensure_ascii=False)
                 if lifecycle.base_instructions is not None:
                     invoke_arguments["base_instructions"] = lifecycle.base_instructions
                 if lifecycle.dynamic_tools is not None:
@@ -536,7 +542,12 @@ class ExternalIntelligenceExecutor:
                 if not isinstance(value, dict):
                     raise ExternalIntelligenceError("external-intelligence output is not an object")
                 if validate is not None:
-                    validate(value)
+                    try:
+                        validate(value)
+                    except (ExternalIntelligenceError, ValueError) as error:
+                        validation_feedback = {"error": str(error), "rejected_output": value}
+                        _write_json(attempt / "validation-feedback.json", validation_feedback)
+                        raise
                 if lifecycle.validate is not None:
                     lifecycle.validate()
                 rate_limited = bool(self.transport.diagnostics()["rate_limit_observed"])

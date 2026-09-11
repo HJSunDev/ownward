@@ -27,7 +27,7 @@ const semanticEmbeddingChunkBytes = 320
 
 type SemanticSubmissionResult = contract.SemanticSubmissionResult
 
-func (s *Service) SemanticWork(_ context.Context, limit int) ([]semantics.Work, error) {
+func (s *Service) SemanticWork(ctx context.Context, limit int) ([]semantics.Work, error) {
 	s.stateMu.RLock()
 	defer s.stateMu.RUnlock()
 	if !s.collaborative || s.derivedStore == nil {
@@ -48,6 +48,9 @@ func (s *Service) SemanticWork(_ context.Context, limit int) ([]semantics.Work, 
 	})
 	result := make([]semantics.Work, 0, limit)
 	for _, asset := range assets {
+		if err := s.refreshInvalidOrganizationWork(ctx, asset); err != nil {
+			return nil, err
+		}
 		record, exists := s.derivedStore.Get(asset.ID)
 		if !exists || record.AssetRevision != asset.Revision || !record.HasPendingSemanticWork() {
 			continue
@@ -64,7 +67,7 @@ func (s *Service) SemanticWork(_ context.Context, limit int) ([]semantics.Work, 
 	return result, nil
 }
 
-func (s *Service) SemanticWorkFor(_ context.Context, assetIDs []string) ([]semantics.Work, error) {
+func (s *Service) SemanticWorkFor(ctx context.Context, assetIDs []string) ([]semantics.Work, error) {
 	s.stateMu.RLock()
 	defer s.stateMu.RUnlock()
 	if !s.collaborative || s.derivedStore == nil {
@@ -87,6 +90,9 @@ func (s *Service) SemanticWorkFor(_ context.Context, assetIDs []string) ([]seman
 		asset, exists := s.authority.ReadCurrent(id)
 		if !exists {
 			return nil, errors.New("定向语义工作的资产不存在")
+		}
+		if err := s.refreshInvalidOrganizationWork(ctx, asset); err != nil {
+			return nil, err
 		}
 		record, exists := s.derivedStore.Get(id)
 		if !exists || record.AssetRevision != asset.Revision || !record.HasPendingSemanticWork() {
@@ -117,7 +123,21 @@ func (s *Service) resolveSemanticWork(record derived.Record) (semantics.Work, er
 		}
 		candidates = append(candidates, candidate)
 	}
-	return semantics.ResolveWork(*record.SemanticWorkReference, asset, candidates)
+	work, err := semantics.ResolveWork(*record.SemanticWorkReference, asset, candidates)
+	if err != nil {
+		return semantics.Work{}, err
+	}
+	for n, ref := range record.SemanticWorkReference.Candidates {
+		if ref.OrganizationSnapshot == "" {
+			continue
+		}
+		current, ok := s.semantic.Get(ref.ID)
+		if !ok || current.Analysis.Organization == nil || current.Analysis.Organization.Snapshot != ref.OrganizationSnapshot || !s.organizationCurrent(current) {
+			return semantics.Work{}, errors.New("语义工作引用的组织已变化")
+		}
+		work.Candidates[n].Organization = semantics.OrganizationInventory(current.Analysis.Organization)
+	}
+	return work, nil
 }
 
 func (s *Service) SubmitSemantic(ctx context.Context, input semantics.Submission) (OrganizationState, error) {
@@ -146,7 +166,7 @@ func (s *Service) submitSemanticWithRecovery(ctx context.Context, input semantic
 	if !exists || record.AssetRevision != asset.Revision || record.SemanticWorkReference == nil {
 		return OrganizationState{}, errors.New("语义工作不存在或已经过期")
 	}
-	normalized, err := semantics.NormalizeSubmissionReference(*record.SemanticWorkReference, asset, input, s.now())
+	normalized, err := s.normalizeSemanticSubmission(record, asset, input)
 	if err != nil {
 		return OrganizationState{}, err
 	}
@@ -198,6 +218,15 @@ func (s *Service) submitSemanticWithRecovery(ctx context.Context, input semantic
 	record.GeneratedAt = s.now().UTC()
 	record.Provider = "semantic:" + normalized.Capability.ID + "/" + normalized.Capability.Version
 	record.Analysis = normalized.Analysis
+	record.InputAssets = append(record.InputAssets, normalized.InputAssets...)
+	for _, ref := range normalized.InputAssets {
+		if ref.OrganizationSnapshot != "" {
+			if source, ok := s.derivedStore.Get(ref.ID); ok {
+				record.InputAssets = append(record.InputAssets, derived.Inputs(source)...)
+			}
+		}
+	}
+	record.InputAssets = derived.Inputs(record)
 	record.SemanticReceipt = &receipt
 	if len(record.Embedding) == 0 && len(recovery.vector) > 0 {
 		record.Embedding = append([]float32(nil), recovery.vector...)
@@ -225,6 +254,9 @@ func (s *Service) submitSemanticWithRecovery(ctx context.Context, input semantic
 	defer s.graphMu.Unlock()
 	previousDependents := s.semantic.Dependents(asset.ID)
 	if err := contract.Commit(ctx, func() error {
+		if _, err := s.normalizeSemanticSubmission(record, asset, input); err != nil {
+			return err
+		}
 		if err := s.derivedStore.Put(record); err != nil {
 			return err
 		}
@@ -270,7 +302,7 @@ func (s *Service) prepareSemanticVectorRecoveries(ctx context.Context, inputs []
 		if !exists || record.AssetRevision != asset.Revision || record.SemanticWorkReference == nil || len(record.Embedding) > 0 {
 			continue
 		}
-		normalized, err := semantics.NormalizeSubmissionReference(*record.SemanticWorkReference, asset, input, s.now())
+		normalized, err := s.normalizeSemanticSubmission(record, asset, input)
 		if err != nil {
 			result[index].err = err
 			continue
@@ -573,7 +605,16 @@ func (s *Service) newPendingSemanticRecord(value domain.Information, vector []fl
 	}
 	candidates := s.semanticCandidates(value, vectors, indexes...)
 	var previous *semantics.Analysis
-	if current, exists := s.derivedStore.Get(value.ID); exists {
+	current, exists := s.derivedStore.Get(value.ID)
+	repair := exists && (!s.organizationCurrent(current) || s.hasStaleRelation(current))
+	if repair {
+		// Reconsider current raw sources; do not create feedback between mutually
+		// stale derived interpretations during recovery.
+		for n := range candidates {
+			candidates[n].Organization = nil
+		}
+	}
+	if exists && current.AssetRevision == value.Revision && !repair {
 		analysis := current.Analysis
 		previous = &analysis
 	}
@@ -590,12 +631,22 @@ func (s *Service) newPendingSemanticRecord(value domain.Information, vector []fl
 		Status: "pending", SemanticWorkReference: &workReference, EmbeddingSpace: s.embedder.Space().ID, InputsKnown: true,
 	}
 	record.InputAssets = append(record.InputAssets, workReference.Candidates...)
+	for _, candidate := range workReference.Candidates {
+		if candidate.OrganizationSnapshot == "" {
+			continue
+		}
+		if source, ok := s.derivedStore.Get(candidate.ID); ok {
+			record.InputAssets = append(record.InputAssets, derived.Inputs(source)...)
+		}
+	}
 	if previous != nil {
+		record.Analysis.Organization = semantics.CloneOrganization(previous.Organization)
 		if current, ok := s.derivedStore.Get(value.ID); ok {
 			record.InputAssets = append(record.InputAssets, derived.Inputs(current)...)
 			record.InputsKnown = current.InputsKnown
 		}
 	}
+	record.InputAssets = derived.Inputs(record)
 	if len(vector) > 0 {
 		record.Embedding = vector
 	} else if embeddingErr == nil {
@@ -625,14 +676,35 @@ func (s *Service) semanticCandidates(value domain.Information, vectors [][]float
 			return
 		}
 		positions[candidate.ID] = len(result)
+		var organization *semantics.Organization
+		if record, ok := semanticRecordFromIndexes(candidate.ID, indexes); ok && record.AssetRevision == candidate.Revision && s.organizationCurrent(record) {
+			organization = semantics.OrganizationInventory(record.Analysis.Organization)
+			for _, dependency := range derived.Inputs(record) {
+				if dependency.ID == value.ID {
+					organization = nil
+					break
+				}
+			}
+		}
 		result = append(result, semantics.Candidate{
 			ID: candidate.ID, Revision: candidate.Revision, Content: candidate.Content,
-			Contexts: append([]domain.Context(nil), candidate.Contexts...), Similarity: similarity,
+			Organization: organization,
+			Contexts:     append([]domain.Context(nil), candidate.Contexts...), Similarity: similarity,
 		})
 	}
 	for _, relation := range value.Relations {
 		if candidate, exists := s.authority.ReadCurrent(relation.TargetID); exists {
 			appendCandidate(candidate, 0)
+		}
+	}
+	for _, index := range indexes {
+		if index == nil {
+			continue
+		}
+		for _, hit := range index.NameSearch(value.Content, 6) {
+			if candidate, exists := s.authority.ReadCurrent(hit.AssetID); exists {
+				appendCandidate(candidate, 0)
+			}
 		}
 	}
 	for _, hit := range lexical {
@@ -704,6 +776,11 @@ func mergedSemanticHits(vector []float32, indexes []*derived.Index, limit int) [
 
 func organizationState(record derived.Record) OrganizationState {
 	state := OrganizationState{Status: record.Status, Provider: record.Provider, Error: record.Error}
+	if record.Analysis.Organization != nil {
+		state.Relations = "organized_given_material"
+	} else {
+		state.Relations = "not_organized"
+	}
 	if record.Status == "pending" && record.HasPendingSemanticWork() {
 		state.RequiredAction = semanticWorkRequiredAction
 	}

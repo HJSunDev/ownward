@@ -49,11 +49,12 @@ def prepare(
     generated_generation_path = output_root / "core-generation.go.overlay"
     generated_access_path = output_root / "mcpserver-server.go.overlay"
     generated_lexical_path = output_root / "retrieval-lexical.go.overlay"
+    generated_composition_path = output_root / "composition-embed.go.overlay"
     semantic_manifest_path = output_root / "semantic-representation.json"
     paths = (
         receipt_path, subject_path, candidate_config_path, binary_path, composition_path,
         overlay_path, generated_service_path, generated_collaboration_path, generated_generation_path,
-        generated_access_path, generated_lexical_path, semantic_manifest_path,
+        generated_access_path, generated_lexical_path, generated_composition_path, semantic_manifest_path,
     )
     if any(path.exists() for path in (*paths, embedding_path)):
         _require(resume and all(path.is_file() for path in paths) and embedding_path.is_dir(), "V2 资源成本候选现场不完整；禁止覆盖或宽松复用")
@@ -70,6 +71,7 @@ def prepare(
             "generated_generation_sha256": evidence.file_sha256(generated_generation_path),
             "generated_access_sha256": evidence.file_sha256(generated_access_path),
             "generated_lexical_sha256": evidence.file_sha256(generated_lexical_path),
+            "generated_composition_sha256": evidence.file_sha256(generated_composition_path),
             "semantic_manifest_sha256": evidence.file_sha256(semantic_manifest_path),
             "semantic_runtime_sha256": evidence.file_sha256(repository / "benchmarks/longmemeval_s/semantic_representation.py"),
             "semantic_executor_sha256": evidence.file_sha256(repository / "benchmarks/longmemeval_s/run.py"),
@@ -219,7 +221,7 @@ def prepare(
         str((repository / "internal" / "core" / "generation.go").resolve()): str(generated_generation_path),
         str((repository / "internal" / "adapter" / "mcpserver" / "server.go").resolve()): str(generated_access_path),
         str((repository / "internal" / "retrieval" / "lexical.go").resolve()): str(generated_lexical_path),
-        str((repository / "manifests" / "compositions" / "v1" / "embed.go").resolve()): str((repository / composition_embed_relative).resolve()),
+        str((repository / "manifests" / "compositions" / "v1" / "embed.go").resolve()): str(generated_composition_path),
     }})
     # Windows CreateProcess has a short command-line ceiling. The sealed JSON
     # object is whitespace-insensitive, so embed its compact form while keeping
@@ -227,7 +229,13 @@ def prepare(
     sealed_composition = base64.b64encode(
         json.dumps(composition, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     ).decode("ascii")
-    ldflags = f"-X main.version={generation_identity} -X github.com/HJSunDev/ownward/manifests/compositions/v1.sealedCompositionBase64={sealed_composition}"
+    # Keep the sealed manifest in build input, not the Windows command line.
+    generated_composition_path.write_text(
+        (repository / composition_embed_relative).read_text(encoding="utf-8").replace(
+            "var sealedCompositionBase64 string", "var sealedCompositionBase64 = " + json.dumps(sealed_composition)
+        ), encoding="utf-8",
+    )
+    ldflags = f"-X main.version={generation_identity}"
     build = subprocess.run(
         ["go", "build", "-trimpath", "-overlay", str(overlay_path), "-ldflags", ldflags, "-o", str(binary_path), "./cmd/ownward"],
         cwd=repository, capture_output=True, text=True, encoding="utf-8", timeout=300, check=False,
@@ -304,6 +312,7 @@ def prepare(
         "generated_generation_sha256": evidence.file_sha256(generated_generation_path),
         "generated_access_sha256": evidence.file_sha256(generated_access_path),
         "generated_lexical_sha256": evidence.file_sha256(generated_lexical_path),
+            "generated_composition_sha256": evidence.file_sha256(generated_composition_path),
         "semantic_manifest_sha256": evidence.file_sha256(semantic_manifest_path),
         "semantic_representation": SEMANTIC_REPRESENTATION,
         "semantic_runtime_sha256": evidence.file_sha256(repository / semantic_runtime_relative),

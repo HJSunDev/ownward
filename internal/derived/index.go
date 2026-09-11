@@ -2,7 +2,9 @@ package derived
 
 import (
 	"container/heap"
+	"crypto/rand"
 	"encoding/binary"
+	"encoding/hex"
 	"math"
 	"sort"
 	"strings"
@@ -19,26 +21,31 @@ type SemanticHit struct {
 }
 
 type Edge struct {
-	SourceID       string  `json:"source_id"`
-	TargetID       string  `json:"target_id"`
-	Type           string  `json:"type"`
-	Confidence     float64 `json:"confidence"`
-	Evidence       string  `json:"evidence,omitempty"`
-	Depth          int     `json:"depth"`
+	Grounded       *semantics.GroundedLink `json:"grounded,omitempty"`
+	OwnerID        string                  `json:"-"`
+	SourceID       string                  `json:"source_id"`
+	TargetID       string                  `json:"target_id"`
+	Type           string                  `json:"type"`
+	Confidence     float64                 `json:"confidence"`
+	Evidence       string                  `json:"evidence,omitempty"`
+	Depth          int                     `json:"depth"`
 	targetRevision uint64
 }
 
 type Index struct {
-	mu             sync.RWMutex
-	searchCacheMu  sync.Mutex
-	records        []indexedRecord
-	blocks         map[int]*vectorBlock
-	activeVectors  int
-	locations      map[string]uint32
-	forward        map[string][]Edge
-	reverse        map[string][]Edge
-	pendingReverse map[string]map[string]struct{}
-	searchCache    map[string]*searchCacheEntry
+	organized          organizationIndex
+	navigationEpoch    uint64
+	navigationInstance string
+	mu                 sync.RWMutex
+	searchCacheMu      sync.Mutex
+	records            []indexedRecord
+	blocks             map[int]*vectorBlock
+	activeVectors      int
+	locations          map[string]uint32
+	forward            map[string][]Edge
+	reverse            map[string][]Edge
+	pendingReverse     map[string]map[string]struct{}
+	searchCache        map[string]*searchCacheEntry
 }
 
 const maxSearchCacheEntries = 64
@@ -67,14 +74,20 @@ type indexedRecord struct {
 }
 
 func NewIndex(records []Record) *Index {
+	var nonce [16]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		panic(err)
+	}
 	index := &Index{
-		records:        make([]indexedRecord, 0, len(records)),
-		blocks:         make(map[int]*vectorBlock),
-		locations:      make(map[string]uint32, len(records)),
-		forward:        make(map[string][]Edge),
-		reverse:        make(map[string][]Edge),
-		pendingReverse: make(map[string]map[string]struct{}),
-		searchCache:    make(map[string]*searchCacheEntry),
+		navigationInstance: hex.EncodeToString(nonce[:]),
+		organized:          newOrganizationIndex(),
+		records:            make([]indexedRecord, 0, len(records)),
+		blocks:             make(map[int]*vectorBlock),
+		locations:          make(map[string]uint32, len(records)),
+		forward:            make(map[string][]Edge),
+		reverse:            make(map[string][]Edge),
+		pendingReverse:     make(map[string]map[string]struct{}),
+		searchCache:        make(map[string]*searchCacheEntry),
 	}
 	counts := make(map[int]int)
 	for _, record := range records {
@@ -98,6 +111,9 @@ func NewIndex(records []Record) *Index {
 		records[recordIndex].Embedding = nil
 	}
 	index.rebuildEdgesLocked()
+	for _, record := range index.records {
+		index.addOrganizationLocked(record.record)
+	}
 	return index
 }
 
@@ -108,6 +124,10 @@ func (i *Index) Upsert(record Record) {
 	if exists && i.records[location].record.AssetRevision > record.AssetRevision {
 		return
 	}
+	if exists {
+		i.removeOrganizationLocked(i.records[location].record)
+	}
+	i.navigationEpoch++
 	i.removeOutgoingLocked(record.AssetID)
 	i.removePendingLocked(record.AssetID)
 	if !exists {
@@ -120,6 +140,7 @@ func (i *Index) Upsert(record Record) {
 	i.upsertVectorLocked(location, record)
 	i.removeStaleIncomingLocked(record.AssetID)
 	i.addOutgoingLocked(record.AssetID, record)
+	i.addOrganizationLocked(record)
 	i.invalidateSearchCache()
 }
 
@@ -150,6 +171,9 @@ func (i *Index) Dependents(targetID string) []string {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
 	seen := make(map[string]struct{})
+	for id := range i.organized.inputs[targetID] {
+		seen[id] = struct{}{}
+	}
 	for _, edge := range i.reverse[targetID] {
 		if edge.targetRevision == 0 || edge.SourceID == targetID {
 			continue
@@ -319,77 +343,8 @@ func cloneSemanticHits(hits []SemanticHit) []SemanticHit {
 }
 
 func (i *Index) Navigate(start []string, relationTypes []string, maxDepth, limit int) []Edge {
-	i.mu.RLock()
-	defer i.mu.RUnlock()
-	if maxDepth <= 0 {
-		maxDepth = 1
-	}
-	if maxDepth > 5 {
-		maxDepth = 5
-	}
-	if limit <= 0 {
-		limit = 50
-	}
-	allowed := make(map[string]struct{}, len(relationTypes))
-	for _, value := range relationTypes {
-		allowed[strings.TrimSpace(value)] = struct{}{}
-	}
-	type pending struct {
-		id    string
-		depth int
-	}
-	queue := make([]pending, 0, len(start))
-	visited := make(map[string]struct{}, len(start))
-	for _, id := range start {
-		id = strings.TrimSpace(id)
-		if id == "" {
-			continue
-		}
-		visited[id] = struct{}{}
-		queue = append(queue, pending{id: id})
-	}
-	result := make([]Edge, 0, limit)
-	visitedEdges := make(map[string]struct{})
-	for len(queue) > 0 && len(result) < limit {
-		current := queue[0]
-		queue = queue[1:]
-		if current.depth >= maxDepth {
-			continue
-		}
-		edges := append(append([]Edge(nil), i.forward[current.id]...), i.reverse[current.id]...)
-		sort.Slice(edges, func(left, right int) bool {
-			if edges[left].Confidence == edges[right].Confidence {
-				return edges[left].TargetID < edges[right].TargetID
-			}
-			return edges[left].Confidence > edges[right].Confidence
-		})
-		for _, edge := range edges {
-			if len(allowed) > 0 {
-				if _, ok := allowed[edge.Type]; !ok {
-					continue
-				}
-			}
-			edgeID := edge.SourceID + "\x00" + edge.Type + "\x00" + edge.TargetID
-			if _, exists := visitedEdges[edgeID]; exists {
-				continue
-			}
-			visitedEdges[edgeID] = struct{}{}
-			nextID := edge.TargetID
-			if edge.TargetID == current.id {
-				nextID = edge.SourceID
-			}
-			edge.Depth = current.depth + 1
-			result = append(result, edge)
-			if len(result) == limit {
-				break
-			}
-			if _, exists := visited[nextID]; !exists {
-				visited[nextID] = struct{}{}
-				queue = append(queue, pending{id: nextID, depth: current.depth + 1})
-			}
-		}
-	}
-	return result
+	page, _ := i.NavigatePage(start, relationTypes, maxDepth, limit)
+	return page.Edges
 }
 
 func (i *Index) rebuildEdgesLocked() {

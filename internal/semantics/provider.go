@@ -78,19 +78,21 @@ type InferredContext struct {
 }
 
 type Analysis struct {
-	Summary   string            `json:"summary" jsonschema:"不改变原意的简洁语义摘要"`
-	Cues      []Cue             `json:"cues" jsonschema:"有助于未来检索的线索；没有则为空数组"`
-	Topics    []string          `json:"topics" jsonschema:"可多重归属的主题；没有可靠主题则为空数组"`
-	Contexts  []InferredContext `json:"inferred_contexts,omitempty"`
-	Relations []Relation        `json:"relations,omitempty"`
+	Organization *Organization     `json:"organization,omitempty" jsonschema:"有原文依据的组织。schema 为 ownward.organization/v1；按独立事项定位 units，保留条件及对象角色，links 只连接当前工作中的有据端点。没有可靠关系允许空 links。"`
+	Summary      string            `json:"summary" jsonschema:"不改变原意的简洁语义摘要"`
+	Cues         []Cue             `json:"cues" jsonschema:"有助于未来检索的线索；没有则为空数组"`
+	Topics       []string          `json:"topics" jsonschema:"可多重归属的主题；没有可靠主题则为空数组"`
+	Contexts     []InferredContext `json:"inferred_contexts,omitempty"`
+	Relations    []Relation        `json:"relations,omitempty"`
 }
 
 type Candidate struct {
-	ID         string           `json:"id"`
-	Revision   uint64           `json:"revision"`
-	Content    string           `json:"content"`
-	Contexts   []domain.Context `json:"explicit_contexts,omitempty"`
-	Similarity float64          `json:"semantic_similarity,omitempty"`
+	Organization *Organization    `json:"organization,omitempty"`
+	ID           string           `json:"id"`
+	Revision     uint64           `json:"revision"`
+	Content      string           `json:"content"`
+	Contexts     []domain.Context `json:"explicit_contexts,omitempty"`
+	Similarity   float64          `json:"semantic_similarity,omitempty"`
 }
 
 type Provider interface {
@@ -331,7 +333,7 @@ func normalizeRelations(values []Relation, limit int) []Relation {
 		value.Type = strings.TrimSpace(value.Type)
 		value.TargetID = strings.TrimSpace(value.TargetID)
 		value.Evidence = truncate(strings.TrimSpace(value.Evidence), 240)
-		key := value.Direction + "\x00" + value.TargetID
+		key := value.Direction + "\x00" + value.TargetID + "\x00" + value.Type + "\x00" + value.Evidence
 		if value.Type == "" || value.TargetID == "" || value.Evidence == "" || value.Confidence < 0.75 || value.Confidence > 1 || math.IsNaN(value.Confidence) || math.IsInf(value.Confidence, 0) {
 			continue
 		}

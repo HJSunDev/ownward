@@ -15,6 +15,7 @@ import (
 	"github.com/HJSunDev/ownward/internal/core"
 	"github.com/HJSunDev/ownward/internal/derived"
 	"github.com/HJSunDev/ownward/internal/embedding"
+	"github.com/HJSunDev/ownward/internal/semantics"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -176,6 +177,28 @@ func TestServerExposesUnifiedCoreOperations(t *testing.T) {
 	rules, err := clientSession.CallTool(ctx, &mcp.CallToolParams{Name: "ownward_rules", Arguments: map[string]any{}})
 	if err != nil || rules.IsError {
 		t.Fatalf("rules failed: result=%#v error=%v", rules, err)
+	}
+	// Model-facing optional fields must also be optional on the actual MCP
+	// boundary, not merely in the host's output schema or native Go calls.
+	work, err := service.SemanticWorkFor(ctx, []string{id})
+	if err != nil || len(work) != 1 {
+		t.Fatalf("semantic work unavailable: %v %#v", err, work)
+	}
+	submitted, err := clientSession.CallTool(ctx, &mcp.CallToolParams{
+		Name: "ownward_semantic_submit",
+		Arguments: map[string]any{"submission": map[string]any{
+			"schema": semantics.SubmissionSchema, "work_id": work[0].ID,
+			"asset_id": id, "asset_revision": current.Revision,
+			"capability": map[string]any{"id": "test", "version": "v1"}, "status": "complete",
+			"analysis": map[string]any{"summary": current.Content, "topics": []string{},
+				"cues": []any{}, "relations": []any{}, "inferred_contexts": []any{},
+				"organization": map[string]any{"schema": semantics.OrganizationSchema,
+					"units": []any{map[string]any{"id": "u", "selector": map[string]any{"exact": current.Content},
+						"mentions": []any{map[string]any{"id": "m", "name": "真实目标"}}}}, "links": []any{}}},
+		}},
+	})
+	if err != nil || submitted.IsError {
+		t.Fatalf("MCP rejected omitted optional organization fields: %#v %v", submitted, err)
 	}
 	if err := clientSession.Close(); err != nil {
 		t.Fatal(err)

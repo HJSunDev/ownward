@@ -14,6 +14,7 @@ import (
 	"github.com/HJSunDev/ownward/internal/core"
 	"github.com/HJSunDev/ownward/internal/derived"
 	"github.com/HJSunDev/ownward/internal/domain"
+	"github.com/HJSunDev/ownward/internal/embedding"
 	"github.com/HJSunDev/ownward/internal/informationcontrol"
 	"github.com/HJSunDev/ownward/internal/semantics"
 )
@@ -139,7 +140,7 @@ func TestForgetCleansCopiesWithoutModelAndPreservesUnrelatedQuality(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	dependent := derived.Record{AssetID: second.Information.ID, AssetRevision: 1, Status: "ready", Analysis: semantics.Analysis{Summary: secret}, InputAssets: []semantics.CandidateReference{{ID: first.Information.ID, Revision: 1}}}
+	dependent := derived.Record{AssetID: second.Information.ID, AssetRevision: 1, Status: "ready", Analysis: semantics.Analysis{Summary: secret, Organization: &semantics.Organization{Schema: semantics.OrganizationSchema, Snapshot: "purge-fixture", Units: []semantics.SemanticUnit{{ID: "u", Statement: secret, Mentions: []semantics.Mention{{ID: "m", Name: secret}}}}, Links: []semantics.GroundedLink{{ID: "edge", Meaning: secret}}}}, InputAssets: []semantics.CandidateReference{{ID: first.Information.ID, Revision: 1}}}
 	independent := derived.Record{AssetID: third.Information.ID, AssetRevision: 1, Status: "ready", Analysis: semantics.Analysis{Summary: "独立资料已整理"}, GeneratedAt: time.Now().UTC(), InputsKnown: true}
 	if err := d.Put(dependent); err != nil {
 		t.Fatal(err)
@@ -253,5 +254,69 @@ func TestRestoreKeepsOwnershipButInvalidatesOldCredentials(t *testing.T) {
 	}
 	if restored.Control().ReadControl().InformationControl.SystemID != before {
 		t.Fatal("恢复改变信息体系身份")
+	}
+}
+func TestSharedGraphSurvivesAgentRevocationAndStopsAtForget(t *testing.T) {
+	a, c, owner, root := setup(t)
+	d, err := derived.Open(filepath.Join(root, "derived"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := core.NewCollaborativeWithAuthority(a.Assets(), d, embedding.HashForTesting{Dimensions: 64})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	p := informationcontrol.NewProduct(s, c)
+	defer p.Close()
+	principal, token, err := c.Enroll(owner, "temporary agent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = c.SetPermissions(owner, principal.ID, []contract.Permission{contract.ReadPermission, contract.MaintainPermission}); err != nil {
+		t.Fatal(err)
+	}
+	agent := informationcontrol.Authenticate(context.Background(), token)
+	first, err := p.Create(owner, contract.CreateInput{Content: "Lumen uses Beacon."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := p.Create(agent, contract.CreateInput{Content: "Beacon is allowed only indoors."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err := p.SemanticWorkFor(agent, []string{second.Information.ID})
+	if err != nil || len(w) != 1 {
+		t.Fatal(err)
+	}
+	input := semantics.Submission{Schema: semantics.SubmissionSchema, WorkID: w[0].ID, AssetID: w[0].Asset.ID, Revision: w[0].Asset.Revision, Capability: semantics.Capability{ID: "fixture", Version: "v1"}, Status: semantics.SubmissionComplete, Analysis: semantics.Analysis{Summary: "Beacon needs indoor conditions", Organization: &semantics.Organization{Schema: semantics.OrganizationSchema, Units: []semantics.SemanticUnit{{ID: "condition"}}, Links: []semantics.GroundedLink{{Type: "applies_in", Meaning: "Beacon's indoor restriction applies to its use by Lumen", Source: semantics.GraphEndpoint{AssetID: first.Information.ID}, Target: semantics.GraphEndpoint{AssetID: second.Information.ID, UnitID: "condition"}}}}}}
+	if _, err = p.SubmitSemantic(agent, input); err != nil {
+		t.Fatal(err)
+	}
+	if err = c.SetPermissions(owner, principal.ID, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = p.Navigate(agent, []string{first.Information.ID}, nil, 1, 10); err == nil {
+		t.Fatal("revoked principal read graph")
+	}
+	if _, err = p.SubmitSemantic(agent, input); err == nil {
+		t.Fatal("revoked principal submitted")
+	}
+	nav, err := p.Navigate(owner, []string{first.Information.ID}, nil, 1, 10)
+	if err != nil || len(nav.Edges) != 1 {
+		t.Fatalf("revocation damaged shared graph: %#v %v", nav, err)
+	}
+	if _, err = p.Manage(owner, contract.ManagementRequest{ID: "forget-graph", Operation: "forget", Targets: []contract.AssetVersion{{ID: first.Information.ID, Revision: 1}}}); err != nil {
+		t.Fatal(err)
+	}
+	nav, err = p.Navigate(owner, []string{second.Information.ID}, nil, 1, 10)
+	if err != nil || len(nav.Edges) != 0 {
+		t.Fatalf("forgotten graph endpoint remained: %#v %v", nav, err)
+	}
+	if _, err = p.Read(owner, second.Information.ID); err != nil {
+		t.Fatal("dependent original was deleted", err)
+	}
+	if _, err = p.SubmitSemantic(owner, input); err == nil {
+		t.Fatal("forgotten input resurrected by late work")
 	}
 }

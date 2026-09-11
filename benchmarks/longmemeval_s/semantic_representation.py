@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
+import copy
 import hashlib
 import json
 from pathlib import Path
@@ -14,8 +16,135 @@ LEGACY_GROUNDED_REPRESENTATION = "ownward.semantic-source-spans/v1"
 GROUNDED_REPRESENTATION = "ownward.semantic-source-spans/v2"
 
 
+@lru_cache(maxsize=1)
+def organization_contract() -> dict[str, Any]:
+    return json.loads((Path(__file__).resolve().parents[2] / "internal/semantics/organization_contract.json").read_text(encoding="utf-8"))
+
+
+def organization_requested(work: list[dict[str, Any]]) -> bool:
+    return bool(work) and all(item.get("organization_schema") == "ownward.organization/v1" for item in work)
+
+
+def input_references(work: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    refs = {}
+    for item in work:
+        for source in [item["asset"], *item.get("candidates", [])]:
+            snapshot = (source.get("organization") or {}).get("snapshot", "")
+            key = (source["id"], source["revision"], snapshot)
+            refs[key] = {"id": key[0], "revision": key[1], **({"organization_snapshot": snapshot} if snapshot else {})}
+    return [refs[key] for key in sorted(refs)]
+
+
+def organization_schema(work: list[dict[str, Any]], schema: dict[str, Any], representation: str = "") -> dict[str, Any]:
+    if not organization_requested(work):
+        return schema
+    schema = copy.deepcopy(schema)
+    analysis = schema["properties"]["analyses"]["items"]
+    graph = copy.deepcopy(organization_contract()["output_schema"])
+    if representation in {GROUNDED_REPRESENTATION, LEGACY_GROUNDED_REPRESENTATION}:
+        def compact_locator(node):
+            if isinstance(node, dict):
+                if node.get("type") == "object" and "asset_id" in node.get("properties", {}):
+                    # One endpoint has one locator. Repeating a unit locator
+                    # as a passage range creates two independently generated
+                    # addresses which can disagree without adding evidence.
+                    refs = [b["body_ref"] for b in default_semantic_input(work)["bodies"]]
+                    properties = {k:compact_locator(v) for k,v in node["properties"].items()}
+                    properties["asset_id"] = {"enum": ["self", *refs]}
+                    unit = {"type":"object", "additionalProperties":False,
+                            "required":list(dict.fromkeys([*node.get("required",[]),"unit_id"])),
+                            "properties":{k:v for k,v in properties.items() if k!="selector"}}
+                    inventories = {c["id"] for item in work for c in item.get("candidates",[])
+                                   if (c.get("organization") or {}).get("units")}
+                    unit["properties"]["asset_id"] = {"enum":["self", *[
+                        b["body_ref"] for b in default_semantic_input(work)["bodies"] if b["id"] in inventories]]}
+                    if "mention_id" in node.get("required",[]):
+                        return unit
+                    raw = {"type":"object", "additionalProperties":False,
+                           "required":["asset_id","selector"],
+                           "properties":{k:properties[k] for k in ["asset_id","selector"]}}
+                    return {"anyOf":[raw,unit]}
+                if node.get("type") == "object" and {"source", "target"}.issubset(node.get("properties", {})):
+                    # A relative owner stays stable when a rejected subset is
+                    # retried. Work ordinals and source-table ordinals differ.
+                    node = copy.deepcopy(node)
+                    node["anyOf"] = [{"properties": {side: {"properties": {"asset_id": {"enum": ["self"]}}}}} for side in ["source", "target"]]
+                if node.get("type") == "object" and "exact" in node.get("properties", {}):
+                    # All supplied sources are numbered. Keep a single locator
+                    # language rather than asking the model to copy quotations
+                    # while also selecting source-relative passage indices.
+                    return {"anyOf": [{"type":"integer", "minimum":0}, {"type":"array", "minItems":2, "maxItems":2, "items":{"type":"integer", "minimum":0}}]}
+                return {k: compact_locator(v) for k,v in node.items()}
+            return [compact_locator(v) for v in node] if isinstance(node,list) else node
+        graph = compact_locator(graph)
+        # A numbered source always has a range, including the complete source;
+        # avoid the ambiguous combination of several units with null locators.
+        graph["properties"]["units"]["items"]["properties"]["selector"] = {"anyOf":[{"type":"integer","minimum":0},{"type":"array","minItems":2,"maxItems":2,"items":{"type":"integer","minimum":0}}]}
+        mention = graph["properties"]["units"]["items"]["properties"]["mentions"]["items"]
+        mention["required"].append("selector")
+        mention["properties"]["selector"] = copy.deepcopy(graph["properties"]["units"]["items"]["properties"]["selector"])
+    analysis["properties"]["organization"] = graph
+    analysis["required"].append("organization")
+    return schema
+
+
 class SemanticRepresentationError(RuntimeError):
     pass
+
+
+def decode_organization(work: list[dict[str, Any]], item: dict[str, Any], value: dict[str, Any], representation: str = "") -> dict[str, Any]:
+    # Resolve only exact aliases in the lossless presentation, not guessed IDs.
+    result = copy.deepcopy(value)
+    bodies = default_semantic_input(work)["bodies"]
+    ids = {body["body_ref"]: body["id"] for body in bodies}
+    allowed = {body["id"] for body in bodies}
+    raw = {body["id"]: body["content"] for body in bodies}
+    indexed = set(raw)
+    def locate(selector, identifier, scoped=False):
+        if type(selector) is int or isinstance(selector,list):
+            _require(representation in {GROUNDED_REPRESENTATION, LEGACY_GROUNDED_REPRESENTATION} and identifier in indexed,
+                     "passage locator requires a supplied numbered source")
+            spans = source_passages(raw[identifier], representation)
+            begin,end = (selector,selector) if type(selector) is int else tuple(selector)
+            _require(type(begin) is int and type(end) is int and 0 <= begin <= end < len(spans),
+                     f"organization range {selector!r} is outside source {identifier}; its passage indices are 0..{len(spans)-1}")
+            before = ''.join(spans[:begin]); exact = ''.join(spans[begin:end+1]); after = ''.join(spans[end+1:])
+            width = 32
+            while True:
+                prefix = before[-width:]; suffix = after[:width]
+                if raw[identifier].count(prefix+exact+suffix)==1:
+                    return {"exact":exact,"prefix":prefix,"suffix":suffix}
+                width *= 2
+        if selector is not None:
+            _require(isinstance(selector,dict) and isinstance(selector.get("exact"),str),"invalid organization selector")
+            exact=selector["exact"]; full=selector.get("prefix","")+exact+selector.get("suffix","")
+            matches=raw[identifier].count(full)
+            _require(bool(exact) and (matches==1 or (scoped and not selector.get("prefix") and not selector.get("suffix") and matches>0)),
+                     f"organization quote in {identifier} must match its supplied source: {exact[:100]!r}")
+        return selector
+    own=item["asset"]["id"]
+    ids["self"] = own
+    for unit in result.get("units",[]):
+        unit["selector"] = locate(unit.get("selector"),own)
+        if unit.get("context"):unit["context"]=[locate(v,own) for v in unit["context"]]
+        for mention in unit.get("mentions",[]):
+            if mention.get("selector") is not None:mention["selector"]=locate(mention["selector"],own,scoped=True)
+    _require(all(u.get("id") for u in result.get("units", [])), "each own organization unit needs a nonempty local id")
+    for link in result.get("links", []):
+        for endpoint in [link["source"], link["target"], *link.get("conditions", [])]:
+            source_id=endpoint["asset_id"]
+            if type(source_id) is int:
+                _require(representation in {GROUNDED_REPRESENTATION, LEGACY_GROUNDED_REPRESENTATION} and 0<=source_id<len(work), "organization source index is outside supplied work")
+                source_id=work[source_id]["asset"]["id"]
+            endpoint["asset_id"] = ids.get(source_id, source_id)
+            _require(endpoint["asset_id"] in allowed, "organization endpoint is outside this work's supplied sources")
+            if endpoint.get("selector") is not None:endpoint["selector"]=locate(endpoint["selector"],endpoint["asset_id"])
+        _require(item["asset"]["id"] in {link["source"]["asset_id"], link["target"]["asset_id"]},
+                 f"a relation in work {item['id']} must involve its own target asset {item['asset']['id']}")
+        if link["type"] == "same_object":
+            _require(link["source"].get("mention_id") and link["target"].get("mention_id"),
+                     "same_object requires two actual mention IDs; otherwise omit the identity link")
+    return result
 
 
 def _require(condition: bool, message: str) -> None:
@@ -83,31 +212,34 @@ def grounded_instruction(representation: str = GROUNDED_REPRESENTATION) -> str:
 
 
 def source_passages(content: str, representation: str = GROUNDED_REPRESENTATION) -> list[str]:
-    # Stable, lossless source slices. Whitespace stays in its original position;
-    # Keep a speaker's paragraph together, including abbreviations and the
-    # conditions following a sentence. Long paragraphs split only at words.
+    # Stable, lossless source slices; offsets avoid repeatedly copying the
+    # unconsumed tail of a long source while planning several possible batches.
     passages = []
     legacy = representation == LEGACY_GROUNDED_REPRESENTATION
-    while content:
-        end = min(200 if legacy else 384, len(content))
-        boundaries = [i + 1 for i, char in enumerate(content[:end])
-                      if char == "\n" or (legacy and char in ".!?。！？" and (i + 1 == len(content) or content[i + 1].isspace()))]
-        boundaries = [i for i in boundaries if content[:i].strip()]
+    offset, length = 0, len(content)
+    while offset < length:
+        end = min(200 if legacy else 384, length-offset)
+        window = content[offset:offset+end]
+        boundaries = [i+1 for i,char in enumerate(window)
+                      if char == "\n" or (legacy and char in ".!?。！？" and
+                         (offset+i+1 == length or content[offset+i+1].isspace()))]
+        boundaries = [i for i in boundaries if window[:i].strip()]
         if boundaries:
             end = boundaries[0]
-        elif end < len(content):
-            space = content.rfind(" ", 0, end)
+        elif offset+end < length:
+            space = window.rfind(" ")
             if space > 0:
-                end = space + 1
-        if not content[:end].strip() and passages:
-            passages[-1] += content[:end]
+                end = space+1
+        part = content[offset:offset+end]
+        if not part.strip() and passages:
+            passages[-1] += part
         else:
-            passages.append(content[:end])
-        content = content[end:]
+            passages.append(part)
+        offset += end
     return passages or [""]
 
 
-def grounded_input(original: dict[str, Any], representation: str = GROUNDED_REPRESENTATION) -> dict[str, Any]:
+def grounded_input(original: dict[str, Any], representation: str = GROUNDED_REPRESENTATION, *, index_references: bool = False) -> dict[str, Any]:
     bodies = {body["body_ref"]: body for body in original["bodies"]}
     targets = {item["asset"]["body_ref"] for item in original["work"]}
     return {
@@ -122,7 +254,8 @@ def grounded_input(original: dict[str, Any], representation: str = GROUNDED_REPR
             "related_sources": [{"source_ref": c["body_ref"], **{k: v for k, v in c.items() if k != "body_ref"}}
                                 for c in item["candidates"]],
         } for index, item in enumerate(original["work"])],
-        "reference_sources": [{"source_ref": ref, **{k: v for k, v in body.items() if k != "body_ref"}}
+        "reference_sources": [{"source_ref": ref, **{k: v for k, v in body.items() if k not in ({"body_ref","content"} if index_references else {"body_ref"})},
+                               **({"passages":{str(i):text for i,text in enumerate(source_passages(body["content"],representation))}} if index_references else {})}
                               for ref, body in bodies.items() if ref not in targets],
     }
 
@@ -149,7 +282,7 @@ def default_semantic_input(work: list[dict[str, Any]]) -> dict[str, Any]:
         asset = item.get("asset") if isinstance(item, dict) else None
         _require(isinstance(asset, dict), "semantic work asset is invalid")
         candidates = []
-        for candidate in item.get("candidates", [])[:2]:
+        for candidate in (item.get("candidates", []) if item.get("organization_schema") else item.get("candidates", [])[:2]):
             if not isinstance(candidate, dict):
                 continue
             metadata = {key: value for key, value in candidate.items() if key not in {"content", "id", "revision"}}
@@ -194,7 +327,7 @@ def validate_default_input(work: list[dict[str, Any]], value: dict[str, Any]) ->
             "semantic asset content or context changed",
         )
         encoded_candidates = encoded.get("candidates") if isinstance(encoded.get("candidates"), list) else []
-        source_candidates = [item for item in source.get("candidates", [])[:2] if isinstance(item, dict)]
+        source_candidates = [item for item in (source.get("candidates", []) if source.get("organization_schema") else source.get("candidates", [])[:2]) if isinstance(item, dict)]
         _require(len(encoded_candidates) == len(source_candidates), "semantic candidate count changed")
         for source_candidate, encoded_candidate in zip(source_candidates, encoded_candidates):
             candidate_body = by_ref.get(encoded_candidate.get("body_ref")) if isinstance(encoded_candidate, dict) else None
@@ -355,13 +488,13 @@ class SemanticInputContract:
     def encode(self, work: list[dict[str, Any]]) -> dict[str, Any]:
         original = self.ordered_input(work)
         if self.representation in {LEGACY_GROUNDED_REPRESENTATION, GROUNDED_REPRESENTATION}:
-            return grounded_input(original, self.representation)
+            return grounded_input(original, self.representation, index_references=organization_requested(work))
         return compact_semantic_input(original) if self.representation == COMPACT_REPRESENTATION else original
 
     def validate(self, work: list[dict[str, Any]], value: dict[str, Any]) -> dict[str, Any]:
         original = self.ordered_input(work)
         if self.representation in {LEGACY_GROUNDED_REPRESENTATION, GROUNDED_REPRESENTATION}:
-            _require(value == grounded_input(original, self.representation), "grounded source identity or content changed")
+            _require(value == grounded_input(original, self.representation, index_references=organization_requested(work)), "grounded source identity or content changed")
             return {**validate_default_input(work, original), "representation": self.representation}
         if self.representation == COMPACT_REPRESENTATION:
             validate_compact_equivalence(original, value)
@@ -374,15 +507,15 @@ class SemanticInputContract:
 
     def body_chars(self, value: dict[str, Any]) -> int:
         if self.representation in {LEGACY_GROUNDED_REPRESENTATION, GROUNDED_REPRESENTATION}:
-            return sum(sum(map(len, item["target"]["passages"].values())) for item in value["work"]) + sum(len(item["content"]) for item in value["reference_sources"])
+            return sum(sum(map(len, item["target"]["passages"].values())) for item in value["work"]) + sum(sum(map(len,item["passages"].values())) if "passages" in item else len(item["content"]) for item in value["reference_sources"])
         if self.representation == COMPACT_REPRESENTATION:
             return sum(len(item[2]) for item in value["bodies"])
         return sum(len(item["content"]) for item in value["bodies"])
 
     def output_schema(self, work: list[dict[str, Any]], legacy: dict[str, Any]) -> dict[str, Any]:
         if self.representation not in {LEGACY_GROUNDED_REPRESENTATION, GROUNDED_REPRESENTATION}:
-            return legacy
-        return {"type": "object", "additionalProperties": False, "required": ["analyses"], "properties": {
+            return organization_schema(work, legacy)
+        return organization_schema(work, {"type": "object", "additionalProperties": False, "required": ["analyses"], "properties": {
             "analyses": {"type": "array", "minItems": len(work), "maxItems": len(work), "items": {
                 "type": "object", "additionalProperties": False, "required": ["index", "summary", "topics", "cues"],
                 "properties": {
@@ -394,7 +527,7 @@ class SemanticInputContract:
                                                                        "kind": {"type": "string", "maxLength": 40}}}},
                 },
             }},
-        }}
+        }}, self.representation)
 
     def decode_analyses(self, work: list[dict[str, Any]], value: dict[str, Any]) -> list[dict[str, Any]]:
         analyses = value.get("analyses")
@@ -402,20 +535,28 @@ class SemanticInputContract:
         if self.representation not in {LEGACY_GROUNDED_REPRESENTATION, GROUNDED_REPRESENTATION}:
             _require([item.get("work_id") for item in analyses if isinstance(item, dict)] == [item["id"] for item in work],
                      "semantic output reordered work items")
-            return analyses
+            return [{**analysis, **({"organization": decode_organization(work, item, analysis["organization"], self.representation)} if "organization" in analysis else {})}
+                    for item, analysis in zip(work, analyses)]
         _require([item.get("index") for item in analyses if isinstance(item, dict)] == list(range(len(work))),
                  "semantic output reordered work items")
-        decoded = []
-        for item, analysis in zip(work, analyses):
-            passages = source_passages(item["asset"]["content"], self.representation)
-            def passage(index: Any) -> str:
-                _require(type(index) is int and 0 <= index < len(passages), "semantic passage is outside its own source")
-                return passages[index].strip()
-            summary = passage(analysis.get("summary"))
-            cues = [{"text": passage(cue.get("passage")), "kind": cue["kind"]} for cue in analysis.get("cues", [])]
-            _require(bool(summary) and all(cue["text"] for cue in cues), "semantic passage is empty")
-            decoded.append({"work_id": item["id"], "summary": summary, "topics": analysis["topics"], "cues": cues})
-        return decoded
+        return [self.decode_analysis(work, index, analysis) for index, analysis in enumerate(analyses)]
+
+    def decode_analysis(self, work: list[dict[str, Any]], index: int, analysis: dict[str, Any]) -> dict[str, Any]:
+        item = work[index]
+        graph = {"organization": decode_organization(work, item, analysis["organization"], self.representation)} if "organization" in analysis else {}
+        if self.representation not in {LEGACY_GROUNDED_REPRESENTATION, GROUNDED_REPRESENTATION}:
+            _require(analysis.get("work_id") == item["id"], "semantic output reordered work items")
+            return {**analysis, **graph}
+        _require(analysis.get("index") == index, "semantic output reordered work items")
+        passages = source_passages(item["asset"]["content"], self.representation)
+        def passage(selected: Any) -> str:
+            _require(type(selected) is int and 0 <= selected < len(passages),
+                     f"semantic passage {selected!r} is outside work {item['id']}; valid indices are 0..{len(passages)-1}")
+            return passages[selected].strip()
+        summary = passage(analysis.get("summary"))
+        cues = [{"text": passage(cue.get("passage")), "kind": cue["kind"]} for cue in analysis.get("cues", [])]
+        _require(bool(summary) and all(cue["text"] for cue in cues), "semantic passage is empty")
+        return {"work_id": item["id"], "summary": summary, "topics": analysis["topics"], "cues": cues, **graph}
 
 
 def load_contract(path: Path | None) -> SemanticInputContract:

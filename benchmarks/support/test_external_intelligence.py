@@ -25,6 +25,29 @@ def runtime_identity() -> dict[str, object]:
 
 
 class ExternalIntelligenceContractTests(unittest.TestCase):
+    def test_validation_retry_carries_feedback_without_changing_model_or_budget(self):
+        captured = []
+        class Transport:
+            identity = runtime_identity()
+            def invoke(self, **request):
+                captured.append(request)
+                return {'id': 'wrong' if len(captured) == 1 else 'right'}, {}, {}
+            def diagnostics(self):
+                return {'rate_limit_observed': False}
+        def validate(value):
+            if value['id'] != 'right':
+                raise subject.ExternalIntelligenceError('id must reference the supplied source')
+        with tempfile.TemporaryDirectory() as root:
+            output, usage = subject.ExternalIntelligenceExecutor(Transport()).invoke(
+                role='semantic-organization', prompt='original', schema={'type': 'object'}, stage=Path(root),
+                model='same', effort='medium', timeout_seconds=240, attempts=2, validate=validate)
+        self.assertEqual(output['id'], 'right')
+        self.assertEqual(usage['attempts'], 2)
+        self.assertIn('id must reference', captured[1]['prompt'])
+        self.assertIn('wrong', captured[1]['prompt'])
+        self.assertEqual(captured[0]['schema'], captured[1]['schema'])
+        self.assertEqual(captured[0]['effort'], captured[1]['effort'])
+
     def test_interrupted_work_is_request_local_and_retry_budget_is_unchanged(self):
         class Transport:
             identity = runtime_identity()

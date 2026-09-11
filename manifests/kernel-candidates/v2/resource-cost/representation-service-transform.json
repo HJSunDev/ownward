@@ -23,8 +23,8 @@
     {
       "name": "accepted-update-invalidates-older-representation-job",
       "count": 1,
-      "before": "\tif _, err := s.authority.UpdateAsset(updated, input.ExpectedRevision); err != nil {\n\t\treturn MutationResult{}, err\n\t}\n\ts.index.Upsert(updated)",
-      "after": "\tif _, err := s.authority.UpdateAsset(updated, input.ExpectedRevision); err != nil {\n\t\treturn MutationResult{}, err\n\t}\n\tif s.representations != nil {\n\t\ts.representations.Invalidate(updated.ID, updated.Revision)\n\t}\n\ts.index.Upsert(updated)"
+      "before": "\ts.index.Upsert(updated)",
+      "after": "\tif s.representations != nil { s.representations.Invalidate(updated.ID, updated.Revision) }\n\ts.index.Upsert(updated)"
     },
     {
       "name": "close-representation-lifecycle-before-vector-capability",

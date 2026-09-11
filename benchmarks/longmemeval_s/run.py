@@ -320,6 +320,7 @@ def _empty_usage() -> dict[str, float | int]:
     return {
         "input_tokens": 0,
         "cached_input_tokens": 0,
+        "cache_write_tokens": 0,
         "output_tokens": 0,
         "reasoning_output_tokens": 0,
         "calls": 0,
@@ -416,7 +417,7 @@ def semantic_analysis_units(
             prompt, _, work_ids = capability.semantic_request(trial_work, settings)
             over = (
                 len(prompt.encode("utf-8")) > input_maximum
-                or ExternalIntelligenceCapability.semantic_output_upper_bound(work_ids) > output_maximum
+                or ExternalIntelligenceCapability.semantic_output_reservation(trial_work) > output_maximum
                 or len(trial) > maximum_works
             )
             if current and over:
@@ -447,7 +448,7 @@ def semantic_analysis_units(
             equivalence = ExternalIntelligenceCapability.validate_semantic_input(work, semantic_input)
             fact_equivalence_sha256 = ExternalIntelligenceCapability.semantic_fact_equivalence_sha256(work)
         input_bytes = len(prompt.encode("utf-8"))
-        output_upper_bound = ExternalIntelligenceCapability.semantic_output_upper_bound(work_ids)
+        output_upper_bound = ExternalIntelligenceCapability.semantic_output_reservation(work)
         require(input_bytes <= input_maximum, f"one semantic work item exceeds the frozen external-intelligence input token upper bound: {work_ids[0]}")
         require(output_upper_bound <= output_maximum, f"one semantic work item exceeds the frozen external-intelligence output token upper bound: {work_ids[0]}")
         unit = {
@@ -589,10 +590,12 @@ def combine_semantic_batch(
         require(isinstance(cues, list) and all(isinstance(value, dict) and isinstance(value.get("text"), str) and isinstance(value.get("kind"), str) for value in cues), f"semantic cues are invalid: {batch_id}")
         submissions.append({
             "schema": "ownward.semantic-submission/v1", "work_id": item["id"], "asset_id": item["asset"]["id"],
+            **({"input_assets": analysis["input_assets"]} if "input_assets" in analysis else {}),
             "asset_revision": item["asset"]["revision"],
             "capability": {"id": settings.get("capability_id", "codex"), "version": settings["semantic_model"], "execution": "longmemeval-s"},
             "status": "complete",
-            "analysis": {"summary": summary.strip(), "topics": topics[:4], "cues": cues[:4], "inferred_contexts": [], "relations": []},
+            "analysis": {"summary": summary.strip(), "topics": topics[:4], "cues": cues[:4], "inferred_contexts": analysis.get("inferred_contexts", []), "relations": analysis.get("relations", []),
+                         **({"organization": analysis["organization"]} if "organization" in analysis else {})},
         })
     value = {
         "schema": "ownward.longmemeval-s-semantic-analysis/v1",
@@ -616,6 +619,8 @@ def submit_semantic_batch(
     frozen: dict[str, Any],
     analysis: dict[str, Any],
     trace_root: Path,
+    capability: "ExternalIntelligenceCapability | None" = None,
+    settings: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     require(runtime.client is not None, "Ownward client is unavailable")
     batch_id = frozen["batch_id"]
@@ -636,14 +641,68 @@ def submit_semantic_batch(
             isinstance(existing, dict)
             and existing.get("schema") == "ownward.longmemeval-s-semantic-trace/v1"
             and existing.get("analysis_identity") == analysis["identity"]
-            and existing.get("submissions") == submissions,
+            and existing.get("initial_submissions", existing.get("submissions")) == submissions,
             f"semantic submission checkpoint changed: {batch_id}",
         )
         return existing
-    submitted = runtime.client.call_tool("ownward_semantic_submit_batch", {"submissions": submissions})
-    results = submitted.get("results") if isinstance(submitted, dict) else None
-    require(isinstance(results, list) and len(results) == len(submissions), f"semantic submission batch is incomplete: {batch_id}")
-    require(all(isinstance(item, dict) and not item.get("error") for item in results), f"semantic submission batch contains failures: {batch_id}")
+    initial_submissions = submissions
+    usage = dict(analysis["usage"])
+    pending_path = trace_root / batch_id / "submission-progress.json"
+    attempt = 0
+    if pending_path.is_file():
+        pending = load_json(pending_path)
+        require(pending.get("analysis_identity") == analysis["identity"], "semantic repair checkpoint changed")
+        submissions, usage, attempt = pending["submissions"], pending["usage"], pending["attempt"]
+    pending_indices = list(range(len(submissions)))
+    while True:
+        # Analysis can share a batch, but publication is an independent commit
+        # per source. Long local embedding work must not couple every source to
+        # one HTTP deadline or discard their completed publication checkpoints.
+        results = []
+        for i in pending_indices:
+            checkpoint = trace_root / batch_id / "accepted" / (canonical_sha256(submissions[i]) + ".json")
+            if checkpoint.is_file():
+                item = load_json(checkpoint)
+            else:
+                response = runtime.client.call_tool("ownward_semantic_submit_batch", {"submissions": [submissions[i]]})
+                rows = response.get("results") if isinstance(response, dict) else None
+                require(isinstance(rows, list) and len(rows) == 1 and isinstance(rows[0], dict),
+                        f"semantic source submission is incomplete: {batch_id}")
+                item = rows[0]
+                if not item.get("error"):
+                    write_json(checkpoint, item)
+            results.append(item)
+        submitted = {"results": results}
+        write_json(trace_root / batch_id / f"submission-response-{attempt:03d}.json", submitted)
+        write_json(trace_root / batch_id / "submission-response.json", submitted)
+        results = submitted.get("results") if isinstance(submitted, dict) else None
+        require(isinstance(results, list) and len(results) == len(pending_indices) and all(isinstance(item, dict) for item in results), f"semantic submission batch is incomplete: {batch_id}")
+        failures = {i: item["error"] for i, item in zip(pending_indices, results) if item.get("error")}
+        failed = list(failures)
+        if not failed:
+            break
+        require(capability is not None and settings is not None and attempt < int(settings["semantic_attempts"])-1,
+                f"semantic submission batch contains failures: {batch_id}: {list(failures.values())}")
+        attempt += 1
+        # The product accepts valid items independently. Reuse those exact
+        # results and ask the host's existing intelligence to repair only the
+        # rejected work; no score or answer information participates.
+        work_by_id = {item["id"]: item for item in frozen["work"]}
+        repairs, extra_usage = capability.semantics(
+            [work_by_id[submissions[i]["work_id"]] for i in failed],
+            {**settings, "semantic_attempts": 1}, trace_root / batch_id / f"repair-{attempt:03d}",
+            feedback=[{"work_id": submissions[i]["work_id"], "error": failures[i],
+                       "rejected_organization": submissions[i]["analysis"].get("organization")} for i in failed],
+        )
+        _add_usage(usage, extra_usage)
+        submissions = [dict(item) for item in submissions]
+        for i, repaired in zip(failed, repairs):
+            require(repaired["work_id"] == submissions[i]["work_id"], "semantic repair reordered work")
+            submissions[i] = {**submissions[i], "input_assets": repaired.get("input_assets", []),
+                              "analysis": {key: value for key, value in repaired.items() if key not in {"work_id", "input_assets"}}}
+        write_json(pending_path, {"analysis_identity": analysis["identity"], "attempt": attempt,
+                                  "submissions": submissions, "usage": usage})
+        pending_indices = failed
     value = {
         "schema": "ownward.longmemeval-s-semantic-trace/v1",
         "question_identity": frozen["question_identity"],
@@ -653,7 +712,8 @@ def submit_semantic_batch(
         "work_ids": analysis["work_ids"],
         "analysis_identity": analysis["identity"],
         "submissions": submissions,
-        "usage": analysis["usage"],
+        "initial_submissions": initial_submissions,
+        "usage": usage,
     }
     write_json(submission_path, value)
     return value
@@ -707,6 +767,7 @@ class ActiveRetrievalSession:
         self._calls: list[dict[str, Any]] = []
         self._observed_information_ids: set[str] = set()
         self._observed_evidence_ids: set[str] = set()
+        self._observed_navigation_cursors: set[str] = set()
         self._returned_information_ids: list[str] = []
         self._read_information_ids: list[str] = []
         self._read_evidence_ids: list[str] = []
@@ -746,6 +807,7 @@ class ActiveRetrievalSession:
         self._calls = []
         self._observed_information_ids = set()
         self._observed_evidence_ids = set()
+        self._observed_navigation_cursors = set()
         self._returned_information_ids = []
         self._read_information_ids = []
         self._read_evidence_ids = []
@@ -816,7 +878,8 @@ class ActiveRetrievalSession:
             start_ids = arguments.get("start_ids")
             require(
                 isinstance(start_ids, list) and start_ids
-                and all(isinstance(value, str) and value in self._observed_information_ids for value in start_ids),
+                and (all(isinstance(value, str) and value in self._observed_information_ids for value in start_ids)
+                     or (len(start_ids) == 1 and start_ids[0] in self._observed_navigation_cursors)),
                 "navigation used an information ID not observed from Ownward",
             )
             require(1 <= int(arguments.get("depth", 1)) <= 5, "navigation depth exceeds the product contract")
@@ -832,6 +895,19 @@ class ActiveRetrievalSession:
             require(arguments.get("id") in self._observed_information_ids, "read ID was not observed from Ownward")
         elif name == "ownward_evidence_read":
             require(arguments.get("id") in self._observed_evidence_ids, "evidence read ID was not observed from Ownward")
+
+    def _observe_relations(self, relations: Any) -> None:
+        if not isinstance(relations, list):
+            return
+        for relation in relations:
+            if not isinstance(relation, dict):
+                continue
+            refs = [relation.get("source"), relation.get("target")]
+            refs += relation.get("context", []) + relation.get("conditions", [])
+            for ref in refs:
+                if isinstance(ref, dict) and isinstance(ref.get("id"), str) and isinstance(ref.get("source_id"), str):
+                    self._observed_evidence_ids.add(ref["id"])
+                    self._observed_information_ids.add(ref["source_id"])
 
     def call(self, name: str, raw_arguments: Any) -> Any:
         arguments = raw_arguments if isinstance(raw_arguments, dict) else {}
@@ -872,6 +948,7 @@ class ActiveRetrievalSession:
                     self._returned_information_ids.extend(result_ids)
                     for source in result.get("results", []):
                         if isinstance(source, dict):
+                            self._observe_relations(source.get("relations"))
                             references = source.get("evidence", [])
                             if isinstance(references, list):
                                 self._observed_evidence_ids.update(self._ids([
@@ -880,6 +957,10 @@ class ActiveRetrievalSession:
                                 ]))
                 elif name == "ownward_navigate":
                     navigation = result.get("result")
+                    if isinstance(navigation, dict):
+                        self._observe_relations([edge.get("grounded") for edge in navigation.get("edges", []) if isinstance(edge, dict)])
+                        if isinstance(navigation.get("continuation"), str) and navigation["continuation"]:
+                            self._observed_navigation_cursors.add(navigation["continuation"])
                     result_ids = self._ids(navigation.get("nodes") if isinstance(navigation, dict) else None)
                     self._observed_information_ids.update(result_ids)
                     self._returned_information_ids.extend(result_ids)
@@ -1115,10 +1196,28 @@ class ExternalIntelligenceCapability:
         per_item_fixed = 512 + 320 + (4 * 100) + (4 * (200 + 40))
         return 64 + sum(per_item_fixed + len(work_id.encode("utf-8")) for work_id in work_ids)
 
+    @staticmethod
+    def semantic_output_reservation(work: list[dict[str, Any]]) -> int:
+        reserved = ExternalIntelligenceCapability.semantic_output_upper_bound([str(item["id"]) for item in work])
+        if semantic_representation.organization_requested(work):
+            # Graph work has a variable output workload. Reserve room according
+            # to each owned source and its candidate references, rather than
+            # packing it as if it still produced only the legacy short cues.
+            # This plans batches; it neither truncates source nor caps answers.
+            reserved += sum(len(item["asset"]["content"].encode("utf-8")) +
+                            len(json.dumps([{k:v for k,v in c.items() if k!="content"} for c in item.get("candidates",[])],ensure_ascii=False).encode("utf-8"))
+                            for item in work)
+        return reserved
+
     def semantic_request(self, work: list[dict[str, Any]], settings: dict[str, Any]) -> tuple[str, dict[str, Any], list[str]]:
         semantic_input = self.encoded_semantic_input(work)
         work_ids = [str(item["id"]) for item in work]
-        prompt = self.semantic_instruction_text() + json.dumps(semantic_input, ensure_ascii=False, separators=(",", ":"))
+        instruction = self.semantic_instruction_text()
+        if semantic_representation.organization_requested(work):
+            instruction = semantic_representation.organization_contract()["instruction"] + "\n\n" + instruction
+            if self.semantic_contract.representation in {semantic_representation.GROUNDED_REPRESENTATION, semantic_representation.LEGACY_GROUNDED_REPRESENTATION}:
+                instruction = "Within each analysis, asset_id 'self' means that work's target; other endpoints use an exact supplied source_ref, never a numeric source index. Every relation involves self. Units and mentions need a passage index or inclusive [first,last] passage range as selector; context uses the same notation. A whole source uses [0,last]. An endpoint uses either a source passage range or a declared unit/mention ID, never both; prefer the source range when no reusable ID has been supplied. Mentions name people, objects or concepts, not whole claims; their ranges must lie inside the containing unit or its context. The host expands positions losslessly to source locators.\n\n" + instruction
+        prompt = instruction + json.dumps(semantic_input, ensure_ascii=False, separators=(",", ":"))
         schema = {
             "type": "object", "additionalProperties": False, "required": ["analyses"],
             "properties": {
@@ -1147,8 +1246,12 @@ class ExternalIntelligenceCapability:
         require(settings["semantic_batch_size"] == 20, "semantic request batch boundary changed")
         return prompt, self.semantic_contract.output_schema(work, schema), work_ids
 
-    def semantics(self, work: list[dict[str, Any]], settings: dict[str, Any], stage: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    def semantics(self, work: list[dict[str, Any]], settings: dict[str, Any], stage: Path, *, feedback: list[dict[str, Any]] | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        if semantic_representation.organization_requested(work):
+            return self._organized_semantics(work, settings, stage, feedback)
         prompt, schema, work_ids = self.semantic_request(work, settings)
+        if feedback:
+            prompt += "\n\nThe product rejected these submissions. Correct the indicated reference errors using the supplied original sources:\n" + json.dumps(feedback, ensure_ascii=False)
 
         def validate(value: dict[str, Any]) -> None:
             try:
@@ -1163,7 +1266,61 @@ class ExternalIntelligenceCapability:
         )
         analyses = self.semantic_contract.decode_analyses(work, value)
         require(isinstance(analyses, list) and [item.get("work_id") for item in analyses if isinstance(item, dict)] == work_ids, "external-intelligence semantic output omitted or reordered work items")
+        if semantic_representation.organization_requested(work):
+            inputs = semantic_representation.input_references(work)
+            analyses = [{**a, "input_assets": inputs} for a in analyses]
         return analyses, usage
+
+    def _organized_semantics(self, work, settings, stage, feedback):
+        identity = canonical_sha256({"work": work, "settings": settings,
+                                     "contract": semantic_representation.organization_contract(),
+                                     "representation": self.semantic_contract.representation})
+        progress_path = stage / "organization-progress.json"
+        accepted, usage, start = {}, _empty_usage(), 0
+        if progress_path.is_file():
+            progress = load_json(progress_path)
+            require(progress["identity"] == identity, "organization repair inputs changed")
+            accepted, usage, start = progress["accepted"], progress["usage"], progress["attempt"]
+            feedback = progress["feedback"]
+        for attempt in range(start, int(settings["semantic_attempts"])):
+            remaining = [item for item in work if item["id"] not in accepted]
+            if not remaining:
+                break
+            prompt, schema, _ = self.semantic_request(remaining, settings)
+            if feedback:
+                prompt += "\n\nCorrect these rejected source references using the supplied material. Preserve supported connections while correcting the indicated definitions and references; return the requested output representation:\n" + json.dumps(feedback, ensure_ascii=False)
+            call_stage = stage if attempt == 0 else stage / f"source-repair-{attempt:03d}"
+            began = time.monotonic()
+            try:
+                value, extra = self._invoke(role="semantic-organization", prompt=prompt, schema=schema,
+                    stage=call_stage, model=settings["semantic_model"], effort=settings["semantic_reasoning_effort"],
+                    timeout_seconds=float(settings["semantic_timeout_seconds"]), attempts=1)
+            except AdapterError as error:
+                usage["attempts"] += 1
+                usage["wall_seconds"] += time.monotonic()-began
+                feedback = [{"error": str(error)}]
+                write_json(progress_path, {"identity": identity, "attempt": attempt+1,
+                    "accepted": accepted, "usage": usage, "feedback": feedback})
+                continue
+            _add_usage(usage, extra)
+            if attempt:
+                usage["retries"] += 1
+            rows = value.get("analyses")
+            require(isinstance(rows, list) and len(rows) == len(remaining), "semantic output omitted work items")
+            inputs = semantic_representation.input_references(remaining)
+            feedback = []
+            for index, item in enumerate(remaining):
+                try:
+                    decoded = self.semantic_contract.decode_analysis(remaining, index, rows[index])
+                    accepted[item["id"]] = {**decoded, "input_assets": inputs}
+                except semantic_representation.SemanticRepresentationError as error:
+                    feedback.append({"work_id": item["id"], "error": str(error), "rejected_organization": rows[index].get("organization")})
+            # Preserve successfully decoded work across retries and interruptions.
+            # Each result retains the full material actually supplied to its call.
+            write_json(progress_path, {"identity": identity, "attempt": attempt+1,
+                "accepted": accepted, "usage": usage, "feedback": feedback})
+        require(len(accepted) == len(work), f"semantic source repair remains incomplete: {feedback}")
+        return [accepted[item["id"]] for item in work], usage
 
     def answer(self, prompt: str, settings: dict[str, Any], stage: Path) -> tuple[str, dict[str, int]]:
         schema = information_use_flow.RESPONSE
@@ -1248,7 +1405,7 @@ def official_prompt(evaluator: Path, question: dict[str, Any], hypothesis: str) 
     exec(compile(ast.Module(body=functions, type_ignores=[]), str(evaluator), "exec"), {"__builtins__": {}}, namespace)
     prompt = namespace["get_anscheck_prompt"](
         question["question_type"], question["question"], question["answer"], hypothesis,
-        abstention="_abs" in question["question_id"],
+        abstention="_abs" in question["question_id"] or question["question_type"] == "unanswerable",
     )
     require(isinstance(prompt, str) and prompt, "official evaluator returned no prompt")
     return prompt
@@ -2111,7 +2268,7 @@ def process_question(
         require(set(analyses) == set(range(organized, len(frozen_batches))), f"semantic analyses are incomplete: {identifier}")
 
         for index in range(organized, len(batches)):
-            trace = submit_semantic_batch(runtime, frozen_batches[index], analyses[index], trace_root)
+            trace = submit_semantic_batch(runtime, frozen_batches[index], analyses[index], trace_root, capability, protocol["memory"])
             _add_usage(semantic_usage, trace["usage"])
             checkpoint["submission_order"] = [*checkpoint.get("submission_order", []), index]
             checkpoint["organized_batches"] = index + 1

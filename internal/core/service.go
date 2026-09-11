@@ -341,8 +341,11 @@ func (s *Service) Update(ctx context.Context, input UpdateInput) (MutationResult
 		dependents = s.semantic.Dependents(updated.ID)
 		dependents = appendUniqueIDs(dependents, s.semantic.PendingDependents(updated.ID)...)
 	}
-	if err := s.commitMutation(ctx, []domain.Information{updated}, []uint64{input.ExpectedRevision}, make([]MutationBatchResult, 1), []int{0}, func() error { _, err := s.authority.UpdateAsset(updated, input.ExpectedRevision); return err }); err != nil {
-		return MutationResult{}, err
+	s.graphMu.Lock()
+	commitErr := s.commitMutation(ctx, []domain.Information{updated}, []uint64{input.ExpectedRevision}, make([]MutationBatchResult, 1), []int{0}, func() error { _, err := s.authority.UpdateAsset(updated, input.ExpectedRevision); return err })
+	s.graphMu.Unlock()
+	if commitErr != nil {
+		return MutationResult{}, commitErr
 	}
 	s.index.Upsert(updated)
 	unlock()
@@ -395,6 +398,9 @@ func (s *Service) SearchEvidence(_ context.Context, input EvidenceSearchInput) (
 	if !exists {
 		return nil, errors.New("证据来源不存在")
 	}
+	if evidence := s.organizedEvidence(value, input.Query, input.Limit); len(evidence) > 0 {
+		return evidence, nil
+	}
 	return rankEvidence(value, input.Query, input.Limit), nil
 }
 
@@ -421,18 +427,15 @@ func (s *Service) Search(ctx context.Context, input SearchInput) ([]SearchResult
 	if len(lexical) > 0 && lexical[0].Information.ID == trimmedQuery && contains(lexical[0].Signals, "identity") {
 		return s.compactResults(lexical[:1]), nil
 	}
-	if s.semantic == nil || !s.semantic.HasVectors() || (!s.collaborative && s.provider == nil) {
+	if s.semantic == nil {
 		if len(lexical) > limit {
 			lexical = lexical[:limit]
 		}
 		return s.compactResults(lexical), nil
 	}
-	queryVector, err := s.embedder.EmbedQuery(ctx, input.Query)
-	if err != nil || len(queryVector) == 0 {
-		if len(lexical) > limit {
-			lexical = lexical[:limit]
-		}
-		return s.compactResults(lexical), nil
+	var queryVector []float32
+	if s.semantic.HasVectors() && s.embedder != nil {
+		queryVector, _ = s.embedder.EmbedQuery(ctx, input.Query)
 	}
 	semanticHits := s.semantic.Search(queryVector, contexts, candidateLimit)
 	type fused struct {
@@ -455,10 +458,18 @@ func (s *Service) Search(ctx context.Context, input SearchInput) ([]SearchResult
 	for rank, hit := range semanticHits {
 		record, recordExists := s.semantic.Get(hit.AssetID)
 		asset, assetExists := s.authority.ReadCurrent(hit.AssetID)
-		if !recordExists || !assetExists || record.AssetRevision != asset.Revision {
+		if !recordExists || !assetExists || record.AssetRevision != asset.Revision || (record.Analysis.Organization != nil && !s.organizationCurrent(record)) {
 			continue
 		}
 		add(hit.AssetID, "semantic", rank+1, 1)
+	}
+	for rank, hit := range s.semantic.NameSearch(input.Query, candidateLimit) {
+		record, ok := s.semantic.Get(hit.AssetID)
+		if _, exists := fusedByID[hit.AssetID]; !exists && ok && s.organizationCurrent(record) {
+			// A repeated literal name is not independent evidence deserving a
+			// third vote. The name index supplies missing candidates instead.
+			add(hit.AssetID, "object", rank+1, 1)
+		}
 	}
 	type rankedSeed struct {
 		id    string
@@ -479,6 +490,10 @@ func (s *Service) Search(ctx context.Context, input SearchInput) ([]SearchResult
 		}
 		return rankedSeeds[left].score > rankedSeeds[right].score
 	})
+	directResults := make(map[string]bool, min(limit, len(rankedSeeds)))
+	for _, hit := range rankedSeeds[:min(limit, len(rankedSeeds))] {
+		directResults[hit.id] = true
+	}
 	if len(rankedSeeds) > 4 {
 		rankedSeeds = rankedSeeds[:4]
 	}
@@ -491,10 +506,18 @@ func (s *Service) Search(ctx context.Context, input SearchInput) ([]SearchResult
 		related = s.semantic.Navigate(seeds, nil, 1, candidateLimit)
 	}
 	seedScores := make(map[string]float64, len(rankedSeeds))
+	relationScorer := retrieval.NewQueryTextScorer(input.Query)
+	graphEntrances := make(map[string]derived.Edge)
 	for _, seed := range rankedSeeds {
 		seedScores[seed.id] = seed.score
 	}
 	for _, edge := range related {
+		if _, ok := s.relationEvidence(edge); !ok {
+			continue
+		}
+		if edge.Grounded != nil && directResults[edge.SourceID] && directResults[edge.TargetID] {
+			continue
+		}
 		for _, direction := range [][2]string{{edge.SourceID, edge.TargetID}, {edge.TargetID, edge.SourceID}} {
 			seedScore, isSeed := seedScores[direction[0]]
 			if !isSeed {
@@ -502,7 +525,18 @@ func (s *Service) Search(ctx context.Context, input SearchInput) ([]SearchResult
 			}
 			neighbor := direction[1]
 			contribution := seedScore * 0.3 * edge.Confidence
+			if edge.Grounded != nil {
+				contribution = seedScore * s.groundedRelationWeight(edge, direction[0], relationScorer)
+			}
 			if item := fusedByID[neighbor]; item != nil {
+				if edge.Grounded != nil {
+					if contribution > item.score {
+						item.score = contribution
+						item.signals["relation"] = struct{}{}
+						graphEntrances[neighbor] = edge
+					}
+					continue
+				}
 				_, graphOnly := item.signals["relation"]
 				if graphOnly && len(item.signals) == 1 {
 					if contribution > item.score {
@@ -514,7 +548,10 @@ func (s *Service) Search(ctx context.Context, input SearchInput) ([]SearchResult
 				continue
 			}
 			fusedByID[neighbor] = &fused{score: contribution, signals: map[string]struct{}{"relation": {}}}
-			if len(seeds) > 0 && direction[0] == seeds[0] {
+			if edge.Grounded != nil {
+				graphEntrances[neighbor] = edge
+			}
+			if edge.Grounded == nil && len(seeds) > 0 && direction[0] == seeds[0] {
 				fusedByID[direction[0]].signals["relation"] = struct{}{}
 			}
 		}
@@ -555,6 +592,47 @@ func (s *Service) Search(ctx context.Context, input SearchInput) ([]SearchResult
 	if len(results) > limit {
 		results = results[:limit]
 	}
+	selectedEntrances := make(map[string]bool)
+	for _, result := range results {
+		if edge, exists := graphEntrances[result.ID]; exists {
+			selectedEntrances[edge.Grounded.ID] = true
+		}
+	}
+	for n := range results {
+		asset, _ := s.authority.ReadCurrent(results[n].ID)
+		// Preserve the retrieval implementation's query-specific evidence. Graph
+		// organization supplies missing entrances and explicit relation evidence;
+		// it must not erase an existing source reader's selected passages.
+		if len(results[n].Evidence) == 0 && strings.TrimSpace(results[n].Summary) != strings.TrimSpace(asset.Content) {
+			results[n].Evidence = s.organizedEvidence(asset, input.Query, 3)
+		}
+		for _, edge := range related {
+			// Within-source connections remain available through navigation. They
+			// add no cross-source entrance to an ordinary search result.
+			if edge.Grounded == nil || edge.SourceID == edge.TargetID || (edge.SourceID != results[n].ID && edge.TargetID != results[n].ID) {
+				continue
+			}
+			// Explain an entrance supplied by the graph. Directly available
+			// sources keep their existing reading path; optional relationship
+			// exploration belongs to navigation, not repeated search payloads.
+			if directResults[edge.SourceID] && directResults[edge.TargetID] {
+				continue
+			}
+			if !selectedEntrances[edge.Grounded.ID] {
+				continue
+			}
+			if relation, ok := s.relationEvidence(edge); ok {
+				results[n].Relations = append(results[n].Relations, *relation)
+				if !contains(results[n].Signals, "relation") {
+					results[n].Signals = append(results[n].Signals, "relation")
+					sort.Strings(results[n].Signals)
+				}
+			}
+			if len(results[n].Relations) == 2 {
+				break
+			}
+		}
+	}
 	return results, nil
 }
 
@@ -582,6 +660,11 @@ func resultSignalPriority(signals []string) int {
 
 func directlyRelated(left, right string, edges []derived.Edge) bool {
 	for _, edge := range edges {
+		// Grounded organization signals its actual retrieval contribution or
+		// delivered evidence. A link alone is not independent corroboration.
+		if edge.Grounded != nil {
+			continue
+		}
 		if edge.SourceID == left && edge.TargetID == right || edge.SourceID == right && edge.TargetID == left {
 			return true
 		}
@@ -603,7 +686,7 @@ func (s *Service) compactResult(value domain.Information, contexts []domain.Cont
 	kind := value.Kind
 	if s.semantic != nil {
 		if record, ok := s.semantic.Get(value.ID); ok {
-			if record.AssetRevision == value.Revision && strings.TrimSpace(record.Analysis.Summary) != "" {
+			if record.AssetRevision == value.Revision && strings.TrimSpace(record.Analysis.Summary) != "" && (record.Analysis.Organization == nil || s.organizationCurrent(record)) {
 				summary = record.Analysis.Summary
 			}
 		}
@@ -623,10 +706,19 @@ func (s *Service) Navigate(_ context.Context, start, relationTypes []string, dep
 	if len(start) == 0 {
 		return NavigationResult{}, errors.New("关系导航至少需要一个起点")
 	}
-	derivedEdges := s.semantic.Navigate(start, relationTypes, depth, limit)
+	page, err := s.semantic.NavigatePage(start, relationTypes, depth, limit)
+	if err != nil {
+		return NavigationResult{}, err
+	}
+	derivedEdges := page.Edges
 	edges := make([]contract.NavigationEdge, 0, len(derivedEdges))
 	for _, edge := range derivedEdges {
+		grounded, valid := s.relationEvidence(edge)
+		if !valid {
+			continue
+		}
 		edges = append(edges, contract.NavigationEdge{
+			Grounded: grounded,
 			SourceID: edge.SourceID, TargetID: edge.TargetID, Type: edge.Type,
 			Confidence: edge.Confidence, Evidence: edge.Evidence, Depth: edge.Depth,
 		})
@@ -649,7 +741,7 @@ func (s *Service) Navigate(_ context.Context, start, relationTypes []string, dep
 		var cues []semantics.Cue
 		contexts := append([]domain.Context(nil), value.Contexts...)
 		if record, ok := s.semantic.Get(id); ok {
-			if record.AssetRevision != value.Revision {
+			if record.AssetRevision != value.Revision || (record.Analysis.Organization != nil && !s.organizationCurrent(record)) {
 				record = derived.Record{}
 			}
 			if strings.TrimSpace(record.Analysis.Summary) != "" {
@@ -661,7 +753,7 @@ func (s *Service) Navigate(_ context.Context, start, relationTypes []string, dep
 		nodes = append(nodes, NavigationNode{ID: id, Kind: value.Kind, Summary: summary, Contexts: contexts, Cues: cues, UpdatedAt: value.UpdatedAt})
 	}
 	sort.Slice(nodes, func(left, right int) bool { return nodes[left].ID < nodes[right].ID })
-	return NavigationResult{Nodes: nodes, Edges: edges}, nil
+	return NavigationResult{Nodes: nodes, Edges: edges, Continuation: page.Continuation, Incomplete: page.Incomplete}, nil
 }
 
 func (s *Service) Rules(context.Context) string {
@@ -1141,6 +1233,9 @@ func (s *Service) applyIncomingRelationsLocked(value domain.Information, previou
 }
 
 func (s *Service) hasStaleRelation(record derived.Record) bool {
+	if record.Analysis.Organization != nil && (!s.organizationCurrent(record) || !s.semantic.OrganizationCurrent(record.AssetID) || !s.semantic.OrganizationLinksCurrent(record.AssetID)) {
+		return true
+	}
 	for _, relation := range record.Analysis.Relations {
 		if relation.TargetRevision == 0 {
 			continue
@@ -1236,7 +1331,7 @@ func (s *Service) effectiveContexts(id string, explicit []domain.Context) []doma
 	}
 	record, ok := s.semantic.Get(id)
 	asset, exists := s.authority.ReadCurrent(id)
-	if !ok || !exists || record.AssetRevision != asset.Revision {
+	if !ok || !exists || record.AssetRevision != asset.Revision || (record.Analysis.Organization != nil && !s.organizationCurrent(record)) {
 		return explicit
 	}
 	return mergeContexts(explicit, semantics.ContextValues(record.Analysis.Contexts))

@@ -6,6 +6,94 @@ import semantic_representation as s
 
 
 class SourceOwnershipTests(unittest.TestCase):
+    def test_compact_graph_endpoint_has_one_unambiguous_locator(self):
+        import run  # Establish the shared benchmark support import path.
+        from external_intelligence import ExternalIntelligenceError, validate_structured_output
+        work = [{"id":"w", "organization_schema":"ownward.organization/v1",
+                 "asset":{"id":"a", "revision":1, "content":"Beacon.\nOnly indoors."},
+                 "candidates":[{"id":"b","revision":1,"content":"Keep dry."}]}]
+        contract = s.SemanticInputContract(s.GROUNDED_REPRESENTATION, "test", None)
+        schema = contract.output_schema(work, {})['properties']['analyses']['items']['properties']['organization']
+        good = {"schema":"ownward.organization/v1", "units":[{"id":"u", "selector":0}],
+                "links":[{"type":"applies_in", "meaning":"location condition",
+                          "source":{"asset_id":"self", "unit_id":"u"},
+                          "target":{"asset_id":"self", "selector":1}}]}
+        validate_structured_output(good, schema)
+        bad = copy.deepcopy(good)
+        bad['links'][0]['source']['selector']=1
+        with self.assertRaises(ExternalIntelligenceError):
+            validate_structured_output(bad, schema)
+        bad = copy.deepcopy(good)
+        bad['links'][0]['type']='same_object'
+        with self.assertRaises(ExternalIntelligenceError):
+            validate_structured_output(bad, schema)
+        reference = next(b['body_ref'] for b in s.default_semantic_input(work)['bodies'] if b['id']=='b')
+        bad = copy.deepcopy(good)
+        bad['links'][0]['target']={'asset_id':reference,'unit_id':'invented'}
+        with self.assertRaises(ExternalIntelligenceError):
+            validate_structured_output(bad, schema)
+        bad['links'][0]['target']={'asset_id':reference,'selector':0}
+        validate_structured_output(bad, schema)
+        decoded = s.decode_organization(work,work[0],good,s.GROUNDED_REPRESENTATION)
+        self.assertEqual(decoded['links'][0]['target']['selector']['exact'],'Only indoors.')
+
+    def test_graph_reference_sources_use_the_same_lossless_locator_language(self):
+        work = [{"id": "w", "organization_schema": "ownward.organization/v1",
+                 "asset": {"id": "a", "revision": 1, "content": "Uses Beacon.\nKeep dry."},
+                 "candidates": [{"id": "b", "revision": 2, "content": "Beacon\nOnly indoors.\nNot waterproof.", "explicit_contexts": []}]}]
+        contract = s.SemanticInputContract(s.GROUNDED_REPRESENTATION, "test", None)
+        encoded = contract.encode(work)
+        self.assertTrue(contract.validate(work, encoded)["equivalent"])
+        reference = encoded["reference_sources"][0]
+        self.assertEqual("".join(reference["passages"].values()), work[0]["candidates"][0]["content"])
+        org = {"units": [], "links": [{"type": "applies_in", "source": {"asset_id": 0},
+                "target": {"asset_id": reference["source_ref"], "selector": [1, 2]}}]}
+        decoded = s.decode_organization(work, work[0], org, s.GROUNDED_REPRESENTATION)
+        self.assertEqual(decoded["links"][0]["target"]["asset_id"], "b")
+        self.assertEqual(decoded["links"][0]["target"]["selector"]["exact"], "Only indoors.\nNot waterproof.")
+        schema = contract.output_schema(work, {})
+        self.assertNotIn('"exact"', __import__('json').dumps(schema))
+        mention = schema['properties']['analyses']['items']['properties']['organization']['properties']['units']['items']['properties']['mentions']['items']
+        self.assertIn('selector', mention['required'])
+        self.assertNotIn({'type': 'null'}, mention['properties']['selector']['anyOf'])
+
+    def test_relative_owner_survives_retry_with_reordered_work(self):
+        work = [{"id": "wa", "asset": {"id": "a", "revision": 1, "content": "Use Beacon."}, "candidates": []},
+                {"id": "wb", "asset": {"id": "b", "revision": 1, "content": "Keep indoors."}, "candidates": []}]
+        for batch in [work, list(reversed(work)), [work[1]]]:
+            org = {"units": [{"id": "u", "selector": 0}], "links": [{"type": "related_to", "source": {"asset_id": "self", "unit_id": "u"}, "target": {"asset_id": "self"}}]}
+            result = s.decode_organization(batch, work[1], org, s.GROUNDED_REPRESENTATION)
+            self.assertEqual(result['links'][0]['source']['asset_id'], 'b')
+            self.assertEqual(result['links'][0]['target']['asset_id'], 'b')
+
+    def test_graph_source_aliases_preserve_identity_and_cannot_cross_work(self):
+        work = [{"id": "w", "organization_schema": "ownward.organization/v1", "asset": {"id": "a", "revision": 1, "content": "A uses B."},
+                 "candidates": [{"id": "b", "revision": 1, "content": "B needs shelter."}, {"id": "c", "revision": 1, "content": "Unrelated."}]}]
+        bodies = s.default_semantic_input(work)["bodies"]
+        refs = {b["id"]: b["body_ref"] for b in bodies}
+        org = {"units": [{"id": "u"}], "links": [{"type": "applies_in", "source": {"asset_id": refs['a']}, "target": {"asset_id": refs['b']}}]}
+        result = s.decode_organization(work, work[0], org)
+        self.assertEqual(result['links'][0]['source']['asset_id'], 'a')
+        self.assertEqual(result['links'][0]['target']['asset_id'], 'b')
+        self.assertEqual(org['links'][0]['source']['asset_id'], refs['a'])
+        org['links'][0]['source']['asset_id'] = refs['c']
+        with self.assertRaises(s.SemanticRepresentationError):
+            s.decode_organization(work, work[0], org)
+
+    def test_graph_passage_locators_preserve_context_and_reject_wrong_sources(self):
+        raw = "Header\nUse Beacon.\nOnly indoors.\nSeparate history."
+        work=[{"id":"w","organization_schema":"ownward.organization/v1","asset":{"id":"a","revision":1,"content":raw},"candidates":[{"id":"b","revision":1,"content":"Unnumbered reference."}]}]
+        org={"units":[{"id":"u","selector":[1,2],"context":[0]}],"links":[{"type":"applies_in","source":{"asset_id":"a","unit_id":"u"},"target":{"asset_id":"b"}}]}
+        decoded=s.decode_organization(work,work[0],org,s.GROUNDED_REPRESENTATION)
+        unit=decoded['units'][0]
+        self.assertEqual(unit['selector']['exact'],"Use Beacon.\nOnly indoors.\n")
+        self.assertEqual(unit['context'][0]['exact'],"Header\n")
+        self.assertIn(unit['selector']['prefix']+unit['selector']['exact']+unit['selector']['suffix'],raw)
+        org['links'][0]['target']['selector']=99
+        with self.assertRaises(s.SemanticRepresentationError):s.decode_organization(work,work[0],org,s.GROUNDED_REPRESENTATION)
+        org['links'][0]['target'].pop('selector');org['units'][0]['selector']=[2,1]
+        with self.assertRaises(s.SemanticRepresentationError):s.decode_organization(work,work[0],org,s.GROUNDED_REPRESENTATION)
+
     def setUp(self):
         self.contract = s.SemanticInputContract(s.COMPACT_REPRESENTATION, "test", None, "targets-first")
 

@@ -21,12 +21,13 @@ func Inputs(record Record) []semantics.CandidateReference {
 			values = append(values, semantics.CandidateReference{ID: relation.InferredBy, Revision: relation.TargetRevision})
 		}
 	}
-	seen := map[string]bool{}
+	seen := map[semantics.CandidateReference]bool{}
 	result := make([]semantics.CandidateReference, 0, len(values))
 	for _, v := range values {
-		if v.ID != "" && v.ID != record.AssetID && !seen[v.ID] {
+		v.Similarity = 0
+		if v.ID != "" && v.ID != record.AssetID && !seen[v] {
 			result = append(result, v)
-			seen[v.ID] = true
+			seen[v] = true
 		}
 	}
 	return result

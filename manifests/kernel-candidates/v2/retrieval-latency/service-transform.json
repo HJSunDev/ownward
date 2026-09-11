@@ -41,14 +41,14 @@
     {
       "name": "single-create-asset-count",
       "count": 1,
-      "before": "\tif _, err := s.authority.CreateAsset(value); err != nil {\n\t\treturn domain.Information{}, err\n\t}\n\ts.index.Upsert(value)\n\treturn value, nil",
-      "after": "\tif _, err := s.authority.CreateAsset(value); err != nil {\n\t\treturn domain.Information{}, err\n\t}\n\ts.index.Upsert(value)\n\tif s.evidencePlans != nil {\n\t\ts.evidencePlans.Reset()\n\t}\n\treturn value, nil"
+      "before": "\ts.index.Upsert(value)\n\treturn value, nil",
+      "after": "\ts.index.Upsert(value)\n\tif s.evidencePlans != nil { s.evidencePlans.Reset() }\n\treturn value, nil"
     },
     {
       "name": "update-invalidates-evidence-plans",
       "count": 1,
-      "before": "\tif _, err := s.authority.UpdateAsset(updated, input.ExpectedRevision); err != nil {\n\t\treturn MutationResult{}, err\n\t}\n\ts.index.Upsert(updated)",
-      "after": "\tif _, err := s.authority.UpdateAsset(updated, input.ExpectedRevision); err != nil {\n\t\treturn MutationResult{}, err\n\t}\n\ts.index.Upsert(updated)\n\tif s.evidencePlans != nil {\n\t\ts.evidencePlans.Reset()\n\t}"
+      "before": "\ts.index.Upsert(updated)\n\tunlock()",
+      "after": "\ts.index.Upsert(updated)\n\tif s.evidencePlans != nil { s.evidencePlans.Reset() }\n\tunlock()"
     },
     {
       "name": "reuse-prepared-evidence-lane",
@@ -71,8 +71,8 @@
     {
       "name": "observe-ranked-sources",
       "count": 1,
-      "before": "\tif len(results) > limit {\n\t\tresults = results[:limit]\n\t}\n\treturn results, nil\n}",
-      "after": "\tif len(results) > limit {\n\t\tresults = results[:limit]\n\t}\n\tif s.evidencePlans != nil {\n\t\tsourceIDs := make([]string, 0, len(results))\n\t\tfor _, result := range results {\n\t\t\tsourceIDs = append(sourceIDs, result.ID)\n\t\t}\n\t\ts.evidencePlans.ObserveSearch(input.Query, sourceIDs)\n\t}\n\treturn results, nil\n}"
+      "before": "\tif len(results) > limit {\n\t\tresults = results[:limit]\n\t}\n\tselectedEntrances := make(map[string]bool)\n\tfor _, result := range results {\n\t\tif edge, exists := graphEntrances[result.ID]; exists {\n\t\t\tselectedEntrances[edge.Grounded.ID] = true\n\t\t}\n\t}\n\tfor n := range results {",
+      "after": "\tif len(results) > limit {\n\t\tresults = results[:limit]\n\t}\n\tif s.evidencePlans != nil {\n\t\tsourceIDs := make([]string, 0, len(results))\n\t\tfor _, result := range results {\n\t\t\tsourceIDs = append(sourceIDs, result.ID)\n\t\t}\n\t\ts.evidencePlans.ObserveSearch(input.Query, sourceIDs)\n\t}\n\tselectedEntrances := make(map[string]bool)\n\tfor _, result := range results {\n\t\tif edge, exists := graphEntrances[result.ID]; exists {\n\t\t\tselectedEntrances[edge.Grounded.ID] = true\n\t\t}\n\t}\n\tfor n := range results {"
     }
   ]
 }

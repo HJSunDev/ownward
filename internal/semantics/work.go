@@ -1,6 +1,7 @@
 package semantics
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -26,36 +27,41 @@ const (
 // Work 是内核交给外部语义能力的有界工作单元。它只包含当前资产和候选上下文，
 // 不包含用户正在执行的任务、检索问题或验收答案。
 type Work struct {
-	Schema     string             `json:"schema"`
-	ID         string             `json:"id"`
-	Generation string             `json:"generation"`
-	Asset      domain.Information `json:"asset"`
-	Candidates []Candidate        `json:"candidates,omitempty"`
-	Previous   *Analysis          `json:"previous_analysis,omitempty"`
-	CreatedAt  time.Time          `json:"created_at"`
+	Schema                   string             `json:"schema"`
+	ID                       string             `json:"id"`
+	Generation               string             `json:"generation"`
+	Asset                    domain.Information `json:"asset"`
+	Candidates               []Candidate        `json:"candidates,omitempty"`
+	Previous                 *Analysis          `json:"previous_analysis,omitempty"`
+	CreatedAt                time.Time          `json:"created_at"`
+	OrganizationSchema       string             `json:"organization_schema,omitempty"`
+	OrganizationInstructions string             `json:"organization_instructions,omitempty"`
+	TargetSnapshot           string             `json:"target_snapshot,omitempty"`
 }
 
 // CandidateReference is the durable identity of candidate context. Candidate
 // content remains authoritative in the asset store and is resolved only when
 // a pending work item is exposed again.
 type CandidateReference struct {
-	ID         string  `json:"id"`
-	Revision   uint64  `json:"revision"`
-	Similarity float64 `json:"semantic_similarity,omitempty"`
+	ID                   string  `json:"id"`
+	Revision             uint64  `json:"revision"`
+	Similarity           float64 `json:"semantic_similarity,omitempty"`
+	OrganizationSnapshot string  `json:"organization_snapshot,omitempty"`
 }
 
 // WorkReference is the compact, rebuildable durable form of Work. It keeps the
 // exact work and candidate identities without duplicating authoritative asset
 // content in derived state.
 type WorkReference struct {
-	Schema     string               `json:"schema"`
-	ID         string               `json:"id"`
-	Generation string               `json:"generation"`
-	AssetID    string               `json:"asset_id"`
-	Revision   uint64               `json:"asset_revision"`
-	Candidates []CandidateReference `json:"candidates,omitempty"`
-	Previous   *Analysis            `json:"previous_analysis,omitempty"`
-	CreatedAt  time.Time            `json:"created_at"`
+	Schema         string               `json:"schema"`
+	ID             string               `json:"id"`
+	Generation     string               `json:"generation"`
+	AssetID        string               `json:"asset_id"`
+	Revision       uint64               `json:"asset_revision"`
+	Candidates     []CandidateReference `json:"candidates,omitempty"`
+	Previous       *Analysis            `json:"previous_analysis,omitempty"`
+	CreatedAt      time.Time            `json:"created_at"`
+	TargetSnapshot string               `json:"target_snapshot,omitempty"`
 }
 
 // Capability 标识产生候选判断的外部语义能力。字段描述能力来源，不规定它必须是
@@ -69,15 +75,16 @@ type Capability struct {
 // Submission 是外部语义能力返回的候选判断。它不能直接成为关系图或长期资产；
 // 只有通过内核校验后，才会进入当前派生组织状态。
 type Submission struct {
-	Schema      string     `json:"schema" jsonschema:"固定填写 ownward.semantic-submission/v1"`
-	WorkID      string     `json:"work_id" jsonschema:"原样复制语义工作的 id"`
-	AssetID     string     `json:"asset_id" jsonschema:"原样复制语义工作的 asset.id"`
-	Revision    uint64     `json:"asset_revision" jsonschema:"原样复制语义工作的 asset.revision"`
-	Capability  Capability `json:"capability" jsonschema:"产生本次判断的外部语义能力来源"`
-	Status      string     `json:"status" jsonschema:"只能填写 complete 或 uncertain。只要能够可靠概括资产本身就填写 complete；没有可靠的关系、场景或主题时在相应字段使用空数组，不能因此填写 uncertain。只有连资产基本含义都无法可靠理解时才填写 uncertain"`
-	Uncertainty string     `json:"uncertainty,omitempty" jsonschema:"仅在 status 为 uncertain 时说明为什么无法可靠理解资产基本含义"`
-	Analysis    Analysis   `json:"analysis" jsonschema:"只依据当前语义工作中的资产和候选上下文形成的候选判断"`
-	AcceptedAt  time.Time  `json:"accepted_at,omitempty"`
+	InputAssets []CandidateReference `json:"input_assets,omitempty" jsonschema:"宿主实际送入同一次判断的完整资产版本与组织快照引用；批量调用包含其他工作及候选，补充材料须仍为当前可访问版本，并共同纳入来源验证和遗忘范围"`
+	Schema      string               `json:"schema" jsonschema:"固定填写 ownward.semantic-submission/v1"`
+	WorkID      string               `json:"work_id" jsonschema:"原样复制语义工作的 id"`
+	AssetID     string               `json:"asset_id" jsonschema:"原样复制语义工作的 asset.id"`
+	Revision    uint64               `json:"asset_revision" jsonschema:"原样复制语义工作的 asset.revision"`
+	Capability  Capability           `json:"capability" jsonschema:"产生本次判断的外部语义能力来源"`
+	Status      string               `json:"status" jsonschema:"只能填写 complete 或 uncertain。只要能够可靠概括资产本身就填写 complete；没有可靠的关系、场景或主题时在相应字段使用空数组，不能因此填写 uncertain。只有连资产基本含义都无法可靠理解时才填写 uncertain"`
+	Uncertainty string               `json:"uncertainty,omitempty" jsonschema:"仅在 status 为 uncertain 时说明为什么无法可靠理解资产基本含义"`
+	Analysis    Analysis             `json:"analysis" jsonschema:"只依据当前语义工作中的资产和候选上下文形成的候选判断"`
+	AcceptedAt  time.Time            `json:"accepted_at,omitempty"`
 }
 
 // SubmissionReceipt proves which normalized result was accepted without
@@ -97,29 +104,42 @@ type SubmissionReceipt struct {
 
 func NewWork(generation string, asset domain.Information, candidates []Candidate, previous *Analysis, now time.Time) (Work, error) {
 	work := Work{
-		Schema:     WorkSchema,
-		Generation: strings.TrimSpace(generation),
-		Asset:      asset,
-		Candidates: append([]Candidate(nil), candidates...),
-		CreatedAt:  now.UTC(),
+		Schema:             WorkSchema,
+		Generation:         strings.TrimSpace(generation),
+		Asset:              asset,
+		Candidates:         append([]Candidate(nil), candidates...),
+		CreatedAt:          now.UTC(),
+		OrganizationSchema: OrganizationSchema, OrganizationInstructions: OrganizationInstruction(),
 	}
 	if previous != nil {
 		value := *previous
+		if value.Organization != nil {
+			work.TargetSnapshot = value.Organization.Snapshot
+		}
+		value.Organization = nil
 		work.Previous = &value
 	}
 	binding := struct {
-		Schema     string      `json:"schema"`
-		Generation string      `json:"generation"`
-		AssetID    string      `json:"asset_id"`
-		Revision   uint64      `json:"revision"`
-		Candidates []Candidate `json:"candidates"`
-	}{WorkSchema, work.Generation, asset.ID, asset.Revision, work.Candidates}
+		Schema         string      `json:"schema"`
+		Generation     string      `json:"generation"`
+		AssetID        string      `json:"asset_id"`
+		Revision       uint64      `json:"revision"`
+		Candidates     []Candidate `json:"candidates"`
+		TargetSnapshot string      `json:"target_snapshot,omitempty"`
+	}{WorkSchema, work.Generation, asset.ID, asset.Revision, work.Candidates, work.TargetSnapshot}
 	encoded, err := json.Marshal(binding)
 	if err != nil {
 		return Work{}, err
 	}
 	digest := sha256.Sum256(encoded)
-	work.ID = "sw_" + hex.EncodeToString(digest[:16])
+	// Each newly issued work is an incarnation. The persisted reference keeps
+	// its identity stable across reads/restarts, but superseded work cannot be
+	// replayed merely because its raw sources happen to be unchanged.
+	var nonce [16]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		return Work{}, err
+	}
+	work.ID = "sw_" + hex.EncodeToString(digest[:8]) + hex.EncodeToString(nonce[:8])
 	if err := work.Validate(); err != nil {
 		return Work{}, err
 	}
@@ -156,15 +176,21 @@ func ReferenceWork(work Work) (WorkReference, error) {
 	reference := WorkReference{
 		Schema: WorkReferenceSchema, ID: work.ID, Generation: work.Generation,
 		AssetID: work.Asset.ID, Revision: work.Asset.Revision, CreatedAt: work.CreatedAt,
-		Candidates: make([]CandidateReference, 0, len(work.Candidates)),
+		TargetSnapshot: work.TargetSnapshot,
+		Candidates:     make([]CandidateReference, 0, len(work.Candidates)),
 	}
 	if work.Previous != nil {
 		previous := *work.Previous
 		reference.Previous = &previous
 	}
 	for _, candidate := range work.Candidates {
+		snapshot := ""
+		if candidate.Organization != nil {
+			snapshot = candidate.Organization.Snapshot
+		}
 		reference.Candidates = append(reference.Candidates, CandidateReference{
 			ID: candidate.ID, Revision: candidate.Revision, Similarity: candidate.Similarity,
+			OrganizationSnapshot: snapshot,
 		})
 	}
 	return reference, reference.Validate()
@@ -204,6 +230,7 @@ func ResolveWork(reference WorkReference, asset domain.Information, candidates [
 	work := Work{
 		Schema: WorkSchema, ID: reference.ID, Generation: reference.Generation,
 		Asset: asset, CreatedAt: reference.CreatedAt,
+		OrganizationSchema: OrganizationSchema, OrganizationInstructions: OrganizationInstruction(), TargetSnapshot: reference.TargetSnapshot,
 		Candidates: make([]Candidate, 0, len(candidates)),
 	}
 	if reference.Previous != nil {
@@ -223,18 +250,27 @@ func ResolveWork(reference WorkReference, asset domain.Information, candidates [
 	return work, work.Validate()
 }
 
-func NormalizeSubmission(work Work, value Submission, acceptedAt time.Time) (Submission, error) {
+func NormalizeSubmission(work Work, value Submission, acceptedAt time.Time, supplemental ...Candidate) (Submission, error) {
 	if err := work.Validate(); err != nil {
 		return Submission{}, err
 	}
-	references := make([]CandidateReference, 0, len(work.Candidates))
-	for _, candidate := range work.Candidates {
+	candidates := append(append([]Candidate(nil), work.Candidates...), supplemental...)
+	references := make([]CandidateReference, 0, len(candidates))
+	for _, candidate := range candidates {
 		references = append(references, CandidateReference{ID: candidate.ID, Revision: candidate.Revision, Similarity: candidate.Similarity})
 	}
-	return normalizeSubmission(work.ID, work.Asset, references, value, acceptedAt)
+	normalized, err := normalizeSubmission(work.ID, work.Asset, references, value, acceptedAt)
+	if err != nil {
+		return Submission{}, err
+	}
+	normalized.Analysis.Organization, err = NormalizeOrganization(work.Asset, normalized.Analysis.Organization, candidates)
+	return normalized, err
 }
 
 func NormalizeSubmissionReference(reference WorkReference, asset domain.Information, value Submission, acceptedAt time.Time) (Submission, error) {
+	if value.Analysis.Organization != nil {
+		return Submission{}, errors.New("关系组织必须用完整语义工作核对原文与端点")
+	}
 	if err := reference.Validate(); err != nil {
 		return Submission{}, err
 	}

@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"reflect"
 
@@ -107,7 +108,7 @@ type SearchOutput struct {
 }
 
 type NavigateInput struct {
-	StartIDs      []string `json:"start_ids" jsonschema:"从检索结果获得的稳定信息标识"`
+	StartIDs      []string `json:"start_ids" jsonschema:"检索取得的稳定资产标识；有 continuation 时将其单独放入数组接续导航，组织变化后从资产重新开始"`
 	RelationTypes []string `json:"relation_types,omitempty" jsonschema:"可选的关系类型约束"`
 	Depth         int      `json:"depth,omitempty" jsonschema:"导航深度，一到五；默认一"`
 	Limit         int      `json:"limit,omitempty" jsonschema:"最多返回的关系数量；默认五十"`
@@ -157,7 +158,7 @@ func New(service contract.ProductCapability, version string) *Server {
 	}, value.rules)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ownward_create",
-		Description: "创建属于用户且可长期复用的信息。体系负责组织结构，调用方不得为了保存信息而自行设计目录或关系图；返回 organization.required_action 时应先完成该动作。",
+		Description: "创建属于用户且可长期复用的信息。体系负责组织结构，调用方不得为了保存信息而自行设计目录或关系图；保存成功后可继续其他工作；organization.required_action 由宿主在可用工作时机接续。",
 		Annotations: closedWorldAnnotations(false, false, false),
 	}, value.create)
 	mcp.AddTool(server, &mcp.Tool{
@@ -187,7 +188,7 @@ func New(service contract.ProductCapability, version string) *Server {
 	}, value.status)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ownward_update",
-		Description: "更新现有个人信息并保留稳定标识；必须提供最后读取到的版本，避免覆盖并发变化；返回 organization.required_action 时应先完成该动作。",
+		Description: "更新现有个人信息并保留稳定标识；必须提供最后读取到的版本，避免覆盖并发变化；保存成功后可继续其他工作；organization.required_action 由宿主在可用工作时机接续。",
 		Annotations: closedWorldAnnotations(false, true, false),
 	}, value.update)
 	mcp.AddTool(server, &mcp.Tool{
@@ -197,12 +198,12 @@ func New(service contract.ProductCapability, version string) *Server {
 	}, value.search)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ownward_navigate",
-		Description: "从已有信息标识沿语义关系继续获取线索。复杂检索用它探索层级、归属、交叉、组合和场景关联，再按需读取完整内容。",
+		Description: "从已有信息沿有据关系取得原文入口与条件；未穷尽时将 continuation 作为唯一导航起点接续。来源变化时从资产重新开始。",
 		Annotations: closedWorldAnnotations(true, false, true),
 	}, value.navigate)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ownward_semantic_work",
-		Description: "以独立的语义能力角色取得待理解的有界工作。只分析工作中的资产和各自候选上下文，不使用当前任务意图，也不直接修改资产或关系图；关系只能指向同一工作项提供的候选，并按提交契约中每种关系与方向的精确定义判断。",
+		Description: "以独立的语义能力角色取得待理解的有界工作。只分析工作中的资产和各自候选上下文，不使用当前任务意图，也不直接修改资产或关系图；关系涉及本项资产；引用同次调用额外提供的资料时，用 input_assets 声明完整输入的身份与版本，按提交契约判断。",
 		Annotations: closedWorldAnnotations(true, false, true),
 	}, value.semanticWork)
 	mcp.AddTool(server, &mcp.Tool{
@@ -221,6 +222,10 @@ func New(service contract.ProductCapability, version string) *Server {
 }
 
 func semanticInputSchema[T any]() *jsonschema.Schema {
+	var organizationSchema jsonschema.Schema
+	if err := json.Unmarshal(semantics.OrganizationOutputSchema(), &organizationSchema); err != nil {
+		panic(err)
+	}
 	relationSchema, err := jsonschema.For[semantics.Relation](nil)
 	if err != nil {
 		panic(err)
@@ -228,8 +233,28 @@ func semanticInputSchema[T any]() *jsonschema.Schema {
 	relationSchema.Properties["type"].Enum = stringEnum(semantics.AllowedRelationTypes())
 	relationSchema.Properties["direction"].Enum = stringEnum(semantics.AllowedRelationDirections())
 	relationSchema.Required = appendRequired(relationSchema.Required, "evidence", "direction")
+	endpointSchema, err := jsonschema.For[semantics.GraphEndpoint](nil)
+	if err != nil {
+		panic(err)
+	}
+	endpointSchema.Properties["selector"] = &jsonschema.Schema{AnyOf: []*jsonschema.Schema{endpointSchema.Properties["selector"], {Type: "null"}}}
+	unitSchema, err := jsonschema.For[semantics.SemanticUnit](nil)
+	if err != nil {
+		panic(err)
+	}
+	unitSchema.Properties["selector"] = &jsonschema.Schema{AnyOf: []*jsonschema.Schema{unitSchema.Properties["selector"], {Type: "null"}}}
+	mentionSchema, err := jsonschema.For[semantics.Mention](nil)
+	if err != nil {
+		panic(err)
+	}
+	mentionSchema.Properties["selector"] = &jsonschema.Schema{AnyOf: []*jsonschema.Schema{mentionSchema.Properties["selector"], {Type: "null"}}}
+	unitSchema.Properties["mentions"].Items = mentionSchema
 	schema, err := jsonschema.For[T](&jsonschema.ForOptions{TypeSchemas: map[reflect.Type]*jsonschema.Schema{
-		reflect.TypeFor[semantics.Relation](): relationSchema,
+		reflect.TypeFor[semantics.Organization]():  &organizationSchema,
+		reflect.TypeFor[semantics.Relation]():      relationSchema,
+		reflect.TypeFor[semantics.GraphEndpoint](): endpointSchema,
+		reflect.TypeFor[semantics.SemanticUnit]():  unitSchema,
+		reflect.TypeFor[semantics.Mention]():       mentionSchema,
 	}})
 	if err != nil {
 		panic(err)
