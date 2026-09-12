@@ -604,10 +604,19 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
                     with self.assertRaisesRegex(adapter.AdapterError, 'without reading'):
                         session.validate()
 
-    def test_active_reader_delivers_with_shared_contract_without_postprocessing_calls(self) -> None:
+    def test_active_reader_reviews_with_shared_contract_without_more_retrieval(self) -> None:
         requests = []
         def invoke(**request):
             requests.append(request)
+            if request['schema'] == adapter.information_use_flow.CHECK_SCHEMA:
+                self.assertEqual(client.instructions, request['base_instructions'])
+                self.assertNotIn('active_retrieval', request)
+                self.assertNotIn('SECRET GOLD', request['prompt'])
+                self.assertNotIn('UNREAD HAYSTACK', request['prompt'])
+                self.assertIn('"question_date": "today"', request['prompt'])
+                self.assertIn('Kyoto', request['prompt'])
+                self.assertEqual(request['effort'], self.protocol['reader']['reasoning_effort'])
+                return {'replacement_delivery': ''}, {'calls': 1}
             if request['schema'] == adapter.information_use_flow.FRAME_SCHEMA:
                 self.assertNotIn('active_retrieval', request)
                 self.assertNotIn('SECRET GOLD', request['prompt'])
@@ -621,7 +630,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             self.assertEqual(request['model'], self.protocol['reader']['model'])
             self.assertEqual(request['effort'], self.protocol['reader']['reasoning_effort'])
             return {'intended_outcome': 'Find the city',
-                    'basis': {'established': 'City is Kyoto', 'unresolved': ''},
+                    'basis': {'1': {'supported': 'City is Kyoto', 'unresolved': ''}},
                     'answer': 'Kyoto', 'conditional_results': []}, {'calls': 1}
         with tempfile.TemporaryDirectory() as directory:
             client = FakeToolClient()
@@ -629,20 +638,25 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             capability = adapter.ExternalIntelligenceCapability(FakeTransport())
             with mock.patch.object(capability, '_invoke', side_effect=invoke):
                 answer, usage, report = capability.active_answer(
-                    {'question': 'Which city?', 'question_date': 'today', 'answer': 'SECRET GOLD'},
+                    {'question': 'Which city?', 'question_date': 'today', 'answer': 'SECRET GOLD',
+                     'haystack_sessions': ['UNREAD HAYSTACK']},
                     client, self.protocol['reader'], self.protocol['retrieval'], Path(directory))
             self.assertEqual(answer, 'Kyoto')
-            self.assertEqual(usage['calls'], 2)
-            self.assertEqual(len(requests), 2)
+            self.assertEqual(usage['calls'], 3)
+            self.assertEqual(len(requests), 3)
             self.assertTrue(report['information_use']['used'])
             self.assertEqual(len(report['selection_steps']), 2)
             self.assertTrue((Path(directory) / 'information-use-result.json').is_file())
+
 
     def test_active_capability_exposes_tools_and_checkpoints_the_agent_trace(self) -> None:
         class ActiveTransport(FakeTransport):
             def invoke(self, **request):
                 self.calls += 1
                 self.test_case.assertEqual(self.expected_instructions, request["base_instructions"])
+                if request['schema'] == adapter.information_use_flow.CHECK_SCHEMA:
+                    self.test_case.assertNotIn('dynamic_tools', request)
+                    return {'replacement_delivery': ''}, {'input_tokens': 1, 'output_tokens': 1}, {'transport': 'fixture'}
                 if request['schema'] == adapter.information_use_flow.FRAME_SCHEMA:
                     self.test_case.assertNotIn('dynamic_tools', request)
                     return {'purpose': 'Find the city', 'needs': ['Which city is selected?']}, {'input_tokens': 1, 'output_tokens': 1}, {'transport': 'fixture'}
@@ -688,7 +702,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
                     {"question": "Which city?", "question_date": "today"}, client,
                     self.protocol["reader"], self.protocol["retrieval"], Path(directory),
                 )
-            self.assertEqual(2, transport.calls)
+            self.assertEqual(3, transport.calls)
 
     def test_app_server_returns_dynamic_tool_results_on_the_protocol_channel(self) -> None:
         server = concrete_transport.CodexAppServer(Path("codex.exe"), Path("auth.json"), Path("runtime"), ["codex"], {})
@@ -796,6 +810,40 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
         self.assertEqual(self.protocol["retrieval"]["evidence_search_limit_per_source"], trace["limits"]["evidence_depth_per_source"])
         self.assertTrue(any("VIOLET-731" in item["content"] for item in evidence))
         self.assertTrue(trace["evidence_read_ids"])
+
+    def test_adjacent_source_text_is_charged_and_invalid_ranges_are_rejected(self) -> None:
+        value = {"source_id": "source", "start_rune": 5, "end_rune": 9,
+                 "content": "原文片段", "context_before": "🙂前", "context_after": "后",
+                 "context_start_rune": 3, "context_end_rune": 10}
+        source, text = adapter.ActiveRetrievalSession._read_content(
+            "ownward_evidence_read", {"evidence": value})
+        self.assertEqual("source", source)
+        self.assertEqual(7, len(text))
+        self.assertEqual(("🙂前", "后"), adapter.ActiveRetrievalSession._adjacent_content(value))
+        for change in ({"context_start_rune": 2}, {"context_end_rune": 11},
+                       {"context_before": None}, {"context_start_rune": True}):
+            with self.subTest(change=change), self.assertRaises(adapter.AdapterError):
+                adapter.ActiveRetrievalSession._adjacent_content({**value, **change})
+
+    def test_passive_retrieval_delivers_and_charges_adjacent_source_text(self) -> None:
+        class ContextClient(FakeToolClient):
+            def call_tool(self, name: str, arguments: dict):
+                value = super().call_tool(name, arguments)
+                if name == "ownward_evidence_read":
+                    evidence = value["evidence"]
+                    start = evidence.get("start_rune", 0)
+                    end = start + len(evidence["content"])
+                    evidence.update(start_rune=start, end_rune=end, context_before="",
+                                    context_after=" SOURCE-CONTEXT", context_start_rune=start,
+                                    context_end_rune=end + len(" SOURCE-CONTEXT"))
+                return value
+        runtime = FakeRuntime()
+        runtime.client = ContextClient()
+        runtime.client.contents = {"info-1": "signal alpha. " * 40}
+        evidence, trace = adapter.passive_retrieve(runtime, "signal", self.protocol)
+        self.assertTrue(evidence)
+        self.assertTrue(all(item["content"].endswith(" SOURCE-CONTEXT") for item in evidence))
+        self.assertEqual(sum(len(item["content"]) for item in evidence), trace["context_chars"])
 
     def test_two_stage_retrieval_preserves_revision_bound_source_prelude(self) -> None:
         class PreludeClient(FakeToolClient):

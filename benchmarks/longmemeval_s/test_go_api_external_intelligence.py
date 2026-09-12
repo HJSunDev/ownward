@@ -91,6 +91,34 @@ class GoAPIClientTests(unittest.TestCase):
                 self.invoke(dynamic_tools=TOOLS, tool_handler=handler)
         handler.assert_not_called()
 
+    def test_complete_json_fence_preserves_delivery_without_model_rewrite(self):
+        value = {'answer': 'Established fact\n```literal content```'}
+        for opening, newline in [('```json', '\n'), ('```', '\r\n')]:
+            with self.subTest(opening=opening):
+                encoded = opening + newline + json.dumps(value) + newline + '```'
+                with mock.patch.object(self.client, '_post', return_value=answer(encoded)) as post:
+                    actual, usage, _ = self.invoke()
+                self.assertEqual(value, actual)
+                self.assertEqual(0, usage['format_corrections'])
+                post.assert_called_once()
+
+    def test_json_fence_does_not_bypass_schema_or_extract_partial_output(self):
+        invalid = [
+            '```json\n{"answer": 7}\n```',
+            '```json\n{"answer": "ok", "extra": true}\n```',
+            '```json\n{"answer": "a"}\n{"answer": "b"}\n```',
+            'commentary\n```json\n{"answer": "ok"}\n```',
+            '```json\n{"answer": "ok"}\n```\ncommentary',
+            '```json\nnot json\n```',
+        ]
+        for encoded in invalid:
+            with self.subTest(encoded=encoded):
+                with mock.patch.object(self.client, '_post', side_effect=[answer(encoded), answer('{"answer":"repaired"}')]) as post:
+                    actual, usage, _ = self.invoke()
+                self.assertEqual({'answer': 'repaired'}, actual)
+                self.assertEqual(1, usage['format_corrections'])
+                self.assertEqual(2, post.call_count)
+
     def test_initial_context_is_a_separate_block_without_schema_or_rule_changes(self):
         with mock.patch.object(self.client, '_post', return_value=answer('{"answer":"ok"}')) as post:
             self.invoke(initial_context='Original source', base_instructions='product rules')

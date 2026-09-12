@@ -403,7 +403,11 @@ class GoAPIClient:
             try:
                 if result.get("stop_reason") != "end_turn":
                     raise ValueError("response did not finish normally")
-                value = json.loads(text)
+                encoded = text.strip()
+                lines = encoded.splitlines()
+                if len(lines) >= 3 and lines[0].lower() in ("```", "```json") and lines[-1] == "```":
+                    encoded = "\n".join(lines[1:-1])
+                value = json.loads(encoded)
                 _validate_schema(value, schema)
                 if not isinstance(value, dict):
                     raise ValueError("expected an object")

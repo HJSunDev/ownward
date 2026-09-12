@@ -848,6 +848,24 @@ class ActiveRetrievalSession:
         ]
 
     @staticmethod
+    def _adjacent_content(value: dict[str, Any]) -> tuple[str, str]:
+        before, after = value.get("context_before", ""), value.get("context_after", "")
+        require(isinstance(before, str) and isinstance(after, str),
+                "Ownward evidence returned invalid adjacent source content")
+        if before or after:
+            start, end = value.get("start_rune"), value.get("end_rune")
+            context_start, context_end = value.get("context_start_rune"), value.get("context_end_rune")
+            require(
+                all(type(v) is int for v in (start, end, context_start, context_end))
+                and 0 <= context_start <= start < end <= context_end
+                and start - context_start == len(before)
+                and context_end - end == len(after)
+                and max(len(before), len(after)) <= end - start,
+                "Ownward evidence returned non-source-bound adjacent content",
+            )
+        return before, after
+
+    @staticmethod
     def _read_content(name: str, result: Any) -> tuple[str, str]:
         if not isinstance(result, dict):
             return "", ""
@@ -865,6 +883,7 @@ class ActiveRetrievalSession:
                         str(value.get("source_complete", "")),
                     ) if part
                 )
+                content += "".join(ActiveRetrievalSession._adjacent_content(value))
                 return str(value.get("source_id", "")), content
         return "", ""
 
@@ -1322,21 +1341,34 @@ class ExternalIntelligenceCapability:
         require(len(accepted) == len(work), f"semantic source repair remains incomplete: {feedback}")
         return [accepted[item["id"]] for item in work], usage
 
-    def answer(self, prompt: str, settings: dict[str, Any], stage: Path) -> tuple[str, dict[str, int]]:
+    def answer(self, prompt: str, settings: dict[str, Any], stage: Path, *, base_instructions: str | None = None) -> tuple[str, dict[str, int]]:
         schema = information_use_flow.RESPONSE
         value, usage = self._invoke(
             role="reader", prompt=prompt + "\n\n" + information_use_flow.OFFER, schema=schema, stage=stage,
             model=settings["model"], effort=settings["reasoning_effort"],
             timeout_seconds=float(settings["timeout_seconds"]), attempts=int(settings["attempts"]),
+            base_instructions=base_instructions,
         )
-        result = self._finish_information_use(value, stage)
+        result, review_usage = self._review_information_use(prompt, value, settings, stage, base_instructions=base_instructions)
+        _add_usage(usage, review_usage)
         return result['answer'].strip(), usage
 
-    @staticmethod
-    def _finish_information_use(response, stage):
-        result = information_use_flow.finish(response)
+    def _review_information_use(self, task, response, settings, stage, *, base_instructions=None):
+        usage = _empty_usage()
+        def invoke(name, instruction, payload, schema):
+            value, stage_usage = self._invoke(
+                role='reader', prompt=information_use_flow.stage_prompt(instruction, payload),
+                schema=schema, stage=stage / name, model=settings['model'],
+                effort=settings['reasoning_effort'], timeout_seconds=settings['timeout_seconds'],
+                attempts=settings['attempts'],
+                base_instructions=base_instructions,
+                resume_prompt=lambda notes: information_use_flow.stage_prompt(instruction, payload, notes),
+            )
+            _add_usage(usage, stage_usage)
+            return value
+        result = information_use_flow.review_delivery(task, response, invoke)
         write_json(stage / "information-use-result.json", result)
-        return result
+        return result, usage
 
     def active_answer(
         self,
@@ -1372,7 +1404,10 @@ class ExternalIntelligenceCapability:
         _add_usage(usage, frame_usage)
         session.validate()
         report = session.report()
-        result = self._finish_information_use(value, stage)
+        result, review_usage = self._review_information_use(
+            {'request': {'question': question['question'], 'question_date': question.get('question_date', '')},
+             'evidence_needs': frame}, value, reader_settings, stage, base_instructions=session.instructions)
+        _add_usage(usage, review_usage)
         report['information_use'] = {'used': result['used_information_use']}
         return result['answer'].strip(), usage, report
 
@@ -1503,9 +1538,10 @@ def passive_retrieve(runtime: OwnwardRuntime, question: str, protocol: dict[str,
             )
         else:
             require(not source_complete, "Ownward evidence returned unrequested complete source content")
+        context_before, context_after = ActiveRetrievalSession._adjacent_content(narrowed_evidence)
         delivered_content = (
             source_complete if request_complete_source
-            else source_prelude + ("\n\n" if source_prelude else "") + content
+            else source_prelude + ("\n\n" if source_prelude else "") + context_before + content + context_after
         )
         if used_chars + len(delivered_content) > settings["context_max_chars"]:
             selection_steps.append({
@@ -1689,7 +1725,7 @@ def stage_dependency_identities(
             "runtime_adapter": sha256(Path(__file__).with_name("external_intelligence_runtime.py")),
             "invoke": inspect.getsource(ExternalIntelligenceCapability._invoke),
             "answer": inspect.getsource(ExternalIntelligenceCapability.active_answer),
-            "information_use_adapter": inspect.getsource(ExternalIntelligenceCapability._finish_information_use),
+            "information_use_adapter": inspect.getsource(ExternalIntelligenceCapability._review_information_use),
             "information_use": sha256(Path(information_use_flow.complete.__code__.co_filename)),
         }),
         "judge": canonical_sha256({

@@ -19,3 +19,6 @@ initial_context = _MODULE.initial_context
 FRAME = _MODULE.FRAME
 FRAME_SCHEMA = _MODULE.FRAME_SCHEMA
 task_contract = _MODULE.task_contract
+review_delivery = _MODULE.review_delivery
+CHECK = _MODULE.CHECK
+CHECK_SCHEMA = _MODULE.CHECK_SCHEMA
