@@ -604,19 +604,10 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
                     with self.assertRaisesRegex(adapter.AdapterError, 'without reading'):
                         session.validate()
 
-    def test_active_reader_reviews_with_shared_contract_without_more_retrieval(self) -> None:
+    def test_active_reader_delivers_after_preparation_and_retrieval(self) -> None:
         requests = []
         def invoke(**request):
             requests.append(request)
-            if request['schema'] == adapter.information_use_flow.CHECK_SCHEMA:
-                self.assertEqual(client.instructions, request['base_instructions'])
-                self.assertNotIn('active_retrieval', request)
-                self.assertNotIn('SECRET GOLD', request['prompt'])
-                self.assertNotIn('UNREAD HAYSTACK', request['prompt'])
-                self.assertIn('"question_date": "today"', request['prompt'])
-                self.assertIn('Kyoto', request['prompt'])
-                self.assertEqual(request['effort'], self.protocol['reader']['reasoning_effort'])
-                return {'replacement_delivery': ''}, {'calls': 1}
             if request['schema'] == adapter.information_use_flow.FRAME_SCHEMA:
                 self.assertNotIn('active_retrieval', request)
                 self.assertNotIn('SECRET GOLD', request['prompt'])
@@ -642,8 +633,8 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
                      'haystack_sessions': ['UNREAD HAYSTACK']},
                     client, self.protocol['reader'], self.protocol['retrieval'], Path(directory))
             self.assertEqual(answer, 'Kyoto')
-            self.assertEqual(usage['calls'], 3)
-            self.assertEqual(len(requests), 3)
+            self.assertEqual(usage['calls'], 2)
+            self.assertEqual(len(requests), 2)
             self.assertTrue(report['information_use']['used'])
             self.assertEqual(len(report['selection_steps']), 2)
             self.assertTrue((Path(directory) / 'information-use-result.json').is_file())
@@ -654,9 +645,6 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             def invoke(self, **request):
                 self.calls += 1
                 self.test_case.assertEqual(self.expected_instructions, request["base_instructions"])
-                if request['schema'] == adapter.information_use_flow.CHECK_SCHEMA:
-                    self.test_case.assertNotIn('dynamic_tools', request)
-                    return {'replacement_delivery': ''}, {'input_tokens': 1, 'output_tokens': 1}, {'transport': 'fixture'}
                 if request['schema'] == adapter.information_use_flow.FRAME_SCHEMA:
                     self.test_case.assertNotIn('dynamic_tools', request)
                     return {'purpose': 'Find the city', 'needs': ['Which city is selected?']}, {'input_tokens': 1, 'output_tokens': 1}, {'transport': 'fixture'}
@@ -702,7 +690,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
                     {"question": "Which city?", "question_date": "today"}, client,
                     self.protocol["reader"], self.protocol["retrieval"], Path(directory),
                 )
-            self.assertEqual(3, transport.calls)
+            self.assertEqual(2, transport.calls)
 
     def test_app_server_returns_dynamic_tool_results_on_the_protocol_channel(self) -> None:
         server = concrete_transport.CodexAppServer(Path("codex.exe"), Path("auth.json"), Path("runtime"), ["codex"], {})

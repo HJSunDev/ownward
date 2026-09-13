@@ -18,3 +18,4 @@
 - `research/`：研究依据和探索草案，不替代产品需求。
 - `modules/`：按业务能力聚合并持续演进的模块文档。
 - `workbench/`：人与智能体协作使用的工作台。
+- [策略库](workbench/problem-solving-approaches.md)：适用于不同场景的问题解决策略，持续积累与验证。

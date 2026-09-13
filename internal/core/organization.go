@@ -8,7 +8,6 @@ import (
 	"github.com/HJSunDev/ownward/internal/domain"
 	"github.com/HJSunDev/ownward/internal/retrieval"
 	"github.com/HJSunDev/ownward/internal/semantics"
-	"sort"
 	"strings"
 )
 
@@ -172,6 +171,10 @@ func (s *Service) relationEvidence(edge derived.Edge) (*contract.RelationEvidenc
 }
 
 func (s *Service) organizedEvidence(asset domain.Information, query string, limit int) []domain.EvidenceReference {
+	return selectEvidence(asset, query, limit, s.organizedEvidenceChoices(asset))
+}
+
+func (s *Service) organizedEvidenceChoices(asset domain.Information) []evidenceChoice {
 	if s.semantic == nil {
 		return nil
 	}
@@ -179,41 +182,28 @@ func (s *Service) organizedEvidence(asset domain.Information, query string, limi
 	if !ok || record.AssetRevision != asset.Revision || record.Analysis.Organization == nil || !s.organizationCurrent(record) {
 		return nil
 	}
-	type hit struct {
-		unit  semantics.SemanticUnit
-		score float64
-	}
-	var hits []hit
-	scorer := retrieval.NewQueryTextScorer(query)
+	var choices []evidenceChoice
 	for _, unit := range record.Analysis.Organization.Units {
 		terms := []string{unit.Statement, unit.Selector.Exact}
 		for _, mention := range unit.Mentions {
 			terms = append(terms, mention.Name, mention.Role)
 		}
-		if score := scorer.Score(strings.Join(terms, " ")); score > 0 {
-			hits = append(hits, hit{unit, score})
-		}
-	}
-	sort.SliceStable(hits, func(a, b int) bool { return hits[a].score > hits[b].score })
-	var result []domain.EvidenceReference
-	for _, selected := range hits {
-		selectors := append([]domain.TextSelector{selected.unit.Selector}, selected.unit.Context...)
-		// Keep the complete context bundle or leave it to ordinary raw reading.
-		if len(result)+len(selectors) > limit {
-			continue
-		}
+		choice := evidenceChoice{terms: strings.Join(terms, " ")}
+		selectors := append([]domain.TextSelector{unit.Selector}, unit.Context...)
 		for _, selector := range selectors {
 			ref, err := sourceReference(asset, selector)
 			if err != nil {
 				return nil
 			}
-			result = append(result, ref)
+			span, err := derived.ParseEvidenceUnitID(ref.ID)
+			if err != nil {
+				return nil
+			}
+			choice.units = append(choice.units, span)
 		}
-		if len(result) == limit {
-			break
-		}
+		choices = append(choices, choice)
 	}
-	return result
+	return choices
 }
 
 // Validate the work handed to the caller, not a freshly enlarged candidate set.

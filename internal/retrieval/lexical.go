@@ -211,6 +211,35 @@ func NewQueryTextScorer(query string) QueryTextScorer {
 	return scorer
 }
 
+// NewPassageTextScorer discounts terms repeated across one source's passages.
+// It does not change asset ranking or retain a corpus-wide index.
+func NewPassageTextScorer(query string, passages []string) QueryTextScorer {
+	scorer := NewQueryTextScorer(query)
+	if len(passages) == 0 {
+		return scorer
+	}
+	frequencies := make(map[string]int)
+	for _, passage := range passages {
+		seen := make(map[string]bool)
+		for _, term := range tokenize(passage) {
+			if !seen[term] {
+				frequencies[term]++
+				seen[term] = true
+			}
+		}
+	}
+	for term, index := range scorer.words {
+		scorer.weights[index] *= math.Log1p(float64(len(passages)) / float64(1+frequencies[term]))
+	}
+	for term, index := range scorer.singleCJK {
+		scorer.weights[index] *= math.Log1p(float64(len(passages)) / float64(1+frequencies[string(term)]))
+	}
+	for term, index := range scorer.pairCJK {
+		scorer.weights[index] *= math.Log1p(float64(len(passages)) / float64(1+frequencies[string(term[:])]))
+	}
+	return scorer
+}
+
 // Score scores real passage text; each query term contributes at most once so
 // a concise, specific match outranks boilerplate frequency.
 func (s QueryTextScorer) Score(text string) float64 {

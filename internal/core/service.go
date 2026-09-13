@@ -398,10 +398,7 @@ func (s *Service) SearchEvidence(_ context.Context, input EvidenceSearchInput) (
 	if !exists {
 		return nil, errors.New("证据来源不存在")
 	}
-	if evidence := s.organizedEvidence(value, input.Query, input.Limit); len(evidence) > 0 {
-		return evidence, nil
-	}
-	return rankEvidence(value, input.Query, input.Limit), nil
+	return s.organizedEvidence(value, input.Query, input.Limit), nil
 }
 
 func (s *Service) Search(ctx context.Context, input SearchInput) ([]SearchResult, error) {

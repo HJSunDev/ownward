@@ -1,0 +1,4 @@
+interface:
+  display_name: "协作解题"
+  short_description: "围绕任务需要设计多智能体分工与协作，促进不同思路、证据与成果相互补充"
+  default_prompt: "使用 $team，根据当前任务设计合适的多智能体协作方式并推进求解。"

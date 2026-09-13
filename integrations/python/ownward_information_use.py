@@ -143,8 +143,7 @@ def respond(observations, invoke):
     """Establish task needs separately, then use the acquired originals in one delivery."""
     frame = invoke('task-basis', FRAME, {'task': observations['task']}, FRAME_SCHEMA)
     instruction, schema = task_contract(frame)
-    value=invoke('respond', instruction, observations, schema)
-    return review_delivery({'request':observations['task'],'evidence_needs':frame},value,invoke)
+    return finish(invoke('respond', instruction, observations, schema))
 
 
 def complete(observations, invoke, *, draft=None):
@@ -158,17 +157,3 @@ def reconsider(observations, draft, reading, invoke):
     """Resume the documented explicit entry with the same single-delivery mechanism."""
     payload = {**observations, 'prior_work': {'draft': draft, 'reading': reading}}
     return respond(payload, invoke)
-
-
-CHECK = "Check only whether the proposed result follows from its stated basis. An explicitly missing required fact or relationship cannot support a definite result; lack of a record does not establish its opposite. Correct a material mismatch while preserving established results and actual conditions; otherwise return an empty correction. Do not reopen source credibility, search coverage or the user's terms. Those belong to the evidence work. Stop once this dependency check is resolved. Do not explain the review."
-
-
-CHECK_SCHEMA = {'type':'object','additionalProperties':False,'required':['replacement_delivery'],
- 'properties':{'replacement_delivery':{'type':'string','description':'The complete corrected user-facing delivery, preserving all unaffected details. Never editing instructions or a correction excerpt. Empty when no material correction is needed.'}}}
-
-
-def review_delivery(task,response,invoke):
-    payload={'request':task,'basis':response['basis'],'proposed_delivery':response['answer']}
-    review=invoke('dependency-check',CHECK,payload,CHECK_SCHEMA)
-    updated={**response,'answer':review['replacement_delivery'].strip() or response['answer']}
-    return {**finish(updated),'original_delivery':response,'review':{'correction':review['replacement_delivery']}}

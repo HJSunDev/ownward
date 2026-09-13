@@ -1349,26 +1349,14 @@ class ExternalIntelligenceCapability:
             timeout_seconds=float(settings["timeout_seconds"]), attempts=int(settings["attempts"]),
             base_instructions=base_instructions,
         )
-        result, review_usage = self._review_information_use(prompt, value, settings, stage, base_instructions=base_instructions)
-        _add_usage(usage, review_usage)
+        result = self._finish_information_use(value, stage)
         return result['answer'].strip(), usage
 
-    def _review_information_use(self, task, response, settings, stage, *, base_instructions=None):
-        usage = _empty_usage()
-        def invoke(name, instruction, payload, schema):
-            value, stage_usage = self._invoke(
-                role='reader', prompt=information_use_flow.stage_prompt(instruction, payload),
-                schema=schema, stage=stage / name, model=settings['model'],
-                effort=settings['reasoning_effort'], timeout_seconds=settings['timeout_seconds'],
-                attempts=settings['attempts'],
-                base_instructions=base_instructions,
-                resume_prompt=lambda notes: information_use_flow.stage_prompt(instruction, payload, notes),
-            )
-            _add_usage(usage, stage_usage)
-            return value
-        result = information_use_flow.review_delivery(task, response, invoke)
+    @staticmethod
+    def _finish_information_use(response, stage):
+        result = information_use_flow.finish(response)
         write_json(stage / "information-use-result.json", result)
-        return result, usage
+        return result
 
     def active_answer(
         self,
@@ -1404,10 +1392,7 @@ class ExternalIntelligenceCapability:
         _add_usage(usage, frame_usage)
         session.validate()
         report = session.report()
-        result, review_usage = self._review_information_use(
-            {'request': {'question': question['question'], 'question_date': question.get('question_date', '')},
-             'evidence_needs': frame}, value, reader_settings, stage, base_instructions=session.instructions)
-        _add_usage(usage, review_usage)
+        result = self._finish_information_use(value, stage)
         report['information_use'] = {'used': result['used_information_use']}
         return result['answer'].strip(), usage, report
 
@@ -1725,7 +1710,7 @@ def stage_dependency_identities(
             "runtime_adapter": sha256(Path(__file__).with_name("external_intelligence_runtime.py")),
             "invoke": inspect.getsource(ExternalIntelligenceCapability._invoke),
             "answer": inspect.getsource(ExternalIntelligenceCapability.active_answer),
-            "information_use_adapter": inspect.getsource(ExternalIntelligenceCapability._review_information_use),
+            "information_use_adapter": inspect.getsource(ExternalIntelligenceCapability._finish_information_use),
             "information_use": sha256(Path(information_use_flow.complete.__code__.co_filename)),
         }),
         "judge": canonical_sha256({

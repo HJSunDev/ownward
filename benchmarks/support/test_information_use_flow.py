@@ -40,10 +40,10 @@ class InformationUseTests(unittest.TestCase):
 
     def test_task_preparation_is_separate_from_sources_and_delivery_preserves_originals(self):
         before = copy.deepcopy(self.observations)
-        invoke = mock.Mock(side_effect=[self.frame, self.response, {'replacement_delivery': ''}])
+        invoke = mock.Mock(side_effect=[self.frame, self.response])
         result = flow.respond(self.observations, invoke)
         instruction, schema = flow.task_contract(self.frame)
-        self.assertEqual(invoke.call_args_list[:2], [
+        self.assertEqual(invoke.call_args_list, [
             mock.call('task-basis', flow.FRAME, {'task': self.observations['task']}, flow.FRAME_SCHEMA),
             mock.call('respond', instruction, self.observations, schema),
         ])
@@ -51,38 +51,6 @@ class InformationUseTests(unittest.TestCase):
         self.assertEqual('Main result\n\nIf the condition applies: Other result', result['answer'])
         self.assertEqual(self.response, result['scoped_results'])
         self.assertTrue(result['used_information_use'])
-        check = invoke.call_args_list[2]
-        self.assertEqual('dependency-check', check.args[0])
-        self.assertEqual(self.response['answer'], check.args[2]['proposed_delivery'])
-        self.assertNotIn('sources', check.args[2])
-
-    def test_review_replaces_only_main_result_and_preserves_conditions(self):
-        before = copy.deepcopy(self.response)
-        unchanged = flow.review_delivery('Task', self.response, mock.Mock(return_value={'replacement_delivery': ' '}))
-        self.assertEqual(flow.finish(self.response)['answer'], unchanged['answer'])
-        corrected = flow.review_delivery('Task', self.response,
-                                        mock.Mock(return_value={'replacement_delivery': 'Supported result with its condition'}))
-        self.assertEqual('Supported result with its condition\n\nIf the condition applies: Other result', corrected['answer'])
-        self.assertEqual(before, self.response)
-        self.assertEqual(before, corrected['original_delivery'])
-
-    def test_review_preserves_incumbent_basis_and_does_not_mutate_delivery(self):
-        self.response['basis'] = {
-            '1': {'supported': 'The requested event is not documented.',
-                  'unresolved': 'It may be the other event; investigate further.'},
-            '2': {'supported': 'The rule applies to the situation given by the user.',
-                  'unresolved': 'No independent confirmation of the given situation.'},
-        }
-        before = copy.deepcopy(self.response)
-        invoke = mock.Mock(return_value={'replacement_delivery': ''})
-        result = flow.review_delivery('Original task', self.response, invoke)
-        payload = invoke.call_args.args[2]
-        self.assertEqual('Original task', payload['request'])
-        self.assertEqual(before['basis'], payload['basis'])
-        self.assertEqual(before, self.response)
-        self.assertEqual(before['basis'], result['basis'])
-        self.assertEqual(flow.finish(before)['answer'], result['answer'])
-
 
     def test_finish_preserves_delivery_without_conditions(self):
         before = copy.deepcopy(self.response)
@@ -94,20 +62,20 @@ class InformationUseTests(unittest.TestCase):
 
     def test_empty_final_delivery_is_rejected(self):
         self.response['answer'] = ' '
-        invoke = mock.Mock(side_effect=[self.frame, self.response, {'replacement_delivery': ''}])
+        invoke = mock.Mock(side_effect=[self.frame, self.response])
         with self.assertRaises(ValueError):
             flow.respond(self.observations, invoke)
-        self.assertEqual(3, invoke.call_count)
+        self.assertEqual(2, invoke.call_count)
 
     def test_explicit_entries_keep_prior_work_separate_from_sources(self):
-        invoke = mock.Mock(side_effect=[self.frame, self.response, {'replacement_delivery': ''}])
+        invoke = mock.Mock(side_effect=[self.frame, self.response])
         flow.complete(self.observations, invoke, draft='Fallible draft')
         payload = invoke.call_args_list[1].args[2]
         self.assertEqual(self.observations['sources'], payload['sources'])
         self.assertEqual('Fallible draft', payload['prior_work']['draft'])
         self.assertIn('fallible', invoke.call_args_list[1].args[1])
         self.assertNotIn('prior_work', self.observations)
-        self.assertEqual(3, invoke.call_count)
+        self.assertEqual(2, invoke.call_count)
 
     def test_task_contracts_do_not_leak_needs_between_tasks(self):
         before = copy.deepcopy(flow.RESPONSE)
