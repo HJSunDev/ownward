@@ -39,6 +39,134 @@ MODEL = "qwen3.8-flash"
 KEY_FIELD = "BAILIAN_API_KEY"
 
 
+def _invalid_fields(value, schema, path=()):
+    """Locate disjoint invalid fields without changing their values or constraints."""
+    try:
+        _validate_schema(value, schema)
+        return []
+    except ExternalIntelligenceError:
+        pass
+    if any(key in schema for key in ("anyOf", "oneOf", "allOf")):
+        return [(path, schema)]
+    shallow = {**schema, "properties": {key: {} for key in schema.get("properties", {})}, "items": {}}
+    try:
+        _validate_schema(value, shallow)
+    except ExternalIntelligenceError:
+        return [(path, schema)]
+    if isinstance(value, dict):
+        children = [(key, child, schema["properties"][key]) for key, child in value.items()
+                    if key in schema.get("properties", {})]
+    elif isinstance(value, list) and isinstance(schema.get("items"), dict):
+        children = [(index, child, schema["items"]) for index, child in enumerate(value)]
+    else:
+        return [(path, schema)]
+    return [error for key, child, rule in children for error in _invalid_fields(child, rule, (*path, key))]
+
+
+def _field_pointer(path):
+    return "/" + "/".join(str(key).replace("~", "~0").replace("/", "~1") for key in path)
+
+
+def _normalize_integer_collections(value, schema):
+    """Normalize singleton integer packaging only when the full schema admits it."""
+    if isinstance(value, list) and len(value) == 1 and type(value[0]) is int and any(k in schema for k in ("anyOf", "oneOf")):
+        try:
+            _validate_schema(value, schema)
+        except ExternalIntelligenceError:
+            try:
+                _validate_schema(value[0], schema)
+                return value[0]
+            except ExternalIntelligenceError:
+                pass
+    if schema.get("type") == "array" and type(value) is int:
+        try:
+            _validate_schema([value], schema)
+            return [value]
+        except ExternalIntelligenceError:
+            return value
+    if isinstance(value, dict) and schema.get("type") == "object":
+        properties = schema.get("properties", {})
+        return {key: _normalize_integer_collections(child, properties.get(key, {}))
+                for key, child in value.items()}
+    if isinstance(value, list) and schema.get("type") == "array":
+        return [_normalize_integer_collections(child, schema.get("items", {})) for child in value]
+    return value
+
+
+def _unwrap_field_corrections(value, schema):
+    """Accept one unambiguous map of the exact requested correction pointers."""
+    matches = []
+    def visit(node):
+        if isinstance(node, dict):
+            if set(node) == set(schema.get("required", [])):
+                candidate = _normalize_integer_collections(node, schema)
+                try:
+                    _validate_schema(candidate, schema)
+                    matches.append(candidate)
+                except ExternalIntelligenceError:
+                    pass
+            for child in node.values():
+                visit(child)
+        elif isinstance(node, list):
+            for child in node:
+                visit(child)
+    visit(value)
+    return matches[0] if len(matches) == 1 else value
+
+
+def _partial_array_output(text, schema):
+    """Retain closed records in a fixed-size batch; missing records remain invalid."""
+    properties = schema.get("properties", {})
+    if schema.get("type") != "object" or len(properties) != 1:
+        return None
+    name, rule = next(iter(properties.items()))
+    count = rule.get("minItems")
+    if (rule.get("type") != "array" or type(count) is not int or count <= 0
+            or count != rule.get("maxItems") or schema.get("required") != [name]):
+        return None
+    decoder = json.JSONDecoder()
+    remaining = text.lstrip()
+    if not remaining.startswith("{"):
+        return None
+    remaining = remaining[1:].lstrip()
+    try:
+        key, end = decoder.raw_decode(remaining)
+    except ValueError:
+        return None
+    remaining = remaining[end:].lstrip()
+    if key != name or not remaining.startswith(":"):
+        return None
+    remaining = remaining[1:].lstrip()
+    if not remaining.startswith("["):
+        return None
+    remaining, rows = remaining[1:].lstrip(), []
+    while remaining and len(rows) < count:
+        try:
+            row, end = decoder.raw_decode(remaining)
+        except ValueError:
+            break
+        rows.append(row)
+        remaining = remaining[end:].lstrip()
+        if not remaining.startswith(","):
+            break
+        remaining = remaining[1:].lstrip()
+    if not rows or len(rows) >= count:
+        return None
+    return {name: rows + [None] * (count - len(rows))}
+
+
+def _closed_json_prefix(text):
+    """Recover a complete object followed only by surplus closing delimiters."""
+    try:
+        value, end = json.JSONDecoder().raw_decode(text)
+    except ValueError:
+        return None
+    trailing = text[end:].strip()
+    if isinstance(value, dict) and trailing and set(trailing).issubset({'}', ']', ' ', '\r', '\n', '\t'}):
+        return value
+    return None
+
+
 @dataclass
 class MessageService:
     host: str
@@ -313,6 +441,13 @@ class GoAPIClient:
         try:
             return self._turn(prompt, schema, model, effort, Path(work_dir), deadline,
                               dynamic_tools, tool_handler, base_instructions, _route or self._route.new_scope(), initial_context)
+        except ExternalIntelligenceError as error:
+            retained_path = Path(work_dir) / "retained-output.json"
+            if not hasattr(error, "partial_output") and retained_path.is_file():
+                retained = json.loads(retained_path.read_text(encoding="utf-8"))
+                error.partial_output = retained["output"]
+                error.partial_usage = retained["usage"]
+            raise
         finally:
             with self._lock:
                 self._active -= 1
@@ -331,6 +466,9 @@ class GoAPIClient:
                      cache_write_tokens=0, format_corrections=0)
         step = 0
         requests = 0
+        repair_fields = []
+        original_value = None
+        response_schema = schema
         while True:
             self._remaining(deadline)
             step += 1
@@ -400,6 +538,7 @@ class GoAPIClient:
                 messages.append({"role": "user", "content": replies})
                 continue
             text = "".join(block["text"] for block in content if block["type"] == "text")
+            value = None
             try:
                 if result.get("stop_reason") != "end_turn":
                     raise ValueError("response did not finish normally")
@@ -407,15 +546,74 @@ class GoAPIClient:
                 lines = encoded.splitlines()
                 if len(lines) >= 3 and lines[0].lower() in ("```", "```json") and lines[-1] == "```":
                     encoded = "\n".join(lines[1:-1])
-                value = json.loads(encoded)
-                _validate_schema(value, schema)
+                try:
+                    value = json.loads(encoded)
+                except json.JSONDecodeError:
+                    value = _closed_json_prefix(encoded)
+                    if value is None:
+                        value = _partial_array_output(encoded, response_schema)
+                    if value is None:
+                        raise
+                    _atomic_json(work_dir / "partial-output.json", value)
+                normalized = _normalize_integer_collections(value, response_schema)
+                if repair_fields:
+                    normalized = _unwrap_field_corrections(normalized, response_schema)
+                if normalized != value:
+                    _atomic_json(work_dir / f"normalized-output-{step:03d}.json", {
+                        "original": value, "normalized": normalized})
+                    value = normalized
+                _validate_schema(value, response_schema)
+                if repair_fields:
+                    corrections = value
+                    value = copy.deepcopy(original_value)
+                    for path, _ in repair_fields:
+                        parent = value
+                        for key in path[:-1]:
+                            parent = parent[key]
+                        parent[path[-1]] = corrections[_field_pointer(path)]
+                    _validate_schema(value, schema)
+                    _atomic_json(work_dir / "format-repair.json", {"corrections": corrections})
                 if not isinstance(value, dict):
                     raise ValueError("expected an object")
             except (ValueError, RuntimeError) as error:
                 if usage["format_corrections"]:
-                    raise ExternalIntelligenceError("Bailian API structured output failed after one correction") from None
+                    retained = original_value if repair_fields else value
+                    if repair_fields and isinstance(value, dict):
+                        retained = copy.deepcopy(original_value)
+                        for path, rule in repair_fields:
+                            pointer = _field_pointer(path)
+                            if pointer not in value:
+                                continue
+                            try:
+                                _validate_schema(value[pointer], rule)
+                            except ExternalIntelligenceError:
+                                continue
+                            parent = retained
+                            for key in path[:-1]:
+                                parent = parent[key]
+                            parent[path[-1]] = value[pointer]
+                    failure = ExternalIntelligenceError("Bailian API structured output failed after one correction")
+                    failure.partial_output = retained
+                    failure.partial_usage = {**usage, "api_requests": requests}
+                    raise failure from None
                 usage["format_corrections"] = 1
                 declarations = []
+                if isinstance(value, dict):
+                    repair_fields = _invalid_fields(value, schema)
+                if repair_fields and all(path for path, _ in repair_fields):
+                    original_value = value
+                    _atomic_json(work_dir / "retained-output.json", {
+                        "output": original_value, "usage": {**usage, "api_requests": requests}})
+                    properties = {_field_pointer(path): rule for path, rule in repair_fields}
+                    response_schema = {"type": "object", "additionalProperties": False,
+                                       "required": list(properties), "properties": properties}
+                    system = (instructions or "Do not use tools.") + " Return only the requested JSON field corrections matching this JSON Schema: " + json.dumps(response_schema, ensure_ascii=False, separators=(",", ":"))
+                    messages.append({"role": "user", "content": [{"type": "text", "text":
+                        "Correct only the invalid fields listed in the response schema. Each key is a JSON Pointer into your previous result. "
+                        "Return the replacement value under that exact key. Preserve its supported meaning and references; "
+                        "all other fields are retained unchanged. Do not use tools or repeat the whole result."}]})
+                    continue
+                repair_fields = []
                 messages.append({"role": "user", "content": [{"type": "text", "text":
                     f"Your previous result failed JSON Schema validation: {error}. Return the corrected JSON object only. Do not use tools."}]})
                 continue

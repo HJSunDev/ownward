@@ -12,6 +12,20 @@ from external_intelligence import ExternalIntelligenceExecutor, InvocationLifecy
 
 
 class ExternalIntelligenceRuntimeTests(unittest.TestCase):
+    def test_provider_neutral_partial_output_survives_runtime_port(self):
+        error = subject.ExternalIntelligenceError('incomplete structured batch')
+        error.partial_output = {'analyses': [{'index': 0}, None]}
+        error.partial_usage = {'output_tokens': 12}
+        inner = mock.Mock()
+        inner.invoke.side_effect = error
+        adapter = mock.Mock(TransportError=subject.ExternalIntelligenceError,
+                            TransportTimeout=subject.ExternalIntelligenceTimeout)
+        port = subject._StableTransport(inner, adapter)
+        with self.assertRaises(subject.ExternalIntelligenceError) as caught:
+            port.invoke(prompt='test')
+        self.assertIs(error, caught.exception)
+        self.assertEqual({'analyses': [{'index': 0}, None]}, caught.exception.partial_output)
+
     def test_adapter_timeout_progress_reaches_the_shared_retry_loop(self):
         for timeout_type in (TimeoutError, subject.ExternalIntelligenceTimeout):
             with self.subTest(timeout_type=timeout_type), tempfile.TemporaryDirectory() as directory:
@@ -24,6 +38,7 @@ class ExternalIntelligenceRuntimeTests(unittest.TestCase):
                 transport.diagnostics.return_value = {'rate_limit_observed': False}
                 error = timeout_type('interrupted')
                 error.working_notes = 'preserved work'
+                error.partial_output = {'analyses': [None]}
                 transport.invoke.side_effect = [error, ({'answer': 'done'}, {}, {})]
                 adapter = mock.Mock(TransportTimeout=timeout_type, TransportError=RuntimeError)
                 stable = subject._StableTransport(transport, adapter).new_scope()
@@ -37,6 +52,17 @@ class ExternalIntelligenceRuntimeTests(unittest.TestCase):
                                  [call.kwargs['prompt'] for call in transport.invoke.call_args_list])
                 self.assertEqual(2, usage['attempts'])
                 self.assertTrue((Path(directory)/'attempt-001/interrupted-work.json').is_file())
+
+    def test_provider_neutral_timeout_preserves_structured_progress(self):
+        error = subject.ExternalIntelligenceTimeout('interrupted correction')
+        error.partial_output = {'analyses': [{'index': 0}, None]}
+        inner = mock.Mock()
+        inner.invoke.side_effect = error
+        adapter = mock.Mock(TransportTimeout=subject.ExternalIntelligenceTimeout,
+                            TransportError=subject.ExternalIntelligenceError)
+        with self.assertRaises(subject.ExternalIntelligenceTimeout) as caught:
+            subject._StableTransport(inner, adapter).invoke(prompt='test')
+        self.assertIs(error, caught.exception)
 
     def test_each_driver_loads_without_other_implementations(self) -> None:
         for driver, module in subject._ADAPTERS.items():

@@ -224,8 +224,12 @@ class _StableTransport:
         try:
             return self._transport.invoke(**request)
         except self._adapter.TransportTimeout as error:
+            if isinstance(error, ExternalIntelligenceTimeout):
+                raise
             raise _translate_timeout(error) from error
         except self._adapter.TransportError as error:
+            if isinstance(error, ExternalIntelligenceError):
+                raise
             raise ExternalIntelligenceError(str(error)) from error
 
     def diagnostics(self) -> dict[str, Any]:

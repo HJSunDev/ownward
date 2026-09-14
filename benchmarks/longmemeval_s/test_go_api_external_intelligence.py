@@ -113,11 +113,147 @@ class GoAPIClientTests(unittest.TestCase):
         ]
         for encoded in invalid:
             with self.subTest(encoded=encoded):
-                with mock.patch.object(self.client, '_post', side_effect=[answer(encoded), answer('{"answer":"repaired"}')]) as post:
+                replacement = '{"/answer":"repaired"}' if encoded == invalid[0] else '{"answer":"repaired"}'
+                with mock.patch.object(self.client, '_post', side_effect=[answer(encoded), answer(replacement)]) as post:
                     actual, usage, _ = self.invoke()
                 self.assertEqual({'answer': 'repaired'}, actual)
                 self.assertEqual(1, usage['format_corrections'])
                 self.assertEqual(2, post.call_count)
+
+    def test_field_repair_finds_all_errors_and_preserves_valid_content(self):
+        schema = {'type': 'object', 'required': ['rows'], 'additionalProperties': False,
+                  'properties': {'rows': {'type': 'array', 'items': {
+                      'type': 'object', 'additionalProperties': False, 'required': ['text', 'context', 'kind'],
+                      'properties': {'text': {'type': 'string'},
+                                     'context': {'type': 'array', 'items': {'type': 'integer'}},
+                                     'kind': {'type': 'string', 'maxLength': 12}}}}}}
+        original = {'rows': [{'text': 'Keep all original evidence.', 'context': [8], 'kind': 'fact'},
+                             {'text': 'Keep this evidence too.', 'context': '11', 'kind': 'overlong category name'}]}
+        corrections = {'/rows/1/context': [11], '/rows/1/kind': 'event'}
+        with mock.patch.object(self.client, '_post', side_effect=[answer(json.dumps(original)), answer(json.dumps(corrections))]) as post:
+            actual, usage, _ = self.client.invoke(prompt='organize', schema=schema, model=subject.MODEL,
+                effort='medium', work_dir=self.root / 'repair', timeout_seconds=5)
+        self.assertEqual(original['rows'][0], actual['rows'][0])
+        self.assertEqual(original['rows'][1]['text'], actual['rows'][1]['text'])
+        self.assertEqual([11], actual['rows'][1]['context'])
+        self.assertEqual('event', actual['rows'][1]['kind'])
+        self.assertEqual('11', original['rows'][1]['context'])
+        system = post.call_args.args[0]['system'][0]['text']
+        self.assertIn('/rows/1/context', system)
+        self.assertIn('/rows/1/kind', system)
+        self.assertNotIn('/rows/0', system)
+        self.assertEqual(1, usage['format_corrections'])
+        self.assertEqual(2, post.call_count)
+
+    def test_field_repair_rejects_changes_outside_invalid_fields(self):
+        schema = {'type': 'object', 'additionalProperties': False, 'required': ['answer', 'count'],
+                  'properties': {'answer': {'type': 'string'}, 'count': {'type': 'integer'}}}
+        replies = [answer('{"answer":"original evidence","count":"two"}'),
+                   answer('{"/answer":"changed evidence","/count":2}')]
+        with mock.patch.object(self.client, '_post', side_effect=replies) as post:
+            with self.assertRaisesRegex(subject.ExternalIntelligenceError, 'after one correction'):
+                self.client.invoke(prompt='test', schema=schema, model=subject.MODEL,
+                    effort='medium', work_dir=self.root / 'invalid-repair', timeout_seconds=5)
+        self.assertEqual(2, post.call_count)
+
+    def test_field_repair_keeps_full_schema_validation_and_handles_escaped_keys(self):
+        schema = {'type': 'object', 'required': ['a/b~c'], 'additionalProperties': False,
+                  'properties': {'a/b~c': {'type': 'integer', 'minimum': 0}}}
+        for replacement, succeeds in [({'/a~1b~0c': 2}, True), ({'/a~1b~0c': -1}, False)]:
+            with self.subTest(replacement=replacement), mock.patch.object(self.client, '_post', side_effect=[
+                    answer('{"a/b~c":"two"}'), answer(json.dumps(replacement))]):
+                invoke = lambda: self.client.invoke(prompt='test', schema=schema, model=subject.MODEL,
+                    effort='medium', work_dir=self.root / 'escaped', timeout_seconds=5)
+                if succeeds:
+                    self.assertEqual({'a/b~c': 2}, invoke()[0])
+                else:
+                    with self.assertRaisesRegex(subject.ExternalIntelligenceError, 'after one correction'):
+                        invoke()
+
+    def test_truncated_batch_repairs_only_missing_record(self):
+        schema = {'type': 'object', 'additionalProperties': False, 'required': ['rows'],
+                  'properties': {'rows': {'type': 'array', 'minItems': 3, 'maxItems': 3,
+                                         'items': {'type': 'string'}}}}
+        first = '{"rows":["first untouched","second untouched",'
+        with mock.patch.object(self.client, '_post', side_effect=[answer(first), answer('{"/rows/2":"third"}')]) as post:
+            value, _, _ = self.client.invoke(prompt='test', schema=schema, model=subject.MODEL,
+                effort='medium', work_dir=self.root / 'truncated', timeout_seconds=5)
+        self.assertEqual({'rows': ['first untouched', 'second untouched', 'third']}, value)
+        self.assertIn('/rows/2', post.call_args.args[0]['system'][0]['text'])
+        self.assertNotIn('/rows/0', post.call_args.args[0]['system'][0]['text'])
+        self.assertEqual(2, post.call_count)
+        self.assertIsNone(subject._partial_array_output('{"rows":[', schema))
+        self.assertIsNone(subject._partial_array_output('{"other":["one",', schema))
+        self.assertIsNone(subject._partial_array_output('{"rows":["one","two","three",', schema))
+
+    def test_failed_correction_retains_valid_records_but_never_completes_missing_one(self):
+        schema = {'type': 'object', 'required': ['rows'], 'additionalProperties': False,
+                  'properties': {'rows': {'type': 'array', 'minItems': 2, 'maxItems': 2,
+                                         'items': {'type': 'string'}}}}
+        with mock.patch.object(self.client, '_post', side_effect=[answer('{"rows":["keep",'), answer('{"/rows/1":5}')]):
+            with self.assertRaises(subject.ExternalIntelligenceError) as caught:
+                self.client.invoke(prompt='test', schema=schema, model=subject.MODEL,
+                    effort='medium', work_dir=self.root / 'partial-failure', timeout_seconds=5)
+        self.assertEqual({'rows': ['keep', None]}, caught.exception.partial_output)
+        with self.assertRaises(subject.ExternalIntelligenceError):
+            subject._validate_schema(caught.exception.partial_output, schema)
+
+    def test_correction_timeout_retains_closed_records_without_accepting_the_batch(self):
+        schema = {'type': 'object', 'required': ['rows'], 'additionalProperties': False,
+                  'properties': {'rows': {'type': 'array', 'minItems': 2, 'maxItems': 2,
+                                         'items': {'type': 'string'}}}}
+        with mock.patch.object(self.client, '_post', side_effect=[answer('{"rows":["keep",'),
+                subject.ExternalIntelligenceTimeout('correction timed out')]):
+            with self.assertRaises(subject.ExternalIntelligenceTimeout) as caught:
+                self.client.invoke(prompt='test', schema=schema, model=subject.MODEL,
+                    effort='medium', work_dir=self.root / 'partial-timeout', timeout_seconds=5)
+        self.assertEqual({'rows': ['keep', None]}, caught.exception.partial_output)
+        with self.assertRaises(subject.ExternalIntelligenceError):
+            subject._validate_schema(caught.exception.partial_output, schema)
+
+    def test_single_integer_collection_is_wrapped_without_changing_members_or_bounds(self):
+        selector = {'anyOf': [{'type': 'integer', 'minimum': 0},
+                    {'type': 'array', 'minItems': 2, 'maxItems': 2, 'items': {'type': 'integer'}}]}
+        schema = {'type': 'object', 'required': ['context'], 'additionalProperties': False,
+                  'properties': {'context': {'type': 'array', 'items': selector, 'maxItems': 5}}}
+        with mock.patch.object(self.client, '_post', return_value=answer('{"context":3}')) as post:
+            value, _, _ = self.client.invoke(prompt='test', schema=schema, model=subject.MODEL,
+                effort='medium', work_dir=self.root / 'singleton', timeout_seconds=5)
+        self.assertEqual({'context': [3]}, value)
+        self.assertEqual(1, post.call_count)
+        original = {'context': [[3, 7], 9]}
+        self.assertEqual(original, subject._normalize_integer_collections(original, schema))
+        for bad in (-1, None, True, '3'):
+            self.assertEqual({'context': bad}, subject._normalize_integer_collections({'context': bad}, schema))
+        pair = {'type': 'array', 'minItems': 2, 'maxItems': 2, 'items': {'type': 'integer'}}
+        self.assertEqual(3, subject._normalize_integer_collections(3, pair))
+        self.assertEqual(3, subject._normalize_integer_collections([3], selector))
+        self.assertEqual([3, 7], subject._normalize_integer_collections([3, 7], selector))
+        self.assertEqual({'context': [3]}, subject._normalize_integer_collections({'context': [3]}, schema))
+        self.assertEqual([-1], subject._normalize_integer_collections([-1], selector))
+
+    def test_wrapped_exact_corrections_are_accepted_without_changing_other_fields(self):
+        schema = {'type': 'object', 'required': ['kind', 'fact'], 'additionalProperties': False,
+                  'properties': {'kind': {'type': 'string', 'maxLength': 8}, 'fact': {'type': 'string'}}}
+        original = {'kind': 'a label that is too long', 'fact': 'unchanged original information'}
+        with mock.patch.object(self.client, '_post', side_effect=[answer(json.dumps(original)),
+                answer('{"analyses":[{"/kind":"event"}]}')]) as post:
+            value, _, _ = self.client.invoke(prompt='test', schema=schema, model=subject.MODEL,
+                effort='medium', work_dir=self.root / 'wrapped-corrections', timeout_seconds=5)
+        self.assertEqual({'kind': 'event', 'fact': original['fact']}, value)
+        self.assertEqual(2, post.call_count)
+        repair = {'type': 'object', 'required': ['/kind'], 'additionalProperties': False,
+                  'properties': {'/kind': {'type': 'string'}}}
+        ambiguous = {'one': {'/kind': 'event'}, 'two': {'/kind': 'fact'}}
+        self.assertEqual(ambiguous, subject._unwrap_field_corrections(ambiguous, repair))
+
+    def test_surplus_closing_delimiter_is_recovered_but_extra_content_is_not(self):
+        with mock.patch.object(self.client, '_post', return_value=answer('{"answer":"kept"}}')) as post:
+            value, _, _ = self.invoke()
+        self.assertEqual({'answer': 'kept'}, value)
+        self.assertEqual(1, post.call_count)
+        self.assertIsNone(subject._closed_json_prefix('{"answer":"one"}{"answer":"two"}'))
+        self.assertIsNone(subject._closed_json_prefix('{"answer":"one"} commentary'))
 
     def test_initial_context_is_a_separate_block_without_schema_or_rule_changes(self):
         with mock.patch.object(self.client, '_post', return_value=answer('{"answer":"ok"}')) as post:

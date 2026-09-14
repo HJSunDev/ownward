@@ -199,14 +199,16 @@ def grounded_instruction(representation: str = GROUNDED_REPRESENTATION) -> str:
             "\n\nSemantic input:\n"
         )
     return (
-        "Prepare source-owned retrieval metadata for every work item, in order. Return its explicit index, "
-        "one summary passage index, up to 4 short topics, and up to 8 nonredundant cues {passage,kind}. "
-        "Passage indices are the numbered keys in that item's target.passages, never another source. These passages "
-        "concatenate to the complete source; select answer-bearing statements, preferences, events or decisions, "
-        "preserving speaker, negation, conditions and changes. The host copies selected original passages; do not "
-        "rewrite them. Cover distinct stated facts across the source, including facts embedded in questions; "
-        "do not spend cues on advice requests, acknowledgements or repeated topic mentions alone. Do not index source IDs or dates "
-        "as facts. Related sources are reference context only. No query, answer or evaluation label is supplied."
+        "Prepare retrieval metadata for the supplied sources so later tasks can find relevant original information. "
+        "Process each work item once, in order, using its target as the source and candidates only as reference context. "
+        "Return the item's index, one representative summary passage index, up to 4 short topics, and up to 8 "
+        "nonredundant cues {passage,kind}. kind is a short category label (at most 40 characters), such as fact, preference, "
+        "event or decision, not a description of the fact. summary and passage are single integer indices, never lists. "
+        "Use passage indices from that target.passages; select original text, do not rewrite it. "
+        "Prioritize distinct facts, preferences, events and decisions, including facts stated within questions; "
+        "preserve speaker, negation, conditions, dates and changes. Cues are retrieval entry points, not an exhaustive "
+        "fact inventory. Omit cues containing only acknowledgements, advice requests or repeated topics. "
+        "Technical source identifiers and metadata dates alone are not content facts; retain dates meaningful to the source content."
         "\n\nSemantic input:\n"
     )
 

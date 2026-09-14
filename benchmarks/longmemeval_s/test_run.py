@@ -422,6 +422,36 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
         self.assertEqual({x["id"] for x in decoded[1]["input_assets"]}, {"a1"})
         self.assertEqual(usage["retries"], 1)
 
+    def test_transport_failure_keeps_valid_source_results_for_bounded_repair(self):
+        contract = adapter.semantic_representation.SemanticInputContract(adapter.semantic_representation.GROUNDED_REPRESENTATION, "test", None)
+        work = [{"id": f"w{i}", "organization_schema": "ownward.organization/v1",
+                 "asset": {"id": f"a{i}", "revision": 1, "content": text}, "candidates": []}
+                for i, text in enumerate(["Keep violet.", "Use Beacon."])]
+        good = {"index": 0, "summary": 0, "topics": [], "cues": [],
+                "organization": {"schema": "ownward.organization/v1", "units": [], "links": []}}
+        transport = FakeTransport([{"analyses": [good]}])
+        failure = adapter.ExternalIntelligenceError('format correction failed')
+        failure.partial_output = {"analyses": [good, None]}
+        failure.partial_usage = {"input_tokens": 9, "output_tokens": 5, "format_corrections": 1}
+        original_invoke = transport.invoke
+        invoked = []
+        def invoke(**kwargs):
+            invoked.append(kwargs)
+            if len(invoked) == 1:
+                raise failure
+            return original_invoke(**kwargs)
+        capability = adapter.ExternalIntelligenceCapability(transport, contract)
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(transport, 'invoke', side_effect=invoke):
+            decoded, usage = capability.semantics(work, {**self.protocol['memory'], 'semantic_attempts': 2}, Path(directory))
+            repeated, _ = capability.semantics(work, {**self.protocol['memory'], 'semantic_attempts': 2}, Path(directory))
+        self.assertEqual(['w0', 'w1'], [row['work_id'] for row in decoded])
+        self.assertEqual(decoded, repeated)
+        self.assertEqual(2, len(invoked))
+        self.assertNotIn('Keep violet.', invoked[1]['prompt'])
+        self.assertIn('Use Beacon.', invoked[1]['prompt'])
+        self.assertEqual(10, usage['input_tokens'])
+        self.assertEqual(1, usage['format_corrections'])
+
     def test_protocol_freezes_official_identity_models_and_cost_inventory(self) -> None:
         adapter.validate_protocol(self.protocol)
         self.assertEqual(adapter.OFFICIAL_DATA_SHA256, self.protocol["official"]["data_sha256"])
@@ -610,9 +640,12 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             requests.append(request)
             if request['schema'] == adapter.information_use_flow.FRAME_SCHEMA:
                 self.assertNotIn('active_retrieval', request)
+                self.assertNotIn('base_instructions', request)
+                self.assertNotIn('prepare_context', request)
                 self.assertNotIn('SECRET GOLD', request['prompt'])
                 return {'purpose': 'Find the city', 'needs': ['Which city is selected?']}, {'calls': 1}
             active = request['active_retrieval']
+            self.assertEqual(adapter.information_use_flow.RETRIEVAL_INSTRUCTIONS, request['base_instructions'])
             context = request['prepare_context'](active.call)
             self.assertIn('ownward_search', context)
             active.call('ownward_read', {'id': 'info-1'})
@@ -644,10 +677,11 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
         class ActiveTransport(FakeTransport):
             def invoke(self, **request):
                 self.calls += 1
-                self.test_case.assertEqual(self.expected_instructions, request["base_instructions"])
                 if request['schema'] == adapter.information_use_flow.FRAME_SCHEMA:
+                    self.test_case.assertNotIn('base_instructions', request)
                     self.test_case.assertNotIn('dynamic_tools', request)
                     return {'purpose': 'Find the city', 'needs': ['Which city is selected?']}, {'input_tokens': 1, 'output_tokens': 1}, {'transport': 'fixture'}
+                self.test_case.assertEqual(self.expected_instructions, request["base_instructions"])
                 self.test_case.assertIn("initial_context", request)
                 self.test_case.assertIn("ownward_search", request["initial_context"])
                 names = [item["name"] for item in request["dynamic_tools"]]
@@ -668,7 +702,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             client.contents["info-1"] = "The selected city is Kyoto."
             transport = ActiveTransport()
             transport.test_case = self
-            transport.expected_instructions = client.instructions
+            transport.expected_instructions = adapter.information_use_flow.RETRIEVAL_INSTRUCTIONS
             answer, _usage, report = adapter.ExternalIntelligenceCapability(transport).active_answer(
                 {"question": "Which city?", "question_date": "today"},
                 client,
@@ -681,11 +715,10 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             checkpoint = adapter.load_json(Path(directory) / "complete.json")
             self.assertEqual("external-agent-progressive/v1", checkpoint["active_retrieval"]["mode"])
             request = adapter.load_json(Path(directory) / "request.json")
-            self.assertEqual(client.instructions, request["base_instructions"])
+            self.assertEqual(adapter.information_use_flow.RETRIEVAL_INSTRUCTIONS, request["base_instructions"])
             self.assertEqual(3, len(report["selection_steps"]))
 
-            client.instructions = "更新后的服务端规则。"
-            with self.assertRaisesRegex(adapter.AdapterError, "request identity changed"):
+            with mock.patch.object(adapter.information_use_flow, 'RETRIEVAL_INSTRUCTIONS', 'Updated read-only instructions.'), self.assertRaisesRegex(adapter.AdapterError, "request identity changed"):
                 adapter.ExternalIntelligenceCapability(transport).active_answer(
                     {"question": "Which city?", "question_date": "today"}, client,
                     self.protocol["reader"], self.protocol["retrieval"], Path(directory),
@@ -1253,6 +1286,37 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             self.assertEqual(result, adapter.submit_semantic_batch(runtime, frozen, initial, root, repaired, self.protocol["memory"]))
             self.assertEqual(repaired.semantics.call_count, 1)
             self.assertEqual(len(submitted), 3)
+
+    def test_partial_semantic_correction_preserves_valid_sources_and_uses_remaining_attempt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = FakeRuntime()
+            runtime.client.contents.update({'info-1': 'Keep.', 'info-2': 'Second.', 'info-3': 'Third.'})
+            capability = FakeCodex()
+            frozen = adapter.freeze_semantic_batch(runtime, list(runtime.client.contents), root, 'question', 0)
+            units = adapter.semantic_analysis_units(frozen, self.protocol['memory'], capability)
+            results = {u['unit_index']: adapter.analyze_semantic_unit(u, root, self.protocol['memory'], capability) for u in units}
+            initial = adapter.combine_semantic_batch(frozen, units, results, root, self.protocol['memory'])
+            submitted = []
+            def submit(name, arguments):
+                item = arguments['submissions'][0]
+                submitted.append(copy.deepcopy(item))
+                valid = item['work_id'] == 'work-info-1' or item['analysis']['summary'] == 'fixed'
+                return {'results': [{} if valid else {'error': 'invalid reference'}]}
+            runtime.client.call_tool = submit
+            def fixed(work_id):
+                return {'work_id': work_id, 'summary': 'fixed', 'topics': [], 'cues': [], 'input_assets': []}
+            partial = adapter.AdapterError('one correction remains incomplete')
+            partial.accepted_analyses = {'work-info-2': fixed('work-info-2')}
+            partial.partial_usage = {'calls': 1}
+            repair = mock.Mock()
+            repair.semantics.side_effect = [partial, ([fixed('work-info-3')], {'calls': 1})]
+            result = adapter.submit_semantic_batch(runtime, frozen, initial, root, repair, {**self.protocol['memory'], 'semantic_attempts': 3})
+            self.assertEqual(2, repair.semantics.call_count)
+            self.assertEqual(['work-info-3'], [w['id'] for w in repair.semantics.call_args.args[0]])
+            self.assertEqual(1, sum(s['work_id'] == 'work-info-1' for s in submitted))
+            self.assertEqual(initial['submissions'][0], result['submissions'][0])
+            self.assertEqual(['fixed', 'fixed'], [s['analysis']['summary'] for s in result['submissions'][1:]])
 
     def test_semantic_publication_resumes_after_transport_failure_without_repeating_completed_sources(self):
         with tempfile.TemporaryDirectory() as directory:

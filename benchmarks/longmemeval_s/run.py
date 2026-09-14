@@ -38,6 +38,7 @@ from external_intelligence import (  # noqa: E402
     ExternalIntelligenceExecutor,
     ExternalIntelligenceTransport,
     InvocationLifecycle,
+    validate_structured_output,
 )
 import semantic_representation  # noqa: E402
 import information_use_flow  # noqa: E402
@@ -688,16 +689,27 @@ def submit_semantic_batch(
         # results and ask the host's existing intelligence to repair only the
         # rejected work; no score or answer information participates.
         work_by_id = {item["id"]: item for item in frozen["work"]}
-        repairs, extra_usage = capability.semantics(
-            [work_by_id[submissions[i]["work_id"]] for i in failed],
-            {**settings, "semantic_attempts": 1}, trace_root / batch_id / f"repair-{attempt:03d}",
-            feedback=[{"work_id": submissions[i]["work_id"], "error": failures[i],
-                       "rejected_organization": submissions[i]["analysis"].get("organization")} for i in failed],
-        )
+        failed_ids = [submissions[i]["work_id"] for i in failed]
+        try:
+            repairs, extra_usage = capability.semantics(
+                [work_by_id[work_id] for work_id in failed_ids],
+                {**settings, "semantic_attempts": 1}, trace_root / batch_id / f"repair-{attempt:03d}",
+                feedback=[{"work_id": submissions[i]["work_id"], "error": failures[i],
+                           "rejected_organization": submissions[i]["analysis"].get("organization")} for i in failed],
+            )
+            require([item["work_id"] for item in repairs] == failed_ids, "semantic repair reordered work")
+        except AdapterError as error:
+            if not hasattr(error, "accepted_analyses"):
+                raise
+            repairs = [error.accepted_analyses[work_id] for work_id in failed_ids if work_id in error.accepted_analyses]
+            extra_usage = error.partial_usage
         _add_usage(usage, extra_usage)
         submissions = [dict(item) for item in submissions]
-        for i, repaired in zip(failed, repairs):
-            require(repaired["work_id"] == submissions[i]["work_id"], "semantic repair reordered work")
+        repaired_by_id = {item["work_id"]: item for item in repairs}
+        for i in failed:
+            repaired = repaired_by_id.get(submissions[i]["work_id"])
+            if repaired is None:
+                continue
             submissions[i] = {**submissions[i], "input_assets": repaired.get("input_assets", []),
                               "analysis": {key: value for key, value in repaired.items() if key not in {"work_id", "input_assets"}}}
         write_json(pending_path, {"analysis_identity": analysis["identity"], "attempt": attempt,
@@ -748,9 +760,6 @@ def _answer_prompt(question: dict[str, Any], evidence: list[dict[str, Any]]) -> 
 
 def _active_answer_prompt(question: dict[str, Any], retrieval: dict[str, Any]) -> str:
     return (
-        "Help the user with the request below, using only personal information obtained through the connected Ownward tools and the ordinary meaning of what the speakers communicate. "
-        "This task is read-only; do not create or update information. "
-        "Deliver a concise, useful result for this request; reflect uncertainty that materially affects it.\n\n"
         f"Question date: {question.get('question_date', '')}\n"
         f"Question: {question['question']}\n\n"
         f"Hard budget: at most {retrieval['max_tool_calls']} tool calls, {retrieval['read_limit']} successful reads, "
@@ -1116,7 +1125,8 @@ class ExternalIntelligenceCapability:
         base_instructions: str | None = None,
         resume_prompt: Callable[[str], str] | None = None,
     ) -> tuple[dict[str, Any], dict[str, int]]:
-        base_instructions = active_retrieval.instructions if active_retrieval is not None else base_instructions
+        if base_instructions is None and active_retrieval is not None:
+            base_instructions = active_retrieval.instructions
         lifecycle = InvocationLifecycle(
             retrieval_mode="external-agent-progressive/v1" if active_retrieval is not None else "no-tools",
             tool_manifest_identity=(active_retrieval.tool_manifest_identity if active_retrieval is not None else None),
@@ -1233,9 +1243,10 @@ class ExternalIntelligenceCapability:
         work_ids = [str(item["id"]) for item in work]
         instruction = self.semantic_instruction_text()
         if semantic_representation.organization_requested(work):
-            instruction = semantic_representation.organization_contract()["instruction"] + "\n\n" + instruction
+            instruction = instruction.removesuffix("\n\nSemantic input:\n") + "\n\n" + semantic_representation.organization_contract()["instruction"]
             if self.semantic_contract.representation in {semantic_representation.GROUNDED_REPRESENTATION, semantic_representation.LEGACY_GROUNDED_REPRESENTATION}:
-                instruction = "Within each analysis, asset_id 'self' means that work's target; other endpoints use an exact supplied source_ref, never a numeric source index. Every relation involves self. Units and mentions need a passage index or inclusive [first,last] passage range as selector; context uses the same notation. A whole source uses [0,last]. An endpoint uses either a source passage range or a declared unit/mention ID, never both; prefer the source range when no reusable ID has been supplied. Mentions name people, objects or concepts, not whole claims; their ranges must lie inside the containing unit or its context. The host expands positions losslessly to source locators.\n\n" + instruction
+                instruction += "\n\nSource locators: asset_id 'self' identifies this work's target; other sources use their supplied source_ref, not numeric source indices. selector is an integer passage index or an inclusive two-integer [first,last] range; [0,last] covers the whole source. context is a list of these selectors, for example [11] or [[11,13],25]; omit it when unnecessary. Each endpoint uses either a source passage selector or unit/mention IDs, not both. Mention ranges must lie within their unit or its context."
+            instruction += "\n\nSemantic input:\n"
         prompt = instruction + json.dumps(semantic_input, ensure_ascii=False, separators=(",", ":"))
         schema = {
             "type": "object", "additionalProperties": False, "required": ["analyses"],
@@ -1315,12 +1326,15 @@ class ExternalIntelligenceCapability:
                     stage=call_stage, model=settings["semantic_model"], effort=settings["semantic_reasoning_effort"],
                     timeout_seconds=float(settings["semantic_timeout_seconds"]), attempts=1)
             except AdapterError as error:
-                usage["attempts"] += 1
-                usage["wall_seconds"] += time.monotonic()-began
-                feedback = [{"error": str(error)}]
-                write_json(progress_path, {"identity": identity, "attempt": attempt+1,
-                    "accepted": accepted, "usage": usage, "feedback": feedback})
-                continue
+                value = getattr(error.__cause__, "partial_output", None)
+                extra = {**getattr(error.__cause__, "partial_usage", {}),
+                         "attempts": 1, "wall_seconds": time.monotonic()-began}
+                if not isinstance(value, dict) or not isinstance(value.get("analyses"), list) or len(value["analyses"]) != len(remaining):
+                    _add_usage(usage, extra)
+                    feedback = [{"error": str(error)}]
+                    write_json(progress_path, {"identity": identity, "attempt": attempt+1,
+                        "accepted": accepted, "usage": usage, "feedback": feedback})
+                    continue
             _add_usage(usage, extra)
             if attempt:
                 usage["retries"] += 1
@@ -1330,15 +1344,21 @@ class ExternalIntelligenceCapability:
             feedback = []
             for index, item in enumerate(remaining):
                 try:
+                    validate_structured_output(rows[index], schema["properties"]["analyses"]["items"])
                     decoded = self.semantic_contract.decode_analysis(remaining, index, rows[index])
                     accepted[item["id"]] = {**decoded, "input_assets": inputs}
-                except semantic_representation.SemanticRepresentationError as error:
-                    feedback.append({"work_id": item["id"], "error": str(error), "rejected_organization": rows[index].get("organization")})
+                except (semantic_representation.SemanticRepresentationError, ExternalIntelligenceError) as error:
+                    feedback.append({"work_id": item["id"], "error": str(error),
+                                     "rejected_organization": rows[index].get("organization") if isinstance(rows[index], dict) else None})
             # Preserve successfully decoded work across retries and interruptions.
             # Each result retains the full material actually supplied to its call.
             write_json(progress_path, {"identity": identity, "attempt": attempt+1,
                 "accepted": accepted, "usage": usage, "feedback": feedback})
-        require(len(accepted) == len(work), f"semantic source repair remains incomplete: {feedback}")
+        if len(accepted) != len(work):
+            error = AdapterError(f"semantic source repair remains incomplete: {feedback}")
+            error.accepted_analyses = accepted
+            error.partial_usage = usage
+            raise error
         return [accepted[item["id"]] for item in work], usage
 
     def answer(self, prompt: str, settings: dict[str, Any], stage: Path, *, base_instructions: str | None = None) -> tuple[str, dict[str, int]]:
@@ -1373,7 +1393,6 @@ class ExternalIntelligenceCapability:
             schema=information_use_flow.FRAME_SCHEMA, stage=stage / "task-basis",
             model=reader_settings["model"], effort=reader_settings["reasoning_effort"],
             timeout_seconds=reader_settings["timeout_seconds"], attempts=reader_settings["attempts"],
-            base_instructions=session.instructions,
             resume_prompt=lambda notes: information_use_flow.stage_prompt(information_use_flow.FRAME, task_payload, notes),
         )
         instruction, schema = information_use_flow.task_contract(frame)
@@ -1387,6 +1406,7 @@ class ExternalIntelligenceCapability:
             timeout_seconds=float(reader_settings["timeout_seconds"]),
             attempts=int(reader_settings["attempts"]),
             active_retrieval=session,
+            base_instructions=information_use_flow.RETRIEVAL_INSTRUCTIONS,
             prepare_context=lambda call: information_use_flow.initial_context(question["question"], call),
         )
         _add_usage(usage, frame_usage)

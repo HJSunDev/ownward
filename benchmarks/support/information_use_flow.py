@@ -13,6 +13,7 @@ respond = _MODULE.respond
 finish = _MODULE.finish
 stage_prompt = _MODULE.stage_prompt
 OFFER = _MODULE.OFFER
+RETRIEVAL_INSTRUCTIONS = _MODULE.RETRIEVAL_INSTRUCTIONS
 RESPONSE = _MODULE.RESPONSE
 initial_context = _MODULE.initial_context
 

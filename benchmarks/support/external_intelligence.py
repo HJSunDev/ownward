@@ -455,6 +455,7 @@ class ExternalIntelligenceExecutor:
                 return complete["output"], complete["usage"]
         stage.mkdir(parents=True, exist_ok=True)
         last_error = ""
+        last_failure = None
         attempt_directories = sorted(path for path in stage.glob("attempt-*") if path.is_dir())
         if attempt_directories and all(_retryable_failed_attempt(path) for path in attempt_directories):
             cycle = canonical_sha256([
@@ -577,6 +578,7 @@ class ExternalIntelligenceExecutor:
                 })
                 return value, usage
             except (ExternalIntelligenceError, OSError, ValueError) as error:
+                last_failure = error
                 notes = getattr(error, "working_notes", "")
                 if (isinstance(error, ExternalIntelligenceTimeout) and isinstance(notes, str) and notes
                         and lifecycle.resume_prompt is not None and lifecycle.dynamic_tools is None):
@@ -597,9 +599,12 @@ class ExternalIntelligenceExecutor:
                 })
                 prior_wall_seconds += elapsed
                 prior_rate_limits += int(rate_limited)
-        raise ExternalIntelligenceError(
+        failure = ExternalIntelligenceError(
             f"external-intelligence capability failed after {attempts} bounded attempts: {last_error}"
         )
+        failure.partial_output = getattr(last_failure, "partial_output", None)
+        failure.partial_usage = getattr(last_failure, "partial_usage", {})
+        raise failure
 
 
 def _retryable_failed_attempt(path: Path) -> bool:
