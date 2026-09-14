@@ -245,7 +245,7 @@ class GoAPIClientTests(unittest.TestCase):
         repair = {'type': 'object', 'required': ['/kind'], 'additionalProperties': False,
                   'properties': {'/kind': {'type': 'string'}}}
         ambiguous = {'one': {'/kind': 'event'}, 'two': {'/kind': 'fact'}}
-        self.assertEqual(ambiguous, subject._unwrap_field_corrections(ambiguous, repair))
+        self.assertIsNone(subject._unwrap_field_corrections(ambiguous, repair))
 
     def test_surplus_closing_delimiter_is_recovered_but_extra_content_is_not(self):
         with mock.patch.object(self.client, '_post', return_value=answer('{"answer":"kept"}}')) as post:

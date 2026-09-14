@@ -41,6 +41,10 @@ type Evidence struct {
 	StartRune      int    `json:"start_rune"`
 	EndRune        int    `json:"end_rune"`
 	Content        string `json:"content"`
+
+	SourcePrelude          string `json:"source_prelude,omitempty"`
+	SourcePreludeStartRune int    `json:"source_prelude_start_rune"`
+	SourcePreludeEndRune   int    `json:"source_prelude_end_rune,omitempty"`
 }
 
 func (e Evidence) Reference() EvidenceReference {
@@ -53,6 +57,9 @@ func (e Evidence) Reference() EvidenceReference {
 func (e Evidence) Validate() error {
 	if err := e.Reference().Validate(); err != nil {
 		return err
+	}
+	if e.SourcePreludeStartRune != 0 || e.SourcePreludeEndRune != len([]rune(e.SourcePrelude)) || e.SourcePreludeEndRune > e.StartRune {
+		return errors.New("来源前导内容与原文区间不一致")
 	}
 	if len([]rune(e.Content)) != e.EndRune-e.StartRune {
 		return errors.New("证据内容与来源区间不一致")

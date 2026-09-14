@@ -93,25 +93,75 @@ def _normalize_integer_collections(value, schema):
     return value
 
 
-def _unwrap_field_corrections(value, schema):
-    """Accept one unambiguous map of the exact requested correction pointers."""
-    matches = []
-    def visit(node):
+def _unwrap_field_corrections(value, schema, *, original=None):
+    """Accept unique requested pointers or those exact paths in a response tree."""
+    matches = {}
+    required = set(schema.get("required", []))
+    def accept(candidate):
+        candidate = _normalize_integer_collections(candidate, schema)
+        try:
+            _validate_schema(candidate, schema)
+        except ExternalIntelligenceError:
+            return
+        fingerprint = json.dumps(candidate, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        matches[fingerprint] = candidate
+
+    def explicit_maps(node):
         if isinstance(node, dict):
-            if set(node) == set(schema.get("required", [])):
-                candidate = _normalize_integer_collections(node, schema)
-                try:
-                    _validate_schema(candidate, schema)
-                    matches.append(candidate)
-                except ExternalIntelligenceError:
-                    pass
+            # Explicit pointers retain their absolute meaning under a wrapper.
+            # Unrequested pointer edits are not silently accepted.
+            pointer_keys = {key for key in node if key.startswith("/")}
+            if required and pointer_keys == required:
+                accept({key: node[key] for key in required})
             for child in node.values():
-                visit(child)
+                explicit_maps(child)
         elif isinstance(node, list):
             for child in node:
-                visit(child)
-    visit(value)
-    return matches[0] if len(matches) == 1 else value
+                explicit_maps(child)
+    explicit_maps(value)
+
+    # A correction map may omit exactly the leading slash of every requested
+    # JSON Pointer. Match the complete root key set; do not interpret prose,
+    # unrequested edits, mixed spellings, or arbitrary nested property names.
+    if (required and all(key.startswith("/") for key in required)
+            and any("/" in key[1:] for key in required) and isinstance(value, dict)):
+        bare_keys = {key[1:]: key for key in required}
+        if set(value).intersection(bare_keys) and set(value).intersection(required):
+            return None
+        if len(bare_keys) == len(required) and set(value) == set(bare_keys):
+            accept({pointer: value[bare] for bare, pointer in bare_keys.items()})
+
+    # Ordinary property names are resolved only at the response root, never
+    # by looking for an arbitrary same-named leaf in a nested object.
+    if original is not None and isinstance(value, (dict, list)):
+        projected = {}
+        try:
+            for pointer in required:
+                if not pointer.startswith("/"):
+                    raise ValueError("not a JSON Pointer")
+                node, template = value, original
+                for encoded in pointer[1:].split("/"):
+                    token = encoded.replace("~1", "/").replace("~0", "~")
+                    if isinstance(template, list):
+                        index = int(token)
+                        if not isinstance(node, list) or str(index) != token or index < 0:
+                            raise ValueError("array index requires an array")
+                        node, template = node[index], template[index]
+                    elif isinstance(template, dict) and isinstance(node, dict):
+                        node, template = node[token], template[token]
+                    else:
+                        raise ValueError("correction container changed")
+                projected[pointer] = node
+            if required:
+                accept(projected)
+        except (ValueError, TypeError, KeyError, IndexError):
+            pass
+    if len(matches) > 1:
+        # A raw object may itself pass the patch schema despite conflicting
+        # wrapped interpretations. An invalid sentinel prevents both delivery
+        # and partial-output retention from accepting an arbitrary candidate.
+        return None
+    return next(iter(matches.values())) if matches else value
 
 
 def _partial_array_output(text, schema):
@@ -153,6 +203,36 @@ def _partial_array_output(text, schema):
     if not rows or len(rows) >= count:
         return None
     return {name: rows + [None] * (count - len(rows))}
+
+
+def _complete_json_containers(text):
+    """Close only unfinished containers after a complete value; never add data."""
+    encoded = text.strip()
+    if not encoded.startswith("{") or encoded[-1:] in ("{", "[", ":", ","):
+        return None
+    stack, quoted, escaped = [], False, False
+    for char in encoded:
+        if quoted:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                quoted = False
+        elif char == '"':
+            quoted = True
+        elif char in "{[":
+            stack.append("}" if char == "{" else "]")
+        elif char in "}]":
+            if not stack or stack.pop() != char:
+                return None
+    if quoted or not stack:
+        return None
+    try:
+        value = json.loads(encoded + "".join(reversed(stack)))
+    except ValueError:
+        return None
+    return value if isinstance(value, dict) else None
 
 
 def _closed_json_prefix(text):
@@ -282,6 +362,20 @@ def normalize_tool_arguments(value, schema):
     return value
 
 
+@dataclass
+class _UnsentRequestContinuation:
+    owner: Any
+    route: Any
+    identity: str
+    state: dict[str, Any]
+    consumed: bool = False
+
+
+def _request_identity(prompt, schema, model, effort, instructions):
+    return hashlib.sha256(json.dumps([prompt, schema, model, effort, instructions], ensure_ascii=False,
+        sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
 class GoAPIClient:
     def __init__(self, credential_file: Path, max_active: int, identity: dict[str, Any]) -> None:
         self._services, self._route = _load_services(credential_file)
@@ -310,6 +404,7 @@ class GoAPIClient:
         service = service or self._route.primary
         destination = self._services[service]
         blocks: dict[int, dict[str, Any]] = {}
+        request_started = False
         connection = http.client.HTTPSConnection(destination.host, timeout=self._remaining(deadline))
         try:
             connection_failures = []
@@ -334,6 +429,7 @@ class GoAPIClient:
             }
             if destination.session_header:
                 headers[destination.session_header] = session
+            request_started = True
             connection.request("POST", destination.endpoint, json.dumps(body, ensure_ascii=False).encode("utf-8"), headers)
             response = connection.getresponse()
             if response.status != 200:
@@ -400,18 +496,29 @@ class GoAPIClient:
                         break
             if not stopped:
                 raise ExternalIntelligenceError("Bailian API response stream ended before message_stop")
+            invalid_arguments = {}
             for index, text in arguments.items():
-                blocks[index]["input"] = json.loads(text)
+                try:
+                    blocks[index]["input"] = json.loads(text)
+                except json.JSONDecodeError:
+                    # An unusable invocation is a model-format failure, not a
+                    # broken transport. Keep raw bytes in the response record;
+                    # an empty placeholder is never dispatched to a handler.
+                    invalid_arguments[blocks[index]["id"]] = text
+                    blocks[index]["input"] = {}
             message["content"] = [blocks[index] for index in sorted(blocks)]
+            if invalid_arguments:
+                message["invalid_tool_arguments"] = invalid_arguments
             _atomic_json(path, message)
             return message
         except (socket.timeout, TimeoutError, ExternalIntelligenceTimeout):
             error = ExternalIntelligenceTimeout("Bailian API request timed out")
+            error.request_not_sent = not request_started
             # Incomplete reasoning is recoverable work, never a completed answer.
             error.working_notes = "".join(blocks[index].get("thinking", "") for index in sorted(blocks))
             raise error from None
         except (OSError, http.client.HTTPException, ValueError) as error:
-            details = {"error_type": type(error).__name__, "errno": getattr(error, "errno", None),
+            details = {"request_started": request_started, "error_type": type(error).__name__, "errno": getattr(error, "errno", None),
                        "filename": getattr(error, "filename", None),
                        "trace": [{"file": frame.filename, "line": frame.lineno, "function": frame.name}
                                  for frame in traceback.extract_tb(error.__traceback__)]}
@@ -419,14 +526,17 @@ class GoAPIClient:
                 _atomic_json(path.with_suffix(".transport-error.json"), details)
             except OSError:
                 pass
-            raise ExternalIntelligenceError(f"Bailian API transport failed ({type(error).__name__})") from None
+            failure = ExternalIntelligenceError(f"Bailian API transport failed ({type(error).__name__})")
+            failure.request_not_sent = not request_started
+            raise failure from None
         finally:
             connection.close()
 
     def invoke(self, *, prompt: str, schema: dict[str, Any], model: str, effort: str,
                work_dir: Path, timeout_seconds: float, dynamic_tools: list[dict[str, Any]] | None = None,
                tool_handler: Any = None, base_instructions: str | None = None,
-               _route: ServiceRoute | None = None, initial_context: str | None = None) -> tuple[dict, dict, dict]:
+               _route: ServiceRoute | None = None, initial_context: str | None = None,
+               _continuation: Any = None) -> tuple[dict, dict, dict]:
         if model.removeprefix(f"{PROVIDER}/").removeprefix("opencode-go/") != MODEL or effort not in {"medium", "xhigh"}:
             raise ExternalIntelligenceError("Bailian API model or reasoning effort is unsupported")
         if (dynamic_tools is None) != (tool_handler is None):
@@ -440,7 +550,7 @@ class GoAPIClient:
             self._maximum = max(self._maximum, self._active)
         try:
             return self._turn(prompt, schema, model, effort, Path(work_dir), deadline,
-                              dynamic_tools, tool_handler, base_instructions, _route or self._route.new_scope(), initial_context)
+                              dynamic_tools, tool_handler, base_instructions, _route or (_continuation.route if isinstance(_continuation, _UnsentRequestContinuation) else self._route.new_scope()), initial_context, _continuation)
         except ExternalIntelligenceError as error:
             retained_path = Path(work_dir) / "retained-output.json"
             if not hasattr(error, "partial_output") and retained_path.is_file():
@@ -453,10 +563,11 @@ class GoAPIClient:
                 self._active -= 1
             self._slots.release()
 
-    def _turn(self, prompt, schema, model, effort, work_dir, deadline, tools, handler, instructions, route, initial_context=None):
+    def _turn(self, prompt, schema, model, effort, work_dir, deadline, tools, handler, instructions, route, initial_context=None, continuation=None):
         work_dir.mkdir(parents=True, exist_ok=True)
         session = str(uuid.uuid4())
-        allowed = {t["name"] for t in tools or []}
+        catalog = list(tools or [])
+        allowed = {t["name"] for t in catalog}
         declarations = [{"name": t["name"], "description": t["description"], "input_schema": t["inputSchema"]} for t in tools or []]
         messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
         if initial_context is not None:
@@ -469,10 +580,35 @@ class GoAPIClient:
         repair_fields = []
         original_value = None
         response_schema = schema
+        request_identity = _request_identity(prompt, schema, model, effort, instructions)
+        if continuation is not None:
+            if (not isinstance(continuation, _UnsentRequestContinuation) or continuation.owner is not self
+                    or continuation.route is not route or continuation.identity != request_identity or continuation.consumed):
+                raise ExternalIntelligenceError("unsent-request continuation identity changed")
+            continuation.consumed = True
+            saved = copy.deepcopy(continuation.state)
+            session, catalog, allowed = saved["session"], saved["catalog"], set(saved["allowed"])
+            declarations, messages, system = saved["declarations"], saved["messages"], saved["system"]
+            usage, step, requests = saved["usage"], saved["step"] - 1, saved["requests"]
+            repair_fields, original_value = saved["repair_fields"], saved["original_value"]
+            response_schema = saved["response_schema"]
+            _atomic_json(work_dir / "resumed-unsent-request.json", {
+                "request_identity": request_identity, "session_id": session,
+                "next_request_step": step + 1, "prior_api_attempts": requests,
+                "same_source_observations_and_budget": True})
         while True:
             self._remaining(deadline)
             step += 1
+            # The host may withdraw exhausted capabilities in the same list.
+            # Only narrow declarations; delivery repair must not re-enable tools.
+            available = {t["name"] for t in tools or []}
+            declarations = [t for t in declarations if t["name"] in available]
             outgoing = copy.deepcopy(messages)
+            if catalog and not declarations and not usage["format_corrections"]:
+                outgoing.append({"role":"user","content":[{"type":"text","text":
+                    "Host execution state: retrieval capacity is exhausted; no further tool call can execute. "
+                    "This is the actual host state, not an estimate from the conversation. "
+                    "Continue the original task using the observations already obtained and return the required result."}]})
             # Keep the stable request prefix cacheable across the tool loop.
             outgoing[-1]["content"][-1]["cache_control"] = {"type": "ephemeral"}
             body = {"model": MODEL, "max_tokens": 128000, "stream": True,
@@ -481,6 +617,8 @@ class GoAPIClient:
                     "messages": outgoing}
             if declarations:
                 body["tools"] = declarations
+            elif catalog:
+                body["tool_choice"] = {"type":"none"}
             _atomic_json(work_dir / f"request-{step:03d}.json", body)
             service = route.current
             response_path = work_dir / f"response-{step:03d}.json"
@@ -502,6 +640,18 @@ class GoAPIClient:
                     })
                     service = fallback
                     response_path = response_path.with_suffix(".fallback.json")
+                except ExternalIntelligenceError as error:
+                    if getattr(error, "request_not_sent", False) is True:
+                        state = copy.deepcopy({"session": session, "catalog": catalog, "allowed": sorted(allowed),
+                            "declarations": declarations, "messages": messages, "system": system, "usage": usage,
+                            "step": step, "requests": requests, "repair_fields": repair_fields,
+                            "original_value": original_value, "response_schema": response_schema})
+                        error.request_continuation = _UnsentRequestContinuation(self, route, request_identity, state)
+                        # Diagnostic snapshot only: disk data is never accepted as a live continuation.
+                        _atomic_json(work_dir / "unsent-request-continuation.json", {
+                            "request_identity": request_identity, "request_step": step,
+                            "state": state, "requires_same_live_scope": True})
+                    raise
             if result.get("model") != MODEL:
                 raise ExternalIntelligenceError("Bailian API response model changed")
             u = result.get("usage", {})
@@ -512,6 +662,14 @@ class GoAPIClient:
             messages.append({"role": "assistant", "content": content})
             calls = [block for block in content if block["type"] == "tool_use"]
             if calls:
+                if catalog and not declarations and not usage["format_corrections"]:
+                    usage["format_corrections"] = 1
+                    messages.append({"role":"user","content":[{"type":"tool_result", "tool_use_id":call["id"],
+                        "is_error":True,"content":"Host retrieval capacity is exhausted; no action was executed."} for call in calls]})
+                    messages.append({"role":"user","content":[{"type":"text","text":
+                        "Preserve your completed work and return the required JSON result from the evidence already obtained. "
+                        "No tool can execute; this is the single delivery-format correction, not a new retrieval attempt."}]})
+                    continue
                 if not declarations or any(call["name"] not in allowed for call in calls):
                     if (not usage["format_corrections"] and len(calls) == 1 and not calls[0].get("input")
                             and any(b.get("type") == "text" and b.get("text", "").strip() for b in content)):
@@ -521,11 +679,20 @@ class GoAPIClient:
                         messages.append({"role":"user","content":[{"type":"text","text":"Preserve your completed work and return it as the required JSON object. This is delivery-format repair; use the evidence already obtained and do not call tools."}]})
                         continue
                     raise ExternalIntelligenceError("Bailian API requested an unavailable tool")
+                invalid_arguments = result.get("invalid_tool_arguments", {})
+                if invalid_arguments:
+                    if usage["format_corrections"]:
+                        raise ExternalIntelligenceError("Bailian API tool arguments failed after one correction")
+                    usage["format_corrections"] = 1
                 replies = []
                 for call in calls:
                     self._remaining(deadline)
                     try:
-                        definition = next(t["input_schema"] for t in declarations if t["name"] == call["name"])
+                        if call["id"] in invalid_arguments:
+                            raise ValueError("Tool arguments were not valid JSON; no action was executed for this call. "
+                                "Preserve evidence already obtained and resubmit valid arguments if this action is still needed. "
+                                "Malformed argument data: " + invalid_arguments[call["id"]])
+                        definition = next(t["inputSchema"] for t in catalog if t["name"] == call["name"])
                         arguments = normalize_tool_arguments(call["input"], definition)
                         if arguments != call["input"]:
                             _atomic_json(work_dir / f"argument-normalization-{step:03d}-{len(replies):02d}.json", {"tool": call["name"], "original": call["input"], "normalized": arguments})
@@ -551,13 +718,18 @@ class GoAPIClient:
                 except json.JSONDecodeError:
                     value = _closed_json_prefix(encoded)
                     if value is None:
+                        value = _complete_json_containers(encoded)
+                        if value is not None:
+                            _atomic_json(work_dir / f"container-closure-{step:03d}.json", {
+                                "rule": "append-missing-container-closers-only", "output": value})
+                    if value is None:
                         value = _partial_array_output(encoded, response_schema)
                     if value is None:
                         raise
                     _atomic_json(work_dir / "partial-output.json", value)
                 normalized = _normalize_integer_collections(value, response_schema)
                 if repair_fields:
-                    normalized = _unwrap_field_corrections(normalized, response_schema)
+                    normalized = _unwrap_field_corrections(normalized, response_schema, original=original_value)
                 if normalized != value:
                     _atomic_json(work_dir / f"normalized-output-{step:03d}.json", {
                         "original": value, "normalized": normalized})
@@ -578,7 +750,8 @@ class GoAPIClient:
             except (ValueError, RuntimeError) as error:
                 if usage["format_corrections"]:
                     retained = original_value if repair_fields else value
-                    if repair_fields and isinstance(value, dict):
+                    if (repair_fields and isinstance(value, dict)
+                            and set(value).issubset(response_schema.get("properties", {}))):
                         retained = copy.deepcopy(original_value)
                         for path, rule in repair_fields:
                             pointer = _field_pointer(path)

@@ -208,3 +208,58 @@ func TestSourceSnapshotDoesNotMixConcurrentRevisions(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestSourcePreludeKeepsHitAndDisjointSourceBounds(t *testing.T) {
+	store, err := assetlog.Open(filepath.Join(t.TempDir(), "assets"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := newTestBasic(t, store)
+	defer s.Close()
+	ctx := contract.WithInformationSystem(context.Background(), "prelude-system")
+	head := "记录：这是南库的报价，不包含搬运费。"
+	content := head + "\n\n" + strings.Repeat("无关的背景资料。", 160) + "\n\n南库本次报价是37元。"
+	created, err := s.Create(ctx, CreateInput{Content: content, Relations: []domain.ExplicitRelation{{Type: "qualifies", TargetID: "$self", Selector: &domain.TextSelector{Exact: head}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	units := derived.BuildEvidenceUnits(created.Information)
+	last := units[len(units)-1]
+	got, err := s.ReadEvidenceWithBasis(ctx, last.ID)
+	if err != nil || got.Evidence.Validate() != nil {
+		t.Fatal(got, err)
+	}
+	if got.Evidence.Content != last.Content || got.Evidence.SourcePrelude != units[0].Content || got.Evidence.SourcePreludeEndRune > got.Evidence.StartRune {
+		t.Fatal("original source bounds changed", got)
+	}
+	if len(got.Clarifications) != 1 || !got.Clarifications[0].Covered {
+		t.Fatal("delivered head clarification marked unread", got)
+	}
+	plain, err := s.ReadEvidence(ctx, last.ID)
+	if err != nil || plain != got.Evidence {
+		t.Fatal("read interfaces disagree", err)
+	}
+	first, err := s.ReadEvidenceWithBasis(ctx, units[0].ID)
+	if err != nil || first.Evidence.SourcePrelude != "" {
+		t.Fatal("head duplicated", err)
+	}
+	near := withSourcePrelude(created.Information, domain.Evidence{StartRune: 7})
+	if near.SourcePrelude != string([]rune(content)[:7]) || near.SourcePreludeEndRune != 7 {
+		t.Fatal("overlap was not removed", near)
+	}
+	if withSourcePrelude(created.Information, got.Evidence) != got.Evidence {
+		t.Fatal("prelude stacked")
+	}
+	updated := strings.Replace(content, "南库", "北库", 1)
+	emptyRelations := []domain.ExplicitRelation{}
+	if _, err = s.Update(ctx, UpdateInput{ID: created.Information.ID, ExpectedRevision: 1, Content: &updated, Relations: &emptyRelations}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.ReadEvidenceWithBasis(ctx, last.ID); err == nil {
+		t.Fatal("stale source accepted")
+	}
+	checks, err := s.CheckInformation(ctx, []string{got.Basis})
+	if err != nil || len(checks) != 1 || checks[0].Status != "changed" {
+		t.Fatal("head edit escaped basis checking", checks, err)
+	}
+}

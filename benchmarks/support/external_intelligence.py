@@ -485,6 +485,7 @@ class ExternalIntelligenceExecutor:
             prior_rate_limits += int(bool(metadata.get("rate_limited", False)))
         working_notes: list[str] = []
         validation_feedback = None
+        request_continuation = None
         for number in range(existing_attempts + 1, attempts + 1):
             attempt = stage / f"attempt-{number:03d}"
             attempt.mkdir()
@@ -492,7 +493,7 @@ class ExternalIntelligenceExecutor:
             work.mkdir()
             attempt_started = time.perf_counter()
             try:
-                if lifecycle.reset_attempt is not None:
+                if request_continuation is None and lifecycle.reset_attempt is not None:
                     lifecycle.reset_attempt()
                 started = time.perf_counter()
                 invoke_arguments: dict[str, Any] = {
@@ -528,7 +529,7 @@ class ExternalIntelligenceExecutor:
                         "tool_handler": handler,
                         "base_instructions": lifecycle.base_instructions,
                     })
-                if lifecycle.prepare_context is not None:
+                if request_continuation is None and lifecycle.prepare_context is not None:
                     if lifecycle.dynamic_tools is None or handler is None:
                         raise ExternalIntelligenceError("initial retrieval requires tool access")
                     context = lifecycle.prepare_context(handler)
@@ -538,6 +539,11 @@ class ExternalIntelligenceExecutor:
                     if remaining <= 0:
                         raise ExternalIntelligenceTimeout("initial retrieval exhausted the request timeout")
                     invoke_arguments["timeout_seconds"] = remaining
+                if request_continuation is not None:
+                    invoke_arguments["_continuation"] = request_continuation
+                    _write_json(attempt / "resumed-request.json", {"prior_attempt": number - 1,
+                        "original_retry_budget_consumed": True, "retrieval_reset": False, "initial_retrieval_repeated": False})
+                request_continuation = None
                 value, usage, transport = self.transport.invoke(**invoke_arguments)
                 elapsed = time.perf_counter() - started
                 if not isinstance(value, dict):
@@ -579,6 +585,9 @@ class ExternalIntelligenceExecutor:
                 return value, usage
             except (ExternalIntelligenceError, OSError, ValueError) as error:
                 last_failure = error
+                if (getattr(error, "request_not_sent", False) is True
+                        and getattr(error, "request_continuation", None) is not None):
+                    request_continuation = error.request_continuation
                 notes = getattr(error, "working_notes", "")
                 if (isinstance(error, ExternalIntelligenceTimeout) and isinstance(notes, str) and notes
                         and lifecycle.resume_prompt is not None and lifecycle.dynamic_tools is None):

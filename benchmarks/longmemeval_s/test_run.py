@@ -653,8 +653,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             self.assertNotIn('SECRET GOLD', request['prompt'])
             self.assertEqual(request['model'], self.protocol['reader']['model'])
             self.assertEqual(request['effort'], self.protocol['reader']['reasoning_effort'])
-            return {'intended_outcome': 'Find the city',
-                    'basis': {'1': {'supported': 'City is Kyoto', 'unresolved': ''}},
+            return {'resolution': 'resolved',
                     'answer': 'Kyoto', 'conditional_results': []}, {'calls': 1}
         with tempfile.TemporaryDirectory() as directory:
             client = FakeToolClient()
@@ -685,11 +684,10 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
                 self.test_case.assertIn("initial_context", request)
                 self.test_case.assertIn("ownward_search", request["initial_context"])
                 names = [item["name"] for item in request["dynamic_tools"]]
-                self.test_case.assertEqual(list(adapter.ACTIVE_RETRIEVAL_TOOLS), names)
+                self.test_case.assertEqual([*adapter.ACTIVE_RETRIEVAL_TOOLS, adapter.information_use_flow.READ_MANY], names)
                 search = request["tool_handler"]("ownward_search", {"query": "selected city", "limit": 1})
                 request["tool_handler"]("ownward_read", {"id": search["results"][0]["id"]})
-                return {"answer": "Kyoto", "intended_outcome": "Find the city",
-                        "basis": {"1": {"supported": "Kyoto", "unresolved": ""}}, "conditional_results": []}, {
+                return {"answer": "Kyoto", "resolution": "resolved", "conditional_results": []}, {
                     "input_tokens": 1, "cached_input_tokens": 0, "output_tokens": 1, "reasoning_output_tokens": 0,
                 }, {
                     "transport": "codex-app-server-stdio", "server_instance": "fixture",

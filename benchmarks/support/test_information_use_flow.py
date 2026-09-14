@@ -31,8 +31,7 @@ class InformationUseTests(unittest.TestCase):
         self.observations = {'task': 'Compare the options', 'sources': [
             {'id': '1', 'origin': 'ownward_read', 'content': 'Original source, including qualifications.'}]}
         self.response = {
-            'intended_outcome': 'Make a choice',
-            'basis': {'established': 'Original report', 'unresolved': 'Meaning of the condition'},
+            'resolution': 'partial',
             'answer': 'Main result',
             'conditional_results': [{'condition': 'If the condition applies', 'result': 'Other result'}],
         }
@@ -58,7 +57,8 @@ class InformationUseTests(unittest.TestCase):
         result = flow.finish(self.response)
         self.assertEqual('Main result', result['answer'])
         self.assertEqual(self.response, result['scoped_results'])
-        self.assertEqual(before['basis'], result['basis'])
+        self.assertEqual({}, result['basis'])
+        self.assertEqual('partial', result['scoped_results']['resolution'])
 
     def test_empty_final_delivery_is_rejected(self):
         self.response['answer'] = ' '
@@ -82,8 +82,9 @@ class InformationUseTests(unittest.TestCase):
         frame_before = copy.deepcopy(self.frame)
         _, first = flow.task_contract(self.frame)
         instruction, second = flow.task_contract({'purpose': 'Other task', 'needs': ['Need A', 'Need B']})
-        self.assertEqual('object', first['properties']['basis']['type'])
-        self.assertEqual(['1', '2'], second['properties']['basis']['required'])
+        self.assertEqual(['resolution', 'answer', 'conditional_results'], first['required'])
+        self.assertEqual(first, second)
+        self.assertNotIn('basis', second['properties'])
         self.assertIn('Need B', instruction)
         self.assertNotIn(self.frame['needs'][0], instruction)
         self.assertEqual(frame_before, self.frame)

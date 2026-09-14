@@ -603,6 +603,7 @@ func (s *Service) Search(ctx context.Context, input SearchInput) ([]SearchResult
 		if len(results[n].Evidence) == 0 && strings.TrimSpace(results[n].Summary) != strings.TrimSpace(asset.Content) {
 			results[n].Evidence = s.organizedEvidence(asset, input.Query, 3)
 		}
+		results[n].Summary = queryEvidenceSummary(asset, input.Query, results[n].Summary, results[n].Evidence)
 		for _, edge := range related {
 			// Within-source connections remain available through navigation. They
 			// add no cross-source entrance to an ordinary search result.

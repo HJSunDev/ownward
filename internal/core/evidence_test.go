@@ -3,6 +3,7 @@ package core
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/HJSunDev/ownward/internal/derived"
 	"github.com/HJSunDev/ownward/internal/domain"
@@ -72,4 +73,66 @@ func repeatEvidencePadding(pattern string, count int) string {
 		result[index] = runes[index%len(runes)]
 	}
 	return string(result)
+}
+
+func TestFocusedPassageIsNotBuriedByWholeSourceOrganization(t *testing.T) {
+	content := "The relay depot lists inspection guidance.\n\n" + strings.Repeat("Ordinary logistical background. ", 300) +
+		"\n\nThe relay depot's inspection fee is 37 credits. Keep the loading bay quiet.\n\n" +
+		strings.Repeat("Ordinary logistical background. ", 300)
+	asset := domain.Information{ID: "scope-density", Revision: 1, Content: content}
+	whole := derived.EvidenceUnit{Schema: derived.EvidenceUnitSchema, SourceID: asset.ID,
+		SourceRevision: 1, StartRune: 0, EndRune: len([]rune(content)), StartByte: 0, EndByte: len(content), Content: content}
+	refs := selectEvidence(asset, "relay depot inspection fee", 3,
+		[]evidenceChoice{{units: []derived.EvidenceUnit{whole}, terms: content}})
+	if len(refs) == 0 || refs[0].ContentRunes > 3*derived.DefaultEvidenceUnitRunes {
+		t.Fatalf("whole-source scope buried a focused passage: %v", refs)
+	}
+	unit, err := derived.ParseEvidenceUnitID(refs[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := derived.ResolveEvidence(asset, unit)
+	if err != nil || !strings.Contains(got.Content, "37 credits") || !strings.Contains(got.Content, "Keep the loading bay quiet") {
+		t.Fatalf("fact or adjacent qualification lost: %v %v", got, err)
+	}
+}
+
+func TestQueryEvidenceSummaryKeepsSourceAndBudget(t *testing.T) {
+	first := "The north depot delivery costs 37 credits. Its loading bay must remain quiet."
+	second := "The west depot delivery costs 52 credits. This charge already includes packaging."
+	content := strings.Repeat("General background. ", 60) + "\n\n" + first + "\n\n" + strings.Repeat("Background. ", 60) + "\n\n" + second
+	asset := domain.Information{ID: "preview-source", Revision: 1, Content: content}
+	refs := rankEvidence(asset, "depot delivery credits", 3)
+	old := strings.Repeat("Old representative metadata. ", 12)
+	got := queryEvidenceSummary(asset, "depot delivery credits", old, refs)
+	if len([]rune(got)) > len([]rune(old)) || len([]rune(got)) > derived.DefaultEvidenceUnitRunes {
+		t.Fatalf("preview exceeded the existing summary allocation: %d", len([]rune(got)))
+	}
+	for _, line := range strings.Split(got, "\n[") {
+		at := strings.Index(line, "] ")
+		if at < 0 || !strings.Contains(content, line[at+2:]) {
+			t.Fatalf("preview is not an original contiguous excerpt: %q", line)
+		}
+	}
+	if strings.Contains(got, "Old representative metadata") || !strings.Contains(got, "credits") {
+		t.Fatal(got)
+	}
+	refs[0].SourceID = "foreign"
+	if queryEvidenceSummary(asset, "depot", old, refs) != old {
+		t.Fatal("foreign reference accepted")
+	}
+}
+
+func TestSentenceClueKeepsStatementWithinOneOriginalReference(t *testing.T) {
+	statement := "Depot returns are permitted only before noon, after checking the original receipt, and only if the packaging remains unopened."
+	text := "General depot return information is collected here. " + statement + " Unrelated reference details follow here."
+	asset := domain.Information{ID: "sentence-source", Revision: 2, Content: text}
+	refs := []domain.EvidenceReference{{SourceID: asset.ID, SourceRevision: 2, StartRune: 0, EndRune: len([]rune(text))}}
+	got := queryEvidenceSummary(asset, "depot returns packaging receipt", strings.Repeat("x", 200), refs)
+	if !strings.Contains(got, statement) {
+		t.Fatalf("qualifications clipped: %q", got)
+	}
+	if utf8.RuneCountInString(got) > 200 {
+		t.Fatal("preview budget expanded")
+	}
 }

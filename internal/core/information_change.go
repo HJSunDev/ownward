@@ -107,9 +107,18 @@ func (s *Service) ReadEvidenceWithBasis(ctx context.Context, id string) (contrac
 	if err != nil {
 		return contract.EvidenceRead{}, err
 	}
+	evidence = withSourcePrelude(snapshot.Information, evidence)
 	notes, hash, err := noteDelivery(snapshot, unit.StartRune, unit.EndRune)
 	if err != nil {
 		return contract.EvidenceRead{}, err
+	}
+	// A self-clarification already delivered in the disjoint source prelude
+	// is covered too; do not claim the unreturned gap was read.
+	for i := range notes {
+		ref := notes[i].Evidence
+		if ref != nil && ref.SourceID == evidence.SourceID && ref.SourceRevision == evidence.SourceRevision && ref.StartRune >= 0 && ref.EndRune <= evidence.SourcePreludeEndRune {
+			notes[i].Covered = true
+		}
 	}
 	return contract.EvidenceRead{Evidence: evidence, Basis: makeBasis(ctx, snapshot, hash, unit.StartRune, unit.EndRune), Clarifications: notes}, nil
 }

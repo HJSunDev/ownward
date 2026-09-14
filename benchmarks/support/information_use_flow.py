@@ -20,3 +20,5 @@ initial_context = _MODULE.initial_context
 FRAME = _MODULE.FRAME
 FRAME_SCHEMA = _MODULE.FRAME_SCHEMA
 task_contract = _MODULE.task_contract
+EvidenceToolSession = _MODULE.EvidenceToolSession
+READ_MANY = _MODULE.READ_MANY

@@ -812,6 +812,13 @@ class ActiveRetrievalSession:
                 return tools
             cursor = next_cursor
 
+    def retrieval_capacity(self) -> tuple[bool, bool]:
+        reads = sum(item.get('success') is True and item.get('tool') in
+                    {'ownward_read', 'ownward_evidence_read'} for item in self._calls)
+        return (len(self._calls) < int(self.settings['max_tool_calls']),
+                reads < int(self.settings['read_limit']) and
+                self._read_chars < int(self.settings['context_max_chars']))
+
     def reset_attempt(self) -> None:
         self._calls = []
         self._observed_information_ids = set()
@@ -1386,7 +1393,8 @@ class ExternalIntelligenceCapability:
         retrieval_settings: dict[str, Any],
         stage: Path,
     ) -> tuple[str, dict[str, int], dict[str, Any]]:
-        session = ActiveRetrievalSession(client, retrieval_settings)
+        session = information_use_flow.EvidenceToolSession(
+            ActiveRetrievalSession(client, retrieval_settings), retrieval_settings['read_limit'])
         task_payload = {"task": question["question"], "date": question.get("question_date", "")}
         frame, frame_usage = self._invoke(
             role="reader", prompt=information_use_flow.stage_prompt(information_use_flow.FRAME, task_payload),
@@ -1413,6 +1421,7 @@ class ExternalIntelligenceCapability:
         session.validate()
         report = session.report()
         result = self._finish_information_use(value, stage)
+        write_json(stage / 'tool-handles.json', session.reverse)
         report['information_use'] = {'used': result['used_information_use']}
         return result['answer'].strip(), usage, report
 
