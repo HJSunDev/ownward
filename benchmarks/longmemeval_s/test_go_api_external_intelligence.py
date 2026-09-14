@@ -186,6 +186,207 @@ class GoAPIClientTests(unittest.TestCase):
         self.assertIsNone(subject._partial_array_output('{"other":["one",', schema))
         self.assertIsNone(subject._partial_array_output('{"rows":["one","two","three",', schema))
 
+    def test_interrupted_complete_batch_requires_an_unambiguous_complete_envelope(self):
+        schema = {'type': 'object', 'additionalProperties': False, 'required': ['rows'],
+                  'properties': {'rows': {'type': 'array', 'minItems': 2, 'maxItems': 2,
+                                         'items': {'type': 'string'}}}}
+        full = {'rows': ['first unchanged', 'second unchanged']}
+        self.assertEqual(full, subject._partial_array_output(json.dumps(full), schema, allow_complete=True))
+        self.assertIsNone(subject._partial_array_output(json.dumps(full), schema))
+        for text in ('{"rows":["first","second",',
+                     '{"rows":["first","second","extra"]}', '{"rows":["first","second"],"extra":true}',
+                     '{"rows":["first","second"]} trailing',
+                     '{"rows":["first","second"],"rows":["different","second"]}'):
+            with self.subTest(text=text):
+                self.assertIsNone(subject._partial_array_output(text, schema, allow_complete=True))
+        invalid = {'rows': ['first unchanged', 3]}
+        retained = subject._partial_array_output(json.dumps(invalid), schema, allow_complete=True)
+        self.assertEqual(invalid, retained)
+        with self.assertRaises(subject.ExternalIntelligenceError):
+            subject._validate_schema(retained, schema)
+        single = {**schema, 'properties': {'rows': {**schema['properties']['rows'], 'minItems': 1, 'maxItems': 1}}}
+        self.assertEqual({'rows': ['only source']}, subject._partial_array_output(
+            '{"rows":["only source"]}', single, allow_complete=True))
+
+    def test_every_batch_truncation_retains_exactly_the_closed_source_records(self):
+        for count in (1, 3):
+            rows = [{'index': i, 'text': 'Original 原文, quotes " and \\ escapes; ]} and \u0085\u2028\u2029 are content.',
+                     'nested': [{'value': i + 12}, [True, None]]} for i in range(count)]
+            schema = {'type': 'object', 'additionalProperties': False, 'required': ['analyses'],
+                      'properties': {'analyses': {'type': 'array', 'minItems': count, 'maxItems': count,
+                                                 'items': {'type': 'object'}}}}
+            for indent in (None, 2):
+                text, ends = '{"analyses":[\n', []
+                for index, row in enumerate(rows):
+                    text += (',\n' if index else '') + json.dumps(row, ensure_ascii=False, indent=indent)
+                    ends.append(len(text))
+                text += '\n]}'
+                for opening in ('', '```json\n', '```\r\n', '```JSON\r'):
+                    wrapped = opening + text + ('\n```' if opening else '')
+                    for cut in range(len(wrapped) + 1):
+                        with self.subTest(count=count, indent=indent, opening=opening, cut=cut):
+                            expected = sum(end + len(opening) <= cut for end in ends)
+                            kept = subject._partial_array_output(wrapped[:cut], schema, allow_complete=True)
+                            if expected:
+                                self.assertEqual({'analyses': rows[:expected] + [None] * (count - expected)}, kept)
+                            else:
+                                self.assertIsNone(kept)
+                for suffix in ('', '}', ']}'):
+                    self.assertEqual({'analyses': rows}, subject._partial_array_output(
+                        text + suffix, schema, allow_complete=True))
+                self.assertEqual({'analyses': rows}, subject._partial_array_output(
+                    '```json\n' + text + '\n```', schema, allow_complete=True))
+
+    def test_short_batches_do_not_hide_conflicting_or_unrequested_envelope_fields(self):
+        schema = {'type': 'object', 'additionalProperties': False, 'required': ['rows'],
+                  'properties': {'rows': {'type': 'array', 'minItems': 2, 'maxItems': 2,
+                                         'items': {'type': 'string'}}}}
+        for text in ('{"rows":["keep"],"extra":true}',
+                     '{"rows":["keep"],"rows":["different","second"]}',
+                     '{"rows":["keep"]} trailing'):
+            with self.subTest(text=text):
+                self.assertIsNone(subject._partial_array_output(text, schema, allow_complete=True))
+
+    def test_cut_markdown_wrappers_do_not_change_content_or_accept_other_wrappers(self):
+        value = {'rows': ['literal ```json\n``` and escaped " quote']}
+        schema = {'type': 'object', 'additionalProperties': False, 'required': ['rows'],
+                  'properties': {'rows': {'type': 'array', 'minItems': 1, 'maxItems': 1,
+                                         'items': {'type': 'string'}}}}
+        text = json.dumps(value)
+        for ending in ('', '\n', '\n`', '\n``', '\n```'):
+            self.assertEqual(value, subject._partial_array_output(
+                '```json\n' + text + ending, schema, allow_complete=True))
+        for encoded in ('prose\n' + text, '```python\n' + text, '```j\u017fon\n' + text, '```json\n' + text + '\n``` prose',
+                        '```json\n' + text + '\n```\n{}', '```json\n' + text + '\ntrailing'):
+            with self.subTest(encoded=encoded):
+                self.assertIsNone(subject._partial_array_output(encoded, schema, allow_complete=True))
+        # Normal successful responses still require the complete Markdown fence.
+        self.assertEqual('```json\n' + text, subject._json_response_text('```json\n' + text))
+
+    def test_markdown_removes_only_wrapper_bytes(self):
+        content = 'Unicode \u0085\u2028\u2029; escapes \r\n\t\b\f\v\x1c\x1d\x1e\\"; literal ```json'
+        for newline in ('\n', '\r\n', '\r'):
+            for indent in (None, 2):
+                # JSON whitespace and string values must both remain unchanged.
+                body = json.dumps({'key\u2028': [content]}, ensure_ascii=False, indent=indent).replace('\n', newline)
+                for opening in ('```json', '```', '```JSON'):
+                    for suffix in ('', newline, newline + '`', newline + '``', newline + '```'):
+                        encoded = opening + newline + body + suffix
+                        with self.subTest(newline=newline, indent=indent, opening=opening, suffix=suffix):
+                            self.assertEqual(body, subject._json_response_text(encoded, allow_incomplete=True))
+                            if suffix == newline + '```':
+                                self.assertEqual(body, subject._json_response_text(encoded))
+                self.assertEqual(body, subject._json_response_text(body))
+
+    def test_unicode_body_survives_normal_interrupted_and_correction_delivery(self):
+        content = 'before\u0085\u2028\u2029after; literal ``` and escaped\nnewline'
+        full = {'rows': ['first', content]}
+        schema = {'type': 'object', 'additionalProperties': False, 'required': ['rows'],
+                  'properties': {'rows': {'type': 'array', 'minItems': 2, 'maxItems': 2,
+                                         'items': {'type': 'string'}}}}
+        for newline in ('\n', '\r\n', '\r'):
+            for mode in ('normal', 'interrupted', 'correction'):
+                encoded = json.dumps({'/rows/1': content} if mode == 'correction' else full, ensure_ascii=False)
+                text = '```json' + newline + encoded + newline + ('```' if mode == 'normal' else '``')
+                error = subject.ExternalIntelligenceTimeout('interrupted')
+                error.partial_message = answer(text)
+                replies = ([answer(text)] if mode == 'normal' else
+                           [answer(json.dumps({'rows': ['first', 1]})), error] if mode == 'correction' else [error])
+                with self.subTest(mode=mode, newline=newline), mock.patch.object(self.client, '_post', side_effect=replies) as post:
+                    params = dict(prompt='test', schema=schema, model=subject.MODEL, effort='medium',
+                                  work_dir=self.root / newline.encode().hex() / mode, timeout_seconds=5)
+                    if mode == 'normal':
+                        value, _, _ = self.client.invoke(**params)
+                    else:
+                        with self.assertRaises(subject.ExternalIntelligenceError) as caught:
+                            self.client.invoke(**params)
+                        value = caught.exception.partial_output
+                    self.assertEqual(full, value)
+                    self.assertEqual(2 if mode == 'correction' else 1, post.call_count)
+
+    def test_cut_fenced_corrections_preserve_only_closed_fields(self):
+        original = {'rows': [None, None]}
+        fields = [(['rows', i], {'type': 'string'}) for i in range(2)]
+        schema = {'type': 'object', 'additionalProperties': False,
+                  'properties': {subject._field_pointer(path): rule for path, rule in fields}}
+        text = '{"/rows/0":"literal ```", "/rows/1":"second"}'
+        ends = [text.index(', '), len(text) - 1]
+        for opening in ('', '```json\n', '```\n'):
+            wrapped = opening + text + ('\n```' if opening else '')
+            for cut in range(len(wrapped) + 1):
+                expected = sum(end + len(opening) <= cut for end in ends)
+                kept = subject._retained_field_corrections(wrapped[:cut], original, fields, schema)
+                with self.subTest(opening=opening, cut=cut):
+                    self.assertEqual({'rows': ['literal ```', 'second'][:expected] + [None] * (2 - expected)}
+                                     if expected else None, kept)
+        self.assertEqual({'rows': [None, None]}, original)
+
+    def test_interrupted_field_repair_retains_only_valid_requested_corrections(self):
+        schema = {'type': 'object', 'additionalProperties': False, 'required': ['rows'],
+                  'properties': {'rows': {'type': 'array', 'minItems': 3, 'maxItems': 3,
+                                         'items': {'type': 'string'}}}}
+        original = {'rows': ['unchanged first', 2, 3]}
+        cases = [({'/rows/1': 'fixed second', '/rows/2': 'fixed third'},
+                  {'rows': ['unchanged first', 'fixed second', 'fixed third']}),
+                 ({'/rows/1': 'fixed second', '/rows/2': 3},
+                  {'rows': ['unchanged first', 'fixed second', 3]}),
+                 ({'/rows/1': 'fixed second'}, {'rows': ['unchanged first', 'fixed second', 3]}),
+                 ({'/rows/0': 'unrequested change', '/rows/1': 'fixed second'}, original)]
+        for number, (corrections, expected) in enumerate(cases):
+            error = subject.ExternalIntelligenceTimeout('field correction stream interrupted')
+            error.partial_message = {'model': subject.MODEL, 'content': [{'type': 'text', 'text': json.dumps(corrections)}]}
+            with self.subTest(corrections=corrections), mock.patch.object(self.client, '_post',
+                    side_effect=[answer(json.dumps(original)), error]) as post:
+                with self.assertRaises(subject.ExternalIntelligenceError) as caught:
+                    self.client.invoke(prompt='test', schema=schema, model=subject.MODEL, effort='medium',
+                        work_dir=self.root / 'field-interruption' / str(number), timeout_seconds=5)
+            self.assertEqual(expected, caught.exception.partial_output)
+            self.assertEqual(2, post.call_count)
+            self.assertEqual({'rows': ['unchanged first', 2, 3]}, original)
+
+    def test_cut_field_corrections_never_complete_truncated_numbers_or_strings(self):
+        original = {'rows': ['unchanged', None, None]}
+        fields = [(['rows', 1], {'type': 'string'}), (['rows', 2], {'type': 'integer'})]
+        schema = {'type': 'object', 'additionalProperties': False, 'required': ['/rows/1', '/rows/2'],
+                  'properties': {subject._field_pointer(path): rule for path, rule in fields}}
+        cases = [('{"/rows/1":"fixed",', {'rows': ['unchanged', 'fixed', None]}),
+                 ('{"/rows/1":"fixed","/rows/2":12', {'rows': ['unchanged', 'fixed', None]}),
+                 ('{"/rows/1":"fixed","/rows/2":12e', {'rows': ['unchanged', 'fixed', None]}),
+                 ('{"/rows/1":"unfinished', None),
+                 ('{"/rows/1":"fixed","/rows/2":12}', {'rows': ['unchanged', 'fixed', 12]}),
+                 ('{"/rows/1":"fixed","/rows/0":"unrequested"', None),
+                 ('{"/rows/1":"fixed","/rows/1":"different"', None),
+                 ('{"/rows/1":"fixed","/rows/1":"different","/rows/2":12}', None),
+                 ('{"/rows/1":"fixed"} trailing', None)]
+        for text, expected in cases:
+            with self.subTest(text=text):
+                self.assertEqual(expected, subject._retained_field_corrections(text, original, fields, schema))
+        self.assertEqual({'rows': ['unchanged', None, None]}, original)
+
+    def test_complete_interrupted_batch_is_retained_without_hiding_transport_failure(self):
+        schema = {'type': 'object', 'additionalProperties': False, 'required': ['rows'],
+                  'properties': {'rows': {'type': 'array', 'minItems': 2, 'maxItems': 2,
+                                         'items': {'type': 'string'}}}}
+        full = {'rows': ['first unchanged', 'second unchanged']}
+        for model, unexpected_tool in ((model, tool) for model in (subject.MODEL, 'wrong-model') for tool in (False, True)):
+            error = subject.ExternalIntelligenceError('stream ended without message_stop')
+            error.partial_message = {'model': model, 'content': [{'type': 'text', 'text': json.dumps(full)}]}
+            if unexpected_tool:
+                error.partial_message['content'].append({'type': 'tool_use', 'id': 'unexecuted', 'name': 'read', 'input': {}})
+            scope = self.root / 'complete-interruption' / model / str(unexpected_tool)
+            with self.subTest(model=model, unexpected_tool=unexpected_tool), mock.patch.object(self.client, '_post', side_effect=error) as post:
+                with self.assertRaises(subject.ExternalIntelligenceError) as caught:
+                    self.client.invoke(prompt='test', schema=schema, model=subject.MODEL,
+                        effort='medium', work_dir=scope, timeout_seconds=5)
+            self.assertEqual(1, post.call_count)
+            if model == subject.MODEL and not unexpected_tool:
+                self.assertEqual(full, caught.exception.partial_output)
+                self.assertEqual(1, caught.exception.partial_usage['api_requests'])
+                audit = json.loads((scope / 'interrupted-source-prefix.json').read_text())
+                self.assertFalse(audit['output_usage_complete'])
+            else:
+                self.assertFalse(hasattr(caught.exception, 'partial_output'))
+
     def test_failed_correction_retains_valid_records_but_never_completes_missing_one(self):
         schema = {'type': 'object', 'required': ['rows'], 'additionalProperties': False,
                   'properties': {'rows': {'type': 'array', 'minItems': 2, 'maxItems': 2,
@@ -301,6 +502,158 @@ class GoAPIClientTests(unittest.TestCase):
         self.assertEqual(8, self.client.diagnostics()["max_active"])
         self.assertEqual(0, self.client.diagnostics()["process_starts"])
 
+    def test_single_range_wrapper_is_normalized_without_changing_evidence(self):
+        selector = {"anyOf": [{"type": "integer", "minimum": 0},
+                    {"type": "array", "minItems": 2, "maxItems": 2,
+                     "items": {"type": "integer", "minimum": 0}}]}
+        schema = {"type": "object", "required": ["selector", "meaning"],
+                  "additionalProperties": False,
+                  "properties": {"selector": selector, "meaning": {"type": "string"}}}
+        value = {"selector": [[7, 9]], "meaning": "Keep this condition unchanged."}
+        with mock.patch.object(self.client, "_post", return_value=answer(json.dumps(value))) as post:
+            actual, usage, _ = self.client.invoke(prompt="test", schema=schema, model=subject.MODEL,
+                effort="medium", work_dir=self.root / "range", timeout_seconds=5)
+        self.assertEqual({**value, "selector": [7, 9]}, actual)
+        self.assertEqual(0, usage["format_corrections"])
+        post.assert_called_once()
+        for invalid in ([[7, 9], [11, 12]], [[7, True]], [[-1, 9]], [[7, 9, 11]]):
+            original = {**value, "selector": invalid}
+            self.assertEqual(original, subject._normalize_integer_collections(original, schema))
+
+    def test_object_alternative_normalization_requires_one_valid_meaning(self):
+        def branch(key, schema):
+            return {"type": "object", "required": ["a", "b"],
+                    "properties": {key: schema}}
+        ambiguous = {"anyOf": [branch("a", {"type": "array", "items": {"type": "integer"}}),
+                               branch("b", {"type": "array", "items": {"type": "integer"}})]}
+        original = {"a": 7, "b": 9}
+        self.assertEqual(original, subject._normalize_integer_collections(original, ambiguous))
+        fixed = {"anyOf": [{"type": "object", "required": ["asset_id", "selector"],
+                  "additionalProperties": False, "properties": {
+                    "asset_id": {"enum": ["self"]}, "selector": {"anyOf": [
+                      {"type": "integer"}, {"type": "array", "minItems": 2, "maxItems": 2,
+                                            "items": {"type": "integer"}}]}}}]}
+        self.assertEqual({"asset_id": "self", "selector": [7, 9]},
+                         subject._normalize_integer_collections({"asset_id": "self", "selector": [[7, 9]]}, fixed))
+        original = {"asset_id": "other", "selector": [[7, 9]]}
+        self.assertEqual(original, subject._normalize_integer_collections(original, fixed))
+
+    def test_interrupted_source_prefix_remains_partial_and_checks_model(self):
+        schema = {"type": "object", "required": ["analyses"], "properties": {
+            "analyses": {"type": "array", "minItems": 2, "maxItems": 2,
+                         "items": {"type": "object", "required": ["index", "text"],
+                                   "properties": {"index": {"type": "integer"}, "text": {"type": "string"}}}}}}
+        prefix = '{"analyses":[{"index":0,"text":"Keep this complete source."},'
+        for model in (subject.MODEL, "wrong-model"):
+            failure = subject.ExternalIntelligenceTimeout("interrupted")
+            failure.partial_message = {"model": model, "content": [{"type": "text", "text": prefix}],
+                                       "usage": {"input_tokens": 10}}
+            with mock.patch.object(self.client, "_post", side_effect=failure) as post:
+                with self.assertRaises(subject.ExternalIntelligenceTimeout) as raised:
+                    self.client.invoke(prompt="test", schema=schema, model=subject.MODEL, effort="medium",
+                                       work_dir=self.root / model, timeout_seconds=5)
+            post.assert_called_once()
+            if model == subject.MODEL:
+                self.assertEqual({"index": 0, "text": "Keep this complete source."},
+                                 raised.exception.partial_output["analyses"][0])
+                audit = json.loads((self.root / model / "interrupted-source-prefix.json").read_text())
+                self.assertFalse(audit["output_usage_complete"])
+                self.assertIsNone(audit["unreported_output_tokens"])
+            else:
+                self.assertFalse(hasattr(raised.exception, "partial_output"))
+
+    def test_transport_interruptions_preserve_only_delivered_source_prefixes(self):
+        schema = {"type": "object", "required": ["analyses"], "properties": {
+            "analyses": {"type": "array", "minItems": 2, "maxItems": 2,
+                         "items": {"type": "object", "required": ["index", "text"],
+                                   "properties": {"index": {"type": "integer"}, "text": {"type": "string"},
+                                                  "selector": {"anyOf": [{"type": "integer"},
+                                                      {"type": "array", "minItems": 2, "maxItems": 2,
+                                                       "items": {"type": "integer"}}]}}}}}}
+        good = {"index": 0, "text": "Keep this complete source.", "selector": [3, 5]}
+        prefix = '{"analyses":[' + json.dumps({**good, "selector": [[3, 5]]}) + ',{"index":1,"text":"unfinished'
+        modes = ("timeout", "eof", "reset", "incomplete_read", "cut_event", "cut_utf8",
+                 "malformed_event", "service_error", "service_error_no_newline")
+        for mode in modes:
+            for model in (subject.MODEL, "wrong-model"):
+                with self.subTest(interruption=mode, model=model):
+                    events = [
+                        {"type": "message_start", "message": {"model": model, "usage": {"input_tokens": 10}}},
+                        {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
+                        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": prefix}},
+                    ]
+                    if mode.startswith("service_error"):
+                        events.append({"type": "error", "error": {"type": "api_error", "message": "rejected"}})
+                    wire = b"".join(b"data: " + json.dumps(event).encode() + b"\n\n" for event in events)
+                    if mode == "malformed_event":
+                        wire += b"data: {not JSON}\n\n"
+                    elif mode == "cut_event":
+                        wire += b'data: {"type":"message_delta","usage":{"output_tokens":'
+                    elif mode == "cut_utf8":
+                        wire += b'data: {"text":"' + '中'.encode()[:2]
+                    elif mode == "service_error_no_newline":
+                        wire = wire.rstrip(b'\n')
+
+                    class Response(io.BytesIO):
+                        status = 200
+                        def readline(self, *args):
+                            line = super().readline(*args)
+                            if not line:
+                                if mode == "timeout":
+                                    raise TimeoutError("interrupted")
+                                if mode == "reset":
+                                    raise ConnectionResetError("interrupted")
+                                if mode == "incomplete_read":
+                                    raise subject.http.client.IncompleteRead(b"unparsed bytes")
+                            return line
+
+                    connection = mock.Mock(sock=None)
+                    connection.getresponse.return_value = Response(wire)
+                    with mock.patch.object(subject.http.client, "HTTPSConnection", return_value=connection):
+                        with self.assertRaises(subject.ExternalIntelligenceError) as caught:
+                            self.client.invoke(prompt="test", schema=schema, model=subject.MODEL, effort="medium",
+                                work_dir=self.root / mode / model, timeout_seconds=5)
+                    connection.request.assert_called_once()
+                    connection.close.assert_called_once()
+                    self.assertEqual(0, self.client._active)
+                    partial = getattr(caught.exception, "partial_output", None)
+                    if mode in ("timeout", "eof", "reset", "incomplete_read", "cut_event", "cut_utf8") and model == subject.MODEL:
+                        self.assertEqual({"analyses": [good, None]}, partial)
+                        with self.assertRaises(subject.ExternalIntelligenceError):
+                            subject._validate_schema(partial, schema)
+                        audit = json.loads((self.root / mode / model / "interrupted-source-prefix.json").read_text())
+                        self.assertFalse(audit["output_usage_complete"])
+                        self.assertIsNone(audit["unreported_output_tokens"])
+                    else:
+                        self.assertIsNone(partial)
+
+    def test_every_wire_cut_preserves_only_fully_decoded_text_events(self):
+        rows = [{'index': i, 'text': '中文 ``` and "quoted"'} for i in range(2)]
+        schema = {'type': 'object', 'required': ['analyses'], 'properties': {
+            'analyses': {'type': 'array', 'minItems': 2, 'maxItems': 2, 'items': {'type': 'object'}}}}
+        prefix = '{"analyses":[' + json.dumps(rows[0], ensure_ascii=False) + ','
+        events = [
+            {'type': 'message_start', 'message': {'model': subject.MODEL}},
+            {'type': 'content_block_start', 'index': 0, 'content_block': {'type': 'text', 'text': prefix}},
+        ]
+        wire = b''.join(b'data: ' + json.dumps(e, ensure_ascii=False).encode() + b'\n\n' for e in events)
+        tail_event = {'type': 'content_block_delta', 'index': 0,
+                      'delta': {'type': 'text_delta', 'text': json.dumps(rows[1], ensure_ascii=False) + ']}'}}
+        tail = b'data: ' + json.dumps(tail_event, ensure_ascii=False).encode() + b'\n\n'
+        for cut in range(len(tail) + 1):
+            response = io.BytesIO(wire + tail[:cut])
+            response.status = 200
+            connection = mock.Mock(sock=None)
+            connection.getresponse.return_value = response
+            with self.subTest(cut=cut), mock.patch.object(subject.http.client, 'HTTPSConnection', return_value=connection):
+                with self.assertRaises(subject.ExternalIntelligenceError) as caught:
+                    self.client._post({}, 'fixture', time.monotonic() + 5, self.root / 'wire-cut.json')
+            received = ''.join(block.get('text', '') for block in caught.exception.partial_message['content'])
+            expected = rows if cut >= len(tail) - 2 else [rows[0], None]
+            self.assertEqual({'analyses': expected}, subject._partial_array_output(received, schema, allow_complete=True))
+            connection.request.assert_called_once()
+            connection.close.assert_called_once()
+
     def test_stream_reassembles_tools_and_preserves_partial_failure_trace(self):
         events = [
             {"type": "message_start", "message": {"model": subject.MODEL, "usage": {"input_tokens": 10}}},
@@ -317,10 +670,13 @@ class GoAPIClientTests(unittest.TestCase):
             return stream
         with mock.patch.object(subject.http.client, "HTTPSConnection", return_value=connection) as https:
             connection.getresponse.return_value = response(events)
-            value = self.client._post({}, "session", time.monotonic()+5, self.root / "response.json")
+            request = {"messages": [{"role": "user", "content": "保留 空格\n原文"}], "stream": True}
+            value = self.client._post(request, "session", time.monotonic()+5, self.root / "response.json")
             self.assertEqual("token-plan.cn-beijing.maas.aliyuncs.com", https.call_args.args[0])
-            method, endpoint, _, headers = connection.request.call_args.args
+            method, endpoint, wire, headers = connection.request.call_args.args
             self.assertEqual(("POST", "/apps/anthropic/v1/messages"), (method, endpoint))
+            self.assertEqual(request, json.loads(wire))
+            self.assertEqual(json.dumps(request, ensure_ascii=False, separators=(",", ":")).encode("utf-8"), wire)
             self.assertEqual("test-key", headers["x-api-key"])
             self.assertNotIn("x-opencode-session", headers)
             self.assertEqual({"id": "one"}, value["content"][0]["input"])

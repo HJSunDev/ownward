@@ -391,6 +391,15 @@ def semantic_analysis_units(
     settings: dict[str, Any],
     capability: "ExternalIntelligenceCapability",
 ) -> list[dict[str, Any]]:
+    with semantic_representation.source_preparation_cache():
+        return _semantic_analysis_units(frozen, settings, capability)
+
+
+def _semantic_analysis_units(
+    frozen: dict[str, Any] | list[dict[str, Any]],
+    settings: dict[str, Any],
+    capability: "ExternalIntelligenceCapability",
+) -> list[dict[str, Any]]:
     semantic_contract = (
         capability.semantic_contract
         if isinstance(capability, ExternalIntelligenceCapability)
@@ -415,7 +424,10 @@ def semantic_analysis_units(
         for entry in batch_entries:
             trial = [*current, entry]
             trial_work = [item["work"] for item in trial]
-            prompt, _, work_ids = capability.semantic_request(trial_work, settings)
+            if isinstance(capability, ExternalIntelligenceCapability):
+                prompt, work_ids = capability.semantic_prompt(trial_work)
+            else:
+                prompt, _, work_ids = capability.semantic_request(trial_work, settings)
             over = (
                 len(prompt.encode("utf-8")) > input_maximum
                 or ExternalIntelligenceCapability.semantic_output_reservation(trial_work) > output_maximum
@@ -1245,7 +1257,7 @@ class ExternalIntelligenceCapability:
                             for item in work)
         return reserved
 
-    def semantic_request(self, work: list[dict[str, Any]], settings: dict[str, Any]) -> tuple[str, dict[str, Any], list[str]]:
+    def semantic_prompt(self, work: list[dict[str, Any]]) -> tuple[str, list[str]]:
         semantic_input = self.encoded_semantic_input(work)
         work_ids = [str(item["id"]) for item in work]
         instruction = self.semantic_instruction_text()
@@ -1255,6 +1267,10 @@ class ExternalIntelligenceCapability:
                 instruction += "\n\nSource locators: asset_id 'self' identifies this work's target; other sources use their supplied source_ref, not numeric source indices. selector is an integer passage index or an inclusive two-integer [first,last] range; [0,last] covers the whole source. context is a list of these selectors, for example [11] or [[11,13],25]; omit it when unnecessary. Each endpoint uses either a source passage selector or unit/mention IDs, not both. Mention ranges must lie within their unit or its context."
             instruction += "\n\nSemantic input:\n"
         prompt = instruction + json.dumps(semantic_input, ensure_ascii=False, separators=(",", ":"))
+        return prompt, work_ids
+
+    def semantic_request(self, work: list[dict[str, Any]], settings: dict[str, Any]) -> tuple[str, dict[str, Any], list[str]]:
+        prompt, work_ids = self.semantic_prompt(work)
         schema = {
             "type": "object", "additionalProperties": False, "required": ["analyses"],
             "properties": {
@@ -1704,6 +1720,31 @@ def _question_identity(question: dict[str, Any], run_identity: str) -> str:
     return canonical_sha256({"run": run_identity, "question": sanitized})
 
 
+def semantic_implementation_identity() -> str:
+    # Shared by preparation reuse and evaluation resume; include the callees
+    # that construct or validate input, not just their unchanged entry points.
+    capability = ExternalIntelligenceCapability
+    functions = (
+        session_reference, session_content, freeze_semantic_batch,
+        semantic_analysis_units, _semantic_analysis_units,
+        analyze_semantic_unit, combine_semantic_batch, submit_semantic_batch,
+        capability.__init__, capability.semantic_contract.fget, capability._invoke,
+        capability.encoded_semantic_input, capability.validate_encoded_semantic_input,
+        capability.semantic_fact_identity, capability.semantic_instruction_text,
+        capability.semantic_prompt, capability.semantic_request,
+        capability.semantic_output_upper_bound, capability.semantic_output_reservation,
+        capability.semantics, capability._organized_semantics,
+        validate_structured_output,
+    )
+    return canonical_sha256({
+        "functions": {function.__qualname__: inspect.getsource(function) for function in functions},
+        "external_intelligence_contract": EXTERNAL_INTELLIGENCE_CONTRACT_SCHEMA,
+        "executor": inspect.getsource(ExternalIntelligenceExecutor),
+        "runtime_adapter": sha256(Path(__file__).with_name("external_intelligence_runtime.py")),
+        "representation_runtime": sha256(Path(semantic_representation.__file__).resolve()),
+    })
+
+
 def stage_dependency_identities(
     *, protocol: dict[str, Any], candidate: str, binary_sha256: str, environment_sha256: str,
     input_manifest_sha256: str, dataset_sha256: str, formal: bool, evaluator_sha256: str,
@@ -1712,22 +1753,7 @@ def stage_dependency_identities(
 ) -> dict[str, str]:
     semantic_contract = semantic_contract or semantic_representation.load_contract(None)
     implementation = {
-        "semantic": canonical_sha256({
-            "source_reference": inspect.getsource(session_reference),
-            "session_content": inspect.getsource(session_content),
-            "external_intelligence_contract": EXTERNAL_INTELLIGENCE_CONTRACT_SCHEMA,
-            "external_intelligence_executor": inspect.getsource(ExternalIntelligenceExecutor),
-            "runtime_adapter": sha256(Path(__file__).with_name("external_intelligence_runtime.py")),
-            "invoke": inspect.getsource(ExternalIntelligenceCapability._invoke),
-            "input": inspect.getsource(ExternalIntelligenceCapability.semantic_input),
-            "validation": inspect.getsource(ExternalIntelligenceCapability.validate_semantic_input),
-            "request": inspect.getsource(ExternalIntelligenceCapability.semantic_request),
-            "units": inspect.getsource(semantic_analysis_units),
-            "analysis": inspect.getsource(analyze_semantic_unit),
-            "combine": inspect.getsource(combine_semantic_batch),
-            "submit": inspect.getsource(submit_semantic_batch),
-            "representation_runtime": sha256(Path(semantic_representation.__file__).resolve()),
-        }),
+        "semantic": semantic_implementation_identity(),
         "retrieval": canonical_sha256({
             "active_prompt": inspect.getsource(_active_answer_prompt),
             "active_session": inspect.getsource(ActiveRetrievalSession),
@@ -2115,12 +2141,16 @@ def process_question(
     capability_factory: Callable[[], ExternalIntelligenceCapability],
     external_intelligence_scheduler: ExternalIntelligenceScheduler,
     stage_run_identities: dict[str, str] | None = None,
+    *, prepare_only: bool = False,
 ) -> dict[str, Any]:
     evaluation_question = question
     question = _product_question(question)
     identifier = question["question_id"]
     root = output_root / "questions" / identifier
     result_path = root / "result.json"
+    if prepare_only:
+        require(not any((root / name).exists() for name in ("result.json", "answer.json", "reader", "judge")),
+                "preparation requires a pre-answer data state")
     identity = _question_identity(question, run_identity)
     stages = stage_run_identities or {name: run_identity for name in ("semantic", "retrieval", "reader", "judge", "diagnostic")}
     stage_identities = {name: _question_identity(question, value) for name, value in stages.items()}
@@ -2302,32 +2332,67 @@ def process_question(
             else:
                 future = external_intelligence_scheduler.submit(analyze_semantic_unit, unit, trace_root, protocol["memory"], capability)
                 futures[future] = unit_index
-        for future in as_completed(futures):
-            unit_index = futures[future]
-            unit_results[unit_index] = future.result()
-            completion_order.append({"unit_index": unit_index, "batch_indexes": needed_units[unit_index]["batch_indexes"]})
-            checkpoint["analysis_completion_order"] = completion_order
+        cold_inputs = all(
+            not work.get("target_snapshot")
+            and not any(candidate.get("organization") for candidate in work.get("candidates", []))
+            for frozen in frozen_batches for work in frozen["work"]
+        )
+        next_batch = organized
+
+        def publish_ready(final=False):
+            nonlocal next_batch
+            if not final and not cold_inputs:
+                return
+            while next_batch < len(frozen_batches):
+                required = [unit["unit_index"] for unit in units if next_batch in unit["batch_indexes"]]
+                if next_batch not in analyses and not all(index in unit_results for index in required):
+                    break
+                if next_batch not in analyses:
+                    analyses[next_batch] = combine_semantic_batch(
+                        frozen_batches[next_batch], units, unit_results, trace_root, protocol["memory"])
+                trace = submit_semantic_batch(runtime, frozen_batches[next_batch], analyses[next_batch],
+                    trace_root, capability, protocol["memory"])
+                _add_usage(semantic_usage, trace["usage"])
+                checkpoint["submission_order"] = [*checkpoint.get("submission_order", []), next_batch]
+                checkpoint["organized_batches"] = next_batch + 1
+                checkpoint["semantic_usage"] = semantic_usage
+                checkpoint["phase_seconds"] = {"create": create_seconds,
+                    "semantic": semantic_seconds + time.monotonic() - semantic_started}
+                write_json(checkpoint_path, checkpoint)
+                next_batch += 1
+
+        publish_ready()
+        try:
+            for future in as_completed(futures):
+                unit_index = futures[future]
+                unit_results[unit_index] = future.result()
+                completion_order.append({"unit_index": unit_index, "batch_indexes": needed_units[unit_index]["batch_indexes"]})
+                checkpoint["analysis_completion_order"] = completion_order
+                write_json(checkpoint_path, checkpoint)
+                publish_ready()
+        except BaseException:
+            checkpoint["phase_seconds"] = {"create": create_seconds,
+                "semantic": semantic_seconds + time.monotonic() - semantic_started}
             write_json(checkpoint_path, checkpoint)
+            raise
         checkpoint["analysis_completion_order"] = completion_order
         write_json(checkpoint_path, checkpoint)
-        for index in range(organized, len(frozen_batches)):
-            if index not in analyses:
-                analyses[index] = combine_semantic_batch(
-                    frozen_batches[index], units, unit_results, trace_root, protocol["memory"],
-                )
-        require(set(analyses) == set(range(organized, len(frozen_batches))), f"semantic analyses are incomplete: {identifier}")
-
-        for index in range(organized, len(batches)):
-            trace = submit_semantic_batch(runtime, frozen_batches[index], analyses[index], trace_root, capability, protocol["memory"])
-            _add_usage(semantic_usage, trace["usage"])
-            checkpoint["submission_order"] = [*checkpoint.get("submission_order", []), index]
-            checkpoint["organized_batches"] = index + 1
-            checkpoint["semantic_usage"] = semantic_usage
-            write_json(checkpoint_path, checkpoint)
+        publish_ready(final=True)
+        require(next_batch == len(frozen_batches), f"semantic analyses are incomplete: {identifier}")
         semantic_seconds += time.monotonic() - semantic_started
         checkpoint["phase_seconds"] = {"create": create_seconds, "semantic": semantic_seconds}
         checkpoint["semantic_usage"] = semantic_usage
         write_json(checkpoint_path, checkpoint)
+        if prepare_only:
+            return {
+                "schema": "ownward.longmemeval-s-prepared-question/v1",
+                "question_id": identifier, "prepared": True,
+                "semantic_identity": stage_identities["semantic"],
+                "asset_count": len(assets), "semantic_batches": len(batches),
+                "phase_seconds": {"create": create_seconds, "semantic": semantic_seconds},
+                "usage": {"semantic": semantic_usage},
+                "reader_calls": 0, "judge_calls": 0,
+            }
         direct_question_probe: dict[str, Any] | None = None
         runtime.client.timeout_seconds = float(protocol["retrieval"]["query_timeout_seconds"])
         retrieval_path = root / "retrieval.json"

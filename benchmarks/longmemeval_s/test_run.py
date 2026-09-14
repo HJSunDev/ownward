@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import copy
 from contextlib import ExitStack
+import io
 import json
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import queue
 import subprocess
 import tempfile
+import threading
 import time
 import unittest
 from unittest import mock
@@ -452,6 +454,139 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
         self.assertEqual(10, usage['input_tokens'])
         self.assertEqual(1, usage['format_corrections'])
 
+    def test_real_stream_interruptions_repair_only_unfinished_sources(self):
+        import go_api_external_intelligence as driver
+        import external_intelligence_runtime as runtime_adapter
+        contract = adapter.semantic_representation.SemanticInputContract(
+            adapter.semantic_representation.GROUNDED_REPRESENTATION, "test", None)
+        work = [{"id": f"w{i}", "organization_schema": "ownward.organization/v1",
+                 "asset": {"id": f"a{i}", "revision": 1, "content": text}, "candidates": []}
+                for i, text in enumerate(("Keep violet.", "Use Beacon."))]
+        good = {"index": 0, "summary": 0, "topics": [], "cues": [],
+                "organization": {"schema": "ownward.organization/v1", "units": [], "links": []}}
+        complete_batches = ("complete", "missing-object-closer", "missing-both-closers", "extra-closers",
+                            "fenced", "fence-unclosed", "fence-cut")
+        for mode, batch in ((mode, batch) for mode in ("timeout", "eof", "reset", "cut-event")
+                            for batch in ("partial", *complete_batches, "bad-reference", "bad-schema")):
+            second = {**good, "index": 1, "summary": 999 if batch == "bad-reference" else
+                      "invalid" if batch == "bad-schema" else 0}
+            prefix = ('{"analyses":[' + json.dumps(good) + ',{"index":1,"summary":' if batch == "partial"
+                      else json.dumps({"analyses": [good, second]}))
+            if batch == "missing-object-closer":
+                prefix = prefix[:-1]
+            elif batch == "missing-both-closers":
+                prefix = prefix[:-2]
+            elif batch == "extra-closers":
+                prefix += '}]'
+            elif batch == "fenced":
+                prefix = '```json\n' + prefix + '\n```'
+            elif batch in ("fence-unclosed", "fence-cut"):
+                prefix = '```json\n' + prefix + ('\n``' if batch == "fence-cut" else '')
+            for attempts in (1, 2):
+                with self.subTest(mode=mode, batch=batch, attempts=attempts), tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    auth = root / "fixture-auth.json"
+                    auth.write_text(json.dumps({"BAILIAN_API_KEY": "test-key"}), encoding="utf-8")
+                    client = driver.GoAPIClient(auth, 1, FakeTransport().identity)
+                    transport = runtime_adapter._StableTransport(client.new_scope(), driver)
+                    capability = adapter.ExternalIntelligenceCapability(transport, contract)
+                    requests = []
+
+                    class Response(io.BytesIO):
+                        status = 200
+                        def __init__(self, complete):
+                            self.complete = complete
+                            text = json.dumps({"analyses": [good]}) if complete else prefix
+                            events = [
+                                {"type": "message_start", "message": {"model": driver.MODEL, "usage": {"input_tokens": 10}}},
+                                {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
+                                {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": text}},
+                            ]
+                            if complete:
+                                events.extend([{"type": "message_delta", "delta": {"stop_reason": "end_turn"},
+                                                "usage": {"output_tokens": 10}}, {"type": "message_stop"}])
+                            wire = b"".join(b"data: " + json.dumps(e).encode() + b"\n\n" for e in events)
+                            if not complete and mode == "cut-event":
+                                wire += b'data: {"type":"message_delta","usage":'
+                            super().__init__(wire)
+
+                        def readline(self, *args):
+                            line = super().readline(*args)
+                            if not line and not self.complete:
+                                if mode == "timeout":
+                                    raise TimeoutError("interrupted")
+                                if mode == "reset":
+                                    raise ConnectionResetError("interrupted")
+                            return line
+
+                    def connect(*args, **kwargs):
+                        connection = mock.Mock(sock=None)
+                        connection.request.side_effect = lambda method, endpoint, body, headers: requests.append(json.loads(body))
+                        connection.getresponse.side_effect = lambda: Response(len(requests) > 1)
+                        return connection
+
+                    settings = {**self.protocol["memory"], "semantic_attempts": attempts,
+                                "semantic_model": driver.MODEL, "semantic_reasoning_effort": "medium"}
+                    stage = root / "organization"
+                    with mock.patch.object(driver.http.client, "HTTPSConnection", side_effect=connect):
+                        if attempts == 1 and batch not in complete_batches:
+                            with self.assertRaises(adapter.AdapterError) as caught:
+                                capability.semantics(work, settings, stage)
+                            self.assertEqual(["w0"], list(caught.exception.accepted_analyses))
+                        else:
+                            decoded, _ = capability.semantics(work, settings, stage)
+                            repeated, _ = capability.semantics(work, settings, stage)
+                            self.assertEqual(decoded, repeated)
+                            self.assertEqual(["w0", "w1"], [row["work_id"] for row in decoded])
+                            self.assertEqual(["Keep violet.", "Use Beacon."], [row["summary"] for row in decoded])
+                            if batch not in complete_batches:
+                                prompt = requests[1]["messages"][0]["content"][0]["text"]
+                                self.assertNotIn("Keep violet.", prompt)
+                                self.assertIn("Use Beacon.", prompt)
+                    self.assertEqual(1 if batch in complete_batches else attempts, len(requests))
+                    checkpoint = adapter.load_json(stage / "organization-progress.json")
+                    self.assertEqual(len(requests), checkpoint["attempt"])
+                    first = checkpoint["accepted"]["w0"]
+                    expected = contract.decode_analysis(work, 0, good)
+                    self.assertEqual(expected, {key: value for key, value in first.items() if key != "input_assets"})
+                    self.assertEqual({"a0", "a1"}, {item["id"] for item in first["input_assets"]})
+
+    def test_interrupted_field_correction_completes_sources_without_an_extra_attempt(self):
+        import go_api_external_intelligence as driver
+        import external_intelligence_runtime as runtime_adapter
+        contract = adapter.semantic_representation.SemanticInputContract(
+            adapter.semantic_representation.GROUNDED_REPRESENTATION, "test", None)
+        work = [{"id": f"w{i}", "organization_schema": "ownward.organization/v1",
+                 "asset": {"id": f"a{i}", "revision": 1, "content": text}, "candidates": []}
+                for i, text in enumerate(("Keep violet.", "Use Beacon."))]
+        good = {"index": 0, "summary": 0, "topics": [], "cues": [],
+                "organization": {"schema": "ownward.organization/v1", "units": [], "links": []}}
+        first = {"model": driver.MODEL, "stop_reason": "end_turn", "usage": {}, "content": [{"type": "text", "text":
+            json.dumps({"analyses": [good, {**good, "index": 1, "summary": "invalid"}]})}]}
+        for model in (driver.MODEL, "wrong-model"):
+            with self.subTest(model=model), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                auth = root / "fixture-auth.json"
+                auth.write_text(json.dumps({"BAILIAN_API_KEY": "test-key"}), encoding="utf-8")
+                client = driver.GoAPIClient(auth, 1, FakeTransport().identity)
+                capability = adapter.ExternalIntelligenceCapability(
+                    runtime_adapter._StableTransport(client.new_scope(), driver), contract)
+                error = driver.ExternalIntelligenceTimeout("correction interrupted")
+                error.partial_message = {"model": model, "content": [{"type": "text", "text": '{"/analyses/1/summary":0}'}]}
+                settings = {**self.protocol["memory"], "semantic_attempts": 1,
+                            "semantic_model": driver.MODEL, "semantic_reasoning_effort": "medium"}
+                with mock.patch.object(client, "_post", side_effect=[first, error]) as post:
+                    if model == driver.MODEL:
+                        result, _ = capability.semantics(work, settings, root / "stage")
+                        again, _ = capability.semantics(work, settings, root / "stage")
+                        self.assertEqual(["Keep violet.", "Use Beacon."], [row["summary"] for row in result])
+                        self.assertEqual(result, again)
+                    else:
+                        with self.assertRaises(adapter.AdapterError) as caught:
+                            capability.semantics(work, settings, root / "stage")
+                        self.assertEqual(["w0"], list(caught.exception.accepted_analyses))
+                self.assertEqual(2, post.call_count)
+
     def test_protocol_freezes_official_identity_models_and_cost_inventory(self) -> None:
         adapter.validate_protocol(self.protocol)
         self.assertEqual(adapter.OFFICIAL_DATA_SHA256, self.protocol["official"]["data_sha256"])
@@ -802,6 +937,31 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             self.assertIn("Kyoto city", judge_input["official_prompt"])
             self.assertTrue(diagnostic["post_answer_only"] if "post_answer_only" in diagnostic else diagnostic["diagnostic_only"])
             self.assertEqual(["info-1"], diagnostic["evidence_coverage"]["read_expected"])
+
+    def test_prepare_only_stops_before_reader_and_reuses_organization(self) -> None:
+        question = {
+            "question_id": "fixture", "question_type": "single-session-user",
+            "question": "Which city?", "answer": "Kyoto city",
+            "haystack_dates": ["yesterday"], "haystack_session_ids": ["session-1"],
+            "haystack_sessions": [[{"role": "user", "content": "I chose Kyoto."}]],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with mock.patch.object(adapter, "OwnwardRuntime", FakeRuntime), \
+                    mock.patch.object(FakeCodex, "active_answer", side_effect=AssertionError("preparation must not answer")), \
+                    mock.patch.object(FakeCodex, "judge", side_effect=AssertionError("preparation must not judge")), \
+                    adapter.ExternalIntelligenceScheduler(8) as scheduler:
+                result = adapter.process_question(question, root, "identity", root / "binary", root / "embedding",
+                    self.protocol, root / "missing-evaluator", lambda: FakeCodex(), scheduler, prepare_only=True)
+                with mock.patch.object(FakeCodex, "semantics", side_effect=AssertionError("must reuse analysis")):
+                    resumed = adapter.process_question(question, root, "identity", root / "binary", root / "embedding",
+                        self.protocol, root / "missing-evaluator", lambda: FakeCodex(), scheduler, prepare_only=True)
+            self.assertTrue(result["prepared"])
+            self.assertTrue(resumed["prepared"])
+            self.assertEqual(1, result["asset_count"])
+            prepared = root / "questions" / "fixture"
+            self.assertTrue((prepared / "semantic-plan.json").is_file())
+            self.assertFalse(any((prepared / name).exists() for name in ("reader", "judge", "answer.json", "result.json")))
 
     def test_two_stage_retrieval_delivers_late_long_source_within_original_budget(self) -> None:
         runtime = FakeRuntime()
@@ -1520,6 +1680,68 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             self.assertEqual([[0], [1], [2]], sorted(item["batch_indexes"] for item in result["semantic_execution"]["analysis_completion_order"]))
             self.assertEqual([0, 1, 2], result["semantic_execution"]["submission_order"])
             self.assertTrue(result["semantic_execution"]["serial_concurrent_equivalent"])
+
+    def test_cold_publication_overlaps_generation_and_resumes_without_repeating_sources(self):
+        question = {"question_id": "pipeline", "question_type": "multi-session", "question": "", "answer": "",
+            "haystack_dates": ["yesterday"] * 45, "haystack_session_ids": [f"session-{i}" for i in range(45)],
+            "haystack_sessions": [[{"role": "user", "content": f"Memory {i}."}] for i in range(45)]}
+        for fail_late, old_snapshot in ((False, False), (True, False), (False, True)):
+            with self.subTest(fail_late=fail_late, old_snapshot=old_snapshot), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                first_commit = threading.Event()
+                observed_overlap = []
+                runtime = FakeRuntime()
+                original_call = runtime.client.call_tool
+
+                def observe(name, arguments):
+                    result = original_call(name, arguments)
+                    if name == "ownward_semantic_work" and old_snapshot:
+                        for work in result["work"]:
+                            work["target_snapshot"] = "existing-snapshot"
+                    if name == "ownward_semantic_submit_batch":
+                        first_commit.set()
+                    return result
+
+                runtime.client.call_tool = observe
+
+                class Capability(FakeCodex):
+                    def semantics(self, work, settings, stage):
+                        if work[0]["asset"]["id"] == "info-41":
+                            observed_overlap.append(first_commit.wait(timeout=1))
+                            if fail_late:
+                                raise RuntimeError("late generation failure")
+                        return super().semantics(work, settings, stage)
+
+                def run(factory):
+                    with mock.patch.object(adapter, "OwnwardRuntime", return_value=runtime), adapter.ExternalIntelligenceScheduler(8) as scheduler:
+                        return adapter.process_question(question, root, "identity", root / "host", root / "embedding",
+                            self.protocol, root / "unused", factory, scheduler, prepare_only=True)
+
+                if fail_late:
+                    with self.assertRaisesRegex(RuntimeError, "late generation failure"):
+                        run(Capability)
+                    checkpoint = adapter.load_json(root / "questions/pipeline/checkpoint.json")
+                    self.assertGreater(checkpoint["organized_batches"], 0)
+                    elapsed = checkpoint["phase_seconds"]["semantic"]
+                    self.assertGreater(elapsed, 0)
+                    resumed_sources = []
+
+                    class Resume(FakeCodex):
+                        def semantics(self, work, settings, stage):
+                            resumed_sources.extend(item["asset"]["id"] for item in work)
+                            return super().semantics(work, settings, stage)
+
+                    result = run(Resume)
+                    self.assertNotIn("info-1", resumed_sources)
+                    self.assertGreaterEqual(result["phase_seconds"]["semantic"], elapsed)
+                else:
+                    result = run(Capability)
+                self.assertTrue(result["prepared"])
+                self.assertEqual([not old_snapshot], observed_overlap)
+                checkpoint = adapter.load_json(root / "questions/pipeline/checkpoint.json")
+                self.assertEqual([0, 1, 2], checkpoint["submission_order"])
+                publications = [ids for name, ids in runtime.client.operations if name == "ownward_semantic_submit_batch"]
+                self.assertEqual(45, len(publications))
 
     def test_dry_plan_uses_real_public_work_without_model_or_submission_and_resumes_exactly(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

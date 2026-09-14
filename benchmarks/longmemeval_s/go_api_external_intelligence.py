@@ -8,6 +8,7 @@ import hashlib
 import http.client
 import json
 from pathlib import Path
+import re
 import socket
 import sys
 import threading
@@ -68,8 +69,10 @@ def _field_pointer(path):
 
 
 def _normalize_integer_collections(value, schema):
-    """Normalize singleton integer packaging only when the full schema admits it."""
-    if isinstance(value, list) and len(value) == 1 and type(value[0]) is int and any(k in schema for k in ("anyOf", "oneOf")):
+    """Unwrap a single position/range only when the complete schema admits it."""
+    if isinstance(value, list) and len(value) == 1 and (
+            type(value[0]) is int or (isinstance(value[0], list) and len(value[0]) == 2
+                                    and all(type(x) is int for x in value[0]))) and any(k in schema for k in ("anyOf", "oneOf")):
         try:
             _validate_schema(value, schema)
         except ExternalIntelligenceError:
@@ -86,10 +89,28 @@ def _normalize_integer_collections(value, schema):
             return value
     if isinstance(value, dict) and schema.get("type") == "object":
         properties = schema.get("properties", {})
-        return {key: _normalize_integer_collections(child, properties.get(key, {}))
-                for key, child in value.items()}
-    if isinstance(value, list) and schema.get("type") == "array":
-        return [_normalize_integer_collections(child, schema.get("items", {})) for child in value]
+        value = {key: _normalize_integer_collections(child, properties.get(key, {}))
+                 for key, child in value.items()}
+    elif isinstance(value, list) and schema.get("type") == "array":
+        value = [_normalize_integer_collections(child, schema.get("items", {})) for child in value]
+    if isinstance(value, dict) and any(k in schema for k in ("anyOf", "oneOf")):
+        try:
+            _validate_schema(value, schema)
+            return value
+        except ExternalIntelligenceError:
+            pass
+        choices = {}
+        for branch in schema.get("anyOf", schema.get("oneOf", [])):
+            if branch.get("type") != "object":
+                continue
+            candidate = _normalize_integer_collections(value, branch)
+            try:
+                _validate_schema(candidate, schema)
+                choices[json.dumps(candidate, sort_keys=True)] = candidate
+            except ExternalIntelligenceError:
+                pass
+        if len(choices) == 1:
+            return next(iter(choices.values()))
     return value
 
 
@@ -164,8 +185,17 @@ def _unwrap_field_corrections(value, schema, *, original=None):
     return next(iter(matches.values())) if matches else value
 
 
-def _partial_array_output(text, schema):
-    """Retain closed records in a fixed-size batch; missing records remain invalid."""
+def _unique_json_fields(pairs):
+    value = {}
+    for key, child in pairs:
+        if key in value:
+            raise ValueError("duplicate JSON field")
+        value[key] = child
+    return value
+
+
+def _partial_array_output(text, schema, *, allow_complete=False):
+    """Retain batch records for per-source validation; missing records stay invalid."""
     properties = schema.get("properties", {})
     if schema.get("type") != "object" or len(properties) != 1:
         return None
@@ -174,7 +204,8 @@ def _partial_array_output(text, schema):
     if (rule.get("type") != "array" or type(count) is not int or count <= 0
             or count != rule.get("maxItems") or schema.get("required") != [name]):
         return None
-    decoder = json.JSONDecoder()
+    decoder = json.JSONDecoder(object_pairs_hook=_unique_json_fields)
+    text = _json_response_text(text, allow_incomplete=allow_complete)
     remaining = text.lstrip()
     if not remaining.startswith("{"):
         return None
@@ -197,12 +228,105 @@ def _partial_array_output(text, schema):
             break
         rows.append(row)
         remaining = remaining[end:].lstrip()
+        if len(rows) == count:
+            break
         if not remaining.startswith(","):
             break
         remaining = remaining[1:].lstrip()
-    if not rows or len(rows) >= count:
+    if not rows:
         return None
+    if len(rows) == count or remaining.startswith("]"):
+        if len(rows) == count and not allow_complete:
+            return None
+        try:
+            if remaining.strip() in ("", "]"):
+                # Every retained record has already closed independently.
+                # Only the outer array/object delimiters may be absent.
+                value = {name: rows}
+            else:
+                try:
+                    value = decoder.decode(text)
+                except ValueError:
+                    value = _closed_json_prefix(text, decoder=decoder)
+            if not isinstance(value, dict) or value.get(name) != rows:
+                return None
+            # Validate the complete envelope without discarding good sources
+            # because another source needs the existing per-source repair.
+            _validate_schema(value, {**schema, "properties": {name: {**rule, "minItems": 0, "items": {}}}})
+        except (ValueError, ExternalIntelligenceError):
+            return None
     return {name: rows + [None] * (count - len(rows))}
+
+
+def _json_response_text(text, *, allow_incomplete=False):
+    encoded = text.strip()
+    opening = re.match(r"```(?:json)?(?:\r\n|\r|\n)", encoded, re.IGNORECASE | re.ASCII)
+    if opening is None:
+        return encoded
+    body = encoded[opening.end():]
+    # Remove only boundary markers. Unicode separators within JSON strings
+    # are content, not line endings; preserve all body characters verbatim.
+    closing = re.search(r"(?:\r\n|\r|\n)(`{1,3})\Z", body)
+    if closing is not None and (closing[1] == "```" or allow_incomplete):
+        return body[:closing.start()]
+    return body if allow_incomplete else encoded
+
+
+def _retained_field_corrections(text, original, fields, schema):
+    encoded = _json_response_text(text, allow_incomplete=True)
+    decoder = json.JSONDecoder(object_pairs_hook=_unique_json_fields)
+    try:
+        value = decoder.decode(encoded)
+    except ValueError:
+        value = _closed_json_prefix(encoded, decoder=decoder)
+    if value is None:
+        # A cut correction map may still contain independently complete fields.
+        # Numeric tokens need a delimiter: a received '12' could still be '123'.
+        if not encoded.startswith("{"):
+            return None
+        remaining, value = encoded[1:].lstrip(), {}
+        while remaining:
+            try:
+                key, end = decoder.raw_decode(remaining)
+                if not isinstance(key, str) or key not in schema.get("properties", {}) or key in value:
+                    return None
+                remaining = remaining[end:].lstrip()
+                if not remaining.startswith(":"):
+                    break
+                candidate, end = decoder.raw_decode(remaining[1:].lstrip())
+                remaining = remaining[1:].lstrip()[end:].lstrip()
+                if remaining and remaining[0] not in ",}":
+                    break
+                if not remaining and not isinstance(candidate, (dict, list, str)):
+                    break
+                value[key] = candidate
+                if remaining.startswith(","):
+                    remaining = remaining[1:].lstrip()
+                elif remaining in ("", "}"):
+                    break
+                else:
+                    return None
+            except ValueError:
+                break
+        if not value:
+            return None
+    corrections = _unwrap_field_corrections(value, schema, original=original)
+    if not isinstance(corrections, dict) or not set(corrections).issubset(schema.get("properties", {})):
+        return None
+    retained = copy.deepcopy(original)
+    for path, rule in fields:
+        pointer = _field_pointer(path)
+        if pointer not in corrections:
+            continue
+        try:
+            _validate_schema(corrections[pointer], rule)
+        except ExternalIntelligenceError:
+            continue
+        parent = retained
+        for key in path[:-1]:
+            parent = parent[key]
+        parent[path[-1]] = corrections[pointer]
+    return retained
 
 
 def _complete_json_containers(text):
@@ -235,10 +359,10 @@ def _complete_json_containers(text):
     return value if isinstance(value, dict) else None
 
 
-def _closed_json_prefix(text):
+def _closed_json_prefix(text, *, decoder=None):
     """Recover a complete object followed only by surplus closing delimiters."""
     try:
-        value, end = json.JSONDecoder().raw_decode(text)
+        value, end = (decoder or json.JSONDecoder()).raw_decode(text)
     except ValueError:
         return None
     trailing = text[end:].strip()
@@ -404,7 +528,14 @@ class GoAPIClient:
         service = service or self._route.primary
         destination = self._services[service]
         blocks: dict[int, dict[str, Any]] = {}
+        message: dict[str, Any] = {}
         request_started = False
+
+        def interrupted(error):
+            error.request_not_sent = not request_started
+            error.partial_message = {**message, "content": [blocks[index] for index in sorted(blocks)]}
+            return error
+
         connection = http.client.HTTPSConnection(destination.host, timeout=self._remaining(deadline))
         try:
             connection_failures = []
@@ -430,7 +561,7 @@ class GoAPIClient:
             if destination.session_header:
                 headers[destination.session_header] = session
             request_started = True
-            connection.request("POST", destination.endpoint, json.dumps(body, ensure_ascii=False).encode("utf-8"), headers)
+            connection.request("POST", destination.endpoint, json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8"), headers)
             response = connection.getresponse()
             if response.status != 200:
                 with self._lock:
@@ -467,7 +598,15 @@ class GoAPIClient:
                         break
                     if not line.startswith(b"data:"):
                         continue
-                    event = json.loads(line[5:].replace(destination.key.encode(), b"[redacted]"))
+                    try:
+                        event = json.loads(line[5:].replace(destination.key.encode(), b"[redacted]"))
+                    except ValueError:
+                        if not line.endswith(b"\n"):
+                            # readline returned an EOF fragment. Discard only
+                            # this event, keeping earlier fully decoded events.
+                            raise interrupted(ExternalIntelligenceError(
+                                "Bailian API response stream ended inside an event")) from None
+                        raise
                     log.write(json.dumps(event, ensure_ascii=False) + "\n")
                     log.flush()
                     kind = event.get("type")
@@ -495,7 +634,7 @@ class GoAPIClient:
                         stopped = True
                         break
             if not stopped:
-                raise ExternalIntelligenceError("Bailian API response stream ended before message_stop")
+                raise interrupted(ExternalIntelligenceError("Bailian API response stream ended before message_stop"))
             invalid_arguments = {}
             for index, text in arguments.items():
                 try:
@@ -512,8 +651,7 @@ class GoAPIClient:
             _atomic_json(path, message)
             return message
         except (socket.timeout, TimeoutError, ExternalIntelligenceTimeout):
-            error = ExternalIntelligenceTimeout("Bailian API request timed out")
-            error.request_not_sent = not request_started
+            error = interrupted(ExternalIntelligenceTimeout("Bailian API request timed out"))
             # Incomplete reasoning is recoverable work, never a completed answer.
             error.working_notes = "".join(blocks[index].get("thinking", "") for index in sorted(blocks))
             raise error from None
@@ -528,6 +666,8 @@ class GoAPIClient:
                 pass
             failure = ExternalIntelligenceError(f"Bailian API transport failed ({type(error).__name__})")
             failure.request_not_sent = not request_started
+            if isinstance(error, (OSError, http.client.HTTPException)):
+                interrupted(failure)
             raise failure from None
         finally:
             connection.close()
@@ -641,6 +781,26 @@ class GoAPIClient:
                     service = fallback
                     response_path = response_path.with_suffix(".fallback.json")
                 except ExternalIntelligenceError as error:
+                    partial = getattr(error, "partial_message", None)
+                    if (not catalog and isinstance(partial, dict)
+                            and partial.get("model") == MODEL
+                            and not any(block.get("type") == "tool_use" for block in partial.get("content", []))):
+                        partial_text = "".join(block.get("text", "") for block in partial.get("content", [])
+                                               if block.get("type") == "text")
+                        retained = (_retained_field_corrections(partial_text, original_value, repair_fields, response_schema)
+                                    if repair_fields else _partial_array_output(partial_text, response_schema, allow_complete=True))
+                        if retained is not None:
+                            retained = _normalize_integer_collections(retained, schema)
+                            known_usage = dict(usage)
+                            for target, source in (("input_tokens", "input_tokens"), ("output_tokens", "output_tokens"),
+                                    ("cached_input_tokens", "cache_read_input_tokens"), ("cache_write_tokens", "cache_creation_input_tokens")):
+                                known_usage[target] += int(partial.get("usage", {}).get(source, 0))
+                            error.partial_output = retained
+                            error.partial_usage = {**known_usage, "api_requests": requests, "calls": 1}
+                            _atomic_json(work_dir / "interrupted-source-prefix.json", {
+                                "output": retained, "known_usage_lower_bound": error.partial_usage,
+                                "output_usage_complete": False, "unreported_output_tokens": None,
+                                "completion": "interrupted; only complete rows may enter existing per-source validation"})
                     if getattr(error, "request_not_sent", False) is True:
                         state = copy.deepcopy({"session": session, "catalog": catalog, "allowed": sorted(allowed),
                             "declarations": declarations, "messages": messages, "system": system, "usage": usage,
@@ -709,10 +869,7 @@ class GoAPIClient:
             try:
                 if result.get("stop_reason") != "end_turn":
                     raise ValueError("response did not finish normally")
-                encoded = text.strip()
-                lines = encoded.splitlines()
-                if len(lines) >= 3 and lines[0].lower() in ("```", "```json") and lines[-1] == "```":
-                    encoded = "\n".join(lines[1:-1])
+                encoded = _json_response_text(text)
                 try:
                     value = json.loads(encoded)
                 except json.JSONDecodeError:

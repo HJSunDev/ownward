@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from contextlib import contextmanager
+from contextvars import ContextVar
 from functools import lru_cache
 import copy
 import hashlib
@@ -14,6 +16,29 @@ DEFAULT_REPRESENTATION = "ownward.semantic-deduplicated-body-table/v1"
 COMPACT_REPRESENTATION = "ownward.semantic-indexed-body-context-table/v2"
 LEGACY_GROUNDED_REPRESENTATION = "ownward.semantic-source-spans/v1"
 GROUNDED_REPRESENTATION = "ownward.semantic-source-spans/v2"
+
+
+_preparation_cache: ContextVar[dict | None] = ContextVar("semantic_preparation_cache", default=None)
+
+
+@contextmanager
+def source_preparation_cache():
+    """Reuse immutable source computations for one plan, isolated from other tasks."""
+    token = _preparation_cache.set({"digests": {}, "passages": {}})
+    try:
+        yield
+    finally:
+        _preparation_cache.reset(token)
+
+
+def _content_digest(content: str) -> str:
+    cache = _preparation_cache.get()
+    if cache is None:
+        return hashlib.sha256(content.encode("utf-8")).hexdigest()
+    digests = cache["digests"]
+    if content not in digests:
+        digests[content] = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    return digests[content]
 
 
 @lru_cache(maxsize=1)
@@ -42,22 +67,23 @@ def organization_schema(work: list[dict[str, Any]], schema: dict[str, Any], repr
     analysis = schema["properties"]["analyses"]["items"]
     graph = copy.deepcopy(organization_contract()["output_schema"])
     if representation in {GROUNDED_REPRESENTATION, LEGACY_GROUNDED_REPRESENTATION}:
+        bodies = default_semantic_input(work)["bodies"]
+        refs = [body["body_ref"] for body in bodies]
+        inventories = {c["id"] for item in work for c in item.get("candidates", [])
+                       if (c.get("organization") or {}).get("units")}
+        unit_refs = [body["body_ref"] for body in bodies if body["id"] in inventories]
         def compact_locator(node):
             if isinstance(node, dict):
                 if node.get("type") == "object" and "asset_id" in node.get("properties", {}):
                     # One endpoint has one locator. Repeating a unit locator
                     # as a passage range creates two independently generated
                     # addresses which can disagree without adding evidence.
-                    refs = [b["body_ref"] for b in default_semantic_input(work)["bodies"]]
                     properties = {k:compact_locator(v) for k,v in node["properties"].items()}
                     properties["asset_id"] = {"enum": ["self", *refs]}
                     unit = {"type":"object", "additionalProperties":False,
                             "required":list(dict.fromkeys([*node.get("required",[]),"unit_id"])),
                             "properties":{k:v for k,v in properties.items() if k!="selector"}}
-                    inventories = {c["id"] for item in work for c in item.get("candidates",[])
-                                   if (c.get("organization") or {}).get("units")}
-                    unit["properties"]["asset_id"] = {"enum":["self", *[
-                        b["body_ref"] for b in default_semantic_input(work)["bodies"] if b["id"] in inventories]]}
+                    unit["properties"]["asset_id"] = {"enum":["self", *unit_refs]}
                     if "mention_id" in node.get("required",[]):
                         return unit
                     raw = {"type":"object", "additionalProperties":False,
@@ -214,6 +240,10 @@ def grounded_instruction(representation: str = GROUNDED_REPRESENTATION) -> str:
 
 
 def source_passages(content: str, representation: str = GROUNDED_REPRESENTATION) -> list[str]:
+    cache = _preparation_cache.get()
+    key = (content, representation)
+    if cache is not None and key in cache["passages"]:
+        return list(cache["passages"][key])
     # Stable, lossless source slices; offsets avoid repeatedly copying the
     # unconsumed tail of a long source while planning several possible batches.
     passages = []
@@ -222,12 +252,18 @@ def source_passages(content: str, representation: str = GROUNDED_REPRESENTATION)
     while offset < length:
         end = min(200 if legacy else 384, length-offset)
         window = content[offset:offset+end]
-        boundaries = [i+1 for i,char in enumerate(window)
-                      if char == "\n" or (legacy and char in ".!?。！？" and
-                         (offset+i+1 == length or content[offset+i+1].isspace()))]
-        boundaries = [i for i in boundaries if window[:i].strip()]
-        if boundaries:
-            end = boundaries[0]
+        if legacy:
+            boundaries = [i+1 for i, char in enumerate(window)
+                          if char == "\n" or (char in ".!?。！？" and
+                             (offset+i+1 == length or content[offset+i+1].isspace()))]
+            boundary = next((i for i in boundaries if window[:i].strip()), 0)
+        else:
+            newline = window.find("\n")
+            while newline >= 0 and not window[:newline+1].strip():
+                newline = window.find("\n", newline+1)
+            boundary = newline+1
+        if boundary:
+            end = boundary
         elif offset+end < length:
             space = window.rfind(" ")
             if space > 0:
@@ -238,7 +274,10 @@ def source_passages(content: str, representation: str = GROUNDED_REPRESENTATION)
         else:
             passages.append(part)
         offset += end
-    return passages or [""]
+    passages = passages or [""]
+    if cache is not None:
+        cache["passages"][key] = tuple(passages)
+    return passages
 
 
 def grounded_input(original: dict[str, Any], representation: str = GROUNDED_REPRESENTATION, *, index_references: bool = False) -> dict[str, Any]:
@@ -271,7 +310,7 @@ def default_semantic_input(work: list[dict[str, Any]]) -> dict[str, Any]:
         identifier = value.get("id")
         revision = value.get("revision")
         _require(isinstance(content, str) and isinstance(identifier, str) and isinstance(revision, int), "semantic body identity is invalid")
-        digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        digest = _content_digest(content)
         key = (identifier, revision, digest)
         if key not in body_refs:
             reference = f"body-{len(bodies):05d}-{digest[:16]}"

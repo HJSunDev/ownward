@@ -152,6 +152,33 @@ class SourceOwnershipTests(unittest.TestCase):
         self.assertEqual(spans[0].strip(), statement)
         self.assertEqual("".join(spans), source)
 
+    def test_preparation_cache_preserves_validation_and_does_not_alias_results(self):
+        contract = s.SemanticInputContract(s.GROUNDED_REPRESENTATION, "test", None)
+        work = [{"id": "w", "asset": {"id": "a", "revision": 1, "content": "First\nSecond"}}]
+        with s.source_preparation_cache():
+            value = contract.encode(work)
+            value["work"][0]["target"]["passages"]["0"] = "Altered\n"
+            with self.assertRaises(s.SemanticRepresentationError):
+                contract.validate(work, value)
+            fresh = contract.encode(work)
+            self.assertEqual(fresh["work"][0]["target"]["passages"]["0"], "First\n")
+            work[0]["asset"]["content"] = "Changed source"
+            with self.assertRaises(s.SemanticRepresentationError):
+                contract.validate(work, fresh)
+
+    def test_preparation_cache_is_scoped_and_restored_after_failure(self):
+        self.assertIsNone(s._preparation_cache.get())
+        with s.source_preparation_cache():
+            outer = s._preparation_cache.get()
+            s.source_passages("outer")
+            with self.assertRaisesRegex(RuntimeError, "stop"):
+                with s.source_preparation_cache():
+                    self.assertIsNot(s._preparation_cache.get(), outer)
+                    s.source_passages("inner")
+                    raise RuntimeError("stop")
+            self.assertIs(s._preparation_cache.get(), outer)
+        self.assertIsNone(s._preparation_cache.get())
+
     def test_previous_representation_keeps_its_sealed_instruction_and_slices(self):
         legacy = s.LEGACY_GROUNDED_REPRESENTATION
         self.assertEqual(s.canonical_sha256(s.grounded_instruction(legacy)),
