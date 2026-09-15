@@ -16,6 +16,57 @@ import run as product
 
 
 SEED = "ownward-longmemeval-s-stratified-100-v1-20260914"
+QUESTION_WORKERS = 6
+EXTERNAL_SLOTS = 8
+
+
+def failure_scope(error):
+    # Only known source-output failures are safe to isolate from other questions.
+    if isinstance(error, product.AdapterError) and str(error).startswith((
+        "semantic submission batch contains failures:",
+        "semantic source repair remains incomplete:",
+        "organization location repair remains incomplete:",
+    )):
+        return "question"
+    return "run"
+
+
+def prepare_pending(pending, one, rows, progress, *, workers=QUESTION_WORKERS):
+    consecutive_failures = 0
+    stop_reason = None
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        iterator = iter(pending)
+        active = {}
+
+        def fill():
+            while not stop_reason and len(active) < workers:
+                item = next(iterator, None)
+                if item is None:
+                    break
+                active[pool.submit(one, item)] = item
+
+        fill()
+        while active:
+            done, _ = wait(active, return_when=FIRST_COMPLETED)
+            for future in done:
+                active.pop(future)
+                row = future.result()
+                rows.append(row)
+                if row["prepared"]:
+                    consecutive_failures = 0
+                else:
+                    consecutive_failures += 1
+                    if row.get("failure_scope") != "question":
+                        stop_reason = "shared_or_unclassified_failure"
+                    elif consecutive_failures >= 3 and stop_reason is None:
+                        stop_reason = "consecutive_question_failures"
+            fill()
+            progress({"prepared": sum(r["prepared"] for r in rows),
+                      "failed": sum(not r["prepared"] for r in rows),
+                      "active": [r["ordinal"] for r in active.values()],
+                      "stop_reason": stop_reason,
+                      "rows": sorted(rows, key=lambda r: r["ordinal"])})
+    return stop_reason
 
 
 def freeze(path, value):
@@ -66,12 +117,29 @@ def hash_tree(root):
             for p in sorted(root.rglob("*")) if p.is_file()}
 
 
+def check_preparation_dependencies(states, dependencies, *, rebuild_changed=False):
+    identity = product.canonical_sha256(dependencies)
+    if (states / identity / "dependencies.json").is_file() or rebuild_changed:
+        return
+    changes = []
+    for path in sorted(states.glob("*/dependencies.json")):
+        previous = product.load_json(path)
+        changed = sorted(key for key in previous.keys() | dependencies.keys()
+                         if previous.get(key) != dependencies.get(key))
+        changes.append({"state": path.parent.name, "changed": changed})
+    product.require(not changes,
+        f"prepared dependencies changed: {changes}; review affected preparation layers before "
+        "using --rebuild-changed. Existing materials have not been rewritten or regenerated.")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--environment-root", type=Path, required=True)
     parser.add_argument("--execution-config", type=Path, required=True)
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--selection-only", action="store_true")
+    parser.add_argument("--rebuild-changed", action="store_true",
+                        help="prepare a new state after reviewing changed ingestion dependencies")
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[2]
     environment = args.environment_root.resolve()
@@ -112,6 +180,8 @@ def main():
         "transport_driver": product.sha256(driver),
     }
     dependency_id = product.canonical_sha256(dependencies)
+    check_preparation_dependencies(materials / "states", dependencies,
+                                   rebuild_changed=args.rebuild_changed)
     state = materials / "states" / dependency_id
     freeze(state / "dependencies.json", dependencies)
     freeze_preparation_protocol(state / "protocol.json", protocol)
@@ -121,7 +191,7 @@ def main():
         "selection": selected_path.relative_to(materials).as_posix(), "dependency_id": dependency_id,
         "head": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo).decode().strip(),
         "runner_sha256": product.sha256(Path(__file__)), "formal_entry_sha256": product.sha256(Path(product.__file__)),
-        "mode": "prepare_only", "question_workers": 6, "external_slots": 8,
+        "mode": "prepare_only", "question_workers": QUESTION_WORKERS, "external_slots": EXTERNAL_SLOTS,
         "reader_calls": 0, "judge_calls": 0,
     })
     pending = []
@@ -142,10 +212,9 @@ def main():
     started = time.monotonic()
     import os
     product.write_json(receipt_root / "process.json", {"pid": os.getpid(), "state": "running", "started": time.time()})
-    failed = False
-    with product.ExternalIntelligenceScheduler(8) as scheduler:
+    with product.ExternalIntelligenceScheduler(EXTERNAL_SLOTS) as scheduler:
         with product.open_external_intelligence_runtime(driver=external["driver"], binary=driver,
-                credential_file=Path(external["credential_file"]), max_active=8, worker_processes=8,
+                credential_file=Path(external["credential_file"]), max_active=EXTERNAL_SLOTS, worker_processes=EXTERNAL_SLOTS,
                 runtime_parent=receipt_root / ".runtime") as transport:
             def one(item):
                 qid = item["question_id"]
@@ -158,7 +227,7 @@ def main():
                 try:
                     value = product.process_question(q, state, dependency_id, args.binary, embedding,
                         protocol, environment / "unused-evaluator", lambda: product.ExternalIntelligenceCapability(transport, contract),
-                        scheduler, prepare_only=True, runtime_workers=min(6, len(pending)))
+                        scheduler, prepare_only=True, runtime_workers=min(QUESTION_WORKERS, len(pending)))
                     root = state / "questions" / qid
                     assert not any((root / name).exists() for name in ("reader", "judge", "answer.json", "result.json"))
                     checkpoint = product.load_json(root / "checkpoint.json")
@@ -174,36 +243,17 @@ def main():
                     row = {**item, "prepared": True, "reused": False, "seconds": receipt["wall_seconds"],
                            "assets": value["asset_count"], "bytes": byte_count, "usage": value["usage"]}
                 except Exception as error:
-                    row = {**item, "prepared": False, "error_type": type(error).__name__, "error": str(error)}
+                    row = {**item, "prepared": False, "error_type": type(error).__name__, "error": str(error),
+                           "failure_scope": failure_scope(error)}
                 product.write_json(receipt_root / (qid + ".json"), row)
                 print(json.dumps({"event": "finished", **row}, ensure_ascii=False), flush=True)
                 return row
-            with ThreadPoolExecutor(max_workers=6) as pool:
-                iterator = iter(pending)
-                active = {}
-                for _ in range(6):
-                    item = next(iterator, None)
-                    if item:
-                        active[pool.submit(one, item)] = item
-                while active:
-                    done, _ = wait(active, return_when=FIRST_COMPLETED)
-                    for future in done:
-                        active.pop(future)
-                        row = future.result()
-                        rows.append(row)
-                        failed = failed or not row["prepared"]
-                    product.write_json(receipt_root / "progress.json", {"prepared": sum(r["prepared"] for r in rows),
-                        "failed": sum(not r["prepared"] for r in rows), "active": [r["ordinal"] for r in active.values()],
-                        "rows": sorted(rows, key=lambda r: r["ordinal"])})
-                    if not failed:
-                        while len(active) < 6:
-                            item = next(iterator, None)
-                            if item is None:
-                                break
-                            active[pool.submit(one, item)] = item
+            stop_reason = prepare_pending(pending, one, rows,
+                lambda value: product.write_json(receipt_root / "progress.json", value))
+    failed = any(not row["prepared"] for row in rows)
     summary = {"prepared": sum(r["prepared"] for r in rows), "failed": sum(not r["prepared"] for r in rows),
                "selected": 100, "elapsed_seconds": time.monotonic() - started,
-               "dependency_id": dependency_id, "reader_calls": 0, "judge_calls": 0,
+               "dependency_id": dependency_id, "reader_calls": 0, "judge_calls": 0, "stop_reason": stop_reason,
                "rows": sorted(rows, key=lambda r: r["ordinal"])}
     product.write_json(receipt_root / "summary.json", summary)
     product.write_json(receipt_root / "process.json", {"pid": os.getpid(), "state": "stopped" if failed else "finished", "finished": time.time()})
