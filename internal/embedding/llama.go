@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"sync"
@@ -163,11 +164,14 @@ func (m *Managed) ensureRunning(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// Bound inference to the host's CPU allocation; additional workers have
+	// diminishing throughput and compete with concurrent imports.
+	threads := strconv.Itoa(min(4, runtime.GOMAXPROCS(0)))
 	arguments := []string{
 		"-m", m.bundle.ModelPath,
 		"--embeddings", "--pooling", "mean", "--embd-normalize", "2",
 		"--host", "127.0.0.1", "--port", strconv.Itoa(port),
-		"--threads", "2", "--threads-batch", "2", "--parallel", "1",
+		"--threads", threads, "--threads-batch", threads, "--parallel", "1",
 		"--ctx-size", "512", "--batch-size", "512", "--ubatch-size", "512",
 		"--no-warmup", "--no-webui", "--log-disable",
 	}

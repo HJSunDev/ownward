@@ -13,12 +13,13 @@ var organizationContract []byte
 
 func OrganizationInstruction() string {
 	var contract struct {
-		Instruction string `json:"instruction"`
+		Instruction             string `json:"instruction"`
+		SourceObjectInstruction string `json:"source_object_instruction"`
 	}
 	if err := json.Unmarshal(organizationContract, &contract); err != nil {
 		panic(err)
 	}
-	return contract.Instruction
+	return contract.Instruction + " " + contract.SourceObjectInstruction
 }
 
 // OrganizationOutputSchema is the same public submission shape that host

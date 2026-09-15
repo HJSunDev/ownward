@@ -158,7 +158,7 @@ def main():
                 try:
                     value = product.process_question(q, state, dependency_id, args.binary, embedding,
                         protocol, environment / "unused-evaluator", lambda: product.ExternalIntelligenceCapability(transport, contract),
-                        scheduler, prepare_only=True)
+                        scheduler, prepare_only=True, runtime_workers=min(6, len(pending)))
                     root = state / "questions" / qid
                     assert not any((root / name).exists() for name in ("reader", "judge", "answer.json", "result.json"))
                     checkpoint = product.load_json(root / "checkpoint.json")

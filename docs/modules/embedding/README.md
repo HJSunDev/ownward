@@ -65,7 +65,7 @@ flowchart LR
 
 ## 第一版架构落点
 
-第一版采用 [EmbeddingGemma 300M 的 Q8 GGUF 方案](../../research/vector-model-selection.md)：CPU-only、llama.cpp、2 个推理线程，使用官方查询与文档提示、Mean Pooling 和 L2 归一化，将 768 维输出截取为 512 维后重新归一化。
+第一版采用 [EmbeddingGemma 300M 的 Q8 GGUF 方案](../../research/vector-model-selection.md)：CPU-only、llama.cpp，推理线程不超过4个且遵守进程CPU预算（`GOMAXPROCS`）；批量测试按同时运行的内核实例数分配CPU预算，避免多个向量进程争抢资源。使用官方查询与文档提示、Mean Pooling 和 L2 归一化，将768维输出截取为512维后重新归一化。
 
 第一版必须完成：
 

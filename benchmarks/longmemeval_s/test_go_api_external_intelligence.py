@@ -1,5 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 import io
+import copy
 import json
 from pathlib import Path
 import tempfile
@@ -119,6 +120,56 @@ class GoAPIClientTests(unittest.TestCase):
                 self.assertEqual({'answer': 'repaired'}, actual)
                 self.assertEqual(1, usage['format_corrections'])
                 self.assertEqual(2, post.call_count)
+
+    def test_organization_field_repair_preserves_material_and_output_without_old_reasoning(self):
+        schema = {'type': 'object', 'required': ['analyses'], 'additionalProperties': False,
+                  'properties': {'analyses': {'type': 'array', 'items': {
+                      'type': 'object', 'required': ['organization', 'kind'], 'additionalProperties': False,
+                      'properties': {'organization': {'type': 'object'},
+                                     'kind': {'type': 'string', 'maxLength': 8}}}}}}
+        original = {'analyses': [{'organization': {'relations': ['valid relation'], 'source': 'unchanged'},
+                                  'kind': 'overlong category'}]}
+        prompt = 'Full original source, all candidates and their original identifiers.'
+        blocks = [{'type': 'thinking', 'thinking': 'completed reasoning', 'signature': 'sig'},
+                  {'type': 'text', 'text': json.dumps(original)}]
+        saved = copy.deepcopy(blocks)
+        for corrections, passes in [({'/analyses/0/kind': 'fact'}, True),
+                ({'/analyses/0/kind': 'fact', '/analyses/0/organization': {}}, False),
+                ({'/analyses/0/kind': 'still too long'}, False)]:
+            with self.subTest(corrections=corrections), mock.patch.object(self.client, '_post', side_effect=[
+                    answer('', content=blocks), answer(json.dumps(corrections))]) as post:
+                invoke = lambda: self.client.invoke(prompt=prompt, schema=schema, model=subject.MODEL,
+                    effort='medium', work_dir=self.root / 'compact', timeout_seconds=5)
+                if passes:
+                    value, usage, _ = invoke()
+                    self.assertEqual(original['analyses'][0]['organization'], value['analyses'][0]['organization'])
+                    self.assertEqual('fact', value['analyses'][0]['kind'])
+                    self.assertEqual(1, usage['format_corrections'])
+                else:
+                    with self.assertRaisesRegex(subject.ExternalIntelligenceError, 'after one correction'):
+                        invoke()
+                body = post.call_args.args[0]
+                self.assertEqual(prompt, body['messages'][0]['content'][0]['text'])
+                self.assertEqual([saved[1]], body['messages'][1]['content'])
+                self.assertEqual(saved, blocks)
+                self.assertEqual(2, post.call_count)
+
+    def test_compaction_does_not_apply_to_tool_history_or_other_tasks(self):
+        schema = {'properties': {'analyses': {'items': {'properties': {'organization': {'type': 'object'}}}}}}
+        messages = [{'role': 'user', 'content': [{'type': 'text', 'text': 'sources'}]},
+                    {'role': 'assistant', 'content': [{'type': 'thinking', 'thinking': 'keep', 'signature': 'sig'},
+                                                     {'type': 'text', 'text': '{}'}]}]
+        helper = subject._compact_organization_repair_history
+        for unrelated in ({}, SCHEMA, {'properties': {'analyses': {'items': []}}}):
+            self.assertIs(messages, helper(messages, unrelated, []))
+        self.assertIs(messages, helper(messages, schema, TOOLS))
+        for changed in (messages + [messages[0]], [messages[1], messages[1]],
+                [messages[0], {'role': 'assistant', 'content': messages[1]['content'] + [{'type': 'tool_use'}]}],
+                [messages[0], {'role': 'assistant', 'content': [messages[1]['content'][0]]}]):
+            self.assertIs(changed, helper(changed, schema, []))
+        redacted = copy.deepcopy(messages)
+        redacted[1]['content'][0] = {'type': 'redacted_thinking', 'data': 'opaque'}
+        self.assertEqual([messages[1]['content'][1]], helper(redacted, schema, [])[1]['content'])
 
     def test_field_repair_finds_all_errors_and_preserves_valid_content(self):
         schema = {'type': 'object', 'required': ['rows'], 'additionalProperties': False,

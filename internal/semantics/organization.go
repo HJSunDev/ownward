@@ -12,7 +12,9 @@ import (
 	"github.com/HJSunDev/ownward/internal/domain"
 )
 
-const OrganizationSchema = "ownward.organization/v1"
+const OrganizationSchema = "ownward.organization/v2"
+
+const LegacyOrganizationSchema = "ownward.organization/v1"
 
 // Organization 是可重建的原文组织；字段仅承接外部智能的判断。
 type Organization struct {
@@ -39,6 +41,8 @@ type Mention struct {
 
 // GraphEndpoint 可引用原资产或一个已发布的单元/提及，引用始终携带原文入口。
 type GraphEndpoint struct {
+	ObjectName         string              `json:"object_name,omitempty"`
+	ObjectRole         string              `json:"object_role,omitempty"`
 	AssetID            string              `json:"asset_id"`
 	Revision           uint64              `json:"revision,omitempty"`
 	Snapshot           string              `json:"snapshot,omitempty"`
@@ -99,7 +103,7 @@ func NormalizeOrganization(asset domain.Information, value *Organization, candid
 		return nil, nil
 	}
 	result := CloneOrganization(value)
-	if result.Schema != OrganizationSchema || len(result.Units) > 128 || len(result.Links) > 128 {
+	if (result.Schema != OrganizationSchema && result.Schema != LegacyOrganizationSchema) || len(result.Units) > 128 || len(result.Links) > 128 {
 		return nil, errors.New("关系组织格式或工作量无效")
 	}
 	units := map[string]bool{}
@@ -114,9 +118,6 @@ func NormalizeOrganization(asset domain.Information, value *Organization, candid
 			unitErrors = append(unitErrors, fmt.Errorf("units[%d] (%q): %w", n, unit.ID, err))
 		}
 	}
-	if len(unitErrors) > 0 {
-		return nil, errors.Join(unitErrors...)
-	}
 	sort.Slice(result.Units, func(i, j int) bool { return result.Units[i].ID < result.Units[j].ID })
 	result.Snapshot = "org_" + organizationDigest(struct {
 		ID       string
@@ -129,9 +130,22 @@ func NormalizeOrganization(asset domain.Information, value *Organization, candid
 	}
 	seen := map[string]bool{}
 	links := make([]GroundedLink, 0, len(result.Links))
-	var linkErrors []error
+	linkErrors := append([]error(nil), unitErrors...)
 	for index, link := range result.Links {
 		var endpointErrors []error
+		for _, endpoint := range append([]GraphEndpoint{link.Source, link.Target}, link.Conditions...) {
+			if (endpoint.ObjectName != "" || endpoint.ObjectRole != "") && result.Schema != OrganizationSchema {
+				return nil, errors.New("source object endpoints require the organization/v2 schema")
+			}
+		}
+		if link.Type != "same_object" && (link.Source.ObjectName != "" || link.Target.ObjectName != "") {
+			return nil, errors.New("source object declarations belong to same_object relations")
+		}
+		for _, condition := range link.Conditions {
+			if condition.ObjectName != "" || condition.ObjectRole != "" {
+				return nil, errors.New("relation conditions must locate source evidence or published units")
+			}
+		}
 		if (!IsAllowedRelationType(link.Type) && link.Type != "same_object") || strings.TrimSpace(link.Meaning) == "" || len(link.Conditions) > 16 {
 			return nil, errors.New("关系含义或条件无效")
 		}
@@ -150,7 +164,7 @@ func NormalizeOrganization(asset domain.Information, value *Organization, candid
 			linkErrors = append(linkErrors, endpointErrors...)
 			continue
 		}
-		if link.Type == "same_object" && (link.Source.MentionID == "" || link.Target.MentionID == "") {
+		if link.Type == "same_object" && ((link.Source.MentionID == "" && link.Source.ObjectName == "") || (link.Target.MentionID == "" && link.Target.ObjectName == "")) {
 			return nil, errors.New("同一对象必须连接对象提及")
 		}
 		if link.Source == link.Target {
@@ -201,17 +215,20 @@ func normalizeUnit(asset domain.Information, unit *SemanticUnit, wholeSource boo
 	}
 	unit.Context = contexts
 	mentions := map[string]bool{}
+	var mentionErrors []error
 	for mn := range unit.Mentions {
 		mention := &unit.Mentions[mn]
 		if mention.Selector.Exact == "" {
 			selector, err := implicitMentionSelector(asset.Content, *unit, mention.Name)
 			if err != nil {
-				return fmt.Errorf("对象 %s: %w", mention.ID, err)
+				mentionErrors = append(mentionErrors, fmt.Errorf("对象 %s: %w", mention.ID, err))
+				continue
 			}
 			mention.Selector = selector
 		}
 		if mention.ID == "" || mention.Name == "" || mentions[mention.ID] {
-			return errors.New("对象提及身份无效")
+			mentionErrors = append(mentionErrors, fmt.Errorf("对象 %s: 对象提及身份无效", mention.ID))
+			continue
 		}
 		mentions[mention.ID] = true
 		ms, me, err := mention.Selector.Resolve(asset.Content)
@@ -225,7 +242,8 @@ func normalizeUnit(asset domain.Information, unit *SemanticUnit, wholeSource boo
 			}
 		}
 		if err != nil {
-			return err
+			mentionErrors = append(mentionErrors, fmt.Errorf("对象 %s: %w", mention.ID, err))
+			continue
 		}
 		contained := ms >= start && me <= end
 		for _, selector := range unit.Context {
@@ -233,10 +251,10 @@ func normalizeUnit(asset domain.Information, unit *SemanticUnit, wholeSource boo
 			contained = contained || (ms >= cs && me <= ce)
 		}
 		if !contained {
-			return fmt.Errorf("单元 %q 的对象提及 %q (%q) 不在该单元或必要上下文内；请定位此单元中的实际提及，或明确它所需的原文上下文", unit.ID, mention.ID, mention.Name)
+			mentionErrors = append(mentionErrors, fmt.Errorf("单元 %q 的对象提及 %q (%q) 不在该单元或必要上下文内；请定位此单元中的实际提及，或明确它所需的原文上下文", unit.ID, mention.ID, mention.Name))
 		}
 	}
-	return nil
+	return errors.Join(mentionErrors...)
 }
 
 // A missing selector denotes the literal name inside this unit, not an entity
@@ -283,6 +301,20 @@ func normalizeEndpoint(endpoint *GraphEndpoint, candidates map[string]Candidate)
 		return errors.New("关联端点不在当前工作或版本已变化")
 	}
 	endpoint.Revision = candidate.Revision
+	if endpoint.ObjectName != "" || endpoint.ObjectRole != "" {
+		if strings.TrimSpace(endpoint.ObjectName) == "" || endpoint.Selector.Exact == "" {
+			return errors.New("a source object requires an explicit name and original evidence selector")
+		}
+		if endpoint.UnitID != "" || endpoint.MentionID != "" || endpoint.Snapshot != "" {
+			return errors.New("a source object cannot also claim a published unit or mention")
+		}
+		if _, _, err := endpoint.Selector.Resolve(candidate.Content); err != nil {
+			return err
+		}
+		endpoint.Fingerprint = ""
+		endpoint.MentionFingerprint = ""
+		return nil
+	}
 	if endpoint.UnitID == "" {
 		if endpoint.MentionID != "" || endpoint.Snapshot != "" {
 			return errors.New("资产端点不能冒充组织单元")

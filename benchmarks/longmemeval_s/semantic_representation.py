@@ -47,7 +47,29 @@ def organization_contract() -> dict[str, Any]:
 
 
 def organization_requested(work: list[dict[str, Any]]) -> bool:
-    return bool(work) and all(item.get("organization_schema") == "ownward.organization/v1" for item in work)
+    return bool(work) and all(item.get("organization_schema") in {"ownward.organization/v1", "ownward.organization/v2"} for item in work)
+
+
+def source_object_work(work: list[dict[str, Any]]) -> bool:
+    return bool(work) and all(item.get("organization_schema") == "ownward.organization/v2" for item in work)
+
+
+def scoped_organization(representation: str, work: list[dict[str, Any]]) -> bool:
+    return source_object_work(work) and representation in {GROUNDED_REPRESENTATION, LEGACY_GROUNDED_REPRESENTATION}
+
+
+def organization_instruction(work: list[dict[str, Any]], representation: str) -> str:
+    contract = organization_contract()
+    instruction = contract["instruction"]
+    if source_object_work(work):
+        instruction += " " + contract["source_object_instruction"]
+    if scoped_organization(representation, work):
+        instruction += (
+            " Report connections between the target's own passages in organization.within_source; "
+            "evaluate these even when related_sources is empty. Report connections involving a listed candidate "
+            "in organization.cross_source. The two lists have the same relation meanings and share the units."
+        )
+    return instruction
 
 
 def input_references(work: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -66,6 +88,12 @@ def organization_schema(work: list[dict[str, Any]], schema: dict[str, Any], repr
     schema = copy.deepcopy(schema)
     analysis = schema["properties"]["analyses"]["items"]
     graph = copy.deepcopy(organization_contract()["output_schema"])
+    if not source_object_work(work):
+        graph["properties"]["schema"]["enum"] = ["ownward.organization/v1"]
+        for branch in graph["properties"]["links"]["items"]["anyOf"]:
+            if branch["properties"]["type"].get("enum") == ["same_object"]:
+                for side in ("source", "target"):
+                    branch["properties"][side] = branch["properties"][side]["anyOf"][0]
     if representation in {GROUNDED_REPRESENTATION, LEGACY_GROUNDED_REPRESENTATION}:
         bodies = default_semantic_input(work)["bodies"]
         refs = [body["body_ref"] for body in bodies]
@@ -80,6 +108,9 @@ def organization_schema(work: list[dict[str, Any]], schema: dict[str, Any], repr
                     # addresses which can disagree without adding evidence.
                     properties = {k:compact_locator(v) for k,v in node["properties"].items()}
                     properties["asset_id"] = {"enum": ["self", *refs]}
+                    if "object_name" in properties:
+                        return {"type":"object", "additionalProperties":False,
+                                "required":["asset_id","selector","object_name"], "properties":properties}
                     unit = {"type":"object", "additionalProperties":False,
                             "required":list(dict.fromkeys([*node.get("required",[]),"unit_id"])),
                             "properties":{k:v for k,v in properties.items() if k!="selector"}}
@@ -109,6 +140,27 @@ def organization_schema(work: list[dict[str, Any]], schema: dict[str, Any], repr
         mention = graph["properties"]["units"]["items"]["properties"]["mentions"]["items"]
         mention["required"].append("selector")
         mention["properties"]["selector"] = copy.deepcopy(graph["properties"]["units"]["items"]["properties"]["selector"])
+    if scoped_organization(representation, work):
+        links = graph["properties"].pop("links")
+        graph["required"].remove("links")
+        graph["required"].extend(["within_source", "cross_source"])
+        within = copy.deepcopy(links)
+        def own_endpoints(node):
+            if isinstance(node, dict):
+                if "asset_id" in node.get("properties", {}):
+                    node["properties"]["asset_id"] = {"enum": ["self"]}
+                for value in node.values():
+                    own_endpoints(value)
+            elif isinstance(node, list):
+                for value in node:
+                    own_endpoints(value)
+        for branch in within["items"]["anyOf"]:
+            for side in ("source", "target"):
+                own_endpoints(branch["properties"][side])
+        graph["properties"]["within_source"] = within
+        graph["properties"]["cross_source"] = links
+        if all(not item.get("candidates") for item in work):
+            links["maxItems"] = 0
     analysis["properties"]["organization"] = graph
     analysis["required"].append("organization")
     return schema
@@ -121,6 +173,16 @@ class SemanticRepresentationError(RuntimeError):
 def decode_organization(work: list[dict[str, Any]], item: dict[str, Any], value: dict[str, Any], representation: str = "") -> dict[str, Any]:
     # Resolve only exact aliases in the lossless presentation, not guessed IDs.
     result = copy.deepcopy(value)
+    scoped = scoped_organization(representation, work)
+    within_count = 0
+    if scoped:
+        within = result.pop("within_source", None)
+        across = result.pop("cross_source", None)
+        _require(isinstance(within, list) and isinstance(across, list) and "links" not in result,
+                 "organization requires separate within_source and cross_source lists")
+        _require(len(within) + len(across) <= 128, "combined relations exceed original budget")
+        within_count = len(within)
+        result["links"] = within + across
     bodies = default_semantic_input(work)["bodies"]
     ids = {body["body_ref"]: body["id"] for body in bodies}
     allowed = {body["id"] for body in bodies}
@@ -156,7 +218,7 @@ def decode_organization(work: list[dict[str, Any]], item: dict[str, Any], value:
         for mention in unit.get("mentions",[]):
             if mention.get("selector") is not None:mention["selector"]=locate(mention["selector"],own,scoped=True)
     _require(all(u.get("id") for u in result.get("units", [])), "each own organization unit needs a nonempty local id")
-    for link in result.get("links", []):
+    for link_index, link in enumerate(result.get("links", [])):
         for endpoint in [link["source"], link["target"], *link.get("conditions", [])]:
             source_id=endpoint["asset_id"]
             if type(source_id) is int:
@@ -167,9 +229,15 @@ def decode_organization(work: list[dict[str, Any]], item: dict[str, Any], value:
             if endpoint.get("selector") is not None:endpoint["selector"]=locate(endpoint["selector"],endpoint["asset_id"])
         _require(item["asset"]["id"] in {link["source"]["asset_id"], link["target"]["asset_id"]},
                  f"a relation in work {item['id']} must involve its own target asset {item['asset']['id']}")
+        if scoped:
+            both_own = link["source"]["asset_id"] == own and link["target"]["asset_id"] == own
+            _require(both_own if link_index < within_count else not both_own,
+                     "relation endpoints do not match their declared source scope")
         if link["type"] == "same_object":
-            _require(link["source"].get("mention_id") and link["target"].get("mention_id"),
-                     "same_object requires two actual mention IDs; otherwise omit the identity link")
+            _require(all(endpoint.get("mention_id") or (result.get("schema") == "ownward.organization/v2" and
+                         str(endpoint.get("object_name", "")).strip() and endpoint.get("selector"))
+                         for endpoint in (link["source"], link["target"])),
+                     "same_object requires two grounded object mentions")
     return result
 
 

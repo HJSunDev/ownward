@@ -9,6 +9,7 @@ import (
 	"github.com/HJSunDev/ownward/internal/retrieval"
 	"github.com/HJSunDev/ownward/internal/semantics"
 	"strings"
+	"unicode/utf8"
 )
 
 // Invalid generations are already hidden by the read-time input checks. The
@@ -122,6 +123,7 @@ func (s *Service) relationEvidence(edge derived.Edge) (*contract.RelationEvidenc
 	}
 	link := edge.Grounded
 	result := &contract.RelationEvidence{ID: link.ID, Origin: "derived_interpretation", Type: link.Type, Meaning: link.Meaning}
+	var lineContexts []domain.EvidenceReference
 	endpoints := append([]semantics.GraphEndpoint{link.Source, link.Target}, link.Conditions...)
 	for n, endpoint := range endpoints {
 		asset, exists := s.authority.ReadCurrent(endpoint.AssetID)
@@ -132,6 +134,11 @@ func (s *Service) relationEvidence(edge derived.Edge) (*contract.RelationEvidenc
 		if err != nil {
 			return nil, false
 		}
+		contextRefs, err := relationLineContext(asset, ref)
+		if err != nil {
+			return nil, false
+		}
+		lineContexts = append(lineContexts, contextRefs...)
 		if n == 0 {
 			result.Source = ref
 		} else if n == 1 {
@@ -167,7 +174,65 @@ func (s *Service) relationEvidence(edge derived.Edge) (*contract.RelationEvidenc
 			}
 		}
 	}
+	covered := append([]domain.EvidenceReference{result.Source, result.Target}, result.Conditions...)
+	covered = append(covered, result.Context...)
+	for _, candidate := range lineContexts {
+		found := false
+		for _, known := range covered {
+			if known.SourceID == candidate.SourceID && known.SourceRevision == candidate.SourceRevision &&
+				known.StartRune <= candidate.StartRune && known.EndRune >= candidate.EndRune {
+				found = true
+				break
+			}
+		}
+		if !found {
+			result.Context = append(result.Context, candidate)
+			covered = append(covered, candidate)
+		}
+	}
 	return result, true
+}
+
+// A locator may cut a sentence when the host chunks a long line. Supply the
+// original boundary lines as context, preserving the chosen anchors and meaning.
+func relationLineContext(asset domain.Information, ref domain.EvidenceReference) ([]domain.EvidenceReference, error) {
+	span, err := derived.ParseEvidenceUnitID(ref.ID)
+	if err != nil {
+		return nil, err
+	}
+	text := asset.Content
+	if span.SourceID != asset.ID || span.SourceRevision != asset.Revision || span.EndByte > len(text) {
+		return nil, errors.New("关系上下文的来源已变化")
+	}
+	var result []domain.EvidenceReference
+	for _, boundary := range []struct{ offset, runeOffset int }{{span.StartByte, span.StartRune}, {span.EndByte, span.EndRune}} {
+		p := boundary.offset
+		if p <= 0 || p >= len(text) || text[p-1] == '\n' || text[p] == '\n' {
+			continue
+		}
+		start := strings.LastIndexByte(text[:p], '\n') + 1
+		end := len(text)
+		if n := strings.IndexByte(text[p:], '\n'); n >= 0 {
+			end = p + n + 1
+		}
+		startRune := boundary.runeOffset - utf8.RuneCountInString(text[start:p])
+		endRune := boundary.runeOffset + utf8.RuneCountInString(text[p:end])
+		if startRune >= ref.StartRune && endRune <= ref.EndRune {
+			continue
+		}
+		if len(result) > 0 && result[len(result)-1].StartRune == startRune && result[len(result)-1].EndRune == endRune {
+			continue
+		}
+		unit, err := derived.MaterializeEvidenceUnit(asset, derived.EvidenceUnit{
+			Schema: derived.EvidenceUnitSchema, SourceID: asset.ID, SourceRevision: asset.Revision,
+			StartRune: startRune, EndRune: endRune, StartByte: start, EndByte: end,
+		})
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, unit.Reference())
+	}
+	return result, nil
 }
 
 func (s *Service) organizedEvidence(asset domain.Information, query string, limit int) []domain.EvidenceReference {

@@ -18,6 +18,28 @@ import codex_app_server as concrete_transport
 import run as adapter
 
 
+class KernelRuntimeResourceTests(unittest.TestCase):
+    def test_parallel_hosts_share_the_available_cpu_budget(self):
+        with mock.patch.object(adapter.os, "process_cpu_count", return_value=12, create=True), \
+                mock.patch.object(adapter.os, "sched_getaffinity", return_value=set(range(12)), create=True), \
+                mock.patch.dict(adapter.os.environ, {}, clear=True):
+            single = adapter.kernel_runtime_environment(Path("bundle"))
+            parallel = adapter.kernel_runtime_environment(Path("bundle"), 6)
+        self.assertEqual(single["GOMAXPROCS"], "12")
+        self.assertEqual(parallel["GOMAXPROCS"], "2")
+        self.assertEqual(single["OWNWARD_EMBEDDING_BUNDLE_DIR"], parallel["OWNWARD_EMBEDDING_BUNDLE_DIR"])
+
+    def test_runtime_budget_does_not_exceed_an_existing_limit(self):
+        with mock.patch.object(adapter.os, "process_cpu_count", return_value=12, create=True), \
+                mock.patch.object(adapter.os, "sched_getaffinity", return_value=set(range(12)), create=True), \
+                mock.patch.dict(adapter.os.environ, {"GOMAXPROCS": "2"}):
+            self.assertEqual(adapter.kernel_runtime_environment(Path("bundle"))["GOMAXPROCS"], "2")
+            self.assertEqual(adapter.kernel_runtime_environment(Path("bundle"), 6)["GOMAXPROCS"], "2")
+        with mock.patch.object(adapter.os, "process_cpu_count", return_value=None, create=True), \
+                mock.patch.dict(adapter.os.environ, {}, clear=True):
+            self.assertEqual(adapter.kernel_runtime_environment(Path("bundle"), 6)["GOMAXPROCS"], "1")
+
+
 class FakeToolClient:
     def __init__(self) -> None:
         self.instructions = "来自当前 Ownward 的协作规则。"
@@ -224,7 +246,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
                 runtime = kwargs.get("external_intelligence_runtime_identity") or {}
                 return {name: runtime.get("provider", "neutral") + logic[0]
                         for name in ("semantic", "retrieval", "reader", "judge", "diagnostic")}
-            def process(question, output_dir, *_args):
+            def process(question, output_dir, *_args, runtime_workers=1):
                 calls.append(question["question_id"])
                 result = {"question_id": question["question_id"], "complete": True}
                 adapter.write_json(output_dir / "questions" / question["question_id"] / "result.json", result)
@@ -283,7 +305,8 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
                 (root/name).write_text('fixture')
             questions = [{'question_id': str(i)} for i in range(20)]
             started = []
-            def process(question, output, *_args):
+            def process(question, output, *_args, runtime_workers=1):
+                self.assertEqual(runtime_workers, 2)
                 identifier = question['question_id']
                 started.append(identifier)
                 if identifier == '0':
@@ -353,7 +376,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
                 questions = [{"question_id": name, "haystack_session_ids": []} for name in ("failed", "good")]
                 completed = []
 
-                def process(question, output_dir, *_args):
+                def process(question, output_dir, *_args, runtime_workers=1):
                     if question["question_id"] == "failed":
                         raise adapter.AdapterError("Go API HTTP 500")
                     value = {"question_id": "good", "complete": True}

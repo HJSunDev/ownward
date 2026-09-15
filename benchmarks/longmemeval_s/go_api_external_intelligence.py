@@ -64,6 +64,25 @@ def _invalid_fields(value, schema, path=()):
     return [error for key, child, rule in children for error in _invalid_fields(child, rule, (*path, key))]
 
 
+def _compact_organization_repair_history(messages, schema, catalog):
+    """Keep all supplied material and output; omit completed reasoning on field repair."""
+    organization = schema
+    for key in ("properties", "analyses", "items", "properties", "organization"):
+        if not isinstance(organization, dict):
+            return messages
+        organization = organization.get(key)
+    if not isinstance(organization, dict) or catalog or len(messages) != 2:
+        return messages
+    previous = messages[-1]
+    blocks = previous.get("content", [])
+    if (messages[0].get("role") != "user" or previous.get("role") != "assistant"
+            or not any(b.get("type") == "text" for b in blocks)
+            or any(b.get("type") not in {"text", "thinking", "redacted_thinking"} for b in blocks)):
+        return messages
+    kept = [b for b in blocks if b.get("type") == "text"]
+    return [messages[0], {**previous, "content": kept}]
+
+
 def _field_pointer(path):
     return "/" + "/".join(str(key).replace("~", "~0").replace("/", "~1") for key in path)
 
@@ -931,6 +950,7 @@ class GoAPIClient:
                 if isinstance(value, dict):
                     repair_fields = _invalid_fields(value, schema)
                 if repair_fields and all(path for path, _ in repair_fields):
+                    messages = _compact_organization_repair_history(messages, schema, catalog)
                     original_value = value
                     _atomic_json(work_dir / "retained-output.json", {
                         "output": original_value, "usage": {**usage, "api_requests": requests}})

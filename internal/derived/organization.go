@@ -55,6 +55,17 @@ func organizationNames(record Record) []string {
 			}
 		}
 	}
+	// Only names explicitly located in this owner source enter its name index.
+	// Foreign source names are not attributed to the owner or copied into its organization.
+	for _, link := range record.Analysis.Organization.Links {
+		for _, endpoint := range append([]semantics.GraphEndpoint{link.Source, link.Target}, link.Conditions...) {
+			if endpoint.AssetID == record.AssetID && endpoint.ObjectName != "" {
+				for _, term := range NameTerms(endpoint.ObjectName) {
+					seen[term] = true
+				}
+			}
+		}
+	}
 	result := make([]string, 0, len(seen))
 	for term := range seen {
 		result = append(result, term)

@@ -1,5 +1,5 @@
 {
-  "schema": "ownward.organization/v1",
+  "schema": "ownward.organization/v2",
   "instruction": "Identify reusable connections supported by each source and its listed candidates; shared vocabulary alone is insufficient. Keep distinct events, participants and conditions separate. Each relation must involve the current source, linking it to a listed candidate or connecting its own passages. Preserve the relation's meaning and conditions, and record it once. Create units only for connected passages and necessary context; if a needed unit is the whole source, cover it with one unit. If no useful connection is supported, units and links may be empty. A mention locates a person, object or concept in the text, with its role and an unambiguous selector. same_object connects two such mentions, not entire events. Reference unit and mention IDs only from this work's output or supplied candidate inventories; otherwise use a source selector. Omit statement and empty optional fields. Return organization with the retrieval metadata.",
   "output_schema": {
     "type": "object",
@@ -13,7 +13,7 @@
       "schema": {
         "type": "string",
         "enum": [
-          "ownward.organization/v1"
+          "ownward.organization/v2"
         ]
       },
       "units": {
@@ -321,26 +321,65 @@
                   "type": "string"
                 },
                 "source": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "required": [
-                    "asset_id",
-                    "unit_id",
-                    "mention_id"
-                  ],
-                  "properties": {
-                    "asset_id": {
-                      "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "asset_id",
+                        "unit_id",
+                        "mention_id"
+                      ],
+                      "properties": {
+                        "asset_id": {
+                          "type": "string"
+                        },
+                        "unit_id": {
+                          "type": "string"
+                        },
+                        "mention_id": {
+                          "type": "string"
+                        },
+                        "selector": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "required": [
+                                "exact"
+                              ],
+                              "properties": {
+                                "exact": {
+                                  "type": "string"
+                                },
+                                "prefix": {
+                                  "type": "string"
+                                },
+                                "suffix": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
                     },
-                    "unit_id": {
-                      "type": "string"
-                    },
-                    "mention_id": {
-                      "type": "string"
-                    },
-                    "selector": {
-                      "anyOf": [
-                        {
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "asset_id",
+                        "selector",
+                        "object_name"
+                      ],
+                      "properties": {
+                        "asset_id": {
+                          "type": "string"
+                        },
+                        "selector": {
                           "type": "object",
                           "additionalProperties": false,
                           "required": [
@@ -358,34 +397,77 @@
                             }
                           }
                         },
-                        {
-                          "type": "null"
+                        "object_name": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "object_role": {
+                          "type": "string"
                         }
-                      ]
+                      }
                     }
-                  }
+                  ]
                 },
                 "target": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "required": [
-                    "asset_id",
-                    "unit_id",
-                    "mention_id"
-                  ],
-                  "properties": {
-                    "asset_id": {
-                      "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "asset_id",
+                        "unit_id",
+                        "mention_id"
+                      ],
+                      "properties": {
+                        "asset_id": {
+                          "type": "string"
+                        },
+                        "unit_id": {
+                          "type": "string"
+                        },
+                        "mention_id": {
+                          "type": "string"
+                        },
+                        "selector": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "required": [
+                                "exact"
+                              ],
+                              "properties": {
+                                "exact": {
+                                  "type": "string"
+                                },
+                                "prefix": {
+                                  "type": "string"
+                                },
+                                "suffix": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
                     },
-                    "unit_id": {
-                      "type": "string"
-                    },
-                    "mention_id": {
-                      "type": "string"
-                    },
-                    "selector": {
-                      "anyOf": [
-                        {
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "asset_id",
+                        "selector",
+                        "object_name"
+                      ],
+                      "properties": {
+                        "asset_id": {
+                          "type": "string"
+                        },
+                        "selector": {
                           "type": "object",
                           "additionalProperties": false,
                           "required": [
@@ -403,12 +485,16 @@
                             }
                           }
                         },
-                        {
-                          "type": "null"
+                        "object_name": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "object_role": {
+                          "type": "string"
                         }
-                      ]
+                      }
                     }
-                  }
+                  ]
                 },
                 "conditions": {
                   "type": "array",
@@ -463,5 +549,6 @@
         }
       }
     }
-  }
+  },
+  "source_object_instruction": "Prefer direct passage selectors over defining units solely to address the same evidence. For same_object, each endpoint may instead declare asset_id, selector, object_name and optional object_role; these locate an explicit object in the original source without requiring a published unit. All relation types can coexist under schema ownward.organization/v2."
 }

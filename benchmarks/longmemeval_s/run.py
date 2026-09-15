@@ -41,6 +41,7 @@ from external_intelligence import (  # noqa: E402
     validate_structured_output,
 )
 import semantic_representation  # noqa: E402
+import organization_repair  # noqa: E402
 import information_use_flow  # noqa: E402
 from external_intelligence_runtime import (  # noqa: E402
     CURRENT_DRIVER,
@@ -707,7 +708,10 @@ def submit_semantic_batch(
                 [work_by_id[work_id] for work_id in failed_ids],
                 {**settings, "semantic_attempts": 1}, trace_root / batch_id / f"repair-{attempt:03d}",
                 feedback=[{"work_id": submissions[i]["work_id"], "error": failures[i],
-                           "rejected_organization": submissions[i]["analysis"].get("organization")} for i in failed],
+                           "rejected_organization": submissions[i]["analysis"].get("organization"),
+                           **({"rejected_analysis": submissions[i]["analysis"],
+                               "input_assets": submissions[i].get("input_assets", [])}
+                              if attempt == 1 and isinstance(submissions[i]["analysis"].get("organization"), dict) else {})} for i in failed],
             )
             require([item["work_id"] for item in repairs] == failed_ids, "semantic repair reordered work")
         except AdapterError as error:
@@ -1262,7 +1266,7 @@ class ExternalIntelligenceCapability:
         work_ids = [str(item["id"]) for item in work]
         instruction = self.semantic_instruction_text()
         if semantic_representation.organization_requested(work):
-            instruction = instruction.removesuffix("\n\nSemantic input:\n") + "\n\n" + semantic_representation.organization_contract()["instruction"]
+            instruction = instruction.removesuffix("\n\nSemantic input:\n") + "\n\n" + semantic_representation.organization_instruction(work, self.semantic_contract.representation)
             if self.semantic_contract.representation in {semantic_representation.GROUNDED_REPRESENTATION, semantic_representation.LEGACY_GROUNDED_REPRESENTATION}:
                 instruction += "\n\nSource locators: asset_id 'self' identifies this work's target; other sources use their supplied source_ref, not numeric source indices. selector is an integer passage index or an inclusive two-integer [first,last] range; [0,last] covers the whole source. context is a list of these selectors, for example [11] or [[11,13],25]; omit it when unnecessary. Each endpoint uses either a source passage selector or unit/mention IDs, not both. Mention ranges must lie within their unit or its context."
             instruction += "\n\nSemantic input:\n"
@@ -1325,6 +1329,15 @@ class ExternalIntelligenceCapability:
         return analyses, usage
 
     def _organized_semantics(self, work, settings, stage, feedback):
+        if feedback and all(isinstance(row.get("rejected_analysis", {}).get("organization"), dict) for row in feedback):
+            try:
+                prompt, schema = organization_repair.request(work, feedback, self.semantic_contract)
+            except (ExternalIntelligenceError, KeyError, TypeError, ValueError):
+                # Unrecognized or mixed semantic errors keep the full repair path.
+                feedback = [{key: value for key, value in row.items()
+                             if key in {"work_id", "error", "rejected_organization"}} for row in feedback]
+            else:
+                return self._repair_organization_locations(work, settings, stage, feedback, prompt, schema)
         identity = canonical_sha256({"work": work, "settings": settings,
                                      "contract": semantic_representation.organization_contract(),
                                      "representation": self.semantic_contract.representation})
@@ -1381,6 +1394,33 @@ class ExternalIntelligenceCapability:
             error = AdapterError(f"semantic source repair remains incomplete: {feedback}")
             error.accepted_analyses = accepted
             error.partial_usage = usage
+            raise error
+        return [accepted[item["id"]] for item in work], usage
+
+    def _repair_organization_locations(self, work, settings, stage, feedback, prompt, schema):
+        began = time.monotonic()
+        partial = False
+        try:
+            value, usage = self._invoke(role="semantic-organization", prompt=prompt, schema=schema,
+                stage=stage, model=settings["semantic_model"], effort=settings["semantic_reasoning_effort"],
+                timeout_seconds=float(settings["semantic_timeout_seconds"]), attempts=1)
+        except AdapterError as error:
+            partial = True
+            value = getattr(error.__cause__, "partial_output", None)
+            usage = {**getattr(error.__cause__, "partial_usage", {}),
+                     "attempts": 1, "wall_seconds": time.monotonic() - began}
+            if not isinstance(value, dict) or not isinstance(value.get("repairs"), list):
+                error.accepted_analyses = {}
+                error.partial_usage = usage
+                raise
+        try:
+            accepted, errors = organization_repair.apply(work, feedback, value, partial=partial)
+        except ExternalIntelligenceError as error:
+            accepted, errors = {}, [{"error": str(error)}]
+        write_json(stage / "location-repair.json", {"accepted": accepted, "errors": errors, "usage": usage})
+        if errors:
+            error = AdapterError(f"organization location repair remains incomplete: {errors}")
+            error.accepted_analyses, error.partial_usage = accepted, usage
             raise error
         return [accepted[item["id"]] for item in work], usage
 
@@ -1733,7 +1773,7 @@ def semantic_implementation_identity() -> str:
         capability.semantic_fact_identity, capability.semantic_instruction_text,
         capability.semantic_prompt, capability.semantic_request,
         capability.semantic_output_upper_bound, capability.semantic_output_reservation,
-        capability.semantics, capability._organized_semantics,
+        capability.semantics, capability._organized_semantics, capability._repair_organization_locations,
         validate_structured_output,
     )
     return canonical_sha256({
@@ -1742,6 +1782,7 @@ def semantic_implementation_identity() -> str:
         "executor": inspect.getsource(ExternalIntelligenceExecutor),
         "runtime_adapter": sha256(Path(__file__).with_name("external_intelligence_runtime.py")),
         "representation_runtime": sha256(Path(semantic_representation.__file__).resolve()),
+        "organization_repair_runtime": sha256(Path(organization_repair.__file__).resolve()),
     })
 
 
@@ -2134,6 +2175,24 @@ def _diagnostic_record(
     }
 
 
+def kernel_runtime_environment(embedding: Path, runtime_workers: int = 1) -> dict[str, str]:
+    require(runtime_workers >= 1, "kernel runtime concurrency must be positive")
+    environment = os.environ.copy()
+    cpu_count = max(1, getattr(os, "process_cpu_count", os.cpu_count)() or 1)
+    if hasattr(os, "sched_getaffinity"):
+        cpu_count = min(cpu_count, max(1, len(os.sched_getaffinity(0))))
+    per_runtime = max(1, cpu_count // runtime_workers)
+    try:
+        explicit_limit = int(environment.get("GOMAXPROCS", "0"))
+        if explicit_limit > 0:
+            per_runtime = min(per_runtime, explicit_limit)
+    except ValueError:
+        pass
+    environment["GOMAXPROCS"] = str(per_runtime)
+    environment["OWNWARD_EMBEDDING_BUNDLE_DIR"] = str(embedding)
+    return environment
+
+
 def process_question(
     question: dict[str, Any], output_root: Path, run_identity: str,
     binary: Path, embedding: Path,
@@ -2141,7 +2200,7 @@ def process_question(
     capability_factory: Callable[[], ExternalIntelligenceCapability],
     external_intelligence_scheduler: ExternalIntelligenceScheduler,
     stage_run_identities: dict[str, str] | None = None,
-    *, prepare_only: bool = False,
+    *, prepare_only: bool = False, runtime_workers: int = 1,
 ) -> dict[str, Any]:
     evaluation_question = question
     question = _product_question(question)
@@ -2194,8 +2253,7 @@ def process_question(
     else:
         require(checkpoint.get("stage_identities", stage_identities) == stage_identities, f"question stage checkpoint identity changed: {identifier}")
     data_dir = root / "ownward-data"
-    environment = os.environ.copy()
-    environment["OWNWARD_EMBEDDING_BUNDLE_DIR"] = str(embedding)
+    environment = kernel_runtime_environment(embedding, runtime_workers)
     started = time.monotonic()
     stored_phase = checkpoint.get("phase_seconds") if isinstance(checkpoint.get("phase_seconds"), dict) else {}
     create_seconds = float(stored_phase.get("create", 0.0))
@@ -3215,6 +3273,7 @@ def execute(
                                 futures[pool.submit(
                                     process_question, question, output_dir, run_identity, binary.resolve(), embedding.resolve(),
                                     protocol, environment["evaluator"], capability_factory, external_intelligence_scheduler, stage_dependencies,
+                                    runtime_workers=min(worker_count, len(scheduled_questions)),
                                 )] = question
                             if not futures:
                                 break

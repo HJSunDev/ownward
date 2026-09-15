@@ -749,7 +749,7 @@ func encodeRecord(record Record) ([]byte, error) {
 }
 
 func validateRecord(record Record) error {
-	if organization := record.Analysis.Organization; organization != nil && (organization.Schema != semantics.OrganizationSchema || organization.Snapshot == "") {
+	if organization := record.Analysis.Organization; organization != nil && ((organization.Schema != semantics.OrganizationSchema && organization.Schema != semantics.LegacyOrganizationSchema) || organization.Snapshot == "") {
 		return errors.New("派生组织格式无效")
 	}
 	if strings.TrimSpace(record.AssetID) == "" || record.AssetRevision == 0 {

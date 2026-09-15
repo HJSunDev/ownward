@@ -8,12 +8,13 @@
 
 | 环节 | 正式来源 |
 | --- | --- |
-| 1. 资料存入与组织 | [语义提示生成](../../../benchmarks/longmemeval_s/semantic_representation.py)的 `grounded_instruction`、[关系组织契约](../../../internal/semantics/organization_contract.json)的 `instruction`；[运行器](../../../benchmarks/longmemeval_s/run.py)的 `semantic_request` 组装来源定位、资料及 Schema。 |
+| 1. 资料存入与组织 | [语义提示生成](../../../benchmarks/longmemeval_s/semantic_representation.py)的 `grounded_instruction`、`organization_instruction`、[关系组织契约](../../../internal/semantics/organization_contract.json)的 `instruction` 与 `source_object_instruction`；[运行器](../../../benchmarks/longmemeval_s/run.py)的 `semantic_request` 组装来源定位、资料及 Schema。 |
 | 2. 明确需求 | [信息使用层](../../../integrations/python/ownward_information_use.py)的 `FRAME`、`FRAME_SCHEMA`、`stage_prompt`；运行器 `active_answer` 填入需求与日期。 |
 | 3. 初始材料；4. 继续取证并形成结果 | 信息使用层 `initial_context`、`EvidenceToolSession`、`RETRIEVAL_INSTRUCTIONS`、`OFFER`、`task_contract`；运行器 `_active_answer_prompt` 填入需求、日期及预算。 |
 | 5. 交付回答 | 信息使用层 `finish`，无 AI 提示词。 |
 | 6. 判分 | 运行器 `official_prompt` 加载固定官方版本的 `get_anscheck_prompt`，`judge` 提供输出 Schema；标答仅进入判分环节。 |
 | 系统格式指令及异常纠错 | [轻量宿主](../../../benchmarks/longmemeval_s/go_api_external_intelligence.py)组装系统消息、工具定义和格式纠错消息。下文按正常调用展示，异常恢复沿用该实现。 |
+| 资料组织被拒绝后的修正 | [定位修正](../../../benchmarks/longmemeval_s/organization_repair.py)的 `INSTRUCTION`、`request` 生成受限字段Schema及相关完整来源；运行器 `_repair_organization_locations` 执行，`submit_semantic_batch` 保持原提交校验与重试预算。 |
 
 ## 各环节完整输入与翻译
 
@@ -37,7 +38,7 @@
 
 > Prepare retrieval metadata for the supplied sources so later tasks can find relevant original information. Process each work item once, in order, using its target as the source and candidates only as reference context. Return the item's index, one representative summary passage index, up to 4 short topics, and up to 8 nonredundant cues {passage,kind}. kind is a short category label (at most 40 characters), such as fact, preference, event or decision, not a description of the fact. summary and passage are single integer indices, never lists. Use passage indices from that target.passages; select original text, do not rewrite it. Prioritize distinct facts, preferences, events and decisions, including facts stated within questions; preserve speaker, negation, conditions, dates and changes. Cues are retrieval entry points, not an exhaustive fact inventory. Omit cues containing only acknowledgements, advice requests or repeated topics. Technical source identifiers and metadata dates alone are not content facts; retain dates meaningful to the source content.
 >
-> Identify reusable connections supported by each source and its listed candidates; shared vocabulary alone is insufficient. Keep distinct events, participants and conditions separate. Each relation must involve the current source, linking it to a listed candidate or connecting its own passages. Preserve the relation's meaning and conditions, and record it once. Create units only for connected passages and necessary context; if a needed unit is the whole source, cover it with one unit. If no useful connection is supported, units and links may be empty. A mention locates a person, object or concept in the text, with its role and an unambiguous selector. same_object connects two such mentions, not entire events. Reference unit and mention IDs only from this work's output or supplied candidate inventories; otherwise use a source selector. Omit statement and empty optional fields. Return organization with the retrieval metadata.
+> Identify reusable connections supported by each source and its listed candidates; shared vocabulary alone is insufficient. Keep distinct events, participants and conditions separate. Each relation must involve the current source, linking it to a listed candidate or connecting its own passages. Preserve the relation's meaning and conditions, and record it once. Create units only for connected passages and necessary context; if a needed unit is the whole source, cover it with one unit. If no useful connection is supported, units and links may be empty. A mention locates a person, object or concept in the text, with its role and an unambiguous selector. same_object connects two such mentions, not entire events. Reference unit and mention IDs only from this work's output or supplied candidate inventories; otherwise use a source selector. Omit statement and empty optional fields. Return organization with the retrieval metadata. Prefer direct passage selectors over defining units solely to address the same evidence. For same_object, each endpoint may instead declare asset_id, selector, object_name and optional object_role; these locate an explicit object in the original source without requiring a published unit. All relation types can coexist under schema ownward.organization/v2. Report connections between the target's own passages in organization.within_source; evaluate these even when related_sources is empty. Report connections involving a listed candidate in organization.cross_source. The two lists have the same relation meanings and share the units.
 >
 > Source locators: asset_id 'self' identifies this work's target; other sources use their supplied source_ref, not numeric source indices. selector is an integer passage index or an inclusive two-integer [first,last] range; [0,last] covers the whole source. context is a list of these selectors, for example [11] or [[11,13],25]; omit it when unnecessary. Each endpoint uses either a source passage selector or unit/mention IDs, not both. Mention ranges must lie within their unit or its context.
 >
@@ -56,7 +57,7 @@
 
 > 为所提供的资料建立检索元数据，使后续任务能够找到相关原始信息。按顺序逐一处理每个工作项，以其 target 为原始来源，候选资料仅供参考。返回工作项的 index、一个具有代表性的摘要段落索引、最多4个简短主题，以及最多8条不重复的线索 {passage,kind}。kind 是不超过40字符的简短类别名，例如事实、偏好、事件或决定，不是事实描述。summary 和 passage 均为单个整数索引，不能填写列表。段落索引取自该工作项的 target.passages；选择原文，不改写。优先覆盖不同的事实、偏好、事件和决定，包括问题中陈述的事实；保留说话者、否定、条件、日期和变化。线索是检索入口，不是完整事实清单。省略仅含确认应答、建议请求或重复主题的线索。技术性来源标识和孤立的元数据日期不作为内容事实；保留对原文内容有意义的日期。
 >
-> 识别每份原文及其候选资料能够支持的可复用联系，仅有共同词汇不足以建立关系。保持不同事件、参与者和条件的区别。每条关系必须涉及当前来源，将其与所列候选来源相连，或连接其自身段落。保留关系的含义与条件，同一关系只记录一次。只为有关联的段落及必要上下文创建单元；需要以全文作为单元时，用一个单元覆盖全文。若未发现有证据支持的有用联系，units 和 links 可以为空。提及应定位原文中的人、对象或概念，标明角色并使用无歧义的 selector。same_object 连接两个这样的提及，不连接整个事件。单元和提及的ID仅引用本工作项的输出或已提供的候选清单，否则使用来源 selector。省略 statement 和空的可选字段。将 organization 与检索元数据一起返回。
+> 识别每份原文及其候选资料能够支持的可复用联系，仅有共同词汇不足以建立关系。保持不同事件、参与者和条件的区别。每条关系必须涉及当前来源，将其与所列候选来源相连，或连接其自身段落。保留关系的含义与条件，同一关系只记录一次。只为有关联的段落及必要上下文创建单元；需要以全文作为单元时，用一个单元覆盖全文。若未发现有证据支持的有用联系，units 和 links 可以为空。提及应定位原文中的人、对象或概念，标明角色并使用无歧义的 selector。same_object 连接两个这样的提及，不连接整个事件。单元和提及的ID仅引用本工作项的输出或已提供的候选清单，否则使用来源 selector。省略 statement 和空的可选字段。将 organization 与检索元数据一起返回。 优先直接使用段落 selector，避免仅为定位同一依据而创建单元。same_object 的每个端点也可声明 asset_id、selector、object_name 及可选的 object_role，直接定位原文中明确的对象，无需已发布单元。所有关系类型均可使用 ownward.organization/v2。来源内部段落的联系填入 organization.within_source，即使 related_sources 为空也需判断；涉及所列候选来源的联系填入 organization.cross_source。两组关系含义相同，共享 units。
 >
 > 来源定位：asset_id 'self' 表示当前工作项的目标来源；其他来源使用所提供的 source_ref，不能使用数字来源索引。selector 为整数段落索引或包含首尾的两个整数 [first,last]；[0,last] 表示全文。context 是这些 selector 的列表，例如 [11] 或 [[11,13],25]；无必要上下文时省略。每个端点使用来源段落 selector 或单元／提及ID，两者不能混用。提及范围必须位于所属单元或其上下文中。
 >
@@ -65,9 +66,58 @@
 
 **格式纠错：** 整数、单项位置列表及单个范围的额外包装按Schema作无歧义转换；对象存在多种格式时，仅接受唯一满足完整Schema的转换，内容和位置不变。精确字段补交可去除唯一可识别的额外包装，完整JSON后多出的闭合括号可清除。其余不合格字段由外部智能补交，其他字段原样保留，合并后仍须通过完整格式校验及原文引用检查。
 
+**纠错上下文：** 轻量宿主对无工具的语义组织首次字段补交，保留完整用户输入、原文、候选及上一轮输出文本，不再发送已完成的推理块；原始响应仍保存在调用记录中。工具取证历史、无法定位字段的整份格式纠错及其他任务沿用完整历史，模型、档位与纠错次数不变。
+
 **包装处理：** 已识别的Markdown包装仅截去首尾标记，JSON正文及其中的Unicode分隔字符原样保留；正常输出、中断恢复和字段纠错使用同一处理方式。
 
 **中断恢复：** 流式响应超时、提前结束或连接中断时，保留模型身份正确、已完整返回且通过原有校验的来源；仅缺结束信号、外层括号或已识别的Markdown结束标记时同样处理。连接在下一条事件中间结束，只丢弃未解析的事件，不丢弃此前完整接收的内容；完整但格式错误的事件及服务拒绝仍按失败处理。格式纠错中已完整收到且通过字段校验的指定修改合回原结果，随后继续逐来源校验，只补实际缺口。未闭合的内容、无法确定完整性的数字、冲突字段及异常工具调用不作为有效结果。中断用量保留统计不完整标记，纠错次数及超时上限不增加。
+
+---
+
+#### C. 校验拒绝后的定位修正
+
+仅用于可以明确定位的提及范围或未声明提及引用错误。修正字段限定于相关单元的上下文、提及定位及报错端点；其余内容冻结。原分析仍保留，修正只重发这些字段涉及的完整来源，不重新搜索或改变关系含义。
+
+**原文 · 系统消息**
+
+> Do not use tools. Return only one strict JSON object matching this JSON Schema; do not use Markdown or commentary: 〈request按失败来源生成的repairs及corrections字段Schema〉
+
+**原文 · 任务消息**
+
+> Correct the rejected evidence locations and source references using the supplied original material. The host preserves the existing retrieval metadata, units and relations; return only changed fields in corrections, keyed by the JSON pointers allowed by the schema. Preserve each relation's meaning, direction and conditions, and each object's identity and role. A unit's context contains original passages needed to support its mentions. Reference only declared units/mentions or use an original source selector. Selectors here use exact original text, with prefix or suffix when needed to disambiguate; they are not passage numbers. Keep existing context passages and object mentions; add needed context or correct mention selectors. Do not omit supported mentions to bypass validation. If a source needs changes beyond these location fields, return an empty corrections object for it so the host can use its existing broader repair.
+>
+> Original material:
+> 〈sources：相关来源的身份、版本、完整原文、显式上下文及已有组织〉
+>
+> Rejected organizations and errors:
+> 〈各来源的work_id、asset_id、拒绝原因及原组织〉
+
+---
+
+**中文对照 · 系统消息**
+
+> 不要使用工具。只返回一个严格符合以下JSON Schema的JSON对象；不要使用Markdown，也不要附加说明：〈按失败来源生成的repairs及corrections字段Schema〉
+
+**中文对照 · 任务消息**
+
+> 根据提供的原始材料，修正被拒绝的证据位置和来源引用。宿主保留现有检索信息、证据单元和关系；只在corrections中返回发生变化的字段，键使用Schema允许的JSON指针。保留每条关系的含义、方向和条件，以及每个对象的身份和角色。单元的context包含支撑其对象提及所需的原文。只引用已声明的单元／提及，或使用原文定位。这里的selector使用原文精确文本，必要时用prefix或suffix消歧，不使用段落编号。保留已有上下文和对象提及，补充必要上下文或修正提及位置。不要省略有依据的提及来绕过校验。若需要修改这些定位字段之外的内容，为该来源返回空corrections对象，交由宿主沿用完整修正。
+>
+> 原始材料：〈相关完整来源〉
+>
+> 被拒绝的组织与错误：〈来源身份、错误及原组织〉
+
+#### D. 完整修正
+
+不属于上述定位错误，或局部修正未完成时，在原重试预算内使用第1节A的完整语义输入，并追加以下反馈；不增加新的判断调用。
+
+**追加原文**
+
+> Correct these rejected source references using the supplied material. Preserve supported connections while correcting the indicated definitions and references; return the requested output representation:
+> 〈失败来源的work_id、错误和被拒绝的organization〉
+
+**中文对照**
+
+> 根据所提供材料修正被拒绝的来源引用。修正指出的定义及引用时保留有依据的连接，返回要求的输出表示：〈失败来源、错误及原组织〉
 
 ---
 
