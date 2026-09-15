@@ -85,6 +85,33 @@ class ScopedOrganizationTests(unittest.TestCase):
         prompt, _, _ = run.ExternalIntelligenceCapability(None, self.contract).semantic_request(self.work, {"semantic_batch_size": 20})
         self.assertNotIn("object_name", prompt)
 
+    def test_multiple_decode_failures_repair_separately_and_resume_without_new_calls(self):
+        from test_run import FakeTransport
+        settings = run.load_json(Path(run.__file__).with_name('protocol.json'))['memory']
+        work = self.work + [dict(id='w' + name, organization_schema='ownward.organization/v2',
+                               asset=dict(id=name, revision=1, content='Source ' + name), candidates=[])
+                            for name in ('c', 'd')]
+        good = dict(index=0, summary=0, topics=[], cues=[], organization=self.graph)
+        bad = [dict(index=i, summary=99, topics=[], cues=[], organization=dict(
+            schema='ownward.organization/v2', units=[], within_source=[], cross_source=[])) for i in (1, 2)]
+        transport = FakeTransport([{'analyses': [good, *bad]},
+                                   *[{'analyses': [dict(row, index=0, summary=0)]} for row in bad]])
+        cap = run.ExternalIntelligenceCapability(transport, self.contract)
+        with tempfile.TemporaryDirectory() as directory:
+            stage = Path(directory)
+            result, usage = cap.semantics(work, settings, stage)
+            progress = run.load_json(stage / 'organization-progress.json')
+            cached, cached_usage = cap.semantics(work, settings, stage)
+            self.assertEqual(progress['attempt'], settings['semantic_attempts'])
+        self.assertEqual(transport.calls, 3)
+        self.assertEqual(cached, result)
+        self.assertEqual(cached_usage, usage)
+        self.assertEqual([row['work_id'] for row in result], ['wa', 'wc', 'wd'])
+        self.assertEqual(result[0]['organization']['links'][1]['target']['asset_id'], 'b')
+        self.assertEqual({ref['id'] for ref in result[0]['input_assets']}, {'a', 'b', 'c', 'd'})
+        self.assertEqual({ref['id'] for ref in result[1]['input_assets']}, {'c'})
+        self.assertEqual({ref['id'] for ref in result[2]['input_assets']}, {'d'})
+
     def test_partial_repair_preserves_valid_scoped_result(self):
         from test_run import FakeTransport
         import json

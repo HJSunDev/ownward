@@ -32,7 +32,6 @@ def failure_scope(error):
 
 
 def prepare_pending(pending, one, rows, progress, *, workers=QUESTION_WORKERS):
-    consecutive_failures = 0
     stop_reason = None
     with ThreadPoolExecutor(max_workers=workers) as pool:
         iterator = iter(pending)
@@ -52,14 +51,8 @@ def prepare_pending(pending, one, rows, progress, *, workers=QUESTION_WORKERS):
                 active.pop(future)
                 row = future.result()
                 rows.append(row)
-                if row["prepared"]:
-                    consecutive_failures = 0
-                else:
-                    consecutive_failures += 1
-                    if row.get("failure_scope") != "question":
-                        stop_reason = "shared_or_unclassified_failure"
-                    elif consecutive_failures >= 3 and stop_reason is None:
-                        stop_reason = "consecutive_question_failures"
+                if not row["prepared"] and row.get("failure_scope") != "question":
+                    stop_reason = "shared_or_unclassified_failure"
             fill()
             progress({"prepared": sum(r["prepared"] for r in rows),
                       "failed": sum(not r["prepared"] for r in rows),

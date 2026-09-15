@@ -170,6 +170,34 @@ class SemanticRepresentationError(RuntimeError):
     pass
 
 
+def _occurrences(content: str, text: str) -> int:
+    # Match the kernel's overlapping occurrence semantics; two suffice to reject uniqueness.
+    if not text:
+        return 0
+    first = content.find(text)
+    return 0 if first < 0 else (2 if content.find(text, first + 1) >= 0 else 1)
+
+
+def passage_selector(content: str, selector: Any, representation: str) -> dict[str, str]:
+    spans = source_passages(content, representation)
+    if type(selector) is int:
+        begin = end = selector
+    else:
+        _require(isinstance(selector, list) and len(selector) == 2, "passage range requires two indices")
+        begin, end = selector
+    _require(type(begin) is int and type(end) is int and 0 <= begin <= end < len(spans),
+             f"organization range {selector!r} is outside source; its passage indices are 0..{len(spans)-1}")
+    before = ''.join(spans[:begin]); exact = ''.join(spans[begin:end+1]); after = ''.join(spans[end+1:])
+    _require(bool(exact.strip()), "organization passage is empty")
+    width = 32
+    while True:
+        prefix, suffix = before[-width:], after[:width]
+        if _occurrences(content, prefix + exact + suffix) == 1:
+            return {"exact": exact, "prefix": prefix, "suffix": suffix}
+        _require(width < max(len(before), len(after)), "organization passage cannot be uniquely located")
+        width *= 2
+
+
 def decode_organization(work: list[dict[str, Any]], item: dict[str, Any], value: dict[str, Any], representation: str = "") -> dict[str, Any]:
     # Resolve only exact aliases in the lossless presentation, not guessed IDs.
     result = copy.deepcopy(value)
@@ -192,21 +220,11 @@ def decode_organization(work: list[dict[str, Any]], item: dict[str, Any], value:
         if type(selector) is int or isinstance(selector,list):
             _require(representation in {GROUNDED_REPRESENTATION, LEGACY_GROUNDED_REPRESENTATION} and identifier in indexed,
                      "passage locator requires a supplied numbered source")
-            spans = source_passages(raw[identifier], representation)
-            begin,end = (selector,selector) if type(selector) is int else tuple(selector)
-            _require(type(begin) is int and type(end) is int and 0 <= begin <= end < len(spans),
-                     f"organization range {selector!r} is outside source {identifier}; its passage indices are 0..{len(spans)-1}")
-            before = ''.join(spans[:begin]); exact = ''.join(spans[begin:end+1]); after = ''.join(spans[end+1:])
-            width = 32
-            while True:
-                prefix = before[-width:]; suffix = after[:width]
-                if raw[identifier].count(prefix+exact+suffix)==1:
-                    return {"exact":exact,"prefix":prefix,"suffix":suffix}
-                width *= 2
+            return passage_selector(raw[identifier], selector, representation)
         if selector is not None:
             _require(isinstance(selector,dict) and isinstance(selector.get("exact"),str),"invalid organization selector")
             exact=selector["exact"]; full=selector.get("prefix","")+exact+selector.get("suffix","")
-            matches=raw[identifier].count(full)
+            matches=_occurrences(raw[identifier], full)
             _require(bool(exact) and (matches==1 or (scoped and not selector.get("prefix") and not selector.get("suffix") and matches>0)),
                      f"organization quote in {identifier} must match its supplied source: {exact[:100]!r}")
         return selector

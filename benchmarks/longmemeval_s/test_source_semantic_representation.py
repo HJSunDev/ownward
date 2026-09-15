@@ -6,6 +6,27 @@ import semantic_representation as s
 
 
 class SourceOwnershipTests(unittest.TestCase):
+    def test_overlapping_repetition_resolves_to_the_exact_selected_position(self):
+        for text in ('Repeated sentence.\n' * 20, '🙂重复文字。\n' * 25):
+            spans = s.source_passages(text, s.GROUNDED_REPRESENTATION)
+            for index in range(len(spans)):
+                selected = s.passage_selector(text, index, s.GROUNDED_REPRESENTATION)
+                full = selected['prefix'] + selected['exact'] + selected['suffix']
+                matches = [n for n in range(len(text)) if text.startswith(full, n)]
+                self.assertEqual(matches, [len(''.join(spans[:index])) - len(selected['prefix'])])
+                self.assertEqual(selected['exact'], spans[index])
+
+    def test_ambiguous_explicit_quotes_are_rejected_even_when_matches_overlap(self):
+        work = [{'id': 'w', 'asset': {'id': 'a', 'revision': 1, 'content': 'aaaaa'}}]
+        self.assertEqual('aaaaa'.count('aaaa'), 1)
+        with self.assertRaises(s.SemanticRepresentationError):
+            s.decode_organization(work, work[0], {'units': [{'id': 'u', 'selector': {'exact': 'aaaa'}}], 'links': []})
+
+    def test_invalid_or_empty_passage_selection_fails_without_looping(self):
+        for raw, selection in [('', 0), ('\n', 0), ('abc', []), ('abc', [0, 0, 0]), ('abc', True)]:
+            with self.subTest(raw=raw, selection=selection), self.assertRaises(s.SemanticRepresentationError):
+                s.passage_selector(raw, selection, s.GROUNDED_REPRESENTATION)
+
     def test_compact_graph_endpoint_has_one_unambiguous_locator(self):
         import run  # Establish the shared benchmark support import path.
         from external_intelligence import ExternalIntelligenceError, validate_structured_output

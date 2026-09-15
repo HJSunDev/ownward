@@ -17,7 +17,10 @@ INSTRUCTION = (
     "A unit's context contains original passages needed to support its mentions. Reference only declared "
     "units/mentions or use an original source selector. Selectors here use exact original text, with prefix "
     "or suffix when needed to disambiguate; they are not passage numbers. "
-    "Keep existing context passages and object mentions; add needed context or correct mention selectors. "
+    "Use a path ending in /- to append only new context passages or missing object mentions; existing entries "
+    "are retained automatically. To correct one mention's location, return its /selector field only. "
+    "For example, corrections {\"/units/0/context/-\":[{\"exact\":\"Alice wrote the plan.\"}]} "
+    "adds that original passage without rewriting other context. Keep existing objects and evidence. "
     "Do not omit supported mentions to bypass validation. If a source needs changes beyond these location "
     "fields, return an empty corrections object for it so the host can use its existing broader repair."
 )
@@ -27,8 +30,8 @@ def fields(organization, error, owner_id):
     contract = representation.organization_contract()['output_schema']
     unit = contract['properties']['units']['items']['properties']
     result = {}
-    units = {int(i) for i in re.findall(r'(?m)^units\[(\d+)\].*不在该单元或必要上下文内', error)}
-    endpoints = {(int(i), side) for i, side in re.findall(r'(?m)^links\[(\d+)\]\.(source|target):.*未声明对象提及', error)}
+    units = {int(i) for i in re.findall(r'(?m)^units\[(\d+)\]', error)}
+    endpoints = {(int(i), side) for i, side in re.findall(r'(?m)^links\[(\d+)\]\.(source|target):', error)}
     for i, side in endpoints:
         if i < len(organization.get('links', [])):
             endpoint = organization['links'][i][side]
@@ -38,7 +41,11 @@ def fields(organization, error, owner_id):
         if i not in units:
             continue
         for key in ('context', 'mentions'):
-            result[f'/units/{i}/{key}'] = copy.deepcopy(unit[key])
+            result[f'/units/{i}/{key}/-'] = copy.deepcopy(unit[key])
+        for j in range(len(item.get('mentions', []))):
+            result[f'/units/{i}/mentions/{j}/selector'] = copy.deepcopy(unit['mentions']['items']['properties']['selector'])
+        if re.search(rf'(?m)^units\[{i}\].*(?:说明定位|说明原文)', error):
+            result[f'/units/{i}/selector'] = copy.deepcopy(unit['selector'])
     branches = contract['properties']['links']['items']['anyOf']
     for i, link in enumerate(organization.get('links', [])):
         branch = next((b for b in branches if link['type'] in b['properties']['type'].get('enum', [])), None)
@@ -69,8 +76,18 @@ def request(work, feedback, semantic_contract):
         organization = row['rejected_analysis']['organization']
         lines = row['error'].splitlines()
         if not lines or any(not (re.match(r'^(?:units\[\d+\].*|单元 ).*不在该单元或必要上下文内', line)
-                                 or re.match(r'^links\[\d+\]\.(source|target):.*未声明对象提及', line)) for line in lines):
+                                 or re.match(r'^units\[\d+\].*(?:说明定位与当前正文失配|说明原文不唯一)', line)
+                                 or re.match(r'^links\[\d+\]\.(source|target):.*(?:未声明对象提及|说明定位与当前正文失配|说明原文不唯一)', line)) for line in lines):
             raise ExternalIntelligenceError('rejection needs broader semantic correction')
+        # Context entries are preserved by local repair. A broken existing
+        # entry requires replacement, which belongs to the full repair path.
+        content = item['asset']['content']
+        for unit in organization.get('units', []):
+            for selector in unit.get('context', []):
+                exact = selector.get('exact', '')
+                quote = selector.get('prefix', '') + exact + selector.get('suffix', '')
+                if not exact.strip() or representation._occurrences(content, quote) != 1:
+                    raise ExternalIntelligenceError('existing context location needs broader semantic correction')
         allowed = fields(organization,row['error'],item['asset']['id'])
         if not allowed:
             raise ExternalIntelligenceError('rejection is not a localized reference error')
@@ -122,6 +139,9 @@ def apply(work, feedback, value, *, partial=False):
             edits = repair['corrections']
             if not edits:
                 raise ExternalIntelligenceError('location-only repair unavailable')
+            paths = list(edits)
+            if any(a != b and b.startswith(a + '/') for a in paths for b in paths):
+                raise ExternalIntelligenceError('repair contains overlapping field edits')
             organization = copy.deepcopy(original['organization'])
             allowed = fields(organization,by_id[item['id']]['error'],item['asset']['id'])
             for pointer, replacement in edits.items():
@@ -131,7 +151,16 @@ def apply(work, feedback, value, *, partial=False):
                 path = pointer.split('/')[1:]
                 parent = organization
                 for token in path[:-1]:
+                    if isinstance(parent, dict) and token in ('context', 'mentions') and token not in parent:
+                        parent[token] = []
                     parent = parent[int(token)] if isinstance(parent, list) else parent[token]
+                if path[-1] == '-':
+                    for item_value in replacement:
+                        if path[-2] == 'mentions' and any(m.get('id') == item_value.get('id') and m != item_value for m in parent):
+                            raise ExternalIntelligenceError('append cannot replace an existing object mention')
+                        if item_value not in parent:
+                            parent.append(copy.deepcopy(item_value))
+                    continue
                 key = int(path[-1]) if isinstance(parent, list) else path[-1]
                 parent[key] = copy.deepcopy(replacement)
             for before, after in zip(original['organization'].get('units', []), organization.get('units', [])):

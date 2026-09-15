@@ -76,7 +76,9 @@
 
 #### C. 校验拒绝后的定位修正
 
-仅用于可以明确定位的提及范围或未声明提及引用错误。修正字段限定于相关单元的上下文、提及定位及报错端点；其余内容冻结。原分析仍保留，修正只重发这些字段涉及的完整来源，不重新搜索或改变关系含义。
+用于可定位的提及范围、未声明提及引用、原文失配或重复定位错误。修正字段限定于相关单元的上下文、提及定位及报错端点；其余内容冻结。追加上下文或提及时只返回新增条目，修改单个提及只返回对应定位，避免复制原有列表。原分析仍保留，修正只重发这些字段涉及的完整来源，不重新搜索或改变关系含义。
+
+已定位到来源的失败分别处理：每个来源独立选择局部修正或完整修正，保留成功来源及其输入记录，不因同批其他来源失败重做。已有上下文定位失效或对象身份无效时，局部字段无法修正，直接完整修正该来源，不消耗局部尝试。段落编号越界等解码错误同时反馈被拒绝的完整输出，避免只交付关系片段而遗漏真正出错的字段。沿用每份来源的剩余尝试次数；拆分可能增加失败阶段的请求数，相关用量必须计入，正常成功路径不增加调用。
 
 **原文 · 系统消息**
 
@@ -84,7 +86,7 @@
 
 **原文 · 任务消息**
 
-> Correct the rejected evidence locations and source references using the supplied original material. The host preserves the existing retrieval metadata, units and relations; return only changed fields in corrections, keyed by the JSON pointers allowed by the schema. Preserve each relation's meaning, direction and conditions, and each object's identity and role. A unit's context contains original passages needed to support its mentions. Reference only declared units/mentions or use an original source selector. Selectors here use exact original text, with prefix or suffix when needed to disambiguate; they are not passage numbers. Keep existing context passages and object mentions; add needed context or correct mention selectors. Do not omit supported mentions to bypass validation. If a source needs changes beyond these location fields, return an empty corrections object for it so the host can use its existing broader repair.
+> Correct the rejected evidence locations and source references using the supplied original material. The host preserves the existing retrieval metadata, units and relations; return only changed fields in corrections, keyed by the JSON pointers allowed by the schema. Preserve each relation's meaning, direction and conditions, and each object's identity and role. A unit's context contains original passages needed to support its mentions. Reference only declared units/mentions or use an original source selector. Selectors here use exact original text, with prefix or suffix when needed to disambiguate; they are not passage numbers. Use a path ending in /- to append only new context passages or missing object mentions; existing entries are retained automatically. To correct one mention's location, return its /selector field only. For example, corrections {"/units/0/context/-":[{"exact":"Alice wrote the plan."}]} adds that original passage without rewriting other context. Keep existing objects and evidence. Do not omit supported mentions to bypass validation. If a source needs changes beyond these location fields, return an empty corrections object for it so the host can use its existing broader repair.
 >
 > Original material:
 > 〈sources：相关来源的身份、版本、完整原文、显式上下文及已有组织〉
@@ -100,7 +102,7 @@
 
 **中文对照 · 任务消息**
 
-> 根据提供的原始材料，修正被拒绝的证据位置和来源引用。宿主保留现有检索信息、证据单元和关系；只在corrections中返回发生变化的字段，键使用Schema允许的JSON指针。保留每条关系的含义、方向和条件，以及每个对象的身份和角色。单元的context包含支撑其对象提及所需的原文。只引用已声明的单元／提及，或使用原文定位。这里的selector使用原文精确文本，必要时用prefix或suffix消歧，不使用段落编号。保留已有上下文和对象提及，补充必要上下文或修正提及位置。不要省略有依据的提及来绕过校验。若需要修改这些定位字段之外的内容，为该来源返回空corrections对象，交由宿主沿用完整修正。
+> 根据提供的原始材料，修正被拒绝的证据位置和来源引用。宿主保留现有检索信息、证据单元和关系；只在corrections中返回发生变化的字段，键使用Schema允许的JSON指针。保留每条关系的含义、方向和条件，以及每个对象的身份和角色。单元的context包含支撑其对象提及所需的原文。只引用已声明的单元／提及，或使用原文定位。这里的selector使用原文精确文本，必要时用prefix或suffix消歧，不使用段落编号。使用以/-结尾的路径仅追加新的上下文或缺失提及，原有条目自动保留；修改单个提及的位置时，只返回它的/selector字段。例如，corrections {"/units/0/context/-":[{"exact":"Alice wrote the plan."}]}只补入该段原文，不重写其他上下文。保留原有对象和依据，不省略有依据的提及来绕过校验。若需要修改定位字段之外的内容，为该来源返回空corrections对象，由宿主沿用完整修正。
 >
 > 原始材料：〈相关完整来源〉
 >

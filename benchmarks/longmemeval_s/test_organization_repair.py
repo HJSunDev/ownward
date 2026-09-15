@@ -31,14 +31,115 @@ class LocationRepairTests(unittest.TestCase):
         prompt,schema=repair.request(self.work,self.fb,None)
         self.assertIn(self.work[0]['asset']['content'],prompt)
         self.assertNotIn('Unrelated retained candidate.',prompt)
-        edits={'/units/0/context':[{'exact':'Original context.'},{'exact':'Alice wrote the plan.'}]}
+        edits={'/units/0/context/-':[{'exact':'Alice wrote the plan.'}]}
         validate_structured_output(self.output(edits),schema)
         before=copy.deepcopy(self.analysis)
         accepted,errors=repair.apply(self.work,self.fb,self.output(edits))
         self.assertFalse(errors)
-        expected=copy.deepcopy(self.analysis);expected['organization']['units'][0]['context']=edits['/units/0/context']
+        expected=copy.deepcopy(self.analysis);expected['organization']['units'][0]['context']+=edits['/units/0/context/-']
         self.assertEqual(accepted['work-a'],{**expected,'work_id':'work-a','input_assets':self.fb[0]['input_assets']})
         self.assertEqual(self.analysis,before)
+
+    def test_additive_context_and_single_selector_keep_original_evidence(self):
+        edits = {'/units/0/context/-': [{'exact': 'Alice wrote the plan.'}],
+                 '/units/0/mentions/0/selector': {'exact': 'Alice wrote'}}
+        prompt, schema = repair.request(self.work, self.fb, None)
+        properties = schema['properties']['repairs']['items']['anyOf'][0]['properties']['corrections']['properties']
+        self.assertNotIn('/units/0/context', properties)
+        self.assertNotIn('/units/0/mentions', properties)
+        validate_structured_output(self.output(edits), schema)
+        result, errors = repair.apply(self.work, self.fb, self.output(edits))
+        self.assertFalse(errors)
+        actual = result['work-a']['organization']
+        self.assertEqual(actual['units'][0]['context'], [{'exact': 'Original context.'}, {'exact': 'Alice wrote the plan.'}])
+        self.assertEqual(actual['units'][0]['mentions'][0]['name'], 'Alice')
+        self.assertEqual(actual['links'], self.analysis['organization']['links'])
+        self.assertEqual(result['work-a']['summary'], self.analysis['summary'])
+
+    def test_additions_preserve_absent_lists_identity_and_cardinality_limits(self):
+        self.analysis['organization']['units'][0].pop('context')
+        good = self.output({'/units/0/context/-': [{'exact': 'Alice wrote the plan.'}]})
+        result, errors = repair.apply(self.work, self.fb, good)
+        self.assertFalse(errors)
+        self.assertEqual(len(result['work-a']['organization']['units'][0]['context']), 1)
+        for edits in (
+            {'/units/0/mentions/-': [{'id': 'alice', 'name': 'Bob', 'selector': {'exact': 'Bob'}}]},
+            {'/units/0/context/-': [{'exact': str(i)} for i in range(17)]},
+            {'/units/0/context': [], '/units/0/context/-': [{'exact': 'Alice'}]},
+            {'/units/0/mentions': [], '/units/0/mentions/0/selector': {'exact': 'Alice'}},
+        ):
+            with self.subTest(edits=edits):
+                result, errors = repair.apply(self.work, self.fb, self.output(edits))
+                self.assertFalse(result)
+                self.assertTrue(errors)
+
+    def test_invalid_quote_can_repair_location_without_rewriting_relationships(self):
+        self.fb[0]['error'] = 'units[0] ("u"): 说明定位与当前正文失配，请同步修正定位'
+        value = self.output({'/units/0/selector': {'exact': 'Alice wrote the plan.'}})
+        _, schema = repair.request(self.work, self.fb, None)
+        validate_structured_output(value, schema)
+        result, errors = repair.apply(self.work, self.fb, value)
+        self.assertFalse(errors)
+        self.assertEqual(result['work-a']['organization']['links'], self.analysis['organization']['links'])
+
+    def test_unrepairable_protected_fields_skip_local_attempt(self):
+        self.work[0]['organization_schema'] = 'ownward.organization/v2'
+        settings = {**run.load_json(Path(run.__file__).with_name('protocol.json'))['memory'], 'semantic_attempts': 1}
+        for fault in ('missing_context', 'overlapping_context', 'invalid_mention_identity'):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as tmp:
+                work, feedback = copy.deepcopy(self.work), copy.deepcopy(self.fb)
+                organization = feedback[0]['rejected_analysis']['organization']
+                if fault == 'invalid_mention_identity':
+                    organization['units'][0]['mentions'].append(copy.deepcopy(organization['units'][0]['mentions'][0]))
+                    feedback[0]['error'] = 'units[0] ("u"): 对象 alice: 对象提及身份无效'
+                else:
+                    quote = 'aaaa' if fault == 'overlapping_context' else 'Missing passage'
+                    organization['units'][0]['context'] = [{'exact': quote}]
+                    if fault == 'overlapping_context':
+                        work[0]['asset']['content'] += ' aaaaa'
+                    feedback[0]['error'] = 'units[0] ("u"): 说明原文不唯一，请提供相邻原文消歧'
+                feedback[0]['rejected_organization'] = organization
+                with self.assertRaises(ExternalIntelligenceError):
+                    repair.request(work, feedback, None)
+                cap = run.ExternalIntelligenceCapability(mock.Mock())
+                cap._invoke = mock.Mock(return_value=({'analyses': [{'work_id': 'work-a', **self.analysis}]}, {'calls': 1}))
+                rows, usage = cap.semantics(work, settings, Path(tmp), feedback=feedback)
+                self.assertEqual(cap._invoke.call_count, 1)
+                self.assertIn('analyses', cap._invoke.call_args.kwargs['schema']['properties'])
+                self.assertEqual(rows[0]['organization'], self.analysis['organization'])
+                self.assertEqual(usage['calls'], 1)
+
+    def test_mixed_source_errors_are_repaired_independently(self):
+        work = copy.deepcopy(self.work[0]); work['id'] = 'work-second'
+        fb = copy.deepcopy(self.fb[0]); fb['work_id'] = work['id']; fb['error'] = 'broader correction needed'
+        for item in [self.work[0], work]:
+            item['organization_schema'] = 'ownward.organization/v2'
+        settings = {**run.load_json(Path(run.__file__).with_name('protocol.json'))['memory'], 'semantic_attempts': 1}
+        cap = run.ExternalIntelligenceCapability(mock.Mock())
+        def invoke(**kwargs):
+            if 'repairs' in kwargs['schema']['properties']:
+                return self.output({'/units/0/context/-': [{'exact': 'Alice wrote the plan.'}]}), {'calls': 1}
+            return {'analyses': [{'work_id': work['id'], **self.analysis}]}, {'calls': 1}
+        cap._invoke = mock.Mock(side_effect=invoke)
+        with tempfile.TemporaryDirectory() as tmp:
+            rows, usage = cap.semantics([self.work[0], work], settings, Path(tmp), feedback=[self.fb[0], fb])
+        self.assertEqual([row['work_id'] for row in rows], ['work-a', 'work-second'])
+        self.assertEqual(usage['calls'], 2)
+        self.assertIn('repairs', cap._invoke.call_args_list[0].kwargs['schema']['properties'])
+        self.assertIn('analyses', cap._invoke.call_args_list[1].kwargs['schema']['properties'])
+
+    def test_source_failure_does_not_discard_success_or_expand_remaining_budget(self):
+        work = [dict(self.work[0], id=name, organization_schema='ownward.organization/v2') for name in ['wa', 'wb']]
+        cap = run.ExternalIntelligenceCapability(mock.Mock())
+        settings = {**run.load_json(Path(run.__file__).with_name('protocol.json'))['memory'], 'semantic_attempts': 1}
+        cap._invoke = mock.Mock(side_effect=[({'analyses': [{'work_id': 'wa', **self.analysis}]}, {'calls': 1}),
+                                             ({'analyses': [{'work_id': 'wrong', **self.analysis}]}, {'calls': 1})])
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(run.AdapterError) as raised:
+                cap.semantics(work, settings, Path(tmp), feedback=[{'work_id': w['id'], 'error': 'bad source'} for w in work])
+        self.assertEqual(set(raised.exception.accepted_analyses), {'wa'})
+        self.assertEqual(cap._invoke.call_count, 2)
+        self.assertEqual(raised.exception.partial_usage['calls'], 2)
 
     def test_foreign_endpoint_includes_original_foreign_material(self):
         self.fb[0]['error']='links[0].target: 单元 "foreign" 未声明对象提及 "m"'
@@ -78,7 +179,7 @@ class LocationRepairTests(unittest.TestCase):
     def test_partial_batch_keeps_complete_correction(self):
         work=copy.deepcopy(self.work[0]);work['id']='work-second'
         fb=copy.deepcopy(self.fb[0]);fb['work_id']='work-second'
-        value=self.output({'/units/0/context':[{'exact':'Original context.'},{'exact':'Alice wrote the plan.'}]})
+        value=self.output({'/units/0/context/-':[{'exact':'Alice wrote the plan.'}]})
         accepted,errors=repair.apply([self.work[0],work],[self.fb[0],fb],value,partial=True)
         self.assertEqual(list(accepted),['work-a'])
         self.assertEqual([x['work_id'] for x in errors],['work-second'])
@@ -93,7 +194,7 @@ class LocationRepairTests(unittest.TestCase):
         self.work[0]['organization_schema']='ownward.organization/v2'
         settings={**run.load_json(Path(run.__file__).with_name('protocol.json'))['memory'],'semantic_attempts':1}
         cap=run.ExternalIntelligenceCapability(mock.Mock())
-        value=self.output({'/units/0/context':[{'exact':'Original context.'},{'exact':'Alice wrote the plan.'}]})
+        value=self.output({'/units/0/context/-':[{'exact':'Alice wrote the plan.'}]})
         with tempfile.TemporaryDirectory() as tmp:
             cap._invoke=mock.Mock(return_value=(value,{'calls':1}))
             result,usage=cap.semantics(self.work,settings,Path(tmp)/'locations',feedback=self.fb)

@@ -60,17 +60,17 @@ class PreparationDispatchTests(unittest.TestCase):
             self.assertEqual(reason, 'shared_or_unclassified_failure')
             self.assertEqual(calls, [1])
 
-    def test_repeated_failures_stop_without_retrying_or_discarding_them(self):
+    def test_multiple_isolated_failures_do_not_block_other_questions(self):
         calls = []; rows = []
         def one(item):
             calls.append(item['ordinal'])
-            return {**item, 'prepared': False, 'failure_scope': 'question'}
+            return {**item, 'prepared': item['ordinal'] >= 3, 'failure_scope': 'question'}
         reason = subject.prepare_pending([{'ordinal': n} for n in range(6)], one, rows,
                                          lambda value: None, workers=1)
-        self.assertEqual(reason, 'consecutive_question_failures')
-        self.assertEqual(calls, [0, 1, 2])
-        self.assertEqual(len(rows), 3)
-        self.assertTrue(all(not row['prepared'] for row in rows))
+        self.assertIsNone(reason)
+        self.assertEqual(calls, list(range(6)))
+        self.assertEqual(len(rows), 6)
+        self.assertEqual(sum(row['prepared'] for row in rows), 3)
 
     def test_only_known_output_failures_are_isolated(self):
         for message in ('semantic submission batch contains failures: source error',

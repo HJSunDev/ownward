@@ -1329,6 +1329,8 @@ class ExternalIntelligenceCapability:
         return analyses, usage
 
     def _organized_semantics(self, work, settings, stage, feedback):
+        if len(work) > 1 and feedback and all(row.get('work_id') for row in feedback):
+            return self._repair_semantic_sources(work, settings, stage, feedback)
         if feedback and all(isinstance(row.get("rejected_analysis", {}).get("organization"), dict) for row in feedback):
             try:
                 prompt, schema = organization_repair.request(work, feedback, self.semantic_contract)
@@ -1351,6 +1353,22 @@ class ExternalIntelligenceCapability:
         for attempt in range(start, int(settings["semantic_attempts"])):
             remaining = [item for item in work if item["id"] not in accepted]
             if not remaining:
+                break
+            if attempt and len(remaining) > 1 and feedback and all(row.get('work_id') for row in feedback):
+                try:
+                    repairs, extra = self._repair_semantic_sources(remaining,
+                        {**settings, 'semantic_attempts': int(settings['semantic_attempts']) - attempt},
+                        stage / f'source-repair-{attempt:03d}', feedback)
+                    accepted.update({row['work_id']: row for row in repairs})
+                    feedback = []
+                except AdapterError as error:
+                    if not hasattr(error, 'accepted_analyses'):
+                        raise
+                    accepted.update(error.accepted_analyses)
+                    extra, feedback = error.partial_usage, error.repair_feedback
+                _add_usage(usage, extra)
+                write_json(progress_path, {'identity': identity, 'attempt': int(settings['semantic_attempts']),
+                    'accepted': accepted, 'usage': usage, 'feedback': feedback})
                 break
             prompt, schema, _ = self.semantic_request(remaining, settings)
             if feedback:
@@ -1385,6 +1403,7 @@ class ExternalIntelligenceCapability:
                     accepted[item["id"]] = {**decoded, "input_assets": inputs}
                 except (semantic_representation.SemanticRepresentationError, ExternalIntelligenceError) as error:
                     feedback.append({"work_id": item["id"], "error": str(error),
+                                     "rejected_output": rows[index],
                                      "rejected_organization": rows[index].get("organization") if isinstance(rows[index], dict) else None})
             # Preserve successfully decoded work across retries and interruptions.
             # Each result retains the full material actually supplied to its call.
@@ -1394,8 +1413,35 @@ class ExternalIntelligenceCapability:
             error = AdapterError(f"semantic source repair remains incomplete: {feedback}")
             error.accepted_analyses = accepted
             error.partial_usage = usage
+            error.repair_feedback = feedback
             raise error
         return [accepted[item["id"]] for item in work], usage
+
+    def _repair_semantic_sources(self, work, settings, stage, feedback):
+        # Native rejection and decode failure affect sources independently. Each
+        # source keeps its own context, repair path, checkpoint and remaining budget.
+        by_id = {row['work_id']: row for row in feedback}
+        accepted, errors, usage = {}, [], _empty_usage()
+        for index, item in enumerate(work):
+            source_feedback = [by_id[item['id']]] if item['id'] in by_id else None
+            try:
+                rows, extra = self.semantics([item], settings, stage / f'source-{index:03d}', feedback=source_feedback)
+                require(len(rows) == 1 and rows[0]['work_id'] == item['id'], 'source repair changed work identity')
+                accepted[item['id']] = rows[0]
+            except AdapterError as error:
+                if not hasattr(error, 'accepted_analyses'):
+                    raise
+                require(set(error.accepted_analyses) <= {item['id']}, 'source repair crossed work identity')
+                accepted.update(error.accepted_analyses)
+                extra = error.partial_usage
+                errors.extend(getattr(error, 'repair_feedback', [{'work_id': item['id'], 'error': str(error)}]))
+            _add_usage(usage, extra)
+        write_json(stage / 'source-repair-results.json', {'accepted': accepted, 'feedback': errors, 'usage': usage})
+        if len(accepted) != len(work):
+            error = AdapterError(f'semantic source repair remains incomplete: {errors}')
+            error.accepted_analyses, error.partial_usage, error.repair_feedback = accepted, usage, errors
+            raise error
+        return [accepted[item['id']] for item in work], usage
 
     def _repair_organization_locations(self, work, settings, stage, feedback, prompt, schema):
         began = time.monotonic()
@@ -1421,6 +1467,7 @@ class ExternalIntelligenceCapability:
         if errors:
             error = AdapterError(f"organization location repair remains incomplete: {errors}")
             error.accepted_analyses, error.partial_usage = accepted, usage
+            error.repair_feedback = errors
             raise error
         return [accepted[item["id"]] for item in work], usage
 
@@ -1773,7 +1820,7 @@ def semantic_implementation_identity() -> str:
         capability.semantic_fact_identity, capability.semantic_instruction_text,
         capability.semantic_prompt, capability.semantic_request,
         capability.semantic_output_upper_bound, capability.semantic_output_reservation,
-        capability.semantics, capability._organized_semantics, capability._repair_organization_locations,
+        capability.semantics, capability._organized_semantics, capability._repair_semantic_sources, capability._repair_organization_locations,
         validate_structured_output,
     )
     return canonical_sha256({
