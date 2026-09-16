@@ -53,6 +53,8 @@ flowchart LR
 
 第一版由 Ownward 管理一个私有的本地 llama.cpp 子进程。进程通信只服务本机 Ownward，不成为对外契约；内核只依赖向量能力，不感知 llama.cpp 的接口。模型在连续使用期间可以保持就绪，空闲释放策略由实际启动延迟、内存和使用体验共同确定，不得为减少表面常驻占用反复支付冷启动成本。
 
+锁定构建采用llama.cpp `9d77fa172`（b10488）的完整服务，仅修正EmbeddingGemma嵌入模式下无用的词预测输出分配；模型、计算配置和GGML后端制品保持不变。上层运行时统一重建，源码[补丁](../../../third_party/llama.cpp/embedding-allocation.patch)和[构建脚本](../../../third_party/llama.cpp/build_runtime.py)随仓库保留；制品、工具链及向量一致性依据见[存取底座验收](../../../benchmarks/acceptance/suite/adapters/product_resource/bounded-unit-one-20260916.json)。组包按新制品重算空间身份，既有安装与派生数据的切换按存储迁移合同执行。
+
 模型不可用时，信息仍须先可靠进入长期资产；相应向量状态保持待生成，稳定身份读取和不依赖向量的检索能力继续工作。不得用与正式向量空间不兼容的替代结果冒充成功。
 
 ## 升级与恢复

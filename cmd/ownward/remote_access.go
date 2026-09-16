@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -368,13 +369,25 @@ func runRemoteConnector(ctx context.Context, material connectionMaterial) error 
 		return err
 	}
 	client := *host.remote.Client
-	client.Transport = remoteBearer{base: client.Transport, credential: host.credential}
+	streamTransport := &connectorTransport{base: remoteBearer{base: client.Transport, credential: host.credential}}
+	client.Transport = streamTransport
 	consumer := mcp.NewClient(&mcp.Implementation{Name: "ownward-remote", Version: version}, nil)
 	session, err := consumer.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: host.descriptor.Endpoint, HTTPClient: &client, MaxRetries: 1, DisableStandaloneSSE: true}, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { session.Close() }()
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		return err
+	}
+	host.streaming, err = configureStreamingConnector(streamTransport, session.InitializeResult(), filepath.Join(cache, "Ownward"))
+	if err != nil {
+		return err
+	}
+	if host.streaming != nil {
+		defer host.streaming.Close()
+	}
 	proxy := mcp.NewServer(&mcp.Implementation{Name: "ownward", Version: version}, &mcp.ServerOptions{Instructions: session.InitializeResult().Instructions, Capabilities: &mcp.ServerCapabilities{}})
 	host.addMaterialTool(proxy, func(ctx context.Context, refs []string) ([]contract.InformationCheck, error) {
 		host.routeMu.Lock()
@@ -457,7 +470,7 @@ func runRemoteConnector(ctx context.Context, material connectionMaterial) error 
 		return nil, connectionMaterial{Location: host.remote.Material.Location, EnrollmentID: id}, nil
 	})
 	addMigrationTool(proxy, host)
-	return proxy.Run(ctx, &mcp.StdioTransport{})
+	return runConnectorIO(ctx, proxy, host.streaming, os.Stdin, os.Stdout)
 }
 
 func addMigrationTool(proxy *mcp.Server, host *hostConnector) {

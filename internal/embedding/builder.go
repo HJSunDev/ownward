@@ -16,10 +16,10 @@ import (
 
 const (
 	SelectedModelSHA256          = "6fa0c02a9c302be6f977521d399b4de3a46310a4f2621ee0063747881b673f67"
-	SelectedRuntimeArchiveSHA256 = "6c938f6d79aac96cb90fda673aade20cff9b1b6c1e97de04f4d5d60bca107082"
+	SelectedRuntimeArchiveSHA256 = "2e3b3f6493af16a1c5eba8408fb678ad246c8585d88b1dbaa9d245ee1c2e53e8"
 	selectedModelName            = "embeddinggemma-300m-qat-Q8_0.gguf"
 	selectedRuntimeEntry         = "runtime/llama-server.exe"
-	selectedCapability           = "embeddinggemma-300m-qat-q8_0-llamacpp-b10488"
+	selectedCapability           = "embeddinggemma-300m-qat-q8_0-llamacpp-b10488-bounded"
 	selectedQueryPrefix          = "task: search result | query: "
 	selectedDocumentPrefix       = "title: none | text: "
 )
@@ -43,11 +43,7 @@ var selectedRuntimeFiles = map[string]struct{}{
 	"ggml-rpc.dll":                {},
 	"ggml.dll":                    {},
 	"libomp140.x86_64.dll":        {},
-	"llama-common.dll":            {},
-	"llama-server-impl.dll":       {},
 	"llama-server.exe":            {},
-	"llama.dll":                   {},
-	"mtmd.dll":                    {},
 }
 
 type BuildOptions struct {

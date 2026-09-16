@@ -72,7 +72,8 @@ func runSharedMCPConnector(ctx context.Context, dataDir, binaryVersion, composit
 	if err != nil {
 		return err
 	}
-	httpClient := &http.Client{Transport: bearerTransport{token: descriptor.BearerToken, base: http.DefaultTransport, credential: host.credential}, Timeout: 2 * time.Minute}
+	transport := &connectorTransport{base: bearerTransport{token: descriptor.BearerToken, base: http.DefaultTransport, credential: host.credential}}
+	httpClient := &http.Client{Transport: transport, Timeout: 2 * time.Minute}
 	client := mcp.NewClient(&mcp.Implementation{Name: "ownward-connect-or-start", Version: binaryVersion}, nil)
 	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: descriptor.Endpoint, HTTPClient: httpClient, MaxRetries: 1, DisableStandaloneSSE: true}, nil)
 	if err != nil {
@@ -80,6 +81,13 @@ func runSharedMCPConnector(ctx context.Context, dataDir, binaryVersion, composit
 	}
 	defer session.Close()
 	initialize := session.InitializeResult()
+	streamScope, err := configureStreamingConnector(transport, initialize, dataDir)
+	if err != nil {
+		return err
+	}
+	if streamScope != nil {
+		defer streamScope.Close()
+	}
 	instructions := ""
 	if initialize != nil {
 		instructions = initialize.Instructions
@@ -108,7 +116,7 @@ func runSharedMCPConnector(ctx context.Context, dataDir, binaryVersion, composit
 			return host.call(callContext, request, session)
 		})
 	}
-	if err := proxy.Run(ctx, &mcp.StdioTransport{}); err != nil {
+	if err := runConnectorIO(ctx, proxy, streamScope, os.Stdin, os.Stdout); err != nil {
 		return fmt.Errorf("共享 Ownward stdio 连接器结束: %w", err)
 	}
 	return nil

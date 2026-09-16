@@ -160,6 +160,17 @@ func evidenceUnitID(unit EvidenceUnit, content string) string {
 	return encodeEvidenceIdentity(identity, strings.HasPrefix(unit.ID, evidenceIDPrefix))
 }
 
+// StreamEvidenceReference 接受流式原文读取已经验证的区间及摘要，保持既有证据身份格式。
+func StreamEvidenceReference(id string, revision uint64, start, end, startByte, endByte int, digest string) (domain.EvidenceReference, error) {
+	ref := domain.EvidenceReference{Schema: domain.EvidenceSchema, SourceID: id, SourceRevision: revision, StartRune: start, EndRune: end, ContentRunes: end - start}
+	decoded, err := hex.DecodeString(digest)
+	if err != nil || len(decoded) != sha256.Size || startByte < 0 || endByte <= startByte {
+		return ref, errors.New("证据区间或摘要无效")
+	}
+	ref.ID = encodeEvidenceIdentity(evidenceIdentity{SourceID: id, SourceRevision: revision, StartRune: start, EndRune: end, StartByte: startByte, EndByte: endByte, ContentSHA256: digest}, false)
+	return ref, ref.Validate()
+}
+
 func encodeEvidenceIdentity(identity evidenceIdentity, legacy bool) string {
 	if legacy {
 		payload, _ := json.Marshal(identity)

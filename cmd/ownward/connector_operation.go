@@ -9,6 +9,7 @@ import (
 	"errors"
 
 	"github.com/HJSunDev/ownward/internal/contract"
+	"github.com/HJSunDev/ownward/internal/rpcstream"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -21,6 +22,17 @@ func mutationDigest(name string, args json.RawMessage) string {
 	data, _ := json.Marshal(value)
 	sum := sha256.Sum256(append([]byte(name+":"), data...))
 	return hex.EncodeToString(sum[:])
+}
+
+func requestMutationDigest(ctx context.Context, name string, args json.RawMessage) (string, error) {
+	if scope := rpcstream.FromContext(ctx); scope != nil && rpcstream.StorageTool(name) {
+		call, err := scope.Resolve(name, args)
+		if err != nil {
+			return "", err
+		}
+		return call.Digest(ctx)
+	}
+	return mutationDigest(name, args), nil
 }
 func connectionID() string {
 	var data [24]byte
@@ -40,7 +52,10 @@ func (h *hostConnector) callProduct(ctx context.Context, request *mcp.CallToolRe
 	}
 	h.operationMu.Lock()
 	defer h.operationMu.Unlock()
-	key := mutationDigest(request.Params.Name, request.Params.Arguments)
+	key, err := requestMutationDigest(ctx, request.Params.Name, request.Params.Arguments)
+	if err != nil {
+		return nil, err
+	}
 	h.mu.Lock()
 	op, exists := h.record.Mutations[key]
 	h.mu.Unlock()

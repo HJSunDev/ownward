@@ -28,7 +28,8 @@ type credentialKey struct{}
 
 // Authenticate 仅由可信连接器调用，凭据不来自工具参数。
 func Authenticate(ctx context.Context, credential string) context.Context {
-	return context.WithValue(ctx, credentialKey{}, digest(credential))
+	value := digest(credential)
+	return context.WithValue(contract.WithAuthenticationDigest(ctx, value), credentialKey{}, value)
 }
 
 func New(authority contract.ControlAuthority) *Control { return &Control{authority: authority} }

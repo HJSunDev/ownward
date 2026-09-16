@@ -1,0 +1,5 @@
+--- a/src/llama-context.cpp
++++ b/src/llama-context.cpp
+@@ -2043 +2043 @@
+-    bool has_logits     = true;
++    bool has_logits     = !(cparams.embeddings && model.arch == LLM_ARCH_GEMMA_EMBEDDING);

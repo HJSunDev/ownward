@@ -15,6 +15,7 @@ import (
 
 	"github.com/HJSunDev/ownward/internal/adapter/localowner"
 	"github.com/HJSunDev/ownward/internal/contract"
+	"github.com/HJSunDev/ownward/internal/rpcstream"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -42,6 +43,7 @@ type hostConnector struct {
 	profile       string
 	record        connectorRecord
 	recoveryScope string
+	streaming     *rpcstream.Scope
 	remote        *remoteConnection
 }
 

@@ -7,6 +7,7 @@ import (
 
 	"github.com/HJSunDev/ownward/internal/adapter/remote"
 	"github.com/HJSunDev/ownward/internal/contract"
+	"github.com/HJSunDev/ownward/internal/rpcstream"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -58,6 +59,9 @@ func (h *hostConnector) refreshRemote(ctx context.Context, session **mcp.ClientS
 	}
 	transport := *client
 	transport.Transport = remoteBearer{base: client.Transport, credential: h.credential}
+	if h.streaming != nil {
+		transport.Transport = &rpcstream.RoundTripper{Scope: h.streaming, Next: transport.Transport}
+	}
 	consumer := mcp.NewClient(&mcp.Implementation{Name: "ownward-remote", Version: version}, nil)
 	nextSession, connectErr := consumer.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: strings.TrimRight(target.Endpoint, "/") + "/capabilities", HTTPClient: &transport, MaxRetries: 1, DisableStandaloneSSE: true}, nil)
 	if connectErr != nil {
@@ -85,6 +89,9 @@ func (h *hostConnector) reconnectRemote(ctx context.Context, session **mcp.Clien
 	}
 	client := *h.remote.Client
 	client.Transport = remoteBearer{base: client.Transport, credential: h.credential}
+	if h.streaming != nil {
+		client.Transport = &rpcstream.RoundTripper{Scope: h.streaming, Next: client.Transport}
+	}
 	consumer := mcp.NewClient(&mcp.Implementation{Name: "ownward-remote", Version: version}, nil)
 	next, err := consumer.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: h.descriptor.Endpoint, HTTPClient: &client, MaxRetries: 1, DisableStandaloneSSE: true}, nil)
 	if err != nil {

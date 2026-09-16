@@ -12,7 +12,8 @@ import (
 )
 
 func hideProcessWindow(command *exec.Cmd) {
-	command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	// 不创建控制台宿主，仍由显式管道和 Job 管理输入输出及子进程寿命。
+	command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x00000008}
 }
 
 type jobLifetime struct {

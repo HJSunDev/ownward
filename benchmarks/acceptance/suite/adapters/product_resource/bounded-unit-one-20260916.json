@@ -1,0 +1,493 @@
+{
+  "schema": "ownward.bounded-storage-unit-one/v1",
+  "date": "2026-09-16",
+  "scope": "SQLite asset storage and stdio-HTTP-tool path; no user-format migration or natural-language retrieval acceptance",
+  "status": "passed",
+  "base_commit": "c660067",
+  "runtime": {
+    "source_commit": "9d77fa172",
+    "source_archive_sha256": "b83890db3d902d4c49d5ee638bade9967011beca56bbd803173689f615c2a9c3",
+    "toolchain": {
+      "zig": "0.14.1",
+      "cmake": "3.31.6",
+      "ninja": "1.11.1.4"
+    },
+    "linkage": "full llama/common/server/mtmd/all model implementations built together; original GGML C ABI binaries unchanged",
+    "archive_sha256": "2e3b3f6493af16a1c5eba8408fb678ad246c8585d88b1dbaa9d245ee1c2e53e8",
+    "space_id": "emb_3ea351940b656cd8366a5581c2758852",
+    "files": {
+      "runtime/ggml-base.dll": "82d02fcaf8c9badda59f3b1ced19dc6c708fe9865662b887d1daede81601545c",
+      "runtime/ggml-cpu-alderlake.dll": "ec78a8eaee6d65d412d9fd901ff815d8db123ff700bd9b07ca7626820bb2c196",
+      "runtime/ggml-cpu-cannonlake.dll": "c4bfd6e32360417d648c6544f1c0d7365b774ae67ddadf8bb14a3508e6c7b6d6",
+      "runtime/ggml-cpu-cascadelake.dll": "66bfcacba4b4815281c5252eb019e0b8a29c4aa87dd023eee93036225b0259c9",
+      "runtime/ggml-cpu-cooperlake.dll": "f64422f4d9d5428519e5c4fb5674382295d5635bb0690e6ee9e0ae564951ea75",
+      "runtime/ggml-cpu-haswell.dll": "89bbd9625a6e2a90d537418415236aa60c85b658213ce4ddc0f4870ad35a848a",
+      "runtime/ggml-cpu-icelake.dll": "213dec9611d7e73d1df1d822cfb6e5aaf633f401b1d697c4db6b180d81878d84",
+      "runtime/ggml-cpu-ivybridge.dll": "bc7cec8d288b0ecd7fe68bf67830cf85c8324aa65f45e76bf97aad2d3bf5372d",
+      "runtime/ggml-cpu-piledriver.dll": "20848fa6ddd68e0bdbc3b88b40476d90957dfafc51a5e9ba67ded9d73a20005b",
+      "runtime/ggml-cpu-sandybridge.dll": "df8c287670ca43b025d5bd3803ca2124ab14296b0b9e98805a553e4d579804be",
+      "runtime/ggml-cpu-sapphirerapids.dll": "96333e30ad5e197b5bb31df3f380f20e173c85257b173ae7f76cb204aa57adb3",
+      "runtime/ggml-cpu-skylakex.dll": "245a1ca2ec180c0d9f49f6287a8e1da7e315c5782405fb64720ee90fd97fe386",
+      "runtime/ggml-cpu-sse42.dll": "79e5226b88255f1f0f9fe865980c71991d439530ba136496056007c266c68248",
+      "runtime/ggml-cpu-x64.dll": "2625898f96e8cc2bf3d7c19705f11e32a33ff546fcbe7f605b62a649366fb4f1",
+      "runtime/ggml-cpu-zen4.dll": "97bfb6b315bd47dc5b2034b8d348daa3694a37576fd3b2209d5bd6f929aa4f7d",
+      "runtime/ggml-rpc.dll": "b392b663cdde7f778c5d355e93a9af346c1dac595d4da57b2a372493e7189f23",
+      "runtime/ggml.dll": "aaca2878d4f10da490f12be47cf11d6902a8a1502c3ca68045114a2c71d794e9",
+      "runtime/libomp140.x86_64.dll": "4a20c1e5c115c29771a12324513eb109badac72180f79481527ad79d996ffb33",
+      "runtime/llama-server.exe": "b578e8bd2b919ff78e0649a5ee41fa69d73166f67a5a38afb814d8d579983536"
+    }
+  },
+  "vector_equivalence": [
+    {
+      "case": "short_query",
+      "vectors": 1,
+      "old_sha256": "ea16c065ad9c493446642f7436eaad957b7153a93289a2d8b7325b1516d6913b",
+      "new_sha256": "ea16c065ad9c493446642f7436eaad957b7153a93289a2d8b7325b1516d6913b",
+      "bit_exact": true
+    },
+    {
+      "case": "long_query",
+      "vectors": 1,
+      "old_sha256": "8a17589cd1c373ad627f9703ad770a91b033b8eb07768bf1d2b027cfa2dabd01",
+      "new_sha256": "8a17589cd1c373ad627f9703ad770a91b033b8eb07768bf1d2b027cfa2dabd01",
+      "bit_exact": true
+    },
+    {
+      "case": "document",
+      "vectors": 1,
+      "old_sha256": "611f43d0c7157886c08c5f2e281a26aee9a53ec785055606dde30b61bfa61568",
+      "new_sha256": "611f43d0c7157886c08c5f2e281a26aee9a53ec785055606dde30b61bfa61568",
+      "bit_exact": true
+    },
+    {
+      "case": "chinese_document",
+      "vectors": 1,
+      "old_sha256": "2bbedcb5681d581f3990b2614d19de32879634f5e31581cc9a92af00e7540228",
+      "new_sha256": "2bbedcb5681d581f3990b2614d19de32879634f5e31581cc9a92af00e7540228",
+      "bit_exact": true
+    },
+    {
+      "case": "batch_documents",
+      "vectors": 3,
+      "old_sha256": "6aad90c1eb5fe31e15b2e90b08a1b18ba109e112b0d9a437da0e580935550264",
+      "new_sha256": "6aad90c1eb5fe31e15b2e90b08a1b18ba109e112b0d9a437da0e580935550264",
+      "bit_exact": true
+    },
+    {
+      "case": "batch32",
+      "vectors": 32,
+      "old_sha256": "e6a08120152a6677ce645a584b655211a0a91a6513d37ef74ed49c845717e98a",
+      "new_sha256": "e6a08120152a6677ce645a584b655211a0a91a6513d37ef74ed49c845717e98a",
+      "bit_exact": true
+    }
+  ],
+  "resources": {
+    "platform": "Windows x64",
+    "workers": 4,
+    "gomemlimit_override": false,
+    "measured_processes": [
+      "storage service",
+      "managed llama-server",
+      "Ownward connector"
+    ],
+    "sampling_interval_ms": 20,
+    "peak_mib": 217.4609375,
+    "limit_mib": 270,
+    "required_margin_mib": 8,
+    "remaining_mib": 52.5390625,
+    "cases": [
+      {
+        "source_bytes": 2624,
+        "request_bytes": 3300,
+        "create_seconds": 0.0779999999977008,
+        "byte_exact": true,
+        "replay_exact": true,
+        "read_exact": true
+      },
+      {
+        "source_bytes": 671104,
+        "request_bytes": 797120,
+        "create_seconds": 0.5940000000009604,
+        "byte_exact": true,
+        "replay_exact": true,
+        "read_exact": true
+      },
+      {
+        "source_bytes": 10737424,
+        "request_bytes": 12750875,
+        "create_seconds": 7.547000000002299,
+        "byte_exact": true,
+        "replay_exact": true,
+        "read_exact": true
+      }
+    ],
+    "service_exit": 0,
+    "connector_exit": 0,
+    "model_peak_mib": 172.5234375,
+    "model_reservation_mib": 200
+  },
+  "verification": [
+    "go test -p 2 ./...",
+    "schema equivalence against existing JSON Schema validation",
+    "byte exact source, escaped structured and text output",
+    "idempotent replay, stale revision rejection, atomic rollback, restart",
+    "revocation and regrant, no delivery of denied snapshots",
+    "cross-connection/tool/expired reference rejection",
+    "cancellation and shared disk quota reclamation",
+    "existing information and explanation basis identity retained",
+    "go vet on affected packages"
+  ],
+  "reproduce": {
+    "build_fixture": "go test -c -o <fixture.exe> ./cmd/ownward",
+    "measure": "python measure.py --binary <fixture.exe> --bundle <formal-bundle> --output <new-directory>",
+    "bundle": "go run ./cmd/ownward-bundle --model <unchanged.gguf> --runtime-archive <locked-runtime.zip> --output <new-bundle>",
+    "runtime_build": "python third_party/llama.cpp/build_runtime.py --source-archive <locked-source.tar.gz> --upstream-runtime <locked-upstream.zip> --zig <zig.exe> --cmake <cmake.exe> --ninja <ninja.exe> --output <new-directory>"
+  },
+  "replay_archive_sha256": "b5b7e29fa821c6a0d20ec89a72ff8da0c5644f3a042171b3c5003350c2849520",
+  "composition_identity": "47d369b2fe5f8d35374fd6e93049eba6db293c77f845231ab24c58cdb4971b10",
+  "fixture_sha256": "19db404ecc8e89b42237d799c7cb90a459c82ca75a614a2f5985c52f99554014",
+  "independent_review": {
+    "schema": "ownward.bounded-unit1-independent-review/v1",
+    "reviewer": "B / 乔布斯",
+    "recorded_at": "2026-09-16T17:36:55",
+    "scope": "Unit one only: bounded create, create_batch, update, ID read, streaming transport, receipts, authority checks, resource implementation and evidence. No user migration, natural-language retrieval, or later-unit maintenance acceptance.",
+    "decision": "B1 repair independently verified. The reviewed code changed during the review, so a complete review of one fixed version remains pending.",
+    "findings": [
+      {
+        "id": "B1",
+        "priority": "P2",
+        "status": "resolved_and_independently_retested",
+        "problem": "Raw JSON byte equality misidentified escaped RPC string IDs after SDK canonicalization. Valid tools/call id \\u0062 executed but returned HTTP409 instead of its result.",
+        "before": {
+          "plain_a_http": 200,
+          "escaped_b_http": 409,
+          "html_c_http": 200
+        },
+        "after": {
+          "plain_a_http": 200,
+          "escaped_b_http": 200,
+          "html_c_http": 200
+        },
+        "fix": "Project duplicate checks, IO output routing, Expand and client response checks share logical identity using the installed SDK jsonrpc.MakeID; original wire ID retained for output.",
+        "reproduction": ".tmp/bounded-unit1-review/b/probes/review_test.go",
+        "command": "go test -p 1 ./.tmp/bounded-unit1-review/b/probes -run TestEscapedRPCIdentity -count=1 -v",
+        "independent_test_seconds": 0.04
+      }
+    ],
+    "reviewed_contracts": [
+      "Original source and explicit metadata fidelity",
+      "Atomic staged payload publication with receipt and revision CAS",
+      "Replay digest and actual committed outcome",
+      "Authorization and source epoch checked before delivery; regrant does not revive old call",
+      "No DB read transaction held through network delivery",
+      "Fixed writer and two-reader pool, shared budget and scratch disk accounting",
+      "Input projection before SDK, output expansion, original schema and logical RPC identity",
+      "Embedding-only allocation patch, complete runtime build, preserved model/vector config"
+    ],
+    "reused_evidence": {
+      "path": "benchmarks/acceptance/suite/adapters/product_resource/bounded-unit-one-20260916.json",
+      "archive_sha256_verified": "b5b7e29fa821c6a0d20ec89a72ff8da0c5644f3a042171b3c5003350c2849520",
+      "vector_samples": 39,
+      "observed_process_tree_peak_mib": 217.4609375,
+      "limit_mib": 270,
+      "note": "Reviewed evidence scope and reproduction code. No independent rerun of model resource workload or full repository tests; those existing measurements do not establish later-unit or complete-product performance."
+    },
+    "reviewed_source_sha256": {
+      "internal/rpcstream/scope.go": "0483fe9b115e77f327ebdc7806d75ec5e2ef57119b95385bc6d568a0ee517c46",
+      "internal/rpcstream/io.go": "54e66ba5a140fa372ee60d684bc98c70ec4400521880dcd9ff4be48cc2819ad4",
+      "internal/rpcstream/client.go": "e2f8fd7bbacac51d264c3b263d2d75bf88824eb18da3b2bccdefdc05c962c0ec",
+      "internal/rpcstream/identity_test.go": "efa19efa4879abee7af1036279e8652d1fb99f97eb28f049df4689c7cd05f412",
+      "internal/core/streaming.go": "8a4c731339c4ffd9c04fa9e217057d5fa424707c62d7506a3f5cdb30460ba269",
+      "internal/core/streaming_fields.go": "749ea53121b23244e70ff05d91647faa27260e847a8c1035d9de5026a6f94a34",
+      "internal/core/streaming_read.go": "4effc9a07a211dfa3c234174bdcd23f38f4d686d28ed62028d910cb92ebb9910",
+      "internal/boundedstore/assets.go": "620656a86c95a4e1d14eb8ea4980eb0d3830c9e3b57c9363ba832add92a185a6",
+      "internal/boundedstore/access.go": "92cc24e4fa3208b24edd65a690d728d43c6633948a6b6d0a07305c396dce14ef",
+      "internal/boundedstore/payload.go": "3134fd1637e2363b2bd55594ea3591f27756931735cd85b6ce5d42efab4efc6c",
+      "internal/boundedstore/store.go": "29297ef58f4f85dfdfdb438cf39b71729af44e95d16085ce57e12b9c20452566",
+      "internal/resourcebudget/budget.go": "89967b1456959c88e43bcc2903c9cd2e6202f03c2096e71f38b48770049a557a",
+      "internal/resourcebudget/disk.go": "16d74c820c3e1fe06884f6ba316c3f5a7751ef599477adab102eaaa074aecfa6",
+      "internal/streamjson/document.go": "d7b588a58cfad617d5f06eb1655a0f8c84782c53d3d78d71fa60e20a9a05345a",
+      "internal/streamjson/text.go": "6a86bca57f65bf0961addbbefe07aa6df8103b4a4d1982673c9a3f427e9849cf",
+      "internal/streamjson/validate.go": "58249bd3aacbcc3e63fe00908ddf8f86d1a22a5b87d9cbcae85ce5f963c3d0f0"
+    },
+    "constraints_observed": {
+      "formal_code_or_docs_modified_by_B": false,
+      "git_modified_by_B": false,
+      "paid_ai_calls": 0,
+      "heavy_resource_runs": 0,
+      "subagents": 0
+    },
+    "integration_verification": {
+      "status": "passed",
+      "composition_identity": "7493e09f2b144998502a65cbb6eceedd757e19b36b0473ab4a6c390abcc28677",
+      "commands": [
+        "go test -p 1 ./internal/rpcstream -count=1",
+        "go test -p 2 ./internal/adapter/mcpserver ./internal/core ./cmd/ownward -run 'Streaming|Stream|Bounded|Connector|Remote' -count=1",
+        "go vet ./internal/rpcstream",
+        "go run ./cmd/ownward-composition verify",
+        "git diff --check HEAD"
+      ],
+      "permanent_regression": "internal/rpcstream/identity_test.go",
+      "resource_evidence": "Original measured composition and resource results above are retained. RPC identity normalization does not change the model, content path or budgets; no new resource measurement is claimed."
+    },
+    "status": "superseded_by_fixed_version_review"
+  },
+  "fixed_version_review": {
+    "schema": "ownward.bounded-unit1-independent-review/v2",
+    "round": 2,
+    "reviewer": "B / 乔布斯",
+    "completed_at": "2026-09-16T18:05:00+08:00",
+    "decision": "changes_required",
+    "summary": "固定版本的完整独立审查已结束。确认两处P2兼容性缺陷：标准JSON转义不一致导致依据及操作摘要变化；批量回执接续因单项旧修订失效而丢失其余有效结果。统一交A集中修复、自验后一次性交付复审；本轮未修改正式代码或权威文档。",
+    "subject": {
+      "base_commit": "c660067",
+      "composition_identity": "7493e09f2b144998502a65cbb6eceedd757e19b36b0473ab4a6c390abcc28677",
+      "reviewed_state": "working tree, not HEAD alone",
+      "source_manifest": ".tmp/bounded-unit1-review/round2-source-hashes.json",
+      "manifest_files": 281,
+      "start_hash_mismatches": [],
+      "end_hash_mismatches": [],
+      "end_verification": ".tmp/bounded-unit1-review/b/round2-end-source-check.json"
+    },
+    "scope": {
+      "included": [
+        "产品定位与有界存储架构第2至4节、第5.1节权威发布部分",
+        "create、create_batch、update、按ID read的原文、元数据、关系定位与依据身份",
+        "分块暂存、原子可见、修订CAS、操作回执、重复提交与接续",
+        "当前授权、撤销与重新授权、最终交付前的控制和来源检查",
+        "stdio、HTTP、SDK、低层工具、连接器投影及恢复，原始参数校验和RPC逻辑身份",
+        "共享内存与暂存额度、固定连接池、取消、临时材料及数据库读取器寿命",
+        "嵌入分配补丁、完整运行时构建、模型与制品身份、既有资源与向量证据的适用范围"
+      ],
+      "excluded": [
+        "单元二的持久化检索与完整语义组织",
+        "单元三的长期维护、WAL回收、遗忘清理与完整并发调度验收",
+        "单元四的旧资料迁移、完整管理接口切换及产品发布验收"
+      ]
+    },
+    "findings": [
+      {
+        "id": "B2",
+        "priority": "P2",
+        "status": "confirmed_open",
+        "title": "保持退格与换页字符的原有JSON规范编码",
+        "location": {
+          "file": "internal/streamjson/text.go",
+          "start_line": 150,
+          "end_line": 160
+        },
+        "trigger": "合法原文或明确元数据含U+0008退格或U+000C换页字符，例如导入文本 page one\\fpage two。",
+        "problem": "WriteString为这两种字符生成\\u0008和\\u000c，而encoding/json生成\\b和\\f。JSON解码后的原文字节保持一致，但本项目的操作摘要和信息依据采用序列化字节哈希，因此不能视为等价实现。",
+        "impact": "真实HTTP创建后立即读取含换页字符的原文，返回basis.c已经不同于原Information JSON的SHA256；按既有核对合同会将未变来源判为changed。Canonical也调用WriteString，因此同一逻辑参数不再保持原mutationDigest，影响已有接续身份兼容。后者为调用链推导，未将升级断线重复写入记作已实测结果。",
+        "contract": [
+          "docs/modules/storage/bounded-runtime-design.md §4.3：字符串转义、数值规范化和数组顺序与原mutationDigest规则等价",
+          "internal/core/information_change.go:160：依据内容指纹与权威来源指纹比较",
+          "internal/core/streaming.go：writeInformation写入同一SHA256；internal/streamjson/text.go Canonical字符串分支复用WriteString"
+        ],
+        "verification": [
+          "TestAllASCIIControlsMatchCanonicalEncoding：遍历32个ASCII控制字符，只有U+0008和U+000C与json.Marshal不一致",
+          "TestReadBasisPreservesOriginalFingerprintForPageBreak：真实SDK→HTTP→工具→SQLite创建并读取；正文正确，basis.c与json.Marshal(read.Information)的SHA256不同"
+        ],
+        "required_result": "流式编码恢复原规范表示，依据、操作摘要和说明指纹均保持兼容；覆盖两种字符的直接编码、真实读取依据及规范摘要回归。不得通过另换指纹定义绕过不一致。"
+      },
+      {
+        "id": "B3",
+        "priority": "P2",
+        "status": "confirmed_open",
+        "title": "批量回执接续保留未受影响条目的结果",
+        "location": {
+          "file": "internal/core/streaming.go",
+          "start_line": 321,
+          "end_line": 324
+        },
+        "trigger": "原操作已成功创建A和B；回执需要接续期间A被另一操作更新；使用相同操作身份与参数重试原create_batch。",
+        "problem": "已找到耐久回执后，deliver按回执修订读取A；A的旧修订失效即返回整个工具错误，未继续返回仍然有效的B。重复接续也不能自行恢复B的提交结果。",
+        "impact": "批次已保存，但调用方收到全局“信息不存在或版本已失效”，无法从原回执取得其他已提交信息的ID和结果。既有逐项恢复语义被破坏，可能导致上游反复重试或无法确认保存范围。未观察到当前实现重复创建资产。",
+        "contract": [
+          "单元一：保持修订与接续语义，重复请求不重复执行",
+          "ownward_create_batch公开合同：每条结果独立返回",
+          "internal/core/operation.go:50：旧路径对失效项返回“操作已提交，原结果已更新或遗忘”并继续其他条目",
+          "internal/authorityport/current.go:78：ReadVersion只认可当前修订，因此旧路径明确覆盖同一触发场景"
+        ],
+        "verification": [
+          "TestBatchReplayKeepsUnaffectedItemAfterOtherItemUpdated：真实SDK→HTTP→工具→SQLite依次创建两项、更新第一项、按原批次操作重放",
+          "实际返回IsError=true及“信息不存在或版本已失效”，没有第二项结果"
+        ],
+        "required_result": "已提交回执中的失效项明确报告原操作已提交而结果已更新，其他有效项继续按原次序交付；保留当前权限和来源检查，不回退旧正文，不将数据库或授权错误统一吞为逐项失效。"
+      }
+    ],
+    "independent_validation": {
+      "probe_source": ".tmp/bounded-unit1-review/b/round2-probes/review_test.go",
+      "command": "go test -p 1 -count=1 -timeout 45s -json ./.tmp/bounded-unit1-review/b/round2-probes",
+      "log": ".tmp/bounded-unit1-review/b/round2-probes-result.jsonl",
+      "package_elapsed_seconds": 0.669,
+      "command_wall_seconds": 6.0528304,
+      "results": {
+        "TestAllASCIIControlsMatchCanonicalEncoding": "failed; B2",
+        "TestReadBasisPreservesOriginalFingerprintForPageBreak": "failed; B2",
+        "TestBatchReplayKeepsUnaffectedItemAfterOtherItemUpdated": "failed; B3",
+        "TestMidStageCancellationLeavesNoVisibleAsset": "passed; cancellation after first chunk leaves no visible asset"
+      },
+      "synthetic_material_only": true,
+      "model_calls": 0,
+      "resource_remeasurement": false,
+      "full_repository_test_rerun": false,
+      "batch_question_evaluation": false
+    },
+    "reused_evidence": {
+      "path": "benchmarks/acceptance/suite/adapters/product_resource/bounded-unit-one-20260916.json",
+      "measured_composition_identity": "47d369b2fe5f8d35374fd6e93049eba6db293c77f845231ab24c58cdb4971b10",
+      "archive_sha256_verified": "b5b7e29fa821c6a0d20ec89a72ff8da0c5644f3a042171b3c5003350c2849520",
+      "vector_samples": 39,
+      "vector_comparison": "six groups, byte exact in existing evidence",
+      "process_tree_peak_mib": 217.4609375,
+      "limit_mib": 270,
+      "margin_mib": 52.5390625,
+      "note": "核对补丁、构建、模型及制品身份、进程夹具和既有测量范围，未重新启动模型或测量负载。该证据继续支持当时已实现存取路径的资源结论，不是修复后新测量，不代表后续检索、维护、真实宿主完整控制流程或迁移产品的验收。"
+    },
+    "review_process": {
+      "fixed_version_review_completed": true,
+      "formal_source_mutations_by_reviewer": false,
+      "authoritative_document_mutations_by_reviewer": false,
+      "git_mutations_by_reviewer": false,
+      "intermediate_findings_sent_to_A": false,
+      "prior_B1_fix": "保留；本轮重新检查逻辑身份在Project、IO、Expand及客户端边界的使用，没有把原轮通过当成本轮整体结论",
+      "next_owner": "A / ownward架构师",
+      "next_step": "集中修复B2与B3、进行必要自验、更新版本身份和验证证据，再一次性交付B复审。"
+    },
+    "repair": {
+      "status": "independently_verified_passed",
+      "composition_identity": "f43536c9af004820a8d8c8b46f5facd38e82fddf315654906f7d6e2d71d66ea7",
+      "source_manifest": ".tmp/bounded-unit1-review/round2-fixed-source-hashes.json",
+      "B2": "Preserve encoding/json short escapes for backspace and form feed. Canonical argument bytes, information and clarification fingerprints remain unchanged.",
+      "B3": "Handle only ErrNotFound per batch item before body output; retain unaffected results and original item errors in order. Track epochs for delivered assets and retain final authorization and source checks. Other storage errors remain fatal.",
+      "tests": [
+        "go test -p 1 -count=1 -timeout 45s ./.tmp/bounded-unit1-review/b/round2-probes",
+        "go test -p 2 ./internal/streamjson ./internal/adapter/mcpserver ./internal/rpcstream ./internal/boundedstore ./internal/core",
+        "go test -p 2 ./cmd/ownward -run 'Streaming|Stream|Bounded|Connector|Remote' -count=1",
+        "go vet ./internal/core ./internal/streamjson ./internal/adapter/mcpserver",
+        "go run ./cmd/ownward-composition verify",
+        "git diff --check HEAD"
+      ],
+      "tests_status": "passed",
+      "regressions": [
+        "internal/streamjson/document_test.go",
+        "internal/adapter/mcpserver/streaming_test.go",
+        "internal/adapter/mcpserver/streaming_replay_test.go"
+      ],
+      "resource_evidence": "Existing measured version retained; no new model or resource measurement claimed."
+    },
+    "final_review": {
+      "schema": "ownward.bounded-unit1-fix-review/v1",
+      "reviewer": "B / 乔布斯",
+      "completed_at": "2026-09-16T18:14:00+08:00",
+      "decision": "passed",
+      "unit_one_closure": "approved",
+      "summary": "两处集中修复及其完整影响范围复审通过，没有新增发现或未解决的单元一阻断项。固定版本完整审查与本次修复复审已形成闭环，单元一可以关闭；不启动后续单元。",
+      "subject": {
+        "composition_identity": "f43536c9af004820a8d8c8b46f5facd38e82fddf315654906f7d6e2d71d66ea7",
+        "base_commit": "c660067",
+        "reviewed_state": "working tree, not HEAD alone",
+        "source_manifest": ".tmp/bounded-unit1-review/round2-fixed-source-hashes.json",
+        "source_files": 282,
+        "start_hash_mismatches": [],
+        "end_hash_mismatches": [],
+        "end_verification": ".tmp/bounded-unit1-review/b/round2-fix-end-source-check.json",
+        "previous_complete_review": ".tmp/bounded-unit1-review/b/round2-review.json",
+        "changed_files_since_complete_review": [
+          "internal/adapter/mcpserver/streaming_replay_test.go",
+          "internal/adapter/mcpserver/streaming_test.go",
+          "internal/core/streaming.go",
+          "internal/streamjson/document_test.go",
+          "internal/streamjson/text.go",
+          "manifests/compositions/v1/current-collaborative.json"
+        ],
+        "removed_files": []
+      },
+      "resolved_findings": [
+        {
+          "id": "B2",
+          "status": "resolved_and_independently_verified",
+          "assessment": "WriteString仅补充U+0008/U+000C的标准短转义，32种ASCII控制字符和Canonical对象/数组均与encoding/json一致；原依据及操作摘要定义没有改变。真实HTTP读取的正文及说明指纹符合原Information JSON合同。",
+          "impact_review": "Canonical、正文、来源、场景和选择器字符串继续共用同一有界编码器，没有增加全文物化、模型调用或额外处理阶段。"
+        },
+        {
+          "id": "B3",
+          "status": "resolved_and_independently_verified",
+          "assessment": "仅在批量变更结果且ReadAssetMeta返回ErrNotFound时产生逐项已提交但结果失效的说明；其他有效项及原错误按原顺序保留，没有回退旧正文或重新提交。非ErrNotFound错误仍整体失败。",
+          "impact_review": "SourceEpoch改在确认可交付资产后、读取正文前登记；原文和详情仍指定同一修订，过程中的修订变化会失败，最终AuthorizeDelivery继续检查当前权限和实际交付来源。全部条目失效时即使来源集合为空，checkAccess仍在检查来源循环之前执行；不会绕过撤销。"
+        },
+        {
+          "id": "B1",
+          "status": "prior_verified_fix_retained",
+          "assessment": "RPC逻辑身份修复的四个边界及对应代码与已完成的完整审查版本一致，没有被本次改动覆盖。"
+        }
+      ],
+      "new_findings": [],
+      "independent_validation": {
+        "command": "go test -p 1 -count=1 -timeout 45s -json ./.tmp/bounded-unit1-review/b/round2-probes ./internal/streamjson ./internal/adapter/mcpserver -run 'Test(AllASCIIControlsMatchCanonicalEncoding|ReadBasisPreservesOriginalFingerprintForPageBreak|BatchReplayKeepsUnaffectedItemAfterOtherItemUpdated|MidStageCancellationLeavesNoVisibleAsset|ControlCharacterEncodingAndCanonicalIdentity|StreamingStorageActualHTTP)$'",
+        "log": ".tmp/bounded-unit1-review/b/round2-fix-tests.jsonl",
+        "exit_code": 0,
+        "test_executions": 8,
+        "passed": 8,
+        "failed": 0,
+        "packages": [
+          {
+            "name": "round2-probes",
+            "tests": 4,
+            "elapsed_seconds": 0.939
+          },
+          {
+            "name": "internal/streamjson",
+            "tests": 1,
+            "elapsed_seconds": 1.771
+          },
+          {
+            "name": "internal/adapter/mcpserver",
+            "tests": 3,
+            "elapsed_seconds": 3.468
+          }
+        ],
+        "coverage": [
+          "原独立失败用例全部重放通过；未改变原复现输入和预期",
+          "32种ASCII控制字符的编码与规范对象/数组身份",
+          "真实HTTP原文及说明依据指纹",
+          "批量接续中的有效项、失效项、原错误、顺序和正文",
+          "全部原结果失效时逐项返回，撤销后不能恢复",
+          "接续不重复创建资产；过期更新拒绝",
+          "中途取消分块写入没有暴露半篇原文"
+        ],
+        "model_calls": 0,
+        "resource_remeasurement": false,
+        "full_repository_test_rerun": false,
+        "batch_question_evaluation": false
+      },
+      "unchanged_review_conclusions": {
+        "assessment": "除列明的两处行为修复、三个测试文件和组合清单外，上一固定版本完整审查涉及的源码身份均未改变。结合本次对调用、异常、权限、修订、材料寿命及流式编码影响范围的复核，原审查其余结论仍成立。",
+        "reused_validation": "A记录的受影响包测试、连接器相关测试、go vet及composition校验继续保留；B未声称重新执行全仓验证。",
+        "resource_and_vector_evidence": {
+          "path": "benchmarks/acceptance/suite/adapters/product_resource/bounded-unit-one-20260916.json",
+          "measured_composition_identity": "47d369b2fe5f8d35374fd6e93049eba6db293c77f845231ab24c58cdb4971b10",
+          "vectors": 39,
+          "peak_mib": 217.4609375,
+          "limit_mib": 270,
+          "margin_mib": 52.5390625,
+          "interpretation": "复用原测量，不改写为新版本重新测量。修复未改变模型、运行时、计算配置、连接池、预算、分块方式或全文缓冲结构，因此未重复启动重型测量。该证据仍只覆盖已实现的单元一存取范围。"
+        }
+      },
+      "completion_boundary": "单元一的有界保存、按ID读取与更新底座通过审查。自然语言检索、完整语义组织、长期维护、旧资料迁移和完整产品交付仍属于后续单元，不将本结论用于这些范围。",
+      "process": {
+        "formal_source_mutations_by_B": false,
+        "authoritative_document_mutations_by_B": false,
+        "git_mutations_by_B": false,
+        "intermediate_repair_requests": false,
+        "final_handoff": "A将本统一结论登记到验收证据及执行文档，关闭单元一后停止，不进入单元二。"
+      }
+    }
+  },
+  "closure": {
+    "status": "passed",
+    "composition_identity": "f43536c9af004820a8d8c8b46f5facd38e82fddf315654906f7d6e2d71d66ea7",
+    "scope": "Execution unit one only; implementation, necessary tests and complete fixed-version review closed. No user-data migration or later-unit acceptance."
+  }
+}
