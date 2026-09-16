@@ -1,0 +1,705 @@
+{
+  "schema": "ownward.bounded-assembly-recovery/v1",
+  "date": "2026-09-16",
+  "result": "allocator_fix_verified_in_isolated_assembly_production_integration_pending",
+  "source_commit": "158f73de243d09168c514fa927fc89ec7548a4bc",
+  "root_cause": "EmbeddingGemma graph has no logits output, but llama.cpp b10488 output_reserve allocated and zeroed n_vocab * n_outputs_max float logits. Long legal input made this unused allocation hundreds of MiB.",
+  "fix": "Skip logits allocation only for EmbeddingGemma with embeddings enabled; keep weights, GGML kernels, token/context budget, prefixes, projection and normalization unchanged. Detach console-less processes while preserving pipes/job lifetime.",
+  "controlled_variable": "The compiler-control and patched DLLs use identical source, compiler, wrapper and backend; only has_logits initialization differs. The official DLL wrapper and unmodified production server provide additional output equivalence controls.",
+  "quality": {
+    "workload_groups": 6,
+    "vectors": 39,
+    "dimensions": 512,
+    "comparison": "exact SHA-256 over every float32 output bit",
+    "all_equal": true,
+    "output_hashes": {
+      "short_query_end": "ea16c065ad9c493446642f7436eaad957b7153a93289a2d8b7325b1516d6913b",
+      "long_query_end": "8a17589cd1c373ad627f9703ad770a91b033b8eb07768bf1d2b027cfa2dabd01",
+      "document_end": "611f43d0c7157886c08c5f2e281a26aee9a53ec785055606dde30b61bfa61568",
+      "chinese_document_end": "2bbedcb5681d581f3990b2614d19de32879634f5e31581cc9a92af00e7540228",
+      "batch_documents_end": "6aad90c1eb5fe31e15b2e90b08a1b18ba109e112b0d9a437da0e580935550264",
+      "batch32_end": "e6a08120152a6677ce645a584b655211a0a91a6513d37ef74ed49c845717e98a"
+    },
+    "database_checks": "rollback, Unicode text fidelity, reader snapshot across writer commit, 5 MiB total scans through two read connections, WAL truncate, integrity_check"
+  },
+  "resource_contract": {
+    "tree_rss_limit_mib": 270,
+    "independent_margin_mib": 8,
+    "touched_held_workspace_mib": 5,
+    "sqlite_cache_mib": 4,
+    "sqlite_connections": 3,
+    "corrected_probe_peak_mib": 204.97265625,
+    "remaining_after_margin_mib": 57.02734375,
+    "sampling_interval_s": 0.02
+  },
+  "environment": {
+    "platform": "Windows-10-10.0.22631-SP0",
+    "go": "go1.25.5 windows/amd64",
+    "GOMAXPROCS": 2,
+    "model_threads": 2,
+    "ctx_batch_ubatch": 512,
+    "parallel": 1
+  },
+  "identities": {
+    "llama_source_commit": "9d77fa172",
+    "llama_source_archive_sha256": "b83890db3d902d4c49d5ee638bade9967011beca56bbd803173689f615c2a9c3",
+    "zig": "0.14.1 x86_64-windows-gnu",
+    "zig_archive_sha256": "554f5378228923ffd558eac35e21af020c73789d87afeabf4bfd16f2e6feed2c",
+    "model_sha256": "6fa0c02a9c302be6f977521d399b4de3a46310a4f2621ee0063747881b673f67",
+    "original_llama_dll_sha256": "1050f5ddc24e12ce136cb02fda3eee3bb2aa589275b2559b397dea340a3469f6",
+    "patched_llama_dll_sha256": "81d3922fcd036169de0697d00bb81c7183642f91de4c01e186dc41c0d4fa689d",
+    "same_compiler_control_llama_dll_sha256": "6a02792088fe235fba355a46003e6a3b34523b4840038b7e99892bb6950ffa8c",
+    "shared_probe_host_sha256": "73f74d60e95c666f2a9e84820fa686d9db8078c2fdc97e9a8d20c28657934d4f",
+    "bundle_manifests": {
+      "control": "emb_23af42d90f586dd9ff79ba0296188d05",
+      "compiler-control": "emb_18f5b7c7916a05975806acaaa211cda7",
+      "patched": "emb_ffe860595348e94c8d34b57ca1d7d995"
+    }
+  },
+  "limitations": [
+    "Production source and bundle were not changed. This is pre-implementation feasibility evidence, not full product acceptance.",
+    "Official server uses MSVC internal C++ ABI, incompatible with the portable compiler DLL. Both controls use the identical C-ABI wrapper. A matched production runtime build remains necessary before claiming its resource gate has passed.",
+    "The isolated model factory excludes unrelated models only to reduce build time; this is not part of the proposed production fix.",
+    "Held workspace represents capacity, not complete retrieval/control logic. Full streaming, retrieval I/O, concurrent maintenance and migration remain unverified.",
+    "Six deterministic workloads demonstrate exact equality in these cases, not an exhaustive proof for every input. Single sequential runs are not a latency benchmark.",
+    "Runtime identity is regenerated; identical observed vectors alone do not authorize silent reuse under a changed space identity."
+  ],
+  "not_adopted": "Switching SQLite drivers or adjusting Go GC did not solve the actual model allocation defect; modernc.org/sqlite remains the design choice.",
+  "runs": [
+    {
+      "name": "recovery-input-boundary",
+      "exit_code": 0,
+      "elapsed_s": 11.062000000001717,
+      "peak_tree_rss_bytes": 699383808,
+      "peak_tree_rss_mib": 666.984375,
+      "peak_processes": [
+        {
+          "pid": 21208,
+          "ppid": 26516,
+          "name": "recovery.exe",
+          "rss": 20324352,
+          "peak_rss": 20324352,
+          "private": 29003776,
+          "created": 1789535947.7846713
+        },
+        {
+          "pid": 32096,
+          "ppid": 21208,
+          "name": "connector.exe",
+          "rss": 9289728,
+          "peak_rss": 9289728,
+          "private": 14082048,
+          "created": 1789535948.037224
+        },
+        {
+          "pid": 29572,
+          "ppid": 21208,
+          "name": "llama-server.exe",
+          "rss": 669769728,
+          "peak_rss": 672788480,
+          "private": 605949952,
+          "created": 1789535949.8657675
+        }
+      ],
+      "stages": [
+        {
+          "at": "2026-09-16T13:19:07.9850004+08:00",
+          "connections": 3,
+          "stage": "sqlite_ready"
+        },
+        {
+          "at": "2026-09-16T13:19:08.1598433+08:00",
+          "pid": 32096,
+          "stage": "connector_ready"
+        },
+        {
+          "at": "2026-09-16T13:19:09.8643613+08:00",
+          "stage": "short_query_start"
+        },
+        {
+          "at": "2026-09-16T13:19:11.7799697+08:00",
+          "count": 512,
+          "elapsed_ms": 1915.6084,
+          "heap_alloc": 2523136,
+          "heap_sys": 8060928,
+          "stage": "short_query_end",
+          "sys": 11030528,
+          "vector_sha256": "ea16c065ad9c493446642f7436eaad957b7153a93289a2d8b7325b1516d6913b"
+        },
+        {
+          "at": "2026-09-16T13:19:12.0306088+08:00",
+          "stage": "long_query_start"
+        },
+        {
+          "at": "2026-09-16T13:19:14.4659069+08:00",
+          "count": 512,
+          "elapsed_ms": 2435.2981,
+          "heap_alloc": 2627736,
+          "heap_sys": 8060928,
+          "stage": "long_query_end",
+          "sys": 11030528,
+          "vector_sha256": "8a17589cd1c373ad627f9703ad770a91b033b8eb07768bf1d2b027cfa2dabd01"
+        },
+        {
+          "at": "2026-09-16T13:19:14.716379+08:00",
+          "stage": "document_start"
+        },
+        {
+          "at": "2026-09-16T13:19:14.9050767+08:00",
+          "count": 1,
+          "elapsed_ms": 188.6977,
+          "heap_alloc": 2709296,
+          "heap_sys": 8060928,
+          "stage": "document_end",
+          "sys": 11030528,
+          "vector_sha256": "611f43d0c7157886c08c5f2e281a26aee9a53ec785055606dde30b61bfa61568"
+        },
+        {
+          "at": "2026-09-16T13:19:15.1558493+08:00",
+          "stage": "chinese_document_start"
+        },
+        {
+          "at": "2026-09-16T13:19:15.3960852+08:00",
+          "count": 1,
+          "elapsed_ms": 240.23590000000002,
+          "heap_alloc": 2790800,
+          "heap_sys": 8060928,
+          "stage": "chinese_document_end",
+          "sys": 11030528,
+          "vector_sha256": "2bbedcb5681d581f3990b2614d19de32879634f5e31581cc9a92af00e7540228"
+        },
+        {
+          "at": "2026-09-16T13:19:15.6465338+08:00",
+          "stage": "batch_documents_start"
+        },
+        {
+          "at": "2026-09-16T13:19:15.9109868+08:00",
+          "count": 3,
+          "elapsed_ms": 264.453,
+          "heap_alloc": 2957312,
+          "heap_sys": 8060928,
+          "stage": "batch_documents_end",
+          "sys": 11030528,
+          "vector_sha256": "6aad90c1eb5fe31e15b2e90b08a1b18ba109e112b0d9a437da0e580935550264"
+        },
+        {
+          "at": "2026-09-16T13:19:16.1614667+08:00",
+          "stage": "batch32_start"
+        },
+        {
+          "at": "2026-09-16T13:19:18.0051739+08:00",
+          "count": 32,
+          "elapsed_ms": 1843.6373,
+          "heap_alloc": 1562344,
+          "heap_sys": 8093696,
+          "stage": "batch32_end",
+          "sys": 11882496,
+          "vector_sha256": "e6a08120152a6677ce645a584b655211a0a91a6513d37ef74ed49c845717e98a"
+        },
+        {
+          "at": "2026-09-16T13:19:18.2562585+08:00",
+          "stage": "complete"
+        }
+      ]
+    },
+    {
+      "name": "control-workspace-checked",
+      "exit_code": 0,
+      "elapsed_s": 10.60899999999674,
+      "peak_tree_rss_bytes": 704016384,
+      "peak_tree_rss_mib": 671.40234375,
+      "peak_processes": [
+        {
+          "pid": 23808,
+          "ppid": 31212,
+          "name": "recovery.exe",
+          "rss": 31117312,
+          "peak_rss": 31117312,
+          "private": 49725440,
+          "created": 1789537901.704118
+        },
+        {
+          "pid": 31304,
+          "ppid": 23808,
+          "name": "connector.exe",
+          "rss": 9363456,
+          "peak_rss": 9363456,
+          "private": 14057472,
+          "created": 1789537902.0020175
+        },
+        {
+          "pid": 25956,
+          "ppid": 23808,
+          "name": "llama-server.exe",
+          "rss": 663535616,
+          "peak_rss": 665112576,
+          "private": 602820608,
+          "created": 1789537903.6747012
+        }
+      ],
+      "stages": [
+        {
+          "at": "2026-09-16T13:51:41.8916554+08:00",
+          "connections": 3,
+          "stage": "sqlite_ready"
+        },
+        {
+          "at": "2026-09-16T13:51:41.9921346+08:00",
+          "elapsed_ms": 52.420899999999996,
+          "passed": true,
+          "read_bytes": 5242880,
+          "stage": "database_checks"
+        },
+        {
+          "at": "2026-09-16T13:51:41.9980989+08:00",
+          "bytes": 5242880,
+          "stage": "workspace_ready"
+        },
+        {
+          "at": "2026-09-16T13:51:42.051509+08:00",
+          "pid": 31304,
+          "stage": "connector_ready"
+        },
+        {
+          "at": "2026-09-16T13:51:43.5925282+08:00",
+          "stage": "short_query_start"
+        },
+        {
+          "at": "2026-09-16T13:51:44.9736658+08:00",
+          "count": 512,
+          "elapsed_ms": 1381.1376,
+          "heap_alloc": 7159192,
+          "heap_sys": 16515072,
+          "stage": "short_query_end",
+          "sys": 19812352,
+          "vector_sha256": "ea16c065ad9c493446642f7436eaad957b7153a93289a2d8b7325b1516d6913b"
+        },
+        {
+          "at": "2026-09-16T13:51:45.224313+08:00",
+          "stage": "long_query_start"
+        },
+        {
+          "at": "2026-09-16T13:51:47.7468049+08:00",
+          "count": 512,
+          "elapsed_ms": 2522.4919,
+          "heap_alloc": 7295744,
+          "heap_sys": 16515072,
+          "stage": "long_query_end",
+          "sys": 19812352,
+          "vector_sha256": "8a17589cd1c373ad627f9703ad770a91b033b8eb07768bf1d2b027cfa2dabd01"
+        },
+        {
+          "at": "2026-09-16T13:51:47.9979675+08:00",
+          "stage": "document_start"
+        },
+        {
+          "at": "2026-09-16T13:51:48.211465+08:00",
+          "count": 1,
+          "elapsed_ms": 213.4975,
+          "heap_alloc": 7377352,
+          "heap_sys": 16515072,
+          "stage": "document_end",
+          "sys": 19812352,
+          "vector_sha256": "611f43d0c7157886c08c5f2e281a26aee9a53ec785055606dde30b61bfa61568"
+        },
+        {
+          "at": "2026-09-16T13:51:48.4620458+08:00",
+          "stage": "chinese_document_start"
+        },
+        {
+          "at": "2026-09-16T13:51:48.7612713+08:00",
+          "count": 1,
+          "elapsed_ms": 299.22549999999995,
+          "heap_alloc": 7459128,
+          "heap_sys": 16515072,
+          "stage": "chinese_document_end",
+          "sys": 19812352,
+          "vector_sha256": "2bbedcb5681d581f3990b2614d19de32879634f5e31581cc9a92af00e7540228"
+        },
+        {
+          "at": "2026-09-16T13:51:49.0119131+08:00",
+          "stage": "batch_documents_start"
+        },
+        {
+          "at": "2026-09-16T13:51:49.2976962+08:00",
+          "count": 3,
+          "elapsed_ms": 285.7831,
+          "heap_alloc": 7625832,
+          "heap_sys": 16515072,
+          "stage": "batch_documents_end",
+          "sys": 19812352,
+          "vector_sha256": "6aad90c1eb5fe31e15b2e90b08a1b18ba109e112b0d9a437da0e580935550264"
+        },
+        {
+          "at": "2026-09-16T13:51:49.548527+08:00",
+          "stage": "batch32_start"
+        },
+        {
+          "at": "2026-09-16T13:51:51.4485198+08:00",
+          "count": 32,
+          "elapsed_ms": 1899.9928000000002,
+          "heap_alloc": 8992544,
+          "heap_sys": 16515072,
+          "stage": "batch32_end",
+          "sys": 19812352,
+          "vector_sha256": "e6a08120152a6677ce645a584b655211a0a91a6513d37ef74ed49c845717e98a"
+        },
+        {
+          "at": "2026-09-16T13:51:51.6997399+08:00",
+          "stage": "complete"
+        }
+      ]
+    },
+    {
+      "name": "compiler-control-workspace-checked",
+      "exit_code": 0,
+      "elapsed_s": 11.14100000000326,
+      "peak_tree_rss_bytes": 697073664,
+      "peak_tree_rss_mib": 664.78125,
+      "peak_processes": [
+        {
+          "pid": 31000,
+          "ppid": 24464,
+          "name": "recovery.exe",
+          "rss": 30904320,
+          "peak_rss": 30904320,
+          "private": 49754112,
+          "created": 1789538081.813992
+        },
+        {
+          "pid": 32272,
+          "ppid": 31000,
+          "name": "connector.exe",
+          "rss": 9293824,
+          "peak_rss": 9293824,
+          "private": 14094336,
+          "created": 1789538082.0050747
+        },
+        {
+          "pid": 26924,
+          "ppid": 31000,
+          "name": "llama-server.exe",
+          "rss": 656875520,
+          "peak_rss": 658083840,
+          "private": 596287488,
+          "created": 1789538083.1732423
+        }
+      ],
+      "stages": [
+        {
+          "at": "2026-09-16T13:54:41.9383791+08:00",
+          "connections": 3,
+          "stage": "sqlite_ready"
+        },
+        {
+          "at": "2026-09-16T13:54:41.9983841+08:00",
+          "elapsed_ms": 34.4492,
+          "passed": true,
+          "read_bytes": 5242880,
+          "stage": "database_checks"
+        },
+        {
+          "at": "2026-09-16T13:54:42.0021014+08:00",
+          "bytes": 5242880,
+          "stage": "workspace_ready"
+        },
+        {
+          "at": "2026-09-16T13:54:42.033189+08:00",
+          "pid": 32272,
+          "stage": "connector_ready"
+        },
+        {
+          "at": "2026-09-16T13:54:43.1709169+08:00",
+          "stage": "short_query_start"
+        },
+        {
+          "at": "2026-09-16T13:54:44.2023579+08:00",
+          "count": 512,
+          "elapsed_ms": 1031.441,
+          "heap_alloc": 7145168,
+          "heap_sys": 16515072,
+          "stage": "short_query_end",
+          "sys": 19812352,
+          "vector_sha256": "ea16c065ad9c493446642f7436eaad957b7153a93289a2d8b7325b1516d6913b"
+        },
+        {
+          "at": "2026-09-16T13:54:44.452958+08:00",
+          "stage": "long_query_start"
+        },
+        {
+          "at": "2026-09-16T13:54:47.5854492+08:00",
+          "count": 512,
+          "elapsed_ms": 3132.4912,
+          "heap_alloc": 7281768,
+          "heap_sys": 16515072,
+          "stage": "long_query_end",
+          "sys": 19812352,
+          "vector_sha256": "8a17589cd1c373ad627f9703ad770a91b033b8eb07768bf1d2b027cfa2dabd01"
+        },
+        {
+          "at": "2026-09-16T13:54:47.8365854+08:00",
+          "stage": "document_start"
+        },
+        {
+          "at": "2026-09-16T13:54:48.1745884+08:00",
+          "count": 1,
+          "elapsed_ms": 338.003,
+          "heap_alloc": 7363248,
+          "heap_sys": 16515072,
+          "stage": "document_end",
+          "sys": 19812352,
+          "vector_sha256": "611f43d0c7157886c08c5f2e281a26aee9a53ec785055606dde30b61bfa61568"
+        },
+        {
+          "at": "2026-09-16T13:54:48.4256709+08:00",
+          "stage": "chinese_document_start"
+        },
+        {
+          "at": "2026-09-16T13:54:48.7520173+08:00",
+          "count": 1,
+          "elapsed_ms": 326.34639999999996,
+          "heap_alloc": 7444656,
+          "heap_sys": 16515072,
+          "stage": "chinese_document_end",
+          "sys": 19812352,
+          "vector_sha256": "2bbedcb5681d581f3990b2614d19de32879634f5e31581cc9a92af00e7540228"
+        },
+        {
+          "at": "2026-09-16T13:54:49.0025485+08:00",
+          "stage": "batch_documents_start"
+        },
+        {
+          "at": "2026-09-16T13:54:49.282583+08:00",
+          "count": 3,
+          "elapsed_ms": 280.03450000000004,
+          "heap_alloc": 7611120,
+          "heap_sys": 16515072,
+          "stage": "batch_documents_end",
+          "sys": 20074496,
+          "vector_sha256": "6aad90c1eb5fe31e15b2e90b08a1b18ba109e112b0d9a437da0e580935550264"
+        },
+        {
+          "at": "2026-09-16T13:54:49.5334068+08:00",
+          "stage": "batch32_start"
+        },
+        {
+          "at": "2026-09-16T13:54:52.0895416+08:00",
+          "count": 32,
+          "elapsed_ms": 2556.1348000000003,
+          "heap_alloc": 8978136,
+          "heap_sys": 16515072,
+          "stage": "batch32_end",
+          "sys": 20074496,
+          "vector_sha256": "e6a08120152a6677ce645a584b655211a0a91a6513d37ef74ed49c845717e98a"
+        },
+        {
+          "at": "2026-09-16T13:54:52.3399766+08:00",
+          "stage": "complete"
+        }
+      ]
+    },
+    {
+      "name": "patched-workspace-checked",
+      "exit_code": 0,
+      "elapsed_s": 9.875,
+      "peak_tree_rss_bytes": 214929408,
+      "peak_tree_rss_mib": 204.97265625,
+      "peak_processes": [
+        {
+          "pid": 27728,
+          "ppid": 27996,
+          "name": "recovery.exe",
+          "rss": 31248384,
+          "peak_rss": 31248384,
+          "private": 50069504,
+          "created": 1789537939.2685595
+        },
+        {
+          "pid": 27932,
+          "ppid": 27728,
+          "name": "connector.exe",
+          "rss": 9338880,
+          "peak_rss": 9338880,
+          "private": 14028800,
+          "created": 1789537939.4481106
+        },
+        {
+          "pid": 31304,
+          "ppid": 27728,
+          "name": "llama-server.exe",
+          "rss": 174342144,
+          "peak_rss": 175554560,
+          "private": 113004544,
+          "created": 1789537940.7726924
+        }
+      ],
+      "stages": [
+        {
+          "at": "2026-09-16T13:52:19.3805554+08:00",
+          "connections": 3,
+          "stage": "sqlite_ready"
+        },
+        {
+          "at": "2026-09-16T13:52:19.4404838+08:00",
+          "elapsed_ms": 34.863,
+          "passed": true,
+          "read_bytes": 5242880,
+          "stage": "database_checks"
+        },
+        {
+          "at": "2026-09-16T13:52:19.4456759+08:00",
+          "bytes": 5242880,
+          "stage": "workspace_ready"
+        },
+        {
+          "at": "2026-09-16T13:52:19.4724207+08:00",
+          "pid": 27932,
+          "stage": "connector_ready"
+        },
+        {
+          "at": "2026-09-16T13:52:20.6882248+08:00",
+          "stage": "short_query_start"
+        },
+        {
+          "at": "2026-09-16T13:52:21.810761+08:00",
+          "count": 512,
+          "elapsed_ms": 1122.5362,
+          "heap_alloc": 7142168,
+          "heap_sys": 16547840,
+          "stage": "short_query_end",
+          "sys": 19812352,
+          "vector_sha256": "ea16c065ad9c493446642f7436eaad957b7153a93289a2d8b7325b1516d6913b"
+        },
+        {
+          "at": "2026-09-16T13:52:22.0613081+08:00",
+          "stage": "long_query_start"
+        },
+        {
+          "at": "2026-09-16T13:52:24.4675775+08:00",
+          "count": 512,
+          "elapsed_ms": 2406.2694,
+          "heap_alloc": 7278720,
+          "heap_sys": 16547840,
+          "stage": "long_query_end",
+          "sys": 19812352,
+          "vector_sha256": "8a17589cd1c373ad627f9703ad770a91b033b8eb07768bf1d2b027cfa2dabd01"
+        },
+        {
+          "at": "2026-09-16T13:52:24.718165+08:00",
+          "stage": "document_start"
+        },
+        {
+          "at": "2026-09-16T13:52:24.9699155+08:00",
+          "count": 1,
+          "elapsed_ms": 251.7505,
+          "heap_alloc": 7360216,
+          "heap_sys": 16547840,
+          "stage": "document_end",
+          "sys": 20074496,
+          "vector_sha256": "611f43d0c7157886c08c5f2e281a26aee9a53ec785055606dde30b61bfa61568"
+        },
+        {
+          "at": "2026-09-16T13:52:25.2207133+08:00",
+          "stage": "chinese_document_start"
+        },
+        {
+          "at": "2026-09-16T13:52:25.4928827+08:00",
+          "count": 1,
+          "elapsed_ms": 272.1694,
+          "heap_alloc": 7441624,
+          "heap_sys": 16547840,
+          "stage": "chinese_document_end",
+          "sys": 20074496,
+          "vector_sha256": "2bbedcb5681d581f3990b2614d19de32879634f5e31581cc9a92af00e7540228"
+        },
+        {
+          "at": "2026-09-16T13:52:25.7434726+08:00",
+          "stage": "batch_documents_start"
+        },
+        {
+          "at": "2026-09-16T13:52:26.0104653+08:00",
+          "count": 3,
+          "elapsed_ms": 266.9927,
+          "heap_alloc": 7608040,
+          "heap_sys": 16547840,
+          "stage": "batch_documents_end",
+          "sys": 20074496,
+          "vector_sha256": "6aad90c1eb5fe31e15b2e90b08a1b18ba109e112b0d9a437da0e580935550264"
+        },
+        {
+          "at": "2026-09-16T13:52:26.2611766+08:00",
+          "stage": "batch32_start"
+        },
+        {
+          "at": "2026-09-16T13:52:28.306647+08:00",
+          "count": 32,
+          "elapsed_ms": 2045.4704000000002,
+          "heap_alloc": 8974976,
+          "heap_sys": 16547840,
+          "stage": "batch32_end",
+          "sys": 20074496,
+          "vector_sha256": "e6a08120152a6677ce645a584b655211a0a91a6513d37ef74ed49c845717e98a"
+        },
+        {
+          "at": "2026-09-16T13:52:28.5574016+08:00",
+          "stage": "complete"
+        }
+      ]
+    }
+  ],
+  "reproduction": {
+    "archive": "bounded-assembly-recovery-20260916.zip",
+    "sha256": "bed920021d87e1e1e3ed1ae7fa17ba7aec0d0f32d50f19ac923f2a7721acad65",
+    "entry": "README.md",
+    "files_sha256": {
+      "README.md": "bdc65cb48edecdfd7e9971743ba2f23170b6094560241072acc8314a7f33c4fe",
+      "main.go": "dc2a66cf3cbb9fa72160d00aaedad2c08a2f323e1ac29ff39cfabd7d5904706c",
+      "go.mod": "869f27205a5384bc2d1710271a7155fb71a370c747f15b285d56b210d82d7c28",
+      "go.sum": "d8ff072ae40307e96d9b661462e0abdc5d668d806c4546fb954afab5c2b93355",
+      "build_runtime.py": "a305ffa20ec650dd7a9aac10abdba597ab378a23721c0e55ad6ac159df8e1bb1",
+      "build_host.py": "bd5562ab2847c28153ae9549c1d6427e0d2727336239716e0fae2d2b9be4bd6a",
+      "build_control.py": "2482063a47f34ede9722a72106315571bb1f570e72451e2832d6939df17189a1",
+      "package_hosts.py": "f1c2957be2f4ed4a6661e039845e5b667715e72bc49c8bf8ac2242f8954f51fe",
+      "update_manifest.go": "32eab99abc03c190d9fb66d8d4cc6499b73b040f753799d37de484f6ba03c46b",
+      "embedding_host.cpp": "3f644ccf9ef71418ef715914d91a2731eef7d9cd385ba14ea43e51ed49e3dd37",
+      "recovery_monitor.py": "f587e4b2a0bb57667f244dc95fe120d1466b8900a874032fda57bdd342df5646",
+      "bundle-manifest-original.json": "fc2e4a1aa7d09fc64789618259a1bbedce2a18d00bd1abd81d13a16dfb78c0da",
+      "allocation.patch": "a8f67990a9fcd9fc3e290694207d52c5a14f1278a797d11ed36188323b963fc4",
+      "probe-model-factory.patch": "914385759c638fc6bc78c2c803072d3c145ff5d7e2a4fe41cd662b31a2a17b54",
+      "recovery-input-boundary.json": "8eaf7f8efa0f96db5960c6b9bd46911f98f63f12b585f66de0fbe169b17a10de",
+      "control-workspace-checked.json": "f6e703ce5ad998298311fdb98ebf89601f53f2fec2255aa365e3a539473f1f49",
+      "compiler-control-workspace-checked.json": "3d9b73cf0634a53e693098ee55ab79bd9ef94e5a0969184cff03b62a58626ec7",
+      "patched-workspace-checked.json": "f5c1ba8ba682683d44140aa27c08694b4529c565c0d6197b8c597b2b13d71352",
+      "embeddingprobe/acceptance_replace_other.go": "f12f8f6fb3833265ef2c5a1b12e132af8e1843ef84ed80bc2cc1b2acf07f2be6",
+      "embeddingprobe/acceptance_replace_windows.go": "215ed6f3b0f062a47e2fec7ed8f8a8e5a3bfce4a3804faca5ed66b54a5529fdf",
+      "embeddingprobe/builder.go": "f57bc7133acd55a394db72426ee6df1d4144291fa295a3b488b48b3381fe5c02",
+      "embeddingprobe/llama.go": "f656fb18dad46ebd7e98ec4777954879aabd407b07ae4a29cb1d3ef425e7030f",
+      "embeddingprobe/manifest.go": "373b9be22ac1841c3027f62870e8f77777cf801c652d232930b411307dceb4d0",
+      "embeddingprobe/process_other.go": "2766f4dc5f71dad91818476ba94d785e84058110197d7b0ac35a3cce6c4ade9b",
+      "embeddingprobe/process_windows.go": "108ffd6d7cdc5258e0e355899f1f2e5e10a43d6852f648009cadf798e292ebd9",
+      "embeddingprobe/provider.go": "de39c26650bd90ba6344a12c6aa4171081186c3c4143ac1c725e2e3db9fe40ad",
+      "connector/codex_connect.go": "3090b4394c97c91eb5a2e8add920fbf405f4c0c92405f0372c4f0b562382bbfd",
+      "connector/connector_operation.go": "0c7a277fb7090985b5c473e98ac170f9fcb24863f1176bbe0463529992474525",
+      "connector/host_connector.go": "3b120d2ab4f216786610a0b5ec940e43a4024cd18c96e5e82f7370c628476d85",
+      "connector/host_materials.go": "49c8387a84d84611164e1bbf8ff9797cb37167a1161e2b6ebb6a186dd5904d80",
+      "connector/information_control.go": "83c216c0fbef5c9e610a6ed7c13bd7c7feae2d0e0599f611b00d6d5af69c5aed",
+      "connector/main.go": "817e850b52ae8a9d190d452602c705ff4b23a64d53bcb9998f17728aa16ea200",
+      "connector/probe_main.go": "3c787cb674bce2504a77ece5fa94c4301305864a2c5ca14baf238e46b4b09922",
+      "connector/remote_access.go": "bc4c8e2a74df8465ec819309f6248ff0879651a784b2c4bb07cdc137f65f2901",
+      "connector/remote_decision.go": "f87cc3f2b04cc0f8a8d578e15baab7889d184763645de9aca7203e8538a1bed9",
+      "connector/remote_resume.go": "56f01b609deeb750f8acf57783831fcf28b821becc75b2cd3f61d12f6435a319",
+      "connector/service_install.go": "05f0d602bd8a076eee812a04f3a21ffc8774c38c3744511e44dda7e41a14493a",
+      "connector/service_local.go": "f3fb5423f337e77965ec18c003dce3e7a7e1a5f5c32983dcb4c3e81bfae4d252",
+      "connector/service_other.go": "06b9276d6173c60264d18e02c5feea8d5322ab5856a2b1d28c18cc96abd95311",
+      "connector/service_runtime.go": "cea98ae37e818f6c72d7b3f13a1c0fe74130adb50e7dab8faddd914f80b926ab",
+      "connector/service_space_other.go": "8d3d3e8cf519197ee19c29c0059783c7fb4000b38bf6ec80dca51e341111a4d0",
+      "connector/service_space_windows.go": "cbfb72a975e651d9661b1735ff531c5e447cd4c175da7e12c7d0191039c57c47",
+      "connector/service_windows.go": "eb9b2149bda63f8e777c481616bf3fa6f239b34fa02717f0b7792666e579804a",
+      "connector/shared_lock_unix.go": "62a9ee41af8f4d23ae1bb606d5c80234b1b834111c9dfe1f2dc6a165c6331e39",
+      "connector/shared_lock_windows.go": "2f8370be6cf5fe4ec7875db9dec3f7c870a8c2bac117b01efbd77756ad94ac61",
+      "connector/shared_mcp.go": "43c3f80933a24512ec8823836c5ae1f714552ea9357d188af3dd63e468945e1b",
+      "connector/shared_process_unix.go": "c25339314b83860c657d9af5294fc09729c78d986535ab1b817e72c8ce04361e",
+      "connector/shared_process_windows.go": "cb469c6f6d6fbcdaf6919c237e4313affe0c21c9bdd6ec5fe2816bc978489f7c"
+    }
+  }
+}

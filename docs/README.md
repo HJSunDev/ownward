@@ -5,6 +5,7 @@
 - [项目哲学](philosophy.md)：产品、架构与使用体验的长期取舍依据。
 - [要什么](delivery/goal.md)：开发智能体首先读取的凝练目标，已封版。
 - [产品需求](product/requirements.md)：产品判断的唯一权威。
+- [长期能力渐进支持需求](product/future-capabilities.md)：长期待做需求、用户价值及产品定位依据。
 - [架构总纲](architecture/overview.md)：整体结构、职责边界与长期不变量。
 - [开发规范](engineering/development-collaboration-guidelines.md)：代码设计、实现与验证约束。
 - [内核持续演进体系](engineering/kernel-evolution-system.md)：内核候选、验证、晋升与长期优化的统一方法。

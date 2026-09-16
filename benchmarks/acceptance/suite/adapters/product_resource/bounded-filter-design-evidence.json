@@ -1,0 +1,183 @@
+{
+  "schema": "ownward.bounded-filter-design-evidence/v1",
+  "measured_on": "2026-09-16",
+  "scope": "Offline mechanism check; not production acceptance",
+  "source": {
+    "corpus_kind": "Existing prepared real organization vectors",
+    "vectors": 4734,
+    "dimensions": 512,
+    "corpus_sha256": "a867fa935a1956fb1cbdabd029bdd6b547afa14d910ad943c48858dd3b76b6f6",
+    "cached_query_source_sha256": "06006d40e778fd8fa20bb4425af1c5b6ccdde222dd30c8010ecfd4b0add74306"
+  },
+  "method": {
+    "block_size_max": 1024,
+    "encoding": "Per-block uniform scalar 8-bit bins split into two 4-bit planes",
+    "bound": "q dot reconstructed_center + norm(q) * reconstruction_residual + 0.0001",
+    "scoring": "Float64 dot after float32 corpus normalization",
+    "top_k": 10,
+    "queries": "One cached query and twelve evenly spaced document-vector leave-one-out probes",
+    "selection": "Blocks ordered by center score; seed up to eleven coarse-score leaders when Top-10 is not full; then refine in decreasing coarse upper-bound order",
+    "threshold": "Only exact scores already evaluated in this execution; no oracle threshold",
+    "page_model": "Ideal packed 16 KiB pages: 64 codes or 8 raw vectors per page; count touched pages once",
+    "script_sha256": "61f943c122fa60cd2e381603841ee45420c4971e66ca77cad9ba02e57c665bd1"
+  },
+  "result": {
+    "query_count": 13,
+    "all_top10_equal": true,
+    "all_bounds_conservative_on_sample": true,
+    "mean_exact_vectors": 25.615384615384617,
+    "mean_ideal_page_ratio_vs_full_scan": 0.27325883575883575
+  },
+  "queries": [
+    {
+      "query_kind": "cached_real_query",
+      "excluded_row": null,
+      "top10_equal": true,
+      "fine_rows": 396,
+      "exact_rows": 21,
+      "coarse_16k_pages": 74,
+      "fine_16k_pages": 74,
+      "exact_16k_pages": 21,
+      "ideal_16k_page_ratio_vs_raw_scan": 0.28547297297297297
+    },
+    {
+      "query_kind": "document_leave_one_out",
+      "excluded_row": 0,
+      "top10_equal": true,
+      "fine_rows": 349,
+      "exact_rows": 35,
+      "coarse_16k_pages": 74,
+      "fine_16k_pages": 69,
+      "exact_16k_pages": 32,
+      "ideal_16k_page_ratio_vs_raw_scan": 0.2956081081081081
+    },
+    {
+      "query_kind": "document_leave_one_out",
+      "excluded_row": 430,
+      "top10_equal": true,
+      "fine_rows": 841,
+      "exact_rows": 25,
+      "coarse_16k_pages": 74,
+      "fine_16k_pages": 74,
+      "exact_16k_pages": 25,
+      "ideal_16k_page_ratio_vs_raw_scan": 0.2922297297297297
+    },
+    {
+      "query_kind": "document_leave_one_out",
+      "excluded_row": 860,
+      "top10_equal": true,
+      "fine_rows": 436,
+      "exact_rows": 19,
+      "coarse_16k_pages": 74,
+      "fine_16k_pages": 74,
+      "exact_16k_pages": 19,
+      "ideal_16k_page_ratio_vs_raw_scan": 0.28209459459459457
+    },
+    {
+      "query_kind": "document_leave_one_out",
+      "excluded_row": 1290,
+      "top10_equal": true,
+      "fine_rows": 792,
+      "exact_rows": 25,
+      "coarse_16k_pages": 74,
+      "fine_16k_pages": 74,
+      "exact_16k_pages": 25,
+      "ideal_16k_page_ratio_vs_raw_scan": 0.2922297297297297
+    },
+    {
+      "query_kind": "document_leave_one_out",
+      "excluded_row": 1721,
+      "top10_equal": true,
+      "fine_rows": 992,
+      "exact_rows": 34,
+      "coarse_16k_pages": 74,
+      "fine_16k_pages": 74,
+      "exact_16k_pages": 33,
+      "ideal_16k_page_ratio_vs_raw_scan": 0.30574324324324326
+    },
+    {
+      "query_kind": "document_leave_one_out",
+      "excluded_row": 2151,
+      "top10_equal": true,
+      "fine_rows": 314,
+      "exact_rows": 34,
+      "coarse_16k_pages": 74,
+      "fine_16k_pages": 72,
+      "exact_16k_pages": 31,
+      "ideal_16k_page_ratio_vs_raw_scan": 0.2989864864864865
+    },
+    {
+      "query_kind": "document_leave_one_out",
+      "excluded_row": 2581,
+      "top10_equal": true,
+      "fine_rows": 34,
+      "exact_rows": 20,
+      "coarse_16k_pages": 74,
+      "fine_16k_pages": 26,
+      "exact_16k_pages": 20,
+      "ideal_16k_page_ratio_vs_raw_scan": 0.20270270270270271
+    },
+    {
+      "query_kind": "document_leave_one_out",
+      "excluded_row": 3011,
+      "top10_equal": true,
+      "fine_rows": 788,
+      "exact_rows": 23,
+      "coarse_16k_pages": 74,
+      "fine_16k_pages": 74,
+      "exact_16k_pages": 22,
+      "ideal_16k_page_ratio_vs_raw_scan": 0.28716216216216217
+    },
+    {
+      "query_kind": "document_leave_one_out",
+      "excluded_row": 3442,
+      "top10_equal": true,
+      "fine_rows": 96,
+      "exact_rows": 20,
+      "coarse_16k_pages": 74,
+      "fine_16k_pages": 54,
+      "exact_16k_pages": 20,
+      "ideal_16k_page_ratio_vs_raw_scan": 0.25
+    },
+    {
+      "query_kind": "document_leave_one_out",
+      "excluded_row": 3872,
+      "top10_equal": true,
+      "fine_rows": 512,
+      "exact_rows": 32,
+      "coarse_16k_pages": 74,
+      "fine_16k_pages": 74,
+      "exact_16k_pages": 32,
+      "ideal_16k_page_ratio_vs_raw_scan": 0.30405405405405406
+    },
+    {
+      "query_kind": "document_leave_one_out",
+      "excluded_row": 4302,
+      "top10_equal": true,
+      "fine_rows": 54,
+      "exact_rows": 21,
+      "coarse_16k_pages": 74,
+      "fine_16k_pages": 38,
+      "exact_16k_pages": 21,
+      "ideal_16k_page_ratio_vs_raw_scan": 0.22466216216216217
+    },
+    {
+      "query_kind": "document_leave_one_out",
+      "excluded_row": 4733,
+      "top10_equal": true,
+      "fine_rows": 138,
+      "exact_rows": 24,
+      "coarse_16k_pages": 74,
+      "fine_16k_pages": 39,
+      "exact_16k_pages": 24,
+      "ideal_16k_page_ratio_vs_raw_scan": 0.23141891891891891
+    }
+  ],
+  "limitations": [
+    "one cached user query plus 12 document-vector leave-one-out probes; not a representative user query set",
+    "not SQLite IO or implementation benchmark",
+    "ideal page packing excludes SQLite metadata, internal pages and overflow; not physical IO measurement",
+    "double-precision experimental scoring is not proof of production float32 SIMD equality",
+    "small sample does not prove larger-scale pruning or no regressions"
+  ]
+}

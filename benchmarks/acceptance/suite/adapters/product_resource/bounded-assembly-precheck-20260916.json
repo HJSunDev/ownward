@@ -1,0 +1,256 @@
+{
+  "schema": "ownward.bounded-assembly-precheck/v1",
+  "date": "2026-09-16",
+  "result": "fail_memory_gate_stop_before_implementation",
+  "source_commit": "158f73de243d09168c514fa927fc89ec7548a4bc",
+  "source_files_sha256": {
+    "internal/embedding/llama.go": "f656fb18dad46ebd7e98ec4777954879aabd407b07ae4a29cb1d3ef425e7030f",
+    "internal/core/collaboration.go": "4dcd5c1be50bf64c96e0d884373157a7f84ce65fef728a06f0df7b2bec5fc255",
+    "cmd/ownward/shared_mcp.go": "f7fee1acf7afe0ae1d7125ea53026d492047766c0b7c89471cc17f5dce49387b",
+    "cmd/ownward/host_connector.go": "a9e8beb051a67470e35b31ef6667b70c7b1e7e215ef9a65a25dbb1ecfcaa9bcf",
+    "go.mod": "9eb79d5beea0003b97ab941b3f275c01136d21e92a28214222fbf5ec4f9d0b91",
+    "go.sum": "0165343335a58aab2dde2d668d7477fe5629815e596b5f961173d40acea5b7a0"
+  },
+  "environment": {
+    "os": "Windows-10-10.0.22631-SP0",
+    "machine": "AMD64",
+    "go": "go1.25.5 windows/amd64",
+    "GOMAXPROCS": 2,
+    "sampling_interval_seconds": 0.02
+  },
+  "scope": {
+    "database": "modernc.org/sqlite v1.39.1; three connections; 2 MiB writer and two 1 MiB reader cache limits; 40 x 64 KiB payloads; mmap disabled; WAL/FULL; 16 KiB pages",
+    "model": "Unchanged production embedding.OpenManaged adapter and EmbeddingGemma 300M Q8 bundle; 512 dimensions; ctx/batch/ubatch 512, parallel 1, two threads",
+    "model_sha256": "6fa0c02a9c302be6f977521d399b4de3a46310a4f2621ee0063747881b673f67",
+    "connector": "Copied production command sources; main redirects to runSharedMCPConnector; only service discovery/start replaced by supplied isolated endpoint; real host connector, MCP client, proxy and stdio initialization run",
+    "service": "Minimal in-process MCP server with isolated identity response, empty business-tool list and SQLite connections; NOT the proposed complete storage/retrieval implementation",
+    "measurement": "Simultaneously sampled sum of parent and all recursive child RSS, including connector, model and conhost; Python observer and compiler excluded",
+    "workload": "Short query, English document, Chinese document, three-document batch, then 32-document batch; each batch respects current maximum 32 inputs and 320 source bytes; no external AI, source truncation or quantization change"
+  },
+  "contract": {
+    "process_tree_rss_limit_mib": 270,
+    "independent_margin_mib": 8,
+    "planned_model_reserve_mib": 224
+  },
+  "runs": [
+    {
+      "artifact": "minimal-assembly-repeated-input.json",
+      "batch": "32 repeated 8-byte inputs",
+      "exit_code": 0,
+      "peak_process_tree_rss_bytes": 285544448,
+      "peak_process_tree_rss_mib": 272.31640625,
+      "peak_processes": [
+        {
+          "pid": 19112,
+          "name": "probe.exe",
+          "rss": 19660800,
+          "peak_rss": 19660800,
+          "private": 27901952
+        },
+        {
+          "pid": 27364,
+          "name": "conhost.exe",
+          "rss": 11005952,
+          "peak_rss": 11005952,
+          "private": 5591040
+        },
+        {
+          "pid": 27852,
+          "name": "connector.exe",
+          "rss": 9654272,
+          "peak_rss": 9654272,
+          "private": 14098432
+        },
+        {
+          "pid": 27304,
+          "name": "llama-server.exe",
+          "rss": 245223424,
+          "peak_rss": 246890496,
+          "private": 188715008
+        }
+      ],
+      "stages": [
+        {
+          "at": "2026-09-16T12:47:33.1697162+08:00",
+          "connections": 3,
+          "stage": "sqlite_ready"
+        },
+        {
+          "at": "2026-09-16T12:47:33.5445359+08:00",
+          "pid": 27852,
+          "stage": "connector_ready"
+        },
+        {
+          "at": "2026-09-16T12:47:35.3855895+08:00",
+          "stage": "short_query_start"
+        },
+        {
+          "at": "2026-09-16T12:47:37.087598+08:00",
+          "count": 512,
+          "elapsed_ms": 1702.0085000000001,
+          "stage": "short_query_end"
+        },
+        {
+          "at": "2026-09-16T12:47:37.3379582+08:00",
+          "stage": "document_start"
+        },
+        {
+          "at": "2026-09-16T12:47:37.5296438+08:00",
+          "count": 1,
+          "elapsed_ms": 191.68560000000002,
+          "stage": "document_end"
+        },
+        {
+          "at": "2026-09-16T12:47:37.7802443+08:00",
+          "stage": "chinese_document_start"
+        },
+        {
+          "at": "2026-09-16T12:47:37.994441+08:00",
+          "count": 1,
+          "elapsed_ms": 214.1967,
+          "stage": "chinese_document_end"
+        },
+        {
+          "at": "2026-09-16T12:47:38.2449896+08:00",
+          "stage": "batch_documents_start"
+        },
+        {
+          "at": "2026-09-16T12:47:38.4647477+08:00",
+          "count": 3,
+          "elapsed_ms": 219.7581,
+          "stage": "batch_documents_end"
+        },
+        {
+          "at": "2026-09-16T12:47:38.7153128+08:00",
+          "stage": "batch32_start"
+        },
+        {
+          "at": "2026-09-16T12:47:40.1148167+08:00",
+          "count": 32,
+          "elapsed_ms": 1399.5039,
+          "stage": "batch32_end"
+        },
+        {
+          "at": "2026-09-16T12:47:40.3651841+08:00",
+          "stage": "complete"
+        }
+      ]
+    },
+    {
+      "artifact": "minimal-assembly.json",
+      "batch": "32 distinct 7-byte inputs",
+      "exit_code": 0,
+      "peak_process_tree_rss_bytes": 284786688,
+      "peak_process_tree_rss_mib": 271.59375,
+      "peak_processes": [
+        {
+          "pid": 14924,
+          "name": "probe.exe",
+          "rss": 17387520,
+          "peak_rss": 17387520,
+          "private": 26501120
+        },
+        {
+          "pid": 26104,
+          "name": "conhost.exe",
+          "rss": 11005952,
+          "peak_rss": 11005952,
+          "private": 5599232
+        },
+        {
+          "pid": 28476,
+          "name": "connector.exe",
+          "rss": 9424896,
+          "peak_rss": 9424896,
+          "private": 14090240
+        },
+        {
+          "pid": 25692,
+          "name": "llama-server.exe",
+          "rss": 246968320,
+          "peak_rss": 247042048,
+          "private": 190640128
+        }
+      ],
+      "stages": [
+        {
+          "at": "2026-09-16T12:48:29.1236664+08:00",
+          "connections": 3,
+          "stage": "sqlite_ready"
+        },
+        {
+          "at": "2026-09-16T12:48:29.3169315+08:00",
+          "pid": 28476,
+          "stage": "connector_ready"
+        },
+        {
+          "at": "2026-09-16T12:48:31.2128839+08:00",
+          "stage": "short_query_start"
+        },
+        {
+          "at": "2026-09-16T12:48:32.8951342+08:00",
+          "count": 512,
+          "elapsed_ms": 1682.2503,
+          "stage": "short_query_end"
+        },
+        {
+          "at": "2026-09-16T12:48:33.1457229+08:00",
+          "stage": "document_start"
+        },
+        {
+          "at": "2026-09-16T12:48:33.340316+08:00",
+          "count": 1,
+          "elapsed_ms": 194.5931,
+          "stage": "document_end"
+        },
+        {
+          "at": "2026-09-16T12:48:33.5909862+08:00",
+          "stage": "chinese_document_start"
+        },
+        {
+          "at": "2026-09-16T12:48:33.8812304+08:00",
+          "count": 1,
+          "elapsed_ms": 290.24420000000003,
+          "stage": "chinese_document_end"
+        },
+        {
+          "at": "2026-09-16T12:48:34.1314143+08:00",
+          "stage": "batch_documents_start"
+        },
+        {
+          "at": "2026-09-16T12:48:34.4307159+08:00",
+          "count": 3,
+          "elapsed_ms": 299.3016,
+          "stage": "batch_documents_end"
+        },
+        {
+          "at": "2026-09-16T12:48:34.6816276+08:00",
+          "stage": "batch32_start"
+        },
+        {
+          "at": "2026-09-16T12:48:36.2731367+08:00",
+          "count": 32,
+          "elapsed_ms": 1591.5091000000002,
+          "stage": "batch32_end"
+        },
+        {
+          "at": "2026-09-16T12:48:36.5236506+08:00",
+          "stage": "complete"
+        }
+      ]
+    }
+  ],
+  "conclusion": "Both minimal assemblies exceeded 270 MiB before full retrieval, streaming or migration was implemented, without reserving the additional 8 MiB margin. Batch model peak exceeded the historical 224 MiB reserve. Current documented assembly budget is not validated and must be corrected before implementation. This does not establish that disk-backed bounded storage is infeasible.",
+  "not_executed_after_failed_gate": [
+    "New SQLite-backed exact vector filter and real page-read performance",
+    "End-to-end bounded large-input/output adapter",
+    "Full control transaction, WAL convergence and migration validation",
+    "Large-scale datasets and paid LLM benchmark runs"
+  ],
+  "reproduction": {
+    "archive": "bounded-assembly-precheck-20260916.zip",
+    "archive_sha256": "52adbb5b1b353f8e302faab9c6f4064da947faa4f683e52a56f82466c5e7955c",
+    "instructions": "Extract inside .tmp/bounded-feasibility-20260916 under the same source checkout; module replace points to repository root. Supply the existing matching model bundle at model_monitor.py bundle path or update only that local path. Run go build -o connector.exe ./connector; go build -o probe.exe .; python model_monitor.py assembly. Final source reproduces the distinct-input run. No binary/model/credentials are included."
+  },
+  "our_probe_processes_remaining": []
+}

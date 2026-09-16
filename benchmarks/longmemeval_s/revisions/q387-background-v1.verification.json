@@ -1,0 +1,158 @@
+{
+  "schema": "ownward.benchmark-revision-verification/v1",
+  "revision_id": "q387-background-v1",
+  "question_id": "b6019101",
+  "ordinal": 387,
+  "upstream_dataset_sha256": "d6f21ea9d60a0d56f34a05b609c79c88a451d2ae03597821ea3d5a9678c3a442",
+  "patch_sha256": "4998c3cc126f0edf12104ecc91fbc078b266cb2c87322c3661f33dfaa8ad3dce",
+  "original_question_sha256": "d3a5333d8cd0f24a213491144cc3f3ac9b522539b8c855770d1a82cb68e4dc6b",
+  "revised_question_sha256": "f8607cfc31989ea48f4f483ae134bf4f4c42b868fc3259cae1de009da58f2a8b",
+  "source_admission_diagnostics": [
+    {
+      "session_id": "ultrachat_146343",
+      "purpose": "source admission diagnostic only",
+      "adopt_output": false,
+      "accepted_by_service": false,
+      "error_type": "ServiceError",
+      "error": "Messages API HTTP 400",
+      "error_code": "data_inspection_failed",
+      "seconds": 6.4539999999979045
+    },
+    {
+      "session_id": "ultrachat_331484",
+      "purpose": "source admission diagnostic only",
+      "adopt_output": false,
+      "accepted_by_service": true,
+      "stop_reason": "end_turn",
+      "seconds": 4.4689999999973224
+    },
+    {
+      "session_id": "sharegpt_tSDixDM_0",
+      "purpose": "source admission diagnostic only",
+      "adopt_output": false,
+      "accepted_by_service": true,
+      "stop_reason": "end_turn",
+      "seconds": 3.202999999994063
+    }
+  ],
+  "changes": [
+    {
+      "session_id": "ultrachat_146343",
+      "session_index": 1,
+      "original_sha256": "19b9cb8055a97e012e5d66f3ee0447f279d65bbfc1827e8d6cd32086fd4029e4",
+      "revised_sha256": "82b74f8173a42df8c147a86a9dc3a5d7a2a8446783ebb7fe4555617541b0fcf2",
+      "turn_count": 14,
+      "original_chars": 10433,
+      "revised_chars": 10733,
+      "per_turn_lengths": [
+        [
+          113,
+          141
+        ],
+        [
+          1683,
+          1718
+        ],
+        [
+          147,
+          161
+        ],
+        [
+          1676,
+          1731
+        ],
+        [
+          160,
+          144
+        ],
+        [
+          1604,
+          1583
+        ],
+        [
+          145,
+          147
+        ],
+        [
+          1271,
+          1387
+        ],
+        [
+          194,
+          180
+        ],
+        [
+          513,
+          521
+        ],
+        [
+          103,
+          109
+        ],
+        [
+          1034,
+          1104
+        ],
+        [
+          152,
+          159
+        ],
+        [
+          1638,
+          1648
+        ]
+      ]
+    }
+  ],
+  "preserved": {
+    "question_category_answer_and_dates": true,
+    "all_49_session_positions": true,
+    "all_turn_roles_and_counts": true,
+    "all_other_48_sessions": true,
+    "both_full_answer_evidence_sessions": true,
+    "background_argument_structure": "Five constraint areas, five supporting actors, four effects, five actions, a preference statement, a counterproposal and qualification, four support choices.",
+    "difficulty_claim": "These checks preserve the intended task and its known difficulty structure; they do not establish statistical equivalence of original and revised benchmark scores."
+  },
+  "verification": {
+    "formal_product_preparation_complete": true,
+    "prepared_assets": 49,
+    "native_batches": 3,
+    "model": "qwen3.8-flash",
+    "effort": "medium",
+    "primary": "bailian",
+    "go_fallback_used": false,
+    "content_refusals": 0,
+    "http_failures": 0,
+    "reader_calls": 0,
+    "judge_calls": 0,
+    "wall_seconds": 257.85899999999674,
+    "usage": {
+      "semantic": {
+        "input_tokens": 78,
+        "cached_input_tokens": 0,
+        "cache_write_tokens": 1160062,
+        "output_tokens": 59926,
+        "reasoning_output_tokens": 0,
+        "calls": 8,
+        "attempts": 8,
+        "retries": 0,
+        "rate_limit_events": 0,
+        "interrupted_attempts": 0,
+        "format_corrections": 5,
+        "wall_seconds": 1105.719369999999
+      }
+    },
+    "all_snapshot_hashes_verified": true,
+    "original_dataset_hash_unchanged": true,
+    "existing_99_snapshot_receipt_hashes_unchanged": true
+  },
+  "evidence_root": "Configured LongMemEval-S evaluation environment root",
+  "evidence": {
+    "revision_directory": "revisions/longmemeval-s/q387-background-v1",
+    "structural_review": "revisions/longmemeval-s/q387-background-v1/structural-review.json",
+    "preparation_receipt": "prepared/longmemeval-s/revised-4998c3cc126f0edf12104ecc91fbc078b266cb2c87322c3661f33dfaa8ad3dce/preparation-runs/20260915-234504",
+    "prepared_receipt": "prepared/longmemeval-s/revised-4998c3cc126f0edf12104ecc91fbc078b266cb2c87322c3661f33dfaa8ad3dce/states/5f9e9db34d232e18c7b17d3379d3757d4b8944f1960989b11fa5c04fd8c10d0f/questions/b6019101/prepared.json",
+    "prepared_receipt_sha256": "f255bd61be0a5b3b54be2a9cae97c1fb1139bad7071fc943f7a4ba98e7711721"
+  },
+  "reporting": "The prepared revised question can be tested alongside the unchanged 99 snapshots only under an explicitly revised dataset profile. Original official preparation remains 99/100. No new answer score is asserted."
+}
