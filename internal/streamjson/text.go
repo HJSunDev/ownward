@@ -12,6 +12,21 @@ import (
 	"unicode/utf8"
 )
 
+// TextReference retains only a string's disk range, not its traversal metadata.
+// It shares the owning document's lifetime and the same streaming decoder.
+type TextReference struct {
+	document   *Document
+	start, end int64
+}
+
+func (n Node) TextReference() TextReference {
+	return TextReference{document: n.d, start: n.Start, end: n.End}
+}
+
+func (r TextReference) Open(ctx context.Context) (io.ReadCloser, error) {
+	return (Node{d: r.document, Kind: '"', Start: r.start, End: r.end}).Open(ctx)
+}
+
 // Open 逐字符解码JSON字符串，跨缓冲边界保持与标准JSON解码一致。
 func (n Node) Open(ctx context.Context) (io.ReadCloser, error) {
 	if n.Kind != '"' {

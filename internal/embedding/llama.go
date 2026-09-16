@@ -94,7 +94,11 @@ func (m *Managed) embed(ctx context.Context, inputs []string) ([][]float32, erro
 	if err != nil {
 		return nil, err
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://127.0.0.1:"+strconv.Itoa(m.port)+"/v1/embeddings", bytes.NewReader(encoded))
+	return m.embedRequest(ctx, bytes.NewReader(encoded), len(inputs))
+}
+
+func (m *Managed) embedRequest(ctx context.Context, body io.Reader, count int) ([][]float32, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://127.0.0.1:"+strconv.Itoa(m.port)+"/v1/embeddings", body)
 	if err != nil {
 		return nil, err
 	}
@@ -117,11 +121,11 @@ func (m *Managed) embed(ctx context.Context, inputs []string) ([][]float32, erro
 	if err := json.NewDecoder(io.LimitReader(response.Body, 64*1024*1024)).Decode(&payload); err != nil {
 		return nil, fmt.Errorf("解析本地向量结果: %w", err)
 	}
-	if len(payload.Data) != len(inputs) {
+	if len(payload.Data) != count {
 		return nil, errors.New("本地向量运行时返回数量不匹配")
 	}
 	sort.Slice(payload.Data, func(left, right int) bool { return payload.Data[left].Index < payload.Data[right].Index })
-	result := make([][]float32, len(inputs))
+	result := make([][]float32, count)
 	for position, item := range payload.Data {
 		if item.Index != position || len(item.Embedding) < m.bundle.Manifest.Space.SourceDimensions {
 			return nil, errors.New("本地向量运行时返回维度或顺序无效")

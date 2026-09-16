@@ -23,6 +23,7 @@ type StreamingAssets struct {
 	Budget    *resourcebudget.Budget
 	Scratch   string
 	DiskBytes int64
+	Embedder  contract.VectorCapability
 }
 
 var _ contract.StreamingProduct = (*StreamingAssets)(nil)
@@ -37,7 +38,7 @@ func (s *StreamingAssets) ExecuteStream(ctx context.Context, request contract.St
 	work, _ := resourcebudget.New(4*resourcebudget.MiB, 0)
 	ctx = resourcebudget.WithContext(ctx, work)
 	permission := contract.MaintainPermission
-	if request.Operation == "ownward_read" {
+	if request.Operation == "ownward_semantic_work" || request.Operation == "ownward_read" || request.Operation == "ownward_evidence_search" || request.Operation == "ownward_evidence_read" || request.Operation == "ownward_search" || request.Operation == "ownward_navigate" {
 		permission = contract.ReadPermission
 	}
 	ctx, err = s.Store.BeginAccess(ctx, contract.AuthenticationDigest(ctx), permission)
@@ -54,6 +55,21 @@ func (s *StreamingAssets) ExecuteStream(ctx context.Context, request contract.St
 		return nil, err
 	}
 	defer args.Close()
+	if request.Operation == "ownward_search" {
+		return s.searchTool(ctx, args.Root())
+	}
+	if request.Operation == "ownward_navigate" {
+		return s.navigateTool(ctx, args.Root())
+	}
+	if request.Operation == "ownward_evidence_search" || request.Operation == "ownward_evidence_read" {
+		return s.evidenceTool(ctx, request.Operation, args.Root())
+	}
+	if request.Operation == "ownward_semantic_work" {
+		return s.semanticWorkTool(ctx, args.Root())
+	}
+	if request.Operation == "ownward_semantic_submit" || request.Operation == "ownward_semantic_submit_batch" {
+		return s.semanticSubmitTool(ctx, request.Operation, args.Root())
+	}
 	if request.Operation == "ownward_read" {
 		id, err := fieldString(args.Root(), "id", 256)
 		if err != nil {
@@ -76,9 +92,15 @@ func (s *StreamingAssets) ExecuteStream(ctx context.Context, request contract.St
 	if op.Kind != request.Operation || op.Digest != hex.EncodeToString(h.Sum(nil)) {
 		return nil, errors.New("操作身份与真实参数不一致")
 	}
+	if s.Embedder != nil {
+		if _, err = s.Store.InitializeGeneration(ctx, s.Embedder.Space().ID); err != nil {
+			return nil, err
+		}
+	}
 	if receipt, found, err := s.Store.MutationReceipt(ctx, op); err != nil {
 		return nil, err
 	} else if found {
+		s.prepareStoredWork(ctx, receipt.Results)
 		return s.deliver(ctx, receipt.Results, false, request.Operation == "ownward_create_batch")
 	}
 	var inputs []streamjson.Node
@@ -131,7 +153,28 @@ func (s *StreamingAssets) ExecuteStream(ctx context.Context, request contract.St
 	if !found {
 		return nil, errors.New("提交后缺少操作回执")
 	}
+	s.prepareStoredWork(ctx, actual.Results)
 	return s.deliver(ctx, actual.Results, false, request.Operation == "ownward_create_batch")
+}
+
+func (s *StreamingAssets) prepareStoredWork(ctx context.Context, outcomes []contract.MutationOutcome) {
+	if s.Embedder == nil {
+		return
+	}
+	var ids []string
+	for _, v := range outcomes {
+		if v.Error == "" {
+			ids = append(ids, v.Asset.ID)
+		}
+	}
+	ctx = s.prepareShortEmbeddings(ctx, ids)
+	for _, outcome := range outcomes {
+		if outcome.Error == "" {
+			_, _ = s.prepareStreamingWork(ctx, outcome.Asset.ID)
+		}
+	}
+	// Failed organization remains in semantic_jobs. The raw save receipt is
+	// authoritative and must not be reported as a failed save after commit.
 }
 
 func fieldString(n streamjson.Node, key string, maximum int64) (string, error) {
@@ -342,7 +385,23 @@ func (s *StreamingAssets) deliver(ctx context.Context, outcomes []contract.Mutat
 					return err
 				}
 			} else {
-				if _, err = io.WriteString(w, `,"organization":{"status":"pending","provider":"external-semantic-capability","required_action":"ownward_semantic_work"}}}`); err != nil {
+				state := OrganizationState{Status: "pending", Provider: "external-semantic-capability", RequiredAction: semanticWorkRequiredAction}
+				if generation, _, e := s.Store.Generation(ctx); e == nil {
+					if v, e := s.Store.CurrentOrganization(ctx, generation, meta.ID); e == nil {
+						record, e := s.Store.RecordHeader(ctx, v)
+						if e != nil {
+							return e
+						}
+						state = organizationState(record)
+					}
+				}
+				if _, err = io.WriteString(w, `,"organization":`); err != nil {
+					return err
+				}
+				if err = writeJSON(w, state); err != nil {
+					return err
+				}
+				if _, err = io.WriteString(w, "}}"); err != nil {
 					return err
 				}
 			}

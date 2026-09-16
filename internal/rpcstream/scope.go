@@ -222,7 +222,11 @@ func (s *Scope) Project(ctx context.Context, r io.Reader) ([]byte, *Call, error)
 }
 
 func StorageTool(name string) bool {
-	return name == "ownward_create" || name == "ownward_create_batch" || name == "ownward_read" || name == "ownward_update"
+	switch name {
+	case "ownward_create", "ownward_create_batch", "ownward_read", "ownward_update", "ownward_search", "ownward_navigate", "ownward_evidence_search", "ownward_evidence_read", "ownward_semantic_work", "ownward_semantic_submit", "ownward_semantic_submit_batch":
+		return true
+	}
+	return false
 }
 
 func (c *Call) Context() context.Context { return c.ctx }

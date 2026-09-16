@@ -55,7 +55,7 @@
         {
           "name": "cmd-ownward-streaming_connector-go",
           "path": "cmd/ownward/streaming_connector.go",
-          "sha256": "7bdf8fa60dbeba6d8e203f3624ee1882ccded04ac909eb2fe2461d72c60f5525"
+          "sha256": "99ab173895b53d5a849209bb0ad727a10c00c83b3d099e6ff7322e888aaaf6da"
         },
         {
           "name": "internal-adapter-localowner-protect_unix",
@@ -80,7 +80,7 @@
         {
           "name": "internal-adapter-mcpserver-streaming-go",
           "path": "internal/adapter/mcpserver/streaming.go",
-          "sha256": "92aa1c7459c64513f565eefccff7c5afde40f7e20fb65e9e14318a100571c6bd"
+          "sha256": "753eac5d7848bf5faac9f999dbe0088259a3975a37950fffa0c70f4a9d7a1e06"
         },
         {
           "name": "internal-adapter-remote-transport",
@@ -135,7 +135,7 @@
         {
           "name": "internal-rpcstream-scope-go",
           "path": "internal/rpcstream/scope.go",
-          "sha256": "0483fe9b115e77f327ebdc7806d75ec5e2ef57119b95385bc6d568a0ee517c46"
+          "sha256": "d88fac493bb773931f25e61d33c7ff743be2ed848fef7f86494455d6e455db1d"
         },
         {
           "name": "mcp-adapter",
@@ -179,14 +179,14 @@
       "dependencies": [
         {
           "role": "kernel",
-          "identity": "790b0fe9d9b44ec9ee70ccd595ba3832a58d1004254a069a94804e5ccb454c01"
+          "identity": "f4a3a556b06dae1a8611bf92e794baf6025cccbca0551faaab01710755ff9983"
         },
         {
           "role": "product-rules",
           "identity": "7bb674243d6a487e16b3bf22fede7fecd8d538845a4c06b825b70788524e3c47"
         }
       ],
-      "identity": "e572668fc8622d0ac41cfc565006805541b1cee0f5ea07e23b0ac9dbd7d100b2"
+      "identity": "b6713b49ca574f11d480d47b25f07abb6c0d272bc33ff3233688208acf77fbd7"
     },
     {
       "role": "assembly",
@@ -284,15 +284,15 @@
       "dependencies": [
         {
           "role": "access",
-          "identity": "e572668fc8622d0ac41cfc565006805541b1cee0f5ea07e23b0ac9dbd7d100b2"
+          "identity": "b6713b49ca574f11d480d47b25f07abb6c0d272bc33ff3233688208acf77fbd7"
         },
         {
           "role": "authority-substrate",
-          "identity": "655ed236632737d5e469ab19995555441e6f005904c5c15e5a62276835ad51ce"
+          "identity": "e25f0ef4703615f11c3dd66cafe93495b868d8c69af4030cad1279fe2dcb5c1c"
         },
         {
           "role": "kernel",
-          "identity": "790b0fe9d9b44ec9ee70ccd595ba3832a58d1004254a069a94804e5ccb454c01"
+          "identity": "f4a3a556b06dae1a8611bf92e794baf6025cccbca0551faaab01710755ff9983"
         },
         {
           "role": "product-rules",
@@ -300,14 +300,14 @@
         },
         {
           "role": "semantic",
-          "identity": "a288d785b1135d48ecc9d37d7c184f111c07647fc4bfac7187ae9319b5f6ae35"
+          "identity": "7f3629d7e7133ab279cc1702f6dc8b375a619ccd1a2a4aab05febb26f24fa791"
         },
         {
           "role": "vector",
-          "identity": "3e9f753f3be7552cb419ecb9de4539358b4a808b2a2a19038d76cfe74cf6d9e2"
+          "identity": "2a9892e01570a830025d676c005b7cd10654d33b00fbc2da43217603d0548ed4"
         }
       ],
-      "identity": "28e562dcd28e0946a97d3f1ca2e8ac24c63012b6f5a022ced22b3652116d4687"
+      "identity": "202bce0bcd430c29527af2358edb87bdb3d56658cca14bbf151e0738ac35ce89"
     },
     {
       "role": "authority-substrate",
@@ -392,12 +392,17 @@
         {
           "name": "internal-boundedstore-access-go",
           "path": "internal/boundedstore/access.go",
-          "sha256": "92cc24e4fa3208b24edd65a690d728d43c6633948a6b6d0a07305c396dce14ef"
+          "sha256": "8b43fb2678b19742664a07a75d59dab7efaa12f5f8470c089d3dca0398ef3bda"
         },
         {
           "name": "internal-boundedstore-assets-go",
           "path": "internal/boundedstore/assets.go",
-          "sha256": "620656a86c95a4e1d14eb8ea4980eb0d3830c9e3b57c9363ba832add92a185a6"
+          "sha256": "66f9b3a4defd499dd522cd947b36d181944f92e47bd01da57ca8d8b5bb8bfce7"
+        },
+        {
+          "name": "internal-boundedstore-context_filter-go",
+          "path": "internal/boundedstore/context_filter.go",
+          "sha256": "7002696f74eba0797060f55f27c35a1d2cb8364fdb5bde134e86ebbd7da69a01"
         },
         {
           "name": "internal-boundedstore-control-go",
@@ -405,9 +410,49 @@
           "sha256": "c5ea0a957d90ef9e68da21e9e09c3dc6b757fda18bd52bc290b5aadbb35238e6"
         },
         {
+          "name": "internal-boundedstore-effective_contexts-go",
+          "path": "internal/boundedstore/effective_contexts.go",
+          "sha256": "df20611b5b676833cea8281da8c7756f7876fa9b0fd557a18c1da8e0c408b35d"
+        },
+        {
+          "name": "internal-boundedstore-evidence-go",
+          "path": "internal/boundedstore/evidence.go",
+          "sha256": "41ab4b59c9a886e52b7628c9f9ab7c7fa92aa2d86d45457399d8e09b823239e0"
+        },
+        {
+          "name": "internal-boundedstore-graph-go",
+          "path": "internal/boundedstore/graph.go",
+          "sha256": "3c9b6d2e547e8969570615442f0983af4fd44306c91d03162c6bf5e722d7de9a"
+        },
+        {
+          "name": "internal-boundedstore-graph_projection-go",
+          "path": "internal/boundedstore/graph_projection.go",
+          "sha256": "df4c96cdbcb33df9b252c58298971671c7083608c1367762c5ad149a9f0d090e"
+        },
+        {
+          "name": "internal-boundedstore-lexical-go",
+          "path": "internal/boundedstore/lexical.go",
+          "sha256": "ccdeed2e1d900373abef016059ae358bab5f5465d3a4505a5adcb96f3d3b8afe"
+        },
+        {
           "name": "internal-boundedstore-links-go",
           "path": "internal/boundedstore/links.go",
           "sha256": "83aa865677faa17e890226bd8f9e29c40cadebe76e8231bbf8a6bd0ff89f0ae0"
+        },
+        {
+          "name": "internal-boundedstore-name_source-go",
+          "path": "internal/boundedstore/name_source.go",
+          "sha256": "26f8bcf16970bbd0a5976da065baeab4cd42eb3bf7ac54743c31fa7c60e8d7bb"
+        },
+        {
+          "name": "internal-boundedstore-navigation-go",
+          "path": "internal/boundedstore/navigation.go",
+          "sha256": "ef684fd7e4a1e7978c2c741088d7bcfd1ed1493c4067d6cffcee53ca88ff56a4"
+        },
+        {
+          "name": "internal-boundedstore-organization-go",
+          "path": "internal/boundedstore/organization.go",
+          "sha256": "ce7091c9bce43249cc0f810b729c9b8ff7624ab33c4ebde5f594eb6cc57ae504"
         },
         {
           "name": "internal-boundedstore-payload-go",
@@ -415,9 +460,49 @@
           "sha256": "3134fd1637e2363b2bd55594ea3591f27756931735cd85b6ce5d42efab4efc6c"
         },
         {
+          "name": "internal-boundedstore-query-go",
+          "path": "internal/boundedstore/query.go",
+          "sha256": "347460716cdcbff9f7832df44876f4a396c32d6f87abf648320b41aa1e8ff437"
+        },
+        {
+          "name": "internal-boundedstore-range_reader-go",
+          "path": "internal/boundedstore/range_reader.go",
+          "sha256": "c8a235be7374c3501fb470bdae43c6ffea8e7aa3989e84161ba142e149aa1ba7"
+        },
+        {
+          "name": "internal-boundedstore-retrieval_schema-go",
+          "path": "internal/boundedstore/retrieval_schema.go",
+          "sha256": "1fa1bcaf6f3d138340e8108897f635f6b5d68bed3f0f8289614bd83788d32a70"
+        },
+        {
+          "name": "internal-boundedstore-retrieval_state-go",
+          "path": "internal/boundedstore/retrieval_state.go",
+          "sha256": "1a878e4523ea534bd837583f992cd0a8a781c6ee4e3776183be4481f4076d5b9"
+        },
+        {
+          "name": "internal-boundedstore-semantic_work-go",
+          "path": "internal/boundedstore/semantic_work.go",
+          "sha256": "99f04d3af7371581d59546807d8ce8b67b69ada764fd3f31644c1f9ee7027f62"
+        },
+        {
           "name": "internal-boundedstore-store-go",
           "path": "internal/boundedstore/store.go",
-          "sha256": "29297ef58f4f85dfdfdb438cf39b71729af44e95d16085ce57e12b9c20452566"
+          "sha256": "e6f8683cd3537ea4097136f1b51db45510f2a98e710ffacfdb5c60d6730e6f14"
+        },
+        {
+          "name": "internal-boundedstore-summary-go",
+          "path": "internal/boundedstore/summary.go",
+          "sha256": "4c8d4b9766bb4f649e7fab4d729013dc8c24928f97ed5f5ec686271e6b8fd4d0"
+        },
+        {
+          "name": "internal-boundedstore-text_scorer-go",
+          "path": "internal/boundedstore/text_scorer.go",
+          "sha256": "84237f404afc2b2e776cd95193be6871f757707756e8fab9f54bad53b1262c8c"
+        },
+        {
+          "name": "internal-boundedstore-vectors-go",
+          "path": "internal/boundedstore/vectors.go",
+          "sha256": "51860759eacef69215d58d285532e48a784bed28115d1708fb9ef2d6e1465a91"
         },
         {
           "name": "internal-boundedstore-workset-go",
@@ -505,6 +590,11 @@
           "sha256": "bcade663e0b39af518d3c3374c763518fb472b55bf0164d9696f586f3a7dbf35"
         },
         {
+          "name": "internal-resourcebudget-runtime-go",
+          "path": "internal/resourcebudget/runtime.go",
+          "sha256": "a457dd36120c97cd65e09db08fd88e46587955d17087f54742b1f9b6dddae469"
+        },
+        {
           "name": "internal-streamjson-document-go",
           "path": "internal/streamjson/document.go",
           "sha256": "d7b588a58cfad617d5f06eb1655a0f8c84782c53d3d78d71fa60e20a9a05345a"
@@ -512,7 +602,7 @@
         {
           "name": "internal-streamjson-selector-go",
           "path": "internal/streamjson/selector.go",
-          "sha256": "c8a13f7dbd8dc6c18ad0bc442921c2150b450e237d9d83ceb1bc69a2f5ec570c"
+          "sha256": "5b25ae7d1c20b3913cb57fb7389cea32d95d1bc121577ddabcb7c5f3acaccc97"
         },
         {
           "name": "internal-streamjson-sorted_strings-go",
@@ -532,7 +622,7 @@
         {
           "name": "internal-streamjson-text-go",
           "path": "internal/streamjson/text.go",
-          "sha256": "e0044ddc0e9cff99c70887d001f3e517c5c3f28285ff4c1b41e47696d011d1d7"
+          "sha256": "927eb719ee945b743f86d0d1529285ea684bdb90be7e7a87aa1d96abb7eecf32"
         },
         {
           "name": "internal-streamjson-validate-go",
@@ -567,7 +657,7 @@
         "control_schema": "ownward.control-state/v1"
       },
       "dependencies": [],
-      "identity": "655ed236632737d5e469ab19995555441e6f005904c5c15e5a62276835ad51ce"
+      "identity": "e25f0ef4703615f11c3dd66cafe93495b868d8c69af4030cad1279fe2dcb5c1c"
     },
     {
       "role": "kernel",
@@ -645,6 +735,11 @@
           "sha256": "42ad3e15a06d346afec0f2d4ebf7433ed00756a0f4bc24bd57243081c47de8b5"
         },
         {
+          "name": "internal-core-derived_lifecycle-go",
+          "path": "internal/core/derived_lifecycle.go",
+          "sha256": "d4613a32d9b669eabea197b9df63e9c8ee2ff27d9690be9d2d5fffc1f383d9bd"
+        },
+        {
           "name": "internal-core-forget",
           "path": "internal/core/forget.go",
           "sha256": "c11c0ce164f5cc27a29358b0081504d2770b3bd143690bb0de550e35991a917b"
@@ -672,7 +767,17 @@
         {
           "name": "internal-core-streaming-go",
           "path": "internal/core/streaming.go",
-          "sha256": "a466e15bbcc6ccdf97da1bced5f65f9952aa907575993509fbc4fc3d5ab515fe"
+          "sha256": "e63ae029dc304ed4fc9f2e693955438f4480dcbb9fa090a615753ad193d7acff"
+        },
+        {
+          "name": "internal-core-streaming_embedding_batch-go",
+          "path": "internal/core/streaming_embedding_batch.go",
+          "sha256": "2fc36936abf19beab262435aa07e7702f3deb71df931666c703cf7c7e7e69d75"
+        },
+        {
+          "name": "internal-core-streaming_evidence-go",
+          "path": "internal/core/streaming_evidence.go",
+          "sha256": "4f4013cf9ee620c9c107ef1a231fa4859fdb9da641c03d6a2f1cfa5762e39a45"
         },
         {
           "name": "internal-core-streaming_fields-go",
@@ -680,14 +785,69 @@
           "sha256": "749ea53121b23244e70ff05d91647faa27260e847a8c1035d9de5026a6f94a34"
         },
         {
+          "name": "internal-core-streaming_graph-go",
+          "path": "internal/core/streaming_graph.go",
+          "sha256": "f03b06b492ba6b81fccb37db053aaad633f2b4a0efe9dc7e966f742de947d779"
+        },
+        {
+          "name": "internal-core-streaming_query-go",
+          "path": "internal/core/streaming_query.go",
+          "sha256": "0523976cf70b0b4cffa70b6193127d9bba81334ba7933fbc153912957fd3be25"
+        },
+        {
           "name": "internal-core-streaming_read-go",
           "path": "internal/core/streaming_read.go",
-          "sha256": "4effc9a07a211dfa3c234174bdcd23f38f4d686d28ed62028d910cb92ebb9910"
+          "sha256": "f24cb2a0d0712da94a9f77034c90a43d678258b7bb94658e174e7f80067639b7"
+        },
+        {
+          "name": "internal-core-streaming_result-go",
+          "path": "internal/core/streaming_result.go",
+          "sha256": "242439b35ce8f146a64342701b8661355a3536a949f641567a7ad33a070df8e3"
+        },
+        {
+          "name": "internal-core-streaming_search-go",
+          "path": "internal/core/streaming_search.go",
+          "sha256": "87b2d6928d59f9309891331cb5732c4942d597108d6758384b1806f6dcdf344b"
+        },
+        {
+          "name": "internal-core-streaming_semantic_fields-go",
+          "path": "internal/core/streaming_semantic_fields.go",
+          "sha256": "c1c57c9389764c21bc8eb48164b567e1c3b1391f97306e0be4be5e5bcf8b6c0f"
+        },
+        {
+          "name": "internal-core-streaming_semantic_resolver-go",
+          "path": "internal/core/streaming_semantic_resolver.go",
+          "sha256": "880457b942aa18f8420ced1f95a65157a5e5dd7f0d4b2de4144432be09338052"
+        },
+        {
+          "name": "internal-core-streaming_semantic_work-go",
+          "path": "internal/core/streaming_semantic_work.go",
+          "sha256": "df241c8d6f57f9913577169833f13fee6a93da498cc5bb0825cf011b88d9a82b"
+        },
+        {
+          "name": "internal-core-streaming_submit-go",
+          "path": "internal/core/streaming_submit.go",
+          "sha256": "968b10f885fef233822de9c3855db8154a709282017c63bbd04466a77d5d8325"
+        },
+        {
+          "name": "internal-core-streaming_text-go",
+          "path": "internal/core/streaming_text.go",
+          "sha256": "34d6d8c59943e501898c3393e40f970b8f1f2f31a7bc3a91453af04dad7c404b"
+        },
+        {
+          "name": "internal-derived-evidence_stream-go",
+          "path": "internal/derived/evidence_stream.go",
+          "sha256": "aaa18ccf9c4f98dbea4846d32489a162a0b17755b145e657e70121c437ef3059"
         },
         {
           "name": "internal-derived-forget",
           "path": "internal/derived/forget.go",
           "sha256": "b06861e417c1dd2ece342d308a89d5077bd8cba8ea49a06ffa76302673a7635f"
+        },
+        {
+          "name": "internal-derived-lifecycle-go",
+          "path": "internal/derived/lifecycle.go",
+          "sha256": "47c1b82b2e58fdbf4a1e73c557afd5aaa018dbe9bbdba1144558a39e392dd62a"
         },
         {
           "name": "internal-derived-navigation-go",
@@ -705,6 +865,16 @@
           "sha256": "b7a277c44bbd2bf216fe63313e41527741ef51863663aff5594f9ab28c9916df"
         },
         {
+          "name": "internal-retrieval-passage_stream-go",
+          "path": "internal/retrieval/passage_stream.go",
+          "sha256": "9d534db7617a6648527d483066ec8fc91fd00bd303d87c2b40dfd73ad73c3e64"
+        },
+        {
+          "name": "internal-retrieval-stream-go",
+          "path": "internal/retrieval/stream.go",
+          "sha256": "1eee921ed01141089a4a3616999e81cfbbb63bec8cf43acdeab94316f3aa4745"
+        },
+        {
           "name": "lexical-retrieval",
           "path": "internal/retrieval/lexical.go",
           "sha256": "b5f7118798aada59f24eb54136e3c1effefd6aeedaab62d7c57240f65fd01469"
@@ -719,7 +889,7 @@
       "dependencies": [
         {
           "role": "authority-substrate",
-          "identity": "655ed236632737d5e469ab19995555441e6f005904c5c15e5a62276835ad51ce"
+          "identity": "e25f0ef4703615f11c3dd66cafe93495b868d8c69af4030cad1279fe2dcb5c1c"
         },
         {
           "role": "product-rules",
@@ -727,14 +897,14 @@
         },
         {
           "role": "semantic",
-          "identity": "a288d785b1135d48ecc9d37d7c184f111c07647fc4bfac7187ae9319b5f6ae35"
+          "identity": "7f3629d7e7133ab279cc1702f6dc8b375a619ccd1a2a4aab05febb26f24fa791"
         },
         {
           "role": "vector",
-          "identity": "3e9f753f3be7552cb419ecb9de4539358b4a808b2a2a19038d76cfe74cf6d9e2"
+          "identity": "2a9892e01570a830025d676c005b7cd10654d33b00fbc2da43217603d0548ed4"
         }
       ],
-      "identity": "790b0fe9d9b44ec9ee70ccd595ba3832a58d1004254a069a94804e5ccb454c01"
+      "identity": "f4a3a556b06dae1a8611bf92e794baf6025cccbca0551faaab01710755ff9983"
     },
     {
       "role": "product-rules",
@@ -784,14 +954,29 @@
           "sha256": "d775f165f9364cf307d8319f651909ab27bc967f4064dd70c814824ef5cb0461"
         },
         {
+          "name": "internal-semanticstream-normalize-go",
+          "path": "internal/semanticstream/normalize.go",
+          "sha256": "2949709ab3429ef47cf09c2a31e4f1b6fe00529ce5672cede16739c404945e79"
+        },
+        {
+          "name": "internal-semanticstream-organization-go",
+          "path": "internal/semanticstream/organization.go",
+          "sha256": "89dbdfaaddf42387b330123d3f1cd1c25d9cb3b03e287e647898796b07e014c7"
+        },
+        {
+          "name": "internal-semanticstream-value-go",
+          "path": "internal/semanticstream/value.go",
+          "sha256": "c5da08fe24e2152390689a13462bc24b14c9ebdf0457d7ad5719e7a4c300e85d"
+        },
+        {
           "name": "semantic-analysis",
           "path": "internal/semantics/provider.go",
-          "sha256": "49a07600f16ecee6940997293771496c9616a89999f90c7d650567eaa253dd7c"
+          "sha256": "635ad7f260bce805ffa7c74846bf10fae70aa8c685a2fba1a86ad2a07b5c7164"
         },
         {
           "name": "semantic-work",
           "path": "internal/semantics/work.go",
-          "sha256": "9304b007acc9ce8e893ac68366b6ff09c7e3e0c88ca857a43e11e6518a54cb6e"
+          "sha256": "f38fa986dccc98e114f217d7794455b0d0159f07dd0c58ff93e4c5f2c155fb05"
         }
       ],
       "config": {
@@ -800,7 +985,7 @@
         "writes_authority": false
       },
       "dependencies": [],
-      "identity": "a288d785b1135d48ecc9d37d7c184f111c07647fc4bfac7187ae9319b5f6ae35"
+      "identity": "7f3629d7e7133ab279cc1702f6dc8b375a619ccd1a2a4aab05febb26f24fa791"
     },
     {
       "role": "vector",
@@ -818,14 +1003,29 @@
           "sha256": "373b9be22ac1841c3027f62870e8f77777cf801c652d232930b411307dceb4d0"
         },
         {
+          "name": "internal-embedding-acceptance_replace_other-go",
+          "path": "internal/embedding/acceptance_replace_other.go",
+          "sha256": "f12f8f6fb3833265ef2c5a1b12e132af8e1843ef84ed80bc2cc1b2acf07f2be6"
+        },
+        {
+          "name": "internal-embedding-acceptance_replace_windows-go",
+          "path": "internal/embedding/acceptance_replace_windows.go",
+          "sha256": "215ed6f3b0f062a47e2fec7ed8f8a8e5a3bfce4a3804faca5ed66b54a5529fdf"
+        },
+        {
           "name": "internal-embedding-builder-go",
           "path": "internal/embedding/builder.go",
           "sha256": "4363ba17323830a879b4451bfe7b1b8f7de9fbf82de41ab3c8834a15d288edfd"
         },
         {
+          "name": "internal-embedding-query_stream-go",
+          "path": "internal/embedding/query_stream.go",
+          "sha256": "c09931f1b7a08185400c76cc64981e871b4d17b06f3c01d07a91e2be10880842"
+        },
+        {
           "name": "managed-runtime",
           "path": "internal/embedding/llama.go",
-          "sha256": "f656fb18dad46ebd7e98ec4777954879aabd407b07ae4a29cb1d3ef425e7030f"
+          "sha256": "261512ef71eeb1b0259ad5ae1878f7105b19809c37bc535dc64c09483328dac1"
         },
         {
           "name": "manifest.json",
@@ -985,10 +1185,10 @@
         "space": "emb_79f072bf21c0c0f5226fa4fe6f1946a5"
       },
       "dependencies": [],
-      "identity": "3e9f753f3be7552cb419ecb9de4539358b4a808b2a2a19038d76cfe74cf6d9e2"
+      "identity": "2a9892e01570a830025d676c005b7cd10654d33b00fbc2da43217603d0548ed4"
     }
   ],
-  "identity": "f43536c9af004820a8d8c8b46f5facd38e82fddf315654906f7d6e2d71d66ea7",
+  "identity": "b7039c153806f4bbf44352f4a425238002ae27ad4d0ab60d23dd83fca8dee19c",
   "audit": {
     "described_product_candidate": "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8",
     "migration_source_git": "dc2c7a09e67f06cfaacbe0a201c7ff27b20d6182"

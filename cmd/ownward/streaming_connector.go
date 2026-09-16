@@ -33,6 +33,7 @@ func configureStreamingConnector(transport *connectorTransport, result *mcp.Init
 	if _, ok := result.Capabilities.Experimental["ownward.bounded-storage"]; !ok {
 		return nil, nil
 	}
+	resourcebudget.LimitRuntime(12 * resourcebudget.MiB)
 	budget, err := resourcebudget.New(2*resourcebudget.MiB, 128*1024)
 	if err != nil {
 		return nil, err

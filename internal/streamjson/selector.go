@@ -11,6 +11,9 @@ import (
 	"github.com/HJSunDev/ownward/internal/contract"
 )
 
+var ErrSelectorAmbiguous = errors.New("说明原文不唯一，请提供相邻原文消歧")
+var ErrSelectorMismatch = errors.New("说明定位与当前正文失配，请同步修正定位")
+
 // ResolveSelector 对任意长正文和引用使用有界磁盘窗口；哈希只筛候选，命中仍逐字节核验。
 func ResolveSelector(ctx context.Context, dir string, content contract.ContentSource, prefix, exact, suffix contract.ContentSource) (start, end int64, err error) {
 	makeFile := func(source contract.ContentSource) (*resourcebudget.File, int64, error) {
@@ -57,7 +60,7 @@ func ResolveSelector(ctx context.Context, dir string, content contract.ContentSo
 	plen, elen, slen := pi.Size(), ei.Size(), si.Size()
 	size := plen + elen + slen
 	if elen == 0 || size > bodySize {
-		return 0, 0, errors.New("说明定位与当前正文失配，请同步修正定位")
+		return 0, 0, ErrSelectorMismatch
 	}
 	pattern := func() io.Reader {
 		return io.MultiReader(io.NewSectionReader(p, 0, plen), io.NewSectionReader(e, 0, elen), io.NewSectionReader(s, 0, slen))
@@ -122,13 +125,13 @@ func ResolveSelector(ctx context.Context, dir string, content contract.ContentSo
 		}
 		if equal {
 			if found >= 0 {
-				return 0, 0, errors.New("说明原文不唯一，请提供相邻原文消歧")
+				return 0, 0, ErrSelectorAmbiguous
 			}
 			found = offset + plen
 		}
 	}
 	if found < 0 {
-		return 0, 0, errors.New("说明定位与当前正文失配，请同步修正定位")
+		return 0, 0, ErrSelectorMismatch
 	}
 	start, err = countRunes(io.NewSectionReader(body, 0, found))
 	if err != nil {

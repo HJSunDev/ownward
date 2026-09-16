@@ -244,6 +244,12 @@ func normalizeAnalysis(source domain.Information, value Analysis) Analysis {
 	return value
 }
 
+// NormalizeAnalysisFields applies the existing finite semantic-field contract;
+// organization locators are normalized independently against their sources.
+func NormalizeAnalysisFields(source domain.Information, value Analysis) Analysis {
+	return normalizeAnalysis(source, value)
+}
+
 func normalizeCues(values []Cue, limit int) []Cue {
 	result := make([]Cue, 0, minInt(len(values), limit))
 	seen := make(map[string]struct{}, len(values))

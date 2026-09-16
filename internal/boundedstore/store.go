@@ -26,18 +26,21 @@ type Options struct {
 
 // Store 不读取旧日志；旧格式迁移与启用由交付阶段控制。
 type Store struct {
-	db           *sql.DB
-	writer       *sql.Conn
-	readers      chan *sql.Conn
-	writeMu      sync.Mutex
-	writeFailure error
-	mu           sync.RWMutex
-	closed       bool
-	budget       *resourcebudget.Budget
-	closeOnce    sync.Once
-	closeErr     error
-	lock         io.Closer
-	releaseCache func()
+	db             *sql.DB
+	writer         *sql.Conn
+	readers        chan *sql.Conn
+	writeMu        sync.Mutex
+	vectorMu       sync.Mutex
+	organizationMu sync.Mutex
+	writeFailure   error
+	mu             sync.RWMutex
+	closed         bool
+	budget         *resourcebudget.Budget
+	closeOnce      sync.Once
+	closeErr       error
+	lock           io.Closer
+	directory      string
+	releaseCache   func()
 }
 
 const schema = `
@@ -116,7 +119,7 @@ func Open(ctx context.Context, path string, options Options) (*Store, error) {
 	}
 	db.SetMaxOpenConns(3)
 	db.SetMaxIdleConns(3)
-	s := &Store{db: db, readers: make(chan *sql.Conn, 2), budget: options.Budget, lock: lock, releaseCache: releaseCache}
+	s := &Store{db: db, readers: make(chan *sql.Conn, 2), budget: options.Budget, lock: lock, releaseCache: releaseCache, directory: filepath.Dir(path)}
 	fail := func(err error) (*Store, error) { s.Close(); return nil, err }
 	s.writer, err = db.Conn(ctx)
 	if err != nil {
@@ -152,7 +155,7 @@ func Open(ctx context.Context, path string, options Options) (*Store, error) {
 	if err = configure(ctx, s.writer, 2048, false); err != nil {
 		return fail(err)
 	}
-	if _, err = s.writer.ExecContext(ctx, schema); err != nil {
+	if _, err = s.writer.ExecContext(ctx, schema+retrievalSchema); err != nil {
 		return fail(err)
 	}
 	var version int
@@ -182,7 +185,9 @@ func configure(ctx context.Context, c *sql.Conn, cacheKB int, readOnly bool) err
 		return err
 	}
 	if readOnly {
-		_, err = c.ExecContext(ctx, "PRAGMA query_only=ON")
+		// Query execution writes only connection-local temporary tables. Main
+		// database mutations remain exclusively behind Store.write.
+		_, err = c.ExecContext(ctx, "PRAGMA temp.cache_size=-128;")
 	} else {
 		_, err = c.ExecContext(ctx, "PRAGMA temp.cache_size=-128; CREATE TEMP TABLE IF NOT EXISTS work_keys(scope TEXT NOT NULL,digest BLOB NOT NULL,PRIMARY KEY(scope,digest)) WITHOUT ROWID;")
 	}

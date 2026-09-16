@@ -32,6 +32,11 @@ func (s *Store) Publish(ctx context.Context, receipt contract.MutationReceipt, v
 	if err := validOperation(receipt.Operation); err != nil {
 		return err
 	}
+	for _, v := range values {
+		if err := s.prepareLexical(ctx, v.Payload, v.Meta.ID); err != nil {
+			return err
+		}
+	}
 	return contract.Commit(ctx, func() error {
 		return s.write(ctx, func(tx *sql.Tx) error {
 			if err := checkAccess(ctx, tx); err != nil {
@@ -95,6 +100,9 @@ func (s *Store) Publish(ctx context.Context, receipt contract.MutationReceipt, v
 					if !errors.Is(err, sql.ErrNoRows) || m.Revision != 1 {
 						return errors.New("新建资产已存在或版本无效")
 					}
+					if _, err = tx.ExecContext(ctx, "UPDATE lexical_stats SET documents=documents+1 WHERE singleton=1"); err != nil {
+						return err
+					}
 				} else {
 					if err != nil {
 						return err
@@ -105,6 +113,12 @@ func (s *Store) Publish(ctx context.Context, receipt contract.MutationReceipt, v
 					if _, err = tx.ExecContext(ctx, "INSERT OR IGNORE INTO reclaim_jobs(payload,reason) VALUES(?,'superseded')", oldPayload); err != nil {
 						return err
 					}
+					if _, err = tx.ExecContext(ctx, "UPDATE lexical_stats SET terms=terms-(SELECT length FROM lexical_documents WHERE payload=?) WHERE singleton=1", oldPayload); err != nil {
+						return err
+					}
+				}
+				if _, err = tx.ExecContext(ctx, "UPDATE lexical_stats SET terms=terms+(SELECT length FROM lexical_documents WHERE payload=?) WHERE singleton=1", v.Payload.ID); err != nil {
+					return err
 				}
 				if _, err = tx.ExecContext(ctx, "INSERT INTO source_epochs(id,revision) SELECT id,1 FROM (SELECT ? AS id UNION SELECT target FROM explicit_links WHERE payload IN (?,?) AND qualifies=1) WHERE true ON CONFLICT(id) DO UPDATE SET revision=source_epochs.revision+1", m.ID, oldPayload, v.Payload.ID); err != nil {
 					return err
@@ -116,6 +130,9 @@ func (s *Store) Publish(ctx context.Context, receipt contract.MutationReceipt, v
 					return err
 				}
 				if _, err = tx.ExecContext(ctx, "INSERT INTO semantic_jobs VALUES(?,?,'asset_changed') ON CONFLICT(asset) DO UPDATE SET revision=excluded.revision,reason=excluded.reason", m.ID, m.Revision); err != nil {
+					return err
+				}
+				if _, err = tx.ExecContext(ctx, `INSERT INTO semantic_jobs SELECT a.id,a.revision,'dependency_changed' FROM dependencies d JOIN organizations o ON o.id=d.organization JOIN organization_current c ON c.organization=o.id JOIN assets a ON a.id=o.asset AND a.deleted=0 WHERE d.asset=? AND d.revision<>? ON CONFLICT(asset) DO UPDATE SET revision=excluded.revision,reason=excluded.reason`, m.ID, m.Revision); err != nil {
 					return err
 				}
 			}
@@ -212,7 +229,7 @@ func scanMeta(row scanner) (contract.AssetMeta, error) {
 	return m, err
 }
 func (s *Store) ReadAssetMeta(ctx context.Context, id string, revision uint64) (contract.AssetMeta, error) {
-	c, release, err := s.reader(ctx)
+	c, release, err := s.snapshotReader(ctx)
 	if err != nil {
 		return contract.AssetMeta{}, err
 	}
@@ -340,18 +357,12 @@ func (s *Store) openPart(ctx context.Context, id string, revision uint64, part i
 	if err != nil {
 		return nil, err
 	}
-	c, release, err := s.reader(ctx)
+	tx, release, err := s.snapshotReader(ctx)
 	if err != nil {
 		budgetDone()
 		return nil, err
 	}
-	tx, err := c.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
-	if err != nil {
-		release()
-		budgetDone()
-		return nil, err
-	}
-	finish := func() { tx.Rollback(); release(); budgetDone() }
+	finish := func() { release(); budgetDone() }
 	var payload string
 	err = tx.QueryRowContext(ctx, "SELECT payload FROM assets WHERE id=? AND deleted=0 AND (?=0 OR revision=?)", id, revision, revision).Scan(&payload)
 	if err != nil {
@@ -380,16 +391,11 @@ func (s *Store) ReadRanges(ctx context.Context, id string, revision uint64, rang
 		return err
 	}
 	defer budgetDone()
-	c, release, err := s.reader(ctx)
+	tx, release, err := s.snapshotReader(ctx)
 	if err != nil {
 		return err
 	}
 	defer release()
-	tx, err := c.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
 	var payload string
 	var length int64
 	if err = tx.QueryRowContext(ctx, "SELECT a.payload,p.content_bytes FROM assets a JOIN payloads p ON p.id=a.payload WHERE a.id=? AND a.deleted=0 AND (?=0 OR a.revision=?)", id, revision, revision).Scan(&payload, &length); err != nil {

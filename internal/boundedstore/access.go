@@ -132,20 +132,14 @@ func (s *Store) CheckAccess(ctx context.Context) error {
 
 // AuthorizeDelivery 将开始交付与控制／资产发布排序；完成后不持事务等待网络。
 func (s *Store) AuthorizeDelivery(ctx context.Context, sources map[string]uint64) error {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if s.closed {
-		return errors.New("存储已关闭")
+	// Readers precede writeMu, including retrieval checks and snapshot users.
+	c, done, err := s.reader(ctx)
+	if err != nil {
+		return err
 	}
+	defer done()
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
-	var c *sql.Conn
-	select {
-	case c = <-s.readers:
-		defer func() { s.readers <- c }()
-	case <-ctx.Done():
-		return ctx.Err()
-	}
 	if err := checkAccess(ctx, c); err != nil {
 		return err
 	}

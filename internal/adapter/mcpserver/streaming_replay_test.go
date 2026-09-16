@@ -26,7 +26,7 @@ type streamReplayFixture struct {
 	store   *boundedstore.Store
 }
 
-func newStreamReplayFixture(t *testing.T) *streamReplayFixture {
+func newStreamReplayFixture(t *testing.T, vectors ...contract.VectorCapability) *streamReplayFixture {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	t.Cleanup(cancel)
@@ -43,6 +43,9 @@ func newStreamReplayFixture(t *testing.T) *streamReplayFixture {
 		t.Fatal(err)
 	}
 	service := &core.StreamingAssets{Store: store, Budget: budget, Scratch: root, DiskBytes: 32 * resourcebudget.MiB}
+	if len(vectors) > 0 {
+		service.Embedder = vectors[0]
+	}
 	server := NewStreamingStorage(service, "round2", root, budget, 32*resourcebudget.MiB)
 	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		server.HTTPHandler().ServeHTTP(w, r.WithContext(contract.WithAuthenticationDigest(r.Context(), digest)))
@@ -67,7 +70,7 @@ func (f *streamReplayFixture) call(name, op string, args any) *mcp.CallToolResul
 func (f *streamReplayFixture) decode(out *mcp.CallToolResult, value any) {
 	f.t.Helper()
 	if out.IsError {
-		f.t.Fatalf("unexpected tool error: %+v", out.Content)
+		data,_:=json.Marshal(out.Content);f.t.Fatalf("unexpected tool error: %s",data)
 	}
 	raw, err := json.Marshal(out.StructuredContent)
 	if err != nil {

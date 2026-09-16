@@ -280,6 +280,18 @@ func NormalizeSubmissionReference(reference WorkReference, asset domain.Informat
 	return normalizeSubmission(reference.ID, asset, reference.Candidates, value, acceptedAt)
 }
 
+// NormalizeSubmissionFields validates the finite submission envelope. The
+// streaming caller separately validates all organization text and endpoints.
+func NormalizeSubmissionFields(reference WorkReference, asset domain.Information, value Submission, acceptedAt time.Time, refs []CandidateReference) (Submission, error) {
+	if err := reference.Validate(); err != nil {
+		return Submission{}, err
+	}
+	if asset.ID != reference.AssetID || asset.Revision != reference.Revision {
+		return Submission{}, errors.New("语义工作引用与权威资产不一致")
+	}
+	return normalizeSubmission(reference.ID, asset, refs, value, acceptedAt)
+}
+
 func normalizeSubmission(workID string, asset domain.Information, candidatesList []CandidateReference, value Submission, acceptedAt time.Time) (Submission, error) {
 	if value.Schema != SubmissionSchema || value.WorkID != workID || value.AssetID != asset.ID || value.Revision != asset.Revision {
 		return Submission{}, errors.New("语义结果与当前工作不一致")

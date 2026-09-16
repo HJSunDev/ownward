@@ -106,6 +106,9 @@ func (s *StreamingAssets) writeInformation(ctx context.Context, w io.Writer, m c
 }
 
 func (s *StreamingAssets) writeReadBasis(ctx context.Context, w io.Writer, m contract.AssetMeta, fingerprint string, runes int64) error {
+	return s.writeReadBasisRange(ctx, w, m, fingerprint, 0, runes)
+}
+func (s *StreamingAssets) writeReadBasisRange(ctx context.Context, w io.Writer, m contract.AssetMeta, fingerprint string, start, end int64) error {
 	if _, err := io.WriteString(w, `,"clarifications":[`); err != nil {
 		return err
 	}
@@ -210,7 +213,7 @@ func (s *StreamingAssets) writeReadBasis(ctx context.Context, w io.Writer, m con
 	if err = notes.WriteJSON(notesHash); err != nil {
 		return err
 	}
-	basis, _ := json.Marshal(informationBasis{contract.BasisSchema, contract.InformationSystem(ctx), m.ID, m.Revision, fingerprint, hex.EncodeToString(notesHash.Sum(nil)), 0, int(runes)})
+	basis, _ := json.Marshal(informationBasis{contract.BasisSchema, contract.InformationSystem(ctx), m.ID, m.Revision, fingerprint, hex.EncodeToString(notesHash.Sum(nil)), int(start), int(end)})
 	if _, err = io.WriteString(w, `],"basis":`); err != nil {
 		return err
 	}

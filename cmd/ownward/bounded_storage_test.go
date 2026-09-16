@@ -51,7 +51,11 @@ func TestBoundedStorageProcess(t *testing.T) {
 		model, err := embedding.OpenManaged(os.Getenv("OWNWARD_BOUND_BUNDLE"))
 		check(err)
 		defer model.Close()
-		server := mcpserver.NewStreamingStorage(&core.StreamingAssets{Store: store, Budget: budget, Scratch: dir, DiskBytes: 256 * resourcebudget.MiB}, "unit-one", dir, budget, 256*resourcebudget.MiB)
+		product := &core.StreamingAssets{Store: store, Budget: budget, Scratch: dir, DiskBytes: 256 * resourcebudget.MiB}
+		if os.Getenv("OWNWARD_BOUND_RETRIEVAL") == "1" {
+			product.Embedder = model
+		}
+		server := mcpserver.NewStreamingStorage(product, "unit-one", dir, budget, 256*resourcebudget.MiB)
 		mux := http.NewServeMux()
 		mux.Handle("/capabilities", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			server.HTTPHandler().ServeHTTP(w, r.WithContext(informationcontrol.Authenticate(r.Context(), r.Header.Get("X-Ownward-Principal"))))
@@ -102,7 +106,7 @@ func TestBoundedStorageProcess(t *testing.T) {
 		copy := *tool
 		proxy.AddTool(&copy, func(ctx context.Context, r *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			var args json.RawMessage = r.Params.Arguments
-			if r.Params.Name != "ownward_read" {
+			if r.Params.Name == "ownward_create" || r.Params.Name == "ownward_create_batch" || r.Params.Name == "ownward_update" {
 				if _, err := requestMutationDigest(ctx, r.Params.Name, args); err != nil {
 					return nil, err
 				}

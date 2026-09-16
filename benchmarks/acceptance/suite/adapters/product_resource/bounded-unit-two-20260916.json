@@ -1,0 +1,263 @@
+{
+  "schema": "ownward.bounded-storage-unit-two/v1",
+  "date": "2026-09-16",
+  "status": "unit_two_closed",
+  "scope": "Persistent lexical/vector/graph retrieval, evidence and semantic organization; no maintenance, migration or whole-product release acceptance.",
+  "base_commit": "24189d425f6ff2df2ba5d4f867f237f227399e37",
+  "composition_identity": "b7039c153806f4bbf44352f4a425238002ae27ad4d0ab60d23dd83fca8dee19c",
+  "source_identity": "Final accepted sources: review/round3-source-hashes.json (212 entries) in the archive. Original resource/vector measurement: root source-sha256.json; restore using review/measured-source.patch and the recorded base commit.",
+  "verification": {
+    "full_repository_tests": "go test -p 2 ./... passed after initial repairs; final compact-reference change passed all affected packages (streamjson, semanticstream, core, boundedstore, adapter/mcpserver).",
+    "static_checks": "Full-repository go vet passed after initial repairs; affected-package go vet and composition verify passed on final sources.",
+    "deterministic_parity": [
+      "Existing BM25 tokenization, context filtering, scores and ordering",
+      "Existing composite search: 7 queries x 3 limits, including long input identity boundary; navigation from 4 seeds",
+      "Semantic normalization, organization fingerprint and raw evidence selectors",
+      "4,734 frozen vectors x 13 queries: exact same candidates, float32 scores and order before and after packing"
+    ],
+    "state_and_transport": [
+      "Automatic delta packing, replacement, stale dependencies and corrupt-filter exact fallback",
+      "Real stdio -> connector -> HTTP -> tools -> SQLite -> local model -> dual structured/text output",
+      "Semantic work, valid submit, replay, conflicting result rejection, source revision update and stale submit rejection",
+      "Existing access revocation, cancellation, version and raw asset roundtrip tests"
+    ],
+    "remote_ai_calls": 0,
+    "review": "Complete fixed-version independent review passed; all five findings closed, no remaining blocker within unit two.",
+    "independent_review": {
+      "status": "complete_passed",
+      "reviewer": "B",
+      "fixed_composition": "b7039c153806f4bbf44352f4a425238002ae27ad4d0ab60d23dd83fca8dee19c",
+      "source_entries": 212,
+      "unchanged_during_final_review": true,
+      "closed_findings": {
+        "B1": "AuthorizeDelivery now acquires a reader before writeMu, matching retrieval and snapshot paths; mixed-delivery regression succeeds.",
+        "B2": "Only HasPendingSemanticWork records are dispatched; accepted receipts remove semantic jobs even when the local vector is pending. Original submission still recovers the vector.",
+        "B3": "Persist explicit targets; suppress conflicting outgoing/incoming inference on the current owner, and suppress incoming inference against explicit declarations at its source.",
+        "B4": "Persist transactional organization publication order, initialize rebuilt generations in asset order, and use sequence-aware navigation cursors and adjacency. Restored NameSource cap to existing 100.",
+        "B5": "Decode bounded canonical reference identities before appending; reject oversized IDs and snapshots immediately. Bound equivalent graph identity fields and inferred relation fields; discard untrusted recomputed identities instead of retaining them. Source/selector/model-authored text remains streamed. Organization text now retains only its document and byte range, reusing the original streaming decoder. The same maximum schema-valid nested structure retains 2,158,800 bytes, down from 4,561,328; all public counts and content are unchanged."
+      },
+      "reports": [
+        "review/b/round1-review.md",
+        "review/b/round2-review.md",
+        "review/b/round3-review.md",
+        "review/b/round3-review.json"
+      ],
+      "verification": [
+        "review/a-go-test.log",
+        "review/a-go-vet.log",
+        "review/a-round3-tests.log",
+        "review/a-round3-vet.log",
+        "review/a-round3-verify.json",
+        "review/b/round3/targeted-results.jsonl"
+      ],
+      "final_independent_checks": {
+        "top_level_tests_passed": 5,
+        "text_reference_subcases_passed": 4,
+        "failures": 0,
+        "reruns": 0
+      },
+      "organization_metadata": {
+        "original_fixture_unchanged": true,
+        "public_schema_passed": true,
+        "semantic_validity_claimed": false,
+        "operation_reservation_bytes": 4194304,
+        "round2_retained_heap_delta_bytes": 4561328,
+        "round3_retained_heap_delta_bytes": 2160352,
+        "A_round3_retained_heap_delta_bytes": 2158800,
+        "child_budget_used_bytes": 0,
+        "new_complete_product_rss_measurement_claimed": false
+      },
+      "resource_boundary": "Original complete-process RSS and vector timings remain tied to measurement_composition_identity; no new post-fix RSS, latency, external-AI result or full question-suite score is claimed."
+    }
+  },
+  "resources": {
+    "platform": "Windows x64",
+    "gomaxprocs": 4,
+    "sampling_interval_ms": 20,
+    "processes": [
+      "service",
+      "managed local embedding runtime",
+      "Ownward connector"
+    ],
+    "runtime_soft_targets_mib": {
+      "service": 20,
+      "connector": 12
+    },
+    "environment_gomemlimit_override": false,
+    "shared_admission_mib": 12,
+    "control_reserve_mib": 1,
+    "query_work_mib": 4,
+    "sqlite_main_caches_mib": 4,
+    "total_rss_limit_mib": 270,
+    "non_model_reservation_mib": 56,
+    "model_reservation_mib": 200,
+    "independent_margin_mib": 8,
+    "budget_adjustment": "Replace initial 48 MiB non-model estimate with 56 MiB based on measured process overhead; 200+56+8=264 MiB remains within the unchanged 270 MiB product boundary. Over-tight GC targets were rejected because they prolonged large-input processing.",
+    "peak_mib": 211.15625,
+    "private_commit_peak_mib": 177.05859375,
+    "non_model_peak_mib": 51.3984375,
+    "individual_peak_mib": {
+      "ownward-test.exe": 33.359375,
+      "llama-server.exe": 159.7578125
+    },
+    "peak_observations": [
+      {
+        "rss": 220983296,
+        "processes": {
+          "47456": [
+            "ownward-test.exe",
+            34701312
+          ],
+          "23972": [
+            "llama-server.exe",
+            167510016
+          ],
+          "49344": [
+            "ownward-test.exe",
+            18771968
+          ]
+        }
+      },
+      {
+        "rss": 221028352,
+        "processes": {
+          "47456": [
+            "ownward-test.exe",
+            34746368
+          ],
+          "23972": [
+            "llama-server.exe",
+            167510016
+          ],
+          "49344": [
+            "ownward-test.exe",
+            18771968
+          ]
+        }
+      },
+      {
+        "rss": 221093888,
+        "processes": {
+          "47456": [
+            "ownward-test.exe",
+            34811904
+          ],
+          "23972": [
+            "llama-server.exe",
+            167510016
+          ],
+          "49344": [
+            "ownward-test.exe",
+            18771968
+          ]
+        }
+      },
+      {
+        "rss": 221229056,
+        "processes": {
+          "47456": [
+            "ownward-test.exe",
+            34811904
+          ],
+          "23972": [
+            "llama-server.exe",
+            167510016
+          ],
+          "49344": [
+            "ownward-test.exe",
+            18907136
+          ]
+        }
+      },
+      {
+        "rss": 221413376,
+        "processes": {
+          "47456": [
+            "ownward-test.exe",
+            34979840
+          ],
+          "23972": [
+            "llama-server.exe",
+            167518208
+          ],
+          "49344": [
+            "ownward-test.exe",
+            18915328
+          ]
+        }
+      }
+    ],
+    "tests": [
+      {
+        "source_bytes": 4147,
+        "create_seconds": 0.1569999999992433,
+        "semantic_work_seconds": 0.06199999999807915,
+        "semantic_submit_seconds": 2.360000000000582,
+        "search_seconds": 0.18699999999807915,
+        "evidence_seconds": 0.07800000000133878,
+        "source_exact": true,
+        "evidence_exact": true,
+        "response_forms_equal": true
+      },
+      {
+        "source_bytes": 1048627,
+        "create_seconds": 3.0939999999973224,
+        "semantic_work_seconds": 0.3440000000045984,
+        "semantic_submit_seconds": 0.7339999999967404,
+        "search_seconds": 0.9380000000019209,
+        "evidence_seconds": 0.0930000000007567,
+        "source_exact": true,
+        "evidence_exact": true,
+        "response_forms_equal": true
+      },
+      {
+        "source_bytes": 8388667,
+        "create_seconds": 18.45300000000134,
+        "semantic_work_seconds": 3.0160000000032596,
+        "semantic_submit_seconds": 4.1560000000026776,
+        "search_seconds": 11.030999999995402,
+        "evidence_seconds": 0.5310000000026776,
+        "source_exact": true,
+        "evidence_exact": true,
+        "response_forms_equal": true
+      }
+    ],
+    "service_exit": 0,
+    "connector_exit": 0,
+    "timing_interpretation": "Per-size timings include transport, storage and local embeddings; source sizes and phases are separate. The first semantic submit includes cold model startup. External AI organization latency is not measured."
+  },
+  "vectors": {
+    "count": 4734,
+    "queries": 13,
+    "bit_exact": true,
+    "phases": {
+      "delta-exact": {
+        "mean_ms": 2288.740976923077,
+        "max_ms": 2494.0275,
+        "mean_exact_vectors": 4734,
+        "mean_logical_payload_bytes": 9695232
+      },
+      "packed-filtered": {
+        "mean_ms": 87.1149,
+        "max_ms": 136.8152,
+        "mean_exact_vectors": 25.23076923076923,
+        "mean_logical_payload_bytes": 2515548.076923077
+      }
+    },
+    "cache": "OS cache not cleared; production SQLite path",
+    "read_measure": "Logical filter/raw-vector payload only; not physical SQLite pages or disk I/O.",
+    "reference_note": "All-delta import is an isolation reference, not a normal production backlog."
+  },
+  "unchanged_runtime_reference": "bounded-unit-one-20260916.json",
+  "fixture_identity": {
+    "vectors.bin": "4cc8afd3f14f1363ea9828feb70d1369a4c287f893c6a4d6e30d2d402a3fbc7c",
+    "query-cases.json": "945d7bacbd7dbe119b2e5987e1651e6290a849dbd8e674b7c7daad781571e0ee"
+  },
+  "reproduction_archive": "bounded-unit-two-20260916.zip",
+  "reproduction_archive_sha256": "b6bcfb0d82ad945dd2a784dbf60e26118564e9f4dca9e2fc586e6ae8c58ee3b1",
+  "remaining_scope": [
+    "Unit three: maintenance, forgetting, WAL scheduling and fault recovery",
+    "Unit four: old-data migration, production activation and frozen complete-product acceptance; no 14/24/500 question rerun in unit two"
+  ],
+  "measurement_composition_identity": "0e7f9bba8c075985b2fdb98fe17a653444cef04cc79d673494a3adc55196725f"
+}
