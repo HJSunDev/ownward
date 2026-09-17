@@ -29,6 +29,9 @@ func NewStreamingStorage(service contract.StreamingProduct, version, dir string,
 	resourcebudget.LimitRuntime(20 * resourcebudget.MiB)
 	server := mcp.NewServer(&mcp.Implementation{Name: "ownward", Version: version}, &mcp.ServerOptions{Instructions: core.CollaborationRules, Capabilities: &mcp.ServerCapabilities{Experimental: map[string]any{"ownward.bounded-storage": map[string]any{"version": 1}}}})
 	s := &StorageServer{server: server, dir: dir, budget: budget, diskBytes: diskBytes}
+	registerStream[RulesInput, RulesOutput](server, service, "ownward_rules", "取得信息存取与使用的协作规则。", true, false)
+	registerStream[StatusInput, StatusOutput](server, service, "ownward_status", "查询一项资料的组织状态。", true, false)
+	registerStream[CheckInput, CheckOutput](server, service, "ownward_check", "重新使用旧材料前批量核对实际取得的 basis；来源变化后重新取证。", true, false)
 	registerStream[CreateInput, CreateOutput](server, service, "ownward_create", "创建属于用户且可长期复用的信息。体系负责组织结构，调用方不得为了保存信息而自行设计目录或关系图；保存成功后可继续其他工作；organization.required_action 由宿主在可用工作时机接续。", false, false)
 	registerStream[CreateBatchInput, CreateBatchOutput](server, service, "ownward_create_batch", "一次创建一批彼此独立的信息，复用同一向量处理批次以降低批量沉淀成本。每条结果独立返回，失败项不得被静默忽略。", false, false)
 	registerStream[ReadInput, ReadOutput](server, service, "ownward_read", "按稳定标识读取一项个人信息及其当前版本。", true, false)

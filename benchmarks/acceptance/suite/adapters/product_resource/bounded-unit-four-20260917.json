@@ -1,0 +1,2328 @@
+{
+  "schema": "ownward.bounded-storage-unit-four/v1",
+  "date": "2026-09-17",
+  "status": "unit_four_closed",
+  "base_commit": "bea38d4d45e1777767608ddffd4fb109b4fb8fa7",
+  "composition_identity": "52797ade3d38c1dd4ce6a25436653734552a893265a9d9e0b7efcf3cc583dd94",
+  "evaluation_host_sha256": "04e726ada1bec610a1fc3d544467666e7277bb4e3f5a98781b8c81de8a78044d",
+  "resource_test_binary_sha256": "b497580ef519432178649b28ebe179bc605be888f42a4bda387d91a9cf69a013",
+  "source_hashes": {
+    "benchmarks/longmemeval_s/migrate_materials.py": "777e8463f155e87bf621f5435d39cc48bef5c25b1933592a02b20bada4bb55ba",
+    "benchmarks/longmemeval_s/test_migrate_materials.py": "f1ea378b5b6dfcbd2b4b55bc5213d37d74b520824694f356dcd42957009d3e5f",
+    "cmd/ownward/bounded_storage_test.go": "ad0945a00f12427afc031c64eaad57833aca0a91f20be61295f7c387542089aa",
+    "cmd/ownward/information_control.go": "79c17b1e1e867138c2c886ea8212b0370e3d5ba3b112afca3cb49544c0e36c77",
+    "cmd/ownward/main.go": "65fe1ed2122ad0af61a41a078f7d5706362da1fbbbda743b6ff5d9bb9c09e089",
+    "cmd/ownward/service_local.go": "6fe37a04e5647dee5091a9a323e07149db5879db224241544177ae15416a1a20",
+    "cmd/ownward/service_runtime.go": "484859225a5a9e5665cd43ac42e331b5798087502992ad6fc0ed7e280c5a3355",
+    "cmd/ownward/service_runtime_test.go": "59c8488232a12ebb026dafc23d43249c2c03040fabf7ae594657efda77c982d0",
+    "cmd/ownward/storage_server.go": "a1a54eec6f571b7a6743b1e3801f0084b60461dac0a48d05df65574ba5d9d60b",
+    "docs/engineering/final-test-preparation-reuse.md": "49381b1e6276b3daf63c4508de4499dda8d6ad72eaca04f075713d7fb3beed4d",
+    "docs/modules/storage/README.md": "f1fc2cefd764911e71160761fdbb8ee16615d9d7332256bc6f3e7b0037fd098d",
+    "docs/modules/storage/architecture.md": "9f619bcd86f27adabe05398667a1f48cb07bc11a2b87dca666d34e23f934385a",
+    "docs/modules/storage/bounded-runtime-design.md": "5d370b6f41464d8ab7f7a93760104e5735c3d27b920883bff83ade9917fe7804",
+    "docs/modules/storage/ingestion-and-derived-data.md": "688223e9944ecdbb4d4a5c15ae6d541fbf34b4913abf148a3401d2fd654b861c",
+    "docs/tasks/bounded-storage-implementation.md": "c8752cc6436d82713f2ab9628b32465c47004756015273ca223a5ce8a56c29d9",
+    "docs/workbench/ingestion-latency-collaboration.md": "dcea06222dc328e328574369067f6b2b200fe81c3506ca2cd4bd3601cd9dc4f2",
+    "internal/adapter/mcpserver/management.go": "6e2c3b671c5861dd5feb6fbfc98f363217c1b0e74099bf74f5612e5646655463",
+    "internal/adapter/mcpserver/streaming.go": "4de4b0f0f8f62b87b3111626aa09d038819c62e16e924c091d2044baa9b4db1b",
+    "internal/adapter/mcpserver/streaming_management.go": "01592080fefae45dfd0354b57cb0fe36cf722f5b59b5f93ea9e0121407b5f8c6",
+    "internal/adapter/mcpserver/streaming_replay_test.go": "27b95cd66e50c7867ef0381743e96928bb0537a79f15d260a6641ae6dfad70a9",
+    "internal/assembly/assembly.go": "5dff54f700add83b83a834d81e55e11378cb32a15e699b5c069baeb353a0c3e7",
+    "internal/assembly/bounded.go": "6ddfa870a50ae95b79481470b934f5e83bdc5c31704c02cbc35465d8f5d59ef5",
+    "internal/assembly/bounded_test.go": "611bbfda28b8760454a1e301b9859a02910bc486aba94849e6687a82bdae3216",
+    "internal/assembly/handoff.go": "1223e11935a400e7116b60a035473a975dc0b115130c16d89550f448f624f0ac",
+    "internal/boundedstore/archive_assets.go": "9d2e128c53fb6f3ba3dfc6166e1972fd9ee170bfb7a4fc4f17eb1f74e07782e7",
+    "internal/boundedstore/backup.go": "1798234c2b4ae836196299ff0bb07e1261b2e18d1f11c8232e64473c2ab9c97f",
+    "internal/boundedstore/control_authority.go": "9351f7694b75724f734898e3746542be14a6c31b1425ef164ecdcbab12e0128a",
+    "internal/boundedstore/control_authority_test.go": "704ff8dc1bb476a75867ce9a0ebe8702c82a34ca91351143b6bb7d37205071d8",
+    "internal/boundedstore/control_forget.go": "7abf3d684696c55e4bca5abdce7707472d5f27755aafd55591cb8335d20ea7b8",
+    "internal/boundedstore/control_restore.go": "760631739c0ccbf9dacb987814fe730af1e30c337f08a67690df33bfd62a5396",
+    "internal/boundedstore/control_visit.go": "7cd0fd72544e38fd6681ee62352a82f483ce11f99b6c0988ae2b204b7ddbcfcc",
+    "internal/boundedstore/deployment.go": "a73dc895b1c61c579c99d798241938837f420a2b2913b5c02c73f0a27a239c84",
+    "internal/boundedstore/deployment_archive.go": "1b10d2fe1cbc2ab2d2c2f7c2ea6bc95d7234e7a05ac993ed5cea96c8ae3e2217",
+    "internal/boundedstore/deployment_cancel.go": "b9700fd942d29ed2bf21dcbf6683886e9d6f470e43da7e711dbb7ae9b7d2e366",
+    "internal/boundedstore/deployment_compat_test.go": "ef43099ffead2b7fe29265e7a5580de9bb46c54f16bf4865176a7ab921630319",
+    "internal/boundedstore/deployment_retired.go": "4d6814be12493daff3dc66b1013269d8a6c2e212fe287b20678be28aa712664c",
+    "internal/boundedstore/deployment_space.go": "c6ef1ebe3c8fe1506530e95c3bb0342c3ff35082a69c228a32bb97e92ce99231",
+    "internal/boundedstore/deployment_test.go": "50fac783e8131f85bd275f178cbb118a4cb93f8a106d8e21091310c4c3c75350",
+    "internal/boundedstore/legacy_control.go": "886ffcd39617c1fb175fe613cbcb003de15242fb0690cbe961d2f0961ced6be2",
+    "internal/boundedstore/legacy_derived.go": "419f75c07db5213d85be2d13794263ae8a669f5aa945336d031351f2cee5ed02",
+    "internal/boundedstore/legacy_import.go": "59bf5af27208ae6ad4fa9a0e9eb8ffabbf3a1576c9d4de696d187095b93d15a9",
+    "internal/boundedstore/legacy_json.go": "7a5136217278cc5b73f7e56edb574b9c9252fba1dadbd829c5c42983b50010e3",
+    "internal/boundedstore/legacy_semantics.go": "8f3b3fabfd7728fa2bba125bec7dd2219431466e864b803ca15cf3e15caa9a87",
+    "internal/boundedstore/legacy_sources.go": "1a50c48496de9fe15aee3246352f3d5cf9f2cc75ef6c503a0cb958187609c6f9",
+    "internal/boundedstore/lexical.go": "f6b41148fd36eecebc9966c7d03217a83d99443caaee9cb52779027d8fbe2e80",
+    "internal/boundedstore/lexical_migration_test.go": "cec90a846ddaec8d1fb157fca769052fd2858b3122eec250c4d49f74b93b8480",
+    "internal/boundedstore/lexical_upgrade.go": "5d9c4213609c03764b394408b70ec91ae1ba41e19a793dd4e609769bfec9d48e",
+    "internal/boundedstore/lexical_upgrade_test.go": "914e3df023a6d955b8b3b92648fbdb28717ef9258214f2d6dcd49c3e623b13cb",
+    "internal/boundedstore/maintenance.go": "5c9a07841d561bc11fc3bfd3a36a06b090921a7138092d4e8b298ff8b46da3b6",
+    "internal/boundedstore/migration_verify.go": "1be44cb4b30e96122c3d15f3c434bbb5dbd67ac3742ac78acb4a96c219a217a4",
+    "internal/boundedstore/name_source.go": "96735e3c7e236ee41afa120571fb79a4b7ff73dfbfd2a2b949c2247ebd0de2aa",
+    "internal/boundedstore/replace_other.go": "51f2984cbc9f10a2b65a4be5b6e2c61b72ba4a603d4a5723ab124bbe58947970",
+    "internal/boundedstore/replace_windows.go": "314c093f367e8cc60e693444364b194124cc7045d596e41346e50649410a4072",
+    "internal/boundedstore/retrieval_schema.go": "1966c62a7ad6a6c2390f153159f932cf62171b5fc2b1575667fd7990ccbb9985",
+    "internal/boundedstore/status.go": "62d631f54c03b90a0112b4ce1ddafa2e7f1ec6fe15cf1a6334114f6c71d08bca",
+    "internal/boundedstore/store.go": "f7eae5ab711a088ed23db1815e664aa90ed624b8ee9d6438f5f4831877e764ef",
+    "internal/contract/control.go": "91329fc89a038925a03967fdb3638cea44d30d0fdc01f69c1330c66ea6a86776",
+    "internal/contract/information_control.go": "fc39e84f685e8766bc68ad576dcd3c4cdd292bee873e456642e54b9b62411040",
+    "internal/core/streaming.go": "e61d04230f6f72efa1cab33b6c3d82dc30c1563483a2c796cd8c971c6b0cdb35",
+    "internal/core/streaming_check.go": "7e3a1cea4279803d5fea9104b7ac667a61ebb185776d25a708c2981ed413740c",
+    "internal/core/streaming_forget.go": "6b68389f10b02bf42556883091efa6f4fa78f08d7ff5a146de48380825651a38",
+    "internal/core/streaming_preview.go": "426f4de4eadd3ece2dbbb81b477f9efc0903eac2294e88dea8d3802cb8e161d3",
+    "internal/core/streaming_product.go": "e9c732346b53386324eab375c88aefc0edec4fa902ab11cbc9c027f56ca0b029",
+    "internal/core/streaming_read.go": "72cdf12d7b370bb8e03d0b0bdd8fb6d02c84880599dc1347e003de97259676f0",
+    "internal/core/streaming_result.go": "758884154198023dacf0c67cde7f03c8dacecc19879813d44af6cb2aaf5d270c",
+    "internal/core/streaming_text.go": "355aad668e28ff8480cda5103c6c8d7259e322f57ac8f07443fdeff55cc09804",
+    "internal/embedding/compatibility.go": "72072bac53f514cb055e2281fd123240a199712d9adc26d04d1cf0a2de8724c9",
+    "internal/informationcontrol/control.go": "420bc304a6f3f99c13a7c17e8a0f5add95c2bc1cb5848c67880dc26457ce63ff",
+    "internal/informationcontrol/forget.go": "d5283a11f64347ddd87da47fc19e0fb6dac65a4a3f07dccc41918e282824082f",
+    "internal/informationcontrol/management.go": "298d01f63af886051d80f1622afa7ff356d824993662820a70979bdb8ce5b5f8",
+    "internal/informationcontrol/product.go": "dbef7348ae039d8ad3e5e8dbb1155935b61ed26bcd287b76e6420efc48ea7f3e",
+    "internal/informationcontrol/remote_access.go": "c3a02a5c268c91fade852e938224ee80b1461a7b530b3f710e4f13c962306ed1",
+    "internal/informationcontrol/selection.go": "0016c43e2cbc00acc41f9ce664b8c13c4ac020036f8d293411864a7a8a1fcdb2",
+    "internal/resourcebudget/budget.go": "55ad832cde5e04a34bfd11d5970bf02aefb49620c8a9148e8e2044c77c71e55e",
+    "internal/resourcebudget/buffered_file_test.go": "35bb00f660f371a3773e5ae56c20a4d31081b6bb7f762216406df05df7ab9878",
+    "internal/resourcebudget/disk.go": "5d3fc63b2b952b03fa39ff9b8a0aa180cf3bce4423255a19d0f193067165fd1b",
+    "internal/rpcstream/scope.go": "fc6c06b2e7431dbe33fdc78cf7fbfbbca4397b5d915757d80684c43e90eb838c",
+    "internal/streamjson/document.go": "9e4e2396abeb864a5d8570a876ad5222f81e1a7f96631e3b542e09193d9d1e9a",
+    "internal/streamjson/sorted_strings.go": "846c6bd19b353d3f1420772cd9b2892e31f3ea4eb8f2684672a1b3cd806af3e8",
+    "manifests/compositions/v1/current-collaborative.json": "b399a903ea1c53d22fb5d7a8fe3a56c36d427883c6c05ecea60a4144ad4368e3"
+  },
+  "scope": "Formal SQLite assembly, bounded native control authority, streaming protocol integration, legacy data conversion, archive/recovery and relocation; existing user deployment untouched.",
+  "verification": {
+    "repository_tests": "go test ./...: passed; full log retained",
+    "static_analysis": "go vet ./...: passed",
+    "composition_check": {
+      "schema": "ownward.composition-check/v1",
+      "passed": true,
+      "composition": "3face7f67cb4bdcca8c00e68abab9369cce37fe37fb813f25bdb1bc85cc10945",
+      "components": 7,
+      "contracts": 9,
+      "content_files": 230,
+      "git_is_identity": false,
+      "active_state_modified": false
+    },
+    "python_material_tests": {
+      "migration_integrity_tests": 1,
+      "existing_preparation_tests": 11,
+      "passed": true
+    },
+    "migration_coverage": [
+      "six durable checkpoints and independent legacy-open rejection",
+      "pre-activation cancellation; no stale-source rollback after activation",
+      "v2/v3/v4/v5 semantic representations; work reference and receipt compatibility",
+      "raw bytes, revisions, provenance, explicit relations and current valid semantic content preserved",
+      "same-space and explicitly bitwise-compatible vector reuse; unknown space rejected",
+      "private default asset archive excludes derived state; frozen handoff preserves authorization continuity",
+      "restore invalidates previous credentials; late, stale and forgotten contents stay blocked",
+      "retired handoff source content purged without deleting permanent legacy refusal marker",
+      "lexical staging releases read snapshots before WAL-growth writes"
+    ],
+    "prepared_materials": [
+      {
+        "suite": "14",
+        "case": "195a1a1b",
+        "receipt_sha256": "e57febb37e2219572f8390f96c37a9c643ee13696d76ef76e7cc3d4fdbffa786",
+        "assets": 46,
+        "organizations": 46,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "14",
+        "case": "71017277",
+        "receipt_sha256": "310ecc8d415e1e635bd56d3d5b071364b344252d7d2acc89735b87c60b4e32c2",
+        "assets": 51,
+        "organizations": 51,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "14",
+        "case": "830ce83f",
+        "receipt_sha256": "fba90eae5db34ed18f44439d64adf359c4fcd9af7867d4145a9b9e5a19e38aca",
+        "assets": 47,
+        "organizations": 47,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "14",
+        "case": "852ce960",
+        "receipt_sha256": "8d029d033ec3119e9a2d6c5df115bc8786bfd7706ac2f23e310b2eefab2f89f5",
+        "assets": 39,
+        "organizations": 39,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "14",
+        "case": "9ee3ecd6",
+        "receipt_sha256": "8fbaf73900d1a4a3f3c296857f4f4454a5e223fbe01051b68f3f67787604dde9",
+        "assets": 50,
+        "organizations": 50,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "14",
+        "case": "a96c20ee_abs",
+        "receipt_sha256": "490608e5a3db09796ad60dc45d455811fa410b0e27f53370b462548eefb9524c",
+        "assets": 53,
+        "organizations": 53,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "14",
+        "case": "bf659f65",
+        "receipt_sha256": "5f5600bbac7b83f6003a7e4774449cd9b9111b6137376514258c10e3ddf57912",
+        "assets": 52,
+        "organizations": 52,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "14",
+        "case": "d851d5ba",
+        "receipt_sha256": "160e2c4e655263a29ba498af20b5003dcf8703454fd59c68c7f9241f2f10c7f4",
+        "assets": 46,
+        "organizations": 46,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "14",
+        "case": "gpt4_2ba83207",
+        "receipt_sha256": "71ab7b9405ccb5a15bbb4a62cb21daa8ebdd4873f87bcde953f384456be1dcd9",
+        "assets": 53,
+        "organizations": 53,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "14",
+        "case": "gpt4_70e84552_abs",
+        "receipt_sha256": "ede180709b3e046917256b9dfd87ed1a3565ff150fb481e648dad9d6e93c1d41",
+        "assets": 50,
+        "organizations": 50,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "14",
+        "case": "gpt4_731e37d7",
+        "receipt_sha256": "4fad06e097bff29500ee638b8de6b9f1b6438526a2f959246cb254d695c84981",
+        "assets": 48,
+        "organizations": 48,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "14",
+        "case": "gpt4_a56e767c",
+        "receipt_sha256": "2492d4b1bb08aee64e59486cf885b615842eab82b72a4363c5a696d49ea030f0",
+        "assets": 48,
+        "organizations": 48,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "14",
+        "case": "gpt4_ab202e7f",
+        "receipt_sha256": "3348a6a2b0e8d7588848f148fdb62daa300d13193d74a942899836ffe94da5dc",
+        "assets": 46,
+        "organizations": 46,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "14",
+        "case": "gpt4_e414231f",
+        "receipt_sha256": "b22ff74fcfcab2c59c4a16baeab43af90d31bf61dedb4dbb69e8ebd1a786f227",
+        "assets": 46,
+        "organizations": 46,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "24",
+        "case": "rs6-01",
+        "receipt_sha256": "291feaf29acd987d68b8100549522a405f38d235ca88a56c54b9077ff79151b6",
+        "assets": 48,
+        "organizations": 48,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "24",
+        "case": "rs6-04",
+        "receipt_sha256": "030b0f6ef4bcade16ead5bb3ddc829e4a493e085e26bc764628165cca26d2262",
+        "assets": 48,
+        "organizations": 48,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "24",
+        "case": "v2s-authority-over-recency",
+        "receipt_sha256": "bdc51ede8c3dc80adde36dff6cf923fa3c565746122438da50bdb6c5189561f1",
+        "assets": 7,
+        "organizations": 7,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "24",
+        "case": "v2s-same-asset-distant-fragments",
+        "receipt_sha256": "0256511b48a2fd21092a99f3cfa307fdf30bb5297fd7ee37513ebc107b8204ba",
+        "assets": 5,
+        "organizations": 5,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "24",
+        "case": "v2s-stable-personal-preference",
+        "receipt_sha256": "ef5a04c474a92786b7787e1e82cccbf31b1146fa618a6318bb837dc77ed95ae4",
+        "assets": 5,
+        "organizations": 5,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "24",
+        "case": "v2s-structured-footnote-exception",
+        "receipt_sha256": "8b685eb2bfbfb521e34239ffaec490c32dcacf482e23f4fe1af4c8542f45ed3b",
+        "assets": 6,
+        "organizations": 6,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "24",
+        "case": "v2s-structured-table-row-column",
+        "receipt_sha256": "854e97b28b662ddcc14c942ac0213ff5de6616c8b5b1559cc10f6c08d5490b0f",
+        "assets": 5,
+        "organizations": 5,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "24",
+        "case": "v2s-updated-conditional-preference",
+        "receipt_sha256": "e4f6993064d3d02fc59b0a5ad2b0b0698fa2e6b59081931d7950200a08a8e1b9",
+        "assets": 6,
+        "organizations": 6,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "24",
+        "case": "v2s-user-assistant-role-provenance",
+        "receipt_sha256": "167bb9144665c719a55618ced8be70cf4cec5ba510b361e0292d443d72c34b34",
+        "assets": 5,
+        "organizations": 5,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "24",
+        "case": "v2s-user-fact-natural-multiturn",
+        "receipt_sha256": "14041ba58b237fd515c3b16906ec2647eb60af9f451d27d8fb42bd5ddc181b43",
+        "assets": 5,
+        "organizations": 5,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "24",
+        "case": "vs-c002",
+        "receipt_sha256": "d6009d73114ae9c5d9b4d8de187c22d949fe02faebbec266fc35868e46c7efdb",
+        "assets": 6,
+        "organizations": 6,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "24",
+        "case": "vs-c003",
+        "receipt_sha256": "dc8f65a7f80124907dfed4905f2f08d4597dc37b8b333d8fd0d71308b7c10c0a",
+        "assets": 10,
+        "organizations": 10,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "24",
+        "case": "vs-c004",
+        "receipt_sha256": "96da7b9a089b9c690adf6e545e952cbea28a0d9f06625065b63f31d318f05e47",
+        "assets": 6,
+        "organizations": 6,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "24",
+        "case": "vs-c006",
+        "receipt_sha256": "8f0aedb3e2556541fba96bc6ca0da86e2072173666d47f8f59abbf6d11d1644f",
+        "assets": 14,
+        "organizations": 14,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "24",
+        "case": "vs-c010",
+        "receipt_sha256": "785f1605b69a1ab51ec1e8074e974b07f14613f24e78902a11fad7cc5910b0ae",
+        "assets": 6,
+        "organizations": 6,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "24",
+        "case": "vs-c011",
+        "receipt_sha256": "86155fc4df322184e25456ed60d640bc198b64fa4ce8d5212630c06435f82f49",
+        "assets": 10,
+        "organizations": 10,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "24",
+        "case": "vs-c012",
+        "receipt_sha256": "5d0a179febd62a97c399a532af8e82548f9038a3b17d9a2e886f47dd4502688e",
+        "assets": 14,
+        "organizations": 14,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "24",
+        "case": "vs-c013",
+        "receipt_sha256": "f440628a2934e3bd06f765f0cd79af25bdd13c019837f2cedec52cfc0a8e23e9",
+        "assets": 6,
+        "organizations": 6,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "24",
+        "case": "vs-c014",
+        "receipt_sha256": "1ea623aa4be6c9c465db2be3073b872732b11900b25d4f8ecb559aef58e8ab75",
+        "assets": 10,
+        "organizations": 10,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "24",
+        "case": "vs-c023",
+        "receipt_sha256": "af476e4403e737f2bccb5ba8901d2376ebe648a297c25cda687c2b4de57bdc3a",
+        "assets": 10,
+        "organizations": 10,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "24",
+        "case": "vs-c027",
+        "receipt_sha256": "82b8035399285b8e98ff6138b6a9db15bbb249d6a67ed980e847be4348516fc4",
+        "assets": 14,
+        "organizations": 14,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "24",
+        "case": "vs-c055",
+        "receipt_sha256": "2c1de78c3045c3d9ea1043964c9060ed302cefed3c3ece736e4ce97847ff5310",
+        "assets": 14,
+        "organizations": 14,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "24",
+        "case": "vs-c066",
+        "receipt_sha256": "8fac85c31677f0beee2d2dadac158018142842baab59e0762778653f49f3cd37",
+        "assets": 10,
+        "organizations": 10,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      },
+      {
+        "suite": "24",
+        "case": "vs-c076",
+        "receipt_sha256": "904f6f2eaf795509cde317f5aabf39b4fde378a93e35e6dc8a79020cb606893a",
+        "assets": 14,
+        "organizations": 14,
+        "new_semantic_calls": 0,
+        "raw_and_semantics_equal": true,
+        "vectors_bitwise_equal": true
+      }
+    ],
+    "new_semantic_ai_calls": 0,
+    "closeout": {
+      "repository_tests": "go test ./... passed",
+      "static_analysis": "go vet ./... passed",
+      "prepared_migration_integrity_test": "python unittest test_migrate_materials passed",
+      "physical_upgrade": "SQLite format 1/2 to 3 resumes after interruption; exact lexical ranks and terms retained, retired integer mappings reclaimed; tests passed",
+      "temporary_buffers": "8 KiB per optional admitted temporary buffer; original disk quota retained, automatic spill and cleanup, no change to durable data; tests passed"
+    }
+  },
+  "regression": {
+    "order": [
+      "14",
+      "24"
+    ],
+    "model_and_protocol_unchanged": true,
+    "new_answers_and_judgments": true,
+    "fixed14": {
+      "results": [
+        {
+          "ordinal": 82,
+          "case": "gpt4_a56e767c",
+          "correct": true,
+          "wait_seconds": 97.625,
+          "complete": true
+        },
+        {
+          "ordinal": 114,
+          "case": "gpt4_ab202e7f",
+          "correct": false,
+          "wait_seconds": 125.57799999999952,
+          "complete": true
+        },
+        {
+          "ordinal": 116,
+          "case": "gpt4_731e37d7",
+          "correct": true,
+          "wait_seconds": 99.0630000000001,
+          "complete": true
+        },
+        {
+          "ordinal": 123,
+          "case": "bf659f65",
+          "correct": false,
+          "wait_seconds": 116.28099999999904,
+          "complete": true
+        },
+        {
+          "ordinal": 361,
+          "case": "gpt4_70e84552_abs",
+          "correct": true,
+          "wait_seconds": 82.23500000000058,
+          "complete": true
+        },
+        {
+          "ordinal": 370,
+          "case": "852ce960",
+          "correct": true,
+          "wait_seconds": 82.20299999999952,
+          "complete": true
+        },
+        {
+          "ordinal": 97,
+          "case": "gpt4_2ba83207",
+          "correct": true,
+          "wait_seconds": 127.51599999999962,
+          "complete": true
+        },
+        {
+          "ordinal": 112,
+          "case": "d851d5ba",
+          "correct": true,
+          "wait_seconds": 102.70299999999952,
+          "complete": true
+        },
+        {
+          "ordinal": 139,
+          "case": "195a1a1b",
+          "correct": true,
+          "wait_seconds": 110.0,
+          "complete": true
+        },
+        {
+          "ordinal": 187,
+          "case": "9ee3ecd6",
+          "correct": true,
+          "wait_seconds": 80.20299999999952,
+          "complete": true
+        },
+        {
+          "ordinal": 231,
+          "case": "a96c20ee_abs",
+          "correct": true,
+          "wait_seconds": 178.71900000000096,
+          "complete": true
+        },
+        {
+          "ordinal": 289,
+          "case": "71017277",
+          "correct": false,
+          "wait_seconds": 96.71900000000096,
+          "complete": true
+        },
+        {
+          "ordinal": 295,
+          "case": "gpt4_e414231f",
+          "correct": true,
+          "wait_seconds": 102.21899999999914,
+          "complete": true
+        },
+        {
+          "ordinal": 369,
+          "case": "830ce83f",
+          "correct": true,
+          "wait_seconds": 114.95299999999952,
+          "complete": true
+        }
+      ],
+      "passed": 11,
+      "failed": 3,
+      "incomplete": 0,
+      "mean_wait_seconds": 108.28692857142843,
+      "binary_unchanged": true,
+      "report_completion": {
+        "new_ai_calls": 0,
+        "reader_and_judge_outputs_unchanged": true
+      }
+    },
+    "fixed24": {
+      "results": [
+        {
+          "ordinal": "vs-c004",
+          "case": "vs-c004",
+          "correct": true,
+          "wait_seconds": 49.75,
+          "complete": true,
+          "wall_seconds": 67.92200000000048
+        },
+        {
+          "ordinal": "vs-c003",
+          "case": "vs-c003",
+          "correct": true,
+          "wait_seconds": 63.6880000000001,
+          "complete": true,
+          "wall_seconds": 71.70299999999952
+        },
+        {
+          "ordinal": "vs-c002",
+          "case": "vs-c002",
+          "correct": true,
+          "wait_seconds": 74.28199999999924,
+          "complete": true,
+          "wall_seconds": 83.14099999999962
+        },
+        {
+          "ordinal": "vs-c011",
+          "case": "vs-c011",
+          "correct": true,
+          "wait_seconds": 83.10899999999856,
+          "complete": true,
+          "wall_seconds": 92.01599999999962
+        },
+        {
+          "ordinal": "vs-c010",
+          "case": "vs-c010",
+          "correct": true,
+          "wait_seconds": 89.9369999999999,
+          "complete": true,
+          "wall_seconds": 98.4380000000001
+        },
+        {
+          "ordinal": "vs-c006",
+          "case": "vs-c006",
+          "correct": true,
+          "wait_seconds": 92.84300000000076,
+          "complete": true,
+          "wall_seconds": 102.60900000000038
+        },
+        {
+          "ordinal": "vs-c013",
+          "case": "vs-c013",
+          "correct": true,
+          "wait_seconds": 67.20299999999952,
+          "complete": true,
+          "wall_seconds": 77.28099999999904
+        },
+        {
+          "ordinal": "vs-c012",
+          "case": "vs-c012",
+          "correct": true,
+          "wait_seconds": 71.79699999999866,
+          "complete": true,
+          "wall_seconds": 86.46899999999914
+        },
+        {
+          "ordinal": "vs-c014",
+          "case": "vs-c014",
+          "correct": true,
+          "wait_seconds": 65.38999999999942,
+          "complete": true,
+          "wall_seconds": 72.51500000000124
+        },
+        {
+          "ordinal": "vs-c055",
+          "case": "vs-c055",
+          "correct": true,
+          "wait_seconds": 85.8119999999999,
+          "complete": true,
+          "wall_seconds": 100.20399999999972
+        },
+        {
+          "ordinal": "v2s-user-fact-natural-multiturn",
+          "case": "v2s-user-fact-natural-multiturn",
+          "correct": true,
+          "wait_seconds": 38.28100000000086,
+          "complete": true,
+          "wall_seconds": 47.625
+        },
+        {
+          "ordinal": "vs-c027",
+          "case": "vs-c027",
+          "correct": true,
+          "wait_seconds": 93.78099999999904,
+          "complete": true,
+          "wall_seconds": 106.3130000000001
+        },
+        {
+          "ordinal": "vs-c066",
+          "case": "vs-c066",
+          "correct": true,
+          "wait_seconds": 67.95399999999972,
+          "complete": true,
+          "wall_seconds": 77.26500000000124
+        },
+        {
+          "ordinal": "vs-c023",
+          "case": "vs-c023",
+          "correct": true,
+          "wait_seconds": 127.29700000000048,
+          "complete": true,
+          "wall_seconds": 135.78199999999924
+        },
+        {
+          "ordinal": "vs-c076",
+          "case": "vs-c076",
+          "correct": true,
+          "wait_seconds": 77.28199999999924,
+          "complete": true,
+          "wall_seconds": 86.76600000000144
+        },
+        {
+          "ordinal": "v2s-updated-conditional-preference",
+          "case": "v2s-updated-conditional-preference",
+          "correct": true,
+          "wait_seconds": 57.1880000000001,
+          "complete": true,
+          "wall_seconds": 66.125
+        },
+        {
+          "ordinal": "v2s-user-assistant-role-provenance",
+          "case": "v2s-user-assistant-role-provenance",
+          "correct": true,
+          "wait_seconds": 63.01599999999962,
+          "complete": true,
+          "wall_seconds": 72.87500000000182
+        },
+        {
+          "ordinal": "v2s-structured-table-row-column",
+          "case": "v2s-structured-table-row-column",
+          "correct": true,
+          "wait_seconds": 45.45300000000134,
+          "complete": true,
+          "wall_seconds": 55.90599999999904
+        },
+        {
+          "ordinal": "v2s-stable-personal-preference",
+          "case": "v2s-stable-personal-preference",
+          "correct": true,
+          "wait_seconds": 76.23500000000058,
+          "complete": true,
+          "wall_seconds": 84.57800000000134
+        },
+        {
+          "ordinal": "v2s-same-asset-distant-fragments",
+          "case": "v2s-same-asset-distant-fragments",
+          "correct": true,
+          "wait_seconds": 47.70300000000134,
+          "complete": true,
+          "wall_seconds": 61.79700000000048
+        },
+        {
+          "ordinal": "v2s-authority-over-recency",
+          "case": "v2s-authority-over-recency",
+          "correct": true,
+          "wait_seconds": 35.64099999999962,
+          "complete": true,
+          "wall_seconds": 43.70300000000134
+        },
+        {
+          "ordinal": "v2s-structured-footnote-exception",
+          "case": "v2s-structured-footnote-exception",
+          "correct": true,
+          "wait_seconds": 82.90699999999924,
+          "complete": true,
+          "wall_seconds": 94.0
+        },
+        {
+          "ordinal": "rs6-01",
+          "case": "rs6-01",
+          "correct": true,
+          "wait_seconds": 62.7970000000023,
+          "complete": true,
+          "wall_seconds": 72.5779999999977
+        },
+        {
+          "ordinal": "rs6-04",
+          "case": "rs6-04",
+          "correct": true,
+          "wait_seconds": 88.06300000000192,
+          "complete": true,
+          "wall_seconds": 102.07800000000134
+        }
+      ],
+      "passed": 24,
+      "failed": 0,
+      "incomplete": 0,
+      "mean_wait_seconds": 71.14204166666673,
+      "binary_unchanged": true
+    },
+    "failure_analysis": {
+      "114": "All five source assets were returned and read. The answer excludes the donated coffee maker from its main count and presents the expected count as a conditional alternative. The recorded retrieval queries return exactly the same outputs on the legacy kernel.",
+      "123": "Previously retired question; executed and original failing score retained, not optimized here.",
+      "289": "The reader selects passages about the chandelier and says the jewelry sender is undetermined. The expected asset is first-ranked and read; identical recorded queries produce identical candidates, scores, summaries and evidence positions on the legacy kernel. This is not proof that the full relevant passage was read.",
+      "retrieval_replay": {
+        "legacy_binary_sha256": "c665478fba53b023b66e7fcde8b4d6a3a16f4cf1f91000667b60a0ba2595f1d1",
+        "native_binary_sha256": "2527bd0d22a44c7889c8565901623a8a9cb04b12d032acf0f8e53e67b7bfd626",
+        "steps": [
+          {
+            "ordinal": 114,
+            "step": 0,
+            "tool": "ownward_search",
+            "equal": true,
+            "seconds": 5.5
+          },
+          {
+            "ordinal": 114,
+            "step": 5,
+            "tool": "ownward_search",
+            "equal": true,
+            "seconds": 1.1569999999992433
+          },
+          {
+            "ordinal": 114,
+            "step": 7,
+            "tool": "ownward_search",
+            "equal": true,
+            "seconds": 0.7350000000005821
+          },
+          {
+            "ordinal": 114,
+            "step": 10,
+            "tool": "ownward_search",
+            "equal": true,
+            "seconds": 0.39100000000144064
+          },
+          {
+            "ordinal": 114,
+            "step": 11,
+            "tool": "ownward_search",
+            "equal": true,
+            "seconds": 0.39099999999962165
+          },
+          {
+            "ordinal": 289,
+            "step": 0,
+            "tool": "ownward_search",
+            "equal": true,
+            "seconds": 6.093999999999141
+          },
+          {
+            "ordinal": 289,
+            "step": 4,
+            "tool": "ownward_search",
+            "equal": true,
+            "seconds": 0.26599999999962165
+          },
+          {
+            "ordinal": 289,
+            "step": 5,
+            "tool": "ownward_search",
+            "equal": true,
+            "seconds": 0.25
+          },
+          {
+            "ordinal": 289,
+            "step": 6,
+            "tool": "ownward_search",
+            "equal": true,
+            "seconds": 0.21899999999914144
+          },
+          {
+            "ordinal": 289,
+            "step": 7,
+            "tool": "ownward_search",
+            "equal": true,
+            "seconds": 0.23400000000037835
+          },
+          {
+            "ordinal": 289,
+            "step": 8,
+            "tool": "ownward_search",
+            "equal": true,
+            "seconds": 0.23500000000058208
+          },
+          {
+            "ordinal": 289,
+            "step": 9,
+            "tool": "ownward_search",
+            "equal": true,
+            "seconds": 0.2819999999992433
+          }
+        ],
+        "all_equal": true,
+        "ai_calls": 0
+      }
+    },
+    "report_completion": "The first six answers and judge outputs were already frozen when missing historical submission receipts interrupted report generation. Original receipts were attached and the same reports completed with AI transport disabled. All reader/judge output hashes remained unchanged; no answer rerun or score selection.",
+    "evaluation_composition_identity": "4e7a236fbf8a57434fe88a777a98a7664cec51f9ffc7216c76425cd5d9180094",
+    "same_evaluation_composition": true,
+    "final_physical_change_validation": {
+      "composition_identity": "3face7f67cb4bdcca8c00e68abab9369cce37fe37fb813f25bdb1bc85cc10945",
+      "kind": "deterministic replay, not a new AI score",
+      "cases": 38,
+      "calls": 407,
+      "all_equal": true,
+      "new_ai_calls": 0,
+      "order": [
+        "14",
+        "24"
+      ],
+      "compared": "All 407 product invocations replayed; three unchanged harness rejections had no product call. Product calls replayed through final assembly on independently migrated original prepared materials. Recursive equality includes original text, evidence positions, scores, ordering and graph results; only transient basis receipts, request IDs, creation/expiration and generation identities are excluded; opaque navigation tokens are normalized with presence preserved. Subsequent navigation requests are rebound to newly issued tokens and executed.",
+      "material_checks": "Every replay material has exact original and semantic checks and bitwise vector comparison; no semantic regeneration.",
+      "summary": "verification/closeout-full-replay/summary.json"
+    }
+  },
+  "resources": {
+    "accepted_warm_workload": {
+      "binary_sha256": "b497580ef519432178649b28ebe179bc605be888f42a4bda387d91a9cf69a013",
+      "composition": "3face7f67cb4bdcca8c00e68abab9369cce37fe37fb813f25bdb1bc85cc10945",
+      "small_query_seconds": [
+        0.2969999999986612,
+        0.3280000000013388,
+        0.375,
+        0.31199999999807915,
+        0.31300000000192085,
+        0.3280000000013388,
+        0.6719999999986612,
+        0.5469999999986612,
+        0.5149999999994179,
+        0.4070000000028813,
+        0.35900000000037835,
+        0.3129999999982829,
+        0.3430000000007567,
+        0.3129999999982829,
+        0.28100000000267755,
+        0.26599999999962165,
+        0.25,
+        0.31199999999807915,
+        0.3280000000013388,
+        0.2969999999986612
+      ],
+      "peak_mib": 210.515625,
+      "private_commit_peak_mib": 167.421875,
+      "non_model_peak_mib": 49.58203125,
+      "individual_peak_mib": {
+        "ownward-test-accepted.exe": 30.125,
+        "llama-server.exe": 160.93359375,
+        "": 0.03515625
+      },
+      "peak_observations": [
+        {
+          "rss": 218980352,
+          "processes": {
+            "25120": [
+              "llama-server.exe",
+              168701952
+            ],
+            "30028": [
+              "ownward-test-accepted.exe",
+              30208000
+            ],
+            "21448": [
+              "ownward-test-accepted.exe",
+              20070400
+            ]
+          }
+        },
+        {
+          "rss": 219000832,
+          "processes": {
+            "25120": [
+              "llama-server.exe",
+              168701952
+            ],
+            "30028": [
+              "ownward-test-accepted.exe",
+              30228480
+            ],
+            "21448": [
+              "ownward-test-accepted.exe",
+              20070400
+            ]
+          }
+        },
+        {
+          "rss": 219635712,
+          "processes": {
+            "25120": [
+              "llama-server.exe",
+              168738816
+            ],
+            "30028": [
+              "ownward-test-accepted.exe",
+              30724096
+            ],
+            "21448": [
+              "ownward-test-accepted.exe",
+              20172800
+            ]
+          }
+        },
+        {
+          "rss": 219725824,
+          "processes": {
+            "25120": [
+              "llama-server.exe",
+              168751104
+            ],
+            "30028": [
+              "ownward-test-accepted.exe",
+              30572544
+            ],
+            "21448": [
+              "ownward-test-accepted.exe",
+              20402176
+            ]
+          }
+        },
+        {
+          "rss": 220741632,
+          "processes": {
+            "25120": [
+              "llama-server.exe",
+              168751104
+            ],
+            "30028": [
+              "ownward-test-accepted.exe",
+              31588352
+            ],
+            "21448": [
+              "ownward-test-accepted.exe",
+              20402176
+            ]
+          }
+        }
+      ],
+      "tests": [
+        {
+          "workload": "frozen 20 documents / 20 queries, local model explicitly warmed with the original warmup query; cold first-write cost reported separately",
+          "document_ms_per_item": 311.7000000000189,
+          "query_p95_ms": 546.9999999986612,
+          "first_query_seconds": 0.01599999999962165,
+          "idle_cpu_percent": 0.0,
+          "idle_rss_mib": 210.43359375
+        }
+      ],
+      "service_exit": 0,
+      "connector_exit": 0
+    },
+    "cold_start_samples": [
+      {
+        "binary_sha256": "da53469a948ea98e4198b4192f7dc2f0c2d8cc7df1f28f1ef99b5378f47df63d",
+        "composition": "3face7f67cb4bdcca8c00e68abab9369cce37fe37fb813f25bdb1bc85cc10945",
+        "small_query_seconds": [],
+        "peak_mib": 40.87890625,
+        "private_commit_peak_mib": 48.7421875,
+        "non_model_peak_mib": 40.87890625,
+        "individual_peak_mib": {
+          "ownward-test-final-delivery.exe": 22.83203125,
+          "": 0.03515625
+        },
+        "peak_observations": [
+          {
+            "rss": 10850304,
+            "processes": {
+              "33912": [
+                "ownward-test-final-delivery.exe",
+                10850304
+              ]
+            }
+          },
+          {
+            "rss": 14712832,
+            "processes": {
+              "33912": [
+                "ownward-test-final-delivery.exe",
+                14712832
+              ]
+            }
+          },
+          {
+            "rss": 20115456,
+            "processes": {
+              "33912": [
+                "ownward-test-final-delivery.exe",
+                20115456
+              ]
+            }
+          },
+          {
+            "rss": 33599488,
+            "processes": {
+              "33912": [
+                "ownward-test-final-delivery.exe",
+                22310912
+              ],
+              "35216": [
+                "ownward-test-final-delivery.exe",
+                11288576
+              ]
+            }
+          },
+          {
+            "rss": 42864640,
+            "processes": {
+              "33912": [
+                "ownward-test-final-delivery.exe",
+                23941120
+              ],
+              "35216": [
+                "ownward-test-final-delivery.exe",
+                18923520
+              ]
+            }
+          }
+        ],
+        "tests": [
+          {
+            "cold_start_total_ms": 2563.000000001921
+          }
+        ],
+        "service_exit": 0,
+        "connector_exit": 0
+      },
+      {
+        "binary_sha256": "da53469a948ea98e4198b4192f7dc2f0c2d8cc7df1f28f1ef99b5378f47df63d",
+        "composition": "3face7f67cb4bdcca8c00e68abab9369cce37fe37fb813f25bdb1bc85cc10945",
+        "small_query_seconds": [],
+        "peak_mib": 35.48828125,
+        "private_commit_peak_mib": 43.83984375,
+        "non_model_peak_mib": 35.48828125,
+        "individual_peak_mib": {
+          "ownward-test-final-delivery.exe": 22.25,
+          "": 0.03515625
+        },
+        "peak_observations": [
+          {
+            "rss": 10997760,
+            "processes": {
+              "34952": [
+                "ownward-test-final-delivery.exe",
+                10997760
+              ]
+            }
+          },
+          {
+            "rss": 13611008,
+            "processes": {
+              "34952": [
+                "ownward-test-final-delivery.exe",
+                13611008
+              ]
+            }
+          },
+          {
+            "rss": 16089088,
+            "processes": {
+              "34952": [
+                "ownward-test-final-delivery.exe",
+                16089088
+              ]
+            }
+          },
+          {
+            "rss": 21622784,
+            "processes": {
+              "34952": [
+                "ownward-test-final-delivery.exe",
+                21622784
+              ]
+            }
+          },
+          {
+            "rss": 37212160,
+            "processes": {
+              "34952": [
+                "ownward-test-final-delivery.exe",
+                23330816
+              ],
+              "35152": [
+                "ownward-test-final-delivery.exe",
+                13881344
+              ]
+            }
+          }
+        ],
+        "tests": [
+          {
+            "cold_start_total_ms": 2859.0000000003783
+          }
+        ],
+        "service_exit": 0,
+        "connector_exit": 0
+      },
+      {
+        "binary_sha256": "da53469a948ea98e4198b4192f7dc2f0c2d8cc7df1f28f1ef99b5378f47df63d",
+        "composition": "3face7f67cb4bdcca8c00e68abab9369cce37fe37fb813f25bdb1bc85cc10945",
+        "small_query_seconds": [],
+        "peak_mib": 35.5078125,
+        "private_commit_peak_mib": 43.49609375,
+        "non_model_peak_mib": 35.5078125,
+        "individual_peak_mib": {
+          "ownward-test-final-delivery.exe": 22.62890625
+        },
+        "peak_observations": [
+          {
+            "rss": 10776576,
+            "processes": {
+              "34332": [
+                "ownward-test-final-delivery.exe",
+                10776576
+              ]
+            }
+          },
+          {
+            "rss": 10809344,
+            "processes": {
+              "34332": [
+                "ownward-test-final-delivery.exe",
+                10809344
+              ]
+            }
+          },
+          {
+            "rss": 14831616,
+            "processes": {
+              "34332": [
+                "ownward-test-final-delivery.exe",
+                14831616
+              ]
+            }
+          },
+          {
+            "rss": 21893120,
+            "processes": {
+              "34332": [
+                "ownward-test-final-delivery.exe",
+                21893120
+              ]
+            }
+          },
+          {
+            "rss": 37232640,
+            "processes": {
+              "31920": [
+                "ownward-test-final-delivery.exe",
+                13504512
+              ],
+              "34332": [
+                "ownward-test-final-delivery.exe",
+                23728128
+              ]
+            }
+          }
+        ],
+        "tests": [
+          {
+            "cold_start_total_ms": 2016.0000000032596
+          }
+        ],
+        "service_exit": 0,
+        "connector_exit": 0
+      }
+    ],
+    "cold_first_batch": {
+      "binary_sha256": "da53469a948ea98e4198b4192f7dc2f0c2d8cc7df1f28f1ef99b5378f47df63d",
+      "composition": "3face7f67cb4bdcca8c00e68abab9369cce37fe37fb813f25bdb1bc85cc10945",
+      "small_query_seconds": [
+        0.4690000000009604,
+        0.5940000000009604,
+        0.4679999999971187,
+        0.375,
+        0.3290000000015425,
+        0.4209999999984575,
+        0.5630000000019209,
+        0.7809999999990396,
+        0.5309999999990396,
+        0.43800000000192085,
+        0.43699999999807915,
+        0.4070000000028813,
+        0.3899999999994179,
+        0.5629999999982829,
+        0.5,
+        0.5149999999994179,
+        0.3600000000005821,
+        0.3280000000013388,
+        0.375,
+        0.375
+      ],
+      "peak_mib": 211.61328125,
+      "private_commit_peak_mib": 168.62890625,
+      "non_model_peak_mib": 50.81640625,
+      "individual_peak_mib": {
+        "ownward-test-final-delivery.exe": 31.30859375,
+        "llama-server.exe": 160.80078125
+      },
+      "peak_observations": [
+        {
+          "rss": 220061696,
+          "processes": {
+            "32304": [
+              "ownward-test-final-delivery.exe",
+              30900224
+            ],
+            "15144": [
+              "llama-server.exe",
+              168607744
+            ],
+            "35016": [
+              "ownward-test-final-delivery.exe",
+              20553728
+            ]
+          }
+        },
+        {
+          "rss": 220397568,
+          "processes": {
+            "32304": [
+              "ownward-test-final-delivery.exe",
+              31727616
+            ],
+            "15144": [
+              "llama-server.exe",
+              168607744
+            ],
+            "35016": [
+              "ownward-test-final-delivery.exe",
+              20062208
+            ]
+          }
+        },
+        {
+          "rss": 221085696,
+          "processes": {
+            "32304": [
+              "ownward-test-final-delivery.exe",
+              32153600
+            ],
+            "15144": [
+              "llama-server.exe",
+              168607744
+            ],
+            "35016": [
+              "ownward-test-final-delivery.exe",
+              20324352
+            ]
+          }
+        },
+        {
+          "rss": 221093888,
+          "processes": {
+            "32304": [
+              "ownward-test-final-delivery.exe",
+              32092160
+            ],
+            "15144": [
+              "llama-server.exe",
+              168607744
+            ],
+            "35016": [
+              "ownward-test-final-delivery.exe",
+              20393984
+            ]
+          }
+        },
+        {
+          "rss": 221892608,
+          "processes": {
+            "32304": [
+              "ownward-test-final-delivery.exe",
+              32829440
+            ],
+            "15144": [
+              "llama-server.exe",
+              168607744
+            ],
+            "35016": [
+              "ownward-test-final-delivery.exe",
+              20455424
+            ]
+          }
+        }
+      ],
+      "tests": [
+        {
+          "workload": "frozen product_resource 20 documents / 20 queries",
+          "document_ms_per_item": 697.649999999885,
+          "query_p95_ms": 594.0000000009604,
+          "first_query_seconds": 0.031000000002677552,
+          "idle_cpu_percent": 0.013001331336329596,
+          "idle_rss_mib": 209.234375
+        }
+      ],
+      "service_exit": 0,
+      "connector_exit": 0
+    },
+    "conditions": "Same frozen 20-document/20-query text, local model and four-thread configuration. Windows authoritative process-tree sampler at 50 ms, measured without competing probes. Warm document workload explicitly invokes the original warmup query because the new empty-corpus search correctly skips embedding. Cold first-batch cost is retained separately; not relabeled as warm throughput.",
+    "long_input_boundary": {
+      "binary_sha256": "e38fe00c7d8613dcbe06c2c250cfcd17349f61c5ccc776627efe99322cae339f",
+      "composition": "92371fe9bca8bd88ee06ac62c860e57a81e3b422ac37168fc7fff3e6267f1053",
+      "small_query_seconds": [],
+      "peak_mib": 212.30859375,
+      "private_commit_peak_mib": 173.87890625,
+      "non_model_peak_mib": 52.73828125,
+      "individual_peak_mib": {
+        "ownward-test-delivery.exe": 33.6875,
+        "llama-server.exe": 159.5703125
+      },
+      "peak_observations": [
+        {
+          "rss": 220966912,
+          "processes": {
+            "21276": [
+              "ownward-test-delivery.exe",
+              33923072
+            ],
+            "26056": [
+              "llama-server.exe",
+              167223296
+            ],
+            "31568": [
+              "ownward-test-delivery.exe",
+              19820544
+            ]
+          }
+        },
+        {
+          "rss": 221085696,
+          "processes": {
+            "21276": [
+              "ownward-test-delivery.exe",
+              34041856
+            ],
+            "26056": [
+              "llama-server.exe",
+              167223296
+            ],
+            "31568": [
+              "ownward-test-delivery.exe",
+              19820544
+            ]
+          }
+        },
+        {
+          "rss": 222052352,
+          "processes": {
+            "21276": [
+              "ownward-test-delivery.exe",
+              34754560
+            ],
+            "26056": [
+              "llama-server.exe",
+              167321600
+            ],
+            "31568": [
+              "ownward-test-delivery.exe",
+              19976192
+            ]
+          }
+        },
+        {
+          "rss": 222380032,
+          "processes": {
+            "21276": [
+              "ownward-test-delivery.exe",
+              35082240
+            ],
+            "26056": [
+              "llama-server.exe",
+              167321600
+            ],
+            "31568": [
+              "ownward-test-delivery.exe",
+              19976192
+            ]
+          }
+        },
+        {
+          "rss": 222621696,
+          "processes": {
+            "21276": [
+              "ownward-test-delivery.exe",
+              35323904
+            ],
+            "26056": [
+              "llama-server.exe",
+              167321600
+            ],
+            "31568": [
+              "ownward-test-delivery.exe",
+              19976192
+            ]
+          }
+        }
+      ],
+      "tests": [
+        {
+          "source_bytes": 8388667,
+          "create_seconds": 57.20300000000134,
+          "semantic_work_seconds": 7.656999999999243,
+          "semantic_submit_seconds": 16.062000000001717,
+          "search_seconds": 19.0779999999977,
+          "evidence_seconds": 1.0,
+          "source_exact": true,
+          "evidence_exact": true,
+          "response_forms_equal": true
+        }
+      ],
+      "service_exit": 0,
+      "connector_exit": 0
+    },
+    "long_input_boundary_note": "Before atomic schema-creation refinement, after buffers and compact postings. 8.39 MB input and full original/evidence/dual protocol outputs are exact; tree 212.31 MiB, non-model 52.74 MiB. Overlapped a diagnostic write probe: its timings are not an uncontended acceptance measurement. Final full repository tests cover the affected paths.",
+    "previous_observations": "verification/resource-observations; all preserved with original binary identities and conditions; prior fail/overlap/cold-model observations are not erased."
+  },
+  "storage": {
+    "real_material_sample": {
+      "assets": 48,
+      "raw_utf8_bytes": 504009,
+      "organization_bytes": 511009,
+      "vector_bytes": 98304,
+      "sqlite_bytes": 8749056,
+      "free_bytes": 49152,
+      "postings": 22359
+    },
+    "synthetic_samples": [
+      {
+        "free_bytes": 49152,
+        "items": 160,
+        "migration_seconds": 67.3315021,
+        "old_derived_bytes": 383380,
+        "old_total_bytes": 438835,
+        "raw_asset_bytes": 44494,
+        "sqlite_bytes": 3375104,
+        "tables": {
+          "access_header": 16384,
+          "access_principals": 16384,
+          "assets": 49152,
+          "assets_payload": 16384,
+          "block_state": 16384,
+          "content_chunks": 65536,
+          "control_payload": 16384,
+          "control_records": 16384,
+          "controlled_copies": 16384,
+          "cursor_expiry": 16384,
+          "dependencies": 16384,
+          "dependencies_input": 16384,
+          "derived_reclaim": 16384,
+          "derived_state": 16384,
+          "explicit_links": 16384,
+          "explicit_target": 16384,
+          "forget_operations": 16384,
+          "forget_target_asset": 16384,
+          "forget_targets": 16384,
+          "generations": 16384,
+          "graph_explicit": 16384,
+          "graph_forward": 16384,
+          "graph_links": 49152,
+          "graph_names": 16384,
+          "graph_reverse": 16384,
+          "graph_unit_fingerprint": 16384,
+          "graph_units": 16384,
+          "invalidation_jobs": 16384,
+          "lexical_contexts": 16384,
+          "lexical_documents": 16384,
+          "lexical_stats": 16384,
+          "navigation_cursors": 16384,
+          "operation_receipts": 16384,
+          "organization_chunks": 81920,
+          "organization_contexts": 16384,
+          "organization_current": 16384,
+          "organization_current_owner": 16384,
+          "organization_headers": 98304,
+          "organization_heads": 16384,
+          "organization_publications": 16384,
+          "organization_state": 16384,
+          "organizations": 16384,
+          "organizations_owner": 16384,
+          "payloads": 49152,
+          "pending_payloads": 16384,
+          "postings": 704512,
+          "postings_payload": 737280,
+          "receipt_generation": 16384,
+          "reclaim_estimates": 16384,
+          "reclaim_jobs": 16384,
+          "semantic_jobs": 16384,
+          "source_epochs": 16384,
+          "sqlite_autoindex_access_principals_2": 16384,
+          "sqlite_autoindex_organization_publications_1": 16384,
+          "sqlite_autoindex_storage_migration_1": 16384,
+          "sqlite_schema": 49152,
+          "sqlite_sequence": 16384,
+          "staging_epoch": 16384,
+          "staging_owners": 16384,
+          "storage_migration": 16384,
+          "store_meta": 16384,
+          "vector_blocks": 16384,
+          "vector_blocks_space": 16384,
+          "vector_delta": 16384,
+          "vector_delta_space": 16384,
+          "vector_filter_pages": 16384,
+          "vector_member_owner": 16384,
+          "vector_members": 16384,
+          "vectors": 458752
+        },
+        "vector_bytes": 327680
+      },
+      {
+        "free_bytes": 49152,
+        "items": 80,
+        "migration_seconds": 26.1178783,
+        "old_derived_bytes": 191652,
+        "old_total_bytes": 219385,
+        "raw_asset_bytes": 22212,
+        "sqlite_bytes": 2260992,
+        "tables": {
+          "access_header": 16384,
+          "access_principals": 16384,
+          "assets": 16384,
+          "assets_payload": 16384,
+          "block_state": 16384,
+          "content_chunks": 49152,
+          "control_payload": 16384,
+          "control_records": 16384,
+          "controlled_copies": 16384,
+          "cursor_expiry": 16384,
+          "dependencies": 16384,
+          "dependencies_input": 16384,
+          "derived_reclaim": 16384,
+          "derived_state": 16384,
+          "explicit_links": 16384,
+          "explicit_target": 16384,
+          "forget_operations": 16384,
+          "forget_target_asset": 16384,
+          "forget_targets": 16384,
+          "generations": 16384,
+          "graph_explicit": 16384,
+          "graph_forward": 16384,
+          "graph_links": 16384,
+          "graph_names": 16384,
+          "graph_reverse": 16384,
+          "graph_unit_fingerprint": 16384,
+          "graph_units": 16384,
+          "invalidation_jobs": 16384,
+          "lexical_contexts": 16384,
+          "lexical_documents": 16384,
+          "lexical_stats": 16384,
+          "navigation_cursors": 16384,
+          "operation_receipts": 16384,
+          "organization_chunks": 49152,
+          "organization_contexts": 16384,
+          "organization_current": 16384,
+          "organization_current_owner": 16384,
+          "organization_headers": 49152,
+          "organization_heads": 16384,
+          "organization_publications": 16384,
+          "organization_state": 16384,
+          "organizations": 16384,
+          "organizations_owner": 16384,
+          "payloads": 16384,
+          "pending_payloads": 16384,
+          "postings": 344064,
+          "postings_payload": 393216,
+          "receipt_generation": 16384,
+          "reclaim_estimates": 16384,
+          "reclaim_jobs": 16384,
+          "semantic_jobs": 16384,
+          "source_epochs": 16384,
+          "sqlite_autoindex_access_principals_2": 16384,
+          "sqlite_autoindex_organization_publications_1": 16384,
+          "sqlite_autoindex_storage_migration_1": 16384,
+          "sqlite_schema": 49152,
+          "sqlite_sequence": 16384,
+          "staging_epoch": 16384,
+          "staging_owners": 16384,
+          "storage_migration": 16384,
+          "store_meta": 16384,
+          "vector_blocks": 16384,
+          "vector_blocks_space": 16384,
+          "vector_delta": 16384,
+          "vector_delta_space": 16384,
+          "vector_filter_pages": 16384,
+          "vector_member_owner": 16384,
+          "vector_members": 16384,
+          "vectors": 245760
+        },
+        "vector_bytes": 163840
+      }
+    ],
+    "synthetic_scope": "80 and 160 instances from the frozen performance content/vector generator, adding only an explicit synthetic vector-space identity required by the new store. No AI. Not a 100000-record release score.",
+    "interpretation": "Same real 48-asset sample: SQLite 8749056 -> 6209536 bytes, -29.03%; 22359 postings retained, zero free pages after reclaim. Originals, semantic records, vectors and canonical term/frequency hashes unchanged. 80/160 frozen fixtures: 2260992/3375104 -> 1867776/2605056 bytes. Existing encoded derived ratio remains about 1.03 <1.35; this is not the whole SQLite file ratio. Physical index/page/control overhead is reported separately. No new AI, no removal of searchable information, no full-corpus in-memory representation.",
+    "compact_physical_samples": [
+      {
+        "after": {
+          "free_bytes": 0,
+          "hashes": {
+            "postings": "bb235f62dcbdf9417400d1e839bc284eab32984308376a26f3e4e7e629b78118",
+            "raw": "af04688484afa32ffd26a99986781bf381f878ce6d5b7c23400f5e0824330378",
+            "semantics": "88dc6c2b013790c262a79f05e02e6fdacebe2125ef81df67b1a9298a47752d18",
+            "vectors": "707aa08202b5757c3ef4d889baa6969d5a113b1674a86f2bc8a5c33de3239793"
+          },
+          "organization_bytes": 511009,
+          "raw_bytes": 504009,
+          "sqlite_bytes": 6209536,
+          "tables": {
+            "access_header": 16384,
+            "access_principals": 16384,
+            "assets": 16384,
+            "assets_payload": 16384,
+            "authority_header": 16384,
+            "authority_items": 16384,
+            "authority_state": 16384,
+            "block_state": 16384,
+            "content_chunks": 851968,
+            "control_payload": 16384,
+            "control_records": 16384,
+            "controlled_copies": 16384,
+            "cursor_expiry": 16384,
+            "dependencies": 147456,
+            "dependencies_input": 131072,
+            "derived_reclaim": 16384,
+            "derived_state": 16384,
+            "explicit_links": 16384,
+            "explicit_target": 16384,
+            "forget_operations": 16384,
+            "forget_target_asset": 16384,
+            "forget_targets": 16384,
+            "generations": 16384,
+            "graph_explicit": 16384,
+            "graph_forward": 16384,
+            "graph_links": 65536,
+            "graph_names": 49152,
+            "graph_reverse": 16384,
+            "graph_unit_fingerprint": 16384,
+            "graph_units": 65536,
+            "invalidation_jobs": 16384,
+            "lexical_contexts": 16384,
+            "lexical_documents": 16384,
+            "lexical_payload_ids": 16384,
+            "lexical_stats": 16384,
+            "navigation_cursors": 16384,
+            "operation_receipts": 16384,
+            "organization_chunks": 901120,
+            "organization_contexts": 16384,
+            "organization_current": 16384,
+            "organization_current_owner": 16384,
+            "organization_headers": 753664,
+            "organization_heads": 16384,
+            "organization_publications": 16384,
+            "organization_state": 16384,
+            "organizations": 16384,
+            "organizations_owner": 16384,
+            "payloads": 16384,
+            "pending_payloads": 16384,
+            "postings": 1048576,
+            "postings_document": 983040,
+            "receipt_generation": 16384,
+            "reclaim_estimates": 16384,
+            "reclaim_jobs": 16384,
+            "semantic_jobs": 16384,
+            "source_epochs": 16384,
+            "sqlite_autoindex_access_principals_2": 16384,
+            "sqlite_autoindex_lexical_payload_ids_1": 16384,
+            "sqlite_autoindex_organization_publications_1": 16384,
+            "sqlite_autoindex_storage_migration_1": 16384,
+            "sqlite_schema": 49152,
+            "sqlite_sequence": 16384,
+            "staging_epoch": 16384,
+            "staging_owners": 16384,
+            "storage_migration": 16384,
+            "store_meta": 16384,
+            "vector_blocks": 16384,
+            "vector_blocks_space": 16384,
+            "vector_delta": 16384,
+            "vector_delta_space": 16384,
+            "vector_filter_pages": 16384,
+            "vector_member_owner": 16384,
+            "vector_members": 16384,
+            "vectors": 131072
+          },
+          "vector_bytes": 98304
+        },
+        "before": {
+          "free_bytes": 49152,
+          "hashes": {
+            "postings": "bb235f62dcbdf9417400d1e839bc284eab32984308376a26f3e4e7e629b78118",
+            "raw": "af04688484afa32ffd26a99986781bf381f878ce6d5b7c23400f5e0824330378",
+            "semantics": "88dc6c2b013790c262a79f05e02e6fdacebe2125ef81df67b1a9298a47752d18",
+            "vectors": "707aa08202b5757c3ef4d889baa6969d5a113b1674a86f2bc8a5c33de3239793"
+          },
+          "organization_bytes": 511009,
+          "raw_bytes": 504009,
+          "sqlite_bytes": 8749056,
+          "tables": {
+            "access_header": 16384,
+            "access_principals": 16384,
+            "assets": 16384,
+            "assets_payload": 16384,
+            "authority_header": 16384,
+            "authority_items": 16384,
+            "authority_state": 16384,
+            "block_state": 16384,
+            "content_chunks": 851968,
+            "control_payload": 16384,
+            "control_records": 16384,
+            "controlled_copies": 16384,
+            "cursor_expiry": 16384,
+            "dependencies": 147456,
+            "dependencies_input": 131072,
+            "derived_reclaim": 16384,
+            "derived_state": 16384,
+            "explicit_links": 16384,
+            "explicit_target": 16384,
+            "forget_operations": 16384,
+            "forget_target_asset": 16384,
+            "forget_targets": 16384,
+            "generations": 16384,
+            "graph_explicit": 16384,
+            "graph_forward": 16384,
+            "graph_links": 65536,
+            "graph_names": 49152,
+            "graph_reverse": 16384,
+            "graph_unit_fingerprint": 16384,
+            "graph_units": 65536,
+            "invalidation_jobs": 16384,
+            "lexical_contexts": 16384,
+            "lexical_documents": 16384,
+            "lexical_stats": 16384,
+            "navigation_cursors": 16384,
+            "operation_receipts": 16384,
+            "organization_chunks": 901120,
+            "organization_contexts": 16384,
+            "organization_current": 16384,
+            "organization_current_owner": 16384,
+            "organization_headers": 753664,
+            "organization_heads": 16384,
+            "organization_publications": 16384,
+            "organization_state": 16384,
+            "organizations": 16384,
+            "organizations_owner": 16384,
+            "payloads": 16384,
+            "pending_payloads": 16384,
+            "postings": 2179072,
+            "postings_payload": 2375680,
+            "receipt_generation": 16384,
+            "reclaim_estimates": 16384,
+            "reclaim_jobs": 16384,
+            "semantic_jobs": 16384,
+            "source_epochs": 16384,
+            "sqlite_autoindex_access_principals_2": 16384,
+            "sqlite_autoindex_organization_publications_1": 16384,
+            "sqlite_autoindex_storage_migration_1": 16384,
+            "sqlite_schema": 49152,
+            "sqlite_sequence": 16384,
+            "staging_epoch": 16384,
+            "staging_owners": 16384,
+            "storage_migration": 16384,
+            "store_meta": 16384,
+            "vector_blocks": 16384,
+            "vector_blocks_space": 16384,
+            "vector_delta": 16384,
+            "vector_delta_space": 16384,
+            "vector_filter_pages": 16384,
+            "vector_member_owner": 16384,
+            "vector_members": 16384,
+            "vectors": 131072
+          },
+          "vector_bytes": 98304
+        },
+        "exact": true,
+        "source": "E:\\Dev\\ownward\\.tmp\\bounded-unit4\\materials14\\questions\\gpt4_a56e767c\\ownward-data\\stores\\9f166a0ceb3b6bdad81a103fff81012a063d273908fd521a\\ownward.sqlite",
+        "upgrade_seconds": 21.3993166
+      },
+      {
+        "after": {
+          "free_bytes": 0,
+          "hashes": {
+            "postings": "27f4f4aba62d48de95b0b9881db86bbb782f0e6c787bb194c5d7ff44645432c1",
+            "raw": "15103299674695cebbc2601b73f330c7ddba00a68f22505ce32207b0a6d9e3d0",
+            "semantics": "17eea334a640a0f99b40a4f7445e200cdf4e8bfd9f5d1e1149ac9db87f61b3e7",
+            "vectors": "29d470124af6b6988b0ccea571aa09a2cff6e1a7b4fd8768558b8f1ab5a38c5a"
+          },
+          "organization_bytes": 52500,
+          "raw_bytes": 14910,
+          "sqlite_bytes": 2605056,
+          "tables": {
+            "access_header": 16384,
+            "access_principals": 16384,
+            "assets": 49152,
+            "assets_payload": 16384,
+            "block_state": 16384,
+            "content_chunks": 65536,
+            "control_payload": 16384,
+            "control_records": 16384,
+            "controlled_copies": 16384,
+            "cursor_expiry": 16384,
+            "dependencies": 16384,
+            "dependencies_input": 16384,
+            "derived_reclaim": 16384,
+            "derived_state": 16384,
+            "explicit_links": 16384,
+            "explicit_target": 16384,
+            "forget_operations": 16384,
+            "forget_target_asset": 16384,
+            "forget_targets": 16384,
+            "generations": 16384,
+            "graph_explicit": 16384,
+            "graph_forward": 16384,
+            "graph_links": 49152,
+            "graph_names": 16384,
+            "graph_reverse": 16384,
+            "graph_unit_fingerprint": 16384,
+            "graph_units": 16384,
+            "invalidation_jobs": 16384,
+            "lexical_contexts": 16384,
+            "lexical_documents": 16384,
+            "lexical_payload_ids": 16384,
+            "lexical_stats": 16384,
+            "navigation_cursors": 16384,
+            "operation_receipts": 16384,
+            "organization_chunks": 81920,
+            "organization_contexts": 16384,
+            "organization_current": 16384,
+            "organization_current_owner": 16384,
+            "organization_headers": 98304,
+            "organization_heads": 16384,
+            "organization_publications": 16384,
+            "organization_state": 16384,
+            "organizations": 16384,
+            "organizations_owner": 16384,
+            "payloads": 49152,
+            "pending_payloads": 16384,
+            "postings": 344064,
+            "postings_document": 344064,
+            "receipt_generation": 16384,
+            "reclaim_estimates": 16384,
+            "reclaim_jobs": 16384,
+            "semantic_jobs": 16384,
+            "source_epochs": 16384,
+            "sqlite_autoindex_access_principals_2": 16384,
+            "sqlite_autoindex_lexical_payload_ids_1": 16384,
+            "sqlite_autoindex_organization_publications_1": 16384,
+            "sqlite_autoindex_storage_migration_1": 16384,
+            "sqlite_schema": 49152,
+            "sqlite_sequence": 16384,
+            "staging_epoch": 16384,
+            "staging_owners": 16384,
+            "storage_migration": 16384,
+            "store_meta": 16384,
+            "vector_blocks": 16384,
+            "vector_blocks_space": 16384,
+            "vector_delta": 16384,
+            "vector_delta_space": 16384,
+            "vector_filter_pages": 16384,
+            "vector_member_owner": 16384,
+            "vector_members": 16384,
+            "vectors": 458752
+          },
+          "vector_bytes": 327680
+        },
+        "before": {
+          "free_bytes": 49152,
+          "hashes": {
+            "postings": "27f4f4aba62d48de95b0b9881db86bbb782f0e6c787bb194c5d7ff44645432c1",
+            "raw": "15103299674695cebbc2601b73f330c7ddba00a68f22505ce32207b0a6d9e3d0",
+            "semantics": "17eea334a640a0f99b40a4f7445e200cdf4e8bfd9f5d1e1149ac9db87f61b3e7",
+            "vectors": "29d470124af6b6988b0ccea571aa09a2cff6e1a7b4fd8768558b8f1ab5a38c5a"
+          },
+          "organization_bytes": 52500,
+          "raw_bytes": 14910,
+          "sqlite_bytes": 3375104,
+          "tables": {
+            "access_header": 16384,
+            "access_principals": 16384,
+            "assets": 49152,
+            "assets_payload": 16384,
+            "block_state": 16384,
+            "content_chunks": 65536,
+            "control_payload": 16384,
+            "control_records": 16384,
+            "controlled_copies": 16384,
+            "cursor_expiry": 16384,
+            "dependencies": 16384,
+            "dependencies_input": 16384,
+            "derived_reclaim": 16384,
+            "derived_state": 16384,
+            "explicit_links": 16384,
+            "explicit_target": 16384,
+            "forget_operations": 16384,
+            "forget_target_asset": 16384,
+            "forget_targets": 16384,
+            "generations": 16384,
+            "graph_explicit": 16384,
+            "graph_forward": 16384,
+            "graph_links": 49152,
+            "graph_names": 16384,
+            "graph_reverse": 16384,
+            "graph_unit_fingerprint": 16384,
+            "graph_units": 16384,
+            "invalidation_jobs": 16384,
+            "lexical_contexts": 16384,
+            "lexical_documents": 16384,
+            "lexical_stats": 16384,
+            "navigation_cursors": 16384,
+            "operation_receipts": 16384,
+            "organization_chunks": 81920,
+            "organization_contexts": 16384,
+            "organization_current": 16384,
+            "organization_current_owner": 16384,
+            "organization_headers": 98304,
+            "organization_heads": 16384,
+            "organization_publications": 16384,
+            "organization_state": 16384,
+            "organizations": 16384,
+            "organizations_owner": 16384,
+            "payloads": 49152,
+            "pending_payloads": 16384,
+            "postings": 704512,
+            "postings_payload": 737280,
+            "receipt_generation": 16384,
+            "reclaim_estimates": 16384,
+            "reclaim_jobs": 16384,
+            "semantic_jobs": 16384,
+            "source_epochs": 16384,
+            "sqlite_autoindex_access_principals_2": 16384,
+            "sqlite_autoindex_organization_publications_1": 16384,
+            "sqlite_autoindex_storage_migration_1": 16384,
+            "sqlite_schema": 49152,
+            "sqlite_sequence": 16384,
+            "staging_epoch": 16384,
+            "staging_owners": 16384,
+            "storage_migration": 16384,
+            "store_meta": 16384,
+            "vector_blocks": 16384,
+            "vector_blocks_space": 16384,
+            "vector_delta": 16384,
+            "vector_delta_space": 16384,
+            "vector_filter_pages": 16384,
+            "vector_member_owner": 16384,
+            "vector_members": 16384,
+            "vectors": 458752
+          },
+          "vector_bytes": 327680
+        },
+        "exact": true,
+        "source": "E:\\Dev\\ownward\\.tmp\\bounded-unit4\\cost-probe-1688724810\\stores\\a2b44417b889c2e8b11427c4cd3ef13d3113d9bd33c5b68c\\ownward.sqlite",
+        "upgrade_seconds": 4.7710356
+      },
+      {
+        "after": {
+          "free_bytes": 0,
+          "hashes": {
+            "postings": "62ef9b72e4c73cb3c5fc314a738dce06c903bf1aa6ced8949ddd8d8e14594b2b",
+            "raw": "c8ee50028da428485e1816360044adc2889501a78028e98938f4c94f4a289c94",
+            "semantics": "f32ef744a8ee3fa6b86b14a7517fde31bedd51e40968d344e4ca0e6d4c81e8bf",
+            "vectors": "617336122d9e4103816ba58328aef65f2d5571cfc07afe9918ce40679559aadc"
+          },
+          "organization_bytes": 26212,
+          "raw_bytes": 7420,
+          "sqlite_bytes": 1867776,
+          "tables": {
+            "access_header": 16384,
+            "access_principals": 16384,
+            "assets": 16384,
+            "assets_payload": 16384,
+            "block_state": 16384,
+            "content_chunks": 49152,
+            "control_payload": 16384,
+            "control_records": 16384,
+            "controlled_copies": 16384,
+            "cursor_expiry": 16384,
+            "dependencies": 16384,
+            "dependencies_input": 16384,
+            "derived_reclaim": 16384,
+            "derived_state": 16384,
+            "explicit_links": 16384,
+            "explicit_target": 16384,
+            "forget_operations": 16384,
+            "forget_target_asset": 16384,
+            "forget_targets": 16384,
+            "generations": 16384,
+            "graph_explicit": 16384,
+            "graph_forward": 16384,
+            "graph_links": 16384,
+            "graph_names": 16384,
+            "graph_reverse": 16384,
+            "graph_unit_fingerprint": 16384,
+            "graph_units": 16384,
+            "invalidation_jobs": 16384,
+            "lexical_contexts": 16384,
+            "lexical_documents": 16384,
+            "lexical_payload_ids": 16384,
+            "lexical_stats": 16384,
+            "navigation_cursors": 16384,
+            "operation_receipts": 16384,
+            "organization_chunks": 49152,
+            "organization_contexts": 16384,
+            "organization_current": 16384,
+            "organization_current_owner": 16384,
+            "organization_headers": 49152,
+            "organization_heads": 16384,
+            "organization_publications": 16384,
+            "organization_state": 16384,
+            "organizations": 16384,
+            "organizations_owner": 16384,
+            "payloads": 16384,
+            "pending_payloads": 16384,
+            "postings": 180224,
+            "postings_document": 180224,
+            "receipt_generation": 16384,
+            "reclaim_estimates": 16384,
+            "reclaim_jobs": 16384,
+            "semantic_jobs": 16384,
+            "source_epochs": 16384,
+            "sqlite_autoindex_access_principals_2": 16384,
+            "sqlite_autoindex_lexical_payload_ids_1": 16384,
+            "sqlite_autoindex_organization_publications_1": 16384,
+            "sqlite_autoindex_storage_migration_1": 16384,
+            "sqlite_schema": 49152,
+            "sqlite_sequence": 16384,
+            "staging_epoch": 16384,
+            "staging_owners": 16384,
+            "storage_migration": 16384,
+            "store_meta": 16384,
+            "vector_blocks": 16384,
+            "vector_blocks_space": 16384,
+            "vector_delta": 16384,
+            "vector_delta_space": 16384,
+            "vector_filter_pages": 16384,
+            "vector_member_owner": 16384,
+            "vector_members": 16384,
+            "vectors": 245760
+          },
+          "vector_bytes": 163840
+        },
+        "before": {
+          "free_bytes": 49152,
+          "hashes": {
+            "postings": "62ef9b72e4c73cb3c5fc314a738dce06c903bf1aa6ced8949ddd8d8e14594b2b",
+            "raw": "c8ee50028da428485e1816360044adc2889501a78028e98938f4c94f4a289c94",
+            "semantics": "f32ef744a8ee3fa6b86b14a7517fde31bedd51e40968d344e4ca0e6d4c81e8bf",
+            "vectors": "617336122d9e4103816ba58328aef65f2d5571cfc07afe9918ce40679559aadc"
+          },
+          "organization_bytes": 26212,
+          "raw_bytes": 7420,
+          "sqlite_bytes": 2260992,
+          "tables": {
+            "access_header": 16384,
+            "access_principals": 16384,
+            "assets": 16384,
+            "assets_payload": 16384,
+            "block_state": 16384,
+            "content_chunks": 49152,
+            "control_payload": 16384,
+            "control_records": 16384,
+            "controlled_copies": 16384,
+            "cursor_expiry": 16384,
+            "dependencies": 16384,
+            "dependencies_input": 16384,
+            "derived_reclaim": 16384,
+            "derived_state": 16384,
+            "explicit_links": 16384,
+            "explicit_target": 16384,
+            "forget_operations": 16384,
+            "forget_target_asset": 16384,
+            "forget_targets": 16384,
+            "generations": 16384,
+            "graph_explicit": 16384,
+            "graph_forward": 16384,
+            "graph_links": 16384,
+            "graph_names": 16384,
+            "graph_reverse": 16384,
+            "graph_unit_fingerprint": 16384,
+            "graph_units": 16384,
+            "invalidation_jobs": 16384,
+            "lexical_contexts": 16384,
+            "lexical_documents": 16384,
+            "lexical_stats": 16384,
+            "navigation_cursors": 16384,
+            "operation_receipts": 16384,
+            "organization_chunks": 49152,
+            "organization_contexts": 16384,
+            "organization_current": 16384,
+            "organization_current_owner": 16384,
+            "organization_headers": 49152,
+            "organization_heads": 16384,
+            "organization_publications": 16384,
+            "organization_state": 16384,
+            "organizations": 16384,
+            "organizations_owner": 16384,
+            "payloads": 16384,
+            "pending_payloads": 16384,
+            "postings": 344064,
+            "postings_payload": 393216,
+            "receipt_generation": 16384,
+            "reclaim_estimates": 16384,
+            "reclaim_jobs": 16384,
+            "semantic_jobs": 16384,
+            "source_epochs": 16384,
+            "sqlite_autoindex_access_principals_2": 16384,
+            "sqlite_autoindex_organization_publications_1": 16384,
+            "sqlite_autoindex_storage_migration_1": 16384,
+            "sqlite_schema": 49152,
+            "sqlite_sequence": 16384,
+            "staging_epoch": 16384,
+            "staging_owners": 16384,
+            "storage_migration": 16384,
+            "store_meta": 16384,
+            "vector_blocks": 16384,
+            "vector_blocks_space": 16384,
+            "vector_delta": 16384,
+            "vector_delta_space": 16384,
+            "vector_filter_pages": 16384,
+            "vector_member_owner": 16384,
+            "vector_members": 16384,
+            "vectors": 245760
+          },
+          "vector_bytes": 163840
+        },
+        "exact": true,
+        "source": "E:\\Dev\\ownward\\.tmp\\bounded-unit4\\cost-probe-3735392436\\stores\\116582c596fab7a51e38c6439143f2249e205a7bf40200b4\\ownward.sqlite",
+        "upgrade_seconds": 2.7178896
+      }
+    ]
+  },
+  "open_acceptance": [],
+  "completion": {
+    "unit_four_closed": true,
+    "user_data_migrated": false,
+    "final_500_started": false,
+    "git_written_by_this_task": false,
+    "quality_scope": "Storage migration and cost closure only. Recorded natural-language results remain 11/14 and 24/24; this is not a claim that all information-use failures are solved or that the complete product is release-certified."
+  },
+  "reproduction_archive": "bounded-unit-four-20260917.zip",
+  "reproduction_archive_sha256": "9b9ad9221587115e4e819efa24d67d70622da2a0b65e653c38fe4070604c287f",
+  "history": {
+    "invalid_replay_attempt": "An intermediate SQLite snapshot still carried its prior product composition; final code correctly rejects this incompatible binding. The accepted replay migrates independent original prepared materials through the formal entry point and verifies equivalence. No product guard or stored identity was bypassed.",
+    "pre_closeout_report": "history/pre-closeout/report.json",
+    "pre_closeout_composition_identity": "4e7a236fbf8a57434fe88a777a98a7664cec51f9ffc7216c76425cd5d9180094",
+    "prior_source_hashes_preserved": true,
+    "pre_independent_review_report": "history/pre-independent-review/report.json",
+    "pre_independent_review_composition_identity": "3face7f67cb4bdcca8c00e68abab9369cce37fe37fb813f25bdb1bc85cc10945"
+  },
+  "independent_review": {
+    "status": "passed",
+    "composition_identity": "52797ade3d38c1dd4ce6a25436653734552a893265a9d9e0b7efcf3cc583dd94",
+    "frozen_files": 387,
+    "round_one": "verification/review-r1/b/review.md",
+    "rereview": "verification/review-r2/b/review.md",
+    "fixes": "verification/review-r2/fixes.md",
+    "closed_findings": {
+      "U4-B1": "An unknown or activated target cannot reopen legacy authority; early safe cancellation and forward recovery remain supported.",
+      "U4-B2": "Running and restarted handoff authorization uses the current credential in bounded control selection; delegated managers work and invalid/revoked management credentials remain denied."
+    },
+    "self_verification": {
+      "passed_top_level_tests": 66,
+      "packages": [
+        "github.com/HJSunDev/ownward/internal/boundedstore",
+        "github.com/HJSunDev/ownward/internal/assembly",
+        "github.com/HJSunDev/ownward/cmd/ownward"
+      ],
+      "failed": 0,
+      "new_external_ai_calls": 0,
+      "composition": "52797ade3d38c1dd4ce6a25436653734552a893265a9d9e0b7efcf3cc583dd94"
+    },
+    "measurement_scope": "No retrieval or semantic-processing changes. Earlier AI scores, resource measurements and 407-call replay retain their original composition identities; this review adds affected recovery and authorization validation, not new AI scores or performance measurements.",
+    "independent_verification": {
+      "composition": "52797ade3d38c1dd4ce6a25436653734552a893265a9d9e0b7efcf3cc583dd94",
+      "initial_and_final_identity_match": true,
+      "file_count": 387,
+      "top_passed": 6,
+      "sub_passed": 7,
+      "failed": 0,
+      "skipped": 0,
+      "packages": [
+        {
+          "Package": "github.com/HJSunDev/ownward/internal/boundedstore",
+          "Elapsed": 4.217
+        },
+        {
+          "Package": "github.com/HJSunDev/ownward/internal/assembly",
+          "Elapsed": 1.311
+        },
+        {
+          "Package": "github.com/HJSunDev/ownward/cmd/ownward",
+          "Elapsed": 29.973
+        }
+      ],
+      "new_external_ai_calls": 0,
+      "closed_findings": [
+        "U4-B1",
+        "U4-B2"
+      ],
+      "new_findings": [],
+      "process_exit_code": 0
+    }
+  }
+}

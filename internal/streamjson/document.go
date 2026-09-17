@@ -18,7 +18,7 @@ import (
 const BufferBytes = 64 * 1024
 const nodeBytes = 64
 
-// Document 在磁盘保存协议负载和节点位置，遍历数组不构造完整切片。
+// Document 有界暂存协议负载和节点位置，大负载落盘，遍历数组不构造完整切片。
 type Document struct {
 	data, index *resourcebudget.File
 	ctx         context.Context
@@ -53,11 +53,11 @@ func Parse(ctx context.Context, dir string, input io.Reader, budget *resourcebud
 	if err = os.MkdirAll(dir, 0700); err != nil {
 		return fail(err)
 	}
-	d.data, err = resourcebudget.TempFile(ctx, dir, "rpc-body-", maxBytes)
+	d.data, err = resourcebudget.BufferedTempFile(ctx, dir, "rpc-body-", maxBytes, budget)
 	if err != nil {
 		return fail(err)
 	}
-	d.index, err = resourcebudget.TempFile(ctx, dir, "rpc-index-", maxBytes)
+	d.index, err = resourcebudget.BufferedTempFile(ctx, dir, "rpc-index-", maxBytes, budget)
 	if err != nil {
 		return fail(err)
 	}

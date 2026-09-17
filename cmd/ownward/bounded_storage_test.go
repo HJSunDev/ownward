@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/HJSunDev/ownward/internal/adapter/mcpserver"
+	"github.com/HJSunDev/ownward/internal/assembly"
 	"github.com/HJSunDev/ownward/internal/boundedstore"
 	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/core"
@@ -40,6 +41,31 @@ func TestBoundedStorageProcess(t *testing.T) {
 		}
 	}
 	dir := os.Getenv("OWNWARD_BOUND_DIR")
+	if role == "service" && os.Getenv("OWNWARD_BOUND_FORMAL") == "1" {
+		r, err := assembly.Open(assembly.Request{DataDir: filepath.Join(dir, "product"), ProductSemantics: assembly.Collaborative, VectorBundleDir: os.Getenv("OWNWARD_BOUND_BUNDLE")})
+		check(err)
+		defer r.Close()
+		if os.Getenv("OWNWARD_BOUND_PREWARM") == "1" {
+			_, err = r.Streaming().Embedder.EmbedQuery(ctx, "预热本地向量能力")
+			check(err)
+		}
+		credential, err := r.UserControl().InitializeOwner("resource fixture")
+		check(err)
+		server := productServer(r)
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		check(err)
+		mux := http.NewServeMux()
+		mux.Handle("/capabilities", http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+			server.HTTPHandler().ServeHTTP(w, request.WithContext(informationcontrol.Authenticate(request.Context(), credential)))
+		}))
+		h := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+		go h.Serve(listener)
+		defer h.Close()
+		check(os.WriteFile(filepath.Join(dir, "endpoint"), []byte("http://"+listener.Addr().String()), 0600))
+		var one [1]byte
+		_, _ = os.Stdin.Read(one[:])
+		return
+	}
 	if role == "service" {
 		budget, err := resourcebudget.New(12*resourcebudget.MiB, resourcebudget.MiB)
 		check(err)

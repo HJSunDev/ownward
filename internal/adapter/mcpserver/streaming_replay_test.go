@@ -70,7 +70,8 @@ func (f *streamReplayFixture) call(name, op string, args any) *mcp.CallToolResul
 func (f *streamReplayFixture) decode(out *mcp.CallToolResult, value any) {
 	f.t.Helper()
 	if out.IsError {
-		data,_:=json.Marshal(out.Content);f.t.Fatalf("unexpected tool error: %s",data)
+		data, _ := json.Marshal(out.Content)
+		f.t.Fatalf("unexpected tool error: %s", data)
 	}
 	raw, err := json.Marshal(out.StructuredContent)
 	if err != nil {

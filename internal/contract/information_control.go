@@ -125,3 +125,7 @@ type InformationManagement interface {
 	Manage(context.Context, ManagementRequest) (ManagementReceipt, error)
 	Receipt(context.Context, string) (ManagementReceipt, error)
 }
+
+type PrincipalVisitor interface {
+	VisitPrincipals(context.Context, func(Principal) error) error
+}

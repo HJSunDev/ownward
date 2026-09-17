@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/HJSunDev/ownward/internal/adapter/localowner"
-	"github.com/HJSunDev/ownward/internal/adapter/mcpserver"
 	"github.com/HJSunDev/ownward/internal/assembly"
 	"github.com/HJSunDev/ownward/internal/config"
 	"github.com/HJSunDev/ownward/internal/contract"
@@ -212,7 +211,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		if resolvedToken == "" {
 			resolvedToken = strings.TrimSpace(os.Getenv(sharedMCPTokenEnvironment))
 		}
-		secured := controlHTTPServer{server: mcpserver.New(service, version), control: runtime.UserControl(), product: runtime.Management(), kernel: runtime.Service(), generation: runtime.OperationGeneration}
+		secured := controlHTTPServer{server: productServer(runtime), control: runtime.UserControl(), product: runtime.Management(), kernel: runtime.UnderlyingKernel(), generation: runtime.OperationGeneration}
 		if err := secured.prepareRecovery(ownerRecoveryScope(loaded.DataDir)); err != nil {
 			return err
 		}

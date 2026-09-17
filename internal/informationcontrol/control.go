@@ -35,7 +35,7 @@ func Authenticate(ctx context.Context, credential string) context.Context {
 func New(authority contract.ControlAuthority) *Control { return &Control{authority: authority} }
 
 func (c *Control) SystemID() string {
-	state := c.authority.ReadControl()
+	state := c.selected(context.Background(), contract.ControlSelection{})
 	if state.InformationControl == nil {
 		return ""
 	}
@@ -62,7 +62,7 @@ func digest(value string) string {
 func (c *Control) InitializeOwner(name string) (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	state := c.authority.ReadControl()
+	state := c.selected(context.Background(), contract.ControlSelection{})
 	if state.InformationControl != nil {
 		return "", errors.New("已有所有者，不能重新初始化")
 	}
@@ -93,7 +93,7 @@ func (c *Control) InitializeOwner(name string) (string, error) {
 func (c *Control) RecoverOwner() (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	state := c.authority.ReadControl()
+	state := c.selected(context.Background(), contract.ControlSelection{})
 	if err := mutable(state); err != nil {
 		return "", err
 	}
@@ -120,7 +120,7 @@ func (c *Control) RecoverOwner() (string, error) {
 func (c *Control) Enroll(ctx context.Context, name string) (contract.Principal, string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	state := c.authority.ReadControl()
+	state := c.selected(ctx, contract.ControlSelection{})
 	if err := mutable(state); err != nil {
 		return contract.Principal{}, "", err
 	}
@@ -148,6 +148,9 @@ func (c *Control) Enroll(ctx context.Context, name string) (contract.Principal, 
 }
 
 func principal(ctx context.Context, state contract.ControlState, permission contract.Permission) (contract.Principal, error) {
+	if state.ReadError != nil {
+		return contract.Principal{}, state.ReadError
+	}
 	if inactive(state) {
 		return contract.Principal{}, ErrInactive
 	}
@@ -167,6 +170,9 @@ func principal(ctx context.Context, state contract.ControlState, permission cont
 }
 
 func (c *Control) save(state contract.ControlState) error {
+	if state.ReadError != nil {
+		return state.ReadError
+	}
 	expected := state.Revision
 	state.Revision++
 	_, err := c.authority.CompareAndSwapControl(expected, state)
@@ -192,7 +198,7 @@ func (c *Control) Changed() <-chan struct{} {
 func (c *Control) Begin(ctx context.Context, permission contract.Permission) (context.Context, func() error, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	state := c.authority.ReadControl()
+	state := c.selected(ctx, contract.ControlSelection{})
 	p, err := principal(ctx, state, permission)
 	if err != nil {
 		return ctx, nil, err
@@ -210,10 +216,13 @@ func (c *Control) Begin(ctx context.Context, permission contract.Permission) (co
 			return ctx, nil, errors.New("遗忘屏障正在恢复，请稍后继续")
 		}
 	}
+	if state.Stopping {
+		return ctx, nil, errors.New("遗忘屏障正在恢复，请稍后继续")
+	}
 	epoch := state.InformationControl.DeletionRevision
 	ctx = contract.WithInformationSystem(ctx, state.InformationControl.SystemID)
 	check := func() error {
-		current := c.authority.ReadControl()
+		current := c.selected(ctx, contract.ControlSelection{})
 		if permission == contract.MaintainPermission && frozen(current) {
 			return ErrMoving
 		}
@@ -239,9 +248,14 @@ func (c *Control) Begin(ctx context.Context, permission contract.Permission) (co
 }
 
 func (c *Control) Principals(ctx context.Context) ([]contract.Principal, error) {
+	if _, ok := c.authority.(contract.PrincipalVisitor); ok {
+		var out []contract.Principal
+		err := c.VisitPrincipals(ctx, func(p contract.Principal) error { out = append(out, p); return nil })
+		return out, err
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	state := c.authority.ReadControl()
+	state := c.selected(ctx, contract.ControlSelection{Principals: true})
 	if _, err := principal(ctx, state, contract.ManagePermission); err != nil {
 		return nil, err
 	}
@@ -252,10 +266,50 @@ func (c *Control) Principals(ctx context.Context) ([]contract.Principal, error) 
 	return values, nil
 }
 
+func (c *Control) Principal(ctx context.Context, id string) (contract.Principal, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	state := c.selected(ctx, contract.ControlSelection{Principal: id})
+	if _, e := principal(ctx, state, contract.ManagePermission); e != nil {
+		return contract.Principal{}, e
+	}
+	for _, p := range state.InformationControl.Principals {
+		if p.ID == id {
+			p.CredentialDigest = ""
+			return p, nil
+		}
+	}
+	return contract.Principal{}, errors.New("接入者已不存在")
+}
+
+func (c *Control) VisitPrincipals(ctx context.Context, visit func(contract.Principal) error) error {
+	if v, ok := c.authority.(contract.PrincipalVisitor); ok {
+		bound, finish, e := c.Begin(ctx, contract.ManagePermission)
+		if e != nil {
+			return e
+		}
+		e = v.VisitPrincipals(bound, visit)
+		if check := finish(); check != nil {
+			return check
+		}
+		return e
+	}
+	values, e := c.Principals(ctx)
+	if e != nil {
+		return e
+	}
+	for _, p := range values {
+		if e = visit(p); e != nil {
+			return e
+		}
+	}
+	return nil
+}
+
 func (c *Control) Self(ctx context.Context) (contract.Principal, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	p, err := principal(ctx, c.authority.ReadControl(), "")
+	p, err := principal(ctx, c.selected(ctx, contract.ControlSelection{}), "")
 	p.CredentialDigest = ""
 	return p, err
 }
@@ -264,7 +318,7 @@ func (c *Control) Self(ctx context.Context) (contract.Principal, error) {
 func (c *Control) Reissue(ctx context.Context, id string) (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	state := c.authority.ReadControl()
+	state := c.selected(ctx, contract.ControlSelection{Principal: id})
 	if err := mutable(state); err != nil {
 		return "", err
 	}
@@ -294,7 +348,7 @@ func (c *Control) Reissue(ctx context.Context, id string) (string, error) {
 func (c *Control) SetPermissions(ctx context.Context, id string, permissions []contract.Permission) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	state := c.authority.ReadControl()
+	state := c.selected(ctx, contract.ControlSelection{Principal: id})
 	if _, err := principal(ctx, state, contract.ManagePermission); err != nil {
 		return err
 	}

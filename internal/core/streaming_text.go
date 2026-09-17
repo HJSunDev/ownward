@@ -45,7 +45,7 @@ func (t *streamingTexts) body(id string) (*streamedBody, error) {
 	if e != nil {
 		return nil, e
 	}
-	f, e := resourcebudget.TempFile(t.ctx, t.s.Scratch, "semantic-source-", t.s.DiskBytes)
+	f, e := resourcebudget.BufferedTempFile(t.ctx, t.s.Scratch, "semantic-source-", t.s.DiskBytes, resourcebudget.FromContext(t.ctx, t.s.Budget))
 	if e != nil {
 		return nil, e
 	}

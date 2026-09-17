@@ -1,6 +1,7 @@
 package assembly
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -50,6 +51,8 @@ type Request struct {
 }
 
 type Runtime struct {
+	streaming    *core.StreamingAssets
+	vector       contract.VectorCapability
 	service      *core.Service
 	product      *informationcontrol.Product
 	userControl  *informationcontrol.Control
@@ -80,6 +83,10 @@ func (r *Runtime) UserControl() *informationcontrol.Control { return r.userContr
 func (r *Runtime) Management() *informationcontrol.Product  { return r.product }
 
 func (r *Runtime) OperationGeneration() uint64 {
+	if r.streaming != nil {
+		g, _ := r.streaming.Store.OperationGeneration(context.Background())
+		return g
+	}
 	if a, ok := r.authority.Assets().(contract.MutationAuthority); ok {
 		return a.OperationGeneration()
 	}
@@ -90,6 +97,9 @@ func (r *Runtime) OperationGeneration() uint64 {
 func (r *Runtime) Kernel() contract.KernelLifecycle {
 	if r == nil {
 		return nil
+	}
+	if r.streaming != nil {
+		return r.streaming
 	}
 	return r.service
 }
@@ -116,6 +126,9 @@ func (r *Runtime) Backup(destination string) error {
 }
 
 func (r *Runtime) ExportHandoff(destination string) error {
+	if r.streaming != nil {
+		return r.streaming.Store.ExportDeploymentArchive(context.Background(), filepath.Join(destination, "authority.zip"))
+	}
 	return r.service.ExportSnapshot(destination, func() error { return r.Backup(filepath.Join(destination, "authority.zip")) })
 }
 
@@ -129,6 +142,12 @@ func (r *Runtime) Close() error {
 		}
 		if r.service != nil {
 			r.closeErr = r.service.Close()
+		}
+		if r.streaming != nil {
+			r.closeErr = errors.Join(r.closeErr, r.streaming.Close())
+		}
+		if r.vector != nil {
+			r.closeErr = errors.Join(r.closeErr, r.vector.Close())
 		}
 		if r.authority != nil {
 			if err := r.authority.Close(); r.closeErr == nil {
@@ -161,7 +180,7 @@ func Open(request Request) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
-	return openWith(request, manifest, productionResources)
+	return openBoundedWith(request, manifest, productionResources)
 }
 
 // Verify validates the release-embedded composition without discovering or

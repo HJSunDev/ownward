@@ -17,12 +17,13 @@ import (
 )
 
 const ChunkBytes = 64 * 1024
-const schemaVersion = 2
+const schemaVersion = 3
 
 type Options struct {
 	Budget   *resourcebudget.Budget
 	LockPath string
-	paused   bool // Restore drains control cleanup before background admission.
+	paused   bool      // Restore drains control cleanup before background admission.
+	lease    io.Closer // Deployment already owns the shared legacy lock.
 }
 
 // Store 不读取旧日志；旧格式迁移与启用由交付阶段控制。
@@ -61,7 +62,7 @@ type Store struct {
 
 const schema = `
 CREATE TABLE IF NOT EXISTS store_meta(key TEXT PRIMARY KEY, value INTEGER NOT NULL) WITHOUT ROWID;
-INSERT OR IGNORE INTO store_meta VALUES('format',2),('operation_generation',1),('asset_epoch',1);
+INSERT OR IGNORE INTO store_meta VALUES('format',3),('operation_generation',1),('asset_epoch',1);
 CREATE TABLE IF NOT EXISTS payloads(
  id TEXT PRIMARY KEY, operation TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('staging','ready','published')),
  content_bytes INTEGER NOT NULL DEFAULT 0, details_bytes INTEGER NOT NULL DEFAULT 0, digest TEXT NOT NULL DEFAULT '',
@@ -118,9 +119,13 @@ func Open(ctx context.Context, path string, options Options) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(options.LockPath), 0700); err != nil {
 		return nil, err
 	}
-	lock, err := assetlog.LockDirectory(options.LockPath)
-	if err != nil {
-		return nil, err
+	lock := options.lease
+	if lock == nil {
+		var err error
+		lock, err = assetlog.LockDirectory(options.LockPath)
+		if err != nil {
+			return nil, err
+		}
 	}
 	releaseCache, err := options.Budget.Acquire(ctx, 4*resourcebudget.MiB+128*1024, false)
 	if err != nil {
@@ -150,7 +155,7 @@ func Open(ctx context.Context, path string, options Options) (*Store, error) {
 		if err = s.writer.QueryRowContext(ctx, "SELECT value FROM store_meta WHERE key='format'").Scan(&version); err != nil {
 			return fail(err)
 		}
-		if version != 1 && version != schemaVersion {
+		if version < 1 || version > schemaVersion {
 			return fail(errors.New("不支持的数据库格式"))
 		}
 	}
@@ -171,12 +176,24 @@ func Open(ctx context.Context, path string, options Options) (*Store, error) {
 	if err = configure(ctx, s.writer, 2048, false); err != nil {
 		return fail(err)
 	}
-	if _, err = s.writer.ExecContext(ctx, schema+retrievalSchema+maintenanceSchema); err != nil {
+	if err = s.upgradeLexicalStorage(ctx); err != nil {
+		return fail(err)
+	}
+	tx, err := s.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return fail(err)
+	}
+	if _, err = tx.ExecContext(ctx, schema+retrievalSchema+maintenanceSchema); err != nil {
+		tx.Rollback()
 		return fail(err)
 	}
 	// Publish the new format before exposing any stop-use barrier. Old binaries
 	// must reject it rather than bypassing the new visibility view.
-	if _, err = s.writer.ExecContext(ctx, "UPDATE store_meta SET value=2 WHERE key='format'"); err != nil {
+	if _, err = tx.ExecContext(ctx, "UPDATE store_meta SET value=3 WHERE key='format'"); err != nil {
+		tx.Rollback()
+		return fail(err)
+	}
+	if err = tx.Commit(); err != nil {
 		return fail(err)
 	}
 	if err = s.initializeMaintenance(ctx); err != nil {

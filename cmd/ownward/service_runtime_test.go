@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net"
 	"os"
@@ -29,11 +30,29 @@ func TestInstalledRuntimeTransfersAndResumesWithoutAnotherAuthority(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer runtime.Close()
 	ownerToken, err := runtime.UserControl().InitializeOwner("owner")
 	if err != nil {
 		t.Fatal(err)
 	}
 	owner := informationcontrol.Authenticate(ctx, ownerToken)
+	manager, managerToken, err := runtime.UserControl().Enroll(owner, "delegated manager")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = runtime.UserControl().SetPermissions(owner, manager.ID, []contract.Permission{contract.ReadPermission, contract.ManagePermission}); err != nil {
+		t.Fatal(err)
+	}
+	revoked, revokedToken, err := runtime.UserControl().Enroll(owner, "revoked manager")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = runtime.UserControl().SetPermissions(owner, revoked.ID, []contract.Permission{contract.ReadPermission, contract.ManagePermission}); err != nil {
+		t.Fatal(err)
+	}
+	if err = runtime.UserControl().SetPermissions(owner, revoked.ID, []contract.Permission{contract.ReadPermission}); err != nil {
+		t.Fatal(err)
+	}
 	composition := runtime.Composition().Composition
 	system := runtime.UserControl().SystemID()
 	value, err := runtime.Product().Create(owner, contract.CreateInput{Content: "same evidence after moving"})
@@ -45,12 +64,13 @@ func TestInstalledRuntimeTransfersAndResumesWithoutAnotherAuthority(t *testing.T
 		t.Fatal(err)
 	}
 	direct := time.Now()
-	for i := 0; i < 10000; i++ {
+	const localSamples = 100
+	for i := 0; i < localSamples; i++ {
 		if _, err := runtime.Product().Read(owner, value.Information.ID); err != nil {
 			t.Fatal(err)
 		}
 	}
-	localMean := time.Since(direct) / 10000
+	localMean := time.Since(direct) / localSamples
 	if err := runtime.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +142,9 @@ func TestInstalledRuntimeTransfersAndResumesWithoutAnotherAuthority(t *testing.T
 		}
 		stop()
 		log, _ := os.ReadFile(filepath.Join(s.Root, "process.log"))
-		t.Fatalf("service did not start: %s", log)
+		pointer, _ := os.ReadFile(filepath.Join(s.DataDir, "storage.json"))
+		marker, _ := os.ReadFile(filepath.Join(s.DataDir, "assets", "manifest.json"))
+		t.Fatalf("service did not start: %s; storage=%s; marker=%s; receiving=%t", log, pointer, marker, s.Source != nil)
 		return stop
 	}
 	stopSource := start(source)
@@ -197,13 +219,18 @@ func TestInstalledRuntimeTransfersAndResumesWithoutAnotherAuthority(t *testing.T
 	}
 	id := connectionID()
 	var handoff contract.Handoff
-	if err := remoteCall(ctx, client, source.Location, "/remote/migration/prepare", ownerToken, map[string]any{"id": id, "target": target.Location}, &handoff); err != nil {
+	if err := remoteCall(ctx, client, source.Location, "/remote/migration/prepare", managerToken, map[string]any{"id": id, "target": target.Location}, &handoff); err != nil {
 		t.Fatal(err)
+	}
+	for _, token := range []string{"invalid-credential", revokedToken} {
+		if err := remoteCall(ctx, client, source.Location, "/remote/migration/start", token, map[string]any{"id": id, "location_saved": true}, nil); err == nil {
+			t.Fatal("unauthorized connection started handoff")
+		}
 	}
 	moving := time.Now()
 	var result receiverState
 	for {
-		err = remoteCall(ctx, client, source.Location, "/remote/migration/start", ownerToken, map[string]any{"id": id, "location_saved": true}, &result)
+		err = remoteCall(ctx, client, source.Location, "/remote/migration/start", managerToken, map[string]any{"id": id, "location_saved": true}, &result)
 		if err != nil {
 			t.Fatal("handoff:", err)
 		}
@@ -243,6 +270,16 @@ func TestInstalledRuntimeTransfersAndResumesWithoutAnotherAuthority(t *testing.T
 	stopSource()
 	stopSource = start(source)
 	defer stopSource()
+	for _, token := range []string{ownerToken, managerToken} {
+		if err := remoteCall(ctx, client, source.Location, "/remote/migration/start", token, map[string]any{"id": id, "location_saved": true}, &result); err != nil || result.Status != "active" {
+			t.Fatal("authorized handoff continuation after restart", result, err)
+		}
+	}
+	for _, token := range []string{"invalid-credential", revokedToken} {
+		if err := remoteCall(ctx, client, source.Location, "/remote/migration/start", token, map[string]any{"id": id, "location_saved": true}, nil); err == nil {
+			t.Fatal("unauthorized handoff continuation after restart")
+		}
+	}
 	if err := remoteCall(ctx, client, source.Location, "/control/self", ownerToken, nil, nil); err == nil {
 		t.Fatal("retired source accepted data access")
 	}
@@ -282,8 +319,27 @@ func TestInstalledRuntimeTransfersAndResumesWithoutAnotherAuthority(t *testing.T
 	if len(workAfter) < len(workBefore) {
 		t.Fatalf("semantic work lost: %s / %s", before, after)
 	}
-	if _, err := os.Stat(filepath.Join(source.DataDir, "assets")); !os.IsNotExist(err) {
-		t.Fatal("source retained asset copy")
+	var pointer struct {
+		ID string `json:"id"`
+	}
+	encoded, err := os.ReadFile(filepath.Join(source.DataDir, "storage.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = json.Unmarshal(encoded, &pointer); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", filepath.Join(source.DataDir, "stores", pointer.ID, "ownward.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var retained int
+	if err = db.QueryRow("SELECT (SELECT count(*) FROM content_chunks)+(SELECT count(*) FROM organization_chunks)+(SELECT count(*) FROM vectors)").Scan(&retained); err != nil || retained != 0 {
+		t.Fatal("source retained asset or derived content", retained, err)
+	}
+	if _, err = os.Stat(filepath.Join(source.DataDir, "assets", "manifest.json")); err != nil {
+		t.Fatal("lost old-program barrier", err)
 	}
 	t.Logf("local mean=%s; remote mean=%s; connection=%s; migration=%s; reconnect and read=%s; model calls=0", localMean, remoteMean, setupTime, migrationTime, reconnectTime)
 }

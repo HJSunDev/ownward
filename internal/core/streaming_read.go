@@ -156,8 +156,9 @@ func (s *StreamingAssets) writeReadBasisRange(ctx context.Context, w io.Writer, 
 			return err
 		}
 		has = has && selector.Kind != 'n'
-		clarification := contract.Clarification{SourceID: meta.ID, SourceRevision: meta.Revision, Covered: meta.ID == m.ID}
+		clarification := contract.Clarification{SourceID: meta.ID, SourceRevision: meta.Revision, Covered: start >= 0 && meta.ID == m.ID}
 		if has {
+			clarification.Covered = clarification.Covered && start <= q.Link.StartRune && end >= q.Link.EndRune
 			ref, err := s.rangeReference(ctx, meta, q.Link.StartRune, q.Link.EndRune)
 			if err != nil {
 				return err

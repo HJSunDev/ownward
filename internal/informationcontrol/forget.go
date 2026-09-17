@@ -141,6 +141,9 @@ func (p *Product) cleanLoop() {
 			delay = min(delay*2, 30*time.Second)
 		} else {
 			delay = time.Second
+			if len(p.control.pending()) > 0 {
+				p.signal()
+			}
 		}
 	}
 }

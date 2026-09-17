@@ -141,7 +141,9 @@ func (s *StreamingAssets) writeSearchRecord(ctx context.Context, w io.Writer, r 
 }
 func streamingDirectlyRelated(a, b string, edges []boundedstore.Edge) bool {
 	for _, e := range edges {
- if e.Grounded!=nil{continue}
+		if e.Grounded != nil {
+			continue
+		}
 		if e.SourceID == a && e.TargetID == b || e.SourceID == b && e.TargetID == a {
 			return true
 		}

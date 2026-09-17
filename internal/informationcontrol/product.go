@@ -141,3 +141,12 @@ func (p *Product) SemanticStatus() map[string]int { return nil }
 func (p *Product) Principals(ctx context.Context) ([]contract.Principal, error) {
 	return p.control.Principals(ctx)
 }
+
+func (p *Product) VisitPrincipals(ctx context.Context, visit func(contract.Principal) error) error {
+	return p.control.VisitPrincipals(ctx, visit)
+}
+
+func (p *Product) ManagementAuthorization(ctx context.Context) (func() error, error) {
+	_, finish, e := p.control.Begin(ctx, contract.ManagePermission)
+	return finish, e
+}

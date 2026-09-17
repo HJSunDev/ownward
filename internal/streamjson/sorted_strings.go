@@ -21,7 +21,7 @@ type SortedStrings struct {
 func NewSortedStrings(ctx context.Context, dir string) (*SortedStrings, error) {
 	s := &SortedStrings{ctx: ctx, left: make([]byte, BufferBytes), right: make([]byte, BufferBytes)}
 	for _, f := range []**resourcebudget.File{&s.data, &s.order, &s.scratch} {
-		v, err := resourcebudget.TempFile(ctx, dir, "basis-order-", 256*resourcebudget.MiB)
+		v, err := resourcebudget.BufferedTempFile(ctx, dir, "basis-order-", 256*resourcebudget.MiB, resourcebudget.FromContext(ctx, nil))
 		if err != nil {
 			s.Close()
 			return nil, err

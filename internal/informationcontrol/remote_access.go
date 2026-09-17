@@ -17,7 +17,7 @@ var ErrMoving = errors.New("信息体系正在交接，普通变更暂未执行�
 func (c *Control) HandoffManager(ctx context.Context, id string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	s := c.authority.ReadControl()
+	s := c.selected(ctx, contract.ControlSelection{Handoff: id})
 	return CheckHandoffManager(ctx, s, id)
 }
 func CheckHandoffManager(ctx context.Context, s contract.ControlState, id string) error {
@@ -32,7 +32,7 @@ func CheckHandoffManager(ctx context.Context, s contract.ControlState, id string
 func (c *Control) PendingManagement(ctx context.Context) ([]contract.ManagementReceipt, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	s := c.authority.ReadControl()
+	s := c.selected(ctx, contract.ControlSelection{Pending: "approval"})
 	p, err := principal(ctx, s, contract.ManagePermission)
 	if err != nil {
 		return nil, err
@@ -67,6 +67,9 @@ func inactive(s contract.ControlState) bool {
 	return s.Access != nil && s.Access.Handoff != nil && s.Access.Handoff.Phase == "retired"
 }
 func mutable(s contract.ControlState) error {
+	if s.ReadError != nil {
+		return s.ReadError
+	}
 	if inactive(s) {
 		return ErrInactive
 	}
@@ -76,12 +79,14 @@ func mutable(s contract.ControlState) error {
 	return nil
 }
 
-func (c *Control) State() contract.ControlState { return c.authority.ReadControl() }
+func (c *Control) State() contract.ControlState {
+	return c.selected(context.Background(), contract.ControlSelection{})
+}
 
 func (c *Control) Invite(ctx context.Context, id string) (contract.Enrollment, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	s := c.authority.ReadControl()
+	s := c.selected(ctx, contract.ControlSelection{})
 	p, err := principal(ctx, s, contract.ManagePermission)
 	if err != nil {
 		return contract.Enrollment{}, err
@@ -127,7 +132,7 @@ func enrollment(s *contract.ControlState, id string) (*contract.Enrollment, erro
 func (c *Control) Join(id, proof, name string, permissions []contract.Permission) (contract.Enrollment, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	s := c.authority.ReadControl()
+	s := c.selected(context.Background(), contract.ControlSelection{})
 	if err := mutable(s); err != nil {
 		return contract.Enrollment{}, err
 	}
@@ -168,7 +173,7 @@ func EnrollmentMarker(id, proof string) string { return digest(id + ":" + digest
 func (c *Control) Enrollments(ctx context.Context) ([]contract.Enrollment, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	s := c.authority.ReadControl()
+	s := c.selected(ctx, contract.ControlSelection{})
 	p, err := principal(ctx, s, contract.ManagePermission)
 	if err != nil {
 		return nil, err
@@ -187,7 +192,7 @@ func (c *Control) Enrollments(ctx context.Context) ([]contract.Enrollment, error
 func (c *Control) EnrollmentPreview(ctx context.Context, id string) (contract.Enrollment, string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	s := c.authority.ReadControl()
+	s := c.selected(ctx, contract.ControlSelection{})
 	p, err := principal(ctx, s, contract.ManagePermission)
 	if err != nil {
 		return contract.Enrollment{}, "", err
@@ -205,7 +210,7 @@ func (c *Control) EnrollmentPreview(ctx context.Context, id string) (contract.En
 func (c *Control) DecideEnrollment(ctx context.Context, id, marker string, accept bool) (contract.Enrollment, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	s := c.authority.ReadControl()
+	s := c.selected(ctx, contract.ControlSelection{})
 	p, err := principal(ctx, s, contract.ManagePermission)
 	if err != nil {
 		return contract.Enrollment{}, err
@@ -235,7 +240,7 @@ func (c *Control) DecideEnrollment(ctx context.Context, id, marker string, accep
 func (c *Control) ClaimEnrollment(id, proof string) (contract.Enrollment, string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	s := c.authority.ReadControl()
+	s := c.selected(context.Background(), contract.ControlSelection{Enrollment: id})
 	if err := mutable(s); err != nil {
 		return contract.Enrollment{}, "", err
 	}
@@ -288,7 +293,7 @@ func (c *Control) ClaimEnrollment(id, proof string) (contract.Enrollment, string
 func (c *Control) AcknowledgeEnrollment(ctx context.Context, id, proof string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	s := c.authority.ReadControl()
+	s := c.selected(ctx, contract.ControlSelection{})
 	if err := mutable(s); err != nil {
 		return err
 	}
@@ -313,7 +318,7 @@ func (c *Control) AcknowledgeEnrollment(ctx context.Context, id, proof string) e
 func (c *Control) PrepareHandoff(ctx context.Context, id string, target contract.Location) (contract.Handoff, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	s := c.authority.ReadControl()
+	s := c.selected(ctx, contract.ControlSelection{Handoff: id})
 	if _, err := principal(ctx, s, contract.ManagePermission); err != nil {
 		return contract.Handoff{}, err
 	}
@@ -340,7 +345,7 @@ func (c *Control) PrepareHandoff(ctx context.Context, id string, target contract
 func (c *Control) FreezeHandoff(ctx context.Context, id string, locationSaved bool) (contract.Handoff, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	s := c.authority.ReadControl()
+	s := c.selected(ctx, contract.ControlSelection{Handoff: id, Pending: "cleaning"})
 	if _, err := principal(ctx, s, contract.ManagePermission); err != nil {
 		return contract.Handoff{}, err
 	}
@@ -374,7 +379,7 @@ func (c *Control) FreezeHandoff(ctx context.Context, id string, locationSaved bo
 func (c *Control) RetireHandoff(ctx context.Context, id, snapshot string, revision uint64) (contract.Handoff, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	s := c.authority.ReadControl()
+	s := c.selected(ctx, contract.ControlSelection{Handoff: id})
 	if s.Access != nil && s.Access.Handoff != nil && s.Access.Handoff.ID == id && s.Access.Handoff.Phase == "retired" && s.Access.Handoff.Snapshot == snapshot {
 		if err := CheckHandoffManager(ctx, s, id); err != nil {
 			return contract.Handoff{}, err
@@ -405,7 +410,7 @@ func cancelHandoff(s *contract.ControlState) {
 func (c *Control) MarkHandoffClean(id string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	s := c.authority.ReadControl()
+	s := c.selected(context.Background(), contract.ControlSelection{Handoff: id})
 	if s.Access == nil {
 		return nil
 	}
@@ -424,7 +429,7 @@ func (c *Control) MarkHandoffClean(id string) error {
 func (c *Control) CancelHandoff(ctx context.Context, id string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	s := c.authority.ReadControl()
+	s := c.selected(ctx, contract.ControlSelection{Handoff: id})
 	if _, err := principal(ctx, s, contract.ManagePermission); err != nil {
 		return err
 	}

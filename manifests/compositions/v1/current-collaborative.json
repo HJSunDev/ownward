@@ -35,7 +35,7 @@
         {
           "name": "cmd-ownward-information_control",
           "path": "cmd/ownward/information_control.go",
-          "sha256": "2463455776af4896a253162df2c6af68cb42b5cf2ccae04eac27b0a90d4ba1f4"
+          "sha256": "79c17b1e1e867138c2c886ea8212b0370e3d5ba3b112afca3cb49544c0e36c77"
         },
         {
           "name": "cmd-ownward-remote_access",
@@ -51,6 +51,11 @@
           "name": "cmd-ownward-remote_resume",
           "path": "cmd/ownward/remote_resume.go",
           "sha256": "daf48f19eb322e194810056753159e9d2f4ddeaa1caefade4e73ac64f261fe2c"
+        },
+        {
+          "name": "cmd-ownward-storage_server-go",
+          "path": "cmd/ownward/storage_server.go",
+          "sha256": "a1a54eec6f571b7a6743b1e3801f0084b60461dac0a48d05df65574ba5d9d60b"
         },
         {
           "name": "cmd-ownward-streaming_connector-go",
@@ -75,12 +80,17 @@
         {
           "name": "internal-adapter-mcpserver-management",
           "path": "internal/adapter/mcpserver/management.go",
-          "sha256": "15eea7a93faa534818435afaa44f2352ceb5b109fbde3720d54e67a61028f11c"
+          "sha256": "6e2c3b671c5861dd5feb6fbfc98f363217c1b0e74099bf74f5612e5646655463"
         },
         {
           "name": "internal-adapter-mcpserver-streaming-go",
           "path": "internal/adapter/mcpserver/streaming.go",
-          "sha256": "753eac5d7848bf5faac9f999dbe0088259a3975a37950fffa0c70f4a9d7a1e06"
+          "sha256": "4de4b0f0f8f62b87b3111626aa09d038819c62e16e924c091d2044baa9b4db1b"
+        },
+        {
+          "name": "internal-adapter-mcpserver-streaming_management-go",
+          "path": "internal/adapter/mcpserver/streaming_management.go",
+          "sha256": "01592080fefae45dfd0354b57cb0fe36cf722f5b59b5f93ea9e0121407b5f8c6"
         },
         {
           "name": "internal-adapter-remote-transport",
@@ -135,7 +145,7 @@
         {
           "name": "internal-rpcstream-scope-go",
           "path": "internal/rpcstream/scope.go",
-          "sha256": "d88fac493bb773931f25e61d33c7ff743be2ed848fef7f86494455d6e455db1d"
+          "sha256": "fc6c06b2e7431dbe33fdc78cf7fbfbbca4397b5d915757d80684c43e90eb838c"
         },
         {
           "name": "mcp-adapter",
@@ -179,14 +189,14 @@
       "dependencies": [
         {
           "role": "kernel",
-          "identity": "eead449f5285adccb4907294bc8ee186f51eab9f4aae7845e4facad8bcde023f"
+          "identity": "a3f564f6ea05e203794ff75400566c3719fc6ed5057d948671d6bb9931f29a11"
         },
         {
           "role": "product-rules",
           "identity": "7bb674243d6a487e16b3bf22fede7fecd8d538845a4c06b825b70788524e3c47"
         }
       ],
-      "identity": "5b5a30df37cd8f54e895bd003a59467e2db64558626e5fd61fbcd4d9e3cd883d"
+      "identity": "2c72693d462840d4560be2229f85a2c60c2b2efa33473c6f0639811c2e33243f"
     },
     {
       "role": "assembly",
@@ -206,7 +216,7 @@
         {
           "name": "cmd-ownward-service_local",
           "path": "cmd/ownward/service_local.go",
-          "sha256": "36e8a21550661a4750f411086d2fcccb88dce036ebdcb1e8f1947b06ef8f1d2d"
+          "sha256": "6fe37a04e5647dee5091a9a323e07149db5879db224241544177ae15416a1a20"
         },
         {
           "name": "cmd-ownward-service_other",
@@ -216,7 +226,7 @@
         {
           "name": "cmd-ownward-service_runtime",
           "path": "cmd/ownward/service_runtime.go",
-          "sha256": "6cb57ec7558ae57dde94621c08b0a1683c7264b550e935d7d073e50dc8061023"
+          "sha256": "484859225a5a9e5665cd43ac42e331b5798087502992ad6fc0ed7e280c5a3355"
         },
         {
           "name": "cmd-ownward-service_space_other",
@@ -236,12 +246,12 @@
         {
           "name": "current-command-assembly",
           "path": "cmd/ownward/main.go",
-          "sha256": "1b914d6bf3178963e9b5f6f366f378ce61ca60bf57cf839eeb9e373b0a2a75d2"
+          "sha256": "65fe1ed2122ad0af61a41a078f7d5706362da1fbbbda743b6ff5d9bb9c09e089"
         },
         {
           "name": "explicit-assembly",
           "path": "internal/assembly/assembly.go",
-          "sha256": "4422b9f418b45d911c7e57c65196f8e7ace71090c2ef155e1291e59b149947e1"
+          "sha256": "5dff54f700add83b83a834d81e55e11378cb32a15e699b5c069baeb353a0c3e7"
         },
         {
           "name": "go-mod",
@@ -254,9 +264,14 @@
           "sha256": "43ee2e00b0c0d86a2b96d4079e3412f9bdec3121f69350a7023399f6b535d978"
         },
         {
+          "name": "internal-assembly-bounded-go",
+          "path": "internal/assembly/bounded.go",
+          "sha256": "6ddfa870a50ae95b79481470b934f5e83bdc5c31704c02cbc35465d8f5d59ef5"
+        },
+        {
           "name": "internal-assembly-handoff",
           "path": "internal/assembly/handoff.go",
-          "sha256": "1586a4e312aa08c7d6c713e32fcbb96c18b86be7baefd72266e80c1c3dd4bb84"
+          "sha256": "1223e11935a400e7116b60a035473a975dc0b115130c16d89550f448f624f0ac"
         },
         {
           "name": "kernel-generation-runtime",
@@ -284,15 +299,15 @@
       "dependencies": [
         {
           "role": "access",
-          "identity": "5b5a30df37cd8f54e895bd003a59467e2db64558626e5fd61fbcd4d9e3cd883d"
+          "identity": "2c72693d462840d4560be2229f85a2c60c2b2efa33473c6f0639811c2e33243f"
         },
         {
           "role": "authority-substrate",
-          "identity": "c8e83981b3fec177b52b11f7c3fd3208ae993850c90a047d2f6e0a6000b6317f"
+          "identity": "1512a0666b7fc7254a7c84fe2f4c5ce52013adc876d06624ae8191bc479f3584"
         },
         {
           "role": "kernel",
-          "identity": "eead449f5285adccb4907294bc8ee186f51eab9f4aae7845e4facad8bcde023f"
+          "identity": "a3f564f6ea05e203794ff75400566c3719fc6ed5057d948671d6bb9931f29a11"
         },
         {
           "role": "product-rules",
@@ -304,10 +319,10 @@
         },
         {
           "role": "vector",
-          "identity": "2a9892e01570a830025d676c005b7cd10654d33b00fbc2da43217603d0548ed4"
+          "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
         }
       ],
-      "identity": "2873034c0da8c0d030e70477c4c41c96f6faa7ceb8e9436ab09ff29402f6efdf"
+      "identity": "07859938a6a892901f7f0e84d22c52a8d923cbdda6dd159df135bb0375d94be7"
     },
     {
       "role": "authority-substrate",
@@ -320,7 +335,7 @@
         {
           "id": "ownward.control-state",
           "version": 1,
-          "definition_sha256": "879981477a3e7f59c9ad1dab56faf49b2ab18be6151d082d269937a81fd4ec84"
+          "definition_sha256": "b026da4abbdcec612b9dbfdc6c3f6809c45150fe3350cfe8db749a90d389079d"
         }
       ],
       "content": [
@@ -395,9 +410,19 @@
           "sha256": "6dc7e9786ee0821154d45f59b63d49d2d8447573c7d1a67e6bc375638bf1b534"
         },
         {
+          "name": "internal-boundedstore-archive_assets-go",
+          "path": "internal/boundedstore/archive_assets.go",
+          "sha256": "9d2e128c53fb6f3ba3dfc6166e1972fd9ee170bfb7a4fc4f17eb1f74e07782e7"
+        },
+        {
           "name": "internal-boundedstore-assets-go",
           "path": "internal/boundedstore/assets.go",
           "sha256": "5969839206db08fe90fe5da8014ea3bb84f9a02ee386b5a9203242e9fb95a5a7"
+        },
+        {
+          "name": "internal-boundedstore-backup-go",
+          "path": "internal/boundedstore/backup.go",
+          "sha256": "1798234c2b4ae836196299ff0bb07e1261b2e18d1f11c8232e64473c2ab9c97f"
         },
         {
           "name": "internal-boundedstore-context_filter-go",
@@ -410,6 +435,51 @@
           "sha256": "58be237845babcc335dc5dbdfa119923fb5178c9f64659c0d82938a5a7576941"
         },
         {
+          "name": "internal-boundedstore-control_authority-go",
+          "path": "internal/boundedstore/control_authority.go",
+          "sha256": "9351f7694b75724f734898e3746542be14a6c31b1425ef164ecdcbab12e0128a"
+        },
+        {
+          "name": "internal-boundedstore-control_forget-go",
+          "path": "internal/boundedstore/control_forget.go",
+          "sha256": "7abf3d684696c55e4bca5abdce7707472d5f27755aafd55591cb8335d20ea7b8"
+        },
+        {
+          "name": "internal-boundedstore-control_restore-go",
+          "path": "internal/boundedstore/control_restore.go",
+          "sha256": "760631739c0ccbf9dacb987814fe730af1e30c337f08a67690df33bfd62a5396"
+        },
+        {
+          "name": "internal-boundedstore-control_visit-go",
+          "path": "internal/boundedstore/control_visit.go",
+          "sha256": "7cd0fd72544e38fd6681ee62352a82f483ce11f99b6c0988ae2b204b7ddbcfcc"
+        },
+        {
+          "name": "internal-boundedstore-deployment-go",
+          "path": "internal/boundedstore/deployment.go",
+          "sha256": "a73dc895b1c61c579c99d798241938837f420a2b2913b5c02c73f0a27a239c84"
+        },
+        {
+          "name": "internal-boundedstore-deployment_archive-go",
+          "path": "internal/boundedstore/deployment_archive.go",
+          "sha256": "1b10d2fe1cbc2ab2d2c2f7c2ea6bc95d7234e7a05ac993ed5cea96c8ae3e2217"
+        },
+        {
+          "name": "internal-boundedstore-deployment_cancel-go",
+          "path": "internal/boundedstore/deployment_cancel.go",
+          "sha256": "b9700fd942d29ed2bf21dcbf6683886e9d6f470e43da7e711dbb7ae9b7d2e366"
+        },
+        {
+          "name": "internal-boundedstore-deployment_retired-go",
+          "path": "internal/boundedstore/deployment_retired.go",
+          "sha256": "4d6814be12493daff3dc66b1013269d8a6c2e212fe287b20678be28aa712664c"
+        },
+        {
+          "name": "internal-boundedstore-deployment_space-go",
+          "path": "internal/boundedstore/deployment_space.go",
+          "sha256": "c6ef1ebe3c8fe1506530e95c3bb0342c3ff35082a69c228a32bb97e92ce99231"
+        },
+        {
           "name": "internal-boundedstore-effective_contexts-go",
           "path": "internal/boundedstore/effective_contexts.go",
           "sha256": "f0bef146c386d3ececefbddf79d1d0f1f404448a0a0c768e748a1af7a269d719"
@@ -418,6 +488,11 @@
           "name": "internal-boundedstore-evidence-go",
           "path": "internal/boundedstore/evidence.go",
           "sha256": "41ab4b59c9a886e52b7628c9f9ab7c7fa92aa2d86d45457399d8e09b823239e0"
+        },
+        {
+          "name": "internal-boundedstore-forget-go",
+          "path": "internal/boundedstore/forget.go",
+          "sha256": "197a2fe955233d5bc6ecbb930edf255465a20fde7dd9010fa845185e0ef9e290"
         },
         {
           "name": "internal-boundedstore-graph-go",
@@ -430,9 +505,49 @@
           "sha256": "df4c96cdbcb33df9b252c58298971671c7083608c1367762c5ad149a9f0d090e"
         },
         {
+          "name": "internal-boundedstore-invalidation-go",
+          "path": "internal/boundedstore/invalidation.go",
+          "sha256": "6a52598eb72fa5391e743f4aa0b75f78f478ef0e62df8f3276ae164ecce73c8a"
+        },
+        {
+          "name": "internal-boundedstore-legacy_control-go",
+          "path": "internal/boundedstore/legacy_control.go",
+          "sha256": "886ffcd39617c1fb175fe613cbcb003de15242fb0690cbe961d2f0961ced6be2"
+        },
+        {
+          "name": "internal-boundedstore-legacy_derived-go",
+          "path": "internal/boundedstore/legacy_derived.go",
+          "sha256": "419f75c07db5213d85be2d13794263ae8a669f5aa945336d031351f2cee5ed02"
+        },
+        {
+          "name": "internal-boundedstore-legacy_import-go",
+          "path": "internal/boundedstore/legacy_import.go",
+          "sha256": "59bf5af27208ae6ad4fa9a0e9eb8ffabbf3a1576c9d4de696d187095b93d15a9"
+        },
+        {
+          "name": "internal-boundedstore-legacy_json-go",
+          "path": "internal/boundedstore/legacy_json.go",
+          "sha256": "7a5136217278cc5b73f7e56edb574b9c9252fba1dadbd829c5c42983b50010e3"
+        },
+        {
+          "name": "internal-boundedstore-legacy_semantics-go",
+          "path": "internal/boundedstore/legacy_semantics.go",
+          "sha256": "8f3b3fabfd7728fa2bba125bec7dd2219431466e864b803ca15cf3e15caa9a87"
+        },
+        {
+          "name": "internal-boundedstore-legacy_sources-go",
+          "path": "internal/boundedstore/legacy_sources.go",
+          "sha256": "1a50c48496de9fe15aee3246352f3d5cf9f2cc75ef6c503a0cb958187609c6f9"
+        },
+        {
           "name": "internal-boundedstore-lexical-go",
           "path": "internal/boundedstore/lexical.go",
-          "sha256": "aa3b94702a34e014f348598564ecdb682ba97a7eb07cc7d3a042e78b7fc7d110"
+          "sha256": "f6b41148fd36eecebc9966c7d03217a83d99443caaee9cb52779027d8fbe2e80"
+        },
+        {
+          "name": "internal-boundedstore-lexical_upgrade-go",
+          "path": "internal/boundedstore/lexical_upgrade.go",
+          "sha256": "5d9c4213609c03764b394408b70ec91ae1ba41e19a793dd4e609769bfec9d48e"
         },
         {
           "name": "internal-boundedstore-links-go",
@@ -440,9 +555,29 @@
           "sha256": "f810a31787640c5aa69cd7f6c5de680f35ee8ad2eec94ccb0ca527236564c96b"
         },
         {
+          "name": "internal-boundedstore-maintenance-go",
+          "path": "internal/boundedstore/maintenance.go",
+          "sha256": "5c9a07841d561bc11fc3bfd3a36a06b090921a7138092d4e8b298ff8b46da3b6"
+        },
+        {
+          "name": "internal-boundedstore-maintenance_schema-go",
+          "path": "internal/boundedstore/maintenance_schema.go",
+          "sha256": "c9f2aff2b367571170355c2fe2be4074bd5061e7ca7950441b979186cc2d92c5"
+        },
+        {
+          "name": "internal-boundedstore-maintenance_vectors-go",
+          "path": "internal/boundedstore/maintenance_vectors.go",
+          "sha256": "5edb42afa50518deea27895e437c081ee6bba55e1f724742d5151bf74fb38d00"
+        },
+        {
+          "name": "internal-boundedstore-migration_verify-go",
+          "path": "internal/boundedstore/migration_verify.go",
+          "sha256": "1be44cb4b30e96122c3d15f3c434bbb5dbd67ac3742ac78acb4a96c219a217a4"
+        },
+        {
           "name": "internal-boundedstore-name_source-go",
           "path": "internal/boundedstore/name_source.go",
-          "sha256": "e577b8da76f3269ab1a1d6d02f5ea09e838b5d312bfba65417367056221fd93a"
+          "sha256": "96735e3c7e236ee41afa120571fb79a4b7ff73dfbfd2a2b949c2247ebd0de2aa"
         },
         {
           "name": "internal-boundedstore-navigation-go",
@@ -470,9 +605,19 @@
           "sha256": "2ec90e2b618ee452867b1bcebd78d2282404508a9e1672bdf2a3c80ab1a70077"
         },
         {
+          "name": "internal-boundedstore-replace_other-go",
+          "path": "internal/boundedstore/replace_other.go",
+          "sha256": "51f2984cbc9f10a2b65a4be5b6e2c61b72ba4a603d4a5723ab124bbe58947970"
+        },
+        {
+          "name": "internal-boundedstore-replace_windows-go",
+          "path": "internal/boundedstore/replace_windows.go",
+          "sha256": "314c093f367e8cc60e693444364b194124cc7045d596e41346e50649410a4072"
+        },
+        {
           "name": "internal-boundedstore-retrieval_schema-go",
           "path": "internal/boundedstore/retrieval_schema.go",
-          "sha256": "1fa1bcaf6f3d138340e8108897f635f6b5d68bed3f0f8289614bd83788d32a70"
+          "sha256": "1966c62a7ad6a6c2390f153159f932cf62171b5fc2b1575667fd7990ccbb9985"
         },
         {
           "name": "internal-boundedstore-retrieval_state-go",
@@ -480,14 +625,24 @@
           "sha256": "f751b96861c75ed95311f56160045759e901f1f1abd87d8027a16489b838cf88"
         },
         {
+          "name": "internal-boundedstore-scheduler-go",
+          "path": "internal/boundedstore/scheduler.go",
+          "sha256": "bddda5f0d27be9e7db19a198dd92b247734152d83644bf48f25736b5c16f3f33"
+        },
+        {
           "name": "internal-boundedstore-semantic_work-go",
           "path": "internal/boundedstore/semantic_work.go",
           "sha256": "5576f47f1c69b764e8a82d80c42b6028412ee3e52e09dd48f1f2de1e0e45349b"
         },
         {
+          "name": "internal-boundedstore-status-go",
+          "path": "internal/boundedstore/status.go",
+          "sha256": "62d631f54c03b90a0112b4ce1ddafa2e7f1ec6fe15cf1a6334114f6c71d08bca"
+        },
+        {
           "name": "internal-boundedstore-store-go",
           "path": "internal/boundedstore/store.go",
-          "sha256": "7d05ffffd37529e2d06a5de710a81af0b482a096c9c1c64c1a65fe722e6b00ad"
+          "sha256": "f7eae5ab711a088ed23db1815e664aa90ed624b8ee9d6438f5f4831877e764ef"
         },
         {
           "name": "internal-boundedstore-summary-go",
@@ -522,7 +677,7 @@
         {
           "name": "internal-contract-information_control",
           "path": "internal/contract/information_control.go",
-          "sha256": "51f919e66edc145b79a201d54b34b8e3681eb2ed3ca346c6ed894d4b6b141618"
+          "sha256": "fc39e84f685e8766bc68ad576dcd3c4cdd292bee873e456642e54b9b62411040"
         },
         {
           "name": "internal-contract-operation",
@@ -542,12 +697,12 @@
         {
           "name": "internal-informationcontrol-control",
           "path": "internal/informationcontrol/control.go",
-          "sha256": "39c73d732b53953ff5222e1ae462df378f74dd841736db1ae6e9c8a78debe3da"
+          "sha256": "420bc304a6f3f99c13a7c17e8a0f5add95c2bc1cb5848c67880dc26457ce63ff"
         },
         {
           "name": "internal-informationcontrol-forget",
           "path": "internal/informationcontrol/forget.go",
-          "sha256": "ffe64aeda2967d0483c6528dcc8204688a6a116a0c0b47ac02781a573b8fdb7f"
+          "sha256": "d5283a11f64347ddd87da47fc19e0fb6dac65a4a3f07dccc41918e282824082f"
         },
         {
           "name": "internal-informationcontrol-information-change-go",
@@ -557,27 +712,32 @@
         {
           "name": "internal-informationcontrol-management",
           "path": "internal/informationcontrol/management.go",
-          "sha256": "954e7d24a07ea1185be5b808f9c71a01b4e31d5ef5599636ad9d015e7553bf55"
+          "sha256": "298d01f63af886051d80f1622afa7ff356d824993662820a70979bdb8ce5b5f8"
         },
         {
           "name": "internal-informationcontrol-product",
           "path": "internal/informationcontrol/product.go",
-          "sha256": "1f360d4e0d73370873e34cb4d49f2468b5610d63469eeb375f546da6628edee9"
+          "sha256": "dbef7348ae039d8ad3e5e8dbb1155935b61ed26bcd287b76e6420efc48ea7f3e"
         },
         {
           "name": "internal-informationcontrol-remote_access",
           "path": "internal/informationcontrol/remote_access.go",
-          "sha256": "74d12f8e1d73676af840e581a1e771ef7e883b6deec40b07c12edcc340cd96d5"
+          "sha256": "c3a02a5c268c91fade852e938224ee80b1461a7b530b3f710e4f13c962306ed1"
+        },
+        {
+          "name": "internal-informationcontrol-selection-go",
+          "path": "internal/informationcontrol/selection.go",
+          "sha256": "0016c43e2cbc00acc41f9ce664b8c13c4ac020036f8d293411864a7a8a1fcdb2"
         },
         {
           "name": "internal-resourcebudget-budget-go",
           "path": "internal/resourcebudget/budget.go",
-          "sha256": "89967b1456959c88e43bcc2903c9cd2e6202f03c2096e71f38b48770049a557a"
+          "sha256": "55ad832cde5e04a34bfd11d5970bf02aefb49620c8a9148e8e2044c77c71e55e"
         },
         {
           "name": "internal-resourcebudget-disk-go",
           "path": "internal/resourcebudget/disk.go",
-          "sha256": "16d74c820c3e1fe06884f6ba316c3f5a7751ef599477adab102eaaa074aecfa6"
+          "sha256": "5d3fc63b2b952b03fa39ff9b8a0aa180cf3bce4423255a19d0f193067165fd1b"
         },
         {
           "name": "internal-resourcebudget-disk_unix-go",
@@ -597,7 +757,7 @@
         {
           "name": "internal-streamjson-document-go",
           "path": "internal/streamjson/document.go",
-          "sha256": "d7b588a58cfad617d5f06eb1655a0f8c84782c53d3d78d71fa60e20a9a05345a"
+          "sha256": "9e4e2396abeb864a5d8570a876ad5222f81e1a7f96631e3b542e09193d9d1e9a"
         },
         {
           "name": "internal-streamjson-selector-go",
@@ -607,7 +767,7 @@
         {
           "name": "internal-streamjson-sorted_strings-go",
           "path": "internal/streamjson/sorted_strings.go",
-          "sha256": "cef933bc8eb620035458f0b0311829bf9ce11ff0b9bc61613f7cff9917d970fa"
+          "sha256": "846c6bd19b353d3f1420772cd9b2892e31f3ea4eb8f2684672a1b3cd806af3e8"
         },
         {
           "name": "internal-streamjson-strings-go",
@@ -653,11 +813,12 @@
       "config": {
         "asset_schema": "ownward.information/v1",
         "authority_mode": "single-owner-substrate",
-        "backup": "authority-backup-v1",
-        "control_schema": "ownward.control-state/v1"
+        "backup": "ownward.sqlite-backup/v1",
+        "control_schema": "ownward.control-state/v1",
+        "storage_format": "ownward.sqlite-storage/v1"
       },
       "dependencies": [],
-      "identity": "c8e83981b3fec177b52b11f7c3fd3208ae993850c90a047d2f6e0a6000b6317f"
+      "identity": "1512a0666b7fc7254a7c84fe2f4c5ce52013adc876d06624ae8191bc479f3584"
     },
     {
       "role": "kernel",
@@ -767,7 +928,12 @@
         {
           "name": "internal-core-streaming-go",
           "path": "internal/core/streaming.go",
-          "sha256": "b1ef7083700ad78c13740fee5af2e6b321379f1508954ce5ad9975e7a8acb2ce"
+          "sha256": "e61d04230f6f72efa1cab33b6c3d82dc30c1563483a2c796cd8c971c6b0cdb35"
+        },
+        {
+          "name": "internal-core-streaming_check-go",
+          "path": "internal/core/streaming_check.go",
+          "sha256": "7e3a1cea4279803d5fea9104b7ac667a61ebb185776d25a708c2981ed413740c"
         },
         {
           "name": "internal-core-streaming_embedding_batch-go",
@@ -785,9 +951,24 @@
           "sha256": "749ea53121b23244e70ff05d91647faa27260e847a8c1035d9de5026a6f94a34"
         },
         {
+          "name": "internal-core-streaming_forget-go",
+          "path": "internal/core/streaming_forget.go",
+          "sha256": "6b68389f10b02bf42556883091efa6f4fa78f08d7ff5a146de48380825651a38"
+        },
+        {
           "name": "internal-core-streaming_graph-go",
           "path": "internal/core/streaming_graph.go",
           "sha256": "f03b06b492ba6b81fccb37db053aaad633f2b4a0efe9dc7e966f742de947d779"
+        },
+        {
+          "name": "internal-core-streaming_preview-go",
+          "path": "internal/core/streaming_preview.go",
+          "sha256": "426f4de4eadd3ece2dbbb81b477f9efc0903eac2294e88dea8d3802cb8e161d3"
+        },
+        {
+          "name": "internal-core-streaming_product-go",
+          "path": "internal/core/streaming_product.go",
+          "sha256": "e9c732346b53386324eab375c88aefc0edec4fa902ab11cbc9c027f56ca0b029"
         },
         {
           "name": "internal-core-streaming_query-go",
@@ -797,12 +978,12 @@
         {
           "name": "internal-core-streaming_read-go",
           "path": "internal/core/streaming_read.go",
-          "sha256": "f24cb2a0d0712da94a9f77034c90a43d678258b7bb94658e174e7f80067639b7"
+          "sha256": "72cdf12d7b370bb8e03d0b0bdd8fb6d02c84880599dc1347e003de97259676f0"
         },
         {
           "name": "internal-core-streaming_result-go",
           "path": "internal/core/streaming_result.go",
-          "sha256": "242439b35ce8f146a64342701b8661355a3536a949f641567a7ad33a070df8e3"
+          "sha256": "758884154198023dacf0c67cde7f03c8dacecc19879813d44af6cb2aaf5d270c"
         },
         {
           "name": "internal-core-streaming_search-go",
@@ -832,7 +1013,7 @@
         {
           "name": "internal-core-streaming_text-go",
           "path": "internal/core/streaming_text.go",
-          "sha256": "34d6d8c59943e501898c3393e40f970b8f1f2f31a7bc3a91453af04dad7c404b"
+          "sha256": "355aad668e28ff8480cda5103c6c8d7259e322f57ac8f07443fdeff55cc09804"
         },
         {
           "name": "internal-derived-evidence_stream-go",
@@ -881,7 +1062,7 @@
         }
       ],
       "config": {
-        "derived_schema": "ownward.derived/v4",
+        "derived_schema": "ownward.derived/v5",
         "mode": "collaborative",
         "semantic_degradation": "explicit-pending",
         "vector_degradation": "preserve-last-valid"
@@ -889,7 +1070,7 @@
       "dependencies": [
         {
           "role": "authority-substrate",
-          "identity": "c8e83981b3fec177b52b11f7c3fd3208ae993850c90a047d2f6e0a6000b6317f"
+          "identity": "1512a0666b7fc7254a7c84fe2f4c5ce52013adc876d06624ae8191bc479f3584"
         },
         {
           "role": "product-rules",
@@ -901,10 +1082,10 @@
         },
         {
           "role": "vector",
-          "identity": "2a9892e01570a830025d676c005b7cd10654d33b00fbc2da43217603d0548ed4"
+          "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
         }
       ],
-      "identity": "eead449f5285adccb4907294bc8ee186f51eab9f4aae7845e4facad8bcde023f"
+      "identity": "a3f564f6ea05e203794ff75400566c3719fc6ed5057d948671d6bb9931f29a11"
     },
     {
       "role": "product-rules",
@@ -1018,6 +1199,11 @@
           "sha256": "4363ba17323830a879b4451bfe7b1b8f7de9fbf82de41ab3c8834a15d288edfd"
         },
         {
+          "name": "internal-embedding-compatibility-go",
+          "path": "internal/embedding/compatibility.go",
+          "sha256": "72072bac53f514cb055e2281fd123240a199712d9adc26d04d1cf0a2de8724c9"
+        },
+        {
           "name": "internal-embedding-query_stream-go",
           "path": "internal/embedding/query_stream.go",
           "sha256": "c09931f1b7a08185400c76cc64981e871b4d17b06f3c01d07a91e2be10880842"
@@ -1029,12 +1215,12 @@
         },
         {
           "name": "manifest.json",
-          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/manifest.json",
-          "sha256": "fc2e4a1aa7d09fc64789618259a1bbedce2a18d00bd1abd81d13a16dfb78c0da"
+          "path": ".tmp/bounded-unit1/formal-bundle/manifest.json",
+          "sha256": "2185b22be0e66c1db93f15a21caaa5e29279057ff34cb5bcbf11e0598feb0d9f"
         },
         {
           "name": "model-embeddinggemma-300m-qat-Q8_0.gguf",
-          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/model/embeddinggemma-300m-qat-Q8_0.gguf",
+          "path": ".tmp/bounded-unit1/formal-bundle/model/embeddinggemma-300m-qat-Q8_0.gguf",
           "sha256": "6fa0c02a9c302be6f977521d399b4de3a46310a4f2621ee0063747881b673f67"
         },
         {
@@ -1054,118 +1240,98 @@
         },
         {
           "name": "runtime-ggml-base.dll",
-          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/ggml-base.dll",
+          "path": ".tmp/bounded-unit1/formal-bundle/runtime/ggml-base.dll",
           "sha256": "82d02fcaf8c9badda59f3b1ced19dc6c708fe9865662b887d1daede81601545c"
         },
         {
           "name": "runtime-ggml-cpu-alderlake.dll",
-          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/ggml-cpu-alderlake.dll",
+          "path": ".tmp/bounded-unit1/formal-bundle/runtime/ggml-cpu-alderlake.dll",
           "sha256": "ec78a8eaee6d65d412d9fd901ff815d8db123ff700bd9b07ca7626820bb2c196"
         },
         {
           "name": "runtime-ggml-cpu-cannonlake.dll",
-          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/ggml-cpu-cannonlake.dll",
+          "path": ".tmp/bounded-unit1/formal-bundle/runtime/ggml-cpu-cannonlake.dll",
           "sha256": "c4bfd6e32360417d648c6544f1c0d7365b774ae67ddadf8bb14a3508e6c7b6d6"
         },
         {
           "name": "runtime-ggml-cpu-cascadelake.dll",
-          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/ggml-cpu-cascadelake.dll",
+          "path": ".tmp/bounded-unit1/formal-bundle/runtime/ggml-cpu-cascadelake.dll",
           "sha256": "66bfcacba4b4815281c5252eb019e0b8a29c4aa87dd023eee93036225b0259c9"
         },
         {
           "name": "runtime-ggml-cpu-cooperlake.dll",
-          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/ggml-cpu-cooperlake.dll",
+          "path": ".tmp/bounded-unit1/formal-bundle/runtime/ggml-cpu-cooperlake.dll",
           "sha256": "f64422f4d9d5428519e5c4fb5674382295d5635bb0690e6ee9e0ae564951ea75"
         },
         {
           "name": "runtime-ggml-cpu-haswell.dll",
-          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/ggml-cpu-haswell.dll",
+          "path": ".tmp/bounded-unit1/formal-bundle/runtime/ggml-cpu-haswell.dll",
           "sha256": "89bbd9625a6e2a90d537418415236aa60c85b658213ce4ddc0f4870ad35a848a"
         },
         {
           "name": "runtime-ggml-cpu-icelake.dll",
-          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/ggml-cpu-icelake.dll",
+          "path": ".tmp/bounded-unit1/formal-bundle/runtime/ggml-cpu-icelake.dll",
           "sha256": "213dec9611d7e73d1df1d822cfb6e5aaf633f401b1d697c4db6b180d81878d84"
         },
         {
           "name": "runtime-ggml-cpu-ivybridge.dll",
-          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/ggml-cpu-ivybridge.dll",
+          "path": ".tmp/bounded-unit1/formal-bundle/runtime/ggml-cpu-ivybridge.dll",
           "sha256": "bc7cec8d288b0ecd7fe68bf67830cf85c8324aa65f45e76bf97aad2d3bf5372d"
         },
         {
           "name": "runtime-ggml-cpu-piledriver.dll",
-          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/ggml-cpu-piledriver.dll",
+          "path": ".tmp/bounded-unit1/formal-bundle/runtime/ggml-cpu-piledriver.dll",
           "sha256": "20848fa6ddd68e0bdbc3b88b40476d90957dfafc51a5e9ba67ded9d73a20005b"
         },
         {
           "name": "runtime-ggml-cpu-sandybridge.dll",
-          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/ggml-cpu-sandybridge.dll",
+          "path": ".tmp/bounded-unit1/formal-bundle/runtime/ggml-cpu-sandybridge.dll",
           "sha256": "df8c287670ca43b025d5bd3803ca2124ab14296b0b9e98805a553e4d579804be"
         },
         {
           "name": "runtime-ggml-cpu-sapphirerapids.dll",
-          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/ggml-cpu-sapphirerapids.dll",
+          "path": ".tmp/bounded-unit1/formal-bundle/runtime/ggml-cpu-sapphirerapids.dll",
           "sha256": "96333e30ad5e197b5bb31df3f380f20e173c85257b173ae7f76cb204aa57adb3"
         },
         {
           "name": "runtime-ggml-cpu-skylakex.dll",
-          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/ggml-cpu-skylakex.dll",
+          "path": ".tmp/bounded-unit1/formal-bundle/runtime/ggml-cpu-skylakex.dll",
           "sha256": "245a1ca2ec180c0d9f49f6287a8e1da7e315c5782405fb64720ee90fd97fe386"
         },
         {
           "name": "runtime-ggml-cpu-sse42.dll",
-          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/ggml-cpu-sse42.dll",
+          "path": ".tmp/bounded-unit1/formal-bundle/runtime/ggml-cpu-sse42.dll",
           "sha256": "79e5226b88255f1f0f9fe865980c71991d439530ba136496056007c266c68248"
         },
         {
           "name": "runtime-ggml-cpu-x64.dll",
-          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/ggml-cpu-x64.dll",
+          "path": ".tmp/bounded-unit1/formal-bundle/runtime/ggml-cpu-x64.dll",
           "sha256": "2625898f96e8cc2bf3d7c19705f11e32a33ff546fcbe7f605b62a649366fb4f1"
         },
         {
           "name": "runtime-ggml-cpu-zen4.dll",
-          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/ggml-cpu-zen4.dll",
+          "path": ".tmp/bounded-unit1/formal-bundle/runtime/ggml-cpu-zen4.dll",
           "sha256": "97bfb6b315bd47dc5b2034b8d348daa3694a37576fd3b2209d5bd6f929aa4f7d"
         },
         {
           "name": "runtime-ggml-rpc.dll",
-          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/ggml-rpc.dll",
+          "path": ".tmp/bounded-unit1/formal-bundle/runtime/ggml-rpc.dll",
           "sha256": "b392b663cdde7f778c5d355e93a9af346c1dac595d4da57b2a372493e7189f23"
         },
         {
           "name": "runtime-ggml.dll",
-          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/ggml.dll",
+          "path": ".tmp/bounded-unit1/formal-bundle/runtime/ggml.dll",
           "sha256": "aaca2878d4f10da490f12be47cf11d6902a8a1502c3ca68045114a2c71d794e9"
         },
         {
           "name": "runtime-libomp140.x86_64.dll",
-          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/libomp140.x86_64.dll",
+          "path": ".tmp/bounded-unit1/formal-bundle/runtime/libomp140.x86_64.dll",
           "sha256": "4a20c1e5c115c29771a12324513eb109badac72180f79481527ad79d996ffb33"
         },
         {
-          "name": "runtime-llama-common.dll",
-          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/llama-common.dll",
-          "sha256": "a888d3ecc44110d72a6ac8172cfec7e015df1c22e21db8414b19f5efc83cc3ad"
-        },
-        {
-          "name": "runtime-llama-server-impl.dll",
-          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/llama-server-impl.dll",
-          "sha256": "7d100e2d144c549a0aac313267c79d256c77562f78106f3652de1bd54dd90a66"
-        },
-        {
           "name": "runtime-llama-server.exe",
-          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/llama-server.exe",
-          "sha256": "3e2ac8887fb37fa4312654cf6625e3449a7e87989b0116c4a582fd518d02cf2f"
-        },
-        {
-          "name": "runtime-llama.dll",
-          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/llama.dll",
-          "sha256": "1050f5ddc24e12ce136cb02fda3eee3bb2aa589275b2559b397dea340a3469f6"
-        },
-        {
-          "name": "runtime-mtmd.dll",
-          "path": ".tmp/first-kernel-baseline-v1/candidate-artifacts-3e712f2/embedding/runtime/mtmd.dll",
-          "sha256": "349c3b83be8eadb85928f4cc0e87f99fff50cb411115910588d20fb1593de73c"
+          "path": ".tmp/bounded-unit1/formal-bundle/runtime/llama-server.exe",
+          "sha256": "b578e8bd2b919ff78e0649a5ee41fa69d73166f67a5a38afb814d8d579983536"
         },
         {
           "name": "third_party-llama-cpp-build_runtime-py",
@@ -1180,15 +1346,15 @@
       ],
       "config": {
         "bundle_schema": "ownward.embedding-bundle/v3",
-        "capability": "embeddinggemma-300m-qat-q8_0-llamacpp-b10488",
+        "capability": "embeddinggemma-300m-qat-q8_0-llamacpp-b10488-bounded",
         "dimensions": 512,
-        "space": "emb_79f072bf21c0c0f5226fa4fe6f1946a5"
+        "space": "emb_3ea351940b656cd8366a5581c2758852"
       },
       "dependencies": [],
-      "identity": "2a9892e01570a830025d676c005b7cd10654d33b00fbc2da43217603d0548ed4"
+      "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
     }
   ],
-  "identity": "2e543a63555bfb235296273ede2d3de10c4b5526f04ad210c5780e64cae8e401",
+  "identity": "52797ade3d38c1dd4ce6a25436653734552a893265a9d9e0b7efcf3cc583dd94",
   "audit": {
     "described_product_candidate": "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8",
     "migration_source_git": "dc2c7a09e67f06cfaacbe0a201c7ff27b20d6182"

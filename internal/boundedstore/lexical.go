@@ -22,17 +22,48 @@ type Ranked struct {
 }
 
 func (s *Store) openPayloadPart(ctx context.Context, payload string, part int) (io.ReadCloser, error) {
-	c, done, err := s.reader(ctx)
-	if err != nil {
-		return nil, err
-	}
-	rows, err := c.QueryContext(ctx, "SELECT bytes FROM content_chunks WHERE payload=? AND part=? ORDER BY ordinal", payload, part)
-	if err != nil {
-		done()
-		return nil, err
-	}
-	return &chunkReader{ctx: ctx, rows: rows, release: done}, nil
+	return &stagedPartReader{store: s, ctx: ctx, payload: payload, part: part}, nil
 }
+
+// Staged payloads are immutable while their caller builds postings. Release
+// each short read before posting writes, so WAL draining cannot wait on itself.
+type stagedPartReader struct {
+	store   *Store
+	ctx     context.Context
+	payload string
+	part    int
+	ordinal int64
+	buffer  []byte
+	closed  bool
+}
+
+func (r *stagedPartReader) Read(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	if r.closed {
+		return 0, io.EOF
+	}
+	if e := r.ctx.Err(); e != nil {
+		return 0, e
+	}
+	if len(r.buffer) == 0 {
+		e := r.store.view(r.ctx, func(q queryer) error {
+			return q.QueryRowContext(r.ctx, "SELECT bytes FROM content_chunks WHERE payload=? AND part=? AND ordinal=?", r.payload, r.part, r.ordinal).Scan(&r.buffer)
+		})
+		if errors.Is(e, sql.ErrNoRows) {
+			return 0, io.EOF
+		}
+		if e != nil {
+			return 0, e
+		}
+		r.ordinal++
+	}
+	n := copy(p, r.buffer)
+	r.buffer = r.buffer[n:]
+	return n, nil
+}
+func (r *stagedPartReader) Close() error { r.closed = true; r.buffer = nil; return nil }
 
 // prepareLexical builds an invisible posting version. Publish switches its
 // pointer and corpus statistics in the same transaction as the source asset.
@@ -61,17 +92,36 @@ func (s *Store) prepareLexical(ctx context.Context, p Staged, id string) error {
 		return err
 	}
 	defer release()
+	var payloadID int64
 	if err = s.write(ctx, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, "DELETE FROM postings WHERE payload=?", p.ID); err != nil {
-			return err
-		}
 		if _, err := tx.ExecContext(ctx, "DELETE FROM lexical_contexts WHERE payload=?", p.ID); err != nil {
 			return err
 		}
-		_, err := tx.ExecContext(ctx, "INSERT INTO lexical_documents VALUES(?,?,-1) ON CONFLICT(payload) DO UPDATE SET length=-1", p.ID, id)
-		return err
+		if _, err := tx.ExecContext(ctx, "INSERT INTO lexical_documents VALUES(?,?,-1) ON CONFLICT(payload) DO UPDATE SET length=-1", p.ID, id); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, "INSERT INTO lexical_payload_ids(payload) VALUES(?) ON CONFLICT(payload) DO NOTHING", p.ID); err != nil {
+			return err
+		}
+		return tx.QueryRowContext(ctx, "SELECT id FROM lexical_payload_ids WHERE payload=?", p.ID).Scan(&payloadID)
 	}); err != nil {
 		return err
+	}
+	for {
+		var removed int64
+		if err = s.write(ctx, func(tx *sql.Tx) error {
+			r, e := tx.ExecContext(ctx, "DELETE FROM postings WHERE (term,payload) IN (SELECT term,payload FROM postings WHERE payload=? LIMIT 64)", payloadID)
+			if e != nil {
+				return e
+			}
+			removed, e = r.RowsAffected()
+			return e
+		}); err != nil {
+			return err
+		}
+		if removed == 0 {
+			break
+		}
 	}
 	var length int64
 	batch := map[[32]byte]int64{}
@@ -86,7 +136,7 @@ func (s *Store) prepareLexical(ctx context.Context, p Staged, id string) error {
 			}
 			defer stmt.Close()
 			for term, n := range batch {
-				if _, err = stmt.ExecContext(ctx, term[:], p.ID, n); err != nil {
+				if _, err = stmt.ExecContext(ctx, term[:], payloadID, n); err != nil {
 					return err
 				}
 			}
@@ -260,7 +310,7 @@ DELETE FROM query_terms; DELETE FROM query_scores;`)
 				return err
 			}
 			var frequency int64
-			if err = q.QueryRowContext(ctx, "SELECT count(*) FROM postings p JOIN live_assets a ON a.payload=p.payload AND a.deleted=0 WHERE p.term=?", d).Scan(&frequency); err != nil {
+			if err = q.QueryRowContext(ctx, "SELECT count(*) FROM postings p JOIN lexical_payload_ids i ON i.id=p.payload JOIN live_assets a ON a.payload=i.payload AND a.deleted=0 WHERE p.term=?", d).Scan(&frequency); err != nil {
 				terms.Close()
 				return err
 			}
@@ -278,7 +328,7 @@ DELETE FROM query_terms; DELETE FROM query_scores;`)
 		if err != nil {
 			return err
 		}
-		rows, err := q.QueryContext(ctx, `SELECT a.id,a.payload,d.length,p.frequency,t.weight FROM query_terms t JOIN postings p ON p.term=t.term JOIN live_assets a ON a.payload=p.payload AND a.deleted=0 JOIN lexical_documents d ON d.payload=a.payload WHERE t.weight>0 ORDER BY a.id,t.run,t.plane,t.ordinal`)
+		rows, err := q.QueryContext(ctx, `SELECT a.id,a.payload,d.length,p.frequency,t.weight FROM query_terms t JOIN postings p ON p.term=t.term JOIN lexical_payload_ids i ON i.id=p.payload JOIN live_assets a ON a.payload=i.payload AND a.deleted=0 JOIN lexical_documents d ON d.payload=a.payload WHERE t.weight>0 ORDER BY a.id,t.run,t.plane,t.ordinal`)
 		if err != nil {
 			return err
 		}

@@ -198,11 +198,19 @@ func (s *Store) reclaimPayload(ctx context.Context, tx *sql.Tx) (bool, error) {
 	if used {
 		return false, errors.New("回收任务仍引用当前原文或控制记录")
 	}
+	r, e := tx.ExecContext(ctx, "DELETE FROM postings WHERE (term,payload) IN (SELECT term,payload FROM postings WHERE payload=(SELECT id FROM lexical_payload_ids WHERE payload=?) LIMIT 16)", id)
+	if e != nil {
+		return false, e
+	}
+	n, e := r.RowsAffected()
+	if e != nil || n > 0 {
+		return n > 0, e
+	}
 	for _, v := range []struct {
 		table, keys string
 		n           int
 	}{
-		{"content_chunks", "payload,part,ordinal", 8}, {"postings", "term,payload", 16},
+		{"content_chunks", "payload,part,ordinal", 8},
 		{"lexical_contexts", "payload,ordinal", 16}, {"explicit_links", "payload,ordinal", 64},
 		{"lexical_documents", "payload", 1},
 	} {

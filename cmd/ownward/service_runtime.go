@@ -17,7 +17,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/HJSunDev/ownward/internal/adapter/mcpserver"
 	"github.com/HJSunDev/ownward/internal/adapter/remote"
 	"github.com/HJSunDev/ownward/internal/assembly"
 	"github.com/HJSunDev/ownward/internal/authoritysubstrate"
@@ -81,7 +80,7 @@ func serveInstallationReady(parent context.Context, s installation, identity rem
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	state, stateErr := authoritysubstrate.ReadControlAt(s.DataDir)
+	state, stateErr := assembly.ReadControlAt(s.DataDir)
 	if stateErr == nil && state.Access != nil && state.Access.Handoff != nil && state.Access.Handoff.Phase == "retired" {
 		h.handler = retiredHandler(s.Location, state.Access.Handoff)
 	} else if s.Source == nil || (stateErr == nil && state.Access != nil && state.Access.Handoff != nil && state.Access.Handoff.Phase == "active") {
@@ -157,7 +156,7 @@ func (h *serviceHost) activateRuntime() error {
 		r.Close()
 		return errors.New("部署身份与资产体系不一致")
 	}
-	s := controlHTTPServer{server: mcpserver.New(r.Product(), version), control: r.UserControl(), product: r.Management(), kernel: r.Service(), generation: r.OperationGeneration}
+	s := controlHTTPServer{server: productServer(r), control: r.UserControl(), product: r.Management(), kernel: r.UnderlyingKernel(), generation: r.OperationGeneration}
 	var closeLocal func()
 	if h.settings.Name != "" {
 		closeLocal, err = startManagedLocal(h.settings, r)
@@ -221,7 +220,7 @@ func (h *serviceHost) saveReceiver() error {
 
 func handoffSize(dataDir string) (int64, error) {
 	var bytes int64
-	for _, name := range []string{"assets", "authority", "state"} {
+	for _, name := range []string{"assets", "authority", "state", "storage.json", "stores"} {
 		root := filepath.Join(dataDir, name)
 		err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 			if errors.Is(err, os.ErrNotExist) {
@@ -313,7 +312,7 @@ func (h *serviceHost) receive(w http.ResponseWriter, r *http.Request) {
 				}
 				var state contract.ControlState
 				if err == nil {
-					state, err = authoritysubstrate.StageHandoff(archivePath, stage)
+					state, err = assembly.StageHandoff(archivePath, stage)
 					if err == nil {
 						err = assembly.ValidateHandoffData(stage)
 					}
@@ -404,14 +403,14 @@ func (h *serviceHost) receive(w http.ResponseWriter, r *http.Request) {
 					break
 				}
 				if _, statErr := os.Stat(h.settings.DataDir); errors.Is(statErr, os.ErrNotExist) {
-					if err = authoritysubstrate.ActivateHandoff(stage, permit.Handoff); err != nil {
+					if err = assembly.ActivateHandoff(stage, permit.Handoff); err != nil {
 						break
 					}
 					err = os.Rename(stage, h.settings.DataDir)
 				} else if statErr != nil {
 					err = statErr
 				} else {
-					state, stateErr := authoritysubstrate.ReadControlAt(h.settings.DataDir)
+					state, stateErr := assembly.ReadControlAt(h.settings.DataDir)
 					if stateErr != nil || state.Access == nil || state.Access.Handoff == nil || state.Access.Handoff.ID != in.ID || state.Access.Handoff.Phase != "active" {
 						err = errors.New("目的地已有其他数据")
 					}
@@ -473,7 +472,7 @@ func (h *serviceHost) migrate(w http.ResponseWriter, r *http.Request) {
 	}
 	switch strings.TrimPrefix(r.URL.Path, "/remote/migration/") {
 	case "prepare":
-		if _, err = runtime.UserControl().Principals(ctx); err != nil {
+		if _, _, err = runtime.UserControl().Begin(ctx, contract.ManagePermission); err != nil {
 			break
 		}
 		if in.Target.ServiceID == h.settings.Location.ServiceID || in.Target.Composition != h.settings.Location.Composition || in.Target.SystemID != h.settings.Location.SystemID {
@@ -506,14 +505,14 @@ func (h *serviceHost) migrate(w http.ResponseWriter, r *http.Request) {
 	case "start":
 		var state contract.ControlState
 		if runtime != nil {
-			state = runtime.UserControl().State()
+			err = runtime.UserControl().HandoffManager(ctx, in.ID)
 		} else {
-			state, err = authoritysubstrate.ReadControlAt(h.settings.DataDir)
-			if err != nil {
-				break
+			state, err = assembly.ReadControlAtContext(ctx, h.settings.DataDir)
+			if err == nil {
+				err = informationcontrol.CheckHandoffManager(ctx, state, in.ID)
 			}
 		}
-		if err = informationcontrol.CheckHandoffManager(ctx, state, in.ID); err != nil {
+		if err != nil {
 			break
 		}
 		h.jobsMu.Lock()
@@ -735,7 +734,10 @@ func (h *serviceHost) finishHandoff(ctx context.Context, runtime *assembly.Runti
 	if closeLocal != nil {
 		closeLocal()
 	}
-	for _, path := range []string{filepath.Join(h.settings.DataDir, "assets"), filepath.Join(h.settings.DataDir, "state"), root} {
+	if err := assembly.CleanRetiredData(ctx, h.settings.DataDir); err != nil {
+		return result, fmt.Errorf("已接管，源副本清理未完成: %w", err)
+	}
+	for _, path := range []string{root} {
 		if err := os.RemoveAll(path); err != nil {
 			return result, fmt.Errorf("已接管，源副本清理未完成: %w", err)
 		}

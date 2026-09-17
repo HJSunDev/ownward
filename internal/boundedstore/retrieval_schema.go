@@ -2,8 +2,9 @@ package boundedstore
 
 const retrievalSchema = `
 CREATE TABLE IF NOT EXISTS lexical_documents(payload TEXT PRIMARY KEY REFERENCES payloads(id), asset TEXT NOT NULL, length INTEGER NOT NULL) WITHOUT ROWID;
-CREATE TABLE IF NOT EXISTS postings(term BLOB NOT NULL, payload TEXT NOT NULL, frequency INTEGER NOT NULL, PRIMARY KEY(term,payload)) WITHOUT ROWID;
-CREATE INDEX IF NOT EXISTS postings_payload ON postings(payload,term);
+CREATE TABLE IF NOT EXISTS lexical_payload_ids(id INTEGER PRIMARY KEY, payload TEXT NOT NULL UNIQUE REFERENCES lexical_documents(payload) ON DELETE CASCADE);
+CREATE TABLE IF NOT EXISTS postings(term BLOB NOT NULL, payload INTEGER NOT NULL REFERENCES lexical_payload_ids(id), frequency INTEGER NOT NULL, PRIMARY KEY(term,payload)) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS postings_document ON postings(payload,term);
 CREATE TABLE IF NOT EXISTS lexical_contexts(payload TEXT NOT NULL, ordinal INTEGER NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, lower_key BLOB NOT NULL,lower_value BLOB NOT NULL, PRIMARY KEY(payload,ordinal)) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS lexical_stats(singleton INTEGER PRIMARY KEY CHECK(singleton=1), documents INTEGER NOT NULL, terms INTEGER NOT NULL);
 INSERT OR IGNORE INTO lexical_stats VALUES(1,0,0);

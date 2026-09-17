@@ -10,12 +10,27 @@ const UserControlStateSchema = "ownward.control-state/v2"
 
 // ControlState 保存唯一权威决定；启用用户控制后使用 v2，旧程序不能忽略权限继续打开。
 type ControlState struct {
+	ReadError              error                    `json:"-"`
+	Stopping               bool                     `json:"-"`
 	Schema                 string                   `json:"schema"`
 	Revision               uint64                   `json:"revision"`
 	ActiveComposition      string                   `json:"active_composition"`
 	ActiveKernelGeneration string                   `json:"active_kernel_generation"`
 	InformationControl     *InformationControlState `json:"information_control,omitempty"`
 	Access                 *AccessState             `json:"access,omitempty"`
+}
+
+// ControlSelection selects the identities used by one control decision.
+// Omitted records remain authoritative and are not deleted by a scoped commit.
+type ControlSelection struct {
+	Credential, Principal, Operation, Handoff, Enrollment string
+	Principals                                            bool
+	Pending                                               string
+	After                                                 string
+	Limit                                                 int
+}
+type SelectedControlAuthority interface {
+	ReadSelectedControl(ControlSelection) (ControlState, error)
 }
 
 // ControlAuthority owns the one durable control decision. Mutations use a

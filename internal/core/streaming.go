@@ -43,7 +43,7 @@ func (s *StreamingAssets) ExecuteStream(ctx context.Context, request contract.St
 	work, _ := resourcebudget.New(4*resourcebudget.MiB, 0)
 	ctx = resourcebudget.WithContext(ctx, work)
 	permission := contract.MaintainPermission
-	if request.Operation == "ownward_semantic_work" || request.Operation == "ownward_read" || request.Operation == "ownward_evidence_search" || request.Operation == "ownward_evidence_read" || request.Operation == "ownward_search" || request.Operation == "ownward_navigate" {
+	if request.Operation == "ownward_check" || request.Operation == "ownward_status" || request.Operation == "ownward_rules" || request.Operation == "ownward_read" || request.Operation == "ownward_evidence_search" || request.Operation == "ownward_evidence_read" || request.Operation == "ownward_search" || request.Operation == "ownward_navigate" {
 		permission = contract.ReadPermission
 	}
 	ctx, err = s.Store.BeginAccess(ctx, contract.AuthenticationDigest(ctx), permission)
@@ -60,6 +60,23 @@ func (s *StreamingAssets) ExecuteStream(ctx context.Context, request contract.St
 		return nil, err
 	}
 	defer args.Close()
+	if request.Operation == "ownward_check" {
+		return s.checkTool(ctx, args.Root())
+	}
+	if request.Operation == "ownward_rules" {
+		return s.smallResult(ctx, map[string]any{"rules": CollaborationRules})
+	}
+	if request.Operation == "ownward_status" {
+		id, e := fieldString(args.Root(), "id", 256)
+		if e != nil {
+			return nil, e
+		}
+		state, e := s.Organization(id)
+		if e != nil {
+			return nil, e
+		}
+		return s.smallResult(ctx, map[string]any{"organization": state})
+	}
 	if request.Operation == "ownward_search" {
 		return s.searchTool(ctx, args.Root())
 	}

@@ -16,12 +16,22 @@ import (
 
 	"github.com/HJSunDev/ownward/internal/adapter/localowner"
 	"github.com/HJSunDev/ownward/internal/contract"
+	"github.com/HJSunDev/ownward/internal/domain"
 	"github.com/HJSunDev/ownward/internal/informationcontrol"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 const principalHeader = "X-Ownward-Principal"
 const controlPrefix = "/__ownward/control/"
+
+func (s controlHTTPServer) previewAsset(ctx context.Context, v contract.AssetVersion) (domain.Information, error) {
+	if bounded, ok := s.kernel.(interface {
+		PreviewInformation(context.Context, string, uint64) (domain.Information, error)
+	}); ok {
+		return bounded.PreviewInformation(ctx, v.ID, v.Revision)
+	}
+	return s.kernel.Read(ctx, v.ID)
+}
 
 // 只定位本机受保护恢复通道；不是体系或主体身份。
 func ownerRecoveryScope(dataDir string) string {
@@ -161,7 +171,7 @@ func (s controlHTTPServer) HTTPHandler() http.Handler {
 			}
 			value, err = s.product.Decide(ctx, input.ID, input.Accept)
 		case "preview":
-			if _, err = s.control.Principals(ctx); err == nil {
+			if _, _, err = s.control.Begin(ctx, contract.ManagePermission); err == nil {
 				var op contract.ManagementReceipt
 				op, err = s.product.Receipt(ctx, input.ID)
 				if err == nil {
@@ -188,16 +198,11 @@ func (s controlHTTPServer) preview(ctx context.Context, op contract.ManagementRe
 	ctx = bound
 	var text string
 	if op.Request.Operation == "permissions" {
-		principals, err := s.control.Principals(ctx)
+		p, err := s.control.Principal(ctx, op.Request.SubjectID)
 		if err != nil {
 			return nil, err
 		}
-		name := ""
-		for _, p := range principals {
-			if p.ID == op.Request.SubjectID {
-				name = p.Name
-			}
-		}
+		name := p.Name
 		if name == "" {
 			return nil, errors.New("接入者已不存在")
 		}
@@ -220,7 +225,7 @@ func (s controlHTTPServer) preview(ctx context.Context, op contract.ManagementRe
 	} else {
 		text = "忘掉以下完整资料，并清理本体系中的相关副本：\n"
 		for _, target := range op.Request.Targets {
-			asset, err := s.kernel.Read(ctx, target.ID)
+			asset, err := s.previewAsset(ctx, target)
 			if err != nil || asset.Revision != target.Revision {
 				return nil, errors.New("资料已变化，请重新核对删除范围")
 			}

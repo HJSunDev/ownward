@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/HJSunDev/ownward/internal/adapter/mcpserver"
 	"github.com/HJSunDev/ownward/internal/adapter/remote"
 	"github.com/HJSunDev/ownward/internal/assembly"
 )
@@ -23,7 +22,7 @@ func startManagedLocal(s installation, r *assembly.Runtime) (func(), error) {
 	if err != nil {
 		return nil, err
 	}
-	secured := controlHTTPServer{server: mcpserver.New(r.Product(), version), control: r.UserControl(), product: r.Management(), kernel: r.Service(), generation: r.OperationGeneration, vault: s.vault(), recovery: proof}
+	secured := controlHTTPServer{server: productServer(r), control: r.UserControl(), product: r.Management(), kernel: r.UnderlyingKernel(), generation: r.OperationGeneration, vault: s.vault(), recovery: proof}
 	if err := s.vault().Save(ownerRecoveryScope(s.DataDir), "owner-recovery", secured.recovery); err != nil {
 		return nil, err
 	}

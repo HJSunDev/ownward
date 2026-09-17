@@ -20,7 +20,7 @@ import (
 // visitNameWords preserves the original word and adjacent-Han terms while
 // spooling arbitrarily long words instead of retaining them in memory.
 func (s *Store) visitNameWords(ctx context.Context, source contract.ContentSource, visit func(io.Reader) error) error {
-	f, e := resourcebudget.TempFile(ctx, s.directory, "name-word-", 256*resourcebudget.MiB)
+	f, e := resourcebudget.BufferedTempFile(ctx, s.directory, "name-word-", 256*resourcebudget.MiB, resourcebudget.FromContext(ctx, s.budget))
 	if e != nil {
 		return e
 	}
@@ -119,6 +119,12 @@ func (s *Store) NameSource(ctx context.Context, generation string, source contra
 
 	if limit <= 0 {
 		return nil, nil
+	}
+	var hasNames bool
+	if e := s.view(ctx, func(q queryer) error {
+		return q.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM graph_names LIMIT 1)").Scan(&hasNames)
+	}); e != nil || !hasNames {
+		return nil, e
 	}
 	limit = min(limit, 100)
 	sorted, e := streamjson.NewSortedStrings(ctx, s.directory)

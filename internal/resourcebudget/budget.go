@@ -78,3 +78,25 @@ func (b *Budget) Acquire(ctx context.Context, bytes int64, control bool) (func()
 }
 
 func (b *Budget) Used() int64 { b.mu.Lock(); defer b.mu.Unlock(); return b.used }
+
+// TryAcquire admits optional buffers without waiting on a caller's own work.
+func (b *Budget) TryAcquire(bytes int64) (func(), bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if bytes <= 0 || bytes > b.limit-b.used || bytes > b.limit-b.reserved-b.ordinary {
+		return nil, false
+	}
+	b.used += bytes
+	b.ordinary += bytes
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			b.mu.Lock()
+			b.used -= bytes
+			b.ordinary -= bytes
+			close(b.changed)
+			b.changed = make(chan struct{})
+			b.mu.Unlock()
+		})
+	}, true
+}

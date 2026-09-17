@@ -58,7 +58,7 @@ func (c *Control) Propose(ctx context.Context, request contract.ManagementReques
 	if len(request.Targets) == 0 {
 		request.Targets = nil
 	}
-	state := c.authority.ReadControl()
+	state := c.selected(ctx, contract.ControlSelection{Principal: request.SubjectID, Operation: request.ID})
 	p, err := principal(ctx, state, "")
 	if err != nil {
 		return contract.ManagementReceipt{}, err
@@ -99,7 +99,7 @@ func (c *Control) Propose(ctx context.Context, request contract.ManagementReques
 func (c *Control) Decide(ctx context.Context, id string, accept bool) (contract.ManagementReceipt, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	state := c.authority.ReadControl()
+	state := c.selected(ctx, contract.ControlSelection{Operation: id})
 	c.mergeDeferred(&state, id)
 	p, err := principal(ctx, state, contract.ManagePermission)
 	if err != nil {
@@ -143,7 +143,7 @@ func approvalValid(state contract.ControlState, op contract.ManagementReceipt) b
 func (c *Control) ApplyPermissions(id string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	state := c.authority.ReadControl()
+	state := c.selected(context.Background(), contract.ControlSelection{Operation: id})
 	if inactive(state) {
 		return ErrInactive
 	}
@@ -189,7 +189,7 @@ func (c *Control) ApplyPermissions(id string) error {
 func (c *Control) StartForget(id string, affected []contract.AssetVersion) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	state := c.authority.ReadControl()
+	state := c.selected(context.Background(), contract.ControlSelection{Operation: id})
 	if inactive(state) {
 		return ErrInactive
 	}
@@ -219,7 +219,7 @@ func (c *Control) StartForget(id string, affected []contract.AssetVersion) error
 func (c *Control) mark(id, status string, failure error) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	state := c.authority.ReadControl()
+	state := c.selected(context.Background(), contract.ControlSelection{Operation: id})
 	for i := range state.InformationControl.Operations {
 		op := &state.InformationControl.Operations[i]
 		if op.Request.ID != id {
@@ -244,7 +244,7 @@ func (c *Control) mark(id, status string, failure error) error {
 func (c *Control) Receipt(ctx context.Context, id string) (contract.ManagementReceipt, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	state := c.authority.ReadControl()
+	state := c.selected(ctx, contract.ControlSelection{Operation: id})
 	c.mergeDeferred(&state, id)
 	p, err := principal(ctx, state, "")
 	if err != nil {
@@ -269,7 +269,7 @@ func (c *Control) Receipt(ctx context.Context, id string) (contract.ManagementRe
 func (c *Control) pending() []contract.ManagementReceipt {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	state := c.authority.ReadControl()
+	state := c.selected(context.Background(), contract.ControlSelection{Pending: "cleaning"})
 	if state.InformationControl == nil {
 		return nil
 	}
@@ -285,7 +285,7 @@ func (c *Control) pending() []contract.ManagementReceipt {
 func (c *Control) operation(id string) (contract.ManagementReceipt, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	state := c.authority.ReadControl()
+	state := c.selected(context.Background(), contract.ControlSelection{Operation: id})
 	c.mergeDeferred(&state, id)
 	if state.InformationControl != nil {
 		for _, op := range state.InformationControl.Operations {

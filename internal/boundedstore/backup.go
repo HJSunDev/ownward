@@ -37,8 +37,9 @@ func (s *Store) copyPath(id string) (string, error) {
 // The freeze prevents repeated online-copy restarts under continuous writes;
 // controls still commit and invalidate the copy before delivery.
 type StorageSnapshot struct {
-	Path   string
-	SHA256 string
+	Path            string
+	SHA256          string
+	ControlRevision uint64
 }
 
 func (s *Store) Snapshot(ctx context.Context) (StorageSnapshot, error) {
@@ -160,7 +161,7 @@ func (s *Store) Snapshot(ctx context.Context) (StorageSnapshot, error) {
 		return StorageSnapshot{}, e
 	}
 	complete = true
-	return StorageSnapshot{Path: path, SHA256: hex.EncodeToString(hash.Sum(nil))}, nil
+	return StorageSnapshot{Path: path, SHA256: hex.EncodeToString(hash.Sum(nil)), ControlRevision: uint64(controlRevision)}, nil
 }
 
 func (s *Store) removeCopyFiles(id string) error {
@@ -352,6 +353,14 @@ func (s *Store) RestoreSnapshot(ctx context.Context, source StorageSnapshot, des
 	options.paused = true
 	restored, e := Open(ctx, destination, options)
 	if e != nil {
+		return nil, e
+	}
+	var native bool
+	if e = restored.writer.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='authority_header')").Scan(&native); e == nil && native {
+		e = restored.invalidateRestoreCredentials(ctx)
+	}
+	if e != nil {
+		restored.Close()
 		return nil, e
 	}
 	reservation, e := options.Budget.Acquire(ctx, 3*resourcebudget.MiB, true)
