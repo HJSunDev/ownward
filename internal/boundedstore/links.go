@@ -49,7 +49,7 @@ func (s *Store) VisitQualifiers(ctx context.Context, target string, visit func(Q
 		}
 		var q Qualifier
 		var created, updated string
-		err = c.QueryRowContext(ctx, "SELECT "+assetColumns+",l.ordinal,l.start_rune,l.end_rune FROM explicit_links l JOIN assets a ON a.payload=l.payload JOIN payloads p ON p.id=a.payload WHERE l.target=? AND l.qualifies=1 AND a.deleted=0 AND (a.id>? OR (a.id=? AND l.ordinal>?)) ORDER BY a.id,l.ordinal LIMIT 1", target, last, last, ordinal).Scan(&q.Meta.ID, &q.Meta.Revision, &created, &updated, &q.Meta.Kind, &q.Meta.ContentBytes, &q.Meta.ContentSHA256, &q.Link.Ordinal, &q.Link.StartRune, &q.Link.EndRune)
+		err = c.QueryRowContext(ctx, "SELECT "+assetColumns+",l.ordinal,l.start_rune,l.end_rune FROM explicit_links l JOIN live_assets a ON a.payload=l.payload JOIN payloads p ON p.id=a.payload WHERE l.target=? AND l.qualifies=1 AND a.deleted=0 AND (a.id>? OR (a.id=? AND l.ordinal>?)) ORDER BY a.id,l.ordinal LIMIT 1", target, last, last, ordinal).Scan(&q.Meta.ID, &q.Meta.Revision, &created, &updated, &q.Meta.Kind, &q.Meta.ContentBytes, &q.Meta.ContentSHA256, &q.Link.Ordinal, &q.Link.StartRune, &q.Link.EndRune)
 		done()
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil

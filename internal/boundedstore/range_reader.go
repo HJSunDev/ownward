@@ -20,7 +20,7 @@ func (s *Store) OpenRange(ctx context.Context, id string, revision uint64, start
 	finish := func() { done(); release() }
 	var payload string
 	var length int64
-	e = q.QueryRowContext(ctx, "SELECT a.payload,p.content_bytes FROM assets a JOIN payloads p ON p.id=a.payload WHERE a.id=? AND a.deleted=0 AND a.revision=?", id, revision).Scan(&payload, &length)
+	e = q.QueryRowContext(ctx, "SELECT a.payload,p.content_bytes FROM live_assets a JOIN payloads p ON p.id=a.payload WHERE a.id=? AND a.deleted=0 AND a.revision=?", id, revision).Scan(&payload, &length)
 	if e != nil {
 		finish()
 		return nil, e

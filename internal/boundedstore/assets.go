@@ -32,6 +32,9 @@ func (s *Store) Publish(ctx context.Context, receipt contract.MutationReceipt, v
 	if err := validOperation(receipt.Operation); err != nil {
 		return err
 	}
+	if err := s.awaitReclaim(ctx); err != nil {
+		return err
+	}
 	for _, v := range values {
 		if err := s.prepareLexical(ctx, v.Payload, v.Meta.ID); err != nil {
 			return err
@@ -76,6 +79,14 @@ func (s *Store) Publish(ctx context.Context, receipt contract.MutationReceipt, v
 					return err
 				}
 				seen[m.ID] = true
+				var forgotten bool
+				if err = tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM forget_targets t JOIN forget_operations f ON f.id=t.operation WHERE t.asset=? AND f.state<>'staging')", m.ID).Scan(&forgotten); err != nil {
+					return err
+				}
+				if forgotten {
+					return ErrNotFound
+				}
+
 				var state, operation string
 				var bytes int64
 				var hash string
@@ -86,7 +97,7 @@ func (s *Store) Publish(ctx context.Context, receipt contract.MutationReceipt, v
 					return errors.New("暂存不属于当前操作或尚未完成")
 				}
 				var invalid int
-				if err = tx.QueryRowContext(ctx, "SELECT count(*) FROM explicit_links l LEFT JOIN assets a ON a.id=l.target AND a.deleted=0 WHERE l.payload=? AND l.target<>? AND a.id IS NULL", v.Payload.ID, m.ID).Scan(&invalid); err != nil {
+				if err = tx.QueryRowContext(ctx, "SELECT count(*) FROM explicit_links l LEFT JOIN live_assets a ON a.id=l.target AND a.deleted=0 WHERE l.payload=? AND l.target<>? AND a.id IS NULL", v.Payload.ID, m.ID).Scan(&invalid); err != nil {
 					return err
 				}
 				if invalid > 0 {
@@ -95,7 +106,7 @@ func (s *Store) Publish(ctx context.Context, receipt contract.MutationReceipt, v
 				var rev uint64
 				var created, oldPayload string
 				var deleted bool
-				err = tx.QueryRowContext(ctx, "SELECT revision,created,payload,deleted FROM assets WHERE id=?", m.ID).Scan(&rev, &created, &oldPayload, &deleted)
+				err = tx.QueryRowContext(ctx, "SELECT revision,created,payload,deleted FROM live_assets WHERE id=?", m.ID).Scan(&rev, &created, &oldPayload, &deleted)
 				if v.ExpectedRevision == 0 {
 					if !errors.Is(err, sql.ErrNoRows) || m.Revision != 1 {
 						return errors.New("新建资产已存在或版本无效")
@@ -132,7 +143,7 @@ func (s *Store) Publish(ctx context.Context, receipt contract.MutationReceipt, v
 				if _, err = tx.ExecContext(ctx, "INSERT INTO semantic_jobs VALUES(?,?,'asset_changed') ON CONFLICT(asset) DO UPDATE SET revision=excluded.revision,reason=excluded.reason", m.ID, m.Revision); err != nil {
 					return err
 				}
-				if _, err = tx.ExecContext(ctx, `INSERT INTO semantic_jobs SELECT a.id,a.revision,'dependency_changed' FROM dependencies d JOIN organizations o ON o.id=d.organization JOIN organization_current c ON c.organization=o.id JOIN assets a ON a.id=o.asset AND a.deleted=0 WHERE d.asset=? AND d.revision<>? ON CONFLICT(asset) DO UPDATE SET revision=excluded.revision,reason=excluded.reason`, m.ID, m.Revision); err != nil {
+				if _, err = tx.ExecContext(ctx, `INSERT OR IGNORE INTO invalidation_jobs(asset,revision,snapshot,forget) VALUES(?,?,'',0)`, m.ID, m.Revision); err != nil {
 					return err
 				}
 			}
@@ -234,7 +245,7 @@ func (s *Store) ReadAssetMeta(ctx context.Context, id string, revision uint64) (
 		return contract.AssetMeta{}, err
 	}
 	defer release()
-	return scanMeta(c.QueryRowContext(ctx, "SELECT "+assetColumns+" FROM assets a JOIN payloads p ON p.id=a.payload WHERE a.id=? AND a.deleted=0 AND (?=0 OR a.revision=?)", id, revision, revision))
+	return scanMeta(c.QueryRowContext(ctx, "SELECT "+assetColumns+" FROM live_assets a JOIN payloads p ON p.id=a.payload WHERE a.id=? AND a.deleted=0 AND (?=0 OR a.revision=?)", id, revision, revision))
 }
 
 func (s *Store) ScanAssets(ctx context.Context, after string, pageBudget int) (contract.AssetPage, error) {
@@ -271,7 +282,7 @@ func (s *Store) ScanAssets(ctx context.Context, after string, pageBudget int) (c
 			return out, errors.New("列表游标已失效，请重新读取")
 		}
 	}
-	rows, err := tx.QueryContext(ctx, "SELECT "+assetColumns+" FROM assets a JOIN payloads p ON p.id=a.payload WHERE a.id>? AND a.deleted=0 ORDER BY a.id", cursor.Last)
+	rows, err := tx.QueryContext(ctx, "SELECT "+assetColumns+" FROM live_assets a JOIN payloads p ON p.id=a.payload WHERE a.id>? AND a.deleted=0 ORDER BY a.id", cursor.Last)
 	if err != nil {
 		return out, err
 	}
@@ -364,7 +375,7 @@ func (s *Store) openPart(ctx context.Context, id string, revision uint64, part i
 	}
 	finish := func() { release(); budgetDone() }
 	var payload string
-	err = tx.QueryRowContext(ctx, "SELECT payload FROM assets WHERE id=? AND deleted=0 AND (?=0 OR revision=?)", id, revision, revision).Scan(&payload)
+	err = tx.QueryRowContext(ctx, "SELECT payload FROM live_assets WHERE id=? AND deleted=0 AND (?=0 OR revision=?)", id, revision, revision).Scan(&payload)
 	if err != nil {
 		finish()
 		if errors.Is(err, sql.ErrNoRows) {
@@ -398,7 +409,7 @@ func (s *Store) ReadRanges(ctx context.Context, id string, revision uint64, rang
 	defer release()
 	var payload string
 	var length int64
-	if err = tx.QueryRowContext(ctx, "SELECT a.payload,p.content_bytes FROM assets a JOIN payloads p ON p.id=a.payload WHERE a.id=? AND a.deleted=0 AND (?=0 OR a.revision=?)", id, revision, revision).Scan(&payload, &length); err != nil {
+	if err = tx.QueryRowContext(ctx, "SELECT a.payload,p.content_bytes FROM live_assets a JOIN payloads p ON p.id=a.payload WHERE a.id=? AND a.deleted=0 AND (?=0 OR a.revision=?)", id, revision, revision).Scan(&payload, &length); err != nil {
 		return err
 	}
 	var end int64

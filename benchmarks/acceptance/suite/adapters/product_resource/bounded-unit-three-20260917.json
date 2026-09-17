@@ -1,0 +1,87 @@
+{
+  "schema": "ownward.bounded-storage-unit-three/v1",
+  "date": "2026-09-17",
+  "status": "unit_three_closed",
+  "base_commit": "12dc34158b562488bc8b44a05966cb39a3324a44",
+  "composition_identity": "2e543a63555bfb235296273ede2d3de10c4b5526f04ad210c5780e64cae8e401",
+  "source_identity": "review/round2-source-hashes.json: 345 final source identities; overlay review/final-source/ on base_commit. Original source/ and verification/ retain initial measurement identity.",
+  "scope": "Bounded maintenance, invalidation, forgetting, WAL scheduling, controlled deployment snapshots and recovery. Existing user data has not migrated.",
+  "verification": {
+    "full_repository_tests": "go test -p 2 ./... -timeout=240s: passed",
+    "maintenance_tests": "Final boundedstore package and full repository tests passed; seven formal regression tests plus two independent differentiating probes all passed.",
+    "static_checks": "go vet -p 2 ./...: passed",
+    "composition_check": "go run ./cmd/ownward-composition verify: passed",
+    "coverage": [
+      "Repeated source revision, interrupted staging cleanup after reopen, bounded retired payload reclamation",
+      "Immediate forgetting visibility and lexical statistics, late publication rejection, physical body and WAL cleanup",
+      "Invalidation during staging preserves publication CAS; competing publication still rejected; old generations reclaimed",
+      "Snapshot integrity and cancellation; copied old snapshot cannot restore forgotten data or old credentials",
+      "Ordinary WAL admission preserves control reserve; pinned SQLite snapshots interrupted before control log exhaustion",
+      "Forgotten shared and single-member vector block/filter reclamation, exact surviving scores and ordering, late block publication rejection",
+      "Authenticated snapshot recovery, old credential rejection, restored deletion-ledger statistics including repeated mixed-target restoration",
+      "Permanent publication rejection reclamation across reopen; canceled valid publication remains retryable",
+      "Control priority preserves ordinary/maintenance alternation and cancellation"
+    ],
+    "remote_ai_calls": 0,
+    "semantic_material_preparation": false,
+    "question_suite_rerun": false,
+    "new_complete_product_rss_measurement": false,
+    "independent_partner_review": {
+      "status": "passed",
+      "complete_rounds": 2,
+      "closed_findings": [
+        "U3-B1",
+        "U3-B2",
+        "U3-B3",
+        "U3-B4",
+        "U3-B5"
+      ],
+      "remaining_blockers": [],
+      "final_source_matches": 345,
+      "top_level_tests": 9,
+      "subtests": 4,
+      "report": "review/b/round2-review.json",
+      "tests": "review/b/round2-tests.jsonl"
+    },
+    "final_evidence": {
+      "full_repository_tests": "review/a/full-tests.log",
+      "bounded_tests": "review/a/bounded-tests.log",
+      "static_checks": "review/a/vet.log",
+      "composition": "review/a/verify.json",
+      "repairs": "review/a/fixes.md"
+    }
+  },
+  "measurements": {
+    "platform": "Windows x64",
+    "repeated_revisions": {
+      "revisions": 40,
+      "elapsed_seconds": 6.1785479,
+      "final_database_bytes": 2260992,
+      "peak_sampled_wal_bytes": 8597824,
+      "interpretation": "Bounded deterministic synthetic revision test; not a user latency average."
+    },
+    "pinned_reader_and_control_writes": {
+      "peak_sampled_wal_bytes": 31798736,
+      "largest_observed_transaction_growth_bytes": 607096,
+      "wal_limit_bytes": 33554432,
+      "reserved_growth_bytes": 2097152,
+      "interpretation": "Measured workload coverage, not a universal maximum proof."
+    }
+  },
+  "driver_fix": {
+    "previous": "modernc.org/sqlite v1.39.1",
+    "current": "modernc.org/sqlite v1.40.1",
+    "cause": "The previous driver cancellation path could discard a constructed rows object without closing it, retaining a SQLite statement and Windows file handle. The adopted driver closes the rows object on cancellation.",
+    "primary_source": "https://gitlab.com/cznic/sqlite/-/blob/v1.40.1/sqlite.go",
+    "verification": "Previously failing storage close/cancellation tests and the final full repository run passed with the updated driver."
+  },
+  "boundaries": [
+    "SQLite schema format 2 is required for forgetting visibility; old format-1 binaries must not open it.",
+    "Snapshot is a protected deployment recovery artifact, not ordinary asset export.",
+    "Unit four owns existing-data migration, owner-facing recovery integration, production activation and whole-product acceptance.",
+    "Unit-two full-process memory and latency evidence retains its original source identity; it is not relabeled as a unit-three measurement."
+  ],
+  "reproduction_archive": "bounded-unit-three-20260917.zip",
+  "reproduction_archive_sha256": "ae07ebe8ab198d3db5356ea3336db728355f78fe2ad8099c29621015ab00e50a",
+  "measurement_composition_identity": "ea977db7cec47705f49ec41415d684ed6d82b3c2d5bbf24e23851b2306419fd4"
+}

@@ -39,7 +39,7 @@ func nextAdjacent(ctx context.Context, q queryer, generation, id string, after a
  SELECT organization,ordinal,grounded,data,0 AS direction FROM graph_links WHERE source=? AND grounded=0
  UNION ALL SELECT organization,ordinal,grounded,data,1 FROM graph_links WHERE target=? AND grounded=0
  UNION ALL SELECT organization,ordinal,grounded,data,2 FROM graph_links WHERE grounded=1 AND (source=? OR target=?)
- ) l JOIN organizations o ON o.id=l.organization JOIN organization_publications p ON p.organization=o.id JOIN organization_current c ON c.organization=o.id AND c.generation=? JOIN assets a ON a.id=o.asset AND a.revision=o.revision AND a.deleted=0
+ ) l JOIN organizations o ON o.id=l.organization JOIN organization_publications p ON p.organization=o.id JOIN organization_current c ON c.organization=o.id AND c.generation=? JOIN live_assets a ON a.id=o.asset AND a.revision=o.revision AND a.deleted=0
  WHERE l.direction>? OR (l.direction=? AND (p.sequence>? OR (p.sequence=? AND l.ordinal>?)))
  ORDER BY l.direction,p.sequence,l.ordinal LIMIT 1`, id, id, id, id, generation, after.Direction, after.Direction, after.Sequence, after.Sequence, after.Ordinal).Scan(&owner, &org, &grounded, &data, &next.Direction, &next.Sequence, &next.Ordinal)
 	if err != nil {
@@ -156,7 +156,7 @@ func (s *Store) NavigatePage(ctx context.Context, generation string, start, type
 			if e != nil {
 				return e
 			}
-			if e = s.write(ctx, func(tx *sql.Tx) error {
+			if e = s.write(context.WithValue(ctx, snapshotWriteKey{}, true), func(tx *sql.Tx) error {
 				_, e := tx.ExecContext(ctx, "INSERT INTO navigation_cursors VALUES(?,?,?,?,?,?,?)", id, contract.AuthenticationDigest(ctx), generation, assetEpoch, derivedEpoch, time.Now().Add(30*time.Minute).Unix(), data)
 				return e
 			}); e != nil {

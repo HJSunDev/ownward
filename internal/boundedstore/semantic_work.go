@@ -34,7 +34,7 @@ func (s *Store) InitializeGeneration(ctx context.Context, space string) (string,
 			return e
 		}
 		var count int
-		if e := tx.QueryRowContext(ctx, "SELECT count(*) FROM assets WHERE deleted=0").Scan(&count); e != nil {
+		if e := tx.QueryRowContext(ctx, "SELECT count(*) FROM live_assets WHERE deleted=0").Scan(&count); e != nil {
 			return e
 		}
 		if count != 0 {
@@ -76,7 +76,7 @@ func (s *Store) ReferencesCurrent(ctx context.Context, generation string, refs [
 	return s.view(ctx, func(q queryer) error {
 		for _, ref := range refs {
 			var revision uint64
-			if e := q.QueryRowContext(ctx, "SELECT revision FROM assets WHERE id=? AND deleted=0", ref.ID).Scan(&revision); e != nil {
+			if e := q.QueryRowContext(ctx, "SELECT revision FROM live_assets WHERE id=? AND deleted=0", ref.ID).Scan(&revision); e != nil {
 				return e
 			}
 			if ref.Revision == 0 || revision != ref.Revision {

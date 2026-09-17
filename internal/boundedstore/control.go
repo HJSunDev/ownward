@@ -18,6 +18,7 @@ type ControlRecord struct {
 }
 
 func (s *Store) PublishControl(ctx context.Context, record ControlRecord, expected uint64) error {
+	ctx = workContext(ctx, controlWork)
 	if record.Key == "" || record.Revision == 0 || record.Revision != expected+1 {
 		return errors.New("控制记录身份或修订无效")
 	}

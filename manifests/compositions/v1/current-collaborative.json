@@ -179,14 +179,14 @@
       "dependencies": [
         {
           "role": "kernel",
-          "identity": "f4a3a556b06dae1a8611bf92e794baf6025cccbca0551faaab01710755ff9983"
+          "identity": "eead449f5285adccb4907294bc8ee186f51eab9f4aae7845e4facad8bcde023f"
         },
         {
           "role": "product-rules",
           "identity": "7bb674243d6a487e16b3bf22fede7fecd8d538845a4c06b825b70788524e3c47"
         }
       ],
-      "identity": "b6713b49ca574f11d480d47b25f07abb6c0d272bc33ff3233688208acf77fbd7"
+      "identity": "5b5a30df37cd8f54e895bd003a59467e2db64558626e5fd61fbcd4d9e3cd883d"
     },
     {
       "role": "assembly",
@@ -246,12 +246,12 @@
         {
           "name": "go-mod",
           "path": "go.mod",
-          "sha256": "66a4c9b284e9423b4d702175b9cfbb47dd375f3bccdf6967e93f78a56caa0c18"
+          "sha256": "41e7f264bea5c2d6eb400a034fcd9cf6317fa5ec3ea80be59d2245242fc2bd48"
         },
         {
           "name": "go-sum",
           "path": "go.sum",
-          "sha256": "d8ff072ae40307e96d9b661462e0abdc5d668d806c4546fb954afab5c2b93355"
+          "sha256": "43ee2e00b0c0d86a2b96d4079e3412f9bdec3121f69350a7023399f6b535d978"
         },
         {
           "name": "internal-assembly-handoff",
@@ -284,15 +284,15 @@
       "dependencies": [
         {
           "role": "access",
-          "identity": "b6713b49ca574f11d480d47b25f07abb6c0d272bc33ff3233688208acf77fbd7"
+          "identity": "5b5a30df37cd8f54e895bd003a59467e2db64558626e5fd61fbcd4d9e3cd883d"
         },
         {
           "role": "authority-substrate",
-          "identity": "e25f0ef4703615f11c3dd66cafe93495b868d8c69af4030cad1279fe2dcb5c1c"
+          "identity": "c8e83981b3fec177b52b11f7c3fd3208ae993850c90a047d2f6e0a6000b6317f"
         },
         {
           "role": "kernel",
-          "identity": "f4a3a556b06dae1a8611bf92e794baf6025cccbca0551faaab01710755ff9983"
+          "identity": "eead449f5285adccb4907294bc8ee186f51eab9f4aae7845e4facad8bcde023f"
         },
         {
           "role": "product-rules",
@@ -307,7 +307,7 @@
           "identity": "2a9892e01570a830025d676c005b7cd10654d33b00fbc2da43217603d0548ed4"
         }
       ],
-      "identity": "202bce0bcd430c29527af2358edb87bdb3d56658cca14bbf151e0738ac35ce89"
+      "identity": "2873034c0da8c0d030e70477c4c41c96f6faa7ceb8e9436ab09ff29402f6efdf"
     },
     {
       "role": "authority-substrate",
@@ -392,27 +392,27 @@
         {
           "name": "internal-boundedstore-access-go",
           "path": "internal/boundedstore/access.go",
-          "sha256": "8b43fb2678b19742664a07a75d59dab7efaa12f5f8470c089d3dca0398ef3bda"
+          "sha256": "6dc7e9786ee0821154d45f59b63d49d2d8447573c7d1a67e6bc375638bf1b534"
         },
         {
           "name": "internal-boundedstore-assets-go",
           "path": "internal/boundedstore/assets.go",
-          "sha256": "66f9b3a4defd499dd522cd947b36d181944f92e47bd01da57ca8d8b5bb8bfce7"
+          "sha256": "5969839206db08fe90fe5da8014ea3bb84f9a02ee386b5a9203242e9fb95a5a7"
         },
         {
           "name": "internal-boundedstore-context_filter-go",
           "path": "internal/boundedstore/context_filter.go",
-          "sha256": "7002696f74eba0797060f55f27c35a1d2cb8364fdb5bde134e86ebbd7da69a01"
+          "sha256": "12af7033d55297526155e1d5afeb6fef2f20fad97dd1c6aebd2382cb32cb845a"
         },
         {
           "name": "internal-boundedstore-control-go",
           "path": "internal/boundedstore/control.go",
-          "sha256": "c5ea0a957d90ef9e68da21e9e09c3dc6b757fda18bd52bc290b5aadbb35238e6"
+          "sha256": "58be237845babcc335dc5dbdfa119923fb5178c9f64659c0d82938a5a7576941"
         },
         {
           "name": "internal-boundedstore-effective_contexts-go",
           "path": "internal/boundedstore/effective_contexts.go",
-          "sha256": "df20611b5b676833cea8281da8c7756f7876fa9b0fd557a18c1da8e0c408b35d"
+          "sha256": "f0bef146c386d3ececefbddf79d1d0f1f404448a0a0c768e748a1af7a269d719"
         },
         {
           "name": "internal-boundedstore-evidence-go",
@@ -422,7 +422,7 @@
         {
           "name": "internal-boundedstore-graph-go",
           "path": "internal/boundedstore/graph.go",
-          "sha256": "3c9b6d2e547e8969570615442f0983af4fd44306c91d03162c6bf5e722d7de9a"
+          "sha256": "462f4d381249def7961d7a440e587391ef11a84263c62c0b70ca7054e8735f5d"
         },
         {
           "name": "internal-boundedstore-graph_projection-go",
@@ -432,27 +432,27 @@
         {
           "name": "internal-boundedstore-lexical-go",
           "path": "internal/boundedstore/lexical.go",
-          "sha256": "ccdeed2e1d900373abef016059ae358bab5f5465d3a4505a5adcb96f3d3b8afe"
+          "sha256": "aa3b94702a34e014f348598564ecdb682ba97a7eb07cc7d3a042e78b7fc7d110"
         },
         {
           "name": "internal-boundedstore-links-go",
           "path": "internal/boundedstore/links.go",
-          "sha256": "83aa865677faa17e890226bd8f9e29c40cadebe76e8231bbf8a6bd0ff89f0ae0"
+          "sha256": "f810a31787640c5aa69cd7f6c5de680f35ee8ad2eec94ccb0ca527236564c96b"
         },
         {
           "name": "internal-boundedstore-name_source-go",
           "path": "internal/boundedstore/name_source.go",
-          "sha256": "26f8bcf16970bbd0a5976da065baeab4cd42eb3bf7ac54743c31fa7c60e8d7bb"
+          "sha256": "e577b8da76f3269ab1a1d6d02f5ea09e838b5d312bfba65417367056221fd93a"
         },
         {
           "name": "internal-boundedstore-navigation-go",
           "path": "internal/boundedstore/navigation.go",
-          "sha256": "ef684fd7e4a1e7978c2c741088d7bcfd1ed1493c4067d6cffcee53ca88ff56a4"
+          "sha256": "1c322c35446059d924d1db1a3a9b82dd8e0e315b4680a4cfa116874a56f1d646"
         },
         {
           "name": "internal-boundedstore-organization-go",
           "path": "internal/boundedstore/organization.go",
-          "sha256": "ce7091c9bce43249cc0f810b729c9b8ff7624ab33c4ebde5f594eb6cc57ae504"
+          "sha256": "482d5f010513adb863ecfadcd542354106c5ee5442624c990f322c0823679827"
         },
         {
           "name": "internal-boundedstore-payload-go",
@@ -467,7 +467,7 @@
         {
           "name": "internal-boundedstore-range_reader-go",
           "path": "internal/boundedstore/range_reader.go",
-          "sha256": "c8a235be7374c3501fb470bdae43c6ffea8e7aa3989e84161ba142e149aa1ba7"
+          "sha256": "2ec90e2b618ee452867b1bcebd78d2282404508a9e1672bdf2a3c80ab1a70077"
         },
         {
           "name": "internal-boundedstore-retrieval_schema-go",
@@ -477,17 +477,17 @@
         {
           "name": "internal-boundedstore-retrieval_state-go",
           "path": "internal/boundedstore/retrieval_state.go",
-          "sha256": "1a878e4523ea534bd837583f992cd0a8a781c6ee4e3776183be4481f4076d5b9"
+          "sha256": "f751b96861c75ed95311f56160045759e901f1f1abd87d8027a16489b838cf88"
         },
         {
           "name": "internal-boundedstore-semantic_work-go",
           "path": "internal/boundedstore/semantic_work.go",
-          "sha256": "99f04d3af7371581d59546807d8ce8b67b69ada764fd3f31644c1f9ee7027f62"
+          "sha256": "5576f47f1c69b764e8a82d80c42b6028412ee3e52e09dd48f1f2de1e0e45349b"
         },
         {
           "name": "internal-boundedstore-store-go",
           "path": "internal/boundedstore/store.go",
-          "sha256": "e6f8683cd3537ea4097136f1b51db45510f2a98e710ffacfdb5c60d6730e6f14"
+          "sha256": "7d05ffffd37529e2d06a5de710a81af0b482a096c9c1c64c1a65fe722e6b00ad"
         },
         {
           "name": "internal-boundedstore-summary-go",
@@ -502,7 +502,7 @@
         {
           "name": "internal-boundedstore-vectors-go",
           "path": "internal/boundedstore/vectors.go",
-          "sha256": "51860759eacef69215d58d285532e48a784bed28115d1708fb9ef2d6e1465a91"
+          "sha256": "12d135b09f36d559d07863594ef43dc29c9564ec29ef53919e9b2ed05f071dfa"
         },
         {
           "name": "internal-boundedstore-workset-go",
@@ -657,7 +657,7 @@
         "control_schema": "ownward.control-state/v1"
       },
       "dependencies": [],
-      "identity": "e25f0ef4703615f11c3dd66cafe93495b868d8c69af4030cad1279fe2dcb5c1c"
+      "identity": "c8e83981b3fec177b52b11f7c3fd3208ae993850c90a047d2f6e0a6000b6317f"
     },
     {
       "role": "kernel",
@@ -767,7 +767,7 @@
         {
           "name": "internal-core-streaming-go",
           "path": "internal/core/streaming.go",
-          "sha256": "e63ae029dc304ed4fc9f2e693955438f4480dcbb9fa090a615753ad193d7acff"
+          "sha256": "b1ef7083700ad78c13740fee5af2e6b321379f1508954ce5ad9975e7a8acb2ce"
         },
         {
           "name": "internal-core-streaming_embedding_batch-go",
@@ -889,7 +889,7 @@
       "dependencies": [
         {
           "role": "authority-substrate",
-          "identity": "e25f0ef4703615f11c3dd66cafe93495b868d8c69af4030cad1279fe2dcb5c1c"
+          "identity": "c8e83981b3fec177b52b11f7c3fd3208ae993850c90a047d2f6e0a6000b6317f"
         },
         {
           "role": "product-rules",
@@ -904,7 +904,7 @@
           "identity": "2a9892e01570a830025d676c005b7cd10654d33b00fbc2da43217603d0548ed4"
         }
       ],
-      "identity": "f4a3a556b06dae1a8611bf92e794baf6025cccbca0551faaab01710755ff9983"
+      "identity": "eead449f5285adccb4907294bc8ee186f51eab9f4aae7845e4facad8bcde023f"
     },
     {
       "role": "product-rules",
@@ -1188,7 +1188,7 @@
       "identity": "2a9892e01570a830025d676c005b7cd10654d33b00fbc2da43217603d0548ed4"
     }
   ],
-  "identity": "b7039c153806f4bbf44352f4a425238002ae27ad4d0ab60d23dd83fca8dee19c",
+  "identity": "2e543a63555bfb235296273ede2d3de10c4b5526f04ad210c5780e64cae8e401",
   "audit": {
     "described_product_candidate": "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8",
     "migration_source_git": "dc2c7a09e67f06cfaacbe0a201c7ff27b20d6182"

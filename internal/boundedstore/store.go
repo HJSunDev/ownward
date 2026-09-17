@@ -17,35 +17,51 @@ import (
 )
 
 const ChunkBytes = 64 * 1024
-const schemaVersion = 1
+const schemaVersion = 2
 
 type Options struct {
 	Budget   *resourcebudget.Budget
 	LockPath string
+	paused   bool // Restore drains control cleanup before background admission.
 }
 
 // Store 不读取旧日志；旧格式迁移与启用由交付阶段控制。
 type Store struct {
-	db             *sql.DB
-	writer         *sql.Conn
-	readers        chan *sql.Conn
-	writeMu        sync.Mutex
-	vectorMu       sync.Mutex
-	organizationMu sync.Mutex
-	writeFailure   error
-	mu             sync.RWMutex
-	closed         bool
-	budget         *resourcebudget.Budget
-	closeOnce      sync.Once
-	closeErr       error
-	lock           io.Closer
-	directory      string
-	releaseCache   func()
+	db                *sql.DB
+	writer            *sql.Conn
+	readers           chan *sql.Conn
+	writeMu           writeGate
+	vectorMu          sync.Mutex
+	organizationMu    sync.Mutex
+	writeFailure      error
+	mu                sync.RWMutex
+	closed            bool
+	budget            *resourcebudget.Budget
+	closeOnce         sync.Once
+	closeErr          error
+	lock              io.Closer
+	directory         string
+	path              string
+	readerMu          sync.Mutex
+	readerChanged     chan struct{}
+	activeReaders     map[*sql.Conn]context.CancelFunc
+	draining          bool
+	maintenanceMu     sync.Mutex
+	maintenanceBatch  writeGate
+	workAdmission     writeGate
+	copyMu            sync.Mutex
+	copyFrozen        bool
+	maintenanceWake   chan struct{}
+	maintenanceCancel context.CancelFunc
+	maintenanceDone   chan struct{}
+	maintenanceErr    error
+	runEpoch          int64
+	releaseCache      func()
 }
 
 const schema = `
 CREATE TABLE IF NOT EXISTS store_meta(key TEXT PRIMARY KEY, value INTEGER NOT NULL) WITHOUT ROWID;
-INSERT OR IGNORE INTO store_meta VALUES('format',1),('operation_generation',1),('asset_epoch',1);
+INSERT OR IGNORE INTO store_meta VALUES('format',2),('operation_generation',1),('asset_epoch',1);
 CREATE TABLE IF NOT EXISTS payloads(
  id TEXT PRIMARY KEY, operation TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('staging','ready','published')),
  content_bytes INTEGER NOT NULL DEFAULT 0, details_bytes INTEGER NOT NULL DEFAULT 0, digest TEXT NOT NULL DEFAULT '',
@@ -119,7 +135,7 @@ func Open(ctx context.Context, path string, options Options) (*Store, error) {
 	}
 	db.SetMaxOpenConns(3)
 	db.SetMaxIdleConns(3)
-	s := &Store{db: db, readers: make(chan *sql.Conn, 2), budget: options.Budget, lock: lock, releaseCache: releaseCache, directory: filepath.Dir(path)}
+	s := &Store{db: db, readers: make(chan *sql.Conn, 2), budget: options.Budget, lock: lock, releaseCache: releaseCache, directory: filepath.Dir(path), path: path, readerChanged: make(chan struct{}), activeReaders: map[*sql.Conn]context.CancelFunc{}, maintenanceWake: make(chan struct{}, 1)}
 	fail := func(err error) (*Store, error) { s.Close(); return nil, err }
 	s.writer, err = db.Conn(ctx)
 	if err != nil {
@@ -134,7 +150,7 @@ func Open(ctx context.Context, path string, options Options) (*Store, error) {
 		if err = s.writer.QueryRowContext(ctx, "SELECT value FROM store_meta WHERE key='format'").Scan(&version); err != nil {
 			return fail(err)
 		}
-		if version != schemaVersion {
+		if version != 1 && version != schemaVersion {
 			return fail(errors.New("不支持的数据库格式"))
 		}
 	}
@@ -155,7 +171,15 @@ func Open(ctx context.Context, path string, options Options) (*Store, error) {
 	if err = configure(ctx, s.writer, 2048, false); err != nil {
 		return fail(err)
 	}
-	if _, err = s.writer.ExecContext(ctx, schema+retrievalSchema); err != nil {
+	if _, err = s.writer.ExecContext(ctx, schema+retrievalSchema+maintenanceSchema); err != nil {
+		return fail(err)
+	}
+	// Publish the new format before exposing any stop-use barrier. Old binaries
+	// must reject it rather than bypassing the new visibility view.
+	if _, err = s.writer.ExecContext(ctx, "UPDATE store_meta SET value=2 WHERE key='format'"); err != nil {
+		return fail(err)
+	}
+	if err = s.initializeMaintenance(ctx); err != nil {
 		return fail(err)
 	}
 	var version int
@@ -176,11 +200,14 @@ func Open(ctx context.Context, path string, options Options) (*Store, error) {
 		}
 		s.readers <- conn
 	}
+	if !options.paused {
+		s.startMaintenance()
+	}
 	return s, nil
 }
 
 func configure(ctx context.Context, c *sql.Conn, cacheKB int, readOnly bool) error {
-	_, err := c.ExecContext(ctx, fmt.Sprintf("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA automatic_index=OFF; PRAGMA wal_autocheckpoint=0; PRAGMA temp_store=FILE; PRAGMA mmap_size=0; PRAGMA cache_size=-%d; PRAGMA busy_timeout=1000;", cacheKB))
+	_, err := c.ExecContext(ctx, fmt.Sprintf("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA secure_delete=ON; PRAGMA foreign_keys=ON; PRAGMA automatic_index=OFF; PRAGMA wal_autocheckpoint=0; PRAGMA temp_store=FILE; PRAGMA mmap_size=0; PRAGMA cache_size=-%d; PRAGMA busy_timeout=1000;", cacheKB))
 	if err != nil {
 		return err
 	}
@@ -194,18 +221,56 @@ func configure(ctx context.Context, c *sql.Conn, cacheKB int, readOnly bool) err
 	return err
 }
 
-func (s *Store) reader(ctx context.Context) (*sql.Conn, func(), error) {
+func (s *Store) reader(ctx context.Context) (*readConnection, func(), error) {
 	s.mu.RLock()
 	if s.closed {
 		s.mu.RUnlock()
 		return nil, nil, errors.New("存储已关闭")
 	}
-	select {
-	case c := <-s.readers:
-		return c, func() { s.readers <- c; s.mu.RUnlock() }, nil
-	case <-ctx.Done():
-		s.mu.RUnlock()
-		return nil, nil, ctx.Err()
+	for {
+		s.readerMu.Lock()
+		blocked := s.draining && classOf(ctx) == ordinaryWork
+		changed := s.readerChanged
+		s.readerMu.Unlock()
+		if blocked {
+			select {
+			case <-ctx.Done():
+				s.mu.RUnlock()
+				return nil, nil, ctx.Err()
+			case <-changed:
+			}
+			continue
+		}
+		select {
+		case c := <-s.readers:
+			s.readerMu.Lock()
+			if s.draining && classOf(ctx) == ordinaryWork {
+				s.readerMu.Unlock()
+				s.readers <- c
+				continue
+			}
+			readCtx, cancel := context.WithCancel(ctx)
+			s.activeReaders[c] = cancel
+			s.readerMu.Unlock()
+			var once sync.Once
+			return &readConnection{c, readCtx}, func() {
+				once.Do(func() {
+					cancel()
+					s.readerMu.Lock()
+					delete(s.activeReaders, c)
+					s.signalReadersLocked()
+					s.readerMu.Unlock()
+					s.readers <- c
+					s.mu.RUnlock()
+					if classOf(ctx) != maintenanceWork && s.walBytes() >= walPassive {
+						s.wakeMaintenance()
+					}
+				})
+			}, nil
+		case <-ctx.Done():
+			s.mu.RUnlock()
+			return nil, nil, ctx.Err()
+		}
 	}
 }
 
@@ -215,7 +280,9 @@ func (s *Store) write(ctx context.Context, fn func(*sql.Tx) error) error {
 	if s.closed {
 		return errors.New("存储已关闭")
 	}
-	s.writeMu.Lock()
+	if err := s.admitWrite(ctx); err != nil {
+		return err
+	}
 	defer s.writeMu.Unlock()
 	if s.writeFailure != nil {
 		return s.writeFailure
@@ -223,7 +290,9 @@ func (s *Store) write(ctx context.Context, fn func(*sql.Tx) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	tx, err := s.writer.BeginTx(ctx, nil)
+	// Writer lifetime is owned here; cancellation is checked by each statement
+	// and before commit, so rollback finishes before the connection is reused.
+	tx, err := s.writer.BeginTx(context.WithoutCancel(ctx), nil)
 	if err != nil {
 		return err
 	}
@@ -231,7 +300,11 @@ func (s *Store) write(ctx context.Context, fn func(*sql.Tx) error) error {
 	if err = fn(tx); err != nil {
 		return err
 	}
+	if err = ctx.Err(); err != nil {
+		return err
+	}
 	if err = tx.Commit(); err == nil {
+		s.afterWrite(ctx)
 		return nil
 	}
 	// 提交结果不确定时废弃物理连接；原操作依靠耐久回执接续。
@@ -246,6 +319,12 @@ func (s *Store) write(ctx context.Context, fn func(*sql.Tx) error) error {
 
 func (s *Store) Close() error {
 	s.closeOnce.Do(func() {
+		if s.maintenanceCancel != nil {
+			s.maintenanceCancel()
+			s.cancelReaders()
+			<-s.maintenanceDone
+		}
+		s.setDraining(false)
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		s.closed = true

@@ -101,7 +101,8 @@ func (s *Store) prepareLexical(ctx context.Context, p Staged, id string) error {
 		}
 		length++
 		batch[d]++
-		if len(batch) >= 512 {
+		// Limit random B-tree page writes as well as the token payload.
+		if len(batch) >= 64 {
 			return flush()
 		}
 		return nil
@@ -259,7 +260,7 @@ DELETE FROM query_terms; DELETE FROM query_scores;`)
 				return err
 			}
 			var frequency int64
-			if err = q.QueryRowContext(ctx, "SELECT count(*) FROM postings p JOIN assets a ON a.payload=p.payload AND a.deleted=0 WHERE p.term=?", d).Scan(&frequency); err != nil {
+			if err = q.QueryRowContext(ctx, "SELECT count(*) FROM postings p JOIN live_assets a ON a.payload=p.payload AND a.deleted=0 WHERE p.term=?", d).Scan(&frequency); err != nil {
 				terms.Close()
 				return err
 			}
@@ -277,7 +278,7 @@ DELETE FROM query_terms; DELETE FROM query_scores;`)
 		if err != nil {
 			return err
 		}
-		rows, err := q.QueryContext(ctx, `SELECT a.id,a.payload,d.length,p.frequency,t.weight FROM query_terms t JOIN postings p ON p.term=t.term JOIN assets a ON a.payload=p.payload AND a.deleted=0 JOIN lexical_documents d ON d.payload=a.payload WHERE t.weight>0 ORDER BY a.id,t.run,t.plane,t.ordinal`)
+		rows, err := q.QueryContext(ctx, `SELECT a.id,a.payload,d.length,p.frequency,t.weight FROM query_terms t JOIN postings p ON p.term=t.term JOIN live_assets a ON a.payload=p.payload AND a.deleted=0 JOIN lexical_documents d ON d.payload=a.payload WHERE t.weight>0 ORDER BY a.id,t.run,t.plane,t.ordinal`)
 		if err != nil {
 			return err
 		}
@@ -321,7 +322,7 @@ DELETE FROM query_terms; DELETE FROM query_scores;`)
 			return err
 		}
 		id := identity
-		err = q.QueryRowContext(ctx, "SELECT payload FROM assets WHERE id=? AND deleted=0", id).Scan(&payload)
+		err = q.QueryRowContext(ctx, "SELECT payload FROM live_assets WHERE id=? AND deleted=0", id).Scan(&payload)
 		if err == nil {
 			ok, e := matchStoredContexts(ctx, q, "lexical_contexts", "payload", payload, contexts)
 			if e != nil {

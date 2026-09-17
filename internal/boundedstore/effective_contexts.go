@@ -22,7 +22,7 @@ func (s *Store) MatchesEffectiveContexts(ctx context.Context, generation, id str
 	valid := true
 	e := s.view(ctx, func(q queryer) error {
 		var payload string
-		if e := q.QueryRowContext(ctx, "SELECT payload FROM assets WHERE id=? AND deleted=0", id).Scan(&payload); e != nil {
+		if e := q.QueryRowContext(ctx, "SELECT payload FROM live_assets WHERE id=? AND deleted=0", id).Scan(&payload); e != nil {
 			return e
 		}
 		org, e := s.CurrentOrganization(ctx, generation, id)
@@ -42,7 +42,7 @@ func (s *Store) ExplicitContextKey(ctx context.Context, id, key string) (bool, e
 	var yes bool
 	digest, _ := lowerDigest(strings.NewReader(key))
 	e := s.view(ctx, func(q queryer) error {
-		return q.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM lexical_contexts c JOIN assets a ON a.payload=c.payload AND a.deleted=0 WHERE a.id=? AND c.lower_key=?)", id, digest[:]).Scan(&yes)
+		return q.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM lexical_contexts c JOIN live_assets a ON a.payload=c.payload AND a.deleted=0 WHERE a.id=? AND c.lower_key=?)", id, digest[:]).Scan(&yes)
 	})
 	return yes, e
 }

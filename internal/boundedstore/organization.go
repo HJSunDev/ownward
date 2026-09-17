@@ -54,7 +54,7 @@ func (s *Store) ActivateGeneration(ctx context.Context, id, expected string) err
 				return errors.New("派生世代不可发布")
 			}
 			var missing int
-			if err = tx.QueryRowContext(ctx, `SELECT count(*) FROM assets a WHERE a.deleted=0 AND NOT EXISTS(SELECT 1 FROM organization_current c JOIN organizations o ON o.id=c.organization WHERE c.generation=? AND c.asset=a.id AND o.revision=a.revision)`, id).Scan(&missing); err != nil {
+			if err = tx.QueryRowContext(ctx, `SELECT count(*) FROM live_assets a WHERE a.deleted=0 AND NOT EXISTS(SELECT 1 FROM organization_current c JOIN organizations o ON o.id=c.organization WHERE c.generation=? AND c.asset=a.id AND o.revision=a.revision)`, id).Scan(&missing); err != nil {
 				return err
 			}
 			if missing > 0 {
@@ -191,7 +191,7 @@ func (s *Store) StageOrganization(ctx context.Context, generation string, source
 		}
 	}
 	err = s.view(ctx, func(q queryer) error {
-		e := q.QueryRowContext(ctx, "SELECT organization FROM organization_current WHERE generation=? AND asset=?", generation, v.Asset).Scan(&v.Expected)
+		e := q.QueryRowContext(ctx, "SELECT coalesce((SELECT organization FROM organization_heads WHERE generation=? AND asset=?),(SELECT organization FROM organization_current WHERE generation=? AND asset=?),'')", generation, v.Asset, generation, v.Asset).Scan(&v.Expected)
 		if errors.Is(e, sql.ErrNoRows) {
 			return nil
 		}
@@ -404,6 +404,9 @@ func visitArray(root streamjson.Node, key string, fn func(streamjson.Node) error
 }
 
 func (s *Store) PublishOrganization(ctx context.Context, v OrganizationVersion) error {
+	if err := s.awaitReclaim(ctx); err != nil {
+		return err
+	}
 	s.organizationMu.Lock()
 	defer s.organizationMu.Unlock()
 	header, err := s.RecordHeader(ctx, v)
@@ -413,6 +416,7 @@ func (s *Store) PublishOrganization(ctx context.Context, v OrganizationVersion) 
 	if err := s.boundDelta(ctx); err != nil {
 		return err
 	}
+	var rejected error
 	err = contract.Commit(ctx, func() error {
 		return s.write(ctx, func(tx *sql.Tx) error {
 			if err := checkAccess(ctx, tx); err != nil {
@@ -434,29 +438,44 @@ func (s *Store) PublishOrganization(ctx context.Context, v OrganizationVersion) 
 			if current == v.ID {
 				return nil
 			}
-			if current != expected || state != "ready" {
+			var head string
+			if err = tx.QueryRowContext(ctx, "SELECT coalesce((SELECT organization FROM organization_heads WHERE generation=? AND asset=?),? )", generation, asset, current).Scan(&head); err != nil {
+				return err
+			}
+			if state != "ready" {
 				return errors.New("派生结果已被替换")
 			}
+			// 永久失效与回收登记同一事务提交；临时错误或取消仍保留可重试候选。
+			reject := func(reason error) error {
+				rejected = reason
+				return s.retireOrganization(ctx, tx, v.ID)
+			}
+			if head != expected {
+				return reject(errors.New("派生结果已被替换"))
+			}
 			var actual uint64
-			if err = tx.QueryRowContext(ctx, "SELECT revision FROM assets WHERE id=? AND deleted=0", asset).Scan(&actual); err != nil {
+			if err = tx.QueryRowContext(ctx, "SELECT revision FROM live_assets WHERE id=? AND deleted=0", asset).Scan(&actual); err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					return reject(ErrNotFound)
+				}
 				return err
 			}
 			if actual != revision {
-				return errors.New("语义来源已变化")
+				return reject(errors.New("语义来源已变化"))
 			}
 			var gstate string
 			if err = tx.QueryRowContext(ctx, "SELECT state FROM generations WHERE id=?", generation).Scan(&gstate); err != nil {
 				return err
 			}
 			if gstate == "retired" {
-				return errors.New("派生世代已退出使用")
+				return reject(errors.New("派生世代已退出使用"))
 			}
 			valid, err := organizationInputsCurrent(ctx, tx, v.ID)
 			if err != nil {
 				return err
 			}
 			if !valid {
-				return errors.New("语义判断的实际输入已变化")
+				return reject(errors.New("语义判断的实际输入已变化"))
 			}
 			if current != "" {
 				if _, err = tx.ExecContext(ctx, "INSERT OR IGNORE INTO derived_reclaim VALUES(?,'organization','replaced')", current); err != nil {
@@ -470,6 +489,9 @@ func (s *Store) PublishOrganization(ctx context.Context, v OrganizationVersion) 
 				return err
 			}
 			if _, err = tx.ExecContext(ctx, "INSERT INTO organization_current VALUES(?,?,?) ON CONFLICT(generation,asset) DO UPDATE SET organization=excluded.organization", generation, asset, v.ID); err != nil {
+				return err
+			}
+			if _, err = tx.ExecContext(ctx, "INSERT INTO organization_heads VALUES(?,?,?) ON CONFLICT(generation,asset) DO UPDATE SET organization=excluded.organization", generation, asset, v.ID); err != nil {
 				return err
 			}
 			if _, err = tx.ExecContext(ctx, "INSERT INTO organization_publications(organization) VALUES(?)", v.ID); err != nil {
@@ -486,12 +508,15 @@ func (s *Store) PublishOrganization(ctx context.Context, v OrganizationVersion) 
 					return err
 				}
 			}
-			_, err = tx.ExecContext(ctx, "INSERT INTO semantic_jobs SELECT a.id,a.revision,'dependency_changed' FROM dependencies d JOIN organizations o ON o.id=d.organization JOIN organization_current c ON c.organization=o.id JOIN assets a ON a.id=o.asset WHERE d.asset=? AND d.snapshot<>'' AND d.snapshot<>? ON CONFLICT(asset) DO UPDATE SET revision=excluded.revision,reason=excluded.reason", asset, v.Snapshot)
+			_, err = tx.ExecContext(ctx, "INSERT OR IGNORE INTO invalidation_jobs(asset,revision,snapshot,forget) VALUES(?,0,?,0)", asset, v.Snapshot)
 			return err
 		})
 	})
 	if err != nil {
 		return err
+	}
+	if rejected != nil {
+		return rejected
 	}
 	var space string
 	err = s.view(ctx, func(q queryer) error {
@@ -500,16 +525,10 @@ func (s *Store) PublishOrganization(ctx context.Context, v OrganizationVersion) 
 	if err != nil {
 		return err
 	}
-	_, err = s.PackVectors(ctx, space, false)
-	if err != nil {
-		// Publication has committed. Delta remains searchable; retain the
-		// maintenance failure rather than reporting a rejected submission.
-		return s.write(context.WithoutCancel(ctx), func(tx *sql.Tx) error {
-			_, e := tx.ExecContext(context.WithoutCancel(ctx), "INSERT OR REPLACE INTO derived_reclaim VALUES(?,'vector_pack',?)", space, err.Error())
-			return e
-		})
-	}
-	return nil
+	return s.write(context.WithoutCancel(ctx), func(tx *sql.Tx) error {
+		_, e := tx.ExecContext(context.WithoutCancel(ctx), "INSERT OR IGNORE INTO derived_reclaim VALUES(?,'vector_pack','published')", space)
+		return e
+	})
 }
 
 // Dependencies are checked recursively at read/publication time. UNION uses a
@@ -518,8 +537,8 @@ func organizationInputsCurrent(ctx context.Context, q queryer, id string) (bool,
 	var invalid int
 	err := q.QueryRowContext(ctx, `WITH RECURSIVE closure(id) AS (
  SELECT ? UNION SELECT c.organization FROM closure x JOIN dependencies d ON d.organization=x.id JOIN organizations o ON o.id=x.id JOIN organization_current c ON c.generation=o.generation AND c.asset=d.asset WHERE d.snapshot<>''
-) SELECT EXISTS(SELECT 1 FROM closure x JOIN organizations o ON o.id=x.id LEFT JOIN assets owner ON owner.id=o.asset AND owner.deleted=0 WHERE owner.id IS NULL OR owner.revision<>o.revision
- UNION ALL SELECT 1 FROM closure x JOIN dependencies d ON d.organization=x.id JOIN organizations owner ON owner.id=x.id LEFT JOIN assets a ON a.id=d.asset AND a.deleted=0 LEFT JOIN organization_current c ON c.generation=owner.generation AND c.asset=d.asset LEFT JOIN organizations target ON target.id=c.organization
+) SELECT EXISTS(SELECT 1 FROM closure x JOIN organizations o ON o.id=x.id LEFT JOIN live_assets owner ON owner.id=o.asset AND owner.deleted=0 WHERE owner.id IS NULL OR owner.revision<>o.revision
+ UNION ALL SELECT 1 FROM closure x JOIN dependencies d ON d.organization=x.id JOIN organizations owner ON owner.id=x.id LEFT JOIN live_assets a ON a.id=d.asset AND a.deleted=0 LEFT JOIN organization_current c ON c.generation=owner.generation AND c.asset=d.asset LEFT JOIN organizations target ON target.id=c.organization
  WHERE a.id IS NULL OR (d.revision<>0 AND a.revision<>d.revision) OR (d.snapshot<>'' AND (target.snapshot IS NULL OR target.snapshot<>d.snapshot OR target.revision<>a.revision)))`, id).Scan(&invalid)
 	return invalid == 0, err
 }
@@ -527,7 +546,7 @@ func organizationInputsCurrent(ctx context.Context, q queryer, id string) (bool,
 func (s *Store) CurrentOrganization(ctx context.Context, generation, asset string) (OrganizationVersion, error) {
 	var v OrganizationVersion
 	err := s.view(ctx, func(q queryer) error {
-		err := q.QueryRowContext(ctx, "SELECT o.id,o.generation,o.asset,o.revision,o.snapshot,o.status,o.work_id,o.expected FROM organization_current c JOIN organizations o ON o.id=c.organization JOIN assets a ON a.id=o.asset AND a.revision=o.revision AND a.deleted=0 WHERE c.generation=? AND c.asset=?", generation, asset).Scan(&v.ID, &v.Generation, &v.Asset, &v.Revision, &v.Snapshot, &v.Status, &v.WorkID, &v.Expected)
+		err := q.QueryRowContext(ctx, "SELECT o.id,o.generation,o.asset,o.revision,o.snapshot,o.status,o.work_id,o.expected FROM organization_current c JOIN organizations o ON o.id=c.organization JOIN live_assets a ON a.id=o.asset AND a.revision=o.revision AND a.deleted=0 WHERE c.generation=? AND c.asset=?", generation, asset).Scan(&v.ID, &v.Generation, &v.Asset, &v.Revision, &v.Snapshot, &v.Status, &v.WorkID, &v.Expected)
 		if err != nil {
 			return err
 		}

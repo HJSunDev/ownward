@@ -68,7 +68,7 @@ func decodeVector(data, digest []byte) ([]float32, error) {
 
 func (s *Store) boundDelta(ctx context.Context) error {
 	if err := s.write(ctx, func(tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, `DELETE FROM vector_delta WHERE NOT EXISTS(SELECT 1 FROM organizations o JOIN organization_current c ON c.organization=o.id JOIN generations g ON g.id=o.generation AND g.state<>'retired' JOIN assets a ON a.id=o.asset AND a.revision=o.revision AND a.deleted=0 WHERE o.id=vector_delta.organization)`)
+		_, err := tx.ExecContext(ctx, `DELETE FROM vector_delta WHERE NOT EXISTS(SELECT 1 FROM organizations o JOIN organization_current c ON c.organization=o.id JOIN generations g ON g.id=o.generation AND g.state<>'retired' JOIN live_assets a ON a.id=o.asset AND a.revision=o.revision AND a.deleted=0 WHERE o.id=vector_delta.organization)`)
 		return err
 	}); err != nil {
 		return err
@@ -112,15 +112,19 @@ func (s *Store) PackVectors(ctx context.Context, space string, force bool) (int,
 	}
 	defer release()
 	var members []vectorMember
+	var runEpoch int64
 	old := ""
 	err = s.view(ctx, func(q queryer) error {
+		if e := q.QueryRowContext(ctx, "SELECT value FROM store_meta WHERE key='run_epoch'").Scan(&runEpoch); e != nil {
+			return e
+		}
 		var count int
 		if e := q.QueryRowContext(ctx, "SELECT count(*) FROM vector_delta WHERE space=?", space).Scan(&count); e != nil {
 			return e
 		}
 		// Repack a depleted block even without new writes; otherwise coalesce a
 		// partial block rather than creating one tiny block per small import.
-		err := q.QueryRowContext(ctx, `SELECT id FROM (SELECT b.id,b.members,(SELECT count(*) FROM vector_members m JOIN organization_current c ON c.organization=m.organization JOIN organizations o ON o.id=m.organization JOIN generations g ON g.id=o.generation AND g.state<>'retired' JOIN assets a ON a.id=o.asset AND a.revision=o.revision AND a.deleted=0 WHERE m.block=b.id) AS live FROM vector_blocks b WHERE b.space=? AND b.state='active') WHERE members<1024 OR live*4<=members*3 ORDER BY (live*4<=members*3) DESC,members,id LIMIT 1`, space).Scan(&old)
+		err := q.QueryRowContext(ctx, `SELECT id FROM (SELECT b.id,b.members,(SELECT count(*) FROM vector_members m JOIN organization_current c ON c.organization=m.organization JOIN organizations o ON o.id=m.organization JOIN generations g ON g.id=o.generation AND g.state<>'retired' JOIN live_assets a ON a.id=o.asset AND a.revision=o.revision AND a.deleted=0 WHERE m.block=b.id) AS live FROM vector_blocks b WHERE b.space=? AND b.state='active') WHERE members<1024 OR live*4<=members*3 ORDER BY (live*4<=members*3) DESC,members,id LIMIT 1`, space).Scan(&old)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
@@ -129,14 +133,14 @@ func (s *Store) PackVectors(ctx context.Context, space string, force bool) (int,
 				return nil
 			}
 			var live, total int
-			if err = q.QueryRowContext(ctx, `SELECT b.members,(SELECT count(*) FROM vector_members m JOIN organization_current c ON c.organization=m.organization JOIN organizations o ON o.id=m.organization JOIN generations g ON g.id=o.generation AND g.state<>'retired' JOIN assets a ON a.id=o.asset AND a.revision=o.revision AND a.deleted=0 WHERE m.block=b.id) FROM vector_blocks b WHERE id=?`, old).Scan(&total, &live); err != nil {
+			if err = q.QueryRowContext(ctx, `SELECT b.members,(SELECT count(*) FROM vector_members m JOIN organization_current c ON c.organization=m.organization JOIN organizations o ON o.id=m.organization JOIN generations g ON g.id=o.generation AND g.state<>'retired' JOIN live_assets a ON a.id=o.asset AND a.revision=o.revision AND a.deleted=0 WHERE m.block=b.id) FROM vector_blocks b WHERE id=?`, old).Scan(&total, &live); err != nil {
 				return err
 			}
 			if live*4 > total*3 {
 				return nil
 			}
 		}
-		rows, err := q.QueryContext(ctx, `SELECT v.organization,o.asset,v.data,v.digest FROM vectors v JOIN organizations o ON o.id=v.organization JOIN organization_current c ON c.organization=o.id JOIN generations g ON g.id=o.generation AND g.state<>'retired' JOIN assets a ON a.id=o.asset AND a.revision=o.revision AND a.deleted=0 WHERE v.organization IN (SELECT organization FROM vector_members WHERE block=? UNION SELECT organization FROM vector_delta WHERE space=?) ORDER BY CASE WHEN v.organization IN(SELECT organization FROM vector_members WHERE block=?) THEN 0 ELSE 1 END,v.organization LIMIT 1024`, old, space, old)
+		rows, err := q.QueryContext(ctx, `SELECT v.organization,o.asset,v.data,v.digest FROM vectors v JOIN organizations o ON o.id=v.organization JOIN organization_current c ON c.organization=o.id JOIN generations g ON g.id=o.generation AND g.state<>'retired' JOIN live_assets a ON a.id=o.asset AND a.revision=o.revision AND a.deleted=0 WHERE v.organization IN (SELECT organization FROM vector_members WHERE block=? UNION SELECT organization FROM vector_delta WHERE space=?) ORDER BY CASE WHEN v.organization IN(SELECT organization FROM vector_members WHERE block=?) THEN 0 ELSE 1 END,v.organization LIMIT 1024`, old, space, old)
 		if err != nil {
 			return err
 		}
@@ -162,7 +166,7 @@ func (s *Store) PackVectors(ctx context.Context, space string, force bool) (int,
 		if old != "" {
 			err = s.write(ctx, func(tx *sql.Tx) error {
 				var live int
-				if e := tx.QueryRowContext(ctx, `SELECT count(*) FROM vector_members m JOIN organization_current c ON c.organization=m.organization JOIN organizations o ON o.id=m.organization JOIN generations g ON g.id=o.generation AND g.state<>'retired' JOIN assets a ON a.id=o.asset AND a.revision=o.revision AND a.deleted=0 WHERE m.block=?`, old).Scan(&live); e != nil {
+				if e := tx.QueryRowContext(ctx, `SELECT count(*) FROM vector_members m JOIN organization_current c ON c.organization=m.organization JOIN organizations o ON o.id=m.organization JOIN generations g ON g.id=o.generation AND g.state<>'retired' JOIN live_assets a ON a.id=o.asset AND a.revision=o.revision AND a.deleted=0 WHERE m.block=?`, old).Scan(&live); e != nil {
 					return e
 				}
 				if live > 0 {
@@ -258,6 +262,18 @@ func (s *Store) PackVectors(ctx context.Context, space string, force bool) (int,
 		}
 	}
 	err = s.write(ctx, func(tx *sql.Tx) error {
+		// 构块期间的遗忘或成员替换不能被迟到的筛选页重新带回。
+		var currentEpoch int64
+		var currentMembers int
+		if e := tx.QueryRowContext(ctx, "SELECT value FROM store_meta WHERE key='run_epoch'").Scan(&currentEpoch); e != nil {
+			return e
+		}
+		if e := tx.QueryRowContext(ctx, `SELECT count(*) FROM vector_members m JOIN vectors v ON v.organization=m.organization JOIN organizations o ON o.id=m.organization JOIN organization_current c ON c.organization=o.id JOIN generations g ON g.id=o.generation AND g.state<>'retired' JOIN live_assets a ON a.id=o.asset AND a.revision=o.revision WHERE m.block=?`, id).Scan(&currentMembers); e != nil {
+			return e
+		}
+		if currentEpoch != runEpoch || currentMembers != len(members) {
+			return errors.New("构块期间资料已变化，未发布旧筛选数据")
+		}
 		if old != "" {
 			var state string
 			if e := tx.QueryRowContext(ctx, "SELECT state FROM vector_blocks WHERE id=?", old).Scan(&state); e != nil {
@@ -273,10 +289,14 @@ func (s *Store) PackVectors(ctx context.Context, space string, force bool) (int,
 				return e
 			}
 		}
-		if _, e := tx.ExecContext(ctx, "UPDATE vector_blocks SET state='active' WHERE id=?", id); e != nil {
+		result, e := tx.ExecContext(ctx, "UPDATE vector_blocks SET state='active' WHERE id=? AND state='staging'", id)
+		if e != nil {
 			return e
 		}
-		_, e := tx.ExecContext(ctx, "DELETE FROM vector_delta WHERE organization IN(SELECT organization FROM vector_members WHERE block=?)", id)
+		if n, err := result.RowsAffected(); err != nil || n != 1 {
+			return errors.Join(errors.New("待发布向量块已失效"), err)
+		}
+		_, e = tx.ExecContext(ctx, "DELETE FROM vector_delta WHERE organization IN(SELECT organization FROM vector_members WHERE block=?)", id)
 		return e
 	})
 	complete = err == nil
@@ -339,7 +359,7 @@ func (s *Store) VectorSearch(ctx context.Context, generation, space string, quer
 	err = s.view(ctx, func(q queryer) error {
 		valid := func(org string) (string, bool, error) {
 			var id string
-			e := q.QueryRowContext(ctx, `SELECT o.asset FROM organizations o JOIN organization_current c ON c.organization=o.id AND c.generation=? JOIN assets a ON a.id=o.asset AND a.revision=o.revision AND a.deleted=0 WHERE o.id=?`, generation, org).Scan(&id)
+			e := q.QueryRowContext(ctx, `SELECT o.asset FROM organizations o JOIN organization_current c ON c.organization=o.id AND c.generation=? JOIN live_assets a ON a.id=o.asset AND a.revision=o.revision AND a.deleted=0 WHERE o.id=?`, generation, org).Scan(&id)
 			if errors.Is(e, sql.ErrNoRows) {
 				return "", false, nil
 			}
@@ -442,7 +462,7 @@ func (s *Store) VectorSearch(ctx context.Context, generation, space string, quer
 			var h vectorHeader
 			good := checkedBlob(data, digest) && json.Unmarshal(data, &h) == nil && h.Version == 1 && count > 0 && count <= 1024
 			exactBlock := func() error {
-				if err := s.write(ctx, func(tx *sql.Tx) error {
+				if err := s.write(context.WithValue(ctx, snapshotWriteKey{}, true), func(tx *sql.Tx) error {
 					_, err := tx.ExecContext(ctx, "INSERT OR IGNORE INTO derived_reclaim VALUES(?,'vector_filter','corrupt')", id)
 					return err
 				}); err != nil {

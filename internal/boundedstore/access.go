@@ -32,19 +32,20 @@ func permissionMask(values []contract.Permission) int {
 
 // PublishAccess 接收控制层已经决定的变更，和控制修订同时生效；不作为外部工具。
 func (s *Store) PublishAccess(ctx context.Context, h AccessHeader, expected uint64, changed []contract.Principal) error {
+	ctx = workContext(ctx, controlWork)
 	if h.System == "" || h.Revision != expected+1 || len(changed) > 64 {
 		return errors.New("控制修订或变更批次无效")
 	}
 	return contract.Commit(ctx, func() error {
 		return s.write(ctx, func(tx *sql.Tx) error {
-			var revision uint64
+			var revision, deletionEpoch uint64
 			var system string
-			err := tx.QueryRowContext(ctx, "SELECT system,revision FROM access_header WHERE singleton=1").Scan(&system, &revision)
+			err := tx.QueryRowContext(ctx, "SELECT system,revision,deletion_epoch FROM access_header WHERE singleton=1").Scan(&system, &revision, &deletionEpoch)
 			if expected == 0 {
 				if !errors.Is(err, sql.ErrNoRows) {
 					return errors.New("信息体系已经初始化")
 				}
-			} else if err != nil || revision != expected || system != h.System {
+			} else if err != nil || revision != expected || system != h.System || h.DeletionEpoch < deletionEpoch {
 				return errors.New("控制状态已变化")
 			}
 			for _, p := range changed {
@@ -80,6 +81,9 @@ var ErrAccess = errors.New("该连接未获准执行此操作，或信息体系�
 
 // BeginAccess 使用可信连接层提供的凭据摘要。操作参数不能指定认证主体。
 func (s *Store) BeginAccess(ctx context.Context, credential string, permission contract.Permission) (context.Context, error) {
+	if permission == contract.ManagePermission {
+		ctx = workContext(ctx, controlWork)
+	}
 	if len(credential) != 64 {
 		return nil, ErrAccess
 	}

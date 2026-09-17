@@ -117,7 +117,7 @@ func (s *Store) PendingAssets(ctx context.Context, limit int) ([]string, error) 
 	}
 	var out []string
 	e := s.view(ctx, func(q queryer) error {
-		rows, e := q.QueryContext(ctx, "SELECT j.asset FROM semantic_jobs j JOIN assets a ON a.id=j.asset AND a.revision=j.revision AND a.deleted=0 ORDER BY a.updated,j.asset LIMIT ?", limit)
+		rows, e := q.QueryContext(ctx, "SELECT j.asset FROM semantic_jobs j JOIN live_assets a ON a.id=j.asset AND a.revision=j.revision AND a.deleted=0 ORDER BY a.updated,j.asset LIMIT ?", limit)
 		if e != nil {
 			return e
 		}

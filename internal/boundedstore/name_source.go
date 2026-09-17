@@ -195,7 +195,7 @@ func (s *Store) NameSource(ctx context.Context, generation string, source contra
 			}
 			ordinal++
 		}
-		rows, e := q.QueryContext(ctx, `SELECT o.id,o.asset FROM source_names t JOIN graph_names n ON n.term=t.term JOIN organizations o ON o.id=n.organization JOIN organization_current c ON c.organization=o.id AND c.generation=? JOIN assets a ON a.id=o.asset AND a.revision=o.revision AND a.deleted=0 ORDER BY t.ordinal,o.asset LIMIT ?`, generation, limit*16)
+		rows, e := q.QueryContext(ctx, `SELECT o.id,o.asset FROM source_names t JOIN graph_names n ON n.term=t.term JOIN organizations o ON o.id=n.organization JOIN organization_current c ON c.organization=o.id AND c.generation=? JOIN live_assets a ON a.id=o.asset AND a.revision=o.revision AND a.deleted=0 ORDER BY t.ordinal,o.asset LIMIT ?`, generation, limit*16)
 		if e != nil {
 			return e
 		}

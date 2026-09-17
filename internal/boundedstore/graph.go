@@ -135,7 +135,7 @@ func (s *Store) NameSearch(ctx context.Context, generation, query string, limit 
 
 func bindGraphEndpoint(ctx context.Context, q queryer, generation string, ep semantics.GraphEndpoint, loc EndpointProjection) (semantics.GraphEndpoint, EndpointProjection, bool, error) {
 	var rev uint64
-	e := q.QueryRowContext(ctx, "SELECT revision FROM assets WHERE id=? AND deleted=0", ep.AssetID).Scan(&rev)
+	e := q.QueryRowContext(ctx, "SELECT revision FROM live_assets WHERE id=? AND deleted=0", ep.AssetID).Scan(&rev)
 	if errors.Is(e, sql.ErrNoRows) {
 		return ep, loc, false, nil
 	}
@@ -225,7 +225,7 @@ func graphEdge(ctx context.Context, q queryer, generation, owner, organization s
 			return Edge{}, false, err
 		}
 		var revision uint64
-		err = q.QueryRowContext(ctx, "SELECT a.revision FROM organization_current c JOIN organizations o ON o.id=c.organization JOIN assets a ON a.id=o.asset AND a.revision=o.revision AND a.deleted=0 WHERE c.generation=? AND c.asset=?", generation, r.TargetID).Scan(&revision)
+		err = q.QueryRowContext(ctx, "SELECT a.revision FROM organization_current c JOIN organizations o ON o.id=c.organization JOIN live_assets a ON a.id=o.asset AND a.revision=o.revision AND a.deleted=0 WHERE c.generation=? AND c.asset=?", generation, r.TargetID).Scan(&revision)
 		if errors.Is(err, sql.ErrNoRows) {
 			return Edge{}, false, nil
 		}
@@ -239,7 +239,7 @@ func graphEdge(ctx context.Context, q queryer, generation, owner, organization s
 		if r.Direction == "incoming" {
 			source, target = target, source
 			var explicit bool
-			if err = q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM graph_explicit e JOIN organization_current c ON c.organization=e.organization JOIN organizations o ON o.id=c.organization JOIN assets a ON a.id=c.asset AND a.revision=o.revision AND a.deleted=0 WHERE c.generation=? AND c.asset=? AND e.target=?)`, generation, source, target).Scan(&explicit); err != nil {
+			if err = q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM graph_explicit e JOIN organization_current c ON c.organization=e.organization JOIN organizations o ON o.id=c.organization JOIN live_assets a ON a.id=c.asset AND a.revision=o.revision AND a.deleted=0 WHERE c.generation=? AND c.asset=? AND e.target=?)`, generation, source, target).Scan(&explicit); err != nil {
 				return Edge{}, false, err
 			}
 			if explicit {
@@ -278,7 +278,7 @@ func (s *Store) VisitAdjacent(ctx context.Context, generation, id string, offset
 SELECT organization,ordinal,grounded,data,0 AS direction FROM graph_links WHERE source=? AND grounded=0
 UNION ALL SELECT organization,ordinal,grounded,data,1 FROM graph_links WHERE target=? AND grounded=0
 UNION ALL SELECT organization,ordinal,grounded,data,2 FROM graph_links WHERE grounded=1 AND (source=? OR target=?)
-) l JOIN organizations o ON o.id=l.organization JOIN organization_publications p ON p.organization=o.id JOIN organization_current c ON c.organization=o.id AND c.generation=? JOIN assets a ON a.id=o.asset AND a.revision=o.revision AND a.deleted=0 ORDER BY l.direction,p.sequence,l.ordinal LIMIT -1 OFFSET ?`, id, id, id, id, generation, offset)
+) l JOIN organizations o ON o.id=l.organization JOIN organization_publications p ON p.organization=o.id JOIN organization_current c ON c.organization=o.id AND c.generation=? JOIN live_assets a ON a.id=o.asset AND a.revision=o.revision AND a.deleted=0 ORDER BY l.direction,p.sequence,l.ordinal LIMIT -1 OFFSET ?`, id, id, id, id, generation, offset)
 		if err != nil {
 			return err
 		}

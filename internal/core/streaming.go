@@ -29,6 +29,11 @@ type StreamingAssets struct {
 var _ contract.StreamingProduct = (*StreamingAssets)(nil)
 
 func (s *StreamingAssets) ExecuteStream(ctx context.Context, request contract.StreamRequest) (*contract.StreamResult, error) {
+	ctx, leave, err := s.Store.BeginForeground(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer leave()
 	// 一次任务先取得完整工作区，内部阶段再使用子预算，避免多个任务各占一部分后互相等待。
 	done, err := s.Budget.Acquire(ctx, 4*resourcebudget.MiB, false)
 	if err != nil {

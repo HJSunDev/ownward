@@ -155,7 +155,7 @@ func (s *Store) InferredContextAllowed(ctx context.Context, id, key, value strin
 	kd, _ := lowerDigest(strings.NewReader(key))
 	vd, _ := lowerDigest(strings.NewReader(value))
 	e := s.view(ctx, func(q queryer) error {
-		return q.QueryRowContext(ctx, "SELECT count(*),coalesce(sum(c.lower_value=?),0) FROM lexical_contexts c JOIN assets a ON a.payload=c.payload WHERE a.id=? AND c.lower_key=?", vd[:], id, kd[:]).Scan(&count, &matches)
+		return q.QueryRowContext(ctx, "SELECT count(*),coalesce(sum(c.lower_value=?),0) FROM lexical_contexts c JOIN live_assets a ON a.payload=c.payload WHERE a.id=? AND c.lower_key=?", vd[:], id, kd[:]).Scan(&count, &matches)
 	})
 	return count == 0 || matches > 0, e
 }
