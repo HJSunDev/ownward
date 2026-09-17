@@ -205,13 +205,20 @@ func (s *StreamingAssets) SemanticStatus() map[string]int {
 	out, _ := s.Store.SemanticCounts(context.Background())
 	return out
 }
-func (s *StreamingAssets) Maintain(ctx context.Context, _ bool) (map[string]int, error) {
+func (s *StreamingAssets) Maintain(ctx context.Context, rebuild bool) (map[string]int, error) {
+	if rebuild {
+		if e := s.rebuildStreaming(ctx); e != nil {
+			return nil, e
+		}
+	}
 	if e := s.Store.DrainMaintenance(ctx); e != nil {
 		return nil, e
 	}
 	return s.Store.SemanticCounts(ctx)
 }
-func (s *StreamingAssets) Close() error { return s.Store.Close() }
+func (s *StreamingAssets) Close() error {
+	return errors.Join(s.cleanDeliveryMaterials(true), s.Store.Close())
+}
 
 func (s *StreamingAssets) smallResult(ctx context.Context, value any) (*contract.StreamResult, error) {
 	stamp, e := s.Store.RetrievalStamp(ctx)

@@ -138,11 +138,19 @@ func (s *Store) setDraining(v bool) {
 	}
 	s.readerMu.Unlock()
 }
-func (s *Store) cancelReaders() {
+
+type readerLease struct {
+	cancel  context.CancelFunc
+	control bool
+}
+
+func (s *Store) cancelReaders(all ...bool) {
 	s.readerMu.Lock()
 	defer s.readerMu.Unlock()
-	for _, cancel := range s.activeReaders {
-		cancel()
+	for _, lease := range s.activeReaders {
+		if !lease.control || (len(all) > 0 && all[0]) {
+			lease.cancel()
+		}
 	}
 }
 func (s *Store) checkpointLocked(ctx context.Context, mode string) (bool, error) {

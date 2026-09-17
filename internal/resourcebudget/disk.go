@@ -46,6 +46,7 @@ func (d *Disk) reserve(n int64) error {
 
 // File 同时计入正文、节点索引及定位工作文件，关闭即释放额度和文件。
 type File struct {
+	mu sync.Mutex
 	*os.File
 	disk          *Disk
 	size, checked int64
@@ -82,12 +83,12 @@ func (f *File) spill() error {
 	if f.File != nil {
 		return nil
 	}
-	v, e := os.CreateTemp(f.dir, f.prefix)
+	v, e := ephemeralFile(f.dir, f.prefix)
 	if e != nil {
 		return e
 	}
-	fail := func(e error) error { v.Close(); os.Remove(v.Name()); return e }
-	if e = CheckFree(v.Name(), uint64(f.size+9*MiB)); e != nil {
+	fail := func(e error) error { v.Close(); return e }
+	if e = CheckFree(f.dir, uint64(f.size+9*MiB)); e != nil {
 		return fail(e)
 	}
 	if _, e = v.Write(f.buffer); e != nil {
@@ -105,6 +106,11 @@ func (f *File) spill() error {
 }
 
 func (f *File) ReadAt(p []byte, offset int64) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.readAt(p, offset)
+}
+func (f *File) readAt(p []byte, offset int64) (int, error) {
 	if f.closed {
 		return 0, os.ErrClosed
 	}
@@ -127,17 +133,24 @@ func (f *File) ReadAt(p []byte, offset int64) (int, error) {
 	return n, nil
 }
 func (f *File) Read(p []byte) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.closed {
 		return 0, os.ErrClosed
 	}
 	if f.File != nil {
 		return f.File.Read(p)
 	}
-	n, e := f.ReadAt(p, f.offset)
+	n, e := f.readAt(p, f.offset)
 	f.offset += int64(n)
 	return n, e
 }
 func (f *File) Seek(offset int64, whence int) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.seek(offset, whence)
+}
+func (f *File) seek(offset int64, whence int) (int64, error) {
 	if f.closed {
 		return 0, os.ErrClosed
 	}
@@ -172,15 +185,18 @@ func (f *File) WriteTo(w io.Writer) (int64, error) {
 func (f *File) WriteString(s string) (int, error) { return f.Write([]byte(s)) }
 
 func TempFile(ctx context.Context, dir, prefix string, fallback int64) (*File, error) {
+	if e := ctx.Err(); e != nil {
+		return nil, e
+	}
 	d := DiskFromContext(ctx)
 	if d == nil {
 		d = NewDisk(fallback)
 	}
-	f, err := os.CreateTemp(dir, prefix)
+	f, err := ephemeralFile(dir, prefix)
 	if err != nil {
 		return nil, err
 	}
-	return &File{File: f, disk: d}, nil
+	return &File{File: f, disk: d, dir: dir}, nil
 }
 func (f *File) grow(end int64) error {
 	if end < 0 {
@@ -192,7 +208,7 @@ func (f *File) grow(end int64) error {
 	n := end - f.size
 	// 已保留额度还需对应磁盘余量；为当前写入之外保留8 MiB。
 	if f.File != nil && end > f.checked {
-		if free, err := freeBytes(f.Name()); err != nil {
+		if free, err := freeBytes(f.dir); err != nil {
 			return err
 		} else if free < uint64(n+9*MiB) {
 			return errors.New("磁盘可用空间不足")
@@ -206,7 +222,9 @@ func (f *File) grow(end int64) error {
 	return nil
 }
 func (f *File) Write(p []byte) (int, error) {
-	offset, err := f.Seek(0, io.SeekCurrent)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	offset, err := f.seek(0, io.SeekCurrent)
 	if err != nil {
 		return 0, err
 	}
@@ -230,6 +248,8 @@ func (f *File) Write(p []byte) (int, error) {
 	return f.File.Write(p)
 }
 func (f *File) WriteAt(p []byte, offset int64) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.closed {
 		return 0, os.ErrClosed
 	}
@@ -254,10 +274,12 @@ func (f *File) WriteAt(p []byte, offset int64) (int, error) {
 	return f.File.WriteAt(p, offset)
 }
 func (f *File) Close() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.once.Do(func() {
 		f.closed = true
 		if f.File != nil {
-			f.err = errors.Join(f.File.Close(), os.Remove(f.Name()))
+			f.err = f.File.Close()
 		}
 		f.buffer = nil
 		if f.release != nil {

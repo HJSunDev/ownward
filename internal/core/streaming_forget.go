@@ -17,5 +17,8 @@ func (s *StreamingAssets) StopUsing(targets, recovered []contract.AssetVersion, 
 }
 
 func (s *StreamingAssets) CleanForgotten() error {
+	if e := s.cleanDeliveryMaterials(false); e != nil {
+		return e
+	}
 	return s.Store.DrainMaintenance(context.Background())
 }

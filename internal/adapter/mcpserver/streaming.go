@@ -103,7 +103,7 @@ func registerStream[T, O any](server *mcp.Server, service contract.StreamingProd
 			defer r.Close()
 			_, e = io.CopyBuffer(w, r, make([]byte, streamjson.BufferBytes))
 			return e
-		}, func() error { return result.Check(call.Context()) })
+		}, func() error { return result.Check(call.Context()) }, result.Retain)
 	})
 }
 

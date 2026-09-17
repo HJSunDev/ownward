@@ -26,6 +26,9 @@ type StreamResult struct {
 	Value ContentSource
 	Check func(context.Context) error
 	Close func() error
+	// Retain binds a transport copy to the same delivery authority. The returned
+	// release closes that copy; invalidation closes all retained copies.
+	Retain func(func() error) (func() error, error)
 }
 
 type StreamingProduct interface {

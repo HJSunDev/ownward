@@ -196,7 +196,7 @@ func (a *ControlAuthority) ReadControl() contract.ControlState {
 	return s
 }
 func (a *ControlAuthority) ReadSelectedControl(selection contract.ControlSelection) (contract.ControlState, error) {
-	ctx := context.Background()
+	ctx := workContext(context.Background(), controlWork)
 	var out contract.ControlState
 	done, e := a.store.budget.Acquire(ctx, 4*resourcebudget.MiB, true)
 	if e != nil {

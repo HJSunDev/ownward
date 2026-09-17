@@ -103,6 +103,9 @@ func openBoundedWith(request Request, manifest composition.Manifest, resource re
 	if e = os.MkdirAll(scratch, 0700); e != nil {
 		return nil, e
 	}
+	if e = resourcebudget.RecoverScratch(scratch); e != nil {
+		return nil, e
+	}
 	kernel := &core.StreamingAssets{Store: store, Budget: budget, Scratch: scratch, DiskBytes: 256 * resourcebudget.MiB, Embedder: vector}
 	c := informationcontrol.New(a)
 	product := informationcontrol.NewProduct(kernel, c)

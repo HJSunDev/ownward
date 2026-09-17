@@ -85,7 +85,7 @@
         {
           "name": "internal-adapter-mcpserver-streaming-go",
           "path": "internal/adapter/mcpserver/streaming.go",
-          "sha256": "4de4b0f0f8f62b87b3111626aa09d038819c62e16e924c091d2044baa9b4db1b"
+          "sha256": "87a5d1a6703929c27dd754669185c1aee93eeefddc44664d51badf5228f72463"
         },
         {
           "name": "internal-adapter-mcpserver-streaming_management-go",
@@ -145,7 +145,7 @@
         {
           "name": "internal-rpcstream-scope-go",
           "path": "internal/rpcstream/scope.go",
-          "sha256": "fc6c06b2e7431dbe33fdc78cf7fbfbbca4397b5d915757d80684c43e90eb838c"
+          "sha256": "ce5a7a6c61b04c2fca9b2882417432ecd3760219192fde44da3dffafa620741d"
         },
         {
           "name": "mcp-adapter",
@@ -189,14 +189,14 @@
       "dependencies": [
         {
           "role": "kernel",
-          "identity": "a3f564f6ea05e203794ff75400566c3719fc6ed5057d948671d6bb9931f29a11"
+          "identity": "6969690c56949bb279e45ae646bca3fe7c6313a1153143ca9c0344a70c50b3cd"
         },
         {
           "role": "product-rules",
           "identity": "7bb674243d6a487e16b3bf22fede7fecd8d538845a4c06b825b70788524e3c47"
         }
       ],
-      "identity": "2c72693d462840d4560be2229f85a2c60c2b2efa33473c6f0639811c2e33243f"
+      "identity": "33fe1fd98636b7d6f169acd6505544c2c73d8fc81e805bf0dccdb2ad01dcc893"
     },
     {
       "role": "assembly",
@@ -266,7 +266,7 @@
         {
           "name": "internal-assembly-bounded-go",
           "path": "internal/assembly/bounded.go",
-          "sha256": "6ddfa870a50ae95b79481470b934f5e83bdc5c31704c02cbc35465d8f5d59ef5"
+          "sha256": "0cb3eb35f6468402a033a1df2a6e0834dc4cb5a1b53ab94c03e0d32821340a04"
         },
         {
           "name": "internal-assembly-handoff",
@@ -299,15 +299,15 @@
       "dependencies": [
         {
           "role": "access",
-          "identity": "2c72693d462840d4560be2229f85a2c60c2b2efa33473c6f0639811c2e33243f"
+          "identity": "33fe1fd98636b7d6f169acd6505544c2c73d8fc81e805bf0dccdb2ad01dcc893"
         },
         {
           "role": "authority-substrate",
-          "identity": "1512a0666b7fc7254a7c84fe2f4c5ce52013adc876d06624ae8191bc479f3584"
+          "identity": "be450cda45171e3f62d5039ad72726b3db3161f2298e7c083cf3b898ee532a1a"
         },
         {
           "role": "kernel",
-          "identity": "a3f564f6ea05e203794ff75400566c3719fc6ed5057d948671d6bb9931f29a11"
+          "identity": "6969690c56949bb279e45ae646bca3fe7c6313a1153143ca9c0344a70c50b3cd"
         },
         {
           "role": "product-rules",
@@ -322,7 +322,7 @@
           "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
         }
       ],
-      "identity": "07859938a6a892901f7f0e84d22c52a8d923cbdda6dd159df135bb0375d94be7"
+      "identity": "6511c909fc0d45097d45ac247f3471bf558debc97b603de89e637f6087e16cbc"
     },
     {
       "role": "authority-substrate",
@@ -437,7 +437,7 @@
         {
           "name": "internal-boundedstore-control_authority-go",
           "path": "internal/boundedstore/control_authority.go",
-          "sha256": "9351f7694b75724f734898e3746542be14a6c31b1425ef164ecdcbab12e0128a"
+          "sha256": "cb9ebbeadc24f94a3fd29b6a119ec7b9ca5ca93653484b5551adca608b1633b2"
         },
         {
           "name": "internal-boundedstore-control_forget-go",
@@ -605,6 +605,11 @@
           "sha256": "2ec90e2b618ee452867b1bcebd78d2282404508a9e1672bdf2a3c80ab1a70077"
         },
         {
+          "name": "internal-boundedstore-rebuild-go",
+          "path": "internal/boundedstore/rebuild.go",
+          "sha256": "0f22b278f564a1c52437025b56698ed703a99e9c486a5753aeddc7e634c9a346"
+        },
+        {
           "name": "internal-boundedstore-replace_other-go",
           "path": "internal/boundedstore/replace_other.go",
           "sha256": "51f2984cbc9f10a2b65a4be5b6e2c61b72ba4a603d4a5723ab124bbe58947970"
@@ -627,7 +632,7 @@
         {
           "name": "internal-boundedstore-scheduler-go",
           "path": "internal/boundedstore/scheduler.go",
-          "sha256": "bddda5f0d27be9e7db19a198dd92b247734152d83644bf48f25736b5c16f3f33"
+          "sha256": "243dd90fe78e8907a9bb337a2b60b7bb1b872216f7d28aefa8cf72e799b62750"
         },
         {
           "name": "internal-boundedstore-semantic_work-go",
@@ -642,7 +647,7 @@
         {
           "name": "internal-boundedstore-store-go",
           "path": "internal/boundedstore/store.go",
-          "sha256": "f7eae5ab711a088ed23db1815e664aa90ed624b8ee9d6438f5f4831877e764ef"
+          "sha256": "17013e1794ef8ae9f9f1affe23df7892c4516cf7b97c660aa474b1543c3a784b"
         },
         {
           "name": "internal-boundedstore-summary-go",
@@ -672,7 +677,7 @@
         {
           "name": "internal-contract-content-go",
           "path": "internal/contract/content.go",
-          "sha256": "c611a24cde0454bd1797858ad50c3fa5f710a64f9ddd7d6e1359735791f595f4"
+          "sha256": "5c20f4a00afef177277965df24def7c0293978c97ebb6a2660f898ea48e02c6c"
         },
         {
           "name": "internal-contract-information_control",
@@ -737,7 +742,7 @@
         {
           "name": "internal-resourcebudget-disk-go",
           "path": "internal/resourcebudget/disk.go",
-          "sha256": "5d3fc63b2b952b03fa39ff9b8a0aa180cf3bce4423255a19d0f193067165fd1b"
+          "sha256": "585c542516a3eb425b7c9b901eaf523d338c6049462e11111fe7466c238417e0"
         },
         {
           "name": "internal-resourcebudget-disk_unix-go",
@@ -750,9 +755,24 @@
           "sha256": "bcade663e0b39af518d3c3374c763518fb472b55bf0164d9696f586f3a7dbf35"
         },
         {
+          "name": "internal-resourcebudget-ephemeral_unix-go",
+          "path": "internal/resourcebudget/ephemeral_unix.go",
+          "sha256": "8f4eaf47796c57c045e3b1fe0c3e5ad4053b143053296dc324e67536552e1cfa"
+        },
+        {
+          "name": "internal-resourcebudget-ephemeral_windows-go",
+          "path": "internal/resourcebudget/ephemeral_windows.go",
+          "sha256": "aba41aa20286c99a2a6531f72e34f84f990d4c6a182b36fa6bef1be783aa698f"
+        },
+        {
           "name": "internal-resourcebudget-runtime-go",
           "path": "internal/resourcebudget/runtime.go",
           "sha256": "a457dd36120c97cd65e09db08fd88e46587955d17087f54742b1f9b6dddae469"
+        },
+        {
+          "name": "internal-resourcebudget-scratch-go",
+          "path": "internal/resourcebudget/scratch.go",
+          "sha256": "e14ad3a9dbe016c749d5d71b8001aba52437ec70f924e64a15999d953bd39550"
         },
         {
           "name": "internal-streamjson-document-go",
@@ -818,7 +838,7 @@
         "storage_format": "ownward.sqlite-storage/v1"
       },
       "dependencies": [],
-      "identity": "1512a0666b7fc7254a7c84fe2f4c5ce52013adc876d06624ae8191bc479f3584"
+      "identity": "be450cda45171e3f62d5039ad72726b3db3161f2298e7c083cf3b898ee532a1a"
     },
     {
       "role": "kernel",
@@ -928,7 +948,7 @@
         {
           "name": "internal-core-streaming-go",
           "path": "internal/core/streaming.go",
-          "sha256": "e61d04230f6f72efa1cab33b6c3d82dc30c1563483a2c796cd8c971c6b0cdb35"
+          "sha256": "27c04a18a47950aade4a667b7deead7da5b707ed4cc4de51cd66f0b4ca79dbd7"
         },
         {
           "name": "internal-core-streaming_check-go",
@@ -953,12 +973,17 @@
         {
           "name": "internal-core-streaming_forget-go",
           "path": "internal/core/streaming_forget.go",
-          "sha256": "6b68389f10b02bf42556883091efa6f4fa78f08d7ff5a146de48380825651a38"
+          "sha256": "57740252f976001ee688d16e794b504bab31b3a2b901a32bc3003d1d26e33646"
         },
         {
           "name": "internal-core-streaming_graph-go",
           "path": "internal/core/streaming_graph.go",
           "sha256": "f03b06b492ba6b81fccb37db053aaad633f2b4a0efe9dc7e966f742de947d779"
+        },
+        {
+          "name": "internal-core-streaming_lifetime-go",
+          "path": "internal/core/streaming_lifetime.go",
+          "sha256": "6e9e91f145ee619b5fc5afb111558c2a3d5e26fe6b752dc915cfd62488fa5642"
         },
         {
           "name": "internal-core-streaming_preview-go",
@@ -968,7 +993,7 @@
         {
           "name": "internal-core-streaming_product-go",
           "path": "internal/core/streaming_product.go",
-          "sha256": "e9c732346b53386324eab375c88aefc0edec4fa902ab11cbc9c027f56ca0b029"
+          "sha256": "cf323b2ec52e72c679387f72d3695d0e3fca19fb86dfa5fb830d526d711aabf7"
         },
         {
           "name": "internal-core-streaming_query-go",
@@ -979,6 +1004,11 @@
           "name": "internal-core-streaming_read-go",
           "path": "internal/core/streaming_read.go",
           "sha256": "72cdf12d7b370bb8e03d0b0bdd8fb6d02c84880599dc1347e003de97259676f0"
+        },
+        {
+          "name": "internal-core-streaming_rebuild-go",
+          "path": "internal/core/streaming_rebuild.go",
+          "sha256": "da8f7ca27ca6207ec078d1ad1c6a8951af4274fb2b87f6d7d0ee06ad554ba52a"
         },
         {
           "name": "internal-core-streaming_result-go",
@@ -1070,7 +1100,7 @@
       "dependencies": [
         {
           "role": "authority-substrate",
-          "identity": "1512a0666b7fc7254a7c84fe2f4c5ce52013adc876d06624ae8191bc479f3584"
+          "identity": "be450cda45171e3f62d5039ad72726b3db3161f2298e7c083cf3b898ee532a1a"
         },
         {
           "role": "product-rules",
@@ -1085,7 +1115,7 @@
           "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
         }
       ],
-      "identity": "a3f564f6ea05e203794ff75400566c3719fc6ed5057d948671d6bb9931f29a11"
+      "identity": "6969690c56949bb279e45ae646bca3fe7c6313a1153143ca9c0344a70c50b3cd"
     },
     {
       "role": "product-rules",
@@ -1354,7 +1384,7 @@
       "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
     }
   ],
-  "identity": "52797ade3d38c1dd4ce6a25436653734552a893265a9d9e0b7efcf3cc583dd94",
+  "identity": "4b53322bccaf263f5791ebc32a1a9b6df3bbd0deb2d5e0bb6bf948fda11cc03f",
   "audit": {
     "described_product_candidate": "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8",
     "migration_source_git": "dc2c7a09e67f06cfaacbe0a201c7ff27b20d6182"

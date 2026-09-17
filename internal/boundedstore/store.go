@@ -45,7 +45,7 @@ type Store struct {
 	path              string
 	readerMu          sync.Mutex
 	readerChanged     chan struct{}
-	activeReaders     map[*sql.Conn]context.CancelFunc
+	activeReaders     map[*sql.Conn]readerLease
 	draining          bool
 	maintenanceMu     sync.Mutex
 	maintenanceBatch  writeGate
@@ -127,6 +127,10 @@ func Open(ctx context.Context, path string, options Options) (*Store, error) {
 			return nil, err
 		}
 	}
+	if err := resourcebudget.RecoverScratch(filepath.Dir(path)); err != nil {
+		lock.Close()
+		return nil, err
+	}
 	releaseCache, err := options.Budget.Acquire(ctx, 4*resourcebudget.MiB+128*1024, false)
 	if err != nil {
 		lock.Close()
@@ -140,7 +144,7 @@ func Open(ctx context.Context, path string, options Options) (*Store, error) {
 	}
 	db.SetMaxOpenConns(3)
 	db.SetMaxIdleConns(3)
-	s := &Store{db: db, readers: make(chan *sql.Conn, 2), budget: options.Budget, lock: lock, releaseCache: releaseCache, directory: filepath.Dir(path), path: path, readerChanged: make(chan struct{}), activeReaders: map[*sql.Conn]context.CancelFunc{}, maintenanceWake: make(chan struct{}, 1)}
+	s := &Store{db: db, readers: make(chan *sql.Conn, 2), budget: options.Budget, lock: lock, releaseCache: releaseCache, directory: filepath.Dir(path), path: path, readerChanged: make(chan struct{}), activeReaders: map[*sql.Conn]readerLease{}, maintenanceWake: make(chan struct{}, 1)}
 	fail := func(err error) (*Store, error) { s.Close(); return nil, err }
 	s.writer, err = db.Conn(ctx)
 	if err != nil {
@@ -267,7 +271,7 @@ func (s *Store) reader(ctx context.Context) (*readConnection, func(), error) {
 				continue
 			}
 			readCtx, cancel := context.WithCancel(ctx)
-			s.activeReaders[c] = cancel
+			s.activeReaders[c] = readerLease{cancel: cancel, control: classOf(ctx) == controlWork}
 			s.readerMu.Unlock()
 			var once sync.Once
 			return &readConnection{c, readCtx}, func() {
@@ -338,7 +342,7 @@ func (s *Store) Close() error {
 	s.closeOnce.Do(func() {
 		if s.maintenanceCancel != nil {
 			s.maintenanceCancel()
-			s.cancelReaders()
+			s.cancelReaders(true)
 			<-s.maintenanceDone
 		}
 		s.setDraining(false)

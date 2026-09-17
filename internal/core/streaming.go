@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/HJSunDev/ownward/internal/boundedstore"
@@ -19,16 +20,27 @@ import (
 
 // StreamingAssets 是新存储格式的资产执行端口；存储格式交付前不切换旧用户资料。
 type StreamingAssets struct {
-	Store     *boundedstore.Store
-	Budget    *resourcebudget.Budget
-	Scratch   string
-	DiskBytes int64
-	Embedder  contract.VectorCapability
+	Store      *boundedstore.Store
+	Budget     *resourcebudget.Budget
+	Scratch    string
+	DiskBytes  int64
+	Embedder   contract.VectorCapability
+	deliveryMu sync.RWMutex
+	rebuildMu  sync.Mutex
+	materialMu sync.Mutex
+	materials  map[*deliveryMaterials]struct{}
 }
 
 var _ contract.StreamingProduct = (*StreamingAssets)(nil)
 
-func (s *StreamingAssets) ExecuteStream(ctx context.Context, request contract.StreamRequest) (*contract.StreamResult, error) {
+func (s *StreamingAssets) ExecuteStream(ctx context.Context, request contract.StreamRequest) (result *contract.StreamResult, failure error) {
+	s.deliveryMu.RLock()
+	defer s.deliveryMu.RUnlock()
+	defer func() {
+		if failure == nil && result != nil {
+			s.trackResult(result)
+		}
+	}()
 	ctx, leave, err := s.Store.BeginForeground(ctx)
 	if err != nil {
 		return nil, err

@@ -68,6 +68,7 @@ type Call struct {
 	once          sync.Once
 	mu            sync.Mutex
 	closed        bool
+	releaseOutput func() error
 }
 
 func New(dir string, budget *resourcebudget.Budget, diskBytes int64) *Scope {
@@ -97,7 +98,11 @@ func (c *Call) Close() {
 		delete(c.Scope.calls, c.token)
 		c.Scope.mu.Unlock()
 		if c.output != nil {
-			c.output.Close()
+			if c.releaseOutput != nil {
+				c.releaseOutput()
+			} else {
+				c.output.Close()
+			}
 		}
 		if c.input != nil {
 			c.input.Close()
@@ -255,7 +260,7 @@ func (c *Call) Digest(ctx context.Context) (string, error) {
 }
 
 // Result 的 write 必须在返回前关闭数据库快照。check 在真实网络交付前再次核对权限与来源。
-func (c *Call) Result(ctx context.Context, write func(io.Writer) error, check func() error) (*mcp.CallToolResult, error) {
+func (c *Call) Result(ctx context.Context, write func(io.Writer) error, check func() error, retain ...func(func() error) (func() error, error)) (*mcp.CallToolResult, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	stop := context.AfterFunc(c.ctx, cancel)
@@ -268,13 +273,64 @@ func (c *Call) Result(ctx context.Context, write func(io.Writer) error, check fu
 	if c.output != nil {
 		return nil, errors.New("调用已经产生结果")
 	}
-	d, err := streamjson.Build(resourcebudget.WithDisk(ctx, c.Scope.Disk), c.Scope.Dir, c.Scope.Budget, c.Scope.DiskBytes, write)
+	// Register before any copied bytes exist. Invalidation cancels construction
+	// and waits for its cleanup, so forgetting cannot complete between Build
+	// and the later publication of c.output.
+	var materialMu sync.Mutex
+	var d *streamjson.Document
+	var release func() error
+	started, invalid := false, false
+	finished := make(chan struct{})
+	cleanup := func() error {
+		materialMu.Lock()
+		invalid = true
+		cancel()
+		wait := started
+		materialMu.Unlock()
+		if wait {
+			<-finished
+		}
+		var err error
+		if d != nil {
+			err = d.Close()
+		}
+		return errors.Join(err, c.input.Close())
+	}
+	if len(retain) > 0 && retain[0] != nil {
+		var err error
+		release, err = retain[0](cleanup)
+		if err != nil {
+			return nil, err
+		}
+	}
+	kept := false
+	defer func() {
+		if !kept && release != nil {
+			release()
+		}
+	}()
+	materialMu.Lock()
+	if invalid {
+		materialMu.Unlock()
+		return nil, errors.New("交付材料已失效")
+	}
+	started = true
+	materialMu.Unlock()
+	var err error
+	d, err = streamjson.Build(resourcebudget.WithDisk(ctx, c.Scope.Disk), c.Scope.Dir, c.Scope.Budget, c.Scope.DiskBytes, write)
+	close(finished)
 	if err != nil {
 		return nil, err
 	}
+	if err = ctx.Err(); err != nil {
+		d.Close()
+		return nil, err
+	}
+	c.releaseOutput = release
 	c.output = d
 	c.outputNode = d.RootContext(c.ctx)
 	c.check = check
+	kept = true
 	return &mcp.CallToolResult{StructuredContent: map[string]string{outputField: c.token}, Content: []mcp.Content{&mcp.TextContent{Text: c.token}}}, nil
 }
 
