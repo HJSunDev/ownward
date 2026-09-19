@@ -4,9 +4,12 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 import hashlib
 import importlib
+import importlib.util
 import json
 from pathlib import Path
 import sys
+import shutil
+import time
 from typing import Any, Iterator
 
 
@@ -23,22 +26,22 @@ from external_intelligence import (  # noqa: E402
     effective_reasoning_effort,
     select_runtime_implementation,
     select_runtime_role_profile,
+    runtime_selection_path,
 )
-from codex_app_server import remove_runtime_root  # noqa: E402
 
 
-SELECTION_PATH = SUPPORT_ROOT / "external-intelligence-runtime.json"
-_CURRENT_SELECTION = load_runtime_selection(SELECTION_PATH)
+SELECTION_PATH = runtime_selection_path()
+_CURRENT_SELECTION = load_runtime_selection(SELECTION_PATH) if SELECTION_PATH.is_file() else {
+    "default_driver": "unconfigured/v1", "driver": "unconfigured/v1", "provider": "unconfigured",
+    "transport": "unconfigured", "worker_isolation": "unconfigured", "implementations": [],
+    "role_profiles": {}, "adapters": {},
+}
 CURRENT_DRIVER = _CURRENT_SELECTION["driver"]
 CURRENT_PROVIDER = _CURRENT_SELECTION["provider"]
 CURRENT_TRANSPORT = _CURRENT_SELECTION["transport"]
 CURRENT_WORKER_ISOLATION = _CURRENT_SELECTION["worker_isolation"]
 
-_ADAPTERS = {
-    "codex-app-server/v1": "codex_external_intelligence",
-    "opencode-server/v1": "opencode_external_intelligence",
-    "opencode-go-api/v1": "go_api_external_intelligence",
-}
+_ADAPTERS = dict(_CURRENT_SELECTION.get("adapters", {}))
 EXPLICIT_ROLE_KEYS = ("generator", "quality_admission", "semantic", "reader", "judge")
 LEGACY_CODEX_DRIVER = "codex-app-server/v1"
 
@@ -141,14 +144,35 @@ def selected_role_profile(driver: str | None = None) -> dict[str, dict[str, str]
 
 def _adapter(driver: str) -> Any:
     select_runtime_implementation(_CURRENT_SELECTION, driver)
-    adapter = _ADAPTERS.get(driver)
-    if adapter is None:
-        raise ExternalIntelligenceError(f"external-intelligence driver has no implementation: {driver}")
-    return importlib.import_module(adapter)
+    locator = _ADAPTERS.get(driver)
+    if locator is None:
+        raise ExternalIntelligenceError(f"external-intelligence driver has no external adapter: {driver}; configure {SELECTION_PATH}")
+    path = Path(locator).resolve()
+    if not path.is_file():
+        raise ExternalIntelligenceError(f"external-intelligence adapter does not exist: {path}")
+    name = "ownward_external_" + hashlib.sha256(str(path).encode()).hexdigest()
+    if name in sys.modules:
+        return sys.modules[name]
+    if str(path.parent) not in sys.path:
+        sys.path.append(str(path.parent))
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        sys.modules.pop(name, None)
+        raise
+    return module
 
 
 def implementation_files(driver: str) -> tuple[Path, ...]:
     return tuple(_adapter(driver).identity_files())
+
+
+def preparation_uses_entry_identity(driver: str) -> bool:
+    """Keep an installed adapter's existing material-identity convention."""
+    return bool(getattr(_adapter(driver), "PREPARATION_ENTRY_IDENTITY", False))
 
 
 def validate_configuration(configuration: RuntimeConfiguration) -> None:
@@ -186,7 +210,8 @@ def current_runtime_identity(
     configuration = RuntimeConfiguration(driver, binary.resolve(), credential_file.resolve())
     validate_configuration(configuration)
     in_process = getattr(adapter, "IN_PROCESS", False)
-    if max_active < 1 or (not in_process and worker_processes != max_active):
+    shared_worker = in_process or getattr(adapter, "SHARED_WORKER", False)
+    if max_active < 1 or (not shared_worker and worker_processes != max_active):
         raise ExternalIntelligenceError("external-intelligence driver requires one isolated worker per active turn")
     return RuntimeIdentity(
         driver=driver,
@@ -196,8 +221,8 @@ def current_runtime_identity(
         artifact_sha256=adapter.artifact_sha256(configuration.binary),
         implementation_sha256=_implementation_identity(adapter),
         credential_locator_sha256=_locator_identity(configuration.credential_file),
-        max_active=max_active,
-        worker_processes=1 if in_process else worker_processes,
+        max_active=min(max_active, getattr(adapter, "MAX_ACTIVE", max_active)),
+        worker_processes=1 if shared_worker else worker_processes,
     ).value()
 
 
@@ -276,6 +301,14 @@ def clean_stale_runtime_roots(output_dir: Path, *, runtime_dir_name: str = ".ext
         if not child.is_dir() or not child.name.startswith(prefixes) or child.resolve().parent != parent:
             raise ExternalIntelligenceError(f"unexpected object in external-intelligence runtime root: {child.name}")
         cleaned.append(child.name)
-        remove_runtime_root(child)
+        deadline = time.perf_counter() + 30
+        while child.exists():
+            try:
+                shutil.rmtree(child)
+                break
+            except OSError as error:
+                if time.perf_counter() >= deadline:
+                    raise ExternalIntelligenceError(f"external runtime cleanup did not quiesce: {child.name}") from error
+                time.sleep(0.05)
     parent.rmdir()
     return cleaned

@@ -108,5 +108,10 @@
         "reasoning_effort": "xhigh"
       }
     }
+  },
+  "adapters": {
+    "codex-app-server/v1": "fake_adapter.py",
+    "opencode-go-api/v1": "fake_adapter.py",
+    "opencode-server/v1": "fake_adapter.py"
   }
 }

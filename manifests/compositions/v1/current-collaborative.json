@@ -130,7 +130,7 @@
         {
           "name": "internal-rpcstream-client-go",
           "path": "internal/rpcstream/client.go",
-          "sha256": "e2f8fd7bbacac51d264c3b263d2d75bf88824eb18da3b2bccdefdc05c962c0ec"
+          "sha256": "b57b7de301862eaa4b267cacf799e13bd45702219f5bb4b4855d5b5ec5bd4fca"
         },
         {
           "name": "internal-rpcstream-http-go",
@@ -165,7 +165,7 @@
         {
           "name": "shared-mcp",
           "path": "cmd/ownward/shared_mcp.go",
-          "sha256": "f6acf03302fe64337d030c1caf7f20e04c222f47fbf0a1f1edbbc278b52fa678"
+          "sha256": "b6e92cba978570f02066d49648dec10fdf14838e70423e55774ae438ec3d0eaf"
         },
         {
           "name": "shared-process-unix",
@@ -196,7 +196,7 @@
           "identity": "7bb674243d6a487e16b3bf22fede7fecd8d538845a4c06b825b70788524e3c47"
         }
       ],
-      "identity": "33fe1fd98636b7d6f169acd6505544c2c73d8fc81e805bf0dccdb2ad01dcc893"
+      "identity": "047129def0b6803a526cbff4ce1f274dea4584f9d136c4a154b1689d09431548"
     },
     {
       "role": "assembly",
@@ -299,7 +299,7 @@
       "dependencies": [
         {
           "role": "access",
-          "identity": "33fe1fd98636b7d6f169acd6505544c2c73d8fc81e805bf0dccdb2ad01dcc893"
+          "identity": "047129def0b6803a526cbff4ce1f274dea4584f9d136c4a154b1689d09431548"
         },
         {
           "role": "authority-substrate",
@@ -322,7 +322,7 @@
           "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
         }
       ],
-      "identity": "6511c909fc0d45097d45ac247f3471bf558debc97b603de89e637f6087e16cbc"
+      "identity": "5a202a3ef275085c7c0bec69b588634cfb3b5023cca01573bcc3c00d237b3e16"
     },
     {
       "role": "authority-substrate",
@@ -1384,7 +1384,7 @@
       "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
     }
   ],
-  "identity": "4b53322bccaf263f5791ebc32a1a9b6df3bbd0deb2d5e0bb6bf948fda11cc03f",
+  "identity": "51192caa8e5f7728e56c22240194de8b1815c06e7db7e33a923edce5a692036b",
   "audit": {
     "described_product_candidate": "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8",
     "migration_source_git": "dc2c7a09e67f06cfaacbe0a201c7ff27b20d6182"

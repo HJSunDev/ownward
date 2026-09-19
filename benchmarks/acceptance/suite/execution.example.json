@@ -27,7 +27,7 @@
     "package": "E:\\path\\to\\ownward-release",
     "production_storage_report": "E:\\path\\to\\ownward-evidence\\production-storage.json",
     "external_intelligence": {
-      "binary": "E:/path/to/ownward/benchmarks/longmemeval_s/go_api_external_intelligence.py",
+      "binary": "E:/path/to/external-intelligence/providers/go_api_external_intelligence.py",
       "credential_file": "E:/Ownward/credentials/bailian.json"
     }
   },
@@ -42,7 +42,7 @@
     "protocol": "E:\\path\\to\\ownward\\benchmarks\\longmemeval_s\\protocol.json",
     "output_dir": "E:\\Ownward\\acceptance\\longmemeval-s\\runs\\candidate-commit\\formal",
     "external_intelligence": {
-      "binary": "E:/path/to/ownward/benchmarks/longmemeval_s/go_api_external_intelligence.py",
+      "binary": "E:/path/to/external-intelligence/providers/go_api_external_intelligence.py",
       "credential_file": "E:/Ownward/credentials/bailian.json"
     }
   }

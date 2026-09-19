@@ -189,10 +189,16 @@ def canonical_sha256(value: Any) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def runtime_selection_path() -> Path:
+    """Machine-local provider selection; never part of the product checkout."""
+    declared = os.environ.get("OWNWARD_EXTERNAL_INTELLIGENCE_SELECTION")
+    return Path(declared).expanduser().resolve() if declared else Path.home() / ".config/ownward/external-intelligence-runtime.json"
+
+
 def load_runtime_selection(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8"))
     required = {"schema", "contract", "default_driver", "implementations", "role_profiles"}
-    if not isinstance(value, dict) or set(value) != required:
+    if not isinstance(value, dict) or not required.issubset(value) or set(value) - required - {"adapters"}:
         raise ExternalIntelligenceError("external-intelligence runtime selection fields changed")
     if value["schema"] != SELECTION_SCHEMA or value["contract"] != CONTRACT_SCHEMA:
         raise ExternalIntelligenceError("external-intelligence runtime selection schema changed")
@@ -225,6 +231,14 @@ def load_runtime_selection(path: Path) -> dict[str, Any]:
         by_driver[driver] = dict(item)
     if default_driver not in by_driver:
         raise ExternalIntelligenceError("external-intelligence default driver is unknown")
+    adapters = value.get("adapters", {})
+    if not isinstance(adapters, dict) or (adapters and set(adapters) != set(by_driver)):
+        raise ExternalIntelligenceError("external-intelligence adapter paths do not match implementations")
+    for driver, locator in adapters.items():
+        if not isinstance(locator, str) or not locator.strip():
+            raise ExternalIntelligenceError("external-intelligence adapter path is missing")
+    if adapters:
+        value["adapters"] = {driver: str((path.parent / locator).resolve()) for driver, locator in adapters.items()}
     profiles = value["role_profiles"]
     if not isinstance(profiles, dict) or set(profiles) != set(by_driver):
         raise ExternalIntelligenceError("external-intelligence role profiles do not match implementations")

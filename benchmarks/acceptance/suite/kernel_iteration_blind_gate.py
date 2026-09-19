@@ -1652,10 +1652,10 @@ def _direct_dependencies(
     evaluator = Path(str(_mapping(candidate_runtime["environment"], "layout")["source"])) / "src" / "evaluation" / "evaluate_qa.py"
     executor_identity = evidence.canonical_sha256({
         "external-intelligence-contract": evidence.file_sha256(repository / "benchmarks" / "support" / "external_intelligence.py"),
-        "external-intelligence-selection": evidence.file_sha256(repository / "benchmarks" / "support" / "external-intelligence-runtime.json"),
+        "external-intelligence-selection": evidence.file_sha256(__import__("external_intelligence").runtime_selection_path()),
         "longmemeval": evidence.file_sha256(long_root / "run.py"),
         "runtime-adapter": evidence.file_sha256(long_root / "external_intelligence_runtime.py"),
-        "transport-adapter": evidence.file_sha256(long_root / "codex_app_server.py"),
+        "transport-adapter": evidence.canonical_sha256({str(p): evidence.file_sha256(p) for p in __import__("external_intelligence_runtime").implementation_files("codex-app-server/v1")}),
         "nonformal-adapter": evidence.file_sha256(adapter),
         "ownward-mcp-transport": evidence.file_sha256(mcp_transport),
         "semantic-representation-runtime": evidence.file_sha256(long_root / "semantic_representation.py"),

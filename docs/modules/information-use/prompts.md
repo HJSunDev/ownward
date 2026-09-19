@@ -13,7 +13,7 @@
 | 3. 初始材料；4. 继续取证并形成结果 | 信息使用层 `initial_context`、`EvidenceToolSession`、`RETRIEVAL_INSTRUCTIONS`、`OFFER`、`task_contract`；运行器 `_active_answer_prompt` 填入需求、日期及预算。 |
 | 5. 交付回答 | 信息使用层 `finish`，无 AI 提示词。 |
 | 6. 判分 | 运行器 `official_prompt` 加载固定官方版本的 `get_anscheck_prompt`，`judge` 提供输出 Schema；标答仅进入判分环节。 |
-| 系统格式指令及异常纠错 | [轻量宿主](../../../benchmarks/longmemeval_s/go_api_external_intelligence.py)组装系统消息、工具定义和格式纠错消息。下文按正常调用展示，异常恢复沿用该实现。 |
+| 系统格式指令及异常纠错 | 外部轻量宿主（按[外部运行清单](../../../benchmarks/support/README.md)定位实际适配器）组装系统消息、工具定义和格式纠错消息。下文按正常调用展示，异常恢复沿用该实现。 |
 | 资料组织被拒绝后的修正 | [定位修正](../../../benchmarks/longmemeval_s/organization_repair.py)的 `INSTRUCTION`、`request` 生成受限字段Schema及相关完整来源；运行器 `_repair_organization_locations` 执行，`submit_semantic_batch` 保持原提交校验与重试预算。 |
 
 ## 各环节完整输入与翻译

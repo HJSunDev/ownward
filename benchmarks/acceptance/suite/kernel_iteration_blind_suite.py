@@ -2787,7 +2787,7 @@ def _load_generation_runtime(path: Path) -> dict[str, Any]:
     except validation.external_intelligence.ExternalIntelligenceError as error:
         raise BlindSuiteError(str(error)) from error
     external_catalog = validation.external_intelligence.load_runtime_selection(
-        Path(__file__).resolve().parents[2] / "support" / "external-intelligence-runtime.json"
+        validation.external_intelligence.runtime_selection_path()
     )
     external = validation.external_intelligence.select_runtime_implementation(external_catalog, configuration.driver)
     # Legacy generation-only configurations predate the provider-neutral role

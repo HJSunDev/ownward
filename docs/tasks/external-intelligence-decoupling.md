@@ -13,12 +13,12 @@
 ## 实现与边界
 
 - 通用端口与有界调度位于 `benchmarks/support/external_intelligence.py`。
-- 唯一运行装配位于 `benchmarks/longmemeval_s/external_intelligence_runtime.py`，只负责校验版本化实现目录、选择一个适配器并封存身份。Codex 与 OpenCode 细节分别收敛在 `codex_external_intelligence.py` 和 `opencode_external_intelligence.py`；业务编排不导入二者。
+- 唯一运行装配位于 `benchmarks/longmemeval_s/external_intelligence_runtime.py`，只负责校验版本化实现目录、选择一个适配器并封存身份。供应商实现和专用测试位于仓库外，通过本机外部清单的 `adapters` 路径加载；业务编排不直接导入具体客户端。
 - LongMemEval、非正式迭代、盲测生成/准入、Reader 与 Judge 通过稳定端口调用。正式质量协议保持原字节与既有兼容字段；独立版本化的运行选择清单封存 provider/driver，运行与请求身份再把二者合并。
 - 供应商、模型、推理档位和执行制品仍是证据的直接依赖，解耦不允许身份模糊或静默降级。
 - 既有产品内核、资产、正式 Acceptance state、当前模型与当前 Codex 认证方式均不改变。固定产品专项验收仍是其已封存的具体评测适配器，不属于本次未来动态生成/Reader 替换链，未被重写或冒充新证据。
 - OpenCode 适配器为每个 worker 建立隔离、可清理的本机服务；所有内置工具默认关闭，只把本次声明的 Ownward 工具经带随机凭证的私有回环 MCP 桥接给模型。适配器从封存实现目录取得 provider、允许模型与档位，负责严格 JSON 解析、Schema 本地校验和有界重试，不再包含供应商或模型特判。认证内容只被复制到临时隔离目录，从不进入证据身份。
-- `external-intelligence-runtime.json` 是封闭的实现目录而非通用插件系统。目录有一个默认 driver，但显式选择绑定到所选条目自身；新增或修改无关实现不会连带失效另一实现的证据。
+- 外部 `external-intelligence-runtime.json` 是显式安装的可信实现清单，不随产品分发。目录有一个默认 driver，但显式选择绑定到所选条目自身；新增或修改无关实现不会连带失效另一实现的证据。
 
 ## 外部能力核验
 
@@ -38,6 +38,6 @@
 - 角色资格分别覆盖验证题生成、独立质量准入、语义组织、Reader 主动工具闭环与 Judge；机器结果位于 `.tmp/external-intelligence/opencode-go-qwen3.8-flash-qualification-v2`、`...-v3` 与 `opencode-go-qwen3.8-flash-quality-admission-v2`。
 - 稳定端口、双适配器、选择/身份隔离、Schema、失败和恢复测试通过；正式 Acceptance state、V0/V1 证据及当前产品均未改写。
 
-## 下一动作
+## 使用边界
 
-本支线到此结束。主线需要外部智能时使用默认 OpenCode Go / Qwen3.8 Flash；需要复现既有证据或对照时，在执行配置中显式选择 `codex-app-server/v1`。任何正式长运行仍须经过原有 preflight 与身份绑定，不能复用不同 provider 的检查点。
+项目只保留通用端口与测试规则；供应商客户端、认证与服务切换、专用验证由外部工具维护。安装与配置见[测试支持说明](../../benchmarks/support/README.md)。上述成绩是记录当时版本的历史证据；正式长运行仍须经过原有preflight与身份绑定，不能复用不同provider的检查点。

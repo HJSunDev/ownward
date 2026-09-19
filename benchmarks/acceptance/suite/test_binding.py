@@ -53,7 +53,7 @@ class BindingManifestTests(unittest.TestCase):
         driver = binding.external_intelligence_runtime.CURRENT_DRIVER
         selected_files = binding.external_intelligence_runtime.implementation_files(driver)
         for path in selected_files:
-            self.assertIn(path.relative_to(self.root.parents[2]).as_posix(), community)
+            self.assertIn(binding._tool_path(self.root.parents[2], path), community)
         self.assertIn("benchmarks/support/external_intelligence.py", community)
         self.assertNotIn("benchmarks/support/external-intelligence-runtime.json", community)
         self.assertEqual(driver, manifests["community"]["external_intelligence_selection"]["driver"])
@@ -82,8 +82,8 @@ class BindingManifestTests(unittest.TestCase):
         manifest = binding._tool_manifest(self.root, "community", config)
         paths = {item["path"] for item in manifest["files"]}
         self.assertEqual("opencode-server/v1", manifest["external_intelligence_selection"]["driver"])
-        self.assertIn("benchmarks/longmemeval_s/opencode_external_intelligence.py", paths)
-        self.assertIn("benchmarks/longmemeval_s/opencode_mcp_bridge.py", paths)
+        for path in binding.external_intelligence_runtime.implementation_files("opencode-server/v1"):
+            self.assertIn(binding._tool_path(self.root.parents[2], path), paths)
         self.assertNotIn("benchmarks/longmemeval_s/codex_app_server.py", paths)
         self.assertNotIn("benchmarks/acceptance/suite/adapters/product/codex_session.py", paths)
 
@@ -378,8 +378,9 @@ class BindingManifestTests(unittest.TestCase):
         community = config["community"]
         self.assertEqual("E:\\Ownward\\acceptance\\longmemeval-s\\manifests\\v1.json", community["environment_manifest"])
         self.assertNotIn("driver", community["external_intelligence"])
-        selected = binding.external_intelligence_runtime._adapter(binding.external_intelligence_runtime.CURRENT_DRIVER)
-        self.assertEqual(Path(selected.__file__).name, Path(community["external_intelligence"]["binary"]).name)
+        binary = community["external_intelligence"]["binary"].replace("\\", "/")
+        self.assertIn("/external-intelligence/", binary)
+        self.assertNotIn("/ownward/benchmarks/", binary)
         roles = binding.external_intelligence_runtime.role_profile_from_execution(community)
         self.assertEqual("qwen3.8-flash", roles["semantic"]["model"])
         self.assertEqual("xhigh", roles["reader"]["reasoning_effort"])

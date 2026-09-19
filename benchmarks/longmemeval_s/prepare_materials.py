@@ -161,7 +161,7 @@ def main():
     contract_path = repo / "manifests/kernel-candidates/v2/source-ownership/semantic-representation.json"
     contract = product.semantic_representation.load_contract(contract_path)
     embedding = Path(settings["candidate"]["embedding_bundle_dir"])
-    driver = repo / "benchmarks/longmemeval_s/go_api_external_intelligence.py"
+    driver = Path(external["binary"]).resolve()
     # The preparation identity excludes the sample, task question, Reader and Judge.
     dependencies = {
         "dataset_sha256": dataset_hash, "binary_sha256": product.sha256(args.binary),
@@ -172,6 +172,12 @@ def main():
         "preparation_implementation": product.semantic_implementation_identity(),
         "transport_driver": product.sha256(driver),
     }
+    from external_intelligence_runtime import preparation_uses_entry_identity
+    if not preparation_uses_entry_identity(external["driver"]):
+        dependencies["external_runtime"] = product.current_runtime_identity(
+            driver=external["driver"], binary=driver,
+            credential_file=Path(external["credential_file"]), max_active=EXTERNAL_SLOTS,
+            worker_processes=EXTERNAL_SLOTS)
     dependency_id = product.canonical_sha256(dependencies)
     check_preparation_dependencies(materials / "states", dependencies,
                                    rebuild_changed=args.rebuild_changed)

@@ -529,7 +529,7 @@ def validate_execution_config(
         protocol_contract_value,
         {name: external_roles[name] for name in ("semantic", "reader", "judge")},
     )
-    external_catalog = external_intelligence.load_runtime_selection(SUPPORT_ROOT / "external-intelligence-runtime.json")
+    external_catalog = external_intelligence.load_runtime_selection(external_intelligence.runtime_selection_path())
     external_selection = external_intelligence.select_runtime_implementation(
         external_catalog, external_configuration.driver,
     )
@@ -1954,7 +1954,7 @@ def _blind_dependencies(
         "quality-admission": evidence.canonical_sha256({"settings": blind["quality_admission"], "implementation": implementation["quality-admission"]}),
         "executor": evidence.canonical_sha256({
             "contract": evidence.text_file_sha256(repository / "benchmarks" / "support" / "external_intelligence.py"),
-            "selection": evidence.text_file_sha256(repository / "benchmarks" / "support" / "external-intelligence-runtime.json"),
+            "selection": evidence.text_file_sha256(external_intelligence.runtime_selection_path()),
             "run": evidence.text_file_sha256(long_root / "run.py"),
             "runtime-adapter": evidence.text_file_sha256(long_root / "external_intelligence_runtime.py"),
             "selected-provider-adapter": external_runtime_implementation_identity(repository, runtime),

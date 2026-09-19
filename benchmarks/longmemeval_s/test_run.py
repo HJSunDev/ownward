@@ -14,7 +14,6 @@ import time
 import unittest
 from unittest import mock
 
-import codex_app_server as concrete_transport
 import run as adapter
 
 
@@ -477,138 +476,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
         self.assertEqual(10, usage['input_tokens'])
         self.assertEqual(1, usage['format_corrections'])
 
-    def test_real_stream_interruptions_repair_only_unfinished_sources(self):
-        import go_api_external_intelligence as driver
-        import external_intelligence_runtime as runtime_adapter
-        contract = adapter.semantic_representation.SemanticInputContract(
-            adapter.semantic_representation.GROUNDED_REPRESENTATION, "test", None)
-        work = [{"id": f"w{i}", "organization_schema": "ownward.organization/v1",
-                 "asset": {"id": f"a{i}", "revision": 1, "content": text}, "candidates": []}
-                for i, text in enumerate(("Keep violet.", "Use Beacon."))]
-        good = {"index": 0, "summary": 0, "topics": [], "cues": [],
-                "organization": {"schema": "ownward.organization/v1", "units": [], "links": []}}
-        complete_batches = ("complete", "missing-object-closer", "missing-both-closers", "extra-closers",
-                            "fenced", "fence-unclosed", "fence-cut")
-        for mode, batch in ((mode, batch) for mode in ("timeout", "eof", "reset", "cut-event")
-                            for batch in ("partial", *complete_batches, "bad-reference", "bad-schema")):
-            second = {**good, "index": 1, "summary": 999 if batch == "bad-reference" else
-                      "invalid" if batch == "bad-schema" else 0}
-            prefix = ('{"analyses":[' + json.dumps(good) + ',{"index":1,"summary":' if batch == "partial"
-                      else json.dumps({"analyses": [good, second]}))
-            if batch == "missing-object-closer":
-                prefix = prefix[:-1]
-            elif batch == "missing-both-closers":
-                prefix = prefix[:-2]
-            elif batch == "extra-closers":
-                prefix += '}]'
-            elif batch == "fenced":
-                prefix = '```json\n' + prefix + '\n```'
-            elif batch in ("fence-unclosed", "fence-cut"):
-                prefix = '```json\n' + prefix + ('\n``' if batch == "fence-cut" else '')
-            for attempts in (1, 2):
-                with self.subTest(mode=mode, batch=batch, attempts=attempts), tempfile.TemporaryDirectory() as directory:
-                    root = Path(directory)
-                    auth = root / "fixture-auth.json"
-                    auth.write_text(json.dumps({"BAILIAN_API_KEY": "test-key"}), encoding="utf-8")
-                    client = driver.GoAPIClient(auth, 1, FakeTransport().identity)
-                    transport = runtime_adapter._StableTransport(client.new_scope(), driver)
-                    capability = adapter.ExternalIntelligenceCapability(transport, contract)
-                    requests = []
 
-                    class Response(io.BytesIO):
-                        status = 200
-                        def __init__(self, complete):
-                            self.complete = complete
-                            text = json.dumps({"analyses": [good]}) if complete else prefix
-                            events = [
-                                {"type": "message_start", "message": {"model": driver.MODEL, "usage": {"input_tokens": 10}}},
-                                {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
-                                {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": text}},
-                            ]
-                            if complete:
-                                events.extend([{"type": "message_delta", "delta": {"stop_reason": "end_turn"},
-                                                "usage": {"output_tokens": 10}}, {"type": "message_stop"}])
-                            wire = b"".join(b"data: " + json.dumps(e).encode() + b"\n\n" for e in events)
-                            if not complete and mode == "cut-event":
-                                wire += b'data: {"type":"message_delta","usage":'
-                            super().__init__(wire)
-
-                        def readline(self, *args):
-                            line = super().readline(*args)
-                            if not line and not self.complete:
-                                if mode == "timeout":
-                                    raise TimeoutError("interrupted")
-                                if mode == "reset":
-                                    raise ConnectionResetError("interrupted")
-                            return line
-
-                    def connect(*args, **kwargs):
-                        connection = mock.Mock(sock=None)
-                        connection.request.side_effect = lambda method, endpoint, body, headers: requests.append(json.loads(body))
-                        connection.getresponse.side_effect = lambda: Response(len(requests) > 1)
-                        return connection
-
-                    settings = {**self.protocol["memory"], "semantic_attempts": attempts,
-                                "semantic_model": driver.MODEL, "semantic_reasoning_effort": "medium"}
-                    stage = root / "organization"
-                    with mock.patch.object(driver.http.client, "HTTPSConnection", side_effect=connect):
-                        if attempts == 1 and batch not in complete_batches:
-                            with self.assertRaises(adapter.AdapterError) as caught:
-                                capability.semantics(work, settings, stage)
-                            self.assertEqual(["w0"], list(caught.exception.accepted_analyses))
-                        else:
-                            decoded, _ = capability.semantics(work, settings, stage)
-                            repeated, _ = capability.semantics(work, settings, stage)
-                            self.assertEqual(decoded, repeated)
-                            self.assertEqual(["w0", "w1"], [row["work_id"] for row in decoded])
-                            self.assertEqual(["Keep violet.", "Use Beacon."], [row["summary"] for row in decoded])
-                            if batch not in complete_batches:
-                                prompt = requests[1]["messages"][0]["content"][0]["text"]
-                                self.assertNotIn("Keep violet.", prompt)
-                                self.assertIn("Use Beacon.", prompt)
-                    self.assertEqual(1 if batch in complete_batches else attempts, len(requests))
-                    checkpoint = adapter.load_json(stage / "organization-progress.json")
-                    self.assertEqual(len(requests), checkpoint["attempt"])
-                    first = checkpoint["accepted"]["w0"]
-                    expected = contract.decode_analysis(work, 0, good)
-                    self.assertEqual(expected, {key: value for key, value in first.items() if key != "input_assets"})
-                    self.assertEqual({"a0", "a1"}, {item["id"] for item in first["input_assets"]})
-
-    def test_interrupted_field_correction_completes_sources_without_an_extra_attempt(self):
-        import go_api_external_intelligence as driver
-        import external_intelligence_runtime as runtime_adapter
-        contract = adapter.semantic_representation.SemanticInputContract(
-            adapter.semantic_representation.GROUNDED_REPRESENTATION, "test", None)
-        work = [{"id": f"w{i}", "organization_schema": "ownward.organization/v1",
-                 "asset": {"id": f"a{i}", "revision": 1, "content": text}, "candidates": []}
-                for i, text in enumerate(("Keep violet.", "Use Beacon."))]
-        good = {"index": 0, "summary": 0, "topics": [], "cues": [],
-                "organization": {"schema": "ownward.organization/v1", "units": [], "links": []}}
-        first = {"model": driver.MODEL, "stop_reason": "end_turn", "usage": {}, "content": [{"type": "text", "text":
-            json.dumps({"analyses": [good, {**good, "index": 1, "summary": "invalid"}]})}]}
-        for model in (driver.MODEL, "wrong-model"):
-            with self.subTest(model=model), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory)
-                auth = root / "fixture-auth.json"
-                auth.write_text(json.dumps({"BAILIAN_API_KEY": "test-key"}), encoding="utf-8")
-                client = driver.GoAPIClient(auth, 1, FakeTransport().identity)
-                capability = adapter.ExternalIntelligenceCapability(
-                    runtime_adapter._StableTransport(client.new_scope(), driver), contract)
-                error = driver.ExternalIntelligenceTimeout("correction interrupted")
-                error.partial_message = {"model": model, "content": [{"type": "text", "text": '{"/analyses/1/summary":0}'}]}
-                settings = {**self.protocol["memory"], "semantic_attempts": 1,
-                            "semantic_model": driver.MODEL, "semantic_reasoning_effort": "medium"}
-                with mock.patch.object(client, "_post", side_effect=[first, error]) as post:
-                    if model == driver.MODEL:
-                        result, _ = capability.semantics(work, settings, root / "stage")
-                        again, _ = capability.semantics(work, settings, root / "stage")
-                        self.assertEqual(["Keep violet.", "Use Beacon."], [row["summary"] for row in result])
-                        self.assertEqual(result, again)
-                    else:
-                        with self.assertRaises(adapter.AdapterError) as caught:
-                            capability.semantics(work, settings, root / "stage")
-                        self.assertEqual(["w0"], list(caught.exception.accepted_analyses))
-                self.assertEqual(2, post.call_count)
 
     def test_protocol_freezes_official_identity_models_and_cost_inventory(self) -> None:
         adapter.validate_protocol(self.protocol)
@@ -625,7 +493,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
         self.assertEqual(23867, self.protocol["execution"]["total_sessions"])
         self.assertEqual(1498, self.protocol["execution"]["semantic_batches"])
         self.assertEqual(1498, self.protocol["execution"]["semantic_work_requests"])
-        selection = adapter.load_json(adapter.SUPPORT_ROOT / "external-intelligence-runtime.json")
+        selection = adapter.load_json(adapter.SUPPORT_ROOT / "fixtures/external-intelligence-runtime.json")
         self.assertEqual("ownward.external-intelligence/v1", selection["contract"])
         self.assertEqual("opencode-go-api/v1", selection["default_driver"])
         self.assertEqual(
@@ -881,21 +749,6 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
                 )
             self.assertEqual(2, transport.calls)
 
-    def test_app_server_returns_dynamic_tool_results_on_the_protocol_channel(self) -> None:
-        server = concrete_transport.CodexAppServer(Path("codex.exe"), Path("auth.json"), Path("runtime"), ["codex"], {})
-        server._active_tool_handler = lambda name, arguments: {"tool": name, "arguments": arguments}
-        with mock.patch.object(server, "_write_message") as write:
-            server._handle_tool_call(17, {"tool": "ownward_search", "arguments": {"query": "q"}})
-        write.assert_called_once_with({
-            "id": 17,
-            "result": {
-                "success": True,
-                "contentItems": [{
-                    "type": "inputText",
-                    "text": '{"tool":"ownward_search","arguments":{"query":"q"}}',
-                }],
-            },
-        })
 
     def test_official_answer_labels_are_validated_but_never_enter_memory_content(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1891,52 +1744,8 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
             self.assertTrue((stage / "complete.json").is_file())
             self.assertFalse((stage / "_audit").exists())
 
-    def test_codex_runtime_cleanup_retries_a_transient_windows_file_lock(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory) / "codex-app-server-fixture"
-            root.mkdir()
-            (root / "goals.sqlite").write_bytes(b"fixture")
-            real_rmtree = adapter.shutil.rmtree
-            calls = 0
 
-            def transient(path: Path) -> None:
-                nonlocal calls
-                calls += 1
-                if calls == 1:
-                    raise PermissionError(32, "fixture lock")
-                real_rmtree(path)
 
-            with mock.patch("codex_app_server.shutil.rmtree", side_effect=transient), mock.patch("codex_app_server.time.sleep"):
-                concrete_transport.remove_runtime_root(root, timeout_seconds=1)
-            self.assertEqual(2, calls)
-            self.assertFalse(root.exists())
-
-    def test_codex_runtime_cleanup_fails_open_after_its_bound(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory) / "codex-app-server-fixture"
-            root.mkdir()
-            with mock.patch("codex_app_server.shutil.rmtree", side_effect=PermissionError(32, "fixture lock")):
-                with self.assertRaisesRegex(concrete_transport.AppServerError, "cleanup did not quiesce"):
-                    concrete_transport.remove_runtime_root(root, timeout_seconds=0)
-            self.assertTrue(root.exists())
-
-    def test_codex_worker_shutdown_targets_its_exact_windows_process_tree(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory) / "codex-app-server-fixture"
-            root.mkdir()
-            server = concrete_transport.CodexAppServer(Path(directory) / "codex.exe", Path(directory) / "auth.json", root, ["codex"], {})
-            process = mock.Mock(pid=43210, stdin=None, stdout=None, stderr=None)
-            process.poll.side_effect = [None, 0]
-            server.process = process
-            with mock.patch("codex_app_server.os.name", "nt"), mock.patch("codex_app_server.subprocess.run") as taskkill:
-                server.__exit__()
-            taskkill.assert_called_once_with(
-                ["taskkill", "/PID", "43210", "/T", "/F"],
-                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5, check=False,
-            )
-            process.terminate.assert_not_called()
-            process.wait.assert_called_once_with(timeout=5)
-            self.assertFalse(root.exists())
 
     def test_retrieval_treats_explicit_null_evidence_as_no_passage_and_reads_full_source(self) -> None:
         client = FakeToolClient()
@@ -1955,154 +1764,10 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
         self.assertEqual("full", retrieval["read_paths"][0]["mode"])
         self.assertEqual([], retrieval["evidence_read_ids"])
 
-    def test_app_server_timeout_interrupts_the_exact_fresh_turn(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            work = root / "work"
-            work.mkdir()
-            server = concrete_transport.CodexAppServer(root / "codex.exe", root / "auth.json", root / "runtime", ["codex"], {})
-            responses = [
-                {"thread": {"id": "thread-1"}},
-                {"turn": {"id": "turn-1"}},
-                {},
-            ]
-            target = mock.Mock()
-            target.get.side_effect = [queue.Empty(), queue.Empty()]
-            with mock.patch.object(server, "request", side_effect=responses) as request, mock.patch("codex_app_server.queue.Queue", return_value=target):
-                with self.assertRaisesRegex(concrete_transport.AppServerTimeout, "timed out"):
-                    server.invoke(
-                        prompt="prompt", schema={"type": "object"}, model="model", effort="low",
-                        work_dir=work, timeout_seconds=1, initial_context="Original evidence",
-                    )
-            turn_input = request.call_args_list[1].args[1]["input"]
-            self.assertEqual([{"type":"text","text":"prompt"},{"type":"text","text":"Original evidence"}], turn_input)
-            self.assertEqual(
-                mock.call("turn/interrupt", {"threadId": "thread-1", "turnId": "turn-1"}, timeout_seconds=10),
-                request.call_args_list[-1],
-            )
 
-    def test_app_server_recovers_and_interrupts_a_turn_start_timeout(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            work = root / "work"
-            work.mkdir()
-            server = concrete_transport.CodexAppServer(root / "codex.exe", root / "auth.json", root / "runtime", ["codex"], {})
-            responses = [
-                {"thread": {"id": "thread-1"}},
-                concrete_transport.AppServerTimeout("turn/start timeout"),
-                {"thread": {"turns": [{"id": "turn-1", "status": "inProgress"}]}},
-                {},
-            ]
-            with mock.patch.object(server, "request", side_effect=responses) as request:
-                with self.assertRaisesRegex(concrete_transport.AppServerTimeout, "orphan_turn_interrupted=true"):
-                    server.invoke(
-                        prompt="prompt", schema={"type": "object"}, model="model", effort="low",
-                        work_dir=work, timeout_seconds=1,
-                    )
-            self.assertEqual(
-                mock.call("turn/interrupt", {"threadId": "thread-1", "turnId": "turn-1"}, timeout_seconds=10),
-                request.call_args_list[-1],
-            )
 
-    def test_app_server_pool_allows_only_one_active_turn_per_worker(self) -> None:
-        class Worker:
-            def __init__(self, index: int, generation: int) -> None:
-                self.index = index
-                self.generation = generation
-                self.active = 0
-                self.maximum = 0
 
-            def __enter__(self):
-                return self
 
-            def __exit__(self, *_args):
-                return None
-
-            def invoke(self, **_request):
-                self.active += 1
-                self.maximum = max(self.maximum, self.active)
-                try:
-                    time.sleep(0.02)
-                    return {"ok": True}, {}, {"transport": "codex-app-server-stdio"}
-                finally:
-                    self.active -= 1
-
-            def diagnostics(self):
-                return {"rate_limit_observed": False}
-
-        workers: list[Worker] = []
-
-        def factory(index: int, generation: int):
-            worker = Worker(index, generation)
-            workers.append(worker)
-            return worker
-
-        with concrete_transport.CodexAppServerPool(2, factory) as pool:
-            with ThreadPoolExecutor(max_workers=4) as executor:
-                values = list(executor.map(lambda _: pool.invoke(), range(4)))
-            diagnostics = pool.diagnostics()
-        self.assertEqual(4, len(values))
-        self.assertTrue(all(worker.maximum == 1 for worker in workers))
-        self.assertEqual(2, diagnostics["max_active"])
-        self.assertEqual(1, diagnostics["per_worker_max_active"])
-
-    def test_app_server_pool_restarts_only_the_failed_worker(self) -> None:
-        created: list[tuple[int, int]] = []
-
-        class Worker:
-            def __init__(self, index: int, generation: int) -> None:
-                self.index = index
-                self.generation = generation
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *_args):
-                return None
-
-            def invoke(self, **_request):
-                if self.generation == 0:
-                    raise concrete_transport.AppServerError("worker failed")
-                return {"ok": True}, {}, {"transport": "codex-app-server-stdio"}
-
-            def diagnostics(self):
-                return {"rate_limit_observed": False}
-
-        def factory(index: int, generation: int):
-            created.append((index, generation))
-            return Worker(index, generation)
-
-        with concrete_transport.CodexAppServerPool(1, factory) as pool:
-            with self.assertRaises(concrete_transport.AppServerError):
-                pool.invoke()
-            value, _, metadata = pool.invoke()
-            diagnostics = pool.diagnostics()
-        self.assertEqual({"ok": True}, value)
-        self.assertEqual(1, metadata["pool_worker_generation"])
-        self.assertEqual([(0, 0), (0, 1)], created)
-        self.assertEqual(1, diagnostics["worker_restarts"])
-
-    def test_app_server_pool_closes_every_worker_before_raising_cleanup_failure(self) -> None:
-        closed: list[int] = []
-
-        class Worker:
-            def __init__(self, index: int) -> None:
-                self.index = index
-
-            def diagnostics(self):
-                return {"rate_limit_observed": False}
-
-            def __exit__(self, *_args):
-                closed.append(self.index)
-                if self.index == 0:
-                    raise concrete_transport.AppServerError("cleanup failed")
-
-        pool = concrete_transport.CodexAppServerPool(2, lambda index, _generation: Worker(index))
-        pool._workers = {0: Worker(0), 1: Worker(1)}
-        with self.assertRaisesRegex(concrete_transport.AppServerError, "cleanup failed"):
-            pool.__exit__()
-        self.assertEqual([0, 1], closed)
-        self.assertEqual({}, pool._workers)
 
     def test_submission_package_is_deterministic(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -2144,24 +1809,7 @@ class LongMemEvalSAdapterTests(unittest.TestCase):
         self.assertNotIn("OfficialJudgeClient", source)
         self.assertNotIn("OPENAI_API_KEY", source)
 
-    def test_codex_capability_uses_one_app_server_without_ephemeral_cli_processes(self) -> None:
-        command = concrete_transport.CodexAppServer.command(["codex"])
-        serialized = " ".join(command)
-        self.assertIn("app-server", command)
-        self.assertNotIn("exec", command)
-        self.assertNotIn("--ephemeral", command)
-        self.assertNotIn("mcp_servers", serialized)
-        self.assertNotIn("OPENAI_API_KEY", serialized)
 
-    def test_app_server_resolves_the_native_codex_process_behind_a_powershell_entry(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            entry = root / "codex.ps1"
-            native = root / "node_modules" / "@openai" / "codex" / "node_modules" / "@openai" / "codex-win32-x64" / "vendor" / "target" / "bin" / "codex.exe"
-            entry.write_text("wrapper", encoding="utf-8")
-            native.parent.mkdir(parents=True)
-            native.write_bytes(b"native")
-            self.assertEqual([str(native.resolve())], concrete_transport.CodexAppServer.direct_command_prefix(entry, ["pwsh", str(entry)]))
 
 
 if __name__ == "__main__":

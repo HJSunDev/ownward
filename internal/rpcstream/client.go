@@ -54,6 +54,15 @@ func (t *RoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	call, err := t.Scope.Resolve(envelope.Params.Name, envelope.Params.Arguments)
 	if err != nil {
+		// Connector-owned control calls are created after stdio projection.
+		// They contain bounded inline arguments, not a host's source reference.
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(envelope.Params.Arguments, &fields) == nil && fields != nil {
+			_, reference := fields[inputField]
+			if !reference && inlineControlTool(envelope.Params.Name) {
+				return boundedControlResponse(next, request)
+			}
+		}
 		return nil, err
 	}
 	call.mu.Lock()
@@ -161,6 +170,35 @@ func (t *RoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	response.Body = io.NopCloser(bytes.NewReader(compact.Bytes()))
 	response.ContentLength = int64(compact.Len())
+	response.Header.Del("Content-Length")
+	return response, nil
+}
+
+func inlineControlTool(name string) bool {
+	switch name {
+	case "ownward_manage", "ownward_management_status", "ownward_check":
+		return true
+	}
+	return false
+}
+
+// The normal authenticated transport and server permission checks still apply.
+// Internal control results must fit the SDK envelope; source payloads never use this path.
+func boundedControlResponse(next http.RoundTripper, request *http.Request) (*http.Response, error) {
+	response, err := next.RoundTrip(request)
+	if err != nil {
+		return nil, err
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, EnvelopeBytes+1))
+	response.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > EnvelopeBytes {
+		return nil, errors.New("内部控制响应超过信封预算")
+	}
+	response.Body = io.NopCloser(bytes.NewReader(body))
+	response.ContentLength = int64(len(body))
 	response.Header.Del("Content-Length")
 	return response, nil
 }

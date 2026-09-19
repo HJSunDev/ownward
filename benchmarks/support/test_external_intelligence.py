@@ -369,7 +369,7 @@ class ExternalIntelligenceContractTests(unittest.TestCase):
                 subject.validate_runtime_identity(value)
 
     def test_runtime_selection_is_versioned_and_provider_explicit(self) -> None:
-        selection = subject.load_runtime_selection(Path(__file__).with_name("external-intelligence-runtime.json"))
+        selection = subject.load_runtime_selection(Path(__file__).parent / "fixtures/external-intelligence-runtime.json")
         self.assertEqual(subject.CONTRACT_SCHEMA, selection["contract"])
         self.assertEqual("opencode-go-api/v1", selection["default_driver"])
         self.assertEqual("opencode-go-api/v1", selection["driver"])
@@ -381,7 +381,7 @@ class ExternalIntelligenceContractTests(unittest.TestCase):
         self.assertEqual(64, len(selection["selection_sha256"]))
 
     def test_implementation_identity_changes_only_for_its_direct_selection(self) -> None:
-        selection = subject.load_runtime_selection(Path(__file__).with_name("external-intelligence-runtime.json"))
+        selection = subject.load_runtime_selection(Path(__file__).parent / "fixtures/external-intelligence-runtime.json")
         codex = subject.select_runtime_implementation(selection, "codex-app-server/v1")["selection_sha256"]
         qwen = subject.select_runtime_implementation(selection, "opencode-server/v1")["selection_sha256"]
         changed = copy.deepcopy(selection)
@@ -390,7 +390,7 @@ class ExternalIntelligenceContractTests(unittest.TestCase):
         self.assertNotEqual(qwen, subject.select_runtime_implementation(changed, "opencode-server/v1")["selection_sha256"])
 
     def test_runtime_catalog_rejects_duplicate_unknown_and_missing_implementations(self) -> None:
-        source = json.loads(Path(__file__).with_name("external-intelligence-runtime.json").read_text(encoding="utf-8"))
+        source = json.loads((Path(__file__).parent / "fixtures/external-intelligence-runtime.json").read_text(encoding="utf-8"))
         mutations = []
         duplicate = copy.deepcopy(source)
         duplicate["implementations"].append(copy.deepcopy(duplicate["implementations"][0]))

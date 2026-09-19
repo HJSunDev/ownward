@@ -538,7 +538,7 @@ def _tool_manifest(suite_root: Path, scope: str, config: dict[str, Any] | None =
             repository / "benchmarks" / "longmemeval_s" / "external_intelligence_runtime.py",
         ])
         external_paths = {
-            path.resolve().relative_to(repository.resolve()).as_posix()
+            _tool_path(repository, path)
             for path in (*implementation_files,
                 repository / "benchmarks" / "support" / "external_intelligence.py",
                 repository / "benchmarks" / "longmemeval_s" / "external_intelligence_runtime.py")
@@ -805,14 +805,19 @@ def _physical_memory_bytes() -> int:
     return int(os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES"))
 
 
+def _tool_path(repository: Path, path: Path) -> str:
+    path = path.resolve()
+    try:
+        return path.relative_to(repository.resolve()).as_posix()
+    except ValueError:
+        return "external/" + hashlib.sha256(str(path).encode()).hexdigest()[:16] + "/" + path.name
+
+
 def _files(repository: Path, paths: list[Path]) -> list[dict[str, str]]:
     result = []
     for path in sorted({item.resolve() for item in paths}):
         _require(path.is_file(), f"绑定工具或材料不存在: {path}")
-        try:
-            relative = path.relative_to(repository.resolve()).as_posix()
-        except ValueError:
-            relative = path.name
+        relative = _tool_path(repository, path)
         result.append({"path": relative, "sha256": sha256(path)})
     return result
 

@@ -92,7 +92,8 @@ func runSharedMCPConnector(ctx context.Context, dataDir, binaryVersion, composit
 	if initialize != nil {
 		instructions = initialize.Instructions
 	}
-	proxy := mcp.NewServer(&mcp.Implementation{Name: "ownward", Version: binaryVersion}, &mcp.ServerOptions{Instructions: instructions, Capabilities: &mcp.ServerCapabilities{}})
+	// Tool schemas must fit the bounded stdio envelope; clients collect MCP pages.
+	proxy := mcp.NewServer(&mcp.Implementation{Name: "ownward", Version: binaryVersion}, &mcp.ServerOptions{Instructions: instructions, Capabilities: &mcp.ServerCapabilities{}, PageSize: 1})
 	host.addMaterialTool(proxy, func(ctx context.Context, refs []string) ([]contract.InformationCheck, error) {
 		result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "ownward_check", Arguments: map[string]any{"bases": refs}})
 		if err != nil {
