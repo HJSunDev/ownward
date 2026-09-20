@@ -58,6 +58,7 @@ func (h *hostConnector) callProduct(ctx context.Context, request *mcp.CallToolRe
 	}
 	h.mu.Lock()
 	op, exists := h.record.Mutations[key]
+	deferred := h.record.Deferred[key]
 	h.mu.Unlock()
 	if !exists {
 		var state struct {
@@ -75,11 +76,23 @@ func (h *hostConnector) callProduct(ctx context.Context, request *mcp.CallToolRe
 			h.record.Mutations = map[string]contract.OperationIdentity{}
 		}
 		h.record.Mutations[key] = op
+		deferred = h.organization != nil && h.organization.ready.Load()
+		if deferred {
+			if h.record.Deferred == nil {
+				h.record.Deferred = map[string]bool{}
+			}
+			h.record.Deferred[key] = true
+		}
 		h.mu.Unlock()
 		if err := h.save(); err != nil {
 			return nil, err
 		}
 	}
+	restore, err := h.deferOrganization(ctx, request, deferred)
+	if err != nil {
+		return nil, err
+	}
+	defer restore()
 	result, err := session.CallTool(contract.WithOperation(ctx, op), &mcp.CallToolParams{Meta: mcp.Meta{"ownward/operation": op.ID, "ownward/generation": op.Generation}, Name: request.Params.Name, Arguments: request.Params.Arguments})
 	if err != nil {
 		return nil, errRemoteUnavailable
@@ -87,6 +100,7 @@ func (h *hostConnector) callProduct(ctx context.Context, request *mcp.CallToolRe
 	if !result.IsError {
 		h.mu.Lock()
 		delete(h.record.Mutations, key)
+		delete(h.record.Deferred, key)
 		h.mu.Unlock()
 		if err := h.save(); err != nil {
 			return nil, err

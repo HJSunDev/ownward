@@ -224,7 +224,7 @@ func TestOrganizationJobUpgradePreservesLegacyData(t *testing.T) {
 	var version int
 	if e = s.view(context.Background(), func(q queryer) error {
 		return q.QueryRowContext(context.Background(), "SELECT value FROM store_meta WHERE key='format'").Scan(&version)
-	}); e != nil || version != 4 {
+	}); e != nil || version != schemaVersion {
 		t.Fatal("upgrade marker", version, e)
 	}
 }
@@ -323,5 +323,67 @@ func TestOrganizationLeaseCannotBeUsedByAnotherPrincipal(t *testing.T) {
 	}
 	if v, e := s.ClaimOrganization(other, "one", "first", 60); e != nil || v != nil {
 		t.Fatal("cross-principal claim recovered private token", e)
+	}
+}
+
+func TestOrganizationBackgroundLimitFairnessAndRevokedReservation(t *testing.T) {
+	s, ctx, p := organizationJobFixture(t)
+	putOrganizationJob(t, s, ctx, "a", 1)
+	putOrganizationJob(t, s, ctx, "b", 1)
+	first, e := s.ClaimOrganizationAfter(ctx, "", "first", 60, "", true)
+	if e != nil || first == nil || first.AssetID != "a" {
+		t.Fatal(first, e)
+	}
+	if duplicate, e := s.ClaimOrganizationAfter(ctx, "b", "parallel", 60, "", true); e != nil || duplicate != nil {
+		t.Fatal("background cap bypassed", duplicate, e)
+	}
+	if duplicate, e := s.ClaimOrganization(ctx, "a", "foreground", 60); e != nil || duplicate != nil {
+		t.Fatal("foreground duplicated running work", duplicate, e)
+	}
+	if _, e = s.ChangeOrganizationLease(ctx, "a", first.Lease, 60, true); e != nil {
+		t.Fatal(e)
+	}
+	next, e := s.ClaimOrganizationAfter(ctx, "", "next", 60, "a", true)
+	if e != nil || next == nil || next.AssetID != "b" {
+		t.Fatal("failed source starves later job", next, e)
+	}
+	p.Revision++
+	if e = s.PublishAccess(context.Background(), AccessHeader{System: "system", Revision: 2}, 1, []contract.Principal{p}); e != nil {
+		t.Fatal(e)
+	}
+	fresh, e := s.BeginAccess(context.Background(), p.CredentialDigest, contract.MaintainPermission)
+	if e != nil {
+		t.Fatal(e)
+	}
+	reclaimed, e := s.ClaimOrganizationAfter(fresh, "a", "reconnect", 60, "", true)
+	if e != nil || reclaimed == nil {
+		t.Fatal("stale principal occupies global background reservation", e)
+	}
+	if e = s.CheckOrganizationExecution(WithOrganizationExecution(fresh, "b", next.Lease), "b"); !errors.Is(e, ErrOrganizationLease) {
+		t.Fatal("revoked work remains valid", e)
+	}
+}
+
+func TestOrganizationUpgradeV4RetainsPendingWork(t *testing.T) {
+	s, ctx, p := organizationJobFixture(t)
+	putOrganizationJob(t, s, ctx, "retained", 1)
+	if e := s.write(ctx, func(tx *sql.Tx) error {
+		_, e := tx.ExecContext(ctx, "ALTER TABLE organization_execution DROP COLUMN background; UPDATE store_meta SET value=4 WHERE key='format'")
+		return e
+	}); e != nil {
+		t.Fatal(e)
+	}
+	path := s.path
+	if e := s.Close(); e != nil {
+		t.Fatal(e)
+	}
+	s = openTest(t, path)
+	ctx, e := s.BeginAccess(context.Background(), p.CredentialDigest, contract.MaintainPermission)
+	if e != nil {
+		t.Fatal(e)
+	}
+	c, e := s.ClaimOrganizationAfter(ctx, "retained", "upgraded", 60, "", true)
+	if e != nil || c == nil || readTest(t, s, "retained") != "original retained" {
+		t.Fatal("upgrade lost work", c, e)
 	}
 }

@@ -17,7 +17,7 @@ import (
 )
 
 const ChunkBytes = 64 * 1024
-const schemaVersion = 4
+const schemaVersion = 5
 
 type Options struct {
 	Budget   *resourcebudget.Budget
@@ -196,7 +196,11 @@ func Open(ctx context.Context, path string, options Options) (*Store, error) {
 	}
 	// Publish the new format before exposing any stop-use barrier. Old binaries
 	// must reject it rather than bypassing the new visibility view.
-	if _, err = tx.ExecContext(ctx, "UPDATE store_meta SET value=4 WHERE key='format'"); err != nil {
+	if err = upgradeOrganizationJobs(ctx, tx); err != nil {
+		tx.Rollback()
+		return fail(err)
+	}
+	if _, err = tx.ExecContext(ctx, "UPDATE store_meta SET value=5 WHERE key='format'"); err != nil {
 		tx.Rollback()
 		return fail(err)
 	}

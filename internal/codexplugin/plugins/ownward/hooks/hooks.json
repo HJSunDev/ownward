@@ -3,6 +3,9 @@
   "hooks": {
     "PostToolUse": [{"matcher": "^mcp__.*ownward.*__ownward_(read|evidence_read|check)$", "hooks": [{"type": "mcp_tool", "server": "ownward", "tool": "ownward_host_event", "input": {"event": "PostToolUse", "session_id": "${session_id}", "turn_id": "${turn_id}", "tool_name": "${tool_name}", "tool_response": "${tool_response}"}, "timeout": 10}]}],
     "SessionStart": [{"matcher": "resume|compact|clear", "hooks": [{"type": "mcp_tool", "server": "ownward", "tool": "ownward_host_event", "input": {"event": "SessionStart", "session_id": "${session_id}", "source": "${source}"}, "timeout": 10}]}],
-    "UserPromptSubmit": [{"hooks": [{"type": "mcp_tool", "server": "ownward", "tool": "ownward_host_event", "input": {"event": "UserPromptSubmit", "session_id": "${session_id}", "turn_id": "${turn_id}"}, "timeout": 10}]}]
+    "UserPromptSubmit": [{"hooks": [{"type": "mcp_tool", "server": "ownward", "tool": "ownward_host_event", "input": {"event": "UserPromptSubmit", "session_id": "${session_id}", "turn_id": "${turn_id}"}, "timeout": 10}]}],
+    "Stop": [{"hooks": [{"type": "mcp_tool", "server": "ownward", "tool": "ownward_host_event", "input": {"event": "Stop", "session_id": "${session_id}", "turn_id": "${turn_id}"}, "timeout": 10}]}],
+    "SessionEnd": [{"hooks": [{"type": "mcp_tool", "server": "ownward", "tool": "ownward_host_event", "input": {"event": "SessionEnd", "session_id": "${session_id}"}, "timeout": 10}]}],
+    "Interrupt": [{"hooks": [{"type": "mcp_tool", "server": "ownward", "tool": "ownward_host_event", "input": {"event": "Interrupt", "session_id": "${session_id}"}, "timeout": 10}]}]
   }
 }

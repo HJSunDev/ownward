@@ -28,11 +28,13 @@ type connectorRecord struct {
 	Connected     bool                                  `json:"connected,omitempty"`
 	LastDelivered []string                              `json:"last_delivered,omitempty"`
 	Mutations     map[string]contract.OperationIdentity `json:"mutations,omitempty"`
+	Deferred      map[string]bool                       `json:"deferred,omitempty"`
 	JoinProof     string                                `json:"join_proof,omitempty"`
 	NextLocation  *contract.Location                    `json:"next_location,omitempty"`
 }
 
 type hostConnector struct {
+	organization  *organizationHost
 	routeMu       sync.RWMutex
 	mu            sync.Mutex
 	initMu        sync.Mutex

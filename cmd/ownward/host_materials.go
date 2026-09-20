@@ -26,7 +26,8 @@ type hostMaterialEvent struct {
 	Response any    `json:"tool_response,omitempty"`
 }
 type hostHookOutput struct {
-	Specific *hostHookContext `json:"hookSpecificOutput,omitempty"`
+	Specific     *hostHookContext `json:"hookSpecificOutput,omitempty"`
+	Organization string           `json:"organization_status,omitempty"`
 }
 type hostHookContext struct {
 	Event   string `json:"hookEventName"`
@@ -48,9 +49,22 @@ func (h *hostConnector) addMaterialTool(proxy *mcp.Server, call func(context.Con
 			return nil, hostHookOutput{}, errors.New("宿主会话身份无效")
 		}
 		switch input.Event {
-		case "SessionStart", "UserPromptSubmit", "PostToolUse":
+		case "SessionStart", "UserPromptSubmit", "PostToolUse", "Stop", "Interrupt", "SessionEnd":
 		default:
 			return nil, hostHookOutput{}, errors.New("不支持的宿主事件")
+		}
+		if h.organization != nil {
+			event := input.Event
+			if event == "SessionStart" && input.Source == "clear" {
+				event = "SessionClear"
+			}
+			h.organization.event(input.Session, event)
+		}
+		if input.Event == "Stop" || input.Event == "Interrupt" || input.Event == "SessionEnd" {
+			if h.organization != nil {
+				return nil, hostHookOutput{Organization: h.organization.state()}, nil
+			}
+			return nil, hostHookOutput{}, nil
 		}
 		// 恢复只加载宿主原连接，不在 Hook 中询问或扩张访问权。
 		h.initMu.Lock()

@@ -103,16 +103,22 @@ func runSharedMCPConnector(ctx context.Context, dataDir, binaryVersion, composit
 		err = decodeTool(result, &out)
 		return out.Results, err
 	})
+	var organizationTools []*mcp.Tool
 	for tool, toolErr := range session.Tools(ctx, nil) {
 		if toolErr != nil {
 			return fmt.Errorf("读取共享 Ownward 工具契约失败: %w", toolErr)
 		}
 		copyOfTool := *tool
+		organizationTools = append(organizationTools, &copyOfTool)
 		proxy.AddTool(&copyOfTool, func(callContext context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			return host.call(callContext, request, session)
 		})
 	}
-	if err := runConnectorIO(ctx, proxy, streamScope, os.Stdin, os.Stdout); err != nil {
+	stopOrganization := host.attachOrganization(ctx, initialize, organizationTools, func(ctx context.Context, name string, args any) (*mcp.CallToolResult, error) {
+		return organizationToolCall(ctx, streamScope, session, name, args)
+	})
+	defer stopOrganization()
+	if err := runConnectorIO(ctx, proxy, streamScope, os.Stdin, os.Stdout, stopOrganization); err != nil {
 		return fmt.Errorf("共享 Ownward stdio 连接器结束: %w", err)
 	}
 	return nil

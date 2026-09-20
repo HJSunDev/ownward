@@ -16,6 +16,8 @@ type IO struct {
 	Scope  *Scope
 	Reader io.ReadCloser
 	Writer io.WriteCloser
+	// 共享Scope由调用者在其他使用者停止后关闭；默认仍随IO关闭。
+	SharedScope bool
 }
 
 func (t *IO) Connect(ctx context.Context) (mcp.Connection, error) {
@@ -32,7 +34,9 @@ func (t *IO) Connect(ctx context.Context) (mcp.Connection, error) {
 			feed.Close()
 			received.Close()
 			write.Close()
-			t.Scope.Close()
+			if !t.SharedScope {
+				t.Scope.Close()
+			}
 		})
 	}
 	go func() { <-ctx.Done(); closeAll() }()

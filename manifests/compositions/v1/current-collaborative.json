@@ -20,17 +20,17 @@
         {
           "name": "cmd-ownward-connector_operation",
           "path": "cmd/ownward/connector_operation.go",
-          "sha256": "0444289d3e7dcdbcbb24b0c0d680929de19bd687bc47952b77cbdb86f036bbc2"
+          "sha256": "f96a9182a72850086558d7186261ec737ac2598851dbf2fcafcebe164241f983"
         },
         {
           "name": "cmd-ownward-host-materials-go",
           "path": "cmd/ownward/host_materials.go",
-          "sha256": "4376ced67b022de6b446de5adf3107da677fd02ee86a4161daaebd57604e7670"
+          "sha256": "226dd00b7d6b76ac9d7f55e20964521668170e3cb0baa5005e3c803953df5720"
         },
         {
           "name": "cmd-ownward-host_connector",
           "path": "cmd/ownward/host_connector.go",
-          "sha256": "3913a778221650c7ae5473ed21e33d539905ee8e53076eb620936204c70101fe"
+          "sha256": "34cd838fb98e00635bb2d9070c366de6568260e2b16ec4ace2146668750ce752"
         },
         {
           "name": "cmd-ownward-information_control",
@@ -38,9 +38,24 @@
           "sha256": "79c17b1e1e867138c2c886ea8212b0370e3d5ba3b112afca3cb49544c0e36c77"
         },
         {
+          "name": "cmd-ownward-organization_connector-go",
+          "path": "cmd/ownward/organization_connector.go",
+          "sha256": "1b13a8fb23f3165f713820ba8cc902d9cfe201d41046147397f235e84170d6ae"
+        },
+        {
+          "name": "cmd-ownward-organization_host-go",
+          "path": "cmd/ownward/organization_host.go",
+          "sha256": "75f8abff0d8a1bd2baa138cdbfaad25b8c654af45bc3dda00c34ee1ddf6dbe13"
+        },
+        {
+          "name": "cmd-ownward-organization_state-go",
+          "path": "cmd/ownward/organization_state.go",
+          "sha256": "188d38ce6e5b9ba7624024e9445e55c200c664f5ae1cf531f506e50ba4563bdd"
+        },
+        {
           "name": "cmd-ownward-remote_access",
           "path": "cmd/ownward/remote_access.go",
-          "sha256": "cc17151aca8efdeaa7e8f63d9cf05f1467a5bab4e247a0bc53d34868e0ae4128"
+          "sha256": "7175c66e38ffdc1be566795506caa81039e71a869d7fe6ad5467b596df5d0b26"
         },
         {
           "name": "cmd-ownward-remote_decision",
@@ -60,7 +75,7 @@
         {
           "name": "cmd-ownward-streaming_connector-go",
           "path": "cmd/ownward/streaming_connector.go",
-          "sha256": "99ab173895b53d5a849209bb0ad727a10c00c83b3d099e6ff7322e888aaaf6da"
+          "sha256": "50b0b615ef7feff6e3dfb44d2c90a5628a84f5a7b443d608d62c4e2c6ef596fe"
         },
         {
           "name": "internal-adapter-localowner-protect_unix",
@@ -103,6 +118,26 @@
           "sha256": "c4557f5df38920e1c22548e614aec1717de5f42ad2df961e1eec50220dc89722"
         },
         {
+          "name": "internal-codexplugin-organization-go",
+          "path": "internal/codexplugin/organization.go",
+          "sha256": "fc8807eb285d0bad31ef17f66b427f38787ab6561c191acf01e0f1799b34b378"
+        },
+        {
+          "name": "internal-codexplugin-organization_client-go",
+          "path": "internal/codexplugin/organization_client.go",
+          "sha256": "212a8abc59fe5ddfcf718909c8f53fc18e197c1a2a2400cd8aff7c29642ca881"
+        },
+        {
+          "name": "internal-codexplugin-organization_other-go",
+          "path": "internal/codexplugin/organization_other.go",
+          "sha256": "73917af5fe86117294e81b46e248602903f700c130cd5d875015e52558a36524"
+        },
+        {
+          "name": "internal-codexplugin-organization_windows-go",
+          "path": "internal/codexplugin/organization_windows.go",
+          "sha256": "44c9c6ca408f009870d113a2022f7d9e1e15e7a9715f1ae31f606e49a48ac728"
+        },
+        {
           "name": "internal-codexplugin-plugin-go",
           "path": "internal/codexplugin/plugin.go",
           "sha256": "06620bcc029e913cd9517f2b5185d644760c6434e8a63a5faa7de64259e45ffb"
@@ -115,12 +150,12 @@
         {
           "name": "internal-codexplugin-plugins-ownward--mcp-json",
           "path": "internal/codexplugin/plugins/ownward/.mcp.json",
-          "sha256": "5438f187fd13a3878d7b2bf73482f97974b37976046b3d7a92d7de4602f298d4"
+          "sha256": "eabfd245ace1fb23c0bce25e65c04c6c847218a795491915f66a81eb2c13f978"
         },
         {
           "name": "internal-codexplugin-plugins-ownward-hooks-hooks-json",
           "path": "internal/codexplugin/plugins/ownward/hooks/hooks.json",
-          "sha256": "626af0bded07c123c8cdc1a0cd76635ecdb79fbb0667561394f4c0874fec0fe0"
+          "sha256": "d8bc527c6f37059f8d319038219ed20e66f4f252093b76a3f50562d357fdf4aa"
         },
         {
           "name": "internal-hostmaterials-materials-go",
@@ -140,7 +175,7 @@
         {
           "name": "internal-rpcstream-io-go",
           "path": "internal/rpcstream/io.go",
-          "sha256": "54e66ba5a140fa372ee60d684bc98c70ec4400521880dcd9ff4be48cc2819ad4"
+          "sha256": "755c3f454f12f67698e71000f171d05a1323de8b39d77e63d4697f289e8cb832"
         },
         {
           "name": "internal-rpcstream-scope-go",
@@ -165,7 +200,7 @@
         {
           "name": "shared-mcp",
           "path": "cmd/ownward/shared_mcp.go",
-          "sha256": "434305fa4a688116717ed31b2f6c87106cf061b4348a8573c9cdc3f44e7b5297"
+          "sha256": "f222c31c34151411d95d54b0ce69047cdce4618b3af20c499e3e8723b60d62bc"
         },
         {
           "name": "shared-process-unix",
@@ -189,14 +224,14 @@
       "dependencies": [
         {
           "role": "kernel",
-          "identity": "76718c06ed9d2ef689fd6c2211500adfbb6c0fe5a83a5f4650a586f0867b8e7b"
+          "identity": "b956af32a4259443f3a89fdfb662c20139fafcc0dd087892182b9e53ac064c0d"
         },
         {
           "role": "product-rules",
           "identity": "7bb674243d6a487e16b3bf22fede7fecd8d538845a4c06b825b70788524e3c47"
         }
       ],
-      "identity": "262a30dd6f6c3c2002feeb2ba14bc1d0ce0dd6bba6beb1f66dcf5464d32b3756"
+      "identity": "54e4026bc7569e803f00169e8ec6e0479243e51563a6d925c2af694255977157"
     },
     {
       "role": "assembly",
@@ -299,15 +334,15 @@
       "dependencies": [
         {
           "role": "access",
-          "identity": "262a30dd6f6c3c2002feeb2ba14bc1d0ce0dd6bba6beb1f66dcf5464d32b3756"
+          "identity": "54e4026bc7569e803f00169e8ec6e0479243e51563a6d925c2af694255977157"
         },
         {
           "role": "authority-substrate",
-          "identity": "726e7dfe3f37086fd4cf9ea600c7e7a8054994fbefd143aa5ba8ef9b551a918f"
+          "identity": "53ac6c3c6333a8a91402152107534aa4d642474c1a4ffa5659171235175f0e8b"
         },
         {
           "role": "kernel",
-          "identity": "76718c06ed9d2ef689fd6c2211500adfbb6c0fe5a83a5f4650a586f0867b8e7b"
+          "identity": "b956af32a4259443f3a89fdfb662c20139fafcc0dd087892182b9e53ac064c0d"
         },
         {
           "role": "product-rules",
@@ -322,7 +357,7 @@
           "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
         }
       ],
-      "identity": "217d982c8a3bdb9b4788cf2d043d7f0bf95a9ca4ea89641e3d9390721b4ed07f"
+      "identity": "659033f732f9c0c19b952c0c91f05914b5c6ce0bc721d1f72cf5137a4a743ed6"
     },
     {
       "role": "authority-substrate",
@@ -592,7 +627,7 @@
         {
           "name": "internal-boundedstore-organization_jobs-go",
           "path": "internal/boundedstore/organization_jobs.go",
-          "sha256": "dddba9ba739a7beadc7204758c3fd0f1aa5f0e9bcf3a5185ea71e6bb4b067f89"
+          "sha256": "c99ec36196fbacf9d2ffceb4cac58295971092743d49281847862950683852f6"
         },
         {
           "name": "internal-boundedstore-payload-go",
@@ -652,7 +687,7 @@
         {
           "name": "internal-boundedstore-store-go",
           "path": "internal/boundedstore/store.go",
-          "sha256": "a234793fd50377048424e2c2aa0fa363b4f3660243a31286b83f8ff78c92d3dd"
+          "sha256": "c27c4dffbe8d99542b0ac59537e77f1b2537099ddfed15ac46a583cd79573026"
         },
         {
           "name": "internal-boundedstore-summary-go",
@@ -843,7 +878,7 @@
         "storage_format": "ownward.sqlite-storage/v1"
       },
       "dependencies": [],
-      "identity": "726e7dfe3f37086fd4cf9ea600c7e7a8054994fbefd143aa5ba8ef9b551a918f"
+      "identity": "53ac6c3c6333a8a91402152107534aa4d642474c1a4ffa5659171235175f0e8b"
     },
     {
       "role": "kernel",
@@ -856,7 +891,7 @@
         {
           "id": "ownward.product-capability",
           "version": 2,
-          "definition_sha256": "77a360c5fd1ec7f604fe80f84b5174f6435d80c7dc757787136a75e2bd18a4a9"
+          "definition_sha256": "248567bbab5359a427e2813498103283004ae09252810e88f9d38ac213befc9c"
         }
       ],
       "content": [
@@ -993,7 +1028,7 @@
         {
           "name": "internal-core-streaming_organization_jobs-go",
           "path": "internal/core/streaming_organization_jobs.go",
-          "sha256": "e7d86c018a50d5721037b6e9b08158f510be34909747d67236f02a23d796da08"
+          "sha256": "0fa22db64f978f05509f24c362082484c5b30b6b186191930921f595457cc1e1"
         },
         {
           "name": "internal-core-streaming_preview-go",
@@ -1110,7 +1145,7 @@
       "dependencies": [
         {
           "role": "authority-substrate",
-          "identity": "726e7dfe3f37086fd4cf9ea600c7e7a8054994fbefd143aa5ba8ef9b551a918f"
+          "identity": "53ac6c3c6333a8a91402152107534aa4d642474c1a4ffa5659171235175f0e8b"
         },
         {
           "role": "product-rules",
@@ -1125,7 +1160,7 @@
           "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
         }
       ],
-      "identity": "76718c06ed9d2ef689fd6c2211500adfbb6c0fe5a83a5f4650a586f0867b8e7b"
+      "identity": "b956af32a4259443f3a89fdfb662c20139fafcc0dd087892182b9e53ac064c0d"
     },
     {
       "role": "product-rules",
@@ -1394,7 +1429,7 @@
       "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
     }
   ],
-  "identity": "e55821c02c8b6d9e3407d04dc3cf2ee6a8161f2eebdc1bcf6ec3171aeab4e9f2",
+  "identity": "4b81b40ac89a949c0c9499af2fada41617333786eb0941565ae6b86cb50ef5b1",
   "audit": {
     "described_product_candidate": "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8",
     "migration_source_git": "dc2c7a09e67f06cfaacbe0a201c7ff27b20d6182"

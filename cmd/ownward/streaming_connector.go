@@ -50,11 +50,19 @@ func configureStreamingConnector(transport *connectorTransport, result *mcp.Init
 	return scope, nil
 }
 
-func runConnectorIO(ctx context.Context, proxy *mcp.Server, scope *rpcstream.Scope, input io.ReadCloser, output io.WriteCloser) error {
+func runConnectorIO(ctx context.Context, proxy *mcp.Server, scope *rpcstream.Scope, input io.ReadCloser, output io.WriteCloser, stopOrganization ...func()) error {
+	// 执行器先停止并释放凭据，再关闭共享通道、回收工作目录。
+	defer func() {
+		for _, stop := range stopOrganization {
+			stop()
+		}
+		if scope != nil {
+			scope.Close()
+			os.Remove(scope.Dir)
+		}
+	}()
 	if scope == nil {
 		return proxy.Run(ctx, &mcp.IOTransport{Reader: input, Writer: output})
 	}
-	defer scope.Close()
-	defer os.Remove(scope.Dir)
-	return proxy.Run(rpcstream.WithScope(ctx, scope), &rpcstream.IO{Scope: scope, Reader: input, Writer: output})
+	return proxy.Run(rpcstream.WithScope(ctx, scope), &rpcstream.IO{Scope: scope, Reader: input, Writer: output, SharedScope: true})
 }

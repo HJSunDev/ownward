@@ -22,6 +22,34 @@ CREATE INDEX IF NOT EXISTS organization_execution_attempt ON organization_execut
 
 var ErrOrganizationLease = errors.New("组织工作需有效执行凭据；请重新领取或接续当前持有者")
 
+func upgradeOrganizationJobs(ctx context.Context, tx *sql.Tx) error {
+	rows, e := tx.QueryContext(ctx, "PRAGMA table_info(organization_execution)")
+	if e != nil {
+		return e
+	}
+	found := false
+	for rows.Next() {
+		var cid, notnull, pk int
+		var name, kind string
+		var def sql.NullString
+		if e = rows.Scan(&cid, &name, &kind, &notnull, &def, &pk); e != nil {
+			rows.Close()
+			return e
+		}
+		found = found || name == "background"
+	}
+	e = rows.Err()
+	rows.Close()
+	if e != nil {
+		return e
+	}
+	if found {
+		return nil
+	}
+	_, e = tx.ExecContext(ctx, "ALTER TABLE organization_execution ADD COLUMN background INTEGER NOT NULL DEFAULT 0")
+	return e
+}
+
 type organizationExecution struct{ asset, token string }
 type organizationExecutionKey struct{}
 
@@ -113,6 +141,10 @@ const availableOrganization = ` FROM semantic_jobs j JOIN live_assets a ON a.id=
  OR NOT EXISTS(SELECT 1 FROM access_principals p JOIN access_header h ON h.singleton=1 WHERE p.id=x.principal AND p.revision=x.principal_revision AND (p.permissions&2)=2 AND h.system=x.system AND h.deletion_epoch=x.deletion_epoch))`
 
 func (s *Store) ClaimOrganization(ctx context.Context, asset, requestID string, seconds int) (*contract.OrganizationLease, error) {
+	return s.ClaimOrganizationAfter(ctx, asset, requestID, seconds, "", false)
+}
+
+func (s *Store) ClaimOrganizationAfter(ctx context.Context, asset, requestID string, seconds int, after string, background bool) (*contract.OrganizationLease, error) {
 	if seconds == 0 {
 		seconds = 300
 	}
@@ -139,7 +171,21 @@ func (s *Store) ClaimOrganization(ctx context.Context, asset, requestID string, 
 		if !errors.Is(e, sql.ErrNoRows) {
 			return e
 		}
-		e = tx.QueryRowContext(ctx, `SELECT j.asset,a.revision,d.generation`+availableOrganization+` ORDER BY a.updated,j.asset LIMIT 1`, asset, asset, time.Now().UnixMilli()).Scan(&v.AssetID, &v.Revision, &v.Generation)
+		if background {
+			var occupied bool
+			if e = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM organization_execution x
+ JOIN semantic_jobs j ON j.asset=x.asset JOIN live_assets a ON a.id=x.asset AND a.deleted=0 AND a.revision=x.revision
+ JOIN access_principals p ON p.id=x.principal AND p.revision=x.principal_revision AND (p.permissions&2)=2
+ JOIN access_header h ON h.singleton=1 AND h.system=x.system AND h.deletion_epoch=x.deletion_epoch
+ JOIN derived_state d ON d.singleton=1 AND d.generation=x.generation
+ WHERE x.background=1 AND x.token<>'' AND x.expires>?)`, time.Now().UnixMilli()).Scan(&occupied); e != nil {
+				return e
+			}
+			if occupied {
+				return nil
+			}
+		}
+		e = tx.QueryRowContext(ctx, `SELECT j.asset,a.revision,d.generation`+availableOrganization+` AND j.asset>? ORDER BY j.asset LIMIT 1`, asset, asset, time.Now().UnixMilli(), after).Scan(&v.AssetID, &v.Revision, &v.Generation)
 		if errors.Is(e, sql.ErrNoRows) {
 			return nil
 		}
@@ -151,7 +197,7 @@ func (s *Store) ClaimOrganization(ctx context.Context, asset, requestID string, 
 			return e
 		}
 		v.ExpiresAt = time.Now().UTC().Add(time.Duration(seconds) * time.Second)
-		_, e = tx.ExecContext(ctx, `UPDATE organization_execution SET request_id=?,token=?,system=?,principal=?,principal_revision=?,deletion_epoch=?,revision=?,generation=?,expires=? WHERE asset=?`, requestID, v.Lease, a.system, a.principal, a.revision, a.epoch, v.Revision, v.Generation, v.ExpiresAt.UnixMilli(), v.AssetID)
+		_, e = tx.ExecContext(ctx, `UPDATE organization_execution SET request_id=?,token=?,system=?,principal=?,principal_revision=?,deletion_epoch=?,revision=?,generation=?,expires=?,background=? WHERE asset=?`, requestID, v.Lease, a.system, a.principal, a.revision, a.epoch, v.Revision, v.Generation, v.ExpiresAt.UnixMilli(), background, v.AssetID)
 		if e == nil {
 			out = v
 		}

@@ -30,13 +30,13 @@ func (s *StreamingAssets) organizationJobsTool(ctx context.Context, request cont
 	if err != nil {
 		return nil, err
 	}
-	if len(input.AssetID) > 256 || len(input.Lease) > 256 {
+	if len(input.AssetID) > 256 || len(input.AfterAssetID) > 256 || len(input.Lease) > 256 {
 		return nil, errors.New("组织执行身份过长")
 	}
 	var out contract.OrganizationJobResult
 	switch input.Action {
 	case "claim":
-		out.Claim, err = s.Store.ClaimOrganization(ctx, input.AssetID, input.RequestID, input.LeaseSeconds)
+		out.Claim, err = s.Store.ClaimOrganizationAfter(ctx, input.AssetID, input.RequestID, input.LeaseSeconds, input.AfterAssetID, input.Background)
 		out.Available = out.Claim != nil
 	case "renew", "release":
 		out.Claim, err = s.Store.ChangeOrganizationLease(ctx, input.AssetID, input.Lease, input.LeaseSeconds, input.Action == "release")

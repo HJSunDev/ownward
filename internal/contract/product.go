@@ -152,6 +152,8 @@ type OrganizationJobCapability interface {
 }
 
 type OrganizationJobRequest struct {
+	AfterAssetID string `json:"after_asset_id,omitempty" jsonschema:"宿主遍历待办的资产游标；仅claim有效"`
+	Background   bool   `json:"background,omitempty" jsonschema:"后台领取使用同一内核共享的单执行名额"`
 	RequestID    string `json:"request_id,omitempty" jsonschema:"claim必填：每次领取使用唯一请求ID；不确定结果的重试沿用原ID"`
 	Action       string `json:"action" jsonschema:"claim、renew、release 或 wait"`
 	AssetID      string `json:"asset_id,omitempty"`

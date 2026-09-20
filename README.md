@@ -101,7 +101,7 @@ codex plugin marketplace add <release-directory>
 codex plugin add ownward@ownward
 ```
 
-Open Codex and review the three Ownward hooks in its normal trust dialog. This
+Open Codex and review the Ownward hooks in its normal trust dialog. This
 integration has been verified with Codex CLI 0.149.0; a host must support native
 plugins, MCP tool hooks and MCP confirmation forms. An unsupported host or an
 untrusted hook does not provide automatic material checking. `/hooks` shows the
@@ -114,6 +114,12 @@ starts. Changed sources are reread in the original task; checks require no model
 call and do not rescan the corpus. Full and fragment reads include explicit
 clarification locations, so a current fragment cannot silently hide a correction
 elsewhere in its source. See [information changes](docs/modules/information-change/README.md).
+
+An opt-in Windows organization executor can continue organizing saved sources
+outside the foreground conversation. It requires a separately verified resource
+reservation and an explicit `OWNWARD_ORGANIZATION_PROFILE`; without it, the
+existing write behavior is unchanged. See [executor setup and limits](docs/modules/information-change/README.md#可选组织执行器).
+This path remains disabled by default pending the fast/deep feature's overall acceptance.
 
 Local use needs no connection file. To select a remote information system, run
 `bin/ownward.exe codex-configure --connection connection.json` from the release
