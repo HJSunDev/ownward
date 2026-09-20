@@ -32,7 +32,7 @@ func (j *organizationJournal) foreground(ctx context.Context) (bool, error) {
 	return j.Foreground(ctx)
 }
 
-func (j *organizationJournal) begin(ctx context.Context, scope, work string, p contract.OrganizationExecutorProfile) (bool, int64, error) {
+func (j *organizationJournal) begin(ctx context.Context, scope, work string, p contract.OrganizationExecutionPolicy) (bool, int64, error) {
 	return j.Begin(ctx, scope, work, p)
 }
 

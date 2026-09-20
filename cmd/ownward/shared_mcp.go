@@ -89,7 +89,19 @@ func runSharedMCPConnector(ctx context.Context, dataDir, binaryVersion, composit
 	if streamScope != nil {
 		defer streamScope.Close()
 	}
-	proxy := newConnectorServer(binaryVersion, initialize)
+	var organizationTools []*mcp.Tool
+	for tool, toolErr := range session.Tools(ctx, nil) {
+		if toolErr != nil {
+			return fmt.Errorf("读取共享 Ownward 工具契约失败: %w", toolErr)
+		}
+		copyOfTool := connectorTool(tool)
+		organizationTools = append(organizationTools, &copyOfTool)
+	}
+	stopOrganization := host.attachOrganization(ctx, initialize, organizationTools, func(ctx context.Context, name string, args any) (*mcp.CallToolResult, error) {
+		return organizationToolCall(ctx, streamScope, session, name, args)
+	})
+	defer stopOrganization()
+	proxy := newConnectorServer(binaryVersion, initialize, host.organizationExecutor)
 	host.addMaterialTool(proxy, func(ctx context.Context, refs []string) ([]contract.InformationCheck, error) {
 		result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "ownward_check", Arguments: map[string]any{"bases": refs}})
 		if err != nil {
@@ -104,21 +116,12 @@ func runSharedMCPConnector(ctx context.Context, dataDir, binaryVersion, composit
 		err = decodeTool(result, &out)
 		return out.Results, err
 	})
-	var organizationTools []*mcp.Tool
-	for tool, toolErr := range session.Tools(ctx, nil) {
-		if toolErr != nil {
-			return fmt.Errorf("读取共享 Ownward 工具契约失败: %w", toolErr)
-		}
-		copyOfTool := connectorTool(tool)
-		organizationTools = append(organizationTools, &copyOfTool)
+	for _, tool := range organizationTools {
+		copyOfTool := *tool
 		proxy.AddTool(&copyOfTool, func(callContext context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			return host.call(callContext, request, session)
 		})
 	}
-	stopOrganization := host.attachOrganization(ctx, initialize, organizationTools, func(ctx context.Context, name string, args any) (*mcp.CallToolResult, error) {
-		return organizationToolCall(ctx, streamScope, session, name, args)
-	})
-	defer stopOrganization()
 	host.addOrganizationDemand(proxy)
 	if err := runConnectorIO(ctx, proxy, streamScope, os.Stdin, os.Stdout, stopOrganization); err != nil {
 		return fmt.Errorf("共享 Ownward stdio 连接器结束: %w", err)
@@ -127,7 +130,7 @@ func runSharedMCPConnector(ctx context.Context, dataDir, binaryVersion, composit
 }
 
 // 正式宿主可能只读取工具目录首屏；完整目录仍须落在64KiB信封内。
-func newConnectorServer(version string, result *mcp.InitializeResult) *mcp.Server {
+func newConnectorServer(version string, result *mcp.InitializeResult, executors ...contract.OrganizationExecutor) *mcp.Server {
 	instructions := ""
 	if result != nil {
 		instructions = result.Instructions
@@ -135,7 +138,7 @@ func newConnectorServer(version string, result *mcp.InitializeResult) *mcp.Serve
 	if os.Getenv("OWNWARD_INFORMATION_USE_PATHS") == "v1" {
 		instructions += "\n\n" + codexplugin.InformationUseInstructions
 	}
-	return mcp.NewServer(&mcp.Implementation{Name: "ownward", Version: version}, &mcp.ServerOptions{PageSize: 64, Instructions: instructions, Capabilities: organizationProxyCapabilities(result)})
+	return mcp.NewServer(&mcp.Implementation{Name: "ownward", Version: version}, &mcp.ServerOptions{PageSize: 64, Instructions: instructions, Capabilities: organizationProxyCapabilities(result, executors...)})
 }
 
 func connectorTool(tool *mcp.Tool) mcp.Tool {
@@ -145,12 +148,12 @@ func connectorTool(tool *mcp.Tool) mcp.Tool {
 	return copy
 }
 
-func organizationProxyCapabilities(result *mcp.InitializeResult) *mcp.ServerCapabilities {
+func organizationProxyCapabilities(result *mcp.InitializeResult, executors ...contract.OrganizationExecutor) *mcp.ServerCapabilities {
 	out := &mcp.ServerCapabilities{}
 	// The protocol is advertised only when this connector has a validated
 	// executor registration. A kernel can expose semantic jobs without
 	// promising that every host can run deferred organization.
-	if !organizationExecutorConfigured() {
+	if len(executors) == 0 || executors[0] == nil {
 		return out
 	}
 	if result != nil && result.Capabilities != nil {
@@ -159,15 +162,6 @@ func organizationProxyCapabilities(result *mcp.InitializeResult) *mcp.ServerCapa
 		}
 	}
 	return out
-}
-
-func organizationExecutorConfigured() bool {
-	path := strings.TrimSpace(os.Getenv("OWNWARD_ORGANIZATION_PROFILE"))
-	if path == "" {
-		return false
-	}
-	_, err := codexplugin.ReadOrganizationProfile(path)
-	return err == nil
 }
 
 func ensureSharedMCPService(ctx context.Context, dataDir, binaryVersion, compositionIdentity string, stderr io.Writer) (*sharedMCPDescriptor, error) {

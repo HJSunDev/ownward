@@ -3,42 +3,22 @@ package contract
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
 	"time"
 )
 
-// OrganizationExecutorProfile describes an approved execution environment.
-// It is configuration owned by the host, never semantic input produced by an
-// external model. The contract deliberately contains no MCP or vendor types.
-type OrganizationExecutorProfile struct {
-	Executable     string `json:"executable"`
-	Home           string `json:"home"`
-	Model          string `json:"model"`
-	Provider       string `json:"provider"`
-	Effort         string `json:"effort"`
-	Reservation    string `json:"reservation"`
-	MemoryMiB      int    `json:"memory_mib"`
-	TimeoutSeconds int    `json:"timeout_seconds"`
-	MaxSubmissions int    `json:"max_submissions"`
-	MaxAttempts    int    `json:"max_attempts"`
-	MaxTokens      int64  `json:"max_tokens"`
+// OrganizationExecutionPolicy is the host-independent execution budget. It
+// contains no process, model-provider, filesystem, or protocol settings.
+// Those belong to an adapter and are never part of the generic runtime port.
+type OrganizationExecutionPolicy struct {
+	TimeoutSeconds int   `json:"timeout_seconds"`
+	MaxSubmissions int   `json:"max_submissions"`
+	MaxAttempts    int   `json:"max_attempts"`
+	MaxTokens      int64 `json:"max_tokens"`
 }
 
-func (p OrganizationExecutorProfile) Validate() error {
-	if !filepath.IsAbs(p.Executable) || !filepath.IsAbs(p.Home) || p.Model == "" || p.Provider == "" || p.Effort == "" || p.Reservation == "" {
-		return errors.New("后台组织须明确执行器、独立宿主配置、原模型档位及已验证资源预留")
-	}
-	if p.MemoryMiB < 64 || p.MemoryMiB > 2048 || p.TimeoutSeconds < 1 || p.TimeoutSeconds > 1800 || p.MaxAttempts < 1 || p.MaxAttempts > 3 || p.MaxSubmissions < 1 || p.MaxSubmissions > 10 || p.MaxTokens < 1 {
+func (p OrganizationExecutionPolicy) Validate() error {
+	if p.TimeoutSeconds < 1 || p.TimeoutSeconds > 1800 || p.MaxAttempts < 1 || p.MaxAttempts > 3 || p.MaxSubmissions < 1 || p.MaxSubmissions > 10 || p.MaxTokens < 1 {
 		return errors.New("组织资源或原恢复预算无效")
-	}
-	if _, err := os.Stat(p.Executable); err != nil {
-		return err
-	}
-	if info, err := os.Stat(p.Home); err != nil {
-		return err
-	} else if !info.IsDir() {
-		return errors.New("组织宿主目录无效")
 	}
 	return nil
 }
@@ -84,13 +64,13 @@ type OrganizationSubmit func(context.Context, []byte) (accepted bool, response [
 // deterministic fixture behind this port.
 type OrganizationExecutor interface {
 	Descriptor() OrganizationExecutorDescriptor
-	Profile() OrganizationExecutorProfile
+	Policy() OrganizationExecutionPolicy
 	Validate(context.Context) error
 	Capacity(context.Context) error
 	Execute(context.Context, OrganizationTask, OrganizationSubmit, func(OrganizationUsage) error) (OrganizationUsage, error)
 }
 
-func (p OrganizationExecutorProfile) Timeout() time.Duration {
+func (p OrganizationExecutionPolicy) Timeout() time.Duration {
 	if p.TimeoutSeconds <= 0 {
 		return 0
 	}

@@ -57,7 +57,7 @@ func (j *Journal) Foreground(ctx context.Context) (bool, error) {
 	return active, err
 }
 
-func (j *Journal) Begin(ctx context.Context, scope, work string, p contract.OrganizationExecutorProfile) (bool, int64, error) {
+func (j *Journal) Begin(ctx context.Context, scope, work string, p contract.OrganizationExecutionPolicy) (bool, int64, error) {
 	tx, err := j.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, 0, err

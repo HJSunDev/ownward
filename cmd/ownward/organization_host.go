@@ -21,7 +21,7 @@ import (
 
 type organizationHost struct {
 	host         *hostConnector
-	profile      contract.OrganizationExecutorProfile
+	policy       contract.OrganizationExecutionPolicy
 	executor     contract.OrganizationExecutor
 	call         func(context.Context, string, any) (*mcp.CallToolResult, error)
 	refreshRoute func(context.Context) error
@@ -78,6 +78,9 @@ func (h *hostConnector) attachOrganizationExecutor(ctx context.Context, initiali
 	if executor == nil || initialize == nil || initialize.Capabilities == nil {
 		return func() {}
 	}
+	if err := executor.Validate(ctx); err != nil {
+		return func() {}
+	}
 	var capability struct {
 		Version int    `json:"version"`
 		Mode    string `json:"mode"`
@@ -96,11 +99,12 @@ func (h *hostConnector) attachOrganizationExecutor(ctx context.Context, initiali
 		return func() {}
 	}
 	child, cancel := context.WithCancel(ctx)
-	o := &organizationHost{host: h, profile: executor.Profile(), executor: executor, call: call, root: root, journal: j, ctx: child, cancel: cancel, done: make(chan struct{}), wake: make(chan struct{}, 1), active: map[string]bool{}, status: "等待宿主就绪"}
+	o := &organizationHost{host: h, policy: executor.Policy(), executor: executor, call: call, root: root, journal: j, ctx: child, cancel: cancel, done: make(chan struct{}), wake: make(chan struct{}, 1), active: map[string]bool{}, status: "等待宿主就绪"}
 	if len(refreshRoute) > 0 {
 		o.refreshRoute = refreshRoute[0]
 	}
 	h.organization = o
+	h.organizationExecutor = executor
 	go o.loop()
 	var stopped sync.Once
 	return func() { stopped.Do(func() { cancel(); <-o.done; j.close() }) }
@@ -446,7 +450,7 @@ func (o *organizationHost) run(lease contract.OrganizationLease, self contract.P
 	scope := o.host.system + ":" + self.ID
 	o.host.mu.Unlock()
 	preparation := fmt.Sprintf("prepare:%s:%d:%s:%d", lease.AssetID, lease.Revision, lease.Generation, self.Revision)
-	allowed, _, e := o.journal.begin(ctx, scope, preparation, o.profile)
+	allowed, _, e := o.journal.begin(ctx, scope, preparation, o.policy)
 	if e != nil || !allowed {
 		if e != nil {
 			o.broken.Store(true)
@@ -480,7 +484,7 @@ func (o *organizationHost) run(lease contract.OrganizationLease, self contract.P
 	if foregroundErr != nil || (active && !o.currentDemand(lease.AssetID)) {
 		return true
 	}
-	allowed, prior, e := o.journal.begin(ctx, scope, key, o.profile)
+	allowed, prior, e := o.journal.begin(ctx, scope, key, o.policy)
 	if e != nil || !allowed {
 		if e != nil {
 			o.broken.Store(true)
@@ -499,15 +503,13 @@ func (o *organizationHost) run(lease contract.OrganizationLease, self contract.P
 		o.setStatus("组织恢复预算已用尽；待办保留并继续其他资料")
 		return false
 	}
-	p := o.profile
-	p.MaxTokens -= prior
 	o.setStatus("正在组织；原文仍可读取")
 	runtime := &organizationruntime.Runtime{Journal: o.journal.Journal, Executor: o.executor}
 	result, e := runtime.RunReserved(ctx, organizationruntime.Execution{
-		Scope:   scope,
-		Key:     key,
-		Profile: p,
-		Task:    contract.OrganizationTask{AssetID: lease.AssetID, Revision: lease.Revision, Generation: lease.Generation, Work: append([]byte(nil), work...)},
+		Scope:  scope,
+		Key:    key,
+		Policy: o.policy,
+		Task:   contract.OrganizationTask{AssetID: lease.AssetID, Revision: lease.Revision, Generation: lease.Generation, Work: append([]byte(nil), work...)},
 	}, prior, func(ctx context.Context, args []byte) (bool, []byte, error) {
 		current, e := o.work(ctx, lease)
 		if e != nil {

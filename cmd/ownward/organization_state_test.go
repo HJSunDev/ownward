@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/HJSunDev/ownward/internal/codexplugin"
+	"github.com/HJSunDev/ownward/internal/contract"
 )
 
 func TestOrganizationJournalRecoversAndSharesLimits(t *testing.T) {
@@ -25,7 +26,7 @@ func TestOrganizationJournalRecoversAndSharesLimits(t *testing.T) {
 	if active, e := b.foreground(ctx); e != nil || !active {
 		t.Fatal("foreground not shared", e)
 	}
-	p := codexplugin.OrganizationProfile{MaxAttempts: 2, MaxTokens: 100}
+	p := contract.OrganizationExecutionPolicy{TimeoutSeconds: 10, MaxSubmissions: 2, MaxAttempts: 2, MaxTokens: 100}
 	if ok, _, e := a.begin(ctx, "system:principal", "work", p); e != nil || !ok {
 		t.Fatal(e)
 	}

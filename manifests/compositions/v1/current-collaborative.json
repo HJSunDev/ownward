@@ -30,7 +30,7 @@
         {
           "name": "cmd-ownward-host_connector",
           "path": "cmd/ownward/host_connector.go",
-          "sha256": "5095553bab83b5b93700cad9ff9bd1d5907a2d53cb5b0bdb478252436c003b33"
+          "sha256": "c85736e448a88128de965f9271ce36987b4f945168bad3a8311b3cf1b496f01f"
         },
         {
           "name": "cmd-ownward-information_control",
@@ -50,17 +50,17 @@
         {
           "name": "cmd-ownward-organization_host-go",
           "path": "cmd/ownward/organization_host.go",
-          "sha256": "b84824e391aa4107136329652848f623be984050d6dda97f2a1a45f553f6f0f8"
+          "sha256": "aa19ce336713a81dc51a0b01d27daca857dde1624773c4e8631bbe45ad5ee734"
         },
         {
           "name": "cmd-ownward-organization_state-go",
           "path": "cmd/ownward/organization_state.go",
-          "sha256": "8be9c0adad269cb98da27568b1b4ff2bfb50566ba1d4f048a6a420c177ea68d8"
+          "sha256": "176b3d1477eea295b562c70e48cdc4f4da4e5f23975e1f7e8568dd45d94815de"
         },
         {
           "name": "cmd-ownward-remote_access",
           "path": "cmd/ownward/remote_access.go",
-          "sha256": "0e88b7ccf9bb51ddea9086c4201c130ffbb7cb466c9457da2ee2af69df89a375"
+          "sha256": "7d1e189800b8546783b03b077faf83d72d6e26f039fa9c9a8d8f515d7992f26d"
         },
         {
           "name": "cmd-ownward-remote_decision",
@@ -140,7 +140,7 @@
         {
           "name": "internal-codexplugin-organization-go",
           "path": "internal/codexplugin/organization.go",
-          "sha256": "25256cb772a47009b12a41ee8b21376b598261c7c9a8e1696ce05c9c58184947"
+          "sha256": "1826bd55532422c6f355f6f53434df1e09c18aeecc11911fe43ff60c46bedaea"
         },
         {
           "name": "internal-codexplugin-organization_client-go",
@@ -150,7 +150,7 @@
         {
           "name": "internal-codexplugin-organization_executor-go",
           "path": "internal/codexplugin/organization_executor.go",
-          "sha256": "4d853fb66b3271992f1854cec2d2afc3a2d1e1dcec7ac345018dd63fbeb9bdc7"
+          "sha256": "6c6c9254d6bf5e8dbd37e9f7c02b55705676670e633a9a02fce8d0428cf64b28"
         },
         {
           "name": "internal-codexplugin-organization_other-go",
@@ -185,7 +185,7 @@
         {
           "name": "internal-contract-organization_executor-go",
           "path": "internal/contract/organization_executor.go",
-          "sha256": "674f04e6b77cd9e9ad304607681cfe59b877e45fe19a8219e49cdb153355a2a2"
+          "sha256": "2aa7aa9d1509f3aea056ac394412189607a74be700b3da30cc76b0982078a27c"
         },
         {
           "name": "internal-hostmaterials-materials-go",
@@ -195,12 +195,12 @@
         {
           "name": "internal-organization-journal-go",
           "path": "internal/organization/journal.go",
-          "sha256": "e6b12db524d19377bd9a9df544832aac37ef64dc16af762b0ec83e98bddc50db"
+          "sha256": "55b41e5eb386f66aa6055d3b9b85e9f92b64fc1ceb784da7ca675b7a3bb61c9d"
         },
         {
           "name": "internal-organization-runtime-go",
           "path": "internal/organization/runtime.go",
-          "sha256": "b919d886f9bd46bbdd5227af972f478325ddd5cbd40d13a62057bb7d86dfe126"
+          "sha256": "4fe9efe05da81b3d3bdc4baf1a3c038095ba86cca03c1d49b7ea4b410df366c9"
         },
         {
           "name": "internal-rpcstream-client-go",
@@ -240,7 +240,7 @@
         {
           "name": "shared-mcp",
           "path": "cmd/ownward/shared_mcp.go",
-          "sha256": "8dc3eb1125b08eed816f96c364ebd5b59b4db6e2b3ffa9f2e302f6550af7e48d"
+          "sha256": "20ee1c631255def70e4bc254a1eddf54ca54cd1049d64741ce037a2182c02e16"
         },
         {
           "name": "shared-process-unix",
@@ -271,7 +271,7 @@
           "identity": "7bb674243d6a487e16b3bf22fede7fecd8d538845a4c06b825b70788524e3c47"
         }
       ],
-      "identity": "2a4456233a44b2c7739f3041aa5ebf542a9bd9789903740ee6b7b12ec923e759"
+      "identity": "07ba194aefc2e7f026a5a9305c42c3cdd8977176891c1b4ca2b573e70f8127fc"
     },
     {
       "role": "assembly",
@@ -374,7 +374,7 @@
       "dependencies": [
         {
           "role": "access",
-          "identity": "2a4456233a44b2c7739f3041aa5ebf542a9bd9789903740ee6b7b12ec923e759"
+          "identity": "07ba194aefc2e7f026a5a9305c42c3cdd8977176891c1b4ca2b573e70f8127fc"
         },
         {
           "role": "authority-substrate",
@@ -397,7 +397,7 @@
           "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
         }
       ],
-      "identity": "2c0c3158b6c0d3f16961055034abc7e53dff8cf3161e120bc3ac3ba2fbee19e4"
+      "identity": "6d516af58592e37ddaddd2d93c8658f35ff40a483ee5c16fd865213fe3dd6a0c"
     },
     {
       "role": "authority-substrate",
@@ -1469,7 +1469,7 @@
       "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
     }
   ],
-  "identity": "d7c4e5a8fcd915a7fac112019c729f2ad10e189a6ad890001b86b71b13bcea0d",
+  "identity": "dbb755f465ec6802967e4a7e77eb909255994bc0d5c32b403a675e41a7277ed3",
   "audit": {
     "described_product_candidate": "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8",
     "migration_source_git": "dc2c7a09e67f06cfaacbe0a201c7ff27b20d6182"

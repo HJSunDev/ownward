@@ -388,7 +388,21 @@ func runRemoteConnector(ctx context.Context, material connectionMaterial) error 
 	if host.streaming != nil {
 		defer host.streaming.Close()
 	}
-	proxy := newConnectorServer(version, session.InitializeResult())
+	var organizationTools []*mcp.Tool
+	for tool, err := range session.Tools(ctx, nil) {
+		if err != nil {
+			return err
+		}
+		copy := connectorTool(tool)
+		organizationTools = append(organizationTools, &copy)
+	}
+	stopOrganization := host.attachOrganization(ctx, session.InitializeResult(), organizationTools, func(ctx context.Context, name string, args any) (*mcp.CallToolResult, error) {
+		return host.remoteOrganizationCall(ctx, &session, name, args)
+	}, func(ctx context.Context) error {
+		return host.refreshOrganizationRoute(ctx, &session)
+	})
+	defer stopOrganization()
+	proxy := newConnectorServer(version, session.InitializeResult(), host.organizationExecutor)
 	host.addMaterialTool(proxy, func(ctx context.Context, refs []string) ([]contract.InformationCheck, error) {
 		host.routeMu.Lock()
 		err := host.refreshRemote(ctx, &session)
@@ -411,13 +425,8 @@ func runRemoteConnector(ctx context.Context, material connectionMaterial) error 
 		err = decodeTool(result, &out)
 		return out.Results, err
 	})
-	var organizationTools []*mcp.Tool
-	for tool, err := range session.Tools(ctx, nil) {
-		if err != nil {
-			return err
-		}
-		copy := connectorTool(tool)
-		organizationTools = append(organizationTools, &copy)
+	for _, tool := range organizationTools {
+		copy := *tool
 		proxy.AddTool(&copy, func(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			host.routeMu.Lock()
 			err := host.refreshRemote(ctx, &session)
@@ -449,12 +458,6 @@ func runRemoteConnector(ctx context.Context, material connectionMaterial) error 
 			return result, err
 		})
 	}
-	stopOrganization := host.attachOrganization(ctx, session.InitializeResult(), organizationTools, func(ctx context.Context, name string, args any) (*mcp.CallToolResult, error) {
-		return host.remoteOrganizationCall(ctx, &session, name, args)
-	}, func(ctx context.Context) error {
-		return host.refreshOrganizationRoute(ctx, &session)
-	})
-	defer stopOrganization()
 	host.addOrganizationDemand(proxy)
 	mcp.AddTool(proxy, &mcp.Tool{Name: "ownward_connect", Description: "按用户需求连接另一个智能体。生成公开连接材料，在目标宿主打开；批准由本可信宿主办理。"}, func(ctx context.Context, request *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, connectionMaterial, error) {
 		host.routeMu.Lock()

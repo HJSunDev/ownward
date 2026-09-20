@@ -12,11 +12,11 @@ import (
 // persistence, leases and recovery live outside this package; this adapter
 // only translates the generic executor port to the official Codex protocol.
 type OrganizationExecutor struct {
-	profile contract.OrganizationExecutorProfile
+	profile OrganizationProfile
 	tool    *mcp.Tool
 }
 
-func NewOrganizationExecutor(profile contract.OrganizationExecutorProfile, tool *mcp.Tool) *OrganizationExecutor {
+func NewOrganizationExecutor(profile OrganizationProfile, tool *mcp.Tool) *OrganizationExecutor {
 	return &OrganizationExecutor{profile: profile, tool: tool}
 }
 
@@ -24,7 +24,9 @@ func (e *OrganizationExecutor) Descriptor() contract.OrganizationExecutorDescrip
 	return contract.OrganizationExecutorDescriptor{ID: "codex-app-server", Version: "v1", Kind: "local-process"}
 }
 
-func (e *OrganizationExecutor) Profile() contract.OrganizationExecutorProfile { return e.profile }
+func (e *OrganizationExecutor) Policy() contract.OrganizationExecutionPolicy {
+	return e.profile.Policy()
+}
 
 func (e *OrganizationExecutor) Validate(context.Context) error { return e.profile.Validate() }
 

@@ -14,9 +14,47 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// OrganizationProfile is deployment configuration, never model-produced input.
-// A reservation certifies capacity independent of the foreground's resource pool.
-type OrganizationProfile = contract.OrganizationExecutorProfile
+// OrganizationProfile is Codex App Server deployment configuration, never
+// model-produced input. It is adapter-owned and does not cross the generic
+// organization runtime boundary.
+type OrganizationProfile struct {
+	Executable     string `json:"executable"`
+	Home           string `json:"home"`
+	Model          string `json:"model"`
+	Provider       string `json:"provider"`
+	Effort         string `json:"effort"`
+	Reservation    string `json:"reservation"`
+	MemoryMiB      int    `json:"memory_mib"`
+	TimeoutSeconds int    `json:"timeout_seconds"`
+	MaxSubmissions int    `json:"max_submissions"`
+	MaxAttempts    int    `json:"max_attempts"`
+	MaxTokens      int64  `json:"max_tokens"`
+}
+
+func (p OrganizationProfile) Policy() contract.OrganizationExecutionPolicy {
+	return contract.OrganizationExecutionPolicy{TimeoutSeconds: p.TimeoutSeconds, MaxSubmissions: p.MaxSubmissions, MaxAttempts: p.MaxAttempts, MaxTokens: p.MaxTokens}
+}
+
+func (p OrganizationProfile) Validate() error {
+	if err := p.Policy().Validate(); err != nil {
+		return err
+	}
+	if !filepath.IsAbs(p.Executable) || !filepath.IsAbs(p.Home) || p.Model == "" || p.Provider == "" || p.Effort == "" || p.Reservation == "" {
+		return errors.New("后台组织须明确执行器、独立宿主配置、原模型档位及已验证资源预留")
+	}
+	if p.MemoryMiB < 64 || p.MemoryMiB > 2048 {
+		return errors.New("组织宿主资源预留无效")
+	}
+	if _, err := os.Stat(p.Executable); err != nil {
+		return err
+	}
+	if info, err := os.Stat(p.Home); err != nil {
+		return err
+	} else if !info.IsDir() {
+		return errors.New("组织宿主目录无效")
+	}
+	return nil
+}
 
 func ReadOrganizationProfile(path string) (OrganizationProfile, error) {
 	var p OrganizationProfile

@@ -34,19 +34,20 @@ type connectorRecord struct {
 }
 
 type hostConnector struct {
-	organization  *organizationHost
-	routeMu       sync.RWMutex
-	mu            sync.Mutex
-	initMu        sync.Mutex
-	operationMu   sync.Mutex
-	descriptor    *sharedMCPDescriptor
-	vault         localowner.Vault
-	system        string
-	profile       string
-	record        connectorRecord
-	recoveryScope string
-	streaming     *rpcstream.Scope
-	remote        *remoteConnection
+	organization         *organizationHost
+	organizationExecutor contract.OrganizationExecutor
+	routeMu              sync.RWMutex
+	mu                   sync.Mutex
+	initMu               sync.Mutex
+	operationMu          sync.Mutex
+	descriptor           *sharedMCPDescriptor
+	vault                localowner.Vault
+	system               string
+	profile              string
+	record               connectorRecord
+	recoveryScope        string
+	streaming            *rpcstream.Scope
+	remote               *remoteConnection
 }
 
 func newHostConnector(ctx context.Context, descriptor *sharedMCPDescriptor, dataDir string) (*hostConnector, error) {

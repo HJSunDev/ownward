@@ -13,8 +13,8 @@ type fixtureExecutor struct{}
 func (fixtureExecutor) Descriptor() contract.OrganizationExecutorDescriptor {
 	return contract.OrganizationExecutorDescriptor{ID: "fixture", Version: "v1", Kind: "deterministic"}
 }
-func (fixtureExecutor) Profile() contract.OrganizationExecutorProfile {
-	return contract.OrganizationExecutorProfile{MaxAttempts: 2, MaxTokens: 100}
+func (fixtureExecutor) Policy() contract.OrganizationExecutionPolicy {
+	return contract.OrganizationExecutionPolicy{TimeoutSeconds: 10, MaxSubmissions: 2, MaxAttempts: 2, MaxTokens: 100}
 }
 func (fixtureExecutor) Validate(context.Context) error { return nil }
 func (fixtureExecutor) Capacity(context.Context) error { return nil }
@@ -37,12 +37,12 @@ func TestRuntimeOwnsDurableExecutionAndUsesGenericExecutor(t *testing.T) {
 	}
 	defer j.Close()
 	runtime := &Runtime{Journal: j, Executor: fixtureExecutor{}}
-	profile := contract.OrganizationExecutorProfile{MaxAttempts: 2, MaxTokens: 100}
+	profile := contract.OrganizationExecutionPolicy{TimeoutSeconds: 10, MaxSubmissions: 2, MaxAttempts: 2, MaxTokens: 100}
 	result, err := runtime.Run(context.Background(), Execution{
-		Scope:   "system:principal",
-		Key:     "work-1",
-		Profile: profile,
-		Task:    contract.OrganizationTask{AssetID: "asset-1", Work: []byte(`{"candidate":true}`)},
+		Scope:  "system:principal",
+		Key:    "work-1",
+		Policy: profile,
+		Task:   contract.OrganizationTask{AssetID: "asset-1", Work: []byte(`{"candidate":true}`)},
 	}, func(context.Context, []byte) (bool, []byte, error) {
 		return true, []byte(`{"accepted":true}`), nil
 	})

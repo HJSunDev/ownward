@@ -34,11 +34,18 @@
 
 **结束条件：** 范围内核心体验与架构义务完整，实际发现经集中修复及复审关闭，必要验证、最终身份和全局结论保存后停止。问题须有合同依据及可达场景；不为假设风险扩展功能，不追求无限完善。未经新授权不操作Git、不启动定时任务。
 
-**当前阶段：** [最终独立复核](../../.tmp/information-availability-global-review-20260920/r3/report.md)通过，四项已发现的实现缺陷全部关闭；本次宿主独立性修复后组合身份为`d7c4e5a8fcd915a7fac112019c729f2ad10e189a6ad890001b86b71b13bcea0d`，253项组合内容身份校验通过。登录已恢复；最小真实整链已实际触发保存、自动组织和前台并行取用，但组织模型在两次提交后失败（14,105 tokens，usage_incomplete=true），未取得可用组织结果，因此依赖取用和完整质量/成本仍未验收。已停止重复调用，不重跑已通过验证或扩大题集。一条预检合成资料尚待兼容入口清理，准确位置和边界见[全局复审](../../.tmp/information-availability-global-review-20260920/r2/report.md)。本轮隔离配置已恢复，未提交；实现修复通过定向回归和静态检查，但不把它写成真实模型质量验收。
+**当前阶段：** [最终独立复核](../../.tmp/information-availability-global-review-20260920/r3/report.md)确认既有四项实现缺陷已关闭；本轮宿主独立性修复后组合重新封存为`dbb755f465ec6802967e4a7e77eb909255994bc0d5c32b403a675e41a7277ed3`，组合校验通过，活动状态未改写。真实整链仍受组织认证/调用失败阻断，固定14题质量与完整成本未验收；不重复无效调用，不扩大题集。一条预检合成资料仍待兼容入口安全清理，准确位置和边界见[全局复审](../../.tmp/information-availability-global-review-20260920/r2/report.md)。
 
-**宿主独立性复审结论（2026-09-20，已修复）：** 初审发现的缺口已经按完整架构落地：`internal/contract` 提供无厂商依赖的执行器契约，`internal/organization` 承担持久化账本、预算、幂等和运行时执行，`internal/codexplugin` 只负责 Codex App Server 协议适配；宿主通过 `attachOrganizationExecutor` 注册任意执行器。无有效执行器时连接器不宣称 deferred，仍保留同步/显式语义路径。确定性通用运行时、Codex 协议和 `cmd/ownward` 集成回归均已通过；完整证据见[宿主独立性复审](../../.tmp/information-availability-global-review-20260920/host-review/report.md)及当前组合身份。
+**宿主独立性复审结论（2026-09-20，已完成）：** 通用运行时只依赖 `OrganizationExecutionPolicy` 与 `OrganizationExecutor`，Codex 进程、模型和文件配置留在适配器；连接器先注册并本地校验执行器，再按注册结果协商延后组织能力。共享与远程入口均已接入该顺序；无 Codex profile 的通用执行器注册、能力声明隔离、Codex 适配及 `cmd/ownward` 集成回归均通过。该结论证明能力边界已与具体宿主解耦，不把 fixture 当作真实模型质量成绩；整体质量与真实整链仍由 G3-01 单独验收。
 
 本轮由B接手完成集中实现与验证；没有运行付费模型、14/24/500题或Git写操作。上述身份只代表R3基线；当前组合变更已重新封存并验证，不能沿用旧身份认定当前版本。
+
+### 当前未关闭问题登记（2026-09-20）
+
+| 编号 | 问题 | 根因与影响 | 当前证据 | 处理顺序与关闭条件 |
+| --- | --- | --- | --- | --- |
+| HOST-01 | 延后组织的正式宿主入口曾以 Codex 配置判定能力，通用执行器不能正式装配。 | 通用接口把 Codex 进程配置混进运行时，能力声明又旁路读取 `OWNWARD_ORGANIZATION_PROFILE`。现已拆出宿主无关执行策略，能力声明改由显式注册且通过本地校验的执行器驱动；共享与远程入口在生成能力目录前完成注册。 | `internal/contract/organization_executor.go`、`internal/organization` 不依赖 Codex；`cmd/ownward/organization_registration_test.go` 验证无 Codex profile 的执行器注册与能力声明；全仓 Go 测试、`go vet ./...`、组合校验均通过。 | **已关闭（结构与装配边界）。** 任意宿主仍须提供自己的 `OrganizationExecutor` 适配器；本项不替代 G3-01 的真实模型质量与整链验收。 |
+| G3-01 | 本需求整体尚未验收关闭，真实组织失败且固定14题质量/时效目标未达到。 | 外部组织执行在两次提交后失败并留下不完整用量；Reader 最佳仅12/14，最新固定集8/14，阶段4与完整等待没有稳定达到约60秒量级。认证阻碍、真实成本和模型语义缺口不能靠代码回归推断解决。 | [全局复审R3](../../.tmp/information-availability-global-review-20260920/r3/report.md)；[固定14题证据](../../.tmp/evidence-answer-improvement-20260913/retained-full14-examples-sentences.json)；[质量登记](../tasks/task-quality-improvement.md#累计问题登记待解决4题)。 | HOST-01 已闭合；仍需恢复合规真实执行条件，先完成组织→依赖取用整链，再以同一最终版本验证固定14题至少13/14、阶段4约60秒量级、完整等待与总成本后关闭。 |
 
 ---
 

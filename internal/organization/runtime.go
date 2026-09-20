@@ -10,11 +10,11 @@ import (
 // durable budget and idempotency boundary; the executor owns only model/tool
 // protocol translation.
 type Execution struct {
-	Scope   string
-	Key     string
-	Task    contract.OrganizationTask
-	Profile contract.OrganizationExecutorProfile
-	Prior   int64
+	Scope  string
+	Key    string
+	Task   contract.OrganizationTask
+	Policy contract.OrganizationExecutionPolicy
+	Prior  int64
 }
 
 type RunResult struct {
@@ -32,7 +32,7 @@ func (r *Runtime) Run(ctx context.Context, execution Execution, submit contract.
 	if r == nil || r.Journal == nil || r.Executor == nil {
 		return RunResult{}, ErrUnavailable
 	}
-	allowed, prior, err := r.Journal.Begin(ctx, execution.Scope, execution.Key, execution.Profile)
+	allowed, prior, err := r.Journal.Begin(ctx, execution.Scope, execution.Key, execution.Policy)
 	if err != nil || !allowed {
 		return RunResult{Allowed: allowed}, err
 	}
