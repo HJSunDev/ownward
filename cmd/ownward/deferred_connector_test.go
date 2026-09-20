@@ -42,7 +42,8 @@ func TestConnectorToolDiscoveryFitsEnvelope(t *testing.T) {
 	t.Run("formal_local_and_remote_proxy", func(t *testing.T) {
 		proxy := newConnectorServer("test", upstream.InitializeResult())
 		for _, tool := range tools {
-			proxy.AddTool(tool, func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			copy := connectorTool(tool)
+			proxy.AddTool(&copy, func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				return &mcp.CallToolResult{}, nil
 			})
 		}

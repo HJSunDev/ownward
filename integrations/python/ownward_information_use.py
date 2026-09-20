@@ -1,6 +1,7 @@
 """Portable information use; the host supplies intelligence, tools and recovery."""
 import json
 import hashlib
+import copy
 
 
 READ_MANY = 'ownward_evidence_read_many'
@@ -222,3 +223,153 @@ def reconsider(observations, draft, reading, invoke):
     """Resume the documented explicit entry with the same single-delivery mechanism."""
     payload = {**observations, 'prior_work': {'draft': draft, 'reading': reading}}
     return respond(payload, invoke)
+
+
+PATH_INSTRUCTIONS = (
+    "Use your existing understanding of the user's task to choose how to obtain evidence. "
+    "For a known source or a bounded fact, read or search only as needed; do not run a separate "
+    "task-preparation call or automatically read the first three matches. For synthesis, ambiguous "
+    "scope, conflicting records or current/comprehensive claims, use the existing deep workflow "
+    "directly. When unsure, retain the deep workflow. A local match does not establish completeness; "
+    "missing matches or unfinished organization do not establish absence. Keep available vector "
+    "and relationship retrieval. If a quick lookup needs deeper work, continue the same task with "
+    "its original request, valid originals and basis references, outstanding qualifications, "
+    "fallible notes, and cumulative usage. Do not restart the budget or repeat sufficient reads. "
+    "Prepare information needs only if not already prepared. Recheck reused sources. Stop relying "
+    "on changed, unavailable or unverified material and conclusions depending on it; reread needed "
+    "sources and their qualifications before using them. Only request organization of sources the task actually depends on; "
+    "reuse work already in progress and count any wait. Use the same result contract on both paths; "
+    "the agent, not code, judges evidence sufficiency. Report unresolved gaps when the budget ends."
+)
+
+
+class UseSession:
+    """Opt-in task state owned by a trusted host, not accepted from model tool arguments.
+
+    The host's call/report/restore enforce and retain the original shared budget,
+    permissions and actual model usage. Invoke uses this session's call method in
+    its existing tool loop and returns the original RESPONSE. No model is owned here.
+    """
+    schema = 'ownward.information-use-session/v1'
+    max_bytes = 8 << 20
+
+    def __init__(self, task, host, invoke, *, context=None):
+        if not isinstance(task, str) or not task.strip():
+            raise ValueError('An original task is required')
+        self.task, self.host, self.invoke = task, host, invoke
+        self.context = copy.deepcopy(context or {})
+        if not isinstance(self.context, dict) or 'task' in self.context or 'sources' in self.context:
+            raise ValueError('Task context must not replace the request or source evidence')
+        self.frame = None
+        self.trace = []
+        self.notes = ''
+        self.pending = []
+        self.started = False
+        self.needs_check = False
+        self.unknown = False
+
+    @staticmethod
+    def _copy(value):
+        encoded = json.dumps(value, ensure_ascii=False, allow_nan=False)
+        if len(encoded.encode('utf-8')) > UseSession.max_bytes:
+            raise ValueError('Task handoff exceeds the retained-material limit')
+        return json.loads(encoded)
+
+    def call(self, name, arguments):
+        # The existing host remains the sole authority for tools and budget.
+        self.started = True
+        try:
+            result = self.host.call(name, arguments)
+        except Exception:
+            # Unknown work is not rolled back or retried outside host accounting.
+            self.unknown = True
+            raise
+        entry = {'tool': name, 'arguments': self._copy(arguments), 'result': self._copy(result)}
+        self._copy(self.trace + [entry])
+        self.trace.append(entry)
+        return result
+
+    def checkpoint(self):
+        """Persist through the host's private task storage, never as user memory."""
+        return self._copy({'schema': self.schema, 'task': self.task, 'context': self.context,
+                          'frame': self.frame, 'trace': self.trace, 'notes': self.notes,
+                          'pending': self.pending, 'started': self.started, 'unknown': self.unknown,
+                          'host': self.host.report()})
+
+    def restore(self, state):
+        """A host must restore usage before further calls; never reset an attempt."""
+        state = self._copy(state)
+        if state.get('schema') != self.schema or state.get('task') != self.task or state.get('context') != self.context:
+            raise ValueError('Handoff does not belong to this task and context')
+        self.host.restore(state['host'])
+        self.frame, self.trace = state['frame'], state['trace']
+        self.notes, self.pending = state['notes'], state['pending']
+        self.started, self.unknown = state['started'], state['unknown']
+        self.needs_check = True
+
+    def _recheck(self):
+        if not self.needs_check:
+            return
+        reads = []
+        for entry in self.trace:
+            if entry['tool'] in ('ownward_read', 'ownward_evidence_read'):
+                reads.append(entry)
+            elif entry['tool'] == READ_MANY:
+                # 批读逐条保留真实结果，核对与单读采用相同的来源依据。
+                for item in entry['result'].get('results', []):
+                    if isinstance(item.get('result'), dict):
+                        reads.append({'tool': 'ownward_evidence_read',
+                                      'arguments': {'id': item['id']}, 'result': item['result']})
+        materials = [{'basis': e['result'].get('basis', '')} for e in reads]
+        checked = check_materials(materials, self.host.call)
+        valid = {id(e) for e, check in zip(reads, checked) if check['status'] == 'unchanged'}
+        # Old search summaries and navigation are leads, not checked original evidence.
+        # Retain only freshly checked reads in the new model context.
+        self.trace = [e for e in reads if id(e) in valid]
+        pending = {c.get('basis', ''): c for c in self.pending}
+        for c in checked:
+            if c['status'] == 'unchanged':
+                pending.pop(c['basis'], None)
+            else:
+                pending[c['basis']] = c
+        self.pending = list(pending.values())
+        if len(valid) != len(reads) or len(reads) == 0:
+            self.notes = ''
+        self.needs_check = False
+
+    def _usage(self):
+        # Host checkpoints can contain old tool payloads. Only counters belong in
+        # model input; otherwise invalid evidence would reappear through accounting.
+        report = self.host.report()
+        result = {k: v for k, v in report.items() if isinstance(v, (int, float, bool))}
+        for name in ('limits', 'usage'):
+            values = report.get(name, {})
+            if isinstance(values, dict):
+                result[name] = {k: v for k, v in values.items() if isinstance(v, (int, float, bool))}
+        for name in ('selection_steps', 'calls'):
+            if isinstance(report.get(name), list):
+                result['tool_calls'] = len(report[name])
+                break
+        return result
+
+    def run(self, path='deep'):
+        """Path is selected by the external agent in its existing task process."""
+        if path not in ('quick', 'deep'):
+            raise ValueError('Expected quick or deep')
+        was_started = self.started
+        self._recheck()
+        if path == 'deep' and self.frame is None:
+            self.frame = self.invoke('task-basis', FRAME, {**self.context, 'task': self.task}, FRAME_SCHEMA)
+        if path == 'deep' and not was_started:
+            # Unchanged deep entry; an already-started lookup never reseeds.
+            self.started = True
+            initial_context(self.task, self.call)
+        self.started = True
+        instruction, schema = task_contract(self.frame) if self.frame is not None else (OFFER, RESPONSE)
+        payload = {**self.context, 'task': self.task, 'tool_results': self.trace,
+                   'prior_work': {'notes': self.notes}, 'pending': self.pending,
+                   'usage': self._usage(), 'usage_incomplete': self.unknown}
+        try:
+            return finish(self.invoke('respond', instruction, self._copy(payload), schema))
+        finally:
+            self.needs_check = True

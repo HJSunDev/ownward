@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/HJSunDev/ownward/internal/codexplugin"
 	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"strconv"
@@ -108,7 +109,7 @@ func runSharedMCPConnector(ctx context.Context, dataDir, binaryVersion, composit
 		if toolErr != nil {
 			return fmt.Errorf("读取共享 Ownward 工具契约失败: %w", toolErr)
 		}
-		copyOfTool := *tool
+		copyOfTool := connectorTool(tool)
 		organizationTools = append(organizationTools, &copyOfTool)
 		proxy.AddTool(&copyOfTool, func(callContext context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			return host.call(callContext, request, session)
@@ -118,19 +119,30 @@ func runSharedMCPConnector(ctx context.Context, dataDir, binaryVersion, composit
 		return organizationToolCall(ctx, streamScope, session, name, args)
 	})
 	defer stopOrganization()
+	host.addOrganizationDemand(proxy)
 	if err := runConnectorIO(ctx, proxy, streamScope, os.Stdin, os.Stdout, stopOrganization); err != nil {
 		return fmt.Errorf("共享 Ownward stdio 连接器结束: %w", err)
 	}
 	return nil
 }
 
-// 本地与远程代理使用同一分页边界，不能重新聚合上游工具页而超出stdio信封。
+// 正式宿主可能只读取工具目录首屏；完整目录仍须落在64KiB信封内。
 func newConnectorServer(version string, result *mcp.InitializeResult) *mcp.Server {
 	instructions := ""
 	if result != nil {
 		instructions = result.Instructions
 	}
-	return mcp.NewServer(&mcp.Implementation{Name: "ownward", Version: version}, &mcp.ServerOptions{PageSize: 1, Instructions: instructions, Capabilities: organizationProxyCapabilities(result)})
+	if os.Getenv("OWNWARD_INFORMATION_USE_PATHS") == "v1" {
+		instructions += "\n\n" + codexplugin.InformationUseInstructions
+	}
+	return mcp.NewServer(&mcp.Implementation{Name: "ownward", Version: version}, &mcp.ServerOptions{PageSize: 64, Instructions: instructions, Capabilities: organizationProxyCapabilities(result)})
+}
+
+func connectorTool(tool *mcp.Tool) mcp.Tool {
+	copy := *tool
+	// 输出Schema是可选目录元数据；上游仍校验真实输出，正文与输入契约不变。
+	copy.OutputSchema = nil
+	return copy
 }
 
 func organizationProxyCapabilities(result *mcp.InitializeResult) *mcp.ServerCapabilities {

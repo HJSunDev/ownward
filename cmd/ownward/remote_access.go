@@ -416,7 +416,7 @@ func runRemoteConnector(ctx context.Context, material connectionMaterial) error 
 		if err != nil {
 			return err
 		}
-		copy := *tool
+		copy := connectorTool(tool)
 		organizationTools = append(organizationTools, &copy)
 		proxy.AddTool(&copy, func(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			host.routeMu.Lock()
@@ -455,6 +455,7 @@ func runRemoteConnector(ctx context.Context, material connectionMaterial) error 
 		return host.refreshOrganizationRoute(ctx, &session)
 	})
 	defer stopOrganization()
+	host.addOrganizationDemand(proxy)
 	mcp.AddTool(proxy, &mcp.Tool{Name: "ownward_connect", Description: "按用户需求连接另一个智能体。生成公开连接材料，在目标宿主打开；批准由本可信宿主办理。"}, func(ctx context.Context, request *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, connectionMaterial, error) {
 		host.routeMu.Lock()
 		err := host.refreshRemote(ctx, &session)

@@ -38,6 +38,11 @@
           "sha256": "79c17b1e1e867138c2c886ea8212b0370e3d5ba3b112afca3cb49544c0e36c77"
         },
         {
+          "name": "cmd-ownward-information_use-go",
+          "path": "cmd/ownward/information_use.go",
+          "sha256": "3cf19b08d816f095ab944d6ce4036482ee9f2698150b989f2167b833e9d35e5d"
+        },
+        {
           "name": "cmd-ownward-organization_connector-go",
           "path": "cmd/ownward/organization_connector.go",
           "sha256": "1b13a8fb23f3165f713820ba8cc902d9cfe201d41046147397f235e84170d6ae"
@@ -45,7 +50,7 @@
         {
           "name": "cmd-ownward-organization_host-go",
           "path": "cmd/ownward/organization_host.go",
-          "sha256": "75f8abff0d8a1bd2baa138cdbfaad25b8c654af45bc3dda00c34ee1ddf6dbe13"
+          "sha256": "035f51b503dac153e27535c196a35b7d7ff9eb0a8583d68e12da70dd278f8afe"
         },
         {
           "name": "cmd-ownward-organization_state-go",
@@ -55,7 +60,7 @@
         {
           "name": "cmd-ownward-remote_access",
           "path": "cmd/ownward/remote_access.go",
-          "sha256": "7175c66e38ffdc1be566795506caa81039e71a869d7fe6ad5467b596df5d0b26"
+          "sha256": "0e88b7ccf9bb51ddea9086c4201c130ffbb7cb466c9457da2ee2af69df89a375"
         },
         {
           "name": "cmd-ownward-remote_decision",
@@ -76,6 +81,11 @@
           "name": "cmd-ownward-streaming_connector-go",
           "path": "cmd/ownward/streaming_connector.go",
           "sha256": "50b0b615ef7feff6e3dfb44d2c90a5628a84f5a7b443d608d62c4e2c6ef596fe"
+        },
+        {
+          "name": "integrations-python-ownward_information_use-py",
+          "path": "integrations/python/ownward_information_use.py",
+          "sha256": "7285cfe52e4c3b509eaaa8d66439bc10ec869fc985dd3775d179cbfb83e326cf"
         },
         {
           "name": "internal-adapter-localowner-protect_unix",
@@ -111,6 +121,16 @@
           "name": "internal-adapter-remote-transport",
           "path": "internal/adapter/remote/transport.go",
           "sha256": "4940e9a760d0ca732dbeda7afdfedd062b2721f9fe333c4006f5f923fb4755fd"
+        },
+        {
+          "name": "internal-codexplugin-information_use-go",
+          "path": "internal/codexplugin/information_use.go",
+          "sha256": "bfa2dcef96580b37d4772934c9eaaeb20c445336e9992b39784ab24bbc544354"
+        },
+        {
+          "name": "internal-codexplugin-information_use-txt",
+          "path": "internal/codexplugin/information_use.txt",
+          "sha256": "d165b932b540338725604f1335b8f48dc4427918c76c89bb7884e987f8baf99b"
         },
         {
           "name": "internal-codexplugin-marketplace-json",
@@ -150,7 +170,7 @@
         {
           "name": "internal-codexplugin-plugins-ownward--mcp-json",
           "path": "internal/codexplugin/plugins/ownward/.mcp.json",
-          "sha256": "eabfd245ace1fb23c0bce25e65c04c6c847218a795491915f66a81eb2c13f978"
+          "sha256": "c59e149183164829b8eaf3f76fcc73bac98b3236cb147bce388e3f1a415a7e3c"
         },
         {
           "name": "internal-codexplugin-plugins-ownward-hooks-hooks-json",
@@ -200,7 +220,7 @@
         {
           "name": "shared-mcp",
           "path": "cmd/ownward/shared_mcp.go",
-          "sha256": "f222c31c34151411d95d54b0ce69047cdce4618b3af20c499e3e8723b60d62bc"
+          "sha256": "16b2efa07bf72c4f0ddb97f486dd6cd6120a8d79e1ff79433fde03a0a70d2f0f"
         },
         {
           "name": "shared-process-unix",
@@ -231,7 +251,7 @@
           "identity": "7bb674243d6a487e16b3bf22fede7fecd8d538845a4c06b825b70788524e3c47"
         }
       ],
-      "identity": "54e4026bc7569e803f00169e8ec6e0479243e51563a6d925c2af694255977157"
+      "identity": "e035649060075065a764067f3775c8567231cd605cc12d491719f127f77b522c"
     },
     {
       "role": "assembly",
@@ -334,7 +354,7 @@
       "dependencies": [
         {
           "role": "access",
-          "identity": "54e4026bc7569e803f00169e8ec6e0479243e51563a6d925c2af694255977157"
+          "identity": "e035649060075065a764067f3775c8567231cd605cc12d491719f127f77b522c"
         },
         {
           "role": "authority-substrate",
@@ -357,7 +377,7 @@
           "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
         }
       ],
-      "identity": "659033f732f9c0c19b952c0c91f05914b5c6ce0bc721d1f72cf5137a4a743ed6"
+      "identity": "a7c2a538e0705f822d7568340c5e037d80eff9bbdc08cd70c311384cb146ce61"
     },
     {
       "role": "authority-substrate",
@@ -1429,7 +1449,7 @@
       "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
     }
   ],
-  "identity": "4b81b40ac89a949c0c9499af2fada41617333786eb0941565ae6b86cb50ef5b1",
+  "identity": "f94121a90a35859e1d175bb3959d3441aaa01a6bd5288ebfffbbab669024612e",
   "audit": {
     "described_product_candidate": "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8",
     "migration_source_git": "dc2c7a09e67f06cfaacbe0a201c7ff27b20d6182"

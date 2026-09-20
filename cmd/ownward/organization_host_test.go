@@ -30,14 +30,22 @@ import (
 // Actual official App Server, formal connector IO and authoritative kernel;
 // only model output and vectors are deterministic local fixtures.
 func TestOrganizationFormalConnectorContinueRestart(t *testing.T) {
-	testOrganizationFormalConnector(t, false)
+	testOrganizationFormalConnector(t, false, false)
 }
 
 func TestOrganizationAcceptedSemanticResumesVectors(t *testing.T) {
-	testOrganizationFormalConnector(t, true)
+	testOrganizationFormalConnector(t, true, false)
 }
 
-func testOrganizationFormalConnector(t *testing.T, vectorFailure bool) {
+func TestOrganizationForegroundDependencyContinuesSameWork(t *testing.T) {
+	testOrganizationFormalConnector(t, false, true)
+}
+
+func TestOrganizationForegroundDependencyResumesVectors(t *testing.T) {
+	testOrganizationFormalConnector(t, true, true)
+}
+
+func testOrganizationFormalConnector(t *testing.T, vectorFailure, demand bool) {
 	exe := os.Getenv("OWNWARD_TEST_CODEX_EXECUTABLE")
 	if exe == "" {
 		t.Skip("requires selected local Codex binary; no live inference")
@@ -45,6 +53,9 @@ func testOrganizationFormalConnector(t *testing.T, vectorFailure bool) {
 	t.Setenv("NO_PROXY", "127.0.0.1,localhost")
 	t.Setenv("no_proxy", "127.0.0.1,localhost")
 	t.Setenv("LOCALAPPDATA", t.TempDir())
+	if demand {
+		t.Setenv("OWNWARD_INFORMATION_USE_PATHS", "v1")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 	check := func(e error) {
@@ -162,7 +173,8 @@ func testOrganizationFormalConnector(t *testing.T, vectorFailure bool) {
 	for tool, e := range upstream.Tools(ctx, nil) {
 		check(e)
 		tools = append(tools, tool)
-		proxy.AddTool(tool, func(c context.Context, r *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		copy := connectorTool(tool)
+		proxy.AddTool(&copy, func(c context.Context, r *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			return host.call(c, r, upstream)
 		})
 	}
@@ -183,6 +195,7 @@ func testOrganizationFormalConnector(t *testing.T, vectorFailure bool) {
 		})
 	}
 	stop := attach()
+	host.addOrganizationDemand(proxy)
 	defer func() { stop() }()
 	sr, cw := io.Pipe()
 	cr, sw := io.Pipe()
@@ -241,6 +254,34 @@ func testOrganizationFormalConnector(t *testing.T, vectorFailure bool) {
 		return out.Organization.Status == "ready"
 	}
 	wait("executor readiness", func() bool { return host.organization != nil && host.organization.ready.Load() })
+	if demand {
+		event("UserPromptSubmit")
+		content := "当前任务需要的资料，只组织一次。"
+		if vectorFailure {
+			content = strings.Repeat(content, 100)
+		}
+		id := create(content)
+		if modelCalls.Load() != 0 {
+			t.Fatal("unrelated work started during foreground")
+		}
+		call("ownward_organize", map[string]any{"id": id}, nil)
+		call("ownward_organize", map[string]any{"id": id}, nil)
+		wait("foreground dependency was never organized", func() bool { return ready(id) })
+		call("ownward_organize", map[string]any{"id": id}, nil)
+		active, err := host.organization.journal.foreground(ctx)
+		check(err)
+		if !active {
+			t.Fatal("foreground ended before dependency completed")
+		}
+		if vectorFailure && vectors.failures.Load() != 1 {
+			t.Fatal("vector failure not reached")
+		}
+		stop()
+		if modelCalls.Load() != 1 {
+			t.Fatal("same dependency duplicated AI work", modelCalls.Load())
+		}
+		return
+	}
 	if vectorFailure {
 		event("UserPromptSubmit")
 		id := create(strings.Repeat("项目星河负责人是李明，周五完成审核。", 100))

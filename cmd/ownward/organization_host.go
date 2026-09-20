@@ -34,6 +34,7 @@ type organizationHost struct {
 	broken       atomic.Bool
 	mu           sync.Mutex
 	active       map[string]bool
+	demand       []string
 	overflow     bool
 	status       string
 }
@@ -166,6 +167,7 @@ func (o *organizationHost) loop() {
 	defer func() { o.cancel(); <-heartDone }()
 	cursor := ""
 	claimRequest := ""
+	claimAsset, claimAfter := "", ""
 	probed := false
 	for o.ctx.Err() == nil {
 		o.mu.Lock()
@@ -245,7 +247,13 @@ func (o *organizationHost) loop() {
 		}
 		o.ready.Store(true)
 		active, e := o.journal.foreground(o.ctx)
-		if e != nil || active {
+		o.mu.Lock()
+		demand := ""
+		if len(o.demand) > 0 {
+			demand = o.demand[0]
+		}
+		o.mu.Unlock()
+		if e != nil || (active && demand == "") {
 			if e != nil {
 				o.broken.Store(true)
 				o.ready.Store(false)
@@ -267,13 +275,28 @@ func (o *organizationHost) loop() {
 		}
 		if claimRequest == "" {
 			claimRequest = connectionID()
+			claimAsset, claimAfter = demand, cursor
+			if claimAsset != "" {
+				claimAfter = ""
+			}
 		}
-		out, e := o.jobs(o.ctx, contract.OrganizationJobRequest{Action: "claim", RequestID: claimRequest, AfterAssetID: cursor, Background: true, LeaseSeconds: 60})
+		out, e := o.jobs(o.ctx, contract.OrganizationJobRequest{Action: "claim", RequestID: claimRequest, AssetID: claimAsset, AfterAssetID: claimAfter, Background: true, LeaseSeconds: 60})
 		if e == nil {
 			claimRequest = ""
 		}
 		if e != nil || out.Claim == nil {
 			lock.release()
+			if e == nil && claimAsset != "" {
+				status, statusErr := o.call(o.ctx, "ownward_status", map[string]any{"id": claimAsset})
+				var value struct{ Organization contract.OrganizationState }
+				if statusErr == nil && (status.IsError || (decodeTool(status, &value) == nil && (value.Organization.Status == "ready" || value.Organization.Status == "uncertain"))) {
+					o.mu.Lock()
+					if len(o.demand) > 0 && o.demand[0] == claimAsset {
+						o.demand = o.demand[1:]
+					}
+					o.mu.Unlock()
+				}
+			}
 			if e == nil && cursor == "" {
 				o.jobs(o.ctx, contract.OrganizationJobRequest{Action: "wait", WaitSeconds: 5})
 			}
@@ -285,13 +308,34 @@ func (o *organizationHost) loop() {
 			continue
 		}
 		lease := *out.Claim
+		// Resolve an ambiguous earlier claim with its original identity, then
+		// yield unrelated work to a newly arrived foreground dependency.
+		if active && claimAsset == "" && lease.AssetID != demand {
+			o.jobs(o.ctx, contract.OrganizationJobRequest{Action: "release", AssetID: lease.AssetID, Lease: lease.Lease})
+			lock.release()
+			continue
+		}
 		cursor = lease.AssetID
-		o.run(lease, self)
+		retry := o.run(lease, self)
 		lock.release()
+		if claimAsset != "" {
+			// 领取不代表完成；仍可恢复的前台依赖保留，轮转避免挡住其他依赖。
+			o.mu.Lock()
+			if len(o.demand) > 0 && o.demand[0] == claimAsset {
+				o.demand = o.demand[1:]
+				if retry {
+					o.demand = append(o.demand, claimAsset)
+				}
+			}
+			o.mu.Unlock()
+			if retry && !o.pause(time.Second) {
+				return
+			}
+		}
 	}
 }
 
-func (o *organizationHost) run(lease contract.OrganizationLease, self contract.Principal) {
+func (o *organizationHost) run(lease contract.OrganizationLease, self contract.Principal) bool {
 	ctx, cancel := context.WithCancel(o.ctx)
 	defer cancel()
 	renewDone := make(chan struct{})
@@ -329,22 +373,22 @@ func (o *organizationHost) run(lease contract.OrganizationLease, self contract.P
 			o.ready.Store(false)
 		}
 		o.setStatus("组织准备预算已用尽；待办保留并继续其他资料")
-		return
+		return false
 	}
 	work, e := o.work(ctx, lease)
 	if e != nil {
 		o.journal.save(ctx, scope, preparation, "preparation_failed", 0, codexplugin.OrganizationUsage{})
 		o.setStatus("组织材料暂不可用；待办保留")
-		return
+		return true
 	}
 	if _, e = o.journal.db.ExecContext(ctx, "DELETE FROM executions WHERE scope=? AND work=?", scope, preparation); e != nil {
 		o.broken.Store(true)
 		o.ready.Store(false)
-		return
+		return false
 	}
 	if string(work) == "[]" {
 		o.setStatus("已复用内核接受的组织结果")
-		return
+		return false
 	}
 	hash := sha256.Sum256(work)
 	key := hex.EncodeToString(hash[:])
@@ -355,7 +399,7 @@ func (o *organizationHost) run(lease contract.OrganizationLease, self contract.P
 			o.ready.Store(false)
 		}
 		o.setStatus("组织恢复预算已用尽；待办保留并继续其他资料")
-		return
+		return false
 	}
 	p := o.profile
 	p.MaxTokens -= prior
@@ -413,6 +457,7 @@ func (o *organizationHost) run(lease contract.OrganizationLease, self contract.P
 	} else {
 		o.setStatus("本项组织未完成；保留待办与累计用量，继续其他资料")
 	}
+	return !o.broken.Load()
 }
 
 func (o *organizationHost) work(ctx context.Context, lease contract.OrganizationLease) (json.RawMessage, error) {

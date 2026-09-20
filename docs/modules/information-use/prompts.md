@@ -10,6 +10,7 @@
 | --- | --- |
 | 1. 资料存入与组织 | [语义提示生成](../../../benchmarks/longmemeval_s/semantic_representation.py)的 `grounded_instruction`、`organization_instruction`、[关系组织契约](../../../internal/semantics/organization_contract.json)的 `instruction` 与 `source_object_instruction`；[运行器](../../../benchmarks/longmemeval_s/run.py)的 `semantic_request` 组装来源定位、资料及 Schema。 |
 | 2. 明确需求 | [信息使用层](../../../integrations/python/ownward_information_use.py)的 `FRAME`、`FRAME_SCHEMA`、`stage_prompt`；运行器 `active_answer` 填入需求与日期。 |
+| 可选快速取用与接续 | 同一信息使用层的`PATH_INSTRUCTIONS`、`UseSession`；[正式Codex指令](../../../internal/codexplugin/information_use.txt)组合路径规则、原取证规则、原需求准备与原交付契约，测试校验两端一致。 |
 | 3. 初始材料；4. 继续取证并形成结果 | 信息使用层 `initial_context`、`EvidenceToolSession`、`RETRIEVAL_INSTRUCTIONS`、`OFFER`、`task_contract`；运行器 `_active_answer_prompt` 填入需求、日期及预算。 |
 | 5. 交付回答 | 信息使用层 `finish`，无 AI 提示词。 |
 | 6. 判分 | 运行器 `official_prompt` 加载固定官方版本的 `get_anscheck_prompt`，`judge` 提供输出 Schema；标答仅进入判分环节。 |
@@ -17,6 +18,22 @@
 | 资料组织被拒绝后的修正 | [定位修正](../../../benchmarks/longmemeval_s/organization_repair.py)的 `INSTRUCTION`、`request` 生成受限字段Schema及相关完整来源；运行器 `_repair_organization_locations` 执行，`submit_semantic_batch` 保持原提交校验与重试预算。 |
 
 ## 各环节完整输入与翻译
+
+### 可选快慢取用契约
+
+正式Codex连接器仅在`OWNWARD_INFORMATION_USE_PATHS=v1`时，将以下路径指令、本文第4节的原取证规则、第2节的`FRAME`及Schema、第4节的`OFFER`及结果Schema依次追加到内核原有MCP初始化指令；没有额外分流模型调用。完整固定输入见[实际发送文件](../../../internal/codexplugin/information_use.txt)，原任务、工具原文与累计用量由原生宿主承载。未启用时不追加，默认深度流程不变。
+
+**路径指令原文**
+
+> Use your existing understanding of the user's task to choose how to obtain evidence. For a known source or a bounded fact, read or search only as needed; do not run a separate task-preparation call or automatically read the first three matches. For synthesis, ambiguous scope, conflicting records or current/comprehensive claims, use the existing deep workflow directly. When unsure, retain the deep workflow. A local match does not establish completeness; missing matches or unfinished organization do not establish absence. Keep available vector and relationship retrieval. If a quick lookup needs deeper work, continue the same task with its original request, valid originals and basis references, outstanding qualifications, fallible notes, and cumulative usage. Do not restart the budget or repeat sufficient reads. Prepare information needs only if not already prepared. Recheck reused sources. Stop relying on changed, unavailable or unverified material and conclusions depending on it; reread needed sources and their qualifications before using them. Only request organization of sources the task actually depends on; reuse work already in progress and count any wait. Use the same result contract on both paths; the agent, not code, judges evidence sufficiency. Report unresolved gaps when the budget ends.
+
+**中文对照**
+
+> 利用对用户任务已有的理解选择取证方式。对于已知来源或范围明确的局部事实，仅按需读取或搜索，不独立准备需求，不自动读取前三条命中。对于综合、范围不明、资料冲突，以及当前状态或完整性判断，直接采用原深度流程；不确定时保留深度处理。局部命中不能证明完整性，未命中或未完成组织不能证明信息不存在。保留可用的向量与关系检索。快速查找需要深入时，携带原始需求、有效原文及basis、待补说明、可纠错笔记和累计用量继续同一任务；不重置预算，不重复充分读取，仅在尚未准备时补需求准备。复用前核对来源。停止依赖已变化、不可用或未核实的材料及相关结论；使用前重新读取所需来源及其限定说明。仅请求当前任务确实依赖的资料组织，复用运行中的工作并计入等待。两条路径使用同一结果契约，由智能体判断依据是否充分；预算耗尽时如实报告缺口。
+
+**Python接入完整输入**：`UseSession.run('quick')`以原`OFFER`、`RESPONSE`调用`invoke('respond', ...)`；直接深度沿用原`FRAME`→`initial_context`→`task_contract`，接续只补未完成步骤。交付输入为原始`task`、宿主必要上下文、实际`tool_results`、独立`prior_work.notes`、待核对`pending`及累计`usage`与`usage_incomplete`。它们由宿主记录，不能由模型补写；变化材料在组装输入前移除。各阶段仍使用下文的原文与Schema，不另增语义复核提示。
+
+---
 
 ### 可选Codex组织执行器
 
