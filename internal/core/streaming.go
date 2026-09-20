@@ -34,6 +34,9 @@ type StreamingAssets struct {
 var _ contract.StreamingProduct = (*StreamingAssets)(nil)
 
 func (s *StreamingAssets) ExecuteStream(ctx context.Context, request contract.StreamRequest) (result *contract.StreamResult, failure error) {
+	if request.Operation == "ownward_semantic_jobs" {
+		return s.organizationJobsTool(ctx, request)
+	}
 	s.deliveryMu.RLock()
 	defer s.deliveryMu.RUnlock()
 	defer func() {
@@ -198,14 +201,16 @@ func (s *StreamingAssets) prepareStoredWork(ctx context.Context, outcomes []cont
 	var ids []string
 	for _, v := range outcomes {
 		if v.Error == "" {
+			managed, err := s.Store.DeferredOrganization(ctx, v.Asset.ID)
+			if err != nil || managed {
+				continue
+			}
 			ids = append(ids, v.Asset.ID)
 		}
 	}
 	ctx = s.prepareShortEmbeddings(ctx, ids)
-	for _, outcome := range outcomes {
-		if outcome.Error == "" {
-			_, _ = s.prepareStreamingWork(ctx, outcome.Asset.ID)
-		}
+	for _, id := range ids {
+		_, _ = s.prepareStreamingWork(ctx, id)
 	}
 	// Failed organization remains in semantic_jobs. The raw save receipt is
 	// authoritative and must not be reported as a failed save after commit.
@@ -238,6 +243,17 @@ func (p currentPart) Open(ctx context.Context) (io.ReadCloser, error) {
 
 func (s *StreamingAssets) prepare(ctx context.Context, op contract.OperationIdentity, input streamjson.Node, update bool) (boundedstore.AssetWrite, error) {
 	var out boundedstore.AssetWrite
+	var mode string
+	if e := semanticOptional(input, "organization_mode", &mode, 128); e != nil {
+		return out, e
+	}
+	if mode != "" && mode != contract.DeferredOrganizationV1 {
+		return out, errors.New("不支持的组织协议")
+	}
+	if mode != "" && s.Embedder == nil {
+		return out, errors.New("延后组织要求已配置组织能力")
+	}
+	out.DeferOrganization = mode == contract.DeferredOrganizationV1
 	now := time.Now().UTC()
 	id, err := newID(now)
 	if err != nil {
@@ -428,6 +444,11 @@ func (s *StreamingAssets) deliver(ctx context.Context, outcomes []contract.Mutat
 						}
 						state = organizationState(record)
 					}
+				}
+				if managed, e := s.Store.DeferredOrganization(ctx, meta.ID); e != nil {
+					return e
+				} else if managed && state.Status == "pending" {
+					state.RequiredAction = "ownward_semantic_jobs"
 				}
 				if _, err = io.WriteString(w, `,"organization":`); err != nil {
 					return err

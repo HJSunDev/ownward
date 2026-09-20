@@ -201,7 +201,7 @@ func (h *hostConnector) call(ctx context.Context, request *mcp.CallToolRequest, 
 		}
 	}
 	switch request.Params.Name {
-	case "ownward_create", "ownward_create_batch", "ownward_update", "ownward_semantic_work", "ownward_semantic_submit", "ownward_semantic_submit_batch":
+	case "ownward_create", "ownward_create_batch", "ownward_update", "ownward_semantic_jobs", "ownward_semantic_work", "ownward_semantic_submit", "ownward_semantic_submit_batch":
 		needed = contract.MaintainPermission
 	}
 	if !slices.Contains(self.Permissions, needed) && request.Params.Name != "ownward_manage" && request.Params.Name != "ownward_management_status" && request.Params.Name != "ownward_connections" {

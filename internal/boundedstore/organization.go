@@ -427,6 +427,9 @@ func (s *Store) PublishOrganization(ctx context.Context, v OrganizationVersion) 
 			if err := tx.QueryRowContext(ctx, "SELECT generation,asset,revision,state,expected FROM organizations WHERE id=?", v.ID).Scan(&generation, &asset, &revision, &state, &expected); err != nil {
 				return err
 			}
+			if err := checkOrganizationExecution(ctx, tx, asset); err != nil {
+				return err
+			}
 			if generation != v.Generation || asset != v.Asset || revision != v.Revision {
 				return errors.New("派生发布身份不一致")
 			}
@@ -503,8 +506,21 @@ func (s *Store) PublishOrganization(ctx context.Context, v OrganizationVersion) 
 			if _, err = tx.ExecContext(ctx, "UPDATE derived_state SET epoch=epoch+1 WHERE singleton=1"); err != nil {
 				return err
 			}
-			if !header.HasPendingSemanticWork() {
+			complete := !header.HasPendingSemanticWork()
+			if complete && header.Status == "pending" {
+				// 旧队列仅承接语义工作；延后任务还须保留未完成的本地向量工作。
+				var deferred bool
+				if err = tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM organization_execution WHERE asset=?)", asset).Scan(&deferred); err != nil {
+					return err
+				}
+				complete = !deferred
+			}
+			if complete {
 				if _, err = tx.ExecContext(ctx, "DELETE FROM semantic_jobs WHERE asset=? AND revision=?", asset, revision); err != nil {
+					return err
+				}
+				// 完成发布同时结束占用；保留身份仅用于已接受结果的只读重放。
+				if _, err = tx.ExecContext(ctx, "UPDATE organization_execution SET expires=0 WHERE asset=?", asset); err != nil {
 					return err
 				}
 			}

@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"reflect"
 
@@ -27,11 +28,12 @@ type RulesOutput struct {
 }
 
 type CreateInput struct {
-	Relations []domain.ExplicitRelation `json:"explicit_relations,omitempty" jsonschema:"明确说明以 qualifies 绑定原资料，selector 以唯一原文定位说明。"`
-	Content   string                    `json:"content" jsonschema:"属于用户且可长期复用的完整信息"`
-	Kind      string                    `json:"kind,omitempty" jsonschema:"兼容既有资产的可选字段；通常省略，不参与自主语义组织"`
-	Contexts  []domain.Context          `json:"contexts,omitempty" jsonschema:"仅在信息含义或适用性依赖场景时提供"`
-	Source    domain.Source             `json:"source,omitempty" jsonschema:"信息来源"`
+	OrganizationMode string                    `json:"organization_mode,omitempty" jsonschema:"协商支持 deferred-v1 的宿主可延后组织准备；省略保持原行为"`
+	Relations        []domain.ExplicitRelation `json:"explicit_relations,omitempty" jsonschema:"明确说明以 qualifies 绑定原资料，selector 以唯一原文定位说明。"`
+	Content          string                    `json:"content" jsonschema:"属于用户且可长期复用的完整信息"`
+	Kind             string                    `json:"kind,omitempty" jsonschema:"兼容既有资产的可选字段；通常省略，不参与自主语义组织"`
+	Contexts         []domain.Context          `json:"contexts,omitempty" jsonschema:"仅在信息含义或适用性依赖场景时提供"`
+	Source           domain.Source             `json:"source,omitempty" jsonschema:"信息来源"`
 }
 
 type CreateOutput struct {
@@ -84,6 +86,7 @@ type StatusOutput struct {
 }
 
 type UpdateInput struct {
+	OrganizationMode string                     `json:"organization_mode,omitempty" jsonschema:"协商支持 deferred-v1 的宿主可延后组织准备；省略保持原行为"`
 	Relations        *[]domain.ExplicitRelation `json:"explicit_relations,omitempty" jsonschema:"完整明确关系列表；同资料附加说明以 qualifies 指向自身并提供 selector。"`
 	ID               string                     `json:"id" jsonschema:"稳定的信息标识"`
 	ExpectedRevision uint64                     `json:"expected_revision" jsonschema:"调用方最后读取到的版本，用于避免覆盖并发更新"`
@@ -119,6 +122,7 @@ type NavigateOutput struct {
 }
 
 type SemanticWorkInput struct {
+	Lease    string   `json:"lease,omitempty" jsonschema:"延后组织工作先领取凭据，并提供唯一 asset_ids；旧工作省略"`
 	Limit    int      `json:"limit,omitempty" jsonschema:"本次最多取得的语义工作数量，一到二十；默认一"`
 	AssetIDs []string `json:"asset_ids,omitempty" jsonschema:"需要定向取得的资产标识，一到二十条；提供后忽略 limit"`
 }
@@ -350,7 +354,7 @@ func coreCreateInput(input CreateInput) (contract.CreateInput, error) {
 		}
 		kind = parsed
 	}
-	return contract.CreateInput{Kind: kind, Content: input.Content, Contexts: input.Contexts, Relations: input.Relations, Source: input.Source}, nil
+	return contract.CreateInput{OrganizationMode: input.OrganizationMode, Kind: kind, Content: input.Content, Contexts: input.Contexts, Relations: input.Relations, Source: input.Source}, nil
 }
 
 func (s *Server) read(ctx context.Context, _ *mcp.CallToolRequest, input ReadInput) (*mcp.CallToolResult, ReadOutput, error) {
@@ -402,6 +406,7 @@ func (s *Server) status(ctx context.Context, _ *mcp.CallToolRequest, input Statu
 
 func (s *Server) update(ctx context.Context, _ *mcp.CallToolRequest, input UpdateInput) (*mcp.CallToolResult, UpdateOutput, error) {
 	update := contract.UpdateInput{
+		OrganizationMode: input.OrganizationMode,
 		Relations:        input.Relations,
 		ID:               input.ID,
 		ExpectedRevision: input.ExpectedRevision,
@@ -440,6 +445,9 @@ func (s *Server) navigate(ctx context.Context, _ *mcp.CallToolRequest, input Nav
 }
 
 func (s *Server) semanticWork(ctx context.Context, _ *mcp.CallToolRequest, input SemanticWorkInput) (*mcp.CallToolResult, SemanticWorkOutput, error) {
+	if input.Lease != "" {
+		return nil, SemanticWorkOutput{}, fmt.Errorf("该入口不支持延后组织协议")
+	}
 	var work []semantics.Work
 	var err error
 	if len(input.AssetIDs) > 0 {

@@ -75,16 +75,17 @@ type Capability struct {
 // Submission 是外部语义能力返回的候选判断。它不能直接成为关系图或长期资产；
 // 只有通过内核校验后，才会进入当前派生组织状态。
 type Submission struct {
-	InputAssets []CandidateReference `json:"input_assets,omitempty" jsonschema:"宿主实际送入同一次判断的完整资产版本与组织快照引用；批量调用包含其他工作及候选，补充材料须仍为当前可访问版本，并共同纳入来源验证和遗忘范围"`
-	Schema      string               `json:"schema" jsonschema:"固定填写 ownward.semantic-submission/v1"`
-	WorkID      string               `json:"work_id" jsonschema:"原样复制语义工作的 id"`
-	AssetID     string               `json:"asset_id" jsonschema:"原样复制语义工作的 asset.id"`
-	Revision    uint64               `json:"asset_revision" jsonschema:"原样复制语义工作的 asset.revision"`
-	Capability  Capability           `json:"capability" jsonschema:"产生本次判断的外部语义能力来源"`
-	Status      string               `json:"status" jsonschema:"只能填写 complete 或 uncertain。只要能够可靠概括资产本身就填写 complete；没有可靠的关系、场景或主题时在相应字段使用空数组，不能因此填写 uncertain。只有连资产基本含义都无法可靠理解时才填写 uncertain"`
-	Uncertainty string               `json:"uncertainty,omitempty" jsonschema:"仅在 status 为 uncertain 时说明为什么无法可靠理解资产基本含义"`
-	Analysis    Analysis             `json:"analysis" jsonschema:"只依据当前语义工作中的资产和候选上下文形成的候选判断"`
-	AcceptedAt  time.Time            `json:"accepted_at,omitempty"`
+	ExecutionLease string               `json:"execution_lease,omitempty" jsonschema:"宿主在延后组织协议下填入领取凭据；旧调用省略"`
+	InputAssets    []CandidateReference `json:"input_assets,omitempty" jsonschema:"宿主实际送入同一次判断的完整资产版本与组织快照引用；批量调用包含其他工作及候选，补充材料须仍为当前可访问版本，并共同纳入来源验证和遗忘范围"`
+	Schema         string               `json:"schema" jsonschema:"固定填写 ownward.semantic-submission/v1"`
+	WorkID         string               `json:"work_id" jsonschema:"原样复制语义工作的 id"`
+	AssetID        string               `json:"asset_id" jsonschema:"原样复制语义工作的 asset.id"`
+	Revision       uint64               `json:"asset_revision" jsonschema:"原样复制语义工作的 asset.revision"`
+	Capability     Capability           `json:"capability" jsonschema:"产生本次判断的外部语义能力来源"`
+	Status         string               `json:"status" jsonschema:"只能填写 complete 或 uncertain。只要能够可靠概括资产本身就填写 complete；没有可靠的关系、场景或主题时在相应字段使用空数组，不能因此填写 uncertain。只有连资产基本含义都无法可靠理解时才填写 uncertain"`
+	Uncertainty    string               `json:"uncertainty,omitempty" jsonschema:"仅在 status 为 uncertain 时说明为什么无法可靠理解资产基本含义"`
+	Analysis       Analysis             `json:"analysis" jsonschema:"只依据当前语义工作中的资产和候选上下文形成的候选判断"`
+	AcceptedAt     time.Time            `json:"accepted_at,omitempty"`
 }
 
 // SubmissionReceipt proves which normalized result was accepted without

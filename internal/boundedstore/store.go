@@ -17,7 +17,7 @@ import (
 )
 
 const ChunkBytes = 64 * 1024
-const schemaVersion = 3
+const schemaVersion = 4
 
 type Options struct {
 	Budget   *resourcebudget.Budget
@@ -31,6 +31,9 @@ type Store struct {
 	db                *sql.DB
 	writer            *sql.Conn
 	readers           chan *sql.Conn
+	jobsMu            sync.Mutex
+	jobsChanged       chan struct{}
+	jobsWaiters       int
 	writeMu           writeGate
 	vectorMu          sync.Mutex
 	organizationMu    sync.Mutex
@@ -144,7 +147,7 @@ func Open(ctx context.Context, path string, options Options) (*Store, error) {
 	}
 	db.SetMaxOpenConns(3)
 	db.SetMaxIdleConns(3)
-	s := &Store{db: db, readers: make(chan *sql.Conn, 2), budget: options.Budget, lock: lock, releaseCache: releaseCache, directory: filepath.Dir(path), path: path, readerChanged: make(chan struct{}), activeReaders: map[*sql.Conn]readerLease{}, maintenanceWake: make(chan struct{}, 1)}
+	s := &Store{jobsChanged: make(chan struct{}), db: db, readers: make(chan *sql.Conn, 2), budget: options.Budget, lock: lock, releaseCache: releaseCache, directory: filepath.Dir(path), path: path, readerChanged: make(chan struct{}), activeReaders: map[*sql.Conn]readerLease{}, maintenanceWake: make(chan struct{}, 1)}
 	fail := func(err error) (*Store, error) { s.Close(); return nil, err }
 	s.writer, err = db.Conn(ctx)
 	if err != nil {
@@ -187,13 +190,13 @@ func Open(ctx context.Context, path string, options Options) (*Store, error) {
 	if err != nil {
 		return fail(err)
 	}
-	if _, err = tx.ExecContext(ctx, schema+retrievalSchema+maintenanceSchema); err != nil {
+	if _, err = tx.ExecContext(ctx, schema+retrievalSchema+maintenanceSchema+organizationJobsSchema); err != nil {
 		tx.Rollback()
 		return fail(err)
 	}
 	// Publish the new format before exposing any stop-use barrier. Old binaries
 	// must reject it rather than bypassing the new visibility view.
-	if _, err = tx.ExecContext(ctx, "UPDATE store_meta SET value=3 WHERE key='format'"); err != nil {
+	if _, err = tx.ExecContext(ctx, "UPDATE store_meta SET value=4 WHERE key='format'"); err != nil {
 		tx.Rollback()
 		return fail(err)
 	}
@@ -325,6 +328,7 @@ func (s *Store) write(ctx context.Context, fn func(*sql.Tx) error) error {
 		return err
 	}
 	if err = tx.Commit(); err == nil {
+		s.signalOrganizationJobs()
 		s.afterWrite(ctx)
 		return nil
 	}
@@ -349,6 +353,7 @@ func (s *Store) Close() error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		s.closed = true
+		s.signalOrganizationJobs()
 		for len(s.readers) > 0 {
 			if err := (<-s.readers).Close(); err != nil {
 				s.closeErr = errors.Join(s.closeErr, err)

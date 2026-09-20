@@ -88,12 +88,7 @@ func runSharedMCPConnector(ctx context.Context, dataDir, binaryVersion, composit
 	if streamScope != nil {
 		defer streamScope.Close()
 	}
-	instructions := ""
-	if initialize != nil {
-		instructions = initialize.Instructions
-	}
-	// Tool schemas must fit the bounded stdio envelope; clients collect MCP pages.
-	proxy := mcp.NewServer(&mcp.Implementation{Name: "ownward", Version: binaryVersion}, &mcp.ServerOptions{Instructions: instructions, Capabilities: &mcp.ServerCapabilities{}, PageSize: 1})
+	proxy := newConnectorServer(binaryVersion, initialize)
 	host.addMaterialTool(proxy, func(ctx context.Context, refs []string) ([]contract.InformationCheck, error) {
 		result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "ownward_check", Arguments: map[string]any{"bases": refs}})
 		if err != nil {
@@ -121,6 +116,25 @@ func runSharedMCPConnector(ctx context.Context, dataDir, binaryVersion, composit
 		return fmt.Errorf("共享 Ownward stdio 连接器结束: %w", err)
 	}
 	return nil
+}
+
+// 本地与远程代理使用同一分页边界，不能重新聚合上游工具页而超出stdio信封。
+func newConnectorServer(version string, result *mcp.InitializeResult) *mcp.Server {
+	instructions := ""
+	if result != nil {
+		instructions = result.Instructions
+	}
+	return mcp.NewServer(&mcp.Implementation{Name: "ownward", Version: version}, &mcp.ServerOptions{PageSize: 1, Instructions: instructions, Capabilities: organizationProxyCapabilities(result)})
+}
+
+func organizationProxyCapabilities(result *mcp.InitializeResult) *mcp.ServerCapabilities {
+	out := &mcp.ServerCapabilities{}
+	if result != nil && result.Capabilities != nil {
+		if capability, ok := result.Capabilities.Experimental["ownward.deferred-organization"]; ok {
+			out.Experimental = map[string]any{"ownward.deferred-organization": capability}
+		}
+	}
+	return out
 }
 
 func ensureSharedMCPService(ctx context.Context, dataDir, binaryVersion, compositionIdentity string, stderr io.Writer) (*sharedMCPDescriptor, error) {

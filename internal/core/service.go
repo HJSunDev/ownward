@@ -248,6 +248,9 @@ func (s *Service) createAsset(ctx context.Context, input CreateInput) (domain.In
 }
 
 func (s *Service) newAsset(input CreateInput) (domain.Information, error) {
+	if input.OrganizationMode != "" {
+		return domain.Information{}, errors.New("该入口不支持延后组织协议")
+	}
 	if strings.TrimSpace(input.Content) == "" {
 		return domain.Information{}, errors.New("信息内容不能为空")
 	}
@@ -286,6 +289,9 @@ func (s *Service) newAsset(input CreateInput) (domain.Information, error) {
 }
 
 func (s *Service) Update(ctx context.Context, input UpdateInput) (MutationResult, error) {
+	if input.OrganizationMode != "" {
+		return MutationResult{}, errors.New("该入口不支持延后组织协议")
+	}
 	unlockOperation := s.lockOperation(ctx)
 	defer unlockOperation()
 	s.stateMu.RLock()

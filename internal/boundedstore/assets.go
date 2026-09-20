@@ -18,9 +18,10 @@ var _ contract.BoundedAssets = (*Store)(nil)
 var ErrNotFound = errors.New("信息不存在或版本已失效")
 
 type AssetWrite struct {
-	Meta             contract.AssetMeta
-	Payload          Staged
-	ExpectedRevision uint64
+	DeferOrganization bool
+	Meta              contract.AssetMeta
+	Payload           Staged
+	ExpectedRevision  uint64
 }
 
 // Publish 将可见版本、后续组织工作、回收任务和回执一同提交。
@@ -141,6 +142,14 @@ func (s *Store) Publish(ctx context.Context, receipt contract.MutationReceipt, v
 					return err
 				}
 				if _, err = tx.ExecContext(ctx, "INSERT INTO semantic_jobs VALUES(?,?,'asset_changed') ON CONFLICT(asset) DO UPDATE SET revision=excluded.revision,reason=excluded.reason", m.ID, m.Revision); err != nil {
+					return err
+				}
+				if v.DeferOrganization {
+					_, err = tx.ExecContext(ctx, "INSERT INTO organization_execution(asset) VALUES(?) ON CONFLICT(asset) DO UPDATE SET token='',expires=0", m.ID)
+				} else {
+					_, err = tx.ExecContext(ctx, "DELETE FROM organization_execution WHERE asset=?", m.ID)
+				}
+				if err != nil {
 					return err
 				}
 				if _, err = tx.ExecContext(ctx, `INSERT OR IGNORE INTO invalidation_jobs(asset,revision,snapshot,forget) VALUES(?,?,'',0)`, m.ID, m.Revision); err != nil {

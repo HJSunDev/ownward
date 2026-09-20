@@ -388,7 +388,7 @@ func runRemoteConnector(ctx context.Context, material connectionMaterial) error 
 	if host.streaming != nil {
 		defer host.streaming.Close()
 	}
-	proxy := mcp.NewServer(&mcp.Implementation{Name: "ownward", Version: version}, &mcp.ServerOptions{Instructions: session.InitializeResult().Instructions, Capabilities: &mcp.ServerCapabilities{}})
+	proxy := newConnectorServer(version, session.InitializeResult())
 	host.addMaterialTool(proxy, func(ctx context.Context, refs []string) ([]contract.InformationCheck, error) {
 		host.routeMu.Lock()
 		err := host.refreshRemote(ctx, &session)

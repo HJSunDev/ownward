@@ -72,7 +72,11 @@ func streamValue[T any](ctx context.Context, s *StreamingAssets, operation strin
 }
 func (s *StreamingAssets) Rules(context.Context) string { return CollaborationRules }
 func createValue(v contract.CreateInput) map[string]any {
-	return map[string]any{"kind": v.Kind, "content": v.Content, "contexts": v.Contexts, "explicit_relations": v.Relations, "source": v.Source}
+	out := map[string]any{"kind": v.Kind, "content": v.Content, "contexts": v.Contexts, "explicit_relations": v.Relations, "source": v.Source}
+	if v.OrganizationMode != "" {
+		out["organization_mode"] = v.OrganizationMode
+	}
+	return out
 }
 func (s *StreamingAssets) Create(ctx context.Context, v contract.CreateInput) (contract.MutationResult, error) {
 	out, e := streamValue[struct {
@@ -92,6 +96,9 @@ func (s *StreamingAssets) CreateBatch(ctx context.Context, v []contract.CreateIn
 }
 func (s *StreamingAssets) Update(ctx context.Context, v contract.UpdateInput) (contract.MutationResult, error) {
 	input := map[string]any{"id": v.ID, "expected_revision": v.ExpectedRevision}
+	if v.OrganizationMode != "" {
+		input["organization_mode"] = v.OrganizationMode
+	}
 	if v.Kind != nil {
 		input["kind"] = *v.Kind
 	}
@@ -193,13 +200,27 @@ func (s *StreamingAssets) Organization(id string) (contract.OrganizationState, e
 			if e != nil {
 				return contract.OrganizationState{}, e
 			}
-			return organizationState(r), nil
+			state := organizationState(r)
+			if state.Status == "pending" {
+				if managed, e := s.Store.DeferredOrganization(ctx, id); e != nil {
+					return contract.OrganizationState{}, e
+				} else if managed {
+					state.RequiredAction = "ownward_semantic_jobs"
+				}
+			}
+			return state, nil
 		}
 		if !errors.Is(e, sql.ErrNoRows) {
 			return contract.OrganizationState{}, e
 		}
 	}
-	return contract.OrganizationState{Status: "pending", Provider: "external-semantic-capability", RequiredAction: semanticWorkRequiredAction}, nil
+	action := semanticWorkRequiredAction
+	if managed, e := s.Store.DeferredOrganization(ctx, id); e != nil {
+		return contract.OrganizationState{}, e
+	} else if managed {
+		action = "ownward_semantic_jobs"
+	}
+	return contract.OrganizationState{Status: "pending", Provider: "external-semantic-capability", RequiredAction: action}, nil
 }
 func (s *StreamingAssets) SemanticStatus() map[string]int {
 	out, _ := s.Store.SemanticCounts(context.Background())

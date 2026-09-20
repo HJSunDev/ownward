@@ -27,7 +27,7 @@ type StorageServer struct {
 
 func NewStreamingStorage(service contract.StreamingProduct, version, dir string, budget *resourcebudget.Budget, diskBytes int64) *StorageServer {
 	resourcebudget.LimitRuntime(20 * resourcebudget.MiB)
-	server := mcp.NewServer(&mcp.Implementation{Name: "ownward", Version: version}, &mcp.ServerOptions{Instructions: core.CollaborationRules, Capabilities: &mcp.ServerCapabilities{Experimental: map[string]any{"ownward.bounded-storage": map[string]any{"version": 1}}}})
+	server := mcp.NewServer(&mcp.Implementation{Name: "ownward", Version: version}, &mcp.ServerOptions{PageSize: 1, Instructions: core.CollaborationRules, Capabilities: &mcp.ServerCapabilities{Experimental: map[string]any{"ownward.bounded-storage": map[string]any{"version": 1}, "ownward.deferred-organization": map[string]any{"version": 1, "mode": contract.DeferredOrganizationV1}}}})
 	s := &StorageServer{server: server, dir: dir, budget: budget, diskBytes: diskBytes}
 	registerStream[RulesInput, RulesOutput](server, service, "ownward_rules", "取得信息存取与使用的协作规则。", true, false)
 	registerStream[StatusInput, StatusOutput](server, service, "ownward_status", "查询一项资料的组织状态。", true, false)
@@ -39,6 +39,7 @@ func NewStreamingStorage(service contract.StreamingProduct, version, dir string,
 	registerStream[NavigateInput, NavigateOutput](server, service, "ownward_navigate", "从已有信息沿有据关系取得原文入口与条件；未穷尽时将 continuation 作为唯一导航起点接续。来源变化时从资产重新开始。", true, false)
 	registerStream[EvidenceSearchInput, EvidenceSearchOutput](server, service, "ownward_evidence_search", "在已经命中的一项长信息内按当前问题即时定位可追溯原文区间；不创建子资产或持久化分段。返回引用须用 ownward_evidence_read 读取。", true, false)
 	registerStream[EvidenceReadInput, EvidenceReadOutput](server, service, "ownward_evidence_read", "按证据检索给出的引用读取可追溯原文区间；来源资产、版本、区间和内容均由内核校验。需要完整信息时仍使用 ownward_read。", true, false)
+	registerStream[contract.OrganizationJobRequest, contract.OrganizationJobResult](server, service, "ownward_semantic_jobs", "宿主接续延后组织：claim领取唯一待办，renew续期，release释放，wait有界等待可领取工作。凭据不授予额外权限；未领取不能执行。", false, false)
 	registerStream[SemanticWorkInput, SemanticWorkOutput](server, service, "ownward_semantic_work", "以独立的语义能力角色取得待理解的有界工作。只分析工作中的资产和各自候选上下文，不使用当前任务意图，也不直接修改资产或关系图；关系涉及本项资产；引用同次调用额外提供的资料时，用 input_assets 声明完整输入的身份与版本，按提交契约判断。", true, false)
 	registerStream[SemanticSubmitInput, SemanticSubmitOutput](server, service, "ownward_semantic_submit", "提交带能力来源、依据、置信度和不确定性的语义候选。Ownward 内核校验工作版本、证据与结构后决定如何进入派生组织状态；能可靠概括资产但没有可靠关系时提交 complete 和空关系，只有无法可靠理解资产基本含义时才提交 uncertain。", false, false)
 	registerStream[SemanticSubmitBatchInput, SemanticSubmitBatchOutput](server, service, "ownward_semantic_submit_batch", "一次提交一批彼此独立的语义候选，减少批量沉淀和重建中的交互成本。每条结果独立校验并返回；失败项不会阻断有效项，调用方必须仅纠正并重试失败项，不得静默忽略。没有可靠关系不代表资产含义不确定，应提交 complete 和空关系。", false, false)

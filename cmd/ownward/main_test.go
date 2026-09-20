@@ -35,9 +35,14 @@ func TestIsolatedReleaseCLIAndMCPAssembleWithoutRepository(t *testing.T) {
 	client := mcp.NewClient(&mcp.Implementation{Name: "isolated-release-test", Version: "1"}, nil)
 	command := exec.Command(binary, "mcp", "--data-dir", mcpData)
 	command.Dir = root
+	var connectorLog bytes.Buffer
+	command.Stderr = &connectorLog
 	session, err := client.Connect(ctx, &mcp.CommandTransport{Command: command}, nil)
 	if err != nil {
-		t.Fatalf("isolated release MCP failed: %v", err)
+		t.Fatalf("isolated release MCP failed: %v\n%s", err, connectorLog.String())
+	}
+	if _, ok := session.InitializeResult().Capabilities.Experimental["ownward.deferred-organization"]; !ok {
+		t.Fatal("connector dropped deferred organization capability")
 	}
 	if _, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "ownward_rules", Arguments: map[string]any{}}); err != nil {
 		t.Fatalf("isolated release MCP did not assemble: %v", err)

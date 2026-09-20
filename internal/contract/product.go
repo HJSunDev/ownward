@@ -29,14 +29,16 @@ type MutationBatchResult struct {
 }
 
 type CreateInput struct {
-	Kind      domain.InformationKind
-	Content   string
-	Contexts  []domain.Context
-	Relations []domain.ExplicitRelation
-	Source    domain.Source
+	OrganizationMode string
+	Kind             domain.InformationKind
+	Content          string
+	Contexts         []domain.Context
+	Relations        []domain.ExplicitRelation
+	Source           domain.Source
 }
 
 type UpdateInput struct {
+	OrganizationMode string
 	ID               string
 	ExpectedRevision uint64
 	Kind             *domain.InformationKind
@@ -138,4 +140,35 @@ type ProductCapability interface {
 	SubmitSemanticBatch(context.Context, []semantics.Submission) ([]SemanticSubmissionResult, error)
 	SemanticStatus() map[string]int
 	Organization(string) (OrganizationState, error)
+}
+
+// DeferredOrganizationV1 opts a capable host into leased organization work.
+// Omission preserves the existing synchronous preparation contract.
+const DeferredOrganizationV1 = "deferred-v1"
+
+// OrganizationJobCapability is an opt-in extension of the product contract.
+type OrganizationJobCapability interface {
+	OrganizationJobs(context.Context, OrganizationJobRequest) (OrganizationJobResult, error)
+}
+
+type OrganizationJobRequest struct {
+	RequestID    string `json:"request_id,omitempty" jsonschema:"claim必填：每次领取使用唯一请求ID；不确定结果的重试沿用原ID"`
+	Action       string `json:"action" jsonschema:"claim、renew、release 或 wait"`
+	AssetID      string `json:"asset_id,omitempty"`
+	Lease        string `json:"lease,omitempty"`
+	LeaseSeconds int    `json:"lease_seconds,omitempty" jsonschema:"执行凭据有效期，1 到 600 秒，默认 300 秒"`
+	WaitSeconds  int    `json:"wait_seconds,omitempty" jsonschema:"wait 最长等待，0 到 30 秒"`
+}
+
+type OrganizationLease struct {
+	AssetID    string    `json:"asset_id"`
+	Revision   uint64    `json:"revision"`
+	Generation string    `json:"generation"`
+	Lease      string    `json:"lease"`
+	ExpiresAt  time.Time `json:"expires_at"`
+}
+
+type OrganizationJobResult struct {
+	Available bool               `json:"available"`
+	Claim     *OrganizationLease `json:"claim,omitempty"`
 }

@@ -39,6 +39,10 @@ func (s *StreamingAssets) publishRecord(ctx context.Context, generation string, 
 	return v, e
 }
 func (s *StreamingAssets) prepareStreamingWork(ctx context.Context, id string) (boundedstore.OrganizationVersion, error) {
+	ctx = boundedstore.EnsureOrganizationExecution(ctx, id)
+	if e := s.Store.CheckOrganizationExecution(ctx, id); e != nil {
+		return boundedstore.OrganizationVersion{}, e
+	}
 	if s.Embedder == nil {
 		return boundedstore.OrganizationVersion{}, errors.New("外部语义协作未配置向量能力")
 	}
@@ -213,6 +217,7 @@ func (s *StreamingAssets) prepareStreamingWork(ctx context.Context, id string) (
 
 func (s *StreamingAssets) semanticWorkTool(ctx context.Context, args streamjson.Node) (*contract.StreamResult, error) {
 	var input struct {
+		Lease    string   `json:"lease"`
 		Limit    int      `json:"limit"`
 		AssetIDs []string `json:"asset_ids"`
 	}
@@ -221,6 +226,21 @@ func (s *StreamingAssets) semanticWorkTool(ctx context.Context, args streamjson.
 	}
 	if len(input.AssetIDs) > 20 {
 		return nil, errors.New("定向语义工作不能超过二十项")
+	}
+	if input.Lease != "" {
+		if len(input.AssetIDs) != 1 {
+			return nil, errors.New("执行凭据必须对应唯一资产")
+		}
+		ctx = boundedstore.WithOrganizationExecution(ctx, input.AssetIDs[0], input.Lease)
+		if e := s.Store.CheckOrganizationExecution(ctx, input.AssetIDs[0]); e != nil {
+			return nil, e
+		}
+	} else {
+		for _, id := range input.AssetIDs {
+			if e := s.Store.CheckOrganizationExecution(boundedstore.WithOrganizationExecution(ctx, id, ""), id); e != nil {
+				return nil, e
+			}
+		}
 	}
 	ids := input.AssetIDs
 	if len(ids) == 0 {
@@ -244,11 +264,17 @@ func (s *StreamingAssets) semanticWorkTool(ctx context.Context, args streamjson.
 		if e != nil {
 			return nil, e
 		}
+		if input.Lease != "" && record.HasSemanticResult() && record.Status == "pending" {
+			if e = s.resumeOrganizationVector(ctx, v, record); e != nil {
+				return nil, e
+			}
+			continue
+		}
 		if record.HasPendingSemanticWork() {
 			works = append(works, v)
 		}
 	}
-	return s.buildRetrieval(ctx, func(ctx context.Context, w io.Writer) error {
+	result, err := s.buildRetrieval(ctx, func(ctx context.Context, w io.Writer) error {
 		io.WriteString(w, `{"work":[`)
 		for i, v := range works {
 			if i > 0 {
@@ -313,6 +339,23 @@ func (s *StreamingAssets) semanticWorkTool(ctx context.Context, args streamjson.
 		_, e := io.WriteString(w, "]}")
 		return e
 	})
+	if err != nil {
+		return nil, err
+	}
+	if input.Lease != "" && len(works) > 0 {
+		check := result.Check
+		result.Check = func(delivery context.Context) error {
+			if err := check(delivery); err != nil {
+				return err
+			}
+			checking, cancel := context.WithCancel(context.WithoutCancel(ctx))
+			defer cancel()
+			stop := context.AfterFunc(delivery, cancel)
+			defer stop()
+			return s.Store.CheckOrganizationExecution(checking, input.AssetIDs[0])
+		}
+	}
+	return result, nil
 }
 func (s *StreamingAssets) writeSemanticCandidate(ctx context.Context, w io.Writer, generation string, c semantics.CandidateReference) error {
 	m, e := s.Store.ReadAssetMeta(ctx, c.ID, c.Revision)
@@ -367,4 +410,64 @@ func (s *StreamingAssets) writeSemanticCandidate(ctx context.Context, w io.Write
 	}
 	_, e = io.WriteString(w, "}")
 	return e
+}
+
+// 只补已接受语义所缺的本地向量，原组织与回执原样保留，不重新派发AI工作。
+func (s *StreamingAssets) resumeOrganizationVector(ctx context.Context, before boundedstore.OrganizationVersion, record derived.Record) error {
+	reader, err := s.Store.OpenOrganization(ctx, before)
+	if err != nil {
+		return err
+	}
+	original, err := streamjson.Parse(ctx, s.Scratch, reader, resourcebudget.FromContext(ctx, s.Budget), s.DiskBytes)
+	reader.Close()
+	if err != nil {
+		return err
+	}
+	defer original.Close()
+	record.Embedding, err = s.Store.RawEmbedding(ctx, before)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if len(record.Embedding) == 0 {
+		record.Embedding, err = s.embedSemanticAnalysis(ctx, record.Analysis)
+		if err != nil {
+			return err
+		}
+	}
+	record.Status, record.Error = "ready", ""
+	if record.SemanticReceipt.Status == semantics.SubmissionUncertain {
+		record.Status, record.Error = "uncertain", record.SemanticReceipt.Uncertainty
+	}
+	writeOrg := func(w io.Writer) error {
+		analysis, ok, err := original.Root().Field("analysis")
+		if err != nil {
+			return err
+		}
+		if ok {
+			organization, ok, err := analysis.Field("organization")
+			if err != nil {
+				return err
+			}
+			if ok {
+				return organization.Copy(w)
+			}
+		}
+		_, err = io.WriteString(w, "null")
+		return err
+	}
+	data, err := streamjson.Build(ctx, s.Scratch, resourcebudget.FromContext(ctx, s.Budget), s.DiskBytes, func(w io.Writer) error {
+		return s.writeWithOrganization(ctx, w, record, writeOrg)
+	})
+	if err != nil {
+		return err
+	}
+	defer data.Close()
+	next, err := s.Store.StageOrganization(ctx, before.Generation, streamjson.RawSource{Node: data.Root()})
+	if err != nil {
+		return err
+	}
+	if next.Expected != before.ID {
+		return errors.New("向量恢复期间组织已变化")
+	}
+	return s.Store.PublishOrganization(ctx, next)
 }

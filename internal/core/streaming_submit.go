@@ -56,6 +56,21 @@ func (s *StreamingAssets) submitStreamingSemantic(ctx context.Context, node stre
 	if e := semanticOptional(node, "asset_id", &assetID, 4096); e != nil {
 		return OrganizationState{}, e
 	}
+	var lease string
+	if e := semanticOptional(node, "execution_lease", &lease, 256); e != nil {
+		return OrganizationState{}, e
+	}
+	ctx = boundedstore.WithOrganizationExecution(ctx, assetID, lease)
+	completedReplay := false
+	if e := s.Store.CheckOrganizationExecution(ctx, assetID); e != nil {
+		if !errors.Is(e, boundedstore.ErrOrganizationLease) {
+			return OrganizationState{}, e
+		}
+		if e = s.Store.CheckOrganizationReplay(ctx, assetID); e != nil {
+			return OrganizationState{}, e
+		}
+		completedReplay = true
+	}
 	writeOrg := func(w io.Writer) error {
 		if orgDocument == nil {
 			_, e := io.WriteString(w, "null")
@@ -151,31 +166,19 @@ func (s *StreamingAssets) submitStreamingSemantic(ctx context.Context, node stre
 	if e != nil {
 		return OrganizationState{}, e
 	}
+	if completedReplay {
+		if record.SemanticReceipt == nil {
+			return OrganizationState{}, boundedstore.ErrOrganizationLease
+		}
+		return organizationState(record), nil
+	}
 	if record.SemanticReceipt != nil && len(record.Embedding) > 0 {
 		return organizationState(record), nil
 	}
 	// Model work never holds a SQLite read snapshot.
 	var embeddingErr error
 	if len(record.Embedding) == 0 && s.Embedder != nil {
-		chunks := semanticEmbeddingChunks(normalized.Analysis)
-		vectors := make([][]float32, 0, len(chunks))
-		for offset := 0; offset < len(chunks); {
-			end := boundedEmbeddingBatchEnd(chunks, offset)
-			out, e := s.Embedder.EmbedDocuments(ctx, chunks[offset:end])
-			if e != nil {
-				embeddingErr = e
-				break
-			}
-			if len(out) != end-offset {
-				embeddingErr = errors.New("本地向量能力返回数量无效")
-				break
-			}
-			vectors = append(vectors, out...)
-			offset = end
-		}
-		if embeddingErr == nil {
-			record.Embedding, embeddingErr = aggregateSemanticVectors(vectors)
-		}
+		record.Embedding, embeddingErr = s.embedSemanticAnalysis(ctx, normalized.Analysis)
 	}
 	if record.SemanticReceipt != nil && len(record.Embedding) == 0 {
 		return organizationState(record), nil
@@ -271,4 +274,22 @@ func (s *StreamingAssets) semanticSubmitTool(ctx context.Context, operation stri
 		}
 		return writeJSON(w, map[string]any{"results": results})
 	})
+}
+
+func (s *StreamingAssets) embedSemanticAnalysis(ctx context.Context, analysis semantics.Analysis) ([]float32, error) {
+	chunks := semanticEmbeddingChunks(analysis)
+	vectors := make([][]float32, 0, len(chunks))
+	for offset := 0; offset < len(chunks); {
+		end := boundedEmbeddingBatchEnd(chunks, offset)
+		out, err := s.Embedder.EmbedDocuments(ctx, chunks[offset:end])
+		if err != nil {
+			return nil, err
+		}
+		if len(out) != end-offset {
+			return nil, errors.New("本地向量能力返回数量无效")
+		}
+		vectors = append(vectors, out...)
+		offset = end
+	}
+	return aggregateSemanticVectors(vectors)
 }

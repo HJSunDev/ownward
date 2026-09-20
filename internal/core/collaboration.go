@@ -141,6 +141,9 @@ func (s *Service) resolveSemanticWork(record derived.Record) (semantics.Work, er
 }
 
 func (s *Service) SubmitSemantic(ctx context.Context, input semantics.Submission) (OrganizationState, error) {
+	if input.ExecutionLease != "" {
+		return OrganizationState{}, errors.New("该入口不支持延后组织协议")
+	}
 	recoveries := s.prepareSemanticVectorRecoveries(ctx, []semantics.Submission{input})
 	return s.submitSemanticWithRecovery(ctx, input, recoveries[0])
 }
