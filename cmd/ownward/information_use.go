@@ -40,6 +40,10 @@ func (h *hostConnector) addOrganizationDemand(proxy *mcp.Server) {
 		if err != nil || result.IsError {
 			return result, nil, err
 		}
+		result, err = o.annotateStatus(ctx, result, self)
+		if err != nil {
+			return nil, nil, err
+		}
 		var status struct{ Organization contract.OrganizationState }
 		if err = decodeTool(result, &status); err != nil {
 			return nil, nil, err
@@ -50,15 +54,9 @@ func (h *hostConnector) addOrganizationDemand(proxy *mcp.Server) {
 		if status.Organization.RequiredAction != "ownward_semantic_jobs" {
 			return result, nil, nil
 		}
-		o.mu.Lock()
-		if !slices.Contains(o.demand, in.ID) {
-			if len(o.demand) >= 32 {
-				o.mu.Unlock()
-				return nil, nil, errors.New("当前依赖资料数已达上限；待办仍保留")
-			}
-			o.demand = append(o.demand, in.ID)
+		if !o.requestDemand(in.ID) {
+			return nil, map[string]any{"status": "unavailable", "id": in.ID, "message": "未能确认唯一的当前任务或依赖数已达上限；未取得前台优先资格，原文与后台待办保留。"}, nil
 		}
-		o.mu.Unlock()
 		select {
 		case o.wake <- struct{}{}:
 		default:

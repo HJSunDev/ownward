@@ -15,15 +15,16 @@ import (
 
 	"github.com/HJSunDev/ownward/internal/codexplugin"
 	"github.com/HJSunDev/ownward/internal/contract"
+	organizationruntime "github.com/HJSunDev/ownward/internal/organization"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type organizationHost struct {
 	host         *hostConnector
-	profile      codexplugin.OrganizationProfile
+	profile      contract.OrganizationExecutorProfile
+	executor     contract.OrganizationExecutor
 	call         func(context.Context, string, any) (*mcp.CallToolResult, error)
 	refreshRoute func(context.Context) error
-	tool         *mcp.Tool
 	journal      *organizationJournal
 	root         string
 	ctx          context.Context
@@ -35,9 +36,13 @@ type organizationHost struct {
 	mu           sync.Mutex
 	active       map[string]bool
 	demand       []string
+	demandOwners map[string]string
 	overflow     bool
 	status       string
 }
+
+// attachOrganization wires the built-in Codex adapter. Other hosts may call
+// attachOrganizationExecutor with any contract.OrganizationExecutor.
 
 func (h *hostConnector) attachOrganization(ctx context.Context, initialize *mcp.InitializeResult, tools []*mcp.Tool, call func(context.Context, string, any) (*mcp.CallToolResult, error), refreshRoute ...func(context.Context) error) func() {
 	path := os.Getenv("OWNWARD_ORGANIZATION_PROFILE")
@@ -65,6 +70,22 @@ func (h *hostConnector) attachOrganization(ctx context.Context, initialize *mcp.
 	if submit == nil {
 		return func() {}
 	}
+	executor := codexplugin.NewOrganizationExecutor(p, submit)
+	return h.attachOrganizationExecutor(ctx, initialize, tools, executor, call, refreshRoute...)
+}
+
+func (h *hostConnector) attachOrganizationExecutor(ctx context.Context, initialize *mcp.InitializeResult, tools []*mcp.Tool, executor contract.OrganizationExecutor, call func(context.Context, string, any) (*mcp.CallToolResult, error), refreshRoute ...func(context.Context) error) func() {
+	if executor == nil || initialize == nil || initialize.Capabilities == nil {
+		return func() {}
+	}
+	var capability struct {
+		Version int    `json:"version"`
+		Mode    string `json:"mode"`
+	}
+	capabilityJSON, _ := json.Marshal(initialize.Capabilities.Experimental["ownward.deferred-organization"])
+	if json.Unmarshal(capabilityJSON, &capability) != nil || capability.Version != 1 || capability.Mode != contract.DeferredOrganizationV1 {
+		return func() {}
+	}
 	root, e := os.UserCacheDir()
 	if e != nil {
 		return func() {}
@@ -75,7 +96,7 @@ func (h *hostConnector) attachOrganization(ctx context.Context, initialize *mcp.
 		return func() {}
 	}
 	child, cancel := context.WithCancel(ctx)
-	o := &organizationHost{host: h, profile: p, tool: submit, call: call, root: root, journal: j, ctx: child, cancel: cancel, done: make(chan struct{}), wake: make(chan struct{}, 1), active: map[string]bool{}, status: "等待宿主就绪"}
+	o := &organizationHost{host: h, profile: executor.Profile(), executor: executor, call: call, root: root, journal: j, ctx: child, cancel: cancel, done: make(chan struct{}), wake: make(chan struct{}, 1), active: map[string]bool{}, status: "等待宿主就绪"}
 	if len(refreshRoute) > 0 {
 		o.refreshRoute = refreshRoute[0]
 	}
@@ -87,6 +108,13 @@ func (h *hostConnector) attachOrganization(ctx context.Context, initialize *mcp.
 
 func (o *organizationHost) event(session, event string) {
 	o.mu.Lock()
+	if event == "UserPromptSubmit" || event == "Stop" || event == "Interrupt" || event == "SessionEnd" || event == "SessionClear" {
+		for id, owner := range o.demandOwners {
+			if owner == session {
+				o.removeDemandLocked(id)
+			}
+		}
+	}
 	if event == "UserPromptSubmit" {
 		if o.active[session] || len(o.active) < 128 {
 			o.active[session] = true
@@ -116,6 +144,44 @@ func (o *organizationHost) event(session, event string) {
 }
 func (o *organizationHost) setStatus(s string) { o.mu.Lock(); o.status = s; o.mu.Unlock() }
 func (o *organizationHost) state() string      { o.mu.Lock(); defer o.mu.Unlock(); return o.status }
+
+func (o *organizationHost) removeDemandLocked(id string) {
+	delete(o.demandOwners, id)
+	for i, value := range o.demand {
+		if value == id {
+			o.demand = append(o.demand[:i], o.demand[i+1:]...)
+			break
+		}
+	}
+}
+
+func (o *organizationHost) requestDemand(id string) bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	// Without an unambiguous live task, retain ordinary background work only.
+	if len(o.active) != 1 || o.overflow {
+		return false
+	}
+	if o.demandOwners == nil {
+		o.demandOwners = make(map[string]string)
+	}
+	if _, exists := o.demandOwners[id]; !exists {
+		if len(o.demand) >= 32 {
+			return false
+		}
+		o.demand = append(o.demand, id)
+	}
+	for session := range o.active {
+		o.demandOwners[id] = session
+	}
+	return true
+}
+
+func (o *organizationHost) currentDemand(id string) bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.active[o.demandOwners[id]]
+}
 func (o *organizationHost) pause(d time.Duration) bool {
 	t := time.NewTimer(d)
 	defer t.Stop()
@@ -217,6 +283,14 @@ func (o *organizationHost) loop() {
 			}
 			continue
 		}
+		if o.executor == nil {
+			o.ready.Store(false)
+			o.setStatus("组织执行器未注册；保留原写入路径")
+			if !o.pause(5 * time.Second) {
+				return
+			}
+			continue
+		}
 		if !probed {
 			probeLock, e := acquireServiceStartupLock(filepath.Join(o.root, "machine.lock"), 0)
 			if e != nil {
@@ -225,7 +299,11 @@ func (o *organizationHost) loop() {
 				}
 				continue
 			}
-			e = codexplugin.ProbeOrganization(o.ctx, o.profile, o.tool)
+			if probe, ok := o.executor.(interface{ Probe(context.Context) error }); ok {
+				e = probe.Probe(o.ctx)
+			} else {
+				e = o.executor.Validate(o.ctx)
+			}
 			probeLock.release()
 			if e != nil {
 				o.ready.Store(false)
@@ -237,7 +315,7 @@ func (o *organizationHost) loop() {
 			}
 			probed = true
 		}
-		if e := codexplugin.OrganizationCapacity(o.profile); e != nil {
+		if e := o.executor.Capacity(o.ctx); e != nil {
 			o.ready.Store(false)
 			o.setStatus("本机资源不足；待办保留，新增资料沿用原路径")
 			if !o.pause(5 * time.Second) {
@@ -292,7 +370,7 @@ func (o *organizationHost) loop() {
 				if statusErr == nil && (status.IsError || (decodeTool(status, &value) == nil && (value.Organization.Status == "ready" || value.Organization.Status == "uncertain"))) {
 					o.mu.Lock()
 					if len(o.demand) > 0 && o.demand[0] == claimAsset {
-						o.demand = o.demand[1:]
+						o.removeDemandLocked(claimAsset)
 					}
 					o.mu.Unlock()
 				}
@@ -310,7 +388,8 @@ func (o *organizationHost) loop() {
 		lease := *out.Claim
 		// Resolve an ambiguous earlier claim with its original identity, then
 		// yield unrelated work to a newly arrived foreground dependency.
-		if active && claimAsset == "" && lease.AssetID != demand {
+		active, e = o.journal.foreground(o.ctx)
+		if e != nil || (active && !o.currentDemand(lease.AssetID)) {
 			o.jobs(o.ctx, contract.OrganizationJobRequest{Action: "release", AssetID: lease.AssetID, Lease: lease.Lease})
 			lock.release()
 			continue
@@ -322,9 +401,10 @@ func (o *organizationHost) loop() {
 			// 领取不代表完成；仍可恢复的前台依赖保留，轮转避免挡住其他依赖。
 			o.mu.Lock()
 			if len(o.demand) > 0 && o.demand[0] == claimAsset {
-				o.demand = o.demand[1:]
 				if retry {
-					o.demand = append(o.demand, claimAsset)
+					o.demand = append(o.demand[1:], claimAsset)
+				} else {
+					o.removeDemandLocked(claimAsset)
 				}
 			}
 			o.mu.Unlock()
@@ -372,16 +452,20 @@ func (o *organizationHost) run(lease contract.OrganizationLease, self contract.P
 			o.broken.Store(true)
 			o.ready.Store(false)
 		}
+		if e == nil {
+			identity, _ := o.executionIdentity(ctx, lease.AssetID)
+			o.blockExecution(ctx, o.statusScope(self), identity, "组织准备恢复预算已用尽，不能自动继续；原文可读。须排除执行故障后恢复组织，不要继续轮询等待。", lease)
+		}
 		o.setStatus("组织准备预算已用尽；待办保留并继续其他资料")
 		return false
 	}
 	work, e := o.work(ctx, lease)
 	if e != nil {
-		o.journal.save(ctx, scope, preparation, "preparation_failed", 0, codexplugin.OrganizationUsage{})
+		o.journal.save(ctx, scope, preparation, "preparation_failed", 0, contract.OrganizationUsage{})
 		o.setStatus("组织材料暂不可用；待办保留")
 		return true
 	}
-	if _, e = o.journal.db.ExecContext(ctx, "DELETE FROM executions WHERE scope=? AND work=?", scope, preparation); e != nil {
+	if e = o.journal.DeleteExecution(ctx, scope, preparation); e != nil {
 		o.broken.Store(true)
 		o.ready.Store(false)
 		return false
@@ -392,11 +476,25 @@ func (o *organizationHost) run(lease contract.OrganizationLease, self contract.P
 	}
 	hash := sha256.Sum256(work)
 	key := hex.EncodeToString(hash[:])
+	active, foregroundErr := o.journal.foreground(ctx)
+	if foregroundErr != nil || (active && !o.currentDemand(lease.AssetID)) {
+		return true
+	}
 	allowed, prior, e := o.journal.begin(ctx, scope, key, o.profile)
 	if e != nil || !allowed {
 		if e != nil {
 			o.broken.Store(true)
 			o.ready.Store(false)
+		}
+		if e == nil {
+			var header []struct {
+				ID string `json:"id"`
+			}
+			identity := ""
+			if json.Unmarshal(work, &header) == nil && len(header) == 1 && header[0].ID != "" {
+				identity = contract.OrganizationExecutionIdentity(lease.AssetID, lease.Revision, lease.Generation, header[0].ID)
+			}
+			o.blockExecution(ctx, o.statusScope(self), identity, "组织恢复预算已用尽，不能自动继续；原文可读。须排除执行故障后恢复组织，不要继续轮询等待。", lease)
 		}
 		o.setStatus("组织恢复预算已用尽；待办保留并继续其他资料")
 		return false
@@ -404,31 +502,37 @@ func (o *organizationHost) run(lease contract.OrganizationLease, self contract.P
 	p := o.profile
 	p.MaxTokens -= prior
 	o.setStatus("正在组织；原文仍可读取")
-	accepted := false
-	usage, e := codexplugin.RunOrganization(ctx, p, work, o.tool, func(ctx context.Context, args json.RawMessage) (*mcp.CallToolResult, bool, error) {
+	runtime := &organizationruntime.Runtime{Journal: o.journal.Journal, Executor: o.executor}
+	result, e := runtime.RunReserved(ctx, organizationruntime.Execution{
+		Scope:   scope,
+		Key:     key,
+		Profile: p,
+		Task:    contract.OrganizationTask{AssetID: lease.AssetID, Revision: lease.Revision, Generation: lease.Generation, Work: append([]byte(nil), work...)},
+	}, prior, func(ctx context.Context, args []byte) (bool, []byte, error) {
 		current, e := o.work(ctx, lease)
 		if e != nil {
-			return nil, false, e
+			return false, nil, e
 		}
 		if sha256.Sum256(current) != hash {
-			return nil, false, errors.New("组织来源已变化，重新领取有效材料")
+			return false, nil, errors.New("组织来源已变化，重新领取有效材料")
 		}
 		var input map[string]json.RawMessage
 		if e = json.Unmarshal(args, &input); e != nil {
-			return nil, false, e
+			return false, nil, e
 		}
 		var sub map[string]json.RawMessage
 		if e = json.Unmarshal(input["submission"], &sub); e != nil {
-			return nil, false, e
+			return false, nil, e
 		}
 		var id string
 		if json.Unmarshal(sub["asset_id"], &id) != nil || id != lease.AssetID {
-			return nil, false, errors.New("组织提交越出当前资产")
+			return false, nil, errors.New("组织提交越出当前资产")
 		}
 		// The host carries execution identity; it does not supply semantic judgments.
 		sub["execution_lease"], _ = json.Marshal(lease.Lease)
 		input["submission"], _ = json.Marshal(sub)
 		r, e := o.call(ctx, "ownward_semantic_submit", input)
+		accepted := false
 		if e == nil && !r.IsError {
 			var result struct{ Organization contract.OrganizationState }
 			if decodeTool(r, &result) == nil {
@@ -436,25 +540,23 @@ func (o *organizationHost) run(lease contract.OrganizationLease, self contract.P
 				accepted = result.Organization.Status == "ready" || result.Organization.Status == "uncertain" || result.Organization.Status == "pending"
 			}
 		}
-		return r, accepted, e
-	}, func(u codexplugin.OrganizationUsage) error {
-		return o.journal.save(ctx, scope, key, "running", prior, u)
+		var response []byte
+		if r != nil {
+			response, _ = json.Marshal(r)
+		}
+		return accepted, response, e
 	})
-	status := "incomplete"
-	if accepted {
-		status = "accepted"
-	} else if e != nil {
-		status = "failed"
-	}
-	save, stop := context.WithTimeout(context.Background(), 3*time.Second)
-	defer stop()
-	if o.journal.save(save, scope, key, status, prior, usage) != nil {
-		o.broken.Store(true)
-		o.ready.Store(false)
-	}
-	if accepted {
+	if e == nil && result.Accepted {
 		o.setStatus("组织结果已被内核接受")
 	} else {
+		o.setStatus("本项组织未完成；保留待办与累计用量，继续其他资料")
+	}
+	if result.Usage.Executor.ID == "" {
+		result.Usage.Executor = o.executor.Descriptor()
+	}
+	if e != nil && result.Usage.TotalTokens == 0 {
+		// Runtime has already persisted the terminal status; preserve the old
+		// retry behavior for transient preparation/protocol failures.
 		o.setStatus("本项组织未完成；保留待办与累计用量，继续其他资料")
 	}
 	return !o.broken.Load()

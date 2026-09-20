@@ -11,11 +11,12 @@ import (
 // OrganizationState is the stable product-level view of derived organization.
 // It deliberately exposes neither the derived store nor a kernel implementation.
 type OrganizationState struct {
-	Relations      string `json:"relations,omitempty"`
-	Status         string `json:"status"`
-	Provider       string `json:"provider,omitempty"`
-	Error          string `json:"error,omitempty"`
-	RequiredAction string `json:"required_action,omitempty"`
+	ExecutionIdentity string `json:"execution_identity,omitempty"`
+	Relations         string `json:"relations,omitempty"`
+	Status            string `json:"status"`
+	Provider          string `json:"provider,omitempty"`
+	Error             string `json:"error,omitempty"`
+	RequiredAction    string `json:"required_action,omitempty"`
 }
 
 type MutationResult struct {

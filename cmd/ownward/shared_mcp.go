@@ -147,12 +147,27 @@ func connectorTool(tool *mcp.Tool) mcp.Tool {
 
 func organizationProxyCapabilities(result *mcp.InitializeResult) *mcp.ServerCapabilities {
 	out := &mcp.ServerCapabilities{}
+	// The protocol is advertised only when this connector has a validated
+	// executor registration. A kernel can expose semantic jobs without
+	// promising that every host can run deferred organization.
+	if !organizationExecutorConfigured() {
+		return out
+	}
 	if result != nil && result.Capabilities != nil {
 		if capability, ok := result.Capabilities.Experimental["ownward.deferred-organization"]; ok {
 			out.Experimental = map[string]any{"ownward.deferred-organization": capability}
 		}
 	}
 	return out
+}
+
+func organizationExecutorConfigured() bool {
+	path := strings.TrimSpace(os.Getenv("OWNWARD_ORGANIZATION_PROFILE"))
+	if path == "" {
+		return false
+	}
+	_, err := codexplugin.ReadOrganizationProfile(path)
+	return err == nil
 }
 
 func ensureSharedMCPService(ctx context.Context, dataDir, binaryVersion, compositionIdentity string, stderr io.Writer) (*sharedMCPDescriptor, error) {

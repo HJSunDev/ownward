@@ -263,7 +263,13 @@ func (h *hostConnector) call(ctx context.Context, request *mcp.CallToolRequest, 
 		}
 		return h.ownerTool(ctx, request.Params.Name, request.Params.Arguments)
 	}
-	result, err := h.callProduct(ctx, request, session)
+	var result *mcp.CallToolResult
+	var err error
+	if request.Params.Name == "ownward_status" && h.organization != nil {
+		result, err = h.organization.statusRequest(ctx, request, self, session)
+	} else {
+		result, err = h.callProduct(ctx, request, session)
+	}
 	if err != nil || result.IsError {
 		return result, err
 	}

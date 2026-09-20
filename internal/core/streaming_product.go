@@ -181,21 +181,29 @@ func (s *StreamingAssets) CheckInformation(ctx context.Context, bases []string) 
 	}](ctx, s, "ownward_check", map[string]any{"bases": bases})
 	return out.Results, e
 }
-func (s *StreamingAssets) Organization(id string) (contract.OrganizationState, error) {
+func (s *StreamingAssets) Organization(id string) (state contract.OrganizationState, err error) {
 	ctx := context.Background()
-	if _, e := s.Store.ReadAssetMeta(ctx, id, 0); e != nil {
+	meta, e := s.Store.ReadAssetMeta(ctx, id, 0)
+	if e != nil {
 		return contract.OrganizationState{}, e
 	}
 	if s.Embedder == nil {
 		return contract.OrganizationState{Status: "not_enabled"}, nil
 	}
 	g, _, e := s.Store.Generation(ctx)
+	workID := ""
+	defer func() {
+		if err == nil {
+			state.ExecutionIdentity = contract.OrganizationExecutionIdentity(id, meta.Revision, g, workID)
+		}
+	}()
 	if e != nil && !errors.Is(e, sql.ErrNoRows) {
 		return contract.OrganizationState{}, e
 	}
 	if e == nil {
 		v, e := s.Store.CurrentOrganization(ctx, g, id)
 		if e == nil {
+			workID = v.WorkID
 			r, e := s.Store.RecordHeader(ctx, v)
 			if e != nil {
 				return contract.OrganizationState{}, e

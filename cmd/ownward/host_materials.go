@@ -26,8 +26,7 @@ type hostMaterialEvent struct {
 	Response any    `json:"tool_response,omitempty"`
 }
 type hostHookOutput struct {
-	Specific     *hostHookContext `json:"hookSpecificOutput,omitempty"`
-	Organization string           `json:"organization_status,omitempty"`
+	Specific *hostHookContext `json:"hookSpecificOutput,omitempty"`
 }
 type hostHookContext struct {
 	Event   string `json:"hookEventName"`
@@ -61,9 +60,6 @@ func (h *hostConnector) addMaterialTool(proxy *mcp.Server, call func(context.Con
 			h.organization.event(input.Session, event)
 		}
 		if input.Event == "Stop" || input.Event == "Interrupt" || input.Event == "SessionEnd" {
-			if h.organization != nil {
-				return nil, hostHookOutput{Organization: h.organization.state()}, nil
-			}
 			return nil, hostHookOutput{}, nil
 		}
 		// 恢复只加载宿主原连接，不在 Hook 中询问或扩张访问权。
