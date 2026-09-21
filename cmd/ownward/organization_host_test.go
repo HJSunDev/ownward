@@ -42,6 +42,7 @@ func testOrganizationFormalConnector(t *testing.T, vectorFailure bool) {
 	if exe == "" {
 		t.Skip("requires selected local Codex binary; no live inference")
 	}
+	t.Setenv("OWNWARD_DEFERRED_WRITE", "1")
 	t.Setenv("NO_PROXY", "127.0.0.1,localhost")
 	t.Setenv("no_proxy", "127.0.0.1,localhost")
 	t.Setenv("LOCALAPPDATA", t.TempDir())

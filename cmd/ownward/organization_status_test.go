@@ -19,9 +19,11 @@ func TestOrganizationForegroundStatusAllowsPendingRouteWriter(t *testing.T) {
 		ID string `json:"id"`
 	}) (*mcp.CallToolResult, struct {
 		Organization contract.OrganizationState `json:"organization"`
-	}, error) { return nil, struct {
-		Organization contract.OrganizationState `json:"organization"`
-	}{contract.OrganizationState{Status: "pending", ExecutionIdentity: "work", RequiredAction: "ownward_semantic_jobs"}}, nil })
+	}, error) {
+		return nil, struct {
+			Organization contract.OrganizationState `json:"organization"`
+		}{contract.OrganizationState{Status: "pending", ExecutionIdentity: "work", RequiredAction: "ownward_semantic_jobs"}}, nil
+	})
 	ct, st := mcp.NewInMemoryTransports()
 	ss, err := server.Connect(ctx, st, nil)
 	if err != nil {
