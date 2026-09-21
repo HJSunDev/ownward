@@ -30,6 +30,7 @@ description: "仅用于项目文档的信息架构与职责归属：在需要新
 <project>/
 ├─ README.md                            — 项目入口
 ├─ AGENTS.md                            — AI常驻行为规则
+├─ collab/                              — 跨会话智能体协作运行态：登记、资源槽与线程产物
 └─ docs/
    ├─ README.md                         — 文档入口
    ├─ philosophy.md                     — 项目全周期的顶层哲学，指导产品、架构、体验与安全取舍

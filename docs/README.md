@@ -20,3 +20,4 @@
 - `modules/`：按业务能力聚合并持续演进的模块文档。
 - `workbench/`：人与智能体协作使用的工作台。
 - [策略库](workbench/problem-solving-approaches.md)：适用于不同场景的问题解决策略，持续积累与验证。
+- [跨会话智能体协作体系](workbench/cross-session-collaboration.md)：跨会话智能体的通用协作协议与场景剧本。

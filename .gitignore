@@ -3,6 +3,7 @@
 /coverage.out
 /.ownward/
 /.tmp/
+/collab/
 /.codex/governance/bin/
 /.codex/governance/runtime/
 *.test
