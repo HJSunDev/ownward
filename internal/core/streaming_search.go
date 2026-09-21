@@ -62,6 +62,13 @@ func (s *StreamingAssets) searchTool(ctx context.Context, args streamjson.Node) 
 	} else if ok {
 		ctx = boundedstore.WithContextFilter(ctx, n)
 	}
+	offset, e := integerField(args, "organization_offset")
+	if e != nil {
+		return nil, e
+	}
+	if offset < 0 || offset > 10000 {
+		return nil, errors.New("待组织枚举偏移必须介于零和一万之间")
+	}
 	identity, complete := smallSource(ctx, query, 256)
 	if !complete {
 		identity = ""
@@ -107,7 +114,13 @@ func (s *StreamingAssets) searchTool(ctx context.Context, args streamjson.Node) 
 			if e = s.writeSearchRecord(ctx, w, r, generation, r.ID, nil); e != nil {
 				return e
 			}
-			_, e = io.WriteString(w, "]}")
+			if _, e = io.WriteString(w, "]"); e != nil {
+				return e
+			}
+			if e = s.writePendingOrganization(ctx, w, generation, lexical, offset); e != nil {
+				return e
+			}
+			_, e = io.WriteString(w, "}")
 			return e
 		}
 		if generation == "" {
@@ -124,7 +137,13 @@ func (s *StreamingAssets) searchTool(ctx context.Context, args streamjson.Node) 
 					return e
 				}
 			}
-			_, e = io.WriteString(w, "]}")
+			if _, e = io.WriteString(w, "]"); e != nil {
+				return e
+			}
+			if e = s.writePendingOrganization(ctx, w, generation, lexical, offset); e != nil {
+				return e
+			}
+			_, e = io.WriteString(w, "}")
 			return e
 		}
 		type fused struct {
@@ -304,9 +323,74 @@ func (s *StreamingAssets) searchTool(ctx context.Context, args streamjson.Node) 
 				return e
 			}
 		}
-		_, e = io.WriteString(w, "]}")
+		if _, e = io.WriteString(w, "]"); e != nil {
+			return e
+		}
+		if e = s.writePendingOrganization(ctx, w, generation, lexical, offset); e != nil {
+			return e
+		}
+		_, e = io.WriteString(w, "}")
 		return e
 	})
+}
+
+// 硬条件：搜索交付面暴露查询相关的待组织资产——逐资产可枚举、有界、分页、
+// 当前主体范围（沿用检索授权与场景过滤）、按确定性相关性（词法评分）排序；
+// 复用 pending 与 required_action 现有词汇，不另造状态词。
+func (s *StreamingAssets) writePendingOrganization(ctx context.Context, w io.Writer, generation string, candidates []boundedstore.Ranked, offset int) error {
+	const page = 5
+	type entry struct {
+		ID             string `json:"id"`
+		Kind           string `json:"kind,omitempty"`
+		Revision       uint64 `json:"revision"`
+		Excerpt        string `json:"excerpt,omitempty"`
+		Status         string `json:"status"`
+		RequiredAction string `json:"required_action"`
+	}
+	assets := make([]entry, 0, page)
+	total := 0
+	for _, hit := range candidates {
+		m, e := s.Store.ReadAssetMeta(ctx, hit.ID, 0)
+		if e != nil {
+			continue
+		}
+		action := ""
+		if v, e := s.Store.CurrentOrganization(ctx, generation, hit.ID); e == nil {
+			r, e := s.Store.RecordHeader(ctx, v)
+			if e != nil {
+				return e
+			}
+			state := organizationState(r)
+			if state.Status != "pending" {
+				continue
+			}
+			action = state.RequiredAction
+		} else if !errors.Is(e, sql.ErrNoRows) && !errors.Is(e, boundedstore.ErrNotFound) {
+			return e
+		}
+		if action == "" {
+			if managed, e := s.Store.DeferredOrganization(ctx, hit.ID); e != nil {
+				return e
+			} else if managed {
+				action = "ownward_semantic_jobs"
+			} else {
+				action = "ownward_semantic_work"
+			}
+		}
+		total++
+		if total <= offset || len(assets) >= page {
+			continue
+		}
+		text, e := s.sourcePrefix(ctx, m, 241)
+		if e != nil {
+			return e
+		}
+		assets = append(assets, entry{ID: hit.ID, Kind: string(m.Kind), Revision: m.Revision, Excerpt: truncate(text, 240), Status: "pending", RequiredAction: action})
+	}
+	if _, e := io.WriteString(w, `,"pending_organization":`); e != nil {
+		return e
+	}
+	return writeJSON(w, map[string]any{"total": total, "assets": assets})
 }
 
 func (s *StreamingAssets) navigateTool(ctx context.Context, args streamjson.Node) (*contract.StreamResult, error) {

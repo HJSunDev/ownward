@@ -7,11 +7,18 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"os"
 
 	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/rpcstream"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// 快存（延后组织准备）由系统显式选择启用，与执行器是否就绪无关；
+// 执行器就绪只影响“是否有人提前组织”，不影响保存速度。
+func deferredWriteEnabled() bool {
+	return os.Getenv("OWNWARD_DEFERRED_WRITE") == "1"
+}
 
 func isAssetMutation(name string) bool {
 	return name == "ownward_create" || name == "ownward_create_batch" || name == "ownward_update"
@@ -76,7 +83,7 @@ func (h *hostConnector) callProduct(ctx context.Context, request *mcp.CallToolRe
 			h.record.Mutations = map[string]contract.OperationIdentity{}
 		}
 		h.record.Mutations[key] = op
-		deferred = h.organization != nil && h.organization.ready.Load()
+		deferred = deferredWriteEnabled()
 		if deferred {
 			if h.record.Deferred == nil {
 				h.record.Deferred = map[string]bool{}

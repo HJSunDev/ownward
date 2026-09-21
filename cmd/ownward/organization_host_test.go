@@ -30,30 +30,14 @@ import (
 // Actual official App Server, formal connector IO and authoritative kernel;
 // only model output and vectors are deterministic local fixtures.
 func TestOrganizationFormalConnectorContinueRestart(t *testing.T) {
-	testOrganizationFormalConnector(t, false, false)
+	testOrganizationFormalConnector(t, false)
 }
 
 func TestOrganizationAcceptedSemanticResumesVectors(t *testing.T) {
-	testOrganizationFormalConnector(t, true, false)
+	testOrganizationFormalConnector(t, true)
 }
 
-func TestOrganizationForegroundDependencyContinuesSameWork(t *testing.T) {
-	testOrganizationFormalConnector(t, false, true)
-}
-
-func TestOrganizationForegroundDependencyResumesVectors(t *testing.T) {
-	testOrganizationFormalConnector(t, true, true)
-}
-
-func TestOrganizationCompletedDemandYieldsToNextTask(t *testing.T) {
-	testOrganizationFormalConnector(t, false, true, "stale")
-}
-
-func TestOrganizationExhaustionVisibleToForeground(t *testing.T) {
-	testOrganizationFormalConnector(t, false, true, "exhausted")
-}
-
-func testOrganizationFormalConnector(t *testing.T, vectorFailure, demand bool, scenario ...string) {
+func testOrganizationFormalConnector(t *testing.T, vectorFailure bool) {
 	exe := os.Getenv("OWNWARD_TEST_CODEX_EXECUTABLE")
 	if exe == "" {
 		t.Skip("requires selected local Codex binary; no live inference")
@@ -61,9 +45,6 @@ func testOrganizationFormalConnector(t *testing.T, vectorFailure, demand bool, s
 	t.Setenv("NO_PROXY", "127.0.0.1,localhost")
 	t.Setenv("no_proxy", "127.0.0.1,localhost")
 	t.Setenv("LOCALAPPDATA", t.TempDir())
-	if demand {
-		t.Setenv("OWNWARD_INFORMATION_USE_PATHS", "v1")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 	check := func(e error) {
@@ -203,7 +184,9 @@ func testOrganizationFormalConnector(t *testing.T, vectorFailure, demand bool, s
 		})
 	}
 	stop := attach()
-	host.addOrganizationDemand(proxy)
+	host.addOrganizationDemand(proxy, func(c context.Context, request *mcp.CallToolRequest, name string, args any) (*mcp.CallToolResult, error) {
+		return organizationToolCall(c, scope, upstream, name, args)
+	})
 	defer func() { stop() }()
 	sr, cw := io.Pipe()
 	cr, sw := io.Pipe()
@@ -266,83 +249,6 @@ func testOrganizationFormalConnector(t *testing.T, vectorFailure, demand bool, s
 		return out.Organization.Status == "ready"
 	}
 	wait("executor readiness", func() bool { return host.organization != nil && host.organization.ready.Load() })
-	if demand {
-		event("UserPromptSubmit")
-		if len(scenario) > 0 && scenario[0] == "stale" {
-			reservation, err := acquireServiceStartupLock(filepath.Join(host.organization.root, "machine.lock"), 3*time.Second)
-			check(err)
-			defer reservation.release()
-			id := create("Queued dependency of a completed task")
-			call("ownward_organize", map[string]any{"id": id}, nil)
-			event("Stop")
-			event("UserPromptSubmit")
-			reservation.release()
-			select {
-			case got := <-started:
-				t.Fatalf("obsolete dependency dispatched during unrelated foreground: %s", got)
-			case <-time.After(1500 * time.Millisecond):
-			}
-			event("Stop")
-			wait("ordinary retained background work did not resume", func() bool { return ready(id) })
-			return
-		}
-		if len(scenario) > 0 && scenario[0] == "exhausted" {
-			id := create("FAIL bounded recovery")
-			call("ownward_organize", map[string]any{"id": id}, nil)
-			var status mcpserver.StatusOutput
-			wait("exhaustion not visible through normal status", func() bool {
-				call("ownward_status", map[string]any{"id": id}, &status)
-				return status.Organization.RequiredAction == "restore_organization_execution"
-			})
-			if status.Organization.Error == "" {
-				t.Fatal("missing exhaustion reason")
-			}
-			call("ownward_organize", map[string]any{"id": id}, &status)
-			if status.Organization.RequiredAction != "restore_organization_execution" {
-				t.Fatal("exhaustion became requested")
-			}
-			var raw mcpserver.ReadOutput
-			call("ownward_read", map[string]any{"id": id}, &raw)
-			oldIdentity := status.Organization.ExecutionIdentity
-			var update mcpserver.UpdateOutput
-			call("ownward_update", map[string]any{"id": id, "expected_revision": raw.Information.Revision, "content": "Corrected source with valid organization"}, &update)
-			call("ownward_status", map[string]any{"id": id}, &status)
-			if status.Organization.RequiredAction == "restore_organization_execution" || status.Organization.ExecutionIdentity == oldIdentity {
-				t.Fatal("old exhaustion contaminated new work")
-			}
-			call("ownward_organize", map[string]any{"id": id}, nil)
-			wait("changed work failed to recover", func() bool { return ready(id) })
-			other := create("Independent normal task")
-			call("ownward_organize", map[string]any{"id": other}, nil)
-			wait("exhausted work blocked unrelated source", func() bool { return ready(other) })
-			return
-		}
-		content := "当前任务需要的资料，只组织一次。"
-		if vectorFailure {
-			content = strings.Repeat(content, 100)
-		}
-		id := create(content)
-		if modelCalls.Load() != 0 {
-			t.Fatal("unrelated work started during foreground")
-		}
-		call("ownward_organize", map[string]any{"id": id}, nil)
-		call("ownward_organize", map[string]any{"id": id}, nil)
-		wait("foreground dependency was never organized", func() bool { return ready(id) })
-		call("ownward_organize", map[string]any{"id": id}, nil)
-		active, err := host.organization.journal.foreground(ctx)
-		check(err)
-		if !active {
-			t.Fatal("foreground ended before dependency completed")
-		}
-		if vectorFailure && vectors.failures.Load() != 1 {
-			t.Fatal("vector failure not reached")
-		}
-		stop()
-		if modelCalls.Load() != 1 {
-			t.Fatal("same dependency duplicated AI work", modelCalls.Load())
-		}
-		return
-	}
 	if vectorFailure {
 		event("UserPromptSubmit")
 		id := create(strings.Repeat("项目星河负责人是李明，周五完成审核。", 100))

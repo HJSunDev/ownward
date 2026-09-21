@@ -35,8 +35,6 @@ type organizationHost struct {
 	broken       atomic.Bool
 	mu           sync.Mutex
 	active       map[string]bool
-	demand       []string
-	demandOwners map[string]string
 	overflow     bool
 	status       string
 }
@@ -112,13 +110,6 @@ func (h *hostConnector) attachOrganizationExecutor(ctx context.Context, initiali
 
 func (o *organizationHost) event(session, event string) {
 	o.mu.Lock()
-	if event == "UserPromptSubmit" || event == "Stop" || event == "Interrupt" || event == "SessionEnd" || event == "SessionClear" {
-		for id, owner := range o.demandOwners {
-			if owner == session {
-				o.removeDemandLocked(id)
-			}
-		}
-	}
 	if event == "UserPromptSubmit" {
 		if o.active[session] || len(o.active) < 128 {
 			o.active[session] = true
@@ -149,43 +140,6 @@ func (o *organizationHost) event(session, event string) {
 func (o *organizationHost) setStatus(s string) { o.mu.Lock(); o.status = s; o.mu.Unlock() }
 func (o *organizationHost) state() string      { o.mu.Lock(); defer o.mu.Unlock(); return o.status }
 
-func (o *organizationHost) removeDemandLocked(id string) {
-	delete(o.demandOwners, id)
-	for i, value := range o.demand {
-		if value == id {
-			o.demand = append(o.demand[:i], o.demand[i+1:]...)
-			break
-		}
-	}
-}
-
-func (o *organizationHost) requestDemand(id string) bool {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	// Without an unambiguous live task, retain ordinary background work only.
-	if len(o.active) != 1 || o.overflow {
-		return false
-	}
-	if o.demandOwners == nil {
-		o.demandOwners = make(map[string]string)
-	}
-	if _, exists := o.demandOwners[id]; !exists {
-		if len(o.demand) >= 32 {
-			return false
-		}
-		o.demand = append(o.demand, id)
-	}
-	for session := range o.active {
-		o.demandOwners[id] = session
-	}
-	return true
-}
-
-func (o *organizationHost) currentDemand(id string) bool {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	return o.active[o.demandOwners[id]]
-}
 func (o *organizationHost) pause(d time.Duration) bool {
 	t := time.NewTimer(d)
 	defer t.Stop()
@@ -237,7 +191,6 @@ func (o *organizationHost) loop() {
 	defer func() { o.cancel(); <-heartDone }()
 	cursor := ""
 	claimRequest := ""
-	claimAsset, claimAfter := "", ""
 	probed := false
 	for o.ctx.Err() == nil {
 		o.mu.Lock()
@@ -329,13 +282,7 @@ func (o *organizationHost) loop() {
 		}
 		o.ready.Store(true)
 		active, e := o.journal.foreground(o.ctx)
-		o.mu.Lock()
-		demand := ""
-		if len(o.demand) > 0 {
-			demand = o.demand[0]
-		}
-		o.mu.Unlock()
-		if e != nil || (active && demand == "") {
+		if e != nil || active {
 			if e != nil {
 				o.broken.Store(true)
 				o.ready.Store(false)
@@ -357,28 +304,13 @@ func (o *organizationHost) loop() {
 		}
 		if claimRequest == "" {
 			claimRequest = connectionID()
-			claimAsset, claimAfter = demand, cursor
-			if claimAsset != "" {
-				claimAfter = ""
-			}
 		}
-		out, e := o.jobs(o.ctx, contract.OrganizationJobRequest{Action: "claim", RequestID: claimRequest, AssetID: claimAsset, AfterAssetID: claimAfter, Background: true, LeaseSeconds: 60})
+		out, e := o.jobs(o.ctx, contract.OrganizationJobRequest{Action: "claim", RequestID: claimRequest, AfterAssetID: cursor, Background: true, LeaseSeconds: 60})
 		if e == nil {
 			claimRequest = ""
 		}
 		if e != nil || out.Claim == nil {
 			lock.release()
-			if e == nil && claimAsset != "" {
-				status, statusErr := o.call(o.ctx, "ownward_status", map[string]any{"id": claimAsset})
-				var value struct{ Organization contract.OrganizationState }
-				if statusErr == nil && (status.IsError || (decodeTool(status, &value) == nil && (value.Organization.Status == "ready" || value.Organization.Status == "uncertain"))) {
-					o.mu.Lock()
-					if len(o.demand) > 0 && o.demand[0] == claimAsset {
-						o.removeDemandLocked(claimAsset)
-					}
-					o.mu.Unlock()
-				}
-			}
 			if e == nil && cursor == "" {
 				o.jobs(o.ctx, contract.OrganizationJobRequest{Action: "wait", WaitSeconds: 5})
 			}
@@ -393,29 +325,14 @@ func (o *organizationHost) loop() {
 		// Resolve an ambiguous earlier claim with its original identity, then
 		// yield unrelated work to a newly arrived foreground dependency.
 		active, e = o.journal.foreground(o.ctx)
-		if e != nil || (active && !o.currentDemand(lease.AssetID)) {
+		if e != nil || active {
 			o.jobs(o.ctx, contract.OrganizationJobRequest{Action: "release", AssetID: lease.AssetID, Lease: lease.Lease})
 			lock.release()
 			continue
 		}
 		cursor = lease.AssetID
-		retry := o.run(lease, self)
+		o.run(lease, self)
 		lock.release()
-		if claimAsset != "" {
-			// 领取不代表完成；仍可恢复的前台依赖保留，轮转避免挡住其他依赖。
-			o.mu.Lock()
-			if len(o.demand) > 0 && o.demand[0] == claimAsset {
-				if retry {
-					o.demand = append(o.demand[1:], claimAsset)
-				} else {
-					o.removeDemandLocked(claimAsset)
-				}
-			}
-			o.mu.Unlock()
-			if retry && !o.pause(time.Second) {
-				return
-			}
-		}
 	}
 }
 
@@ -481,7 +398,7 @@ func (o *organizationHost) run(lease contract.OrganizationLease, self contract.P
 	hash := sha256.Sum256(work)
 	key := hex.EncodeToString(hash[:])
 	active, foregroundErr := o.journal.foreground(ctx)
-	if foregroundErr != nil || (active && !o.currentDemand(lease.AssetID)) {
+	if foregroundErr != nil || active {
 		return true
 	}
 	allowed, prior, e := o.journal.begin(ctx, scope, key, o.policy)

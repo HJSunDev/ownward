@@ -20,7 +20,7 @@
         {
           "name": "cmd-ownward-connector_operation",
           "path": "cmd/ownward/connector_operation.go",
-          "sha256": "f96a9182a72850086558d7186261ec737ac2598851dbf2fcafcebe164241f983"
+          "sha256": "7bcf8f9c64962ad91db30a5da80d4280ea96cb25874d75a56d8a006daf74ef64"
         },
         {
           "name": "cmd-ownward-host-materials-go",
@@ -40,7 +40,7 @@
         {
           "name": "cmd-ownward-information_use-go",
           "path": "cmd/ownward/information_use.go",
-          "sha256": "4065c15b778676af0b74833d4aa212ebce8c565af1ec9fcbdf072d1e5f9a2e16"
+          "sha256": "1c3c1fdbca17767a812cec1f6abaea1473f3c7dc09caec77d2b16f7a912cd216"
         },
         {
           "name": "cmd-ownward-organization_connector-go",
@@ -50,7 +50,7 @@
         {
           "name": "cmd-ownward-organization_host-go",
           "path": "cmd/ownward/organization_host.go",
-          "sha256": "aa19ce336713a81dc51a0b01d27daca857dde1624773c4e8631bbe45ad5ee734"
+          "sha256": "4a8ce42013890e90ad2548dede9ea3af9eaf5868d3c29f879a400ab3ec14f110"
         },
         {
           "name": "cmd-ownward-organization_state-go",
@@ -60,7 +60,7 @@
         {
           "name": "cmd-ownward-remote_access",
           "path": "cmd/ownward/remote_access.go",
-          "sha256": "7d1e189800b8546783b03b077faf83d72d6e26f039fa9c9a8d8f515d7992f26d"
+          "sha256": "4764d64299b12527ff56a438d5b0fa84a781cf887a580b45a14bf1bc85471af0"
         },
         {
           "name": "cmd-ownward-remote_decision",
@@ -175,7 +175,7 @@
         {
           "name": "internal-codexplugin-plugins-ownward--mcp-json",
           "path": "internal/codexplugin/plugins/ownward/.mcp.json",
-          "sha256": "c59e149183164829b8eaf3f76fcc73bac98b3236cb147bce388e3f1a415a7e3c"
+          "sha256": "672e1ed4ccfef6b9c045525d6ee17371d5688fb1f8a9c4868b559b38d3fb86bf"
         },
         {
           "name": "internal-codexplugin-plugins-ownward-hooks-hooks-json",
@@ -225,7 +225,7 @@
         {
           "name": "mcp-adapter",
           "path": "internal/adapter/mcpserver/server.go",
-          "sha256": "a263ce3e367dac2660b2eab7482e967eb38a72da519a05c595d4fbfaa0d1aac1"
+          "sha256": "8822427676024a84dc5c5a47bb5d0229e71f6544bf2df842cc8f39007cf68711"
         },
         {
           "name": "shared-lock-unix",
@@ -240,7 +240,7 @@
         {
           "name": "shared-mcp",
           "path": "cmd/ownward/shared_mcp.go",
-          "sha256": "20ee1c631255def70e4bc254a1eddf54ca54cd1049d64741ce037a2182c02e16"
+          "sha256": "ffb25e085ee008f813129cb9bbdee2709e1f40cb7c467f00cb50b19c53631ea3"
         },
         {
           "name": "shared-process-unix",
@@ -264,14 +264,14 @@
       "dependencies": [
         {
           "role": "kernel",
-          "identity": "e87ab4a28f470968887c055a5e5c405fcdeee9c14724b59da2c464e32e393119"
+          "identity": "f97b66c9de04c8052f67d73179654d707663b4392d69770451e8c6242ea1f654"
         },
         {
           "role": "product-rules",
-          "identity": "7bb674243d6a487e16b3bf22fede7fecd8d538845a4c06b825b70788524e3c47"
+          "identity": "1eb81993761504bd72d76fc2c0dc380e697cf9d1e1827845da552803e2b71fce"
         }
       ],
-      "identity": "07ba194aefc2e7f026a5a9305c42c3cdd8977176891c1b4ca2b573e70f8127fc"
+      "identity": "64f98406290f63e6d84fb2761b5a4b0109574f6d9f52c21cbee420b59ab62ef8"
     },
     {
       "role": "assembly",
@@ -374,7 +374,7 @@
       "dependencies": [
         {
           "role": "access",
-          "identity": "07ba194aefc2e7f026a5a9305c42c3cdd8977176891c1b4ca2b573e70f8127fc"
+          "identity": "64f98406290f63e6d84fb2761b5a4b0109574f6d9f52c21cbee420b59ab62ef8"
         },
         {
           "role": "authority-substrate",
@@ -382,11 +382,11 @@
         },
         {
           "role": "kernel",
-          "identity": "e87ab4a28f470968887c055a5e5c405fcdeee9c14724b59da2c464e32e393119"
+          "identity": "f97b66c9de04c8052f67d73179654d707663b4392d69770451e8c6242ea1f654"
         },
         {
           "role": "product-rules",
-          "identity": "7bb674243d6a487e16b3bf22fede7fecd8d538845a4c06b825b70788524e3c47"
+          "identity": "1eb81993761504bd72d76fc2c0dc380e697cf9d1e1827845da552803e2b71fce"
         },
         {
           "role": "semantic",
@@ -397,7 +397,7 @@
           "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
         }
       ],
-      "identity": "6d516af58592e37ddaddd2d93c8658f35ff40a483ee5c16fd865213fe3dd6a0c"
+      "identity": "0f3085fee3aa18be80597adf9e81654c27808b741f01e898f3cb45aef96ec2fb"
     },
     {
       "role": "authority-substrate",
@@ -1103,7 +1103,7 @@
         {
           "name": "internal-core-streaming_search-go",
           "path": "internal/core/streaming_search.go",
-          "sha256": "87b2d6928d59f9309891331cb5732c4942d597108d6758384b1806f6dcdf344b"
+          "sha256": "3310096217389feb76a01c5e2e9e0fb60e59f7c649fe4f69fc5346fb88a221d6"
         },
         {
           "name": "internal-core-streaming_semantic_fields-go",
@@ -1189,7 +1189,7 @@
         },
         {
           "role": "product-rules",
-          "identity": "7bb674243d6a487e16b3bf22fede7fecd8d538845a4c06b825b70788524e3c47"
+          "identity": "1eb81993761504bd72d76fc2c0dc380e697cf9d1e1827845da552803e2b71fce"
         },
         {
           "role": "semantic",
@@ -1200,7 +1200,7 @@
           "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
         }
       ],
-      "identity": "e87ab4a28f470968887c055a5e5c405fcdeee9c14724b59da2c464e32e393119"
+      "identity": "f97b66c9de04c8052f67d73179654d707663b4392d69770451e8c6242ea1f654"
     },
     {
       "role": "product-rules",
@@ -1215,14 +1215,14 @@
         {
           "name": "collaboration-rules",
           "path": "internal/productrules/rules.go",
-          "sha256": "3d7bea91a71ba80cde10b78d501f71078396a72837d992ea9914cc8c13f9f1c7"
+          "sha256": "2b3f850d63979f923c95ae8c8ef77138040456bf453fd332dc90c9fb26305f26"
         }
       ],
       "config": {
         "version": "ownward.product-rules/v1"
       },
       "dependencies": [],
-      "identity": "7bb674243d6a487e16b3bf22fede7fecd8d538845a4c06b825b70788524e3c47"
+      "identity": "1eb81993761504bd72d76fc2c0dc380e697cf9d1e1827845da552803e2b71fce"
     },
     {
       "role": "semantic",
@@ -1469,7 +1469,7 @@
       "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
     }
   ],
-  "identity": "dbb755f465ec6802967e4a7e77eb909255994bc0d5c32b403a675e41a7277ed3",
+  "identity": "68c44860101963d316fe235cda87b1d1bb31fb9589eac97232e01160d7609f32",
   "audit": {
     "described_product_candidate": "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8",
     "migration_source_git": "dc2c7a09e67f06cfaacbe0a201c7ff27b20d6182"

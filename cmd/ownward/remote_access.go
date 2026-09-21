@@ -458,7 +458,23 @@ func runRemoteConnector(ctx context.Context, material connectionMaterial) error 
 			return result, err
 		})
 	}
-	host.addOrganizationDemand(proxy)
+	host.addOrganizationDemand(proxy, func(ctx context.Context, request *mcp.CallToolRequest, name string, args any) (*mcp.CallToolResult, error) {
+		host.routeMu.Lock()
+		err := host.refreshRemote(ctx, &session)
+		host.routeMu.Unlock()
+		if err != nil {
+			return nil, err
+		}
+		host.routeMu.RLock()
+		defer host.routeMu.RUnlock()
+		if err := host.initialize(ctx, request); err != nil {
+			return nil, err
+		}
+		if err := host.processEnrollments(ctx, request.Session); err != nil {
+			return nil, err
+		}
+		return session.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
+	})
 	mcp.AddTool(proxy, &mcp.Tool{Name: "ownward_connect", Description: "按用户需求连接另一个智能体。生成公开连接材料，在目标宿主打开；批准由本可信宿主办理。"}, func(ctx context.Context, request *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, connectionMaterial, error) {
 		host.routeMu.Lock()
 		err := host.refreshRemote(ctx, &session)

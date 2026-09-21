@@ -121,12 +121,13 @@ reservation and an explicit `OWNWARD_ORGANIZATION_PROFILE`; without it, the
 existing write behavior is unchanged. See [executor setup and limits](docs/modules/information-change/README.md#可选组织执行器).
 This path remains disabled by default pending the fast/deep feature's overall acceptance.
 
-`OWNWARD_INFORMATION_USE_PATHS=v1` opts the connector into demand-based fast/deep
-retrieval instructions. The existing agent chooses within its task; no extra
+`OWNWARD_INFORMATION_USE_PATHS=v1` opts the connector into fast/deep retrieval
+instructions. The existing agent chooses within its task; no extra
 classifier call is added. Quick retrieval carries valid sources and accumulated
-usage into deeper work when needed. With a qualified organization executor, the
-connector also exposes `ownward_organize` for sources required by the foreground
-task. Remove the variable and reconnect to restore the original instructions;
+usage into deeper work when needed. The connector exposes `ownward_organize` for
+sources required by the foreground task: it claims the pending work and returns
+the materials for the caller to organize and submit; no background executor is
+required. Remove the variable and reconnect to restore the original instructions;
 saved data and completed organization are retained. See the [integration contract](docs/modules/information-use/README.md#可选快速取用与接续).
 
 Local use needs no connection file. To select a remote information system, run

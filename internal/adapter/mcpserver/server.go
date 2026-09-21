@@ -101,13 +101,29 @@ type UpdateOutput struct {
 }
 
 type SearchInput struct {
-	Query    string           `json:"query" jsonschema:"当前检索目标；复杂问题应随累计证据调整查询"`
-	Contexts []domain.Context `json:"contexts,omitempty" jsonschema:"当前目的要求满足的场景约束"`
-	Limit    int              `json:"limit,omitempty" jsonschema:"返回数量，一到一百；默认十"`
+	Query              string           `json:"query" jsonschema:"当前检索目标；复杂问题应随累计证据调整查询"`
+	Contexts           []domain.Context `json:"contexts,omitempty" jsonschema:"当前目的要求满足的场景约束"`
+	Limit              int              `json:"limit,omitempty" jsonschema:"返回数量，一到一百；默认十"`
+	OrganizationOffset int              `json:"organization_offset,omitempty" jsonschema:"待组织资产枚举的偏移；结果附带查询相关的未组织资产，按确定性相关性排序，可用于分页"`
+}
+
+type PendingOrganizationAsset struct {
+	ID             string `json:"id"`
+	Kind           string `json:"kind,omitempty"`
+	Revision       uint64 `json:"revision"`
+	Excerpt        string `json:"excerpt,omitempty"`
+	Status         string `json:"status"`
+	RequiredAction string `json:"required_action"`
+}
+
+type PendingOrganization struct {
+	Total  int                        `json:"total"`
+	Assets []PendingOrganizationAsset `json:"assets"`
 }
 
 type SearchOutput struct {
-	Results []contract.SearchResult `json:"results"`
+	Results             []contract.SearchResult `json:"results"`
+	PendingOrganization *PendingOrganization    `json:"pending_organization,omitempty"`
 }
 
 type NavigateInput struct {

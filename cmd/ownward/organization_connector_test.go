@@ -25,7 +25,7 @@ func TestOrganizationWriteRetryKeepsOriginalMode(t *testing.T) {
 	}))
 	defer control.Close()
 	h := &hostConnector{descriptor: &sharedMCPDescriptor{Endpoint: control.URL}, system: "test", profile: "test", vault: localowner.Vault{Root: t.TempDir()}, organization: &organizationHost{wake: make(chan struct{}, 1)}}
-	h.organization.ready.Store(true)
+	t.Setenv("OWNWARD_DEFERRED_WRITE", "1")
 	server := mcp.NewServer(&mcp.Implementation{Name: "test"}, nil)
 	var modes, operations []string
 	server.AddTool(&mcp.Tool{Name: "ownward_create", InputSchema: map[string]any{"type": "object"}}, func(c context.Context, r *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -82,6 +82,73 @@ func TestOrganizationWriteRetryKeepsOriginalMode(t *testing.T) {
 	}
 	if len(h.record.Mutations) != 0 || len(h.record.Deferred) != 0 {
 		t.Fatal("completed operation not cleared")
+	}
+}
+
+func TestDeferredWriteGateIndependentOfExecutor(t *testing.T) {
+	run := func(t *testing.T, switchValue string, executorReady bool) string {
+		ctx := context.Background()
+		budget, _ := resourcebudget.New(2*resourcebudget.MiB, 128*1024)
+		scope := rpcstream.New(t.TempDir(), budget, 16*resourcebudget.MiB)
+		defer scope.Close()
+		ctx = rpcstream.WithScope(ctx, scope)
+		control := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			json.NewEncoder(w).Encode(map[string]any{"generation": 1})
+		}))
+		defer control.Close()
+		h := &hostConnector{descriptor: &sharedMCPDescriptor{Endpoint: control.URL}, system: "test", profile: "test", vault: localowner.Vault{Root: t.TempDir()}}
+		if executorReady {
+			h.organization = &organizationHost{wake: make(chan struct{}, 1)}
+			h.organization.ready.Store(true)
+		}
+		t.Setenv("OWNWARD_DEFERRED_WRITE", switchValue)
+		server := mcp.NewServer(&mcp.Implementation{Name: "test"}, nil)
+		var mode string
+		server.AddTool(&mcp.Tool{Name: "ownward_create", InputSchema: map[string]any{"type": "object"}}, func(c context.Context, r *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			call, e := scope.Resolve(r.Params.Name, r.Params.Arguments)
+			if e != nil {
+				return nil, e
+			}
+			var raw struct {
+				Mode string `json:"organization_mode"`
+			}
+			if e = call.Arguments.DecodeSmall(&raw, 4096); e != nil {
+				return nil, e
+			}
+			mode = raw.Mode
+			return &mcp.CallToolResult{}, nil
+		})
+		ct, st := mcp.NewInMemoryTransports()
+		ss, e := server.Connect(ctx, st, nil)
+		if e != nil {
+			t.Fatal(e)
+		}
+		defer ss.Close()
+		client, e := mcp.NewClient(&mcp.Implementation{Name: "test"}, nil).Connect(ctx, ct, nil)
+		if e != nil {
+			t.Fatal(e)
+		}
+		defer client.Close()
+		envelope, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": "ownward_create", "arguments": map[string]any{"content": "source"}}})
+		projected, call, e := scope.Project(ctx, bytes.NewReader(envelope))
+		if e != nil {
+			t.Fatal(e)
+		}
+		defer call.Close()
+		var request struct{ Params mcp.CallToolParamsRaw }
+		if e = json.Unmarshal(projected, &request); e != nil {
+			t.Fatal(e)
+		}
+		if _, e = h.callProduct(ctx, &mcp.CallToolRequest{Params: &request.Params}, client); e != nil {
+			t.Fatal(e)
+		}
+		return mode
+	}
+	if mode := run(t, "", true); mode != "" {
+		t.Fatalf("executor readiness must not enable deferred write, got %q", mode)
+	}
+	if mode := run(t, "1", false); mode != "deferred-v1" {
+		t.Fatalf("explicit switch must enable deferred write, got %q", mode)
 	}
 }
 

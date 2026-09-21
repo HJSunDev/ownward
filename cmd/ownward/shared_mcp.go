@@ -122,7 +122,9 @@ func runSharedMCPConnector(ctx context.Context, dataDir, binaryVersion, composit
 			return host.call(callContext, request, session)
 		})
 	}
-	host.addOrganizationDemand(proxy)
+	host.addOrganizationDemand(proxy, func(ctx context.Context, request *mcp.CallToolRequest, name string, args any) (*mcp.CallToolResult, error) {
+		return organizationToolCall(ctx, streamScope, session, name, args)
+	})
 	if err := runConnectorIO(ctx, proxy, streamScope, os.Stdin, os.Stdout, stopOrganization); err != nil {
 		return fmt.Errorf("共享 Ownward stdio 连接器结束: %w", err)
 	}

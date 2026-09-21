@@ -125,32 +125,16 @@ func TestOrganizationCompactPreservesForeground(t *testing.T) {
 	defer j.close()
 	o := &organizationHost{ctx: context.Background(), journal: j, active: map[string]bool{}, wake: make(chan struct{}, 1)}
 	o.event("a", "UserPromptSubmit")
-	if !o.requestDemand("first") {
-		t.Fatal("missing active demand")
-	}
 	o.event("a", "SessionStart")
-	if !o.currentDemand("first") {
-		t.Fatal("compaction lost active demand")
+	if active, err := j.foreground(o.ctx); err != nil || !active {
+		t.Fatal("compaction cleared active foreground", active, err)
 	}
 	o.event("b", "UserPromptSubmit")
 	o.event("b", "Stop")
-	if !o.currentDemand("first") {
-		t.Fatal("another session ended this demand")
-	}
 	if active, err := j.foreground(o.ctx); err != nil || !active {
-		t.Fatal("compaction or another session cleared active foreground", active, err)
+		t.Fatal("another session ended active foreground", active, err)
 	}
 	o.event("a", "SessionClear")
-	if o.currentDemand("first") || len(o.demand) != 0 {
-		t.Fatal("clear retained demand priority")
-	}
-	o.event("a", "UserPromptSubmit")
-	o.requestDemand("second")
-	o.event("a", "UserPromptSubmit")
-	if o.currentDemand("second") {
-		t.Fatal("new task inherited old priority")
-	}
-	o.event("a", "Stop")
 	if active, err := j.foreground(o.ctx); err != nil || active {
 		t.Fatal("clear retained obsolete turn", active, err)
 	}
