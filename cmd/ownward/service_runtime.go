@@ -371,7 +371,11 @@ func (h *serviceHost) receive(w http.ResponseWriter, r *http.Request) {
 			out = h.receiver
 		case "cancel":
 			if h.receiver.ID != in.ID {
-				err = errors.New("目的地没有此交接")
+				// A delayed cleanup is about this transfer only. A newer receiver
+				// reservation must remain untouched, even after a lost response.
+				err = os.RemoveAll(root)
+				out = receiverState{ID: in.ID, Status: "cancelled"}
+				break
 			} else if h.receiver.Status == "active" {
 				err = errors.New("目标已接管，不能取消")
 			} else {
@@ -457,6 +461,8 @@ func (h *serviceHost) migrate(w http.ResponseWriter, r *http.Request) {
 		ID            string            `json:"id"`
 		Target        contract.Location `json:"target"`
 		LocationSaved bool              `json:"location_saved"`
+		Revision      uint64            `json:"revision,omitempty"`
+		Accept        bool              `json:"accept,omitempty"`
 	}
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10))
 	decoder.DisallowUnknownFields()
@@ -471,8 +477,29 @@ func (h *serviceHost) migrate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch strings.TrimPrefix(r.URL.Path, "/remote/migration/") {
+	case "status":
+		out, err = runtime.UserControl().HandoffStatus(ctx, in.ID)
+	case "decide":
+		out, err = runtime.Management().DecideHandoff(ctx, in.ID, in.Revision, in.Accept)
 	case "prepare":
+		// Serialize receiver preparation with cancellation cleanup. Decisions
+		// themselves remain immediate and never wait for this network lock.
+		h.transferMu.Lock()
+		defer h.transferMu.Unlock()
 		if _, _, err = runtime.UserControl().Begin(ctx, contract.ManagePermission); err != nil {
+			break
+		}
+		var previous contract.Handoff
+		previous, err = runtime.UserControl().HandoffStatus(ctx, in.ID)
+		if err == nil {
+			if previous.Target != in.Target {
+				err = informationcontrol.ErrDenied
+			} else {
+				out = previous
+			}
+			break
+		}
+		if !errors.Is(err, informationcontrol.ErrHandoffNotFound) {
 			break
 		}
 		if in.Target.ServiceID == h.settings.Location.ServiceID || in.Target.Composition != h.settings.Location.Composition || in.Target.SystemID != h.settings.Location.SystemID {
@@ -554,7 +581,7 @@ func (h *serviceHost) migrate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case "cancel":
-		err = runtime.UserControl().CancelHandoff(ctx, in.ID)
+		err = runtime.Management().CancelHandoff(ctx, in.ID)
 		if err == nil {
 			err = h.cleanCancelled(ctx, runtime)
 		}
@@ -700,6 +727,9 @@ func (h *serviceHost) executeHandoff(ctx context.Context, runtime *assembly.Runt
 
 func (h *serviceHost) finishHandoff(ctx context.Context, runtime *assembly.Runtime, handoff contract.Handoff) (receiverState, error) {
 	var result receiverState
+	// The durable Handoff already owns the destination. A damaged presentation
+	// hint must never block activation after the source has retired.
+	_ = saveOwnerEntry(h.settings.DataDir, handoff.Target.SystemID, "", &handoff)
 	id := handoff.ID
 	root, err := transferPath(h.settings, id)
 	if err != nil {
@@ -747,6 +777,29 @@ func (h *serviceHost) finishHandoff(ctx context.Context, runtime *assembly.Runti
 
 func (h *serviceHost) cleanCancelled(ctx context.Context, runtime *assembly.Runtime) error {
 	state := runtime.UserControl().State()
+	if state.ReadError != nil {
+		return state.ReadError
+	}
+	pending := false
+	if state.Access != nil {
+		for _, cancelled := range state.Access.Cancelled {
+			pending = pending || !cancelled.Cleaned
+		}
+	}
+	if !pending {
+		return nil
+	}
+	// The migration holds transferMu through Runtime.Close, which waits for
+	// this worker. Never block shutdown on that same lock. The existing cleanup
+	// loop retries a busy writer; no directory is declared clean meanwhile.
+	if !h.transferMu.TryLock() {
+		return errors.New("迁移仍在处理，取消清理将自动接续")
+	}
+	defer h.transferMu.Unlock()
+	state = runtime.UserControl().State()
+	if state.ReadError != nil {
+		return state.ReadError
+	}
 	if state.Access == nil {
 		return nil
 	}

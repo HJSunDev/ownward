@@ -2,12 +2,17 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"database/sql"
 	"encoding/json"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -217,9 +222,50 @@ func TestInstalledRuntimeTransfersAndResumesWithoutAnotherAuthority(t *testing.T
 	if remoteCall(ctx, untrusted, target.Location, "/remote/receive/prepare", "", map[string]string{"id": connectionID()}, nil) == nil {
 		t.Fatal("unbound source could transfer")
 	}
+	// No host is waiting for this decision. The authority must complete the
+	// rejection and wake receiver cleanup itself, including across restart.
+	rejectedID := connectionID()
+	var rejected contract.Handoff
+	if err := remoteCall(ctx, client, source.Location, "/remote/migration/prepare", managerToken, map[string]any{"id": rejectedID, "target": target.Location}, &rejected); err != nil {
+		t.Fatal(err)
+	}
+	if err := remoteCall(ctx, client, source.Location, "/remote/migration/decide", ownerToken, map[string]any{"id": rejectedID, "revision": rejected.Revision, "accept": false}, &rejected); err != nil || rejected.ApprovalStatus != "declined" {
+		t.Fatal("offline rejection", rejected, err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		var state receiverState
+		err := remoteCall(ctx, peer, target.Location, "/remote/receive/status", "", map[string]string{"id": rejectedID}, &state)
+		if err == nil && state.Status == "cancelled" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("rejected receiver was not cleaned", state, err)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	stopSource()
+	stopSource = start(source)
+	if err := remoteCall(ctx, client, source.Location, "/remote/migration/prepare", managerToken, map[string]any{"id": rejectedID, "target": target.Location}, &rejected); err != nil || rejected.Phase != "cancelled" {
+		t.Fatal("reconnected host did not recover terminal decision", rejected, err)
+	}
 	id := connectionID()
 	var handoff contract.Handoff
 	if err := remoteCall(ctx, client, source.Location, "/remote/migration/prepare", managerToken, map[string]any{"id": id, "target": target.Location}, &handoff); err != nil {
+		t.Fatal(err)
+	}
+	// A lost old cleanup response is retried after the next reservation exists.
+	if err := remoteCall(ctx, peer, target.Location, "/remote/receive/cancel", "", map[string]string{"id": rejectedID}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := remoteCall(ctx, client, source.Location, "/remote/migration/cancel", ownerToken, map[string]string{"id": rejectedID}, nil); err != nil {
+		t.Fatal(err)
+	}
+	var nextReceiver receiverState
+	if err := remoteCall(ctx, peer, target.Location, "/remote/receive/status", "", map[string]string{"id": id}, &nextReceiver); err != nil || nextReceiver.Status != "prepared" {
+		t.Fatal("late cleanup touched next receiver", nextReceiver, err)
+	}
+	if err := remoteCall(ctx, client, source.Location, "/remote/migration/decide", managerToken, map[string]any{"id": id, "revision": handoff.Revision, "accept": true}, &handoff); err != nil {
 		t.Fatal(err)
 	}
 	for _, token := range []string{"invalid-credential", revokedToken} {
@@ -228,6 +274,13 @@ func TestInstalledRuntimeTransfersAndResumesWithoutAnotherAuthority(t *testing.T
 		}
 	}
 	moving := time.Now()
+	entryPath := filepath.Join(source.DataDir, "owner-window.json")
+	if err := os.Remove(entryPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(entryPath, 0700); err != nil {
+		t.Fatal(err)
+	}
 	var result receiverState
 	for {
 		err = remoteCall(ctx, client, source.Location, "/remote/migration/start", managerToken, map[string]any{"id": id, "location_saved": true}, &result)
@@ -242,6 +295,31 @@ func TestInstalledRuntimeTransfersAndResumesWithoutAnotherAuthority(t *testing.T
 		}
 	}
 	migrationTime := time.Since(moving)
+	// A corrupt optional hint did not block source retirement or activation;
+	// once its path is repaired discovery reconstructs it from durable state.
+	if err := os.Remove(entryPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := discoverOwnerEntry(source.DataDir, target.Location.SystemID, "", &contract.Handoff{Phase: "retired", Target: target.Location}); err != nil {
+		t.Fatal(err)
+	}
+	for _, deployment := range []installation{source, target} {
+		b, e := os.ReadFile(filepath.Join(deployment.DataDir, "owner-window.json"))
+		if e != nil {
+			t.Fatal("missing migrated owner entry", e)
+		}
+		var entry ownerEntryDescriptor
+		if e = json.Unmarshal(b, &entry); e != nil {
+			t.Fatal(e)
+		}
+		if deployment.DataDir == source.DataDir {
+			if entry.Entry != "" || entry.Target == nil || *entry.Target != target.Location {
+				t.Fatal("source entry did not follow handoff", entry)
+			}
+		} else if entry.Target != nil || !strings.HasPrefix(entry.Entry, "http://127.0.0.1:") {
+			t.Fatal("destination did not regenerate local entry", entry)
+		}
+	}
 	if err := host.refreshRemote(ctx, &session); err != nil {
 		t.Fatal(err)
 	}
@@ -342,4 +420,216 @@ func TestInstalledRuntimeTransfersAndResumesWithoutAnotherAuthority(t *testing.T
 		t.Fatal("lost old-program barrier", err)
 	}
 	t.Logf("local mean=%s; remote mean=%s; connection=%s; migration=%s; reconnect and read=%s; model calls=0", localMean, remoteMean, setupTime, migrationTime, reconnectTime)
+}
+func TestMigrationCompletionDoesNotWaitForOwnTransferLock(t *testing.T) {
+	_, _, bundle := buildIsolatedRelease(t)
+	runtime, e := assembly.Open(assembly.Request{DataDir: filepath.Join(t.TempDir(), "library"), ProductSemantics: assembly.Collaborative, VectorBundleDir: bundle})
+	if e != nil {
+		t.Fatal(e)
+	}
+	token, e := runtime.UserControl().InitializeOwner("owner")
+	if e != nil {
+		t.Fatal(e)
+	}
+	ctx := informationcontrol.Authenticate(context.Background(), token)
+	target := contract.Location{SystemID: runtime.UserControl().SystemID(), ServiceID: "target", Endpoint: "https://isolated.test", Certificate: "fixture", Composition: "test"}
+	old, e := runtime.UserControl().PrepareHandoff(ctx, "old-rejection", target)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = runtime.UserControl().DecideHandoff(ctx, old.ID, old.Revision, false); e != nil {
+		t.Fatal(e)
+	}
+
+	// Pending cleanup must remain durable while its writer owns the transfer
+	// lock. Returning promptly lets the existing worker retry or stop on Close.
+	host := &serviceHost{runtime: runtime}
+	host.transferMu.Lock()
+	busy := make(chan error, 1)
+	go func() { busy <- host.cleanCancelled(ctx, runtime) }()
+	select {
+	case err := <-busy:
+		host.transferMu.Unlock()
+		if err == nil {
+			t.Fatal("busy cleanup falsely reported success")
+		}
+	case <-time.After(time.Second):
+		host.transferMu.Unlock()
+		<-busy
+		runtime.Close()
+		t.Fatal("pending cleanup blocked on active writer")
+	}
+	state := runtime.UserControl().State()
+	if len(state.Access.Cancelled) != 1 || state.Access.Cancelled[0].Cleaned {
+		t.Fatal("busy cleanup lost durable work")
+	}
+	if e = runtime.UserControl().MarkHandoffClean(old.ID); e != nil {
+		t.Fatal(e)
+	}
+	next, e := runtime.UserControl().PrepareHandoff(ctx, "next-migration", target)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = runtime.UserControl().DecideHandoff(ctx, next.ID, next.Revision, true); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = runtime.UserControl().FreezeHandoff(ctx, next.ID, true); e != nil {
+		t.Fatal(e)
+	}
+	host.transferMu.Lock()
+	var release sync.Once
+	unlock := func() { release.Do(host.transferMu.Unlock) }
+	defer unlock()
+	entered := make(chan struct{})
+	var once sync.Once
+	runtime.Management().SetRelatedCleanup(func() error { once.Do(func() { close(entered) }); return host.cleanCancelled(ctx, runtime) })
+	if _, e = runtime.Management().DecideHandoff(ctx, old.ID, old.Revision, false); e != nil {
+		t.Fatal(e)
+	}
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		unlock()
+		runtime.Close()
+		t.Fatal("cleaner did not run")
+	}
+	closed := make(chan error, 1)
+	go func() { closed <- runtime.Close() }()
+	select {
+	case e = <-closed:
+		if e != nil {
+			t.Fatal(e)
+		}
+	case <-time.After(time.Second):
+		unlock()
+		<-closed
+		t.Fatal("runtime close waits for cleaner blocked on the migration's own transfer lock")
+	}
+}
+
+func TestMigrationCancelWhileBusyCleansAutomatically(t *testing.T) {
+	_, _, bundle := buildIsolatedRelease(t)
+	runtime, e := assembly.Open(assembly.Request{DataDir: filepath.Join(t.TempDir(), "library"), ProductSemantics: assembly.Collaborative, VectorBundleDir: bundle})
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer runtime.Close()
+	token, e := runtime.UserControl().InitializeOwner("owner")
+	if e != nil {
+		t.Fatal(e)
+	}
+	ctx := informationcontrol.Authenticate(context.Background(), token)
+	source, e := remote.NewIdentity("https://source.test", "test")
+	if e != nil {
+		t.Fatal(e)
+	}
+	srv := httptest.NewUnstartedServer(nil)
+	target, e := remote.NewIdentity("https://"+srv.Listener.Addr().String(), "test")
+	if e != nil {
+		t.Fatal(e)
+	}
+	target.Location.SystemID = runtime.UserControl().SystemID()
+	cert, e := target.TLSCertificate()
+	if e != nil {
+		t.Fatal(e)
+	}
+	receiver := &serviceHost{settings: installation{Root: t.TempDir(), Source: &source.Location}, identity: target}
+	srv.TLS = &tls.Config{Certificates: []tls.Certificate{cert}, ClientAuth: tls.RequestClientCert, MinVersion: tls.VersionTLS13}
+	srv.Config.Handler = http.HandlerFunc(receiver.receive)
+	srv.StartTLS()
+	defer srv.Close()
+	host := &serviceHost{runtime: runtime, identity: source, settings: installation{Root: t.TempDir()}}
+	id := connectionID()
+	receiver.receiver = receiverState{ID: id, Status: "prepared"}
+	for _, settings := range []installation{host.settings, receiver.settings} {
+		root, e := transferPath(settings, id)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if e = os.MkdirAll(root, 0700); e != nil {
+			t.Fatal(e)
+		}
+		if e = os.WriteFile(filepath.Join(root, "partial"), []byte("isolated transfer"), 0600); e != nil {
+			t.Fatal(e)
+		}
+	}
+	h, e := runtime.UserControl().PrepareHandoff(ctx, id, target.Location)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = runtime.UserControl().DecideHandoff(ctx, id, h.Revision, true); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = runtime.UserControl().FreezeHandoff(ctx, id, true); e != nil {
+		t.Fatal(e)
+	}
+	checked := make(chan error, 4)
+	runtime.Management().SetRelatedCleanup(func() error {
+		e := host.cleanCancelled(ctx, runtime)
+		select {
+		case checked <- e:
+		default:
+		}
+		return e
+	})
+	select {
+	case <-checked:
+	case <-time.After(2 * time.Second):
+		t.Fatal("initial cleaner did not run")
+	}
+	host.transferMu.Lock()
+	var unlock sync.Once
+	release := func() { unlock.Do(host.transferMu.Unlock) }
+	defer release()
+	req := httptest.NewRequest("POST", "/remote/migration/cancel", strings.NewReader(`{"id":"`+id+`"}`))
+	req.Header.Set("Authorization", "Bearer "+token)
+	response := httptest.NewRecorder()
+	host.migrate(response, req)
+	if response.Code != http.StatusConflict {
+		t.Fatal("busy cancellation claimed cleanup complete", response.Code)
+	}
+	select {
+	case e := <-checked:
+		if e == nil {
+			t.Fatal("busy cleaner reported success")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("cancel did not wake background cleanup")
+	}
+	state := runtime.UserControl().State()
+	if state.Access.Handoff != nil || len(state.Access.Cancelled) != 1 || state.Access.Cancelled[0].Cleaned {
+		t.Fatal("cancellation or durable cleanup lost", state.Access)
+	}
+	release()
+	// No more client request or manual MarkHandoffClean: the existing worker
+	// must retry actual TLS receiver cleanup and remove both temporary copies.
+	deadline := time.Now().Add(4 * time.Second)
+	for {
+		state = runtime.UserControl().State()
+		if len(state.Access.Cancelled) == 0 {
+			break
+		} // cleaned history is not selected without its ID
+		if state.Access.Cancelled[0].Cleaned {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("cleanup did not resume without another user action")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	for _, settings := range []installation{host.settings, receiver.settings} {
+		root, e := transferPath(settings, id)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if _, e = os.Stat(root); !os.IsNotExist(e) {
+			t.Fatal("cancelled transfer retained files", root, e)
+		}
+	}
+	receiver.transferMu.Lock()
+	status := receiver.receiver.Status
+	receiver.transferMu.Unlock()
+	if status != "cancelled" {
+		t.Fatal("receiver still reserved", status)
+	}
 }

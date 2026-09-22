@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS owner_draft_grants(
  principal TEXT NOT NULL, principal_revision INTEGER NOT NULL,
  owner_revision INTEGER NOT NULL, expires INTEGER NOT NULL) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS owner_grant_draft ON owner_draft_grants(draft,id);
+CREATE INDEX IF NOT EXISTS owner_grant_expiry ON owner_draft_grants(expires,id);
 CREATE TABLE IF NOT EXISTS asset_originals(
  asset TEXT PRIMARY KEY, revision INTEGER NOT NULL,
  payload TEXT NOT NULL REFERENCES payloads(id)) WITHOUT ROWID;
@@ -22,6 +23,9 @@ CREATE TABLE IF NOT EXISTS owner_events(
  asset TEXT NOT NULL, revision INTEGER NOT NULL, operation TEXT NOT NULL,
  status TEXT NOT NULL, at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS owner_event_age ON owner_events(at,sequence);
+CREATE TABLE IF NOT EXISTS owner_event_access(
+ sequence INTEGER PRIMARY KEY REFERENCES owner_events(sequence) ON DELETE CASCADE,
+ data BLOB NOT NULL);
 CREATE TABLE IF NOT EXISTS owner_event_relation_changes(
  sequence INTEGER PRIMARY KEY REFERENCES owner_events(sequence) ON DELETE CASCADE,
  quote_missing INTEGER NOT NULL CHECK(quote_missing>=0),

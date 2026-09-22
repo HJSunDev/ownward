@@ -18,6 +18,7 @@ func (p *Product) Manage(ctx context.Context, request contract.ManagementRequest
 	if err != nil {
 		return contract.ManagementReceipt{}, err
 	}
+	defer p.control.releaseDeferred(request.ID)
 	if op.Status == "approved" {
 		if err := p.execute(op); err != nil {
 			return op, err
@@ -28,10 +29,25 @@ func (p *Product) Manage(ctx context.Context, request contract.ManagementRequest
 
 // Decide 由宿主的独立可信管理通道调用，不向普通 MCP 调用者注册批准工具。
 func (p *Product) Decide(ctx context.Context, id string, accept bool) (contract.ManagementReceipt, error) {
-	op, err := p.control.Decide(ctx, id, accept)
+	return p.decide(ctx, id, "", accept, false)
+}
+
+func (p *Product) DecideVersion(ctx context.Context, id, decision string, accept bool) (contract.ManagementReceipt, error) {
+	return p.decide(ctx, id, decision, accept, true)
+}
+
+func (p *Product) decide(ctx context.Context, id, decision string, accept, versioned bool) (contract.ManagementReceipt, error) {
+	var op contract.ManagementReceipt
+	var err error
+	if versioned {
+		op, err = p.control.DecideVersion(ctx, id, decision, accept)
+	} else {
+		op, err = p.control.Decide(ctx, id, accept)
+	}
 	if err != nil {
 		return contract.ManagementReceipt{}, err
 	}
+	defer p.control.releaseDeferred(id)
 	if op.Status == "approved" {
 		if err := p.execute(op); err != nil {
 			return op, err
@@ -53,7 +69,7 @@ func (p *Product) execute(op contract.ManagementReceipt) error {
 	if err != nil {
 		return err
 	}
-	if op.Status == "completed" || op.Status == "cleaning" {
+	if op.Terminal() || op.Status == "cleaning" {
 		return nil
 	}
 	if op.Request.Operation == "permissions" {
@@ -68,6 +84,9 @@ func (p *Product) execute(op contract.ManagementReceipt) error {
 		recovered = op.Affected
 	}
 	err = kernel.StopUsing(op.Request.Targets, recovered, op.Request.ID, func(affected []contract.AssetVersion) error { return p.control.StartForget(op.Request.ID, affected) })
+	if errors.Is(err, contract.ErrForgetScopeChanged) && op.Status == "approved" {
+		return p.control.supersedeForget(op.Request.ID)
+	}
 	if err == nil {
 		err = p.control.mark(op.Request.ID, "cleaning", nil)
 	} else if current, readErr := p.control.operation(op.Request.ID); readErr == nil && current.Status == "stopping" {
@@ -93,8 +112,9 @@ func (p *Product) cleanLoop() {
 			return
 		case <-p.wake:
 		}
-		failed := false
-		for _, op := range p.control.pending() {
+		pending, readErr := p.control.pending()
+		failed := readErr != nil
+		for _, op := range pending {
 			select {
 			case <-p.stop:
 				return
@@ -141,7 +161,7 @@ func (p *Product) cleanLoop() {
 			delay = min(delay*2, 30*time.Second)
 		} else {
 			delay = time.Second
-			if len(p.control.pending()) > 0 {
+			if pending, err := p.control.pending(); err != nil || len(pending) > 0 {
 				p.signal()
 			}
 		}

@@ -278,13 +278,16 @@ func scanMeta(row scanner) (contract.AssetMeta, error) {
 	m.UpdatedAt, err = time.Parse(time.RFC3339Nano, updated)
 	return m, err
 }
-func (s *Store) ReadAssetMeta(ctx context.Context, id string, revision uint64) (contract.AssetMeta, error) {
-	c, release, err := s.snapshotReader(ctx)
+func (s *Store) ReadAssetMeta(ctx context.Context, id string, revision uint64) (out contract.AssetMeta, err error) {
+	err = s.view(ctx, func(q queryer) error {
+		var e error
+		out, e = scanMeta(q.QueryRowContext(ctx, "SELECT "+assetColumns+" FROM live_assets a JOIN payloads p ON p.id=a.payload WHERE a.id=? AND a.deleted=0 AND (?=0 OR a.revision=?)", id, revision, revision))
+		return e
+	})
 	if err != nil {
 		return contract.AssetMeta{}, err
 	}
-	defer release()
-	return scanMeta(c.QueryRowContext(ctx, "SELECT "+assetColumns+" FROM live_assets a JOIN payloads p ON p.id=a.payload WHERE a.id=? AND a.deleted=0 AND (?=0 OR a.revision=?)", id, revision, revision))
+	return out, nil
 }
 
 func (s *Store) ScanAssets(ctx context.Context, after string, pageBudget int) (contract.AssetPage, error) {

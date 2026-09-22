@@ -2,6 +2,7 @@ package informationcontrol
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"slices"
 	"strings"
@@ -33,22 +34,17 @@ func (c *Control) PendingManagement(ctx context.Context) ([]contract.ManagementR
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	s := c.selected(ctx, contract.ControlSelection{Pending: "approval"})
-	p, err := principal(ctx, s, contract.ManagePermission)
+	_, err := principal(ctx, s, contract.ManagePermission)
 	if err != nil {
 		return nil, err
 	}
 	var out []contract.ManagementReceipt
 	for _, op := range s.InformationControl.Operations {
+		op = visibleManagement(s, op)
 		if op.Status == "awaiting_approval" {
 			out = append(out, op)
 		}
 	}
-	for _, op := range c.deferred {
-		if op.Status == "awaiting_approval" {
-			out = append(out, op)
-		}
-	}
-	_ = p
 	return out, nil
 }
 
@@ -86,7 +82,7 @@ func (c *Control) State() contract.ControlState {
 func (c *Control) Invite(ctx context.Context, id string) (contract.Enrollment, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	s := c.selected(ctx, contract.ControlSelection{})
+	s := c.selected(ctx, contract.ControlSelection{Enrollment: id})
 	p, err := principal(ctx, s, contract.ManagePermission)
 	if err != nil {
 		return contract.Enrollment{}, err
@@ -104,7 +100,7 @@ func (c *Control) Invite(ctx context.Context, id string) (contract.Enrollment, e
 			if e.Manager != p.ID || now.After(e.Expires) {
 				return contract.Enrollment{}, ErrDenied
 			}
-			return publicEnrollment(e), nil
+			return visibleEnrollment(s, e), nil
 		}
 	}
 	a.Enrollments = slices.DeleteFunc(a.Enrollments, func(e contract.Enrollment) bool { return now.After(e.Expires) })
@@ -117,6 +113,44 @@ func (c *Control) Invite(ctx context.Context, id string) (contract.Enrollment, e
 }
 
 func publicEnrollment(e contract.Enrollment) contract.Enrollment { e.ProofDigest = ""; return e }
+
+func enrollmentApprovalValid(s contract.ControlState, e contract.Enrollment) bool {
+	approver := e.Approver
+	if approver == "" {
+		approver = e.Manager // pre-window approvals
+	}
+	return approvalValid(s, contract.ManagementReceipt{Approver: approver, ApproverRevision: e.ApproverRevision})
+}
+
+// Effective status is derived from the original approval, not a second queue.
+// Keep the public proof marker stable; separately bind each displayed decision
+// to the approval and any already-issued recipient identity.
+func visibleEnrollment(s contract.ControlState, e contract.Enrollment) contract.Enrollment {
+	e.Decision = ""
+	approver := e.Approver
+	if approver == "" {
+		approver = e.Manager
+	}
+	var approverRevision, recipientRevision uint64
+	for _, p := range s.InformationControl.Principals {
+		if p.ID == approver {
+			approverRevision = p.Revision
+		}
+		if p.ID == e.Principal {
+			recipientRevision = p.Revision
+		}
+	}
+	b, _ := json.Marshal(struct {
+		Enrollment          contract.Enrollment
+		Approver, Recipient uint64
+	}{e, approverRevision, recipientRevision})
+	out := publicEnrollment(e)
+	out.Decision = digest(string(b))
+	if e.Status == "approved" && !e.Claimed && !enrollmentApprovalValid(s, e) {
+		out.Status = "pending"
+	}
+	return out
+}
 func enrollment(s *contract.ControlState, id string) (*contract.Enrollment, error) {
 	if s.Access != nil {
 		for i := range s.Access.Enrollments {
@@ -132,7 +166,7 @@ func enrollment(s *contract.ControlState, id string) (*contract.Enrollment, erro
 func (c *Control) Join(id, proof, name string, permissions []contract.Permission) (contract.Enrollment, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	s := c.selected(context.Background(), contract.ControlSelection{})
+	s := c.selected(context.Background(), contract.ControlSelection{Enrollment: id})
 	if err := mutable(s); err != nil {
 		return contract.Enrollment{}, err
 	}
@@ -158,7 +192,7 @@ func (c *Control) Join(id, proof, name string, permissions []contract.Permission
 		if e.ProofDigest != digest(proof) || e.Name != name || !slices.Equal(e.Permissions, permissions) {
 			return contract.Enrollment{}, ErrDenied
 		}
-		return publicEnrollment(*e), nil
+		return visibleEnrollment(s, *e), nil
 	}
 	e.ProofDigest = digest(proof)
 	e.Name = name
@@ -173,7 +207,7 @@ func EnrollmentMarker(id, proof string) string { return digest(id + ":" + digest
 func (c *Control) Enrollments(ctx context.Context) ([]contract.Enrollment, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	s := c.selected(ctx, contract.ControlSelection{})
+	s := c.selected(ctx, contract.ControlSelection{Enrollments: true})
 	p, err := principal(ctx, s, contract.ManagePermission)
 	if err != nil {
 		return nil, err
@@ -181,8 +215,8 @@ func (c *Control) Enrollments(ctx context.Context) ([]contract.Enrollment, error
 	var out []contract.Enrollment
 	if s.Access != nil {
 		for _, e := range s.Access.Enrollments {
-			if e.Manager == p.ID && time.Now().Before(e.Expires) {
-				out = append(out, publicEnrollment(e))
+			if (e.Manager == p.ID || p.ID == s.InformationControl.OwnerID) && time.Now().Before(e.Expires) {
+				out = append(out, visibleEnrollment(s, e))
 			}
 		}
 	}
@@ -192,7 +226,7 @@ func (c *Control) Enrollments(ctx context.Context) ([]contract.Enrollment, error
 func (c *Control) EnrollmentPreview(ctx context.Context, id string) (contract.Enrollment, string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	s := c.selected(ctx, contract.ControlSelection{})
+	s := c.selected(ctx, contract.ControlSelection{Enrollment: id})
 	p, err := principal(ctx, s, contract.ManagePermission)
 	if err != nil {
 		return contract.Enrollment{}, "", err
@@ -201,16 +235,20 @@ func (c *Control) EnrollmentPreview(ctx context.Context, id string) (contract.En
 	if err != nil {
 		return contract.Enrollment{}, "", err
 	}
-	if e.Manager != p.ID || e.ProofDigest == "" {
+	if (e.Manager != p.ID && p.ID != s.InformationControl.OwnerID) || e.ProofDigest == "" {
 		return contract.Enrollment{}, "", ErrDenied
 	}
-	return publicEnrollment(*e), digest(id + ":" + e.ProofDigest)[:8], nil
+	return visibleEnrollment(s, *e), digest(id + ":" + e.ProofDigest)[:8], nil
 }
 
 func (c *Control) DecideEnrollment(ctx context.Context, id, marker string, accept bool) (contract.Enrollment, error) {
+	return c.DecideEnrollmentVersion(ctx, id, marker, "", accept)
+}
+
+func (c *Control) DecideEnrollmentVersion(ctx context.Context, id, marker, decision string, accept bool) (contract.Enrollment, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	s := c.selected(ctx, contract.ControlSelection{})
+	s := c.selected(ctx, contract.ControlSelection{Enrollment: id})
 	p, err := principal(ctx, s, contract.ManagePermission)
 	if err != nil {
 		return contract.Enrollment{}, err
@@ -222,18 +260,25 @@ func (c *Control) DecideEnrollment(ctx context.Context, id, marker string, accep
 	if err != nil {
 		return contract.Enrollment{}, err
 	}
-	if e.Manager != p.ID || e.ProofDigest == "" || digest(id + ":" + e.ProofDigest)[:8] != marker {
+	if (e.Manager != p.ID && p.ID != s.InformationControl.OwnerID) || e.ProofDigest == "" || digest(id + ":" + e.ProofDigest)[:8] != marker {
 		return contract.Enrollment{}, ErrDenied
 	}
-	if e.Status != "pending" {
-		return publicEnrollment(*e), nil
+	visible := visibleEnrollment(s, *e)
+	if visible.Status != "pending" {
+		return visible, nil
+	}
+	// Legacy callers may decide an initial request, never revive an invalidated
+	// approval. Current presentations must submit the token they actually showed.
+	if (decision == "" && e.Status != "pending") || (decision != "" && decision != visible.Decision) {
+		return contract.Enrollment{}, contract.ErrOwnerRefresh
 	}
 	e.Status = "declined"
 	if accept {
 		e.Status = "approved"
+		e.Approver = p.ID
 		e.ApproverRevision = p.Revision
 	}
-	out := publicEnrollment(*e)
+	out := visibleEnrollment(s, *e)
 	return out, c.save(s)
 }
 
@@ -251,13 +296,14 @@ func (c *Control) ClaimEnrollment(id, proof string) (contract.Enrollment, string
 	if e.ProofDigest != digest(proof) {
 		return contract.Enrollment{}, "", ErrDenied
 	}
-	if e.Status != "approved" {
-		return publicEnrollment(*e), "", nil
+	visible := visibleEnrollment(s, *e)
+	if visible.Status != "approved" {
+		return visible, "", nil
 	}
 	if e.Claimed {
 		return publicEnrollment(*e), "", nil
 	}
-	if !approvalValid(s, contract.ManagementReceipt{Approver: e.Manager, ApproverRevision: e.ApproverRevision}) {
+	if !enrollmentApprovalValid(s, *e) {
 		return contract.Enrollment{}, "", ErrDenied
 	}
 	token, err := randomID("")
@@ -328,16 +374,19 @@ func (c *Control) PrepareHandoff(ctx context.Context, id string, target contract
 	a := accessState(&s)
 	for _, h := range a.Cancelled {
 		if h.ID == id {
-			return contract.Handoff{}, errors.New("已取消迁移不能重新使用")
+			if h.Target != target {
+				return contract.Handoff{}, ErrDenied
+			}
+			return handoffStatus(s, id)
 		}
 	}
 	if a.Handoff != nil && a.Handoff.Phase != "active" {
 		if a.Handoff.ID == id && a.Handoff.Target == target {
-			return *a.Handoff, nil
+			return visibleHandoff(s, *a.Handoff), nil
 		}
 		return contract.Handoff{}, ErrMoving
 	}
-	a.Handoff = &contract.Handoff{ID: id, Target: target, Phase: "prepared", Revision: s.Revision + 1}
+	a.Handoff = &contract.Handoff{ID: id, Target: target, Phase: "prepared", Revision: s.Revision + 1, ApprovalStatus: "awaiting_approval"}
 	out := *a.Handoff
 	return out, c.save(s)
 }
@@ -362,6 +411,9 @@ func (c *Control) FreezeHandoff(ctx context.Context, id string, locationSaved bo
 		return *h, nil
 	}
 	if h.Phase != "prepared" || !locationSaved {
+		return contract.Handoff{}, ErrDenied
+	}
+	if h.ApprovalStatus != "approved" || !approvalValid(s, contract.ManagementReceipt{Approver: h.Approver, ApproverRevision: h.ApproverRevision}) {
 		return contract.Handoff{}, ErrDenied
 	}
 	for _, op := range s.InformationControl.Operations {
@@ -432,6 +484,13 @@ func (c *Control) CancelHandoff(ctx context.Context, id string) error {
 	s := c.selected(ctx, contract.ControlSelection{Handoff: id})
 	if _, err := principal(ctx, s, contract.ManagePermission); err != nil {
 		return err
+	}
+	if s.Access != nil {
+		for _, h := range s.Access.Cancelled {
+			if h.ID == id {
+				return nil // a late retry must not cancel another active handoff
+			}
+		}
 	}
 	if s.Access == nil || s.Access.Handoff == nil {
 		return nil

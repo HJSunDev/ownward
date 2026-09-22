@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/HJSunDev/ownward/internal/adapter/localowner"
+	"github.com/HJSunDev/ownward/internal/adapter/ownerwindow"
 	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/domain"
 	"github.com/HJSunDev/ownward/internal/informationcontrol"
@@ -48,6 +49,8 @@ type controlHTTPServer struct {
 	vault      localowner.Vault
 	recovery   string
 	generation func() uint64
+	window     *ownerwindow.Server
+	dataDir    string
 }
 
 // 独立恢复通道只在当前 OS 用户受保护的凭据区交付；服务启动令牌没有恢复权。
@@ -89,6 +92,10 @@ func (s controlHTTPServer) HTTPHandler() http.Handler {
 	}
 	next := s.server.HTTPHandler()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Origin") != "" {
+			http.Error(w, "origin not supported", 403)
+			return
+		}
 		ctx := informationcontrol.Authenticate(r.Context(), r.Header.Get(principalHeader))
 		r = r.WithContext(ctx)
 		if !strings.HasPrefix(r.URL.Path, controlPrefix) {
@@ -97,9 +104,10 @@ func (s controlHTTPServer) HTTPHandler() http.Handler {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		var input struct {
-			Name   string `json:"name"`
-			ID     string `json:"id"`
-			Accept bool   `json:"accept"`
+			Name     string `json:"name"`
+			ID       string `json:"id"`
+			Accept   bool   `json:"accept"`
+			Decision string `json:"decision"`
 		}
 		if r.Method == http.MethodPost {
 			decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192))
@@ -115,6 +123,14 @@ func (s controlHTTPServer) HTTPHandler() http.Handler {
 		var value any
 		var err error
 		switch strings.TrimPrefix(r.URL.Path, controlPrefix) {
+		case "owner-window":
+			if r.Method != http.MethodPost || s.window == nil {
+				http.NotFound(w, r)
+				return
+			}
+			var entry string
+			entry, err = s.window.Bootstrap(r.Context(), r.Header.Get(principalHeader))
+			value = map[string]string{"entry": entry}
 		case "identity":
 			value = map[string]string{"system_id": s.control.SystemID()}
 		case "generation":
@@ -169,7 +185,9 @@ func (s controlHTTPServer) HTTPHandler() http.Handler {
 				http.Error(w, "method not allowed", 405)
 				return
 			}
-			value, err = s.product.Decide(ctx, input.ID, input.Accept)
+			value, err = s.product.DecideVersion(ctx, input.ID, input.Decision, input.Accept)
+		case "receipt":
+			value, err = s.product.Receipt(ctx, input.ID)
 		case "preview":
 			if _, _, err = s.control.Begin(ctx, contract.ManagePermission); err == nil {
 				var op contract.ManagementReceipt
@@ -240,5 +258,5 @@ func (s controlHTTPServer) preview(ctx context.Context, op contract.ManagementRe
 	if err := finish(); err != nil {
 		return nil, err
 	}
-	return map[string]string{"message": text}, nil
+	return map[string]string{"message": text, "decision": op.Decision}, nil
 }

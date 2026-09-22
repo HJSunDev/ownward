@@ -63,6 +63,9 @@ func TestHandoffPreservesAuthorityDerivedWorkAndMutationReceipt(t *testing.T) {
 	if _, err := r.UserControl().PrepareHandoff(owner, "migration", location); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := r.UserControl().DecideHandoff(owner, "migration", r.UserControl().State().Access.Handoff.Revision, true); err != nil {
+		t.Fatal(err)
+	}
 	h, err := r.UserControl().FreezeHandoff(owner, "migration", true)
 	if err != nil {
 		t.Fatal(err)

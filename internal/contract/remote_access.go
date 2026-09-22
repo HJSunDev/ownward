@@ -25,6 +25,9 @@ func (l Location) Validate() error {
 }
 
 type Enrollment struct {
+	// Decision binds a displayed decision to current approval and recipient
+	// revisions. It is a projection token, never persisted or a credential.
+	Decision         string       `json:"decision,omitempty"`
 	ID               string       `json:"id"`
 	Manager          string       `json:"manager"`
 	Name             string       `json:"name,omitempty"`
@@ -35,16 +38,20 @@ type Enrollment struct {
 	Expires          time.Time    `json:"expires"`
 	Claimed          bool         `json:"claimed,omitempty"`
 	ApproverRevision uint64       `json:"approver_revision,omitempty"`
+	Approver         string       `json:"approver,omitempty"`
 }
 
 type Handoff struct {
-	Cleaned       bool     `json:"cleaned,omitempty"`
-	ID            string   `json:"id"`
-	Target        Location `json:"target"`
-	Phase         string   `json:"phase"`
-	Snapshot      string   `json:"snapshot,omitempty"`
-	Revision      uint64   `json:"revision"`
-	LocationSaved bool     `json:"location_saved"`
+	Cleaned          bool     `json:"cleaned,omitempty"`
+	ID               string   `json:"id"`
+	Target           Location `json:"target"`
+	Phase            string   `json:"phase"`
+	Snapshot         string   `json:"snapshot,omitempty"`
+	Revision         uint64   `json:"revision"`
+	LocationSaved    bool     `json:"location_saved"`
+	ApprovalStatus   string   `json:"approval_status,omitempty"`
+	Approver         string   `json:"approver,omitempty"`
+	ApproverRevision uint64   `json:"approver_revision,omitempty"`
 }
 
 type AccessState struct {

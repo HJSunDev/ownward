@@ -207,7 +207,7 @@ func (h *hostConnector) call(ctx context.Context, request *mcp.CallToolRequest, 
 	case "ownward_create", "ownward_create_batch", "ownward_update", "ownward_semantic_jobs", "ownward_semantic_work", "ownward_semantic_submit", "ownward_semantic_submit_batch":
 		needed = contract.MaintainPermission
 	}
-	if !slices.Contains(self.Permissions, needed) && request.Params.Name != "ownward_manage" && request.Params.Name != "ownward_management_status" && request.Params.Name != "ownward_connections" {
+	if !slices.Contains(self.Permissions, needed) && request.Params.Name != "ownward_manage" && request.Params.Name != "ownward_management_status" && request.Params.Name != "ownward_connections" && request.Params.Name != "ownward_draft_work" {
 		h.mu.Lock()
 		connected := h.record.Connected
 		h.mu.Unlock()
@@ -279,7 +279,7 @@ func (h *hostConnector) call(ctx context.Context, request *mcp.CallToolRequest, 
 		if err := decodeTool(result, &op); err != nil {
 			return nil, err
 		}
-		if op.Status == "awaiting_approval" {
+		if op.Status == "awaiting_approval" || op.Status == "approved" {
 			op, err = h.confirm(ctx, request, op.Request.ID)
 			if err != nil {
 				return nil, err
@@ -311,25 +311,41 @@ func (h *hostConnector) confirm(ctx context.Context, request *mcp.CallToolReques
 	if err != nil {
 		return contract.ManagementReceipt{}, err
 	}
-	var preview struct {
-		Message string `json:"message"`
-	}
-	if err := h.controlCall(ctx, "preview", owner, map[string]string{"id": id}, &preview); err != nil {
-		return contract.ManagementReceipt{}, err
-	}
-	accept, err := hostConfirm(ctx, request.Session, preview.Message)
+	op, err := h.confirmManagement(ctx, request.Session, owner, id)
 	if err != nil {
+		return op, err
+	}
+	return op, acceptedDecision(op.Status)
+}
+
+// Both local and remote hosts present the same immutable confirmation and
+// resume the same durable operation. Polling never replaces its decision token.
+func (h *hostConnector) confirmManagement(ctx context.Context, session *mcp.ServerSession, credential, id string) (contract.ManagementReceipt, error) {
+	var preview struct {
+		Message  string `json:"message"`
+		Decision string `json:"decision"`
+	}
+	if err := h.controlCall(ctx, "preview", credential, map[string]string{"id": id}, &preview); err != nil {
 		return contract.ManagementReceipt{}, err
 	}
 	var op contract.ManagementReceipt
-	if err := h.controlCall(ctx, "decide", owner, struct {
-		ID     string `json:"id"`
-		Accept bool   `json:"accept"`
-	}{id, accept}, &op); err != nil {
+	state, err := awaitOwnerDecision(ctx, session, preview.Message, func(c context.Context) (string, error) {
+		e := h.controlCall(c, "receipt", credential, map[string]string{"id": id}, &op)
+		return op.Status, e
+	}, func(c context.Context, accept bool) (string, error) {
+		e := h.controlCall(c, "decide", credential, map[string]any{"id": id, "decision": preview.Decision, "accept": accept}, &op)
+		return op.Status, e
+	})
+	if err != nil {
 		return op, err
 	}
-	if op.Status == "declined" {
-		return op, errors.New("用户未批准该操作")
+	if state == "approved" {
+		// Approval may have survived an interrupted execution. Resume that
+		// same authorized request; a status query itself never executes it.
+		err = h.controlCall(ctx, "decide", credential, map[string]any{"id": id, "decision": preview.Decision, "accept": true}, &op)
+		if err != nil {
+			return op, err
+		}
 	}
 	return op, nil
 }
@@ -505,7 +521,7 @@ func (h *hostConnector) appendReceipts(ctx context.Context, session *mcp.ClientS
 		if decodeTool(value, &op) != nil {
 			continue
 		}
-		if op.Status == "completed" {
+		if op.Terminal() {
 			result.Content = append(result.Content, receiptResult(op).Content...)
 			delivered = append(delivered, id)
 		} else if op.Status == "awaiting_approval" || op.Status == "declined" || op.Error != "" {

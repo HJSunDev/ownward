@@ -9,6 +9,11 @@
           "id": "ownward.access-adapter",
           "version": 2,
           "definition_sha256": "668a74532601509c3927928354ae506857301413bec8a80736447a3c658c1065"
+        },
+        {
+          "id": "ownward.owner-view",
+          "version": 1,
+          "definition_sha256": "7c8352e20338a5b0fd709d6dda2fc7f1a4b9b28277a201b15fda0b4a93489f80"
         }
       ],
       "content": [
@@ -30,12 +35,12 @@
         {
           "name": "cmd-ownward-host_connector",
           "path": "cmd/ownward/host_connector.go",
-          "sha256": "c85736e448a88128de965f9271ce36987b4f945168bad3a8311b3cf1b496f01f"
+          "sha256": "c887e62929b3d6a035b81df227f573444e25e74c615a05a4c6f080964f45494c"
         },
         {
           "name": "cmd-ownward-information_control",
           "path": "cmd/ownward/information_control.go",
-          "sha256": "79c17b1e1e867138c2c886ea8212b0370e3d5ba3b112afca3cb49544c0e36c77"
+          "sha256": "e8f32df870e71a08cf3a8c69c24e0165a6dd07e8c88751a0a440954ec7c875c1"
         },
         {
           "name": "cmd-ownward-information_use-go",
@@ -58,9 +63,19 @@
           "sha256": "176b3d1477eea295b562c70e48cdc4f4da4e5f23975e1f7e8568dd45d94815de"
         },
         {
+          "name": "cmd-ownward-owner_decision-go",
+          "path": "cmd/ownward/owner_decision.go",
+          "sha256": "dbbf2639e88ca518e17a9389f2e4b1a5ba4d890120f13834867a412367fe6e3f"
+        },
+        {
+          "name": "cmd-ownward-owner_window-go",
+          "path": "cmd/ownward/owner_window.go",
+          "sha256": "7602b5147aa22a4ef1fe3578d413d01d1bab757def4afc9ecc2cfac31d4cb3b3"
+        },
+        {
           "name": "cmd-ownward-remote_access",
           "path": "cmd/ownward/remote_access.go",
-          "sha256": "4764d64299b12527ff56a438d5b0fa84a781cf887a580b45a14bf1bc85471af0"
+          "sha256": "14ba78dcf2cd4119030bef89d0165e9899ae2095caa8a810639ab980b5af10c5"
         },
         {
           "name": "cmd-ownward-remote_decision",
@@ -75,7 +90,7 @@
         {
           "name": "cmd-ownward-storage_server-go",
           "path": "cmd/ownward/storage_server.go",
-          "sha256": "a1a54eec6f571b7a6743b1e3801f0084b60461dac0a48d05df65574ba5d9d60b"
+          "sha256": "9c97b438d4737efd9537a91f3ebb6d448a0285ac2e753c5d92680bd84849b505"
         },
         {
           "name": "cmd-ownward-streaming_connector-go",
@@ -108,6 +123,11 @@
           "sha256": "6e2c3b671c5861dd5feb6fbfc98f363217c1b0e74099bf74f5612e5646655463"
         },
         {
+          "name": "internal-adapter-mcpserver-owner_work-go",
+          "path": "internal/adapter/mcpserver/owner_work.go",
+          "sha256": "e3baad57e2cd2ae5418df55992b4b351f9e7c2f2dd6647339e3ef1dedbef7248"
+        },
+        {
           "name": "internal-adapter-mcpserver-streaming-go",
           "path": "internal/adapter/mcpserver/streaming.go",
           "sha256": "d0275ff06b5bbc3dd8b6907e3693bf5b2928bd51030eab6943c4b3a3a77233fa"
@@ -116,6 +136,26 @@
           "name": "internal-adapter-mcpserver-streaming_management-go",
           "path": "internal/adapter/mcpserver/streaming_management.go",
           "sha256": "01592080fefae45dfd0354b57cb0fe36cf722f5b59b5f93ea9e0121407b5f8c6"
+        },
+        {
+          "name": "internal-adapter-ownerwindow-http-go",
+          "path": "internal/adapter/ownerwindow/http.go",
+          "sha256": "160ed140b2028f878225e13e827417a84401131796d3e061e5233d48c20bb7f2"
+        },
+        {
+          "name": "internal-adapter-ownerwindow-static-bootstrap-js",
+          "path": "internal/adapter/ownerwindow/static/bootstrap.js",
+          "sha256": "17b36538bb56ad5a8a9ea84c75ba3ef50c82359092395f238f387c3fe8995c43"
+        },
+        {
+          "name": "internal-adapter-ownerwindow-static-go",
+          "path": "internal/adapter/ownerwindow/static.go",
+          "sha256": "b2dae2c457a04fd6f011343dab91b057a769c142b1a2846d58a625f9731114a1"
+        },
+        {
+          "name": "internal-adapter-ownerwindow-static-index-html",
+          "path": "internal/adapter/ownerwindow/static/index.html",
+          "sha256": "74a191cc4629a616ddc52c4d0411cd88ba3b7c796e87fb425661ddd2f2f017d1"
         },
         {
           "name": "internal-adapter-remote-transport",
@@ -203,6 +243,16 @@
           "sha256": "4fe9efe05da81b3d3bdc4baf1a3c038095ba86cca03c1d49b7ea4b410df366c9"
         },
         {
+          "name": "internal-ownerview-decisions-go",
+          "path": "internal/ownerview/decisions.go",
+          "sha256": "d287ee54b18adbc8c764314c7fa6f550bf49c5609486d03e1b1ab39847bfe735"
+        },
+        {
+          "name": "internal-ownerview-service-go",
+          "path": "internal/ownerview/service.go",
+          "sha256": "d32ee1255437ec3bcf39c33c2f04791cb687b28cf560b28b3e06c788fc120b59"
+        },
+        {
           "name": "internal-rpcstream-client-go",
           "path": "internal/rpcstream/client.go",
           "sha256": "b57b7de301862eaa4b267cacf799e13bd45702219f5bb4b4855d5b5ec5bd4fca"
@@ -220,7 +270,7 @@
         {
           "name": "internal-rpcstream-scope-go",
           "path": "internal/rpcstream/scope.go",
-          "sha256": "c3679a6d5d9003e20399a35e210117a518e062d2ba4257bf50808b1ae1aa2c7b"
+          "sha256": "4e0a53f5188349073f1465afbcf79d947761ee630b438b4e8e5ef071d8045ee6"
         },
         {
           "name": "mcp-adapter",
@@ -264,14 +314,14 @@
       "dependencies": [
         {
           "role": "kernel",
-          "identity": "649b658273f883a6fc1243da11157ed15808c93e1ee1e180f72d56bcd0ce19c6"
+          "identity": "a15461b202aba91fe087612de8aa6c1ed439eaaf572987071912ce164ce247ae"
         },
         {
           "role": "product-rules",
           "identity": "1eb81993761504bd72d76fc2c0dc380e697cf9d1e1827845da552803e2b71fce"
         }
       ],
-      "identity": "71b82a6638f981ea82ee2527128ca9b550715c417d486580a017ef92caf918f0"
+      "identity": "1d5db004dcc61f6b0d8bc0199172a4385bb0296cdaaf4163ca7e62c035f4921c"
     },
     {
       "role": "assembly",
@@ -279,19 +329,19 @@
         {
           "id": "ownward.assembly",
           "version": 1,
-          "definition_sha256": "de4ce0096499a83ccd1301d283b1113cb371bd5b75be8e1815427deeba01e002"
+          "definition_sha256": "15ad11aa9f49dcd3ea4c3c3503f4103d4e0ba1f5a8c759f9bac578074488c3b9"
         }
       ],
       "content": [
         {
           "name": "cmd-ownward-service_install",
           "path": "cmd/ownward/service_install.go",
-          "sha256": "115a03f5ff1716074d518a157486d7594d992d9c73fba56c0511a3ef98f0474e"
+          "sha256": "1652d0a2dcd00d7306ab13bc9815cb6b4c1e8b4b2e7d48ecc2eb5f6813c6936e"
         },
         {
           "name": "cmd-ownward-service_local",
           "path": "cmd/ownward/service_local.go",
-          "sha256": "6fe37a04e5647dee5091a9a323e07149db5879db224241544177ae15416a1a20"
+          "sha256": "89aa041cdf640bb920148052cca17f43fe18bb5379afb0c336f33e018e0911d9"
         },
         {
           "name": "cmd-ownward-service_other",
@@ -301,7 +351,7 @@
         {
           "name": "cmd-ownward-service_runtime",
           "path": "cmd/ownward/service_runtime.go",
-          "sha256": "484859225a5a9e5665cd43ac42e331b5798087502992ad6fc0ed7e280c5a3355"
+          "sha256": "c0dd8c03d06cbe49cd8d60557404fa56eeef5fd9684a1f20e1cab1ea1085549d"
         },
         {
           "name": "cmd-ownward-service_space_other",
@@ -321,7 +371,7 @@
         {
           "name": "current-command-assembly",
           "path": "cmd/ownward/main.go",
-          "sha256": "65fe1ed2122ad0af61a41a078f7d5706362da1fbbbda743b6ff5d9bb9c09e089"
+          "sha256": "db21e0ec31de755a5ddb33e19d80c91ed1c0887ee0abe037d6bf2fe9d5f671ca"
         },
         {
           "name": "explicit-assembly",
@@ -374,15 +424,15 @@
       "dependencies": [
         {
           "role": "access",
-          "identity": "71b82a6638f981ea82ee2527128ca9b550715c417d486580a017ef92caf918f0"
+          "identity": "1d5db004dcc61f6b0d8bc0199172a4385bb0296cdaaf4163ca7e62c035f4921c"
         },
         {
           "role": "authority-substrate",
-          "identity": "ec7dffcfa6ba4147930fa0b02a2287dec07bc06a3ea834864a4ffafecf171741"
+          "identity": "48ec23fe25fede7159fb3b3bb0e57b9e56bcce11772759cb240d120744d2168a"
         },
         {
           "role": "kernel",
-          "identity": "649b658273f883a6fc1243da11157ed15808c93e1ee1e180f72d56bcd0ce19c6"
+          "identity": "a15461b202aba91fe087612de8aa6c1ed439eaaf572987071912ce164ce247ae"
         },
         {
           "role": "product-rules",
@@ -397,7 +447,7 @@
           "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
         }
       ],
-      "identity": "537899d076c1044e7dce6db48ad502b3f04a1da06756b1d0aeb711f9efdd09f0"
+      "identity": "b67997ccd979097bcec10a63e5066b761704fd4cf14ea2ab43751ac1f8ca44d8"
     },
     {
       "role": "authority-substrate",
@@ -410,12 +460,12 @@
         {
           "id": "ownward.control-state",
           "version": 1,
-          "definition_sha256": "b026da4abbdcec612b9dbfdc6c3f6809c45150fe3350cfe8db749a90d389079d"
+          "definition_sha256": "444fcaf0252a8076d490cc243958140fdd2b7173de9fbd59aab74a44f29838cc"
         },
         {
           "id": "ownward.owner-work",
           "version": 1,
-          "definition_sha256": "ac60cd3593f44ffe70977700e12547946de7a9271a3d4330568985ff9d2e5c9c"
+          "definition_sha256": "4344a751a9a7ee5a29b53ccda112ba6ea19841954f421a1785340479a9e4ef8a"
         }
       ],
       "content": [
@@ -497,7 +547,7 @@
         {
           "name": "internal-boundedstore-assets-go",
           "path": "internal/boundedstore/assets.go",
-          "sha256": "62ba481b9de3ce7947835dfddde10ab625954187e784d26ac711afe2b37f1cb9"
+          "sha256": "6f7eb149415d4a8700fb6e673c1f1c0da478ee95b8cce7312ead6bd2094ce52a"
         },
         {
           "name": "internal-boundedstore-backup-go",
@@ -517,12 +567,12 @@
         {
           "name": "internal-boundedstore-control_authority-go",
           "path": "internal/boundedstore/control_authority.go",
-          "sha256": "a6a0ed8839983a2f85fd894a2311d1a4c8f0a1fc0f44e9d31facde79c1c84f80"
+          "sha256": "a1176158e8b6efecb59d389acc439626b7363e855605a692d722f9c3527f1762"
         },
         {
           "name": "internal-boundedstore-control_forget-go",
           "path": "internal/boundedstore/control_forget.go",
-          "sha256": "7abf3d684696c55e4bca5abdce7707472d5f27755aafd55591cb8335d20ea7b8"
+          "sha256": "de37504cc25527adca7cb9bfd77cdfc5f55ff55a60a06eaed3dd0ab31a09b5f0"
         },
         {
           "name": "internal-boundedstore-control_restore-go",
@@ -662,7 +712,7 @@
         {
           "name": "internal-boundedstore-navigation-go",
           "path": "internal/boundedstore/navigation.go",
-          "sha256": "1c322c35446059d924d1db1a3a9b82dd8e0e315b4680a4cfa116874a56f1d646"
+          "sha256": "c487ffc4831c605c3d123c417365824323884f86c5d7d2b8957115b7838cc94c"
         },
         {
           "name": "internal-boundedstore-organization-go",
@@ -677,7 +727,7 @@
         {
           "name": "internal-boundedstore-owner_events-go",
           "path": "internal/boundedstore/owner_events.go",
-          "sha256": "ac0d225737a8a9d1f89edd3aba8866bb5e5d9760e34c959a70295151c3397212"
+          "sha256": "4c230a6a5b60f6f5e9b3d495fdc7e9ba763b1877928c339a544e3bb4bb99b9b0"
         },
         {
           "name": "internal-boundedstore-owner_forget-go",
@@ -687,17 +737,22 @@
         {
           "name": "internal-boundedstore-owner_publish-go",
           "path": "internal/boundedstore/owner_publish.go",
-          "sha256": "b6d9a76238a0ccde4a22786d400cb0647a40775779746c49a1b6375a0d7be853"
+          "sha256": "d7de7a13e1cd3c4ef79325615bb7ef3f55d20dac0e82fb4fc2fea5dfe2f0c690"
         },
         {
           "name": "internal-boundedstore-owner_schema-go",
           "path": "internal/boundedstore/owner_schema.go",
-          "sha256": "10ef06b6e1f969061ced1462b9a4e50aa6455b8ef38a8ce6dbf9df2db5525bed"
+          "sha256": "328d2659c9176a6559bb8fe6d1f81bee183d0e202794ea40c2828d5627ac2877"
+        },
+        {
+          "name": "internal-boundedstore-owner_view-go",
+          "path": "internal/boundedstore/owner_view.go",
+          "sha256": "dbeea96ec01f8e8724868f048482efaa9dc279479191ab6584825555b9766f90"
         },
         {
           "name": "internal-boundedstore-owner_work-go",
           "path": "internal/boundedstore/owner_work.go",
-          "sha256": "4c8527052d34ec0fafc54aed39c4754920b038f71d9f6f7b975a9bbdeda1763c"
+          "sha256": "077e867b4e86c36b639facc186bcca2ec572a60e46d34c4cc918c26b70de0ce4"
         },
         {
           "name": "internal-boundedstore-payload-go",
@@ -707,7 +762,7 @@
         {
           "name": "internal-boundedstore-query-go",
           "path": "internal/boundedstore/query.go",
-          "sha256": "347460716cdcbff9f7832df44876f4a396c32d6f87abf648320b41aa1e8ff437"
+          "sha256": "659855ccb23d908a43e7d2042fda2a85a72296373b65b1b278792b8201812c79"
         },
         {
           "name": "internal-boundedstore-range_reader-go",
@@ -792,7 +847,7 @@
         {
           "name": "internal-contract-information_control",
           "path": "internal/contract/information_control.go",
-          "sha256": "fc39e84f685e8766bc68ad576dcd3c4cdd292bee873e456642e54b9b62411040"
+          "sha256": "0688b45b419f84db6c64b9408bccc8beb3ff08ad0edcf8e5d56c0b0f1079a291"
         },
         {
           "name": "internal-contract-operation",
@@ -802,7 +857,7 @@
         {
           "name": "internal-contract-remote_access",
           "path": "internal/contract/remote_access.go",
-          "sha256": "c1bbecb7a2a8e8e567d301c2205139b607d24ee06ead6cf8b4113bb5dc461abd"
+          "sha256": "f08a890a4e52d56ba58c26694593ac82ed3d8ef9008f23dfc4216976579112e1"
         },
         {
           "name": "internal-domain-selector-go",
@@ -817,7 +872,7 @@
         {
           "name": "internal-informationcontrol-forget",
           "path": "internal/informationcontrol/forget.go",
-          "sha256": "d5283a11f64347ddd87da47fc19e0fb6dac65a4a3f07dccc41918e282824082f"
+          "sha256": "7608bd1c94286ba854791cfbd1c911e7ba2ec0f0163e04114efe865c28b71708"
         },
         {
           "name": "internal-informationcontrol-information-change-go",
@@ -827,17 +882,22 @@
         {
           "name": "internal-informationcontrol-management",
           "path": "internal/informationcontrol/management.go",
-          "sha256": "298d01f63af886051d80f1622afa7ff356d824993662820a70979bdb8ce5b5f8"
+          "sha256": "8d9c4f216e6566ff972de144997ecffa4e91faa4d7ad29afa139bf0babd6da79"
+        },
+        {
+          "name": "internal-informationcontrol-owner_view-go",
+          "path": "internal/informationcontrol/owner_view.go",
+          "sha256": "e9a99d92daeed5d519fbd8960b6025c2e987faa6e03871aa9d8230c5164c0b05"
         },
         {
           "name": "internal-informationcontrol-product",
           "path": "internal/informationcontrol/product.go",
-          "sha256": "dbef7348ae039d8ad3e5e8dbb1155935b61ed26bcd287b76e6420efc48ea7f3e"
+          "sha256": "b45cc8633982eed9d27b5a62044f6214fa6695e6fee09f11bf2745e321a0775d"
         },
         {
           "name": "internal-informationcontrol-remote_access",
           "path": "internal/informationcontrol/remote_access.go",
-          "sha256": "c3a02a5c268c91fade852e938224ee80b1461a7b530b3f710e4f13c962306ed1"
+          "sha256": "82ead09ed27928d2fbc8d5d3ed7f7880a6d53ecc9a39a0cd8cf23f69c2fa4326"
         },
         {
           "name": "internal-informationcontrol-selection-go",
@@ -948,7 +1008,7 @@
         "storage_format": "ownward.sqlite-storage/v1"
       },
       "dependencies": [],
-      "identity": "ec7dffcfa6ba4147930fa0b02a2287dec07bc06a3ea834864a4ffafecf171741"
+      "identity": "48ec23fe25fede7159fb3b3bb0e57b9e56bcce11772759cb240d120744d2168a"
     },
     {
       "role": "kernel",
@@ -1033,7 +1093,7 @@
         {
           "name": "internal-core-forget",
           "path": "internal/core/forget.go",
-          "sha256": "c11c0ce164f5cc27a29358b0081504d2770b3bd143690bb0de550e35991a917b"
+          "sha256": "5fc70ad272a35264fb198e2b7721d784a4d4d08d23dffd94c66c3d536d302852"
         },
         {
           "name": "internal-core-information-change-go",
@@ -1215,7 +1275,7 @@
       "dependencies": [
         {
           "role": "authority-substrate",
-          "identity": "ec7dffcfa6ba4147930fa0b02a2287dec07bc06a3ea834864a4ffafecf171741"
+          "identity": "48ec23fe25fede7159fb3b3bb0e57b9e56bcce11772759cb240d120744d2168a"
         },
         {
           "role": "product-rules",
@@ -1230,7 +1290,7 @@
           "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
         }
       ],
-      "identity": "649b658273f883a6fc1243da11157ed15808c93e1ee1e180f72d56bcd0ce19c6"
+      "identity": "a15461b202aba91fe087612de8aa6c1ed439eaaf572987071912ce164ce247ae"
     },
     {
       "role": "product-rules",
@@ -1499,7 +1559,7 @@
       "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
     }
   ],
-  "identity": "1e309fdd3caad628304d830c7c3679a865ba8539eff153e88566b68e6d2b0b0e",
+  "identity": "d60398cfa5fda31849456cb100abfe5080ddfebb3175d5fc097b2ba999528b4b",
   "audit": {
     "described_product_candidate": "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8",
     "migration_source_git": "dc2c7a09e67f06cfaacbe0a201c7ff27b20d6182"

@@ -72,6 +72,7 @@ func remoteHandler(location contract.Location, server controlHTTPServer) http.Ha
 				Name        string                `json:"name,omitempty"`
 				Permissions []contract.Permission `json:"permissions,omitempty"`
 				Marker      string                `json:"marker,omitempty"`
+				Decision    string                `json:"decision,omitempty"`
 				Accept      bool                  `json:"accept,omitempty"`
 			}
 			if r.Method != "POST" {
@@ -105,7 +106,7 @@ func remoteHandler(location contract.Location, server controlHTTPServer) http.Ha
 					Marker     string              `json:"marker"`
 				}{e, marker}
 			case "decide":
-				out, err = server.control.DecideEnrollment(ctx, in.ID, in.Marker, in.Accept)
+				out, err = server.control.DecideEnrollmentVersion(ctx, in.ID, in.Marker, in.Decision, in.Accept)
 			case "claim":
 				var e contract.Enrollment
 				var token string
@@ -136,7 +137,7 @@ func remoteHandler(location contract.Location, server controlHTTPServer) http.Ha
 		}
 		if strings.HasPrefix(r.URL.Path, controlPrefix) {
 			switch strings.TrimPrefix(r.URL.Path, controlPrefix) {
-			case "self", "generation", "preview", "decide", "reissue":
+			case "self", "generation", "preview", "decide", "receipt", "reissue":
 				product.ServeHTTP(w, r)
 				return
 			}
@@ -312,12 +313,17 @@ func (h *hostConnector) processEnrollments(ctx context.Context, session *mcp.Ser
 		if err := remoteCall(ctx, h.remote.Client, h.remote.Material.Location, "/remote/enrollment/preview", h.credential(), map[string]string{"id": e.ID}, &preview); err != nil {
 			return err
 		}
-		accept, err := h.durableConfirm(ctx, session, "join:"+e.ID, preview.Marker, fmt.Sprintf("允许“%s”接入此信息体系吗？请核对目标宿主上的标记 %s；允许的行为：%v。", preview.Enrollment.Name, preview.Marker, preview.Enrollment.Permissions))
+		message := fmt.Sprintf("允许“%s”接入此信息体系吗？请核对目标宿主上的标记 %s；允许的行为：%v。", preview.Enrollment.Name, preview.Marker, preview.Enrollment.Permissions)
+		decisionToken, marker := preview.Enrollment.Decision, preview.Marker
+		_, err := awaitOwnerDecision(ctx, session, message, func(c context.Context) (string, error) {
+			err := remoteCall(c, h.remote.Client, h.remote.Material.Location, "/remote/enrollment/preview", h.credential(), map[string]string{"id": e.ID}, &preview)
+			return preview.Enrollment.Status, err
+		}, func(c context.Context, accept bool) (string, error) {
+			var decision contract.Enrollment
+			err := remoteCall(c, h.remote.Client, h.remote.Material.Location, "/remote/enrollment/decide", h.credential(), map[string]any{"id": e.ID, "marker": marker, "decision": decisionToken, "accept": accept}, &decision)
+			return decision.Status, err
+		})
 		if err != nil {
-			return err
-		}
-		var decision contract.Enrollment
-		if err := remoteCall(ctx, h.remote.Client, h.remote.Material.Location, "/remote/enrollment/decide", h.credential(), map[string]any{"id": e.ID, "marker": preview.Marker, "accept": accept}, &decision); err != nil {
 			return err
 		}
 	}
@@ -326,18 +332,8 @@ func (h *hostConnector) processEnrollments(ctx context.Context, session *mcp.Ser
 		return err
 	}
 	for _, op := range pending {
-		var preview struct {
-			Message string `json:"message"`
-		}
-		if err := h.controlCall(ctx, "preview", h.credential(), map[string]string{"id": op.Request.ID}, &preview); err != nil {
-			return err
-		}
-		accept, err := h.durableConfirm(ctx, session, "manage:"+op.Request.ID, preview.Message, preview.Message)
+		_, err := h.confirmManagement(ctx, session, h.credential(), op.Request.ID)
 		if err != nil {
-			return err
-		}
-		var receipt contract.ManagementReceipt
-		if err := h.controlCall(ctx, "decide", h.credential(), map[string]any{"id": op.Request.ID, "accept": accept}, &receipt); err != nil {
 			return err
 		}
 	}
@@ -525,21 +521,44 @@ func addMigrationTool(proxy *mcp.Server, host *hostConnector) {
 		}
 		// Persist identity before preparing either side or asking for a decision.
 		// A disconnected form resumes the same operation, never an orphaned new one.
-		if _, decided := host.record.Decisions["move:"+id]; !decided {
-			var h contract.Handoff
-			if err := remoteCall(ctx, host.remote.Client, host.remote.Material.Location, "/remote/migration/prepare", host.credential(), map[string]any{"id": id, "target": input.Target}, &h); err != nil {
+		var identity struct {
+			Handoff *contract.Handoff `json:"handoff"`
+		}
+		if err := remoteCall(ctx, host.remote.Client, host.remote.Material.Location, "/remote/identity", "", nil, &identity); err != nil {
+			return nil, receiverState{}, err
+		}
+		var handoff contract.Handoff
+		if identity.Handoff != nil && identity.Handoff.ID == id && identity.Handoff.Phase != "prepared" {
+			handoff = *identity.Handoff
+		} else {
+			if err := remoteCall(ctx, host.remote.Client, host.remote.Material.Location, "/remote/migration/prepare", host.credential(), map[string]any{"id": id, "target": input.Target}, &handoff); err != nil {
 				return nil, receiverState{}, err
 			}
 		}
-		accept, err := host.durableConfirm(ctx, request.Session, "move:"+id, input.Target.ServiceID, "将信息体系搬迁到你选择的目的地吗？搬迁期间暂停普通修改，接管时暂不可用；等待取决于资料量和两端网络。信息、权限与连接关系保留。源退出前可取消，退出后继续完成交接。")
+		// The form approves the version it presented. Polling may discover that
+		// approval was invalidated, but cannot lend a new revision to this form.
+		decisionRevision := handoff.Revision
+		state, err := awaitOwnerDecision(ctx, request.Session, "将信息体系搬迁到你选择的目的地吗？搬迁期间暂停普通修改，接管时暂不可用；等待取决于资料量和两端网络。信息、权限与连接关系保留。源退出前可取消，退出后继续完成交接。", func(c context.Context) (string, error) {
+			if handoff.Phase == "cancelled" {
+				return handoff.ApprovalStatus, nil
+			}
+			if handoff.Phase != "prepared" {
+				return "approved", nil
+			}
+			err := remoteCall(c, host.remote.Client, host.remote.Material.Location, "/remote/migration/status", host.credential(), map[string]string{"id": id}, &handoff)
+			status := handoff.ApprovalStatus
+			if status == "" {
+				status = "awaiting_approval"
+			}
+			return status, err
+		}, func(c context.Context, accept bool) (string, error) {
+			err := remoteCall(c, host.remote.Client, host.remote.Material.Location, "/remote/migration/decide", host.credential(), map[string]any{"id": id, "revision": decisionRevision, "accept": accept}, &handoff)
+			return handoff.ApprovalStatus, err
+		})
 		if err != nil {
 			return nil, receiverState{}, err
 		}
-		if !accept {
-			var out any
-			if err := remoteCall(ctx, host.remote.Client, host.remote.Material.Location, "/remote/migration/cancel", host.credential(), map[string]string{"id": id}, &out); err != nil {
-				return nil, receiverState{}, err
-			}
+		if state == "declined" || state == "cancelled" {
 			host.record.MigrationID, host.record.NextLocation = "", nil
 			if err := host.save(); err != nil {
 				return nil, receiverState{}, err

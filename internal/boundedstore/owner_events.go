@@ -41,15 +41,23 @@ func (s *Store) OwnerEvents(ctx context.Context, after uint64, limit int) (contr
 		}
 		var floor uint64
 		cutoff := time.Now().Add(-OwnerHistoryRetention).UnixMilli()
-		if e := q.QueryRowContext(ctx, "SELECT max(value,coalesce((SELECT max(sequence) FROM owner_events WHERE at<?),0)) FROM store_meta WHERE key='owner_event_floor'", cutoff).Scan(&floor); e != nil {
+		if e := q.QueryRowContext(ctx, "SELECT max(value,coalesce((SELECT max(sequence) FROM owner_events WHERE at<?),0),coalesce((SELECT max(sequence) FROM owner_events),0)-?) FROM store_meta WHERE key='owner_event_floor'", cutoff, OwnerEventLimit).Scan(&floor); e != nil {
 			return e
 		}
 		out.Reset = after != 0 && after < floor
 		out.Next = max(after, floor)
-		rows, e := q.QueryContext(ctx, `SELECT e.sequence,e.kind,e.asset,e.revision,e.operation,e.status,e.at,
- coalesce(c.quote_missing,0),coalesce(c.quote_ambiguous,0),coalesce(c.target_unavailable,0)
+		// A presentation does not need an unbounded replay identity. Keep short
+		// references for compatibility; omit oversized optional references in
+		// SQL before allocating/scoring the page. Never skip the event itself.
+		// Management references remain exact and are bounded on admission.
+		rows, e := q.QueryContext(ctx, `WITH page AS (SELECT e.sequence,e.kind,e.asset,e.revision,
+ CASE WHEN e.kind='management' OR length(CAST(e.operation AS BLOB))<=? THEN e.operation ELSE '' END AS operation,e.status,e.at,
+ coalesce(c.quote_missing,0),coalesce(c.quote_ambiguous,0),coalesce(c.target_unavailable,0),d.data
  FROM owner_events e LEFT JOIN owner_event_relation_changes c ON c.sequence=e.sequence
- WHERE e.sequence>? AND e.at>=? ORDER BY e.sequence LIMIT ?`, max(after, floor), cutoff, limit)
+ LEFT JOIN owner_event_access d ON d.sequence=e.sequence
+ WHERE e.sequence>? AND e.at>=? ORDER BY e.sequence LIMIT ?)
+ SELECT * FROM (SELECT *,sum(coalesce(length(data),0)+length(operation)+length(asset)+length(status)+128) OVER(ORDER BY sequence) AS bytes FROM page)
+			WHERE bytes<=524288 ORDER BY sequence`, contract.OwnerEventReferenceBytes, max(after, floor), cutoff, limit)
 		if e != nil {
 			return e
 		}
@@ -58,8 +66,16 @@ func (s *Store) OwnerEvents(ctx context.Context, after uint64, limit int) (contr
 			var v contract.OwnerEvent
 			var at int64
 			var changes contract.RelationInvalidationCounts
-			if e = rows.Scan(&v.Sequence, &v.Kind, &v.Asset.ID, &v.Asset.Revision, &v.Operation, &v.Status, &at, &changes.QuoteMissing, &changes.QuoteAmbiguous, &changes.TargetUnavailable); e != nil {
+			var access []byte
+			var bytes int64
+			if e = rows.Scan(&v.Sequence, &v.Kind, &v.Asset.ID, &v.Asset.Revision, &v.Operation, &v.Status, &at, &changes.QuoteMissing, &changes.QuoteAmbiguous, &changes.TargetUnavailable, &access, &bytes); e != nil {
 				return e
+			}
+			if len(access) > 0 {
+				v.Access = new(contract.OwnerAccessFact)
+				if e = json.Unmarshal(access, v.Access); e != nil {
+					return e
+				}
 			}
 			if changes != (contract.RelationInvalidationCounts{}) {
 				v.InvalidatedRelations = &changes
@@ -86,9 +102,9 @@ func (s *Store) OwnerOperations(ctx context.Context, after string, limit int, pe
 		if _, e := requireOwner(ctx, q, false); e != nil {
 			return e
 		}
-		condition := "a.state NOT IN ('completed','declined')"
+		condition := "a.state NOT IN ('completed','declined','superseded')"
 		if !pending {
-			condition = "a.state IN ('completed','declined') AND EXISTS(SELECT 1 FROM owner_operation_times t WHERE t.id=a.id AND t.updated>=?)"
+			condition = "a.state IN ('completed','declined','superseded') AND EXISTS(SELECT 1 FROM owner_operation_times t WHERE t.id=a.id AND t.updated>=?)"
 		}
 		args := []any{after}
 		if !pending {
@@ -138,7 +154,7 @@ func (s *Store) expireOwnerHistory(ctx context.Context, tx *sql.Tx) (bool, error
 		return true, e
 	}
 	r, e := tx.ExecContext(ctx, `DELETE FROM owner_operation_times WHERE id IN (
- SELECT id FROM owner_operation_times WHERE state IN ('completed','declined') AND updated<? LIMIT 64)`, cutoff)
+ SELECT id FROM owner_operation_times WHERE state IN ('completed','declined','superseded') AND updated<? LIMIT 64)`, cutoff)
 	if e != nil {
 		return false, e
 	}
@@ -147,7 +163,7 @@ func (s *Store) expireOwnerHistory(ctx context.Context, tx *sql.Tx) (bool, error
 		return n > 0, e
 	}
 	r, e = tx.ExecContext(ctx, `DELETE FROM owner_operation_times WHERE id IN (
- SELECT id FROM owner_operation_times WHERE state IN ('completed','declined') ORDER BY updated DESC,id DESC LIMIT 64 OFFSET ?)`, OwnerEventLimit)
+ SELECT id FROM owner_operation_times WHERE state IN ('completed','declined','superseded') ORDER BY updated DESC,id DESC LIMIT 64 OFFSET ?)`, OwnerEventLimit)
 	if e != nil {
 		return false, e
 	}

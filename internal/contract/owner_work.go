@@ -75,6 +75,11 @@ type OwnerWork interface {
 }
 
 // OwnerEvent contains references, never copies of original or draft text.
+// Event references are optional projection metadata, not the replay identity.
+// Oversized non-management references may be omitted; the durable operation
+// and its receipt retain their complete identity and remain queryable.
+const OwnerEventReferenceBytes = 4 << 10
+
 type OwnerEvent struct {
 	Sequence             uint64                      `json:"sequence"`
 	Kind                 string                      `json:"kind"`
@@ -83,6 +88,14 @@ type OwnerEvent struct {
 	Status               string                      `json:"status,omitempty"`
 	At                   time.Time                   `json:"at"`
 	InvalidatedRelations *RelationInvalidationCounts `json:"invalidated_relations,omitempty"`
+	Access               *OwnerAccessFact            `json:"access,omitempty"`
+}
+
+// A past decision's public scope, never a credential or an executable approval.
+// Kept only with the bounded event that records the authority's commit.
+type OwnerAccessFact struct {
+	Subject     string       `json:"subject"`
+	Permissions []Permission `json:"permissions,omitempty"`
 }
 
 // Counts explain invalidated inherited relations without retaining quotations

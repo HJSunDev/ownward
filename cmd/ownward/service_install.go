@@ -92,6 +92,7 @@ func runAccessCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 	output := flags.String("output", "", "公开连接材料保存位置")
 	operation := flags.String("id", "", "待接入操作")
 	marker := flags.String("marker", "", "目标宿主显示的核对标记")
+	decision := flags.String("decision", "", "本次核对预览中的 enrollment.decision")
 	accept := flags.Bool("approve", false, "批准核对过的接入申请")
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
@@ -317,7 +318,10 @@ func runAccessCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 		if strings.TrimSpace(*marker) == "" {
 			return errors.New("请核对目标宿主的接入标记")
 		}
-		if err := remoteCall(ctx, client, s.Location, path+"decide", credential, map[string]any{"id": *operation, "marker": *marker, "accept": *accept}, &result); err != nil {
+		if strings.TrimSpace(*decision) == "" {
+			return errors.New("请先运行 service-approve 核对预览，再用 --decision 提交该预览中的 enrollment.decision")
+		}
+		if err := remoteCall(ctx, client, s.Location, path+"decide", credential, map[string]any{"id": *operation, "marker": *marker, "decision": *decision, "accept": *accept}, &result); err != nil {
 			return err
 		}
 	default:

@@ -23,6 +23,9 @@ func (s *Service) StopUsing(targets, recoveredAffected []contract.AssetVersion, 
 	for _, target := range targets {
 		asset, exists := s.authority.ReadCurrent(target.ID)
 		if (!exists && recoveredAffected == nil) || (exists && asset.Revision != target.Revision) {
+			if recoveredAffected == nil {
+				return contract.ErrForgetScopeChanged
+			}
 			return errors.New("遗忘目标已变化，需重新核对")
 		}
 		deleted[target.ID] = true

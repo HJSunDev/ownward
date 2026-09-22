@@ -14,8 +14,8 @@ var _ contract.VectorCapability = embedding.Unavailable{}
 
 func TestContractCatalogIsVersionedAndDeterministic(t *testing.T) {
 	definitions := contract.Definitions()
-	if len(definitions) != 10 {
-		t.Fatalf("contract definitions = %d, want 10", len(definitions))
+	if len(definitions) != 11 {
+		t.Fatalf("contract definitions = %d, want 11", len(definitions))
 	}
 	seen := make(map[string]struct{}, len(definitions))
 	for _, definition := range definitions {

@@ -82,8 +82,15 @@ func TestFrozenMigrationYieldsToAuthorizedRevocationAtomically(t *testing.T) {
 	if err := c.SetPermissions(owner, p.ID, []contract.Permission{contract.ReadPermission, contract.MaintainPermission}); err != nil {
 		t.Fatal(err)
 	}
+	r := contract.ManagementRequest{ID: "revoke", Operation: "permissions", SubjectID: p.ID}
+	if _, err := c.Propose(Authenticate(context.Background(), token), r); err != nil {
+		t.Fatal(err)
+	}
 	target := contract.Location{ServiceID: "destination", SystemID: c.SystemID(), Endpoint: "https://example.test", Certificate: "test", Composition: "test"}
 	if _, err := c.PrepareHandoff(owner, "migration", target); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.DecideHandoff(owner, "migration", c.State().Access.Handoff.Revision, true); err != nil {
 		t.Fatal(err)
 	}
 	h, err := c.FreezeHandoff(owner, "migration", true)
@@ -93,10 +100,10 @@ func TestFrozenMigrationYieldsToAuthorizedRevocationAtomically(t *testing.T) {
 	if _, _, err := c.Begin(Authenticate(context.Background(), token), contract.MaintainPermission); !errors.Is(err, ErrMoving) {
 		t.Fatal("frozen writes allowed", err)
 	}
-	r := contract.ManagementRequest{ID: "revoke", Operation: "permissions", SubjectID: p.ID}
-	_, err = c.Propose(Authenticate(context.Background(), token), r)
-	if err != nil {
-		t.Fatal(err)
+	newRequest := r
+	newRequest.ID = "unaccepted-while-frozen"
+	if _, err = c.Propose(Authenticate(context.Background(), token), newRequest); !errors.Is(err, ErrMoving) {
+		t.Fatal("volatile request reported as accepted", err)
 	}
 	if c.State().Revision != h.Revision {
 		t.Fatal("unapproved proposal invalidated snapshot")
@@ -126,6 +133,9 @@ func TestRetirementRejectsOldCallsAndSurvivesReload(t *testing.T) {
 	c, owner, dir := accessControl(t)
 	target := contract.Location{ServiceID: "target", SystemID: c.SystemID(), Endpoint: "https://example.test", Certificate: "test", Composition: "test"}
 	if _, err := c.PrepareHandoff(owner, "move", target); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.DecideHandoff(owner, "move", c.State().Access.Handoff.Revision, true); err != nil {
 		t.Fatal(err)
 	}
 	h, err := c.FreezeHandoff(owner, "move", true)

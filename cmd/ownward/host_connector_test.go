@@ -127,7 +127,7 @@ func hostCall(t *testing.T, s *mcp.ClientSession, name string, input any, wantSu
 				}
 			}
 		}
-		t.Fatalf("%s success=%v want=%v error=%v content=%#v", name, success, wantSuccess, err, result.Content)
+		t.Fatalf("%s success=%v want=%v error=%v result=%#v", name, success, wantSuccess, err, result)
 	}
 	return result
 }

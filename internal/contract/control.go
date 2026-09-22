@@ -25,9 +25,11 @@ type ControlState struct {
 type ControlSelection struct {
 	Credential, Principal, Operation, Handoff, Enrollment string
 	Principals                                            bool
+	Enrollments                                           bool // load only the bounded enrollment identities
 	Pending                                               string
 	After                                                 string
 	Limit                                                 int
+	RelatedPrincipals                                     []string // bounded dependencies of an in-flight management commit
 }
 type SelectedControlAuthority interface {
 	ReadSelectedControl(ControlSelection) (ControlState, error)

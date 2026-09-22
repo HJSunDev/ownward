@@ -84,7 +84,7 @@ var roles = map[string]roleSpec{
 		dependencies: []string{"authority-substrate", "product-rules", "semantic", "vector"},
 	},
 	"access": {
-		contracts:    []contractKey{{contract.AccessAdapterContract, 2}},
+		contracts:    []contractKey{{contract.AccessAdapterContract, 2}, {contract.OwnerViewContract, 1}},
 		dependencies: []string{"kernel", "product-rules"},
 	},
 	"assembly": {

@@ -46,6 +46,9 @@ func authenticateWork(ctx context.Context, q querier, writing bool) (ownerActor,
  JOIN authority_header a ON a.singleton=h.singleton
  JOIN access_principals o ON o.id=json_extract(a.data,'$.information_control.owner_id')
  WHERE h.singleton=1`, digest).Scan(&a.id, &a.revision, &a.system, &frozen, &retired, &stopping, &a.owner, &a.ownerRevision)
+	if e != nil && !errors.Is(e, sql.ErrNoRows) {
+		return a, e
+	}
 	if e != nil || retired || stopping || (writing && frozen) {
 		return a, ErrAccess
 	}
@@ -175,6 +178,9 @@ func (s *Store) CreateDraft(ctx context.Context, in contract.DraftInput) (contra
 		if in.Target.ID != "" {
 			var current uint64
 			if e := tx.QueryRowContext(ctx, "SELECT revision FROM live_assets WHERE id=?", in.Target.ID).Scan(&current); e != nil {
+				if errors.Is(e, sql.ErrNoRows) {
+					return ErrDraftConflict
+				}
 				return e
 			}
 			if current != in.Target.Revision {
@@ -453,6 +459,10 @@ func (s *Store) ListDrafts(ctx context.Context, after string, limit int) (contra
 }
 
 func (s *Store) GrantDraft(ctx context.Context, id, principal string, ttl time.Duration) (contract.DraftGrant, error) {
+	return s.GrantDraftVersion(ctx, id, 0, principal, 0, ttl)
+}
+
+func (s *Store) GrantDraftVersion(ctx context.Context, id string, draftRevision uint64, principal string, principalRevision uint64, ttl time.Duration) (contract.DraftGrant, error) {
 	var out contract.DraftGrant
 	if ttl < time.Second || ttl > 24*time.Hour {
 		return out, errors.New("工作授权有效期须为 1 秒至 24 小时")
@@ -467,12 +477,19 @@ func (s *Store) GrantDraft(ctx context.Context, id, principal string, ttl time.D
 		if e != nil {
 			return e
 		}
-		if _, _, e = loadDraft(ctx, tx, id); e != nil {
+		d, _, e := loadDraft(ctx, tx, id)
+		if e != nil {
 			return e
 		}
+		if draftRevision != 0 && d.Revision != draftRevision {
+			return contract.ErrOwnerRefresh
+		}
 		var rev uint64
-		if e = tx.QueryRowContext(ctx, "SELECT revision FROM access_principals WHERE id=? AND permissions<>0", principal).Scan(&rev); e != nil {
+		if e = tx.QueryRowContext(ctx, "SELECT revision FROM access_principals WHERE id=? AND length(credential)=64", principal).Scan(&rev); e != nil {
 			return ErrAccess
+		}
+		if principalRevision != 0 && rev != principalRevision {
+			return contract.ErrOwnerRefresh
 		}
 		if _, e = tx.ExecContext(ctx, "DELETE FROM owner_draft_grants WHERE draft=? AND (principal=? OR expires<=?)", id, principal, time.Now().UnixMilli()); e != nil {
 			return e
@@ -497,7 +514,15 @@ func (s *Store) RevokeDraftGrant(ctx context.Context, id string) error {
 		if _, e := requireOwner(ctx, tx, false); e != nil {
 			return e
 		}
-		if _, e := tx.ExecContext(ctx, "DELETE FROM owner_draft_grants WHERE id=?", id); e != nil {
+		r, e := tx.ExecContext(ctx, "DELETE FROM owner_draft_grants WHERE id=?", id)
+		if e != nil {
+			return e
+		}
+		n, e := r.RowsAffected()
+		if e != nil || n == 0 {
+			return e
+		}
+		if e = cancelFrozenHandoffForOwnerWork(ctx, tx); e != nil {
 			return e
 		}
 		return workChanged(ctx, tx)

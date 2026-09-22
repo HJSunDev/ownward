@@ -12,6 +12,7 @@ const (
 	AssetAuthorityContract     = "ownward.asset-authority"
 	ControlStateContract       = "ownward.control-state"
 	OwnerWorkContract          = "ownward.owner-work"
+	OwnerViewContract          = "ownward.owner-view"
 	ProductCapabilityContract  = "ownward.product-capability"
 	KernelLifecycleContract    = "ownward.kernel-lifecycle"
 	SemanticCapabilityContract = "ownward.semantic-capability"
@@ -37,6 +38,7 @@ type Definition struct {
 }
 
 var definitions = []Definition{
+	{OwnerViewContract, 1, "物主认证后的有界五面投影、条件操作与限域草稿工具", []string{"query", "act", "draft_work", "backup", "restore", "bootstrap"}, []string{OwnerViewSchema}, "internal/contract/owner_view.go"},
 	{OwnerWorkContract, 1, "私有耐久文稿、限域授权、原子发布、来源原件与有界操作投影", []string{"create_draft", "read_draft", "write_draft", "list_drafts", "grant_draft", "revoke_draft_grant", "discard_draft", "publish_draft", "work_revision", "events", "operations", "read_original"}, []string{OwnerWorkSchema}, "internal/contract/owner_work.go"},
 	{AssetAuthorityContract, 2, "权威资产的耐久提交、版本化读取、变化范围、维护、备份与完整恢复", []string{"create", "create_batch", "update_if_revision", "get_current", "read_source_snapshot", "list_current", "sync", "compact", "backup", "restore"}, []string{"ownward.information/v1", "ownward.asset-change-scope/v1"}, "internal/contract/asset.go"},
 	{ControlStateContract, 1, "保存活动组合、活动内核世代、用户授权、遗忘与唯一活动位置及其耐久修订", []string{"read", "compare_and_swap"}, []string{ControlStateSchema, UserControlStateSchema, AccessControlStateSchema}, "internal/contract/control.go"},

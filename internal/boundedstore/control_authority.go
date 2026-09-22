@@ -105,6 +105,46 @@ func controlItem(ctx context.Context, tx *sql.Tx, kind, id, state string, data [
 	return storeControlItem(ctx, tx, kind, id, state, data, true)
 }
 
+// A withdrawn private-work capability has the same priority as other access
+// revocations. Cancel the frozen candidate in the revocation's own transaction:
+// either retirement won first and owner authentication rejects the mutation,
+// or the old retirement CAS can never authorize the copied grant again.
+func cancelFrozenHandoffForOwnerWork(ctx context.Context, tx *sql.Tx) error {
+	var data []byte
+	if e := tx.QueryRowContext(ctx, "SELECT data FROM authority_header WHERE singleton=1").Scan(&data); e != nil {
+		return e
+	}
+	var state contract.ControlState
+	if e := json.Unmarshal(data, &state); e != nil {
+		return e
+	}
+	if state.Access == nil || state.Access.Handoff == nil || state.Access.Handoff.Phase != "frozen" {
+		return nil
+	}
+	h := *state.Access.Handoff
+	b, e := json.Marshal(h)
+	if e != nil {
+		return e
+	}
+	if e = controlItem(ctx, tx, "cancelled", h.ID, "pending", b); e != nil {
+		return e
+	}
+	state.Access.Handoff = nil
+	state.Revision++
+	data, e = json.Marshal(state)
+	if e != nil {
+		return e
+	}
+	if _, e = tx.ExecContext(ctx, "UPDATE authority_header SET data=? WHERE singleton=1", data); e != nil {
+		return e
+	}
+	if _, e = tx.ExecContext(ctx, "UPDATE access_header SET revision=?,frozen=0 WHERE singleton=1", state.Revision); e != nil {
+		return e
+	}
+	_, e = tx.ExecContext(ctx, "UPDATE controlled_copies SET state='building'")
+	return e
+}
+
 func storeControlItem(ctx context.Context, tx *sql.Tx, kind, id, state string, data []byte, recordEvent bool) error {
 	if id == "" || len(data) > 256*1024 {
 		return errors.New("控制决定身份或大小无效")
@@ -123,6 +163,17 @@ func storeControlItem(ctx context.Context, tx *sql.Tx, kind, id, state string, d
 		if e == nil {
 			e = recordOwnerEvent(ctx, tx, "management", "", 0, id, state)
 		}
+	}
+	if e == nil && kind == "cancelled" && len(previous) == 0 && recordEvent {
+		var hand contract.Handoff
+		if e = json.Unmarshal(data, &hand); e != nil {
+			return e
+		}
+		status := "cancelled"
+		if hand.ApprovalStatus == "declined" {
+			status = "declined"
+		}
+		e = recordOwnerAccess(ctx, tx, "handoff", hand.ID, status, contract.OwnerAccessFact{Subject: hand.Target.Endpoint})
 	}
 	return e
 }
@@ -205,7 +256,7 @@ func (s *Store) splitControl(ctx context.Context, n streamjson.Node) error {
 			if e != nil {
 				return e
 			}
-			return s.write(ctx, func(tx *sql.Tx) error { return controlItem(ctx, tx, "cancelled", handoff.ID, state, data) })
+			return s.write(ctx, func(tx *sql.Tx) error { return storeControlItem(ctx, tx, "cancelled", handoff.ID, state, data, false) })
 		}); e != nil {
 			return e
 		}
@@ -251,6 +302,12 @@ func (a *ControlAuthority) ReadSelectedControl(selection contract.ControlSelecti
 			return nil
 		}
 		ids := map[string]bool{out.InformationControl.OwnerID: true}
+		if len(selection.RelatedPrincipals) > 3 {
+			return errors.New("管理提交依赖超过上限")
+		}
+		for _, id := range selection.RelatedPrincipals {
+			ids[id] = true
+		}
 		if selection.Principal != "" {
 			ids[selection.Principal] = true
 		}
@@ -264,11 +321,17 @@ func (a *ControlAuthority) ReadSelectedControl(selection contract.ControlSelecti
 			}
 		}
 		if out.Access != nil {
+			if out.Access.Handoff != nil && out.Access.Handoff.Approver != "" {
+				ids[out.Access.Handoff.Approver] = true
+			}
 			for _, p := range out.Access.Enrollments {
-				if p.ID != selection.Enrollment {
+				if !selection.Enrollments && p.ID != selection.Enrollment {
 					continue
 				}
 				ids[p.Manager] = true
+				if p.Approver != "" {
+					ids[p.Approver] = true
+				}
 				if p.Principal != "" {
 					ids[p.Principal] = true
 				}
@@ -300,7 +363,17 @@ func (a *ControlAuthority) ReadSelectedControl(selection contract.ControlSelecti
 			limit = 64
 		}
 		if selection.Operation != "" || selection.Pending != "" {
-			rows, e := q.QueryContext(ctx, `SELECT data FROM (SELECT data,id,sum(length(data)) OVER(ORDER BY id=? DESC,id) AS bytes FROM authority_items WHERE kind='operations' AND (id=? OR (?='cleaning' AND state IN ('stopping','cleaning')) OR (?='approval' AND state='awaiting_approval')) AND id>?) WHERE bytes<=524288 ORDER BY id=? DESC,id LIMIT ?`, selection.Operation, selection.Operation, selection.Pending, selection.Pending, selection.After, selection.Operation, limit)
+			rows, e := q.QueryContext(ctx, `WITH candidates AS (
+ SELECT a.data,a.id FROM authority_items a WHERE a.kind='operations'
+ AND (a.id=? OR (?='cleaning' AND a.state IN ('stopping','cleaning')) OR
+ (?='approval' AND (a.state='awaiting_approval' OR (a.state='approved' AND (NOT EXISTS(
+ SELECT 1 FROM access_principals p WHERE p.id=json_extract(a.data,'$.approver')
+ AND p.revision=json_extract(a.data,'$.approver_revision') AND p.permissions & 4 != 0)
+ OR (json_extract(a.data,'$.request.operation')='permissions' AND coalesce(json_extract(a.data,'$.request.subject_revision'),0)=0
+ AND coalesce(json_extract(a.data,'$.approved_subject_revision'),0)=0))))))
+ AND a.id>? ORDER BY a.id=? DESC,a.id LIMIT ?)
+ SELECT data FROM (SELECT data,id,sum(length(data)) OVER(ORDER BY id=? DESC,id) AS bytes FROM candidates)
+ WHERE bytes<=524288 ORDER BY id=? DESC,id`, selection.Operation, selection.Pending, selection.Pending, selection.After, selection.Operation, limit, selection.Operation, selection.Operation)
 			if e != nil {
 				return e
 			}
@@ -463,6 +536,9 @@ func (a *ControlAuthority) CompareAndSwapControl(expected uint64, next contract.
 			}
 		}
 		if next.Access != nil {
+			if e := recordAccessDecisions(ctx, tx, old.Access, next.Access); e != nil {
+				return e
+			}
 			access := *next.Access
 			headerAccess := access
 			h.Access = &headerAccess

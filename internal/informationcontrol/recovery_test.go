@@ -37,6 +37,9 @@ func TestForgetDuringFrozenMigrationStopsUseBeforeOfflineCopyCleanup(t *testing.
 	if _, err := c.PrepareHandoff(owner, "migration", target); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := c.DecideHandoff(owner, "migration", c.State().Access.Handoff.Revision, true); err != nil {
+		t.Fatal(err)
+	}
 	frozen, err := c.FreezeHandoff(owner, "migration", true)
 	if err != nil {
 		t.Fatal(err)
@@ -210,11 +213,11 @@ func TestConfirmationTargetChangeAndReceiptIsolation(t *testing.T) {
 	if _, err := p.Update(owner, contract.UpdateInput{ID: value.Information.ID, ExpectedRevision: 1, Content: &changed}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.Decide(owner, request.ID, true); err == nil {
-		t.Fatal("changed target deleted")
+	if receipt, err := p.Decide(owner, request.ID, true); err != nil || receipt.Status != "superseded" {
+		t.Fatal("changed target did not close without deletion", receipt, err)
 	}
-	if _, err := p.Read(owner, value.Information.ID); err != nil {
-		t.Fatal("target was lost", err)
+	if current, err := p.Read(owner, value.Information.ID); err != nil || current.Content != changed {
+		t.Fatal("current target was lost or changed", current, err)
 	}
 	if _, err := p.Receipt(informationcontrol.Authenticate(context.Background(), otherToken), request.ID); err == nil {
 		t.Fatal("other subject read receipt")

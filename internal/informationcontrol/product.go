@@ -49,6 +49,30 @@ func (p *Product) SetRelatedCleanup(clean func() error) {
 	p.cleanupMu.Unlock()
 	p.signal()
 }
+
+func (p *Product) RevokeDraftGrant(ctx context.Context, work contract.OwnerWork, id string) error {
+	if e := p.control.RevokeDraftGrant(ctx, work, id); e != nil {
+		return e
+	}
+	p.signal()
+	return nil
+}
+
+func (p *Product) DecideHandoff(ctx context.Context, id string, revision uint64, accept bool) (contract.Handoff, error) {
+	h, e := p.control.DecideHandoff(ctx, id, revision, accept)
+	if e == nil && h.Phase == "cancelled" {
+		p.signal()
+	}
+	return h, e
+}
+
+func (p *Product) CancelHandoff(ctx context.Context, id string) error {
+	if e := p.control.CancelHandoff(ctx, id); e != nil {
+		return e
+	}
+	p.signal()
+	return nil
+}
 func (p *Product) cleanRelated() error {
 	p.cleanupMu.RLock()
 	fn := p.relatedCleanup

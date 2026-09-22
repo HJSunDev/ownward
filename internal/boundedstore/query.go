@@ -17,9 +17,11 @@ type snapshot struct {
 	tx    *sql.Tx
 }
 
+var ErrSnapshotInterrupted = errors.New("读取被存储维护中断，请重新读取")
+
 // WithSnapshot scopes all reads in one tool to the same database version.
 // No model or network call may run while fn owns this snapshot.
-func (s *Store) WithSnapshot(ctx context.Context, fn func(context.Context) error) error {
+func (s *Store) WithSnapshot(ctx context.Context, fn func(context.Context) error) (err error) {
 	if v, ok := ctx.Value(snapshotKey{}).(snapshot); ok {
 		if v.store != s {
 			return errors.New("读快照属于其他资料库")
@@ -31,6 +33,14 @@ func (s *Store) WithSnapshot(ctx context.Context, fn func(context.Context) error
 		return err
 	}
 	defer done()
+	// Forget and WAL pressure cancel the internal read lease, not the caller.
+	// database/sql may then return ErrTxDone instead of context.Canceled. Keep
+	// the interruption's origin explicit, including a cancellation at delivery.
+	defer func() {
+		if ctx.Err() == nil && c.ctx.Err() != nil {
+			err = ErrSnapshotInterrupted
+		}
+	}()
 	tx, err := c.BeginTx(ctx, nil)
 	if err != nil {
 		return err

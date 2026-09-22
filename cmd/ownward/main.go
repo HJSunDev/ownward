@@ -100,6 +100,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		}
 		return runSharedMCPConnector(ctx, loaded.DataDir, version, verification.Composition, stdout, stderr)
 	}
+	if command == "owner-window" {
+		return openOwnerWindow(ctx, loaded.DataDir, vectorBundleDir, stdout, stderr)
+	}
 	if command == "recover-owner" {
 		// 活动服务仍持有资产锁；通过独立 OS 保护通道恢复，不杀进程或争夺写入权。
 		if descriptor, readErr := readSharedMCPDescriptor(filepath.Join(loaded.DataDir, "runtime", "mcp-service.json")); readErr == nil {
@@ -211,7 +214,11 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		if resolvedToken == "" {
 			resolvedToken = strings.TrimSpace(os.Getenv(sharedMCPTokenEnvironment))
 		}
-		secured := controlHTTPServer{server: productServer(runtime), control: runtime.UserControl(), product: runtime.Management(), kernel: runtime.UnderlyingKernel(), generation: runtime.OperationGeneration}
+		secured := controlHTTPServer{server: productServer(runtime), control: runtime.UserControl(), product: runtime.Management(), kernel: runtime.UnderlyingKernel(), generation: runtime.OperationGeneration, dataDir: loaded.DataDir}
+		secured.window, err = newOwnerWindow(runtime, loaded.DataDir)
+		if err != nil {
+			return err
+		}
 		if err := secured.prepareRecovery(ownerRecoveryScope(loaded.DataDir)); err != nil {
 			return err
 		}
@@ -401,11 +408,19 @@ func runHTTPMCP(ctx context.Context, server httpMCPServer, address, token string
 	if strings.TrimSpace(token) != "" {
 		handler = bearerTokenHandler(handler, strings.TrimSpace(token))
 	}
+	endpoint := "http://" + net.JoinHostPort(tcpAddress.IP.String(), strconv.Itoa(tcpAddress.Port))
+	if mounted, ok := server.(interface{ BrowserHandler(string) http.Handler }); ok {
+		handler = mountOwnerWindow(handler, mounted.BrowserHandler(endpoint))
+	}
+	if publisher, ok := server.(interface{ PublishOwnerEntry(string) error }); ok {
+		// Rebuildable window metadata must not gate ordinary machine access.
+		// The explicit owner command can retry and report an entry-only error.
+		_ = publisher.PublishOwnerEntry(endpoint)
+	}
 	httpServer := &http.Server{
 		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
-	endpoint := "http://" + net.JoinHostPort(tcpAddress.IP.String(), strconv.Itoa(tcpAddress.Port))
 	cleanupDescriptor, err := publishSharedMCPDescriptorFromEnvironment(endpoint)
 	if err != nil {
 		_ = listener.Close()
@@ -453,7 +468,7 @@ func bearerTokenHandler(next http.Handler, token string) http.Handler {
 }
 
 func printUsage(writer io.Writer) {
-	fmt.Fprintln(writer, "用法: ownward <setup|recover-owner|mcp|mcp-http|codex-configure|codex-connect|create|update|read|evidence-read|check|search|navigate|rules|backup|restore|maintain|rebuild|version> [选项]")
+	fmt.Fprintln(writer, "用法: ownward <setup|recover-owner|owner-window|mcp|mcp-http|codex-configure|codex-connect|create|update|read|evidence-read|check|search|navigate|rules|backup|restore|maintain|rebuild|version> [选项]")
 	fmt.Fprintln(writer, "信息类型:", strings.Join(kindNames(), ", "))
 }
 

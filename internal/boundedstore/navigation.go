@@ -30,6 +30,10 @@ type navigationState struct {
 	Depth int
 }
 
+// Expiry, reclamation or an authority-version change invalidates a navigation
+// position. Storage failures and corrupt cursor state are separate errors.
+var ErrNavigationExpired = errors.New("导航接续已失效，请从原资产重新导航")
+
 func nextAdjacent(ctx context.Context, q queryer, generation, id string, after adjacencyPosition) (Edge, bool, adjacencyPosition, error) {
 	var owner, org string
 	var grounded bool
@@ -74,8 +78,11 @@ func (s *Store) NavigatePage(ctx context.Context, generation string, start, type
 		if len(start) == 1 && strings.HasPrefix(start[0], "nav2:") {
 			var data []byte
 			err = q.QueryRowContext(ctx, "SELECT state FROM navigation_cursors WHERE id=? AND principal=? AND generation=? AND asset_epoch=? AND derived_epoch=? AND expires>?", strings.TrimPrefix(start[0], "nav2:"), contract.AuthenticationDigest(ctx), generation, assetEpoch, derivedEpoch, time.Now().Unix()).Scan(&data)
+			if errors.Is(err, sql.ErrNoRows) {
+				return ErrNavigationExpired
+			}
 			if err != nil {
-				return errors.New("导航接续已失效，请从原资产重新导航")
+				return err
 			}
 			if json.Unmarshal(data, &state) != nil || state.Depth < 1 || state.Depth > 5 || len(state.Queue) > 105 {
 				return errors.New("导航接续无效")

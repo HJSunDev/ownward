@@ -228,7 +228,7 @@ func (s *Scope) Project(ctx context.Context, r io.Reader) ([]byte, *Call, error)
 
 func StorageTool(name string) bool {
 	switch name {
-	case "ownward_rules", "ownward_status", "ownward_check", "ownward_connections", "ownward_manage", "ownward_management_status", "ownward_create", "ownward_create_batch", "ownward_read", "ownward_update", "ownward_search", "ownward_navigate", "ownward_evidence_search", "ownward_evidence_read", "ownward_semantic_jobs", "ownward_semantic_work", "ownward_semantic_submit", "ownward_semantic_submit_batch":
+	case "ownward_rules", "ownward_status", "ownward_check", "ownward_connections", "ownward_manage", "ownward_management_status", "ownward_draft_work", "ownward_create", "ownward_create_batch", "ownward_read", "ownward_update", "ownward_search", "ownward_navigate", "ownward_evidence_search", "ownward_evidence_read", "ownward_semantic_jobs", "ownward_semantic_work", "ownward_semantic_submit", "ownward_semantic_submit_batch":
 		return true
 	}
 	return false

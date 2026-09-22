@@ -22,7 +22,11 @@ func startManagedLocal(s installation, r *assembly.Runtime) (func(), error) {
 	if err != nil {
 		return nil, err
 	}
-	secured := controlHTTPServer{server: productServer(r), control: r.UserControl(), product: r.Management(), kernel: r.UnderlyingKernel(), generation: r.OperationGeneration, vault: s.vault(), recovery: proof}
+	secured := controlHTTPServer{server: productServer(r), control: r.UserControl(), product: r.Management(), kernel: r.UnderlyingKernel(), generation: r.OperationGeneration, vault: s.vault(), recovery: proof, dataDir: s.DataDir}
+	secured.window, err = newOwnerWindow(r, s.DataDir)
+	if err != nil {
+		return nil, err
+	}
 	if err := s.vault().Save(ownerRecoveryScope(s.DataDir), "owner-recovery", secured.recovery); err != nil {
 		return nil, err
 	}
@@ -43,7 +47,8 @@ func startManagedLocal(s installation, r *assembly.Runtime) (func(), error) {
 		}
 		base.ServeHTTP(w, request)
 	})
-	server := &http.Server{Handler: bearerTokenHandler(handler, d.BearerToken), ReadHeaderTimeout: 5 * time.Second}
+	server := &http.Server{Handler: mountOwnerWindow(bearerTokenHandler(handler, d.BearerToken), secured.BrowserHandler(d.Endpoint)), ReadHeaderTimeout: 5 * time.Second}
+	_ = secured.PublishOwnerEntry(d.Endpoint) // optional, rebuildable window hint
 	path := filepath.Join(s.DataDir, "runtime", "mcp-service.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		listener.Close()

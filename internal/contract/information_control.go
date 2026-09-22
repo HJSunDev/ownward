@@ -7,6 +7,13 @@ import (
 
 type Permission string
 
+// ErrForgetScopeChanged means the target was missing or its version differed
+// before a stop-use barrier committed. Storage/cleanup failures after that
+// barrier must never use this error: they still owe completion of deletion.
+var ErrForgetScopeChanged = errors.New("遗忘目标已变化，请刷新后重新确认")
+
+const MaxForgetTargets = 64
+
 const (
 	ReadPermission     Permission = "read"
 	MaintainPermission Permission = "maintain"
@@ -22,21 +29,31 @@ type Principal struct {
 }
 
 type ManagementRequest struct {
-	ID          string         `json:"id"`
-	Operation   string         `json:"operation"`
-	SubjectID   string         `json:"subject_id,omitempty"`
-	Permissions []Permission   `json:"permissions,omitempty"`
-	Targets     []AssetVersion `json:"targets,omitempty"`
+	ID              string         `json:"id"`
+	Operation       string         `json:"operation"`
+	SubjectID       string         `json:"subject_id,omitempty"`
+	SubjectRevision uint64         `json:"subject_revision,omitempty"`
+	Permissions     []Permission   `json:"permissions,omitempty"`
+	Targets         []AssetVersion `json:"targets,omitempty"`
 }
 
 type ManagementReceipt struct {
-	Request          ManagementRequest `json:"request"`
-	Requester        string            `json:"requester"`
-	Approver         string            `json:"approver,omitempty"`
-	ApproverRevision uint64            `json:"approver_revision,omitempty"`
-	Status           string            `json:"status"`
-	Affected         []AssetVersion    `json:"affected,omitempty"`
-	Error            string            `json:"error,omitempty"`
+	Request                 ManagementRequest `json:"request"`
+	Requester               string            `json:"requester"`
+	Approver                string            `json:"approver,omitempty"`
+	ApproverRevision        uint64            `json:"approver_revision,omitempty"`
+	ApprovedSubjectRevision uint64            `json:"approved_subject_revision,omitempty"`
+	Status                  string            `json:"status"`
+	Affected                []AssetVersion    `json:"affected,omitempty"`
+	Error                   string            `json:"error,omitempty"`
+	// Decision binds a presented confirmation to current authority. It is a
+	// derived value, never a new approval or durable operation state.
+	Decision string `json:"decision,omitempty"`
+}
+
+// Terminal results are durable facts, never candidates for another execution.
+func (r ManagementReceipt) Terminal() bool {
+	return r.Status == "completed" || r.Status == "declined" || r.Status == "superseded"
 }
 
 type InformationControlState struct {
@@ -77,7 +94,7 @@ func (s InformationControlState) Validate() error {
 		}
 		operations[op.Request.ID] = true
 		switch op.Status {
-		case "awaiting_approval", "approved", "declined", "stopping", "cleaning", "completed":
+		case "awaiting_approval", "approved", "declined", "superseded", "stopping", "cleaning", "completed":
 		default:
 			return errors.New("管理操作状态无效")
 		}

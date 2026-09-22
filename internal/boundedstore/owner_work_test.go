@@ -644,12 +644,23 @@ func TestOwnerPublicationReceiptRotation(t *testing.T) {
 	if e != nil || retry != a {
 		t.Fatal("last receipt retry lost", retry, e)
 	}
+	lookedUp, e := s.OwnerPublication(ctx, "last")
+	if e != nil || lookedUp.State != "completed" || lookedUp.Asset != a {
+		t.Fatal("publication recovery at receipt capacity", lookedUp, e)
+	}
+	if n := countTest(t, s, "SELECT count(*) FROM operation_receipts"); n != 4096 {
+		t.Fatal("read-only recovery rotated receipts", n)
+	}
 	d = newDraft(t, s, ctx, "next independent publication")
 	if _, e = s.PublishDraft(ctx, d.ID, d.Revision, contract.OperationIdentity{ID: "next"}); e != nil {
 		t.Fatal("capacity stopped publication", e)
 	}
 	if n := countTest(t, s, "SELECT value FROM store_meta WHERE key='operation_generation'"); n != 2 {
 		t.Fatal(n)
+	}
+	lookedUp, e = s.OwnerPublication(ctx, "last")
+	if e != nil || lookedUp.State != "unknown" || lookedUp.Asset.ID != "" {
+		t.Fatal("expired receipt was treated as an uncommitted publication", lookedUp, e)
 	}
 	d = newDraft(t, s, ctx, "expired explicit operation")
 	if _, e = s.PublishDraft(ctx, d.ID, d.Revision, contract.OperationIdentity{ID: "expired", Generation: 1}); !errors.Is(e, contract.ErrOperationExpired) {
@@ -813,6 +824,22 @@ func TestOwnerHistoryExpiresOnReadWithoutMaintenance(t *testing.T) {
 	if countTest(t, s, "SELECT count(*) FROM owner_events") != 2 {
 		t.Fatal("fixture failed to retain expired physical rows")
 	}
+	// Age alone changes projection visibility, even when maintenance has not
+	// advanced an epoch. Capture a near-future retention boundary then cross it.
+	expires := time.Now().Add(150 * time.Millisecond)
+	stamp := expires.Add(-OwnerHistoryRetention).UnixMilli()
+	if _, e = s.writer.ExecContext(ctx, "UPDATE owner_events SET at=?; UPDATE owner_operation_times SET updated=?", stamp, stamp); e != nil {
+		t.Fatal(e)
+	}
+	before, e := s.OwnerCheckpoint(ctx)
+	if e != nil || before.VisibleUntil == 0 {
+		t.Fatal(before, e)
+	}
+	time.Sleep(time.Until(expires) + 10*time.Millisecond)
+	after, e := s.OwnerCheckpoint(ctx)
+	if e != nil || after.VisibleUntil != 0 || before.Events != after.Events {
+		t.Fatal("idle expiration not observable", before, after, e)
+	}
 }
 
 func TestOwnerRestoreSnapshotFromPreviousSchema(t *testing.T) {
@@ -850,6 +877,56 @@ func TestOwnerRestoreSnapshotFromPreviousSchema(t *testing.T) {
 	defer r.Close()
 	if countTest(t, r, "SELECT value FROM store_meta WHERE key='format'") != schemaVersion {
 		t.Fatal("restored old schema not upgraded")
+	}
+}
+
+func TestOwnerGrantRevocationAndHandoffCancellationAreAtomic(t *testing.T) {
+	s, c, ctx := ownerFixture(t)
+	p, agent := workAgent(t, c, ctx)
+	d, e := s.CreateDraft(ctx, contract.DraftInput{Content: StringSource("private grant")})
+	if e != nil {
+		t.Fatal(e)
+	}
+	g, e := s.GrantDraft(ctx, d.ID, p.ID, time.Hour)
+	if e != nil {
+		t.Fatal(e)
+	}
+	target := contract.Location{SystemID: c.SystemID(), ServiceID: "next", Endpoint: "https://next.test", Certificate: "fixture", Composition: "composition"}
+	h, e := c.PrepareHandoff(ctx, "atomic-grant", target)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = c.DecideHandoff(ctx, h.ID, h.Revision, true); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = c.FreezeHandoff(ctx, h.ID, true); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = s.writer.ExecContext(ctx, `CREATE TRIGGER fail_owner_revoke BEFORE UPDATE ON authority_header BEGIN SELECT RAISE(ABORT,'injected cancel failure'); END`); e != nil {
+		t.Fatal(e)
+	}
+	if e = s.RevokeDraftGrant(ctx, g.ID); e == nil {
+		t.Fatal("injected cancellation failure ignored")
+	}
+	if _, e = s.DraftMetadata(agent, d.ID, g.ID); e != nil {
+		t.Fatal("grant partially revoked", e)
+	}
+	state := c.State()
+	if state.Access.Handoff == nil || state.Access.Handoff.Phase != "frozen" || len(state.Access.Cancelled) != 0 {
+		t.Fatal("partial cancellation", state.Access)
+	}
+	if _, e = s.writer.ExecContext(ctx, "DROP TRIGGER fail_owner_revoke"); e != nil {
+		t.Fatal(e)
+	}
+	if e = s.RevokeDraftGrant(ctx, g.ID); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = s.DraftMetadata(agent, d.ID, g.ID); e == nil {
+		t.Fatal("revoked grant survived")
+	}
+	state = c.State()
+	if state.Access.Handoff != nil || len(state.Access.Cancelled) != 1 {
+		t.Fatal("no durable cancellation", state.Access)
 	}
 }
 

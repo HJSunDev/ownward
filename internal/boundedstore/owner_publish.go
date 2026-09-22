@@ -261,6 +261,60 @@ func (s *Store) draftReceipt(ctx context.Context, op contract.OperationIdentity)
 	return
 }
 
+type OwnerPublicationRow struct {
+	State string
+	Asset contract.AssetVersion
+}
+
+// Recover an uncertain publication without parsing an old process's handle,
+// renewing its write authority, or creating another replay ledger. The caller
+// asks only what happened to this operation, not to publish a new request.
+func (s *Store) OwnerPublication(ctx context.Context, id string) (out OwnerPublicationRow, err error) {
+	if id == "" || len(id) > contract.OwnerRequestBytes {
+		return out, errors.New("发布操作标识无效")
+	}
+	out.State = "unknown"
+	err = s.view(ctx, func(q queryer) error {
+		actor, e := requireOwner(ctx, q, false)
+		if e != nil {
+			return e
+		}
+		var data []byte
+		e = q.QueryRowContext(ctx, `SELECT results FROM operation_receipts
+ WHERE system=? AND principal=? AND id=? AND kind='ownward_publish_draft'`, actor.system, actor.id, id).Scan(&data)
+		if errors.Is(e, sql.ErrNoRows) {
+			return nil // Not retained is not proof of not committed.
+		}
+		if e != nil {
+			return e
+		}
+		var results []contract.MutationOutcome
+		if e = json.Unmarshal(data, &results); e != nil {
+			return e
+		}
+		if len(results) != 1 || results[0].Error != "" || results[0].Asset.ID == "" {
+			return errors.New("文稿发布回执无效")
+		}
+		asset := results[0].Asset
+		var current uint64
+		e = q.QueryRowContext(ctx, "SELECT revision FROM live_assets WHERE id=?", asset.ID).Scan(&current)
+		if errors.Is(e, sql.ErrNoRows) {
+			out.State = "unavailable"
+			return nil
+		}
+		if e != nil {
+			return e
+		}
+		out.State = "completed"
+		if current != asset.Revision {
+			out.State = "changed"
+		}
+		out.Asset = contract.AssetVersion{ID: asset.ID, Revision: current}
+		return nil
+	})
+	return
+}
+
 // OpenOriginal returns the separately retained evidence, not an arbitrary old
 // edit version. It shares live-asset visibility, authorization and forget state.
 func (s *Store) OpenOriginal(ctx context.Context, id string, details bool) (uint64, io.ReadCloser, error) {

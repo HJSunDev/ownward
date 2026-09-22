@@ -135,6 +135,9 @@ func TestBoundedHandoffKeepsIdentityAndReceipts(t *testing.T) {
 	if _, e = r.UserControl().PrepareHandoff(owner, "move", location); e != nil {
 		t.Fatal(e)
 	}
+	if _, e := r.UserControl().DecideHandoff(owner, "move", r.UserControl().State().Access.Handoff.Revision, true); e != nil {
+		t.Fatal(e)
+	}
 	hand, e := r.UserControl().FreezeHandoff(owner, "move", true)
 	if e != nil {
 		t.Fatal(e)

@@ -15,7 +15,7 @@ func publishAuthorizedForget(ctx context.Context, tx *sql.Tx, op contract.Manage
 	if e := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM forget_operations WHERE id=? AND state<>'staging')", op.Request.ID).Scan(&exists); e != nil || exists {
 		return e
 	}
-	if len(op.Request.Targets) == 0 || len(op.Request.Targets) > 64 {
+	if len(op.Request.Targets) == 0 || len(op.Request.Targets) > contract.MaxForgetTargets {
 		return errors.New("遗忘目标数量无效")
 	}
 	if _, e := tx.ExecContext(ctx, "INSERT OR IGNORE INTO forget_operations(id,principal,digest,state) VALUES(?,'control','','staging')", op.Request.ID); e != nil {
@@ -24,10 +24,13 @@ func publishAuthorizedForget(ctx context.Context, tx *sql.Tx, op contract.Manage
 	for _, v := range op.Request.Targets {
 		var revision uint64
 		if e := tx.QueryRowContext(ctx, "SELECT revision FROM live_assets WHERE id=?", v.ID).Scan(&revision); e != nil {
+			if errors.Is(e, sql.ErrNoRows) {
+				return contract.ErrForgetScopeChanged
+			}
 			return e
 		}
 		if revision != v.Revision {
-			return errors.New("遗忘目标版本已变化，请重新确认")
+			return contract.ErrForgetScopeChanged
 		}
 		r, e := tx.ExecContext(ctx, "INSERT OR IGNORE INTO forget_targets VALUES(?,?,?)", op.Request.ID, v.ID, v.Revision)
 		if e != nil {
