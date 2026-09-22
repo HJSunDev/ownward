@@ -18,6 +18,7 @@ var _ contract.BoundedAssets = (*Store)(nil)
 var ErrNotFound = errors.New("信息不存在或版本已失效")
 
 type AssetWrite struct {
+	KeepOriginal      bool // Trusted owner edit: preserve source evidence in this transaction.
 	DeferOrganization bool
 	Meta              contract.AssetMeta
 	Payload           Staged
@@ -27,6 +28,10 @@ type AssetWrite struct {
 // Publish 将可见版本、后续组织工作、回收任务和回执一同提交。
 // 权限层通过既有 CommitGuard 在短事务外保持授权与撤销的顺序。
 func (s *Store) Publish(ctx context.Context, receipt contract.MutationReceipt, values []AssetWrite) error {
+	return s.publish(ctx, receipt, values, nil, nil)
+}
+
+func (s *Store) publish(ctx context.Context, receipt contract.MutationReceipt, values []AssetWrite, before, after func(*sql.Tx) error) error {
 	if len(values) > 20 || len(receipt.Results) == 0 || len(receipt.Results) > 20 {
 		return errors.New("批量变更数量无效")
 	}
@@ -49,6 +54,11 @@ func (s *Store) Publish(ctx context.Context, receipt contract.MutationReceipt, v
 			_, found, err := lookupReceipt(ctx, tx, receipt.Operation)
 			if err != nil || found {
 				return err
+			}
+			if before != nil {
+				if err = before(tx); err != nil {
+					return err
+				}
 			}
 			var count int
 			if err = tx.QueryRowContext(ctx, "SELECT count(*) FROM operation_receipts").Scan(&count); err != nil {
@@ -122,7 +132,12 @@ func (s *Store) Publish(ctx context.Context, receipt contract.MutationReceipt, v
 					if deleted || rev != v.ExpectedRevision || m.Revision != rev+1 || created != stamp(m.CreatedAt) {
 						return errors.New("信息版本已变化，不能覆盖")
 					}
-					if _, err = tx.ExecContext(ctx, "INSERT OR IGNORE INTO reclaim_jobs(payload,reason) VALUES(?,'superseded')", oldPayload); err != nil {
+					if v.KeepOriginal {
+						if _, err = tx.ExecContext(ctx, "INSERT OR IGNORE INTO asset_originals VALUES(?,?,?)", m.ID, rev, oldPayload); err != nil {
+							return err
+						}
+					}
+					if _, err = tx.ExecContext(ctx, "INSERT OR IGNORE INTO reclaim_jobs(payload,reason) SELECT ?,'superseded' WHERE NOT EXISTS(SELECT 1 FROM asset_originals WHERE payload=?)", oldPayload, oldPayload); err != nil {
 						return err
 					}
 					if _, err = tx.ExecContext(ctx, "UPDATE lexical_stats SET terms=terms-(SELECT length FROM lexical_documents WHERE payload=?) WHERE singleton=1", oldPayload); err != nil {
@@ -153,6 +168,21 @@ func (s *Store) Publish(ctx context.Context, receipt contract.MutationReceipt, v
 					return err
 				}
 				if _, err = tx.ExecContext(ctx, `INSERT OR IGNORE INTO invalidation_jobs(asset,revision,snapshot,forget) VALUES(?,?,'',0)`, m.ID, m.Revision); err != nil {
+					return err
+				}
+				kind := "updated"
+				if v.ExpectedRevision == 0 {
+					kind = "created"
+				}
+				if v.KeepOriginal {
+					kind = "revised"
+				}
+				if err = recordOwnerEvent(ctx, tx, kind, m.ID, m.Revision, receipt.Operation.ID, "completed"); err != nil {
+					return err
+				}
+			}
+			if after != nil {
+				if err = after(tx); err != nil {
 					return err
 				}
 			}

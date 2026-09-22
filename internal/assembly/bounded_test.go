@@ -5,9 +5,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"github.com/HJSunDev/ownward/internal/authoritysubstrate"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/HJSunDev/ownward/internal/boundedstore"
 	"github.com/HJSunDev/ownward/internal/contract"
@@ -112,6 +114,24 @@ func TestBoundedHandoffKeepsIdentityAndReceipts(t *testing.T) {
 		t.Fatal(e)
 	}
 	location := contract.Location{SystemID: r.UserControl().SystemID(), ServiceID: "target", Endpoint: "https://target.test", Certificate: "test", Composition: manifest.Identity}
+	draft, e := r.Streaming().Store.CreateDraft(owner, contract.DraftInput{Target: contract.AssetVersion{ID: created.Information.ID, Revision: 1}, Content: boundedstore.StringSource("private handoff work")})
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = r.Product().Read(owner, draft.ID); e == nil {
+		t.Fatal("private draft visible as asset")
+	}
+	p, agentToken, e := r.UserControl().Enroll(owner, "Draft writer")
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = r.UserControl().SetPermissions(owner, p.ID, []contract.Permission{contract.ReadPermission}); e != nil {
+		t.Fatal(e)
+	}
+	grant, e := r.Streaming().Store.GrantDraft(owner, draft.ID, p.ID, time.Hour)
+	if e != nil {
+		t.Fatal(e)
+	}
 	if _, e = r.UserControl().PrepareHandoff(owner, "move", location); e != nil {
 		t.Fatal(e)
 	}
@@ -160,6 +180,20 @@ func TestBoundedHandoffKeepsIdentityAndReceipts(t *testing.T) {
 	got, e := next.Product().Read(owner, created.Information.ID)
 	if e != nil || got.Content != created.Information.Content {
 		t.Fatal("identity or data lost", e)
+	}
+	agent := informationcontrol.Authenticate(context.Background(), agentToken)
+	_, body, e := next.Streaming().Store.ReadDraft(agent, draft.ID, grant.ID)
+	if e != nil {
+		t.Fatal("handoff lost authorized private work", e)
+	}
+	text, e := io.ReadAll(body)
+	body.Close()
+	if e != nil || string(text) != "private handoff work" {
+		t.Fatal(string(text), e)
+	}
+	if _, body, e = r.Streaming().Store.ReadDraft(owner, draft.ID, ""); e == nil {
+		body.Close()
+		t.Fatal("retired source still exposes draft")
 	}
 	retry, e := next.Product().Create(op, contract.CreateInput{Content: "Handoff preserves original content"})
 	if e != nil || retry.Information.ID != got.ID {

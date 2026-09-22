@@ -1,12 +1,14 @@
 package boundedstore
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"io"
 	"reflect"
+	"time"
 
 	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/resourcebudget"
@@ -70,6 +72,21 @@ func (s *Store) OpenControlAuthority(ctx context.Context, initial contract.Contr
 		if exists && (h.ActiveComposition != initial.ActiveComposition || h.ActiveKernelGeneration != initial.ActiveKernelGeneration) {
 			return errors.New("存储的组合身份不兼容，需要显式迁移")
 		}
+		// Old control records have no event timestamp. Retain only the latest
+		// bounded display set from the upgrade date; never fabricate past events.
+		var seeded bool
+		if e := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM store_meta WHERE key='owner_history_seeded')").Scan(&seeded); e != nil {
+			return e
+		}
+		if !seeded {
+			if _, e := tx.ExecContext(ctx, `INSERT OR IGNORE INTO owner_operation_times
+ SELECT id,state,? FROM authority_items WHERE kind='operations' ORDER BY sequence DESC LIMIT ?`, time.Now().UnixMilli(), OwnerEventLimit); e != nil {
+				return e
+			}
+			if _, e := tx.ExecContext(ctx, "INSERT INTO store_meta VALUES('owner_history_seeded',1)"); e != nil {
+				return e
+			}
+		}
 		h.ActiveComposition, h.ActiveKernelGeneration = initial.ActiveComposition, initial.ActiveKernelGeneration
 		b, e := json.Marshal(h)
 		if e != nil {
@@ -85,10 +102,28 @@ func (s *Store) OpenControlAuthority(ctx context.Context, initial contract.Contr
 }
 
 func controlItem(ctx context.Context, tx *sql.Tx, kind, id, state string, data []byte) error {
+	return storeControlItem(ctx, tx, kind, id, state, data, true)
+}
+
+func storeControlItem(ctx context.Context, tx *sql.Tx, kind, id, state string, data []byte, recordEvent bool) error {
 	if id == "" || len(data) > 256*1024 {
 		return errors.New("控制决定身份或大小无效")
 	}
-	_, e := tx.ExecContext(ctx, `INSERT INTO authority_items SELECT ?,?,coalesce(max(sequence)+1,1),?,? FROM authority_items WHERE kind=? ON CONFLICT(kind,id) DO UPDATE SET state=excluded.state,data=excluded.data`, kind, id, state, data, kind)
+	var previous []byte
+	e := tx.QueryRowContext(ctx, "SELECT data FROM authority_items WHERE kind=? AND id=?", kind, id).Scan(&previous)
+	if e != nil && !errors.Is(e, sql.ErrNoRows) {
+		return e
+	}
+	if bytes.Equal(previous, data) {
+		return nil
+	}
+	_, e = tx.ExecContext(ctx, `INSERT INTO authority_items SELECT ?,?,coalesce(max(sequence)+1,1),?,? FROM authority_items WHERE kind=? ON CONFLICT(kind,id) DO UPDATE SET state=excluded.state,data=excluded.data`, kind, id, state, data, kind)
+	if e == nil && kind == "operations" && recordEvent {
+		_, e = tx.ExecContext(ctx, "INSERT INTO owner_operation_times VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state,updated=excluded.updated", id, state, time.Now().UnixMilli())
+		if e == nil {
+			e = recordOwnerEvent(ctx, tx, "management", "", 0, id, state)
+		}
+	}
 	return e
 }
 
@@ -138,7 +173,8 @@ func (s *Store) splitControl(ctx context.Context, n streamjson.Node) error {
 				if e != nil {
 					return e
 				}
-				return s.write(ctx, func(tx *sql.Tx) error { return controlItem(ctx, tx, k, id, state, data) })
+				// Import existing decisions without pretending they happened now.
+				return s.write(ctx, func(tx *sql.Tx) error { return storeControlItem(ctx, tx, k, id, state, data, false) })
 			}); e != nil {
 				return e
 			}

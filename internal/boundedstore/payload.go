@@ -32,6 +32,10 @@ func newID() (string, error) {
 
 // Stage 只持有一个正文块；完整发布前任何读取入口均不可见。
 func (s *Store) Stage(ctx context.Context, operation string, content, details contract.ContentSource) (Staged, error) {
+	return s.stage(ctx, operation, content, details, false)
+}
+
+func (s *Store) stage(ctx context.Context, operation string, content, details contract.ContentSource, allowBlank bool) (Staged, error) {
 	if operation == "" || content == nil {
 		return Staged{}, errors.New("暂存操作及正文不能为空")
 	}
@@ -57,14 +61,14 @@ func (s *Store) Stage(ctx context.Context, operation string, content, details co
 			_ = s.queueReclaim(context.WithoutCancel(ctx), id, "aborted")
 		}
 	}()
-	n, hash, err := s.stagePart(ctx, id, 0, content, true)
+	n, hash, err := s.stagePart(ctx, id, 0, content, true, allowBlank)
 	if err != nil {
 		return Staged{}, err
 	}
 	if details == nil {
 		details = StringSource("{}")
 	}
-	d, _, err := s.stagePart(ctx, id, 1, details, false)
+	d, _, err := s.stagePart(ctx, id, 1, details, false, false)
 	if err != nil {
 		return Staged{}, err
 	}
@@ -79,7 +83,7 @@ func (s *Store) Stage(ctx context.Context, operation string, content, details co
 	return Staged{ID: id, Operation: operation, ContentBytes: n, ContentSHA256: hash}, nil
 }
 
-func (s *Store) stagePart(ctx context.Context, id string, part int, source contract.ContentSource, text bool) (int64, string, error) {
+func (s *Store) stagePart(ctx context.Context, id string, part int, source contract.ContentSource, text, allowBlank bool) (int64, string, error) {
 	r, err := source.Open(ctx)
 	if err != nil {
 		return 0, "", err
@@ -135,7 +139,7 @@ func (s *Store) stagePart(ctx context.Context, id string, part int, source contr
 			break
 		}
 	}
-	if text && (len(tail) != 0 || !nonblank) {
+	if text && (len(tail) != 0 || (!nonblank && !allowBlank)) {
 		return 0, "", errors.New("正文为空白或UTF-8不完整")
 	}
 	return count, hex.EncodeToString(hash.Sum(nil)), nil

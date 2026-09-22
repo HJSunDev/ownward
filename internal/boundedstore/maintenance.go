@@ -70,7 +70,7 @@ func (s *Store) Maintain(ctx context.Context) (bool, error) {
 	more := false
 	e = s.write(ctx, func(tx *sql.Tx) error {
 		var e error
-		for _, step := range []func(context.Context, *sql.Tx) (bool, error){s.recoverStage, s.invalidateBatch, s.forgetBatch, s.reclaimPayload, s.reclaimDerived, s.expireCursors} {
+		for _, step := range []func(context.Context, *sql.Tx) (bool, error){s.recoverStage, s.invalidateBatch, s.forgetOwnerWork, s.forgetBatch, s.reclaimPayload, s.reclaimDerived, s.expireCursors, s.expireOwnerHistory} {
 			more, e = step(ctx, tx)
 			if e != nil || more {
 				return e
@@ -192,7 +192,7 @@ func (s *Store) reclaimPayload(ctx context.Context, tx *sql.Tx) (bool, error) {
 		return false, e
 	}
 	var used bool
-	if e = tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM assets WHERE payload=? UNION ALL SELECT 1 FROM control_records WHERE payload=?)", id, id).Scan(&used); e != nil {
+	if e = tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM assets WHERE payload=? UNION ALL SELECT 1 FROM control_records WHERE payload=? UNION ALL SELECT 1 FROM owner_drafts WHERE payload=? UNION ALL SELECT 1 FROM asset_originals WHERE payload=?)", id, id, id, id).Scan(&used); e != nil {
 		return false, e
 	}
 	if used {

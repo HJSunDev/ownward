@@ -51,6 +51,10 @@ func (s *Store) invalidateRestoreCredentials(ctx context.Context) error {
 		after = id
 	}
 	return s.write(ctx, func(tx *sql.Tx) error {
+		// A historical backup preserves private work, never active work grants.
+		if _, e := tx.ExecContext(ctx, "DELETE FROM owner_draft_grants"); e != nil {
+			return e
+		}
 		var b []byte
 		if e := tx.QueryRowContext(ctx, "SELECT data FROM authority_header").Scan(&b); e != nil {
 			return e

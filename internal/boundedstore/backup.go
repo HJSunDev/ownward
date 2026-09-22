@@ -40,6 +40,7 @@ type StorageSnapshot struct {
 	Path            string
 	SHA256          string
 	ControlRevision uint64
+	WorkRevision    uint64
 }
 
 func (s *Store) Snapshot(ctx context.Context) (StorageSnapshot, error) {
@@ -67,7 +68,7 @@ func (s *Store) Snapshot(ctx context.Context) (StorageSnapshot, error) {
 		return StorageSnapshot{}, e
 	}
 	defer release()
-	var epoch, controlRevision int64
+	var epoch, controlRevision, workRevision int64
 	e = s.write(ctx, func(tx *sql.Tx) error {
 		if e := management(ctx, tx); e != nil {
 			return e
@@ -80,6 +81,9 @@ func (s *Store) Snapshot(ctx context.Context) (StorageSnapshot, error) {
 			return errors.New("遗忘清理尚未完成")
 		}
 		if e := tx.QueryRowContext(ctx, "SELECT value FROM store_meta WHERE key='asset_epoch'").Scan(&epoch); e != nil {
+			return e
+		}
+		if e := tx.QueryRowContext(ctx, "SELECT value FROM store_meta WHERE key='owner_work_epoch'").Scan(&workRevision); e != nil {
 			return e
 		}
 		if e := tx.QueryRowContext(ctx, "SELECT coalesce((SELECT revision FROM access_header WHERE singleton=1),0)").Scan(&controlRevision); e != nil {
@@ -144,14 +148,17 @@ func (s *Store) Snapshot(ctx context.Context) (StorageSnapshot, error) {
 		if e := management(ctx, tx); e != nil {
 			return e
 		}
-		var now, controlNow int64
+		var now, controlNow, workNow int64
 		if e := tx.QueryRowContext(ctx, "SELECT value FROM store_meta WHERE key='asset_epoch'").Scan(&now); e != nil {
 			return e
 		}
 		if e := tx.QueryRowContext(ctx, "SELECT coalesce((SELECT revision FROM access_header WHERE singleton=1),0)").Scan(&controlNow); e != nil {
 			return e
 		}
-		if now != epoch || controlNow != controlRevision {
+		if e := tx.QueryRowContext(ctx, "SELECT value FROM store_meta WHERE key='owner_work_epoch'").Scan(&workNow); e != nil {
+			return e
+		}
+		if now != epoch || controlNow != controlRevision || workNow != workRevision {
 			return errors.New("备份期间控制状态变化，快照未发布")
 		}
 		_, e := tx.ExecContext(ctx, "UPDATE controlled_copies SET state='ready' WHERE id=?", id)
@@ -161,7 +168,7 @@ func (s *Store) Snapshot(ctx context.Context) (StorageSnapshot, error) {
 		return StorageSnapshot{}, e
 	}
 	complete = true
-	return StorageSnapshot{Path: path, SHA256: hex.EncodeToString(hash.Sum(nil)), ControlRevision: uint64(controlRevision)}, nil
+	return StorageSnapshot{Path: path, SHA256: hex.EncodeToString(hash.Sum(nil)), ControlRevision: uint64(controlRevision), WorkRevision: uint64(workRevision)}, nil
 }
 
 func (s *Store) removeCopyFiles(id string) error {
@@ -283,6 +290,15 @@ func (s *Store) RestoreSnapshot(ctx context.Context, source StorageSnapshot, des
 	}
 	if e = c.QueryRowContext(ctx, "SELECT system FROM access_header WHERE singleton=1").Scan(&identity); e != nil || identity != system {
 		return nil, errors.New("快照不属于当前信息体系")
+	}
+	var hasWork bool
+	if e = c.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='owner_draft_grants')").Scan(&hasWork); e != nil {
+		return nil, e
+	}
+	if hasWork {
+		if _, e = c.ExecContext(ctx, "DELETE FROM owner_draft_grants"); e != nil {
+			return nil, e
+		}
 	}
 	if _, e = c.ExecContext(ctx, "DELETE FROM controlled_copies; UPDATE access_header SET revision=revision+1,deletion_epoch=deletion_epoch+1,frozen=1,stopping=0; UPDATE access_principals SET credential='invalidated:'||id,permissions=0,revision=revision+1;"); e != nil {
 		return nil, e

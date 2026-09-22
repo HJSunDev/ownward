@@ -121,7 +121,11 @@ func (s *Store) exportArchive(ctx context.Context, destination string, derived b
 		if e := tx.QueryRowContext(ctx, "SELECT coalesce((SELECT revision FROM access_header WHERE singleton=1),0)").Scan(&current); e != nil {
 			return e
 		}
-		if current != revision {
+		var workRevision uint64
+		if e := tx.QueryRowContext(ctx, "SELECT value FROM store_meta WHERE key='owner_work_epoch'").Scan(&workRevision); e != nil {
+			return e
+		}
+		if current != revision || workRevision != snapshot.WorkRevision {
 			return errors.New("备份期间控制状态已改变")
 		}
 		// Linking publishes a complete file without replacing another backup.

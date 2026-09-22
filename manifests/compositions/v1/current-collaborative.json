@@ -264,14 +264,14 @@
       "dependencies": [
         {
           "role": "kernel",
-          "identity": "f97b66c9de04c8052f67d73179654d707663b4392d69770451e8c6242ea1f654"
+          "identity": "649b658273f883a6fc1243da11157ed15808c93e1ee1e180f72d56bcd0ce19c6"
         },
         {
           "role": "product-rules",
           "identity": "1eb81993761504bd72d76fc2c0dc380e697cf9d1e1827845da552803e2b71fce"
         }
       ],
-      "identity": "64f98406290f63e6d84fb2761b5a4b0109574f6d9f52c21cbee420b59ab62ef8"
+      "identity": "71b82a6638f981ea82ee2527128ca9b550715c417d486580a017ef92caf918f0"
     },
     {
       "role": "assembly",
@@ -279,7 +279,7 @@
         {
           "id": "ownward.assembly",
           "version": 1,
-          "definition_sha256": "98d1b53746584ed448478203105378de34ce4f8aa15d6fe83f16e1e4cb69b97b"
+          "definition_sha256": "de4ce0096499a83ccd1301d283b1113cb371bd5b75be8e1815427deeba01e002"
         }
       ],
       "content": [
@@ -374,15 +374,15 @@
       "dependencies": [
         {
           "role": "access",
-          "identity": "64f98406290f63e6d84fb2761b5a4b0109574f6d9f52c21cbee420b59ab62ef8"
+          "identity": "71b82a6638f981ea82ee2527128ca9b550715c417d486580a017ef92caf918f0"
         },
         {
           "role": "authority-substrate",
-          "identity": "53ac6c3c6333a8a91402152107534aa4d642474c1a4ffa5659171235175f0e8b"
+          "identity": "ec7dffcfa6ba4147930fa0b02a2287dec07bc06a3ea834864a4ffafecf171741"
         },
         {
           "role": "kernel",
-          "identity": "f97b66c9de04c8052f67d73179654d707663b4392d69770451e8c6242ea1f654"
+          "identity": "649b658273f883a6fc1243da11157ed15808c93e1ee1e180f72d56bcd0ce19c6"
         },
         {
           "role": "product-rules",
@@ -397,7 +397,7 @@
           "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
         }
       ],
-      "identity": "0f3085fee3aa18be80597adf9e81654c27808b741f01e898f3cb45aef96ec2fb"
+      "identity": "537899d076c1044e7dce6db48ad502b3f04a1da06756b1d0aeb711f9efdd09f0"
     },
     {
       "role": "authority-substrate",
@@ -411,6 +411,11 @@
           "id": "ownward.control-state",
           "version": 1,
           "definition_sha256": "b026da4abbdcec612b9dbfdc6c3f6809c45150fe3350cfe8db749a90d389079d"
+        },
+        {
+          "id": "ownward.owner-work",
+          "version": 1,
+          "definition_sha256": "ac60cd3593f44ffe70977700e12547946de7a9271a3d4330568985ff9d2e5c9c"
         }
       ],
       "content": [
@@ -492,12 +497,12 @@
         {
           "name": "internal-boundedstore-assets-go",
           "path": "internal/boundedstore/assets.go",
-          "sha256": "355607e4395353fcc8510401ff61ca329a315e5e468cbd5843c4b4825acf0556"
+          "sha256": "62ba481b9de3ce7947835dfddde10ab625954187e784d26ac711afe2b37f1cb9"
         },
         {
           "name": "internal-boundedstore-backup-go",
           "path": "internal/boundedstore/backup.go",
-          "sha256": "1798234c2b4ae836196299ff0bb07e1261b2e18d1f11c8232e64473c2ab9c97f"
+          "sha256": "b44014c93c5811014e4d2ebb2f10539ba3a077deae5c2375424342f62b139e8c"
         },
         {
           "name": "internal-boundedstore-context_filter-go",
@@ -512,7 +517,7 @@
         {
           "name": "internal-boundedstore-control_authority-go",
           "path": "internal/boundedstore/control_authority.go",
-          "sha256": "cb9ebbeadc24f94a3fd29b6a119ec7b9ca5ca93653484b5551adca608b1633b2"
+          "sha256": "a6a0ed8839983a2f85fd894a2311d1a4c8f0a1fc0f44e9d31facde79c1c84f80"
         },
         {
           "name": "internal-boundedstore-control_forget-go",
@@ -522,7 +527,7 @@
         {
           "name": "internal-boundedstore-control_restore-go",
           "path": "internal/boundedstore/control_restore.go",
-          "sha256": "760631739c0ccbf9dacb987814fe730af1e30c337f08a67690df33bfd62a5396"
+          "sha256": "9e7c81a30349cfd490569f5174e56729c5b0cf1732fb4c4c85c4e50bd20aabcc"
         },
         {
           "name": "internal-boundedstore-control_visit-go",
@@ -537,7 +542,7 @@
         {
           "name": "internal-boundedstore-deployment_archive-go",
           "path": "internal/boundedstore/deployment_archive.go",
-          "sha256": "1b10d2fe1cbc2ab2d2c2f7c2ea6bc95d7234e7a05ac993ed5cea96c8ae3e2217"
+          "sha256": "c47b513061b53dcd423a50abc47ccbe574635d0ecc26324a4469ec182d31fb16"
         },
         {
           "name": "internal-boundedstore-deployment_cancel-go",
@@ -632,7 +637,7 @@
         {
           "name": "internal-boundedstore-maintenance-go",
           "path": "internal/boundedstore/maintenance.go",
-          "sha256": "5c9a07841d561bc11fc3bfd3a36a06b090921a7138092d4e8b298ff8b46da3b6"
+          "sha256": "da946fea9b137a98d91c4a5f1457a33a518d564a8095fc0983ae97212e631351"
         },
         {
           "name": "internal-boundedstore-maintenance_schema-go",
@@ -670,9 +675,34 @@
           "sha256": "c99ec36196fbacf9d2ffceb4cac58295971092743d49281847862950683852f6"
         },
         {
+          "name": "internal-boundedstore-owner_events-go",
+          "path": "internal/boundedstore/owner_events.go",
+          "sha256": "ac0d225737a8a9d1f89edd3aba8866bb5e5d9760e34c959a70295151c3397212"
+        },
+        {
+          "name": "internal-boundedstore-owner_forget-go",
+          "path": "internal/boundedstore/owner_forget.go",
+          "sha256": "1e12315e086125fe8d587249a35eda46e336a6d4fb81a985411695d60d57585c"
+        },
+        {
+          "name": "internal-boundedstore-owner_publish-go",
+          "path": "internal/boundedstore/owner_publish.go",
+          "sha256": "b6d9a76238a0ccde4a22786d400cb0647a40775779746c49a1b6375a0d7be853"
+        },
+        {
+          "name": "internal-boundedstore-owner_schema-go",
+          "path": "internal/boundedstore/owner_schema.go",
+          "sha256": "10ef06b6e1f969061ced1462b9a4e50aa6455b8ef38a8ce6dbf9df2db5525bed"
+        },
+        {
+          "name": "internal-boundedstore-owner_work-go",
+          "path": "internal/boundedstore/owner_work.go",
+          "sha256": "4c8527052d34ec0fafc54aed39c4754920b038f71d9f6f7b975a9bbdeda1763c"
+        },
+        {
           "name": "internal-boundedstore-payload-go",
           "path": "internal/boundedstore/payload.go",
-          "sha256": "3134fd1637e2363b2bd55594ea3591f27756931735cd85b6ce5d42efab4efc6c"
+          "sha256": "588c3acf3708ed207ed38c1dcf674942b0f225f988eb77f6184af0993c13e117"
         },
         {
           "name": "internal-boundedstore-query-go",
@@ -727,7 +757,7 @@
         {
           "name": "internal-boundedstore-store-go",
           "path": "internal/boundedstore/store.go",
-          "sha256": "c27c4dffbe8d99542b0ac59537e77f1b2537099ddfed15ac46a583cd79573026"
+          "sha256": "431d99924015bd2f1fe4235ad8a1ce99339707fbe96bc48a545233980fa1ef28"
         },
         {
           "name": "internal-boundedstore-summary-go",
@@ -918,7 +948,7 @@
         "storage_format": "ownward.sqlite-storage/v1"
       },
       "dependencies": [],
-      "identity": "53ac6c3c6333a8a91402152107534aa4d642474c1a4ffa5659171235175f0e8b"
+      "identity": "ec7dffcfa6ba4147930fa0b02a2287dec07bc06a3ea834864a4ffafecf171741"
     },
     {
       "role": "kernel",
@@ -1185,7 +1215,7 @@
       "dependencies": [
         {
           "role": "authority-substrate",
-          "identity": "53ac6c3c6333a8a91402152107534aa4d642474c1a4ffa5659171235175f0e8b"
+          "identity": "ec7dffcfa6ba4147930fa0b02a2287dec07bc06a3ea834864a4ffafecf171741"
         },
         {
           "role": "product-rules",
@@ -1200,7 +1230,7 @@
           "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
         }
       ],
-      "identity": "f97b66c9de04c8052f67d73179654d707663b4392d69770451e8c6242ea1f654"
+      "identity": "649b658273f883a6fc1243da11157ed15808c93e1ee1e180f72d56bcd0ce19c6"
     },
     {
       "role": "product-rules",
@@ -1469,7 +1499,7 @@
       "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
     }
   ],
-  "identity": "68c44860101963d316fe235cda87b1d1bb31fb9589eac97232e01160d7609f32",
+  "identity": "1e309fdd3caad628304d830c7c3679a865ba8539eff153e88566b68e6d2b0b0e",
   "audit": {
     "described_product_candidate": "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8",
     "migration_source_git": "dc2c7a09e67f06cfaacbe0a201c7ff27b20d6182"

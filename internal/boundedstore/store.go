@@ -17,7 +17,7 @@ import (
 )
 
 const ChunkBytes = 64 * 1024
-const schemaVersion = 5
+const schemaVersion = 6
 
 type Options struct {
 	Budget   *resourcebudget.Budget
@@ -190,7 +190,7 @@ func Open(ctx context.Context, path string, options Options) (*Store, error) {
 	if err != nil {
 		return fail(err)
 	}
-	if _, err = tx.ExecContext(ctx, schema+retrievalSchema+maintenanceSchema+organizationJobsSchema); err != nil {
+	if _, err = tx.ExecContext(ctx, schema+retrievalSchema+maintenanceSchema+organizationJobsSchema+ownerSchema); err != nil {
 		tx.Rollback()
 		return fail(err)
 	}
@@ -200,7 +200,7 @@ func Open(ctx context.Context, path string, options Options) (*Store, error) {
 		tx.Rollback()
 		return fail(err)
 	}
-	if _, err = tx.ExecContext(ctx, "UPDATE store_meta SET value=5 WHERE key='format'"); err != nil {
+	if _, err = tx.ExecContext(ctx, "UPDATE store_meta SET value=6 WHERE key='format'"); err != nil {
 		tx.Rollback()
 		return fail(err)
 	}
