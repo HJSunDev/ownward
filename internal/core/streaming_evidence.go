@@ -160,6 +160,9 @@ func (s *StreamingAssets) evidenceTool(ctx context.Context, operation string, ar
 		if err != nil {
 			return err
 		}
+		if err = s.writeOriginal(ctx, w, meta.ID, false); err != nil {
+			return err
+		}
 		return s.writeReadBasisRange(ctx, w, meta, hex.EncodeToString(hash.Sum(nil)), int64(unit.StartRune), int64(unit.EndRune))
 	})
 }

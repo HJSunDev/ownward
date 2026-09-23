@@ -1,18 +1,26 @@
 import {query, act, resolve, text, request, logout, operationID, invalidate, scope} from './api.js';
-import {Editor, rescuedInput, clearRescue, retainReceipt} from './editor.js';
+import {Editor, rescuedInput, rescueNeedsWindow, rescueCleanupPending, retryRescueCleanup, clearRescue, retainReceipt} from './editor.js';
 import {el, button, row, heading, empty, prose, tag, date, notice, clearNotice, statusName, permissionName, dialog, confirm, download, errorMessage} from './ui.js';
 
 const main=document.getElementById('main');
-const state={surface:'drafts',epoch:0,cursor:'',editor:null,selection:null,active:true,polling:false,after:'',search:'',filter:'',exiting:false};
+const state={surface:'drafts',epoch:0,cursor:'',editor:null,selection:null,active:true,polling:false,after:'',search:'',filter:'',exiting:false,bound:false,run:0,pendingDirty:true};
 const surfaces=[['drafts','文稿','01'],['assets','资料','02'],['relations','关系','03'],['events','动态','04'],['control','掌控','05']];
 const eventName={create:'存入资料',created:'存入资料',update:'更新资料',updated:'更新资料',correct:'更正资料',correction:'更正资料',draft_published:'文稿存入资料',forget:'遗忘资料',permissions:'调整接入能力',enrollment:'接入决定',handoff:'迁移决定',access:'接入变更'};
 const valid=epoch=>state.active&&epoch===state.epoch;
 const section=(title,...content)=>el('section',{class:'section'},el('div',{class:'section-title'},el('h2',{},title)),...content);
 const sourceLabel=s=>s?.authored?'我创建的':s?.actor||s?.ref||'未注明来源';
+const pendingWork=editor=>!!editor&&(editor.dirty||editor.conflict||editor.publishID||editor.rebase||editor.discardPending||editor.refreshPending||editor.pendingSave!==undefined);
+const clearReceiptNotice=()=>{state.receiptNotice?.();state.receiptNotice=null;};
+const pendingReceiptNotice=retained=>{clearReceiptNotice();state.receiptNotice=notice(retained?'存入结果尚未确认，原稿已不可用。只保留核对线索，请核对近期动态，避免重复存入。':'存入结果尚未确认，原稿已不可用。核对线索仅留在此窗口，请勿刷新或关闭，并核对近期动态，避免重复存入。',true);};
 
 export async function start(health){
+  clearReceiptNotice();
+  state.pendingNotice?.();state.pendingNotice=null;
+  const run=++state.run;clearTimeout(state.pollTimer);state.polling=false;state.active=true;state.exiting=false;state.pendingDirty=true;
+  retryRescueCleanup();
   state.cursor=health.cursor;
   document.getElementById('entry').hidden=true;document.getElementById('shell').hidden=false;
+  if(!state.bound){state.bound=true;
   const nav=document.getElementById('navigation');
   for(const [id,label,n] of surfaces)nav.append(button(label,()=>navigate(id),'nav-item',{'data-surface':id,'aria-label':label}),el('span',{class:'nav-number','aria-hidden':'true'},n));
   document.getElementById('pending-entry').onclick=()=>navigate('control').catch(error=>notice(error.message,true));
@@ -20,33 +28,40 @@ export async function start(health){
     try{
       const exit=async()=>{
         if(state.exiting)return;state.exiting=true;
-        lock('窗口内的暂存已清除，正在结束会话。',false);
+        lock('正在结束会话。',false);
         let message='已退出物主窗口。';
-        try{await logout();}catch(error){if(error.status!==401)message='本窗口已退出并清除暂存；服务端会话结束尚未确认。';}
-        document.getElementById('status').textContent=message+' 请从本机物主入口重新验证。';
+        try{await logout();}catch(error){if(error.status!==401)message='本窗口已退出；服务端会话结束尚未确认。';}
+        if(!state.active)document.getElementById('status').textContent=message+' 请从本机物主入口重新验证。';
       };
-      if(state.editor?.dirty||state.editor?.conflict||state.editor?.publishID){await confirm('退出前保留文字',el('div',{},el('p',{},'还有尚未完成核对的文字。可以先保存一份文本到本机；确认退出会清除窗口内的暂存。'),button('下载当前文字',()=>download(new Blob([state.editor.value],{type:'text/plain;charset=utf-8'}),'未完成的文稿.txt'))),'清除暂存并退出',exit,true);}else await exit();
+      const rescue=rescuedInput(),input=state.editor?.value??rescue?.text;
+      if(pendingWork(state.editor)||rescue?.reference){await confirm('退出前保留文字',el('div',{},el('p',{},'还有尚未完成核对的输入或操作。确认退出会清除窗口内的暂存，不会删除已保存的文稿，也不会撤销已提交的操作。'),typeof input==='string'?button('下载当前文字',()=>download(new Blob([input],{type:'text/plain;charset=utf-8'}),'未完成的文稿.txt')):null),'清除暂存并退出',exit,true);}else await exit();
     }catch(error){notice(errorMessage(error),true);}
   };
   window.addEventListener('owner-auth-lost',()=>lock('验证已失效，请从本机物主入口重新打开。未同步输入将在重新验证后核对。'));
-  window.addEventListener('beforeunload',event=>{if(state.editor?.dirty||state.editor?.busy||state.editor?.publishID){state.editor.persist();event.preventDefault();event.returnValue='';}});
+  window.addEventListener('beforeunload',event=>{retryRescueCleanup();if(pendingWork(state.editor)||state.editor?.busy||rescuedInput()?.reference||rescueNeedsWindow()){state.editor?.persist();event.preventDefault();event.returnValue='';}});
   window.addEventListener('online',()=>poll());
-  document.addEventListener('visibilitychange',()=>{if(!document.hidden)poll();});
-  await render();await refreshPending();
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden){retryRescueCleanup();showStorageCleanup();poll();}});
+  }
+  await render();
+  if(!state.active||run!==state.run)return;
+  try{await refreshPending();}catch(error){if(state.active&&run===state.run&&error.status!==-1)state.pendingNotice=notice('待处理事项暂时无法核对，稍后会重试。',true);}
+  if(!state.active||run!==state.run)return;
   const rescue=rescuedInput();
   if(rescue?.reference){
-    try{await openDraft(rescue.reference,rescue);}catch(error){notice('尚未核对上次输入；请保留此窗口并重试。',true);}
+    try{await openDraft(rescue.reference);}catch(error){if(state.active&&run===state.run){notice('尚未核对上次输入；请保留此窗口并重试。',true);showResume();}}
   }
-  setTimeout(poll,2200);
+  if(state.active&&run===state.run)state.pollTimer=setTimeout(poll,2200);
 }
 function lock(message,preserveInput=!state.exiting){
+  clearReceiptNotice();
   invalidate();
-  state.active=false;state.epoch++;
+  state.active=false;state.epoch++;state.run++;clearTimeout(state.pollTimer);state.polling=false;
   if(preserveInput)state.editor?.persist();state.editor?.destroy();state.editor=null;state.selection=null;
   if(!preserveInput)clearRescue();
   document.querySelectorAll('dialog').forEach(d=>d.remove());main.replaceChildren();
   document.getElementById('shell').hidden=true;document.getElementById('entry').hidden=false;
-  document.getElementById('status').textContent=message+' 可在本机运行 ownward owner-window 重新验证。';
+  document.getElementById('status').textContent=message+(rescueCleanupPending()?' 浏览器暂存尚待清理，请勿刷新或关闭。':rescueNeedsWindow()?' 暂存仅在当前窗口，请勿刷新或关闭；重新验证会在此窗口继续核对。':'')+' 可在本机运行 ownward owner-window 重新验证。';
+  showStorageCleanup();
 }
 async function navigate(surface){
   if(!state.active)return;
@@ -67,8 +82,30 @@ async function render(){
   }}
 }
 function showResume(){
-  if(state.editor?.live&&!main.contains(state.editor.node))main.prepend(el('div',{class:'resume-bar'},el('span',{},state.editor.dirty||state.editor.conflict?'有一篇文稿的输入留在此窗口，等待继续核对。':'进行中的文稿已保留。'),button('回到这篇文稿',()=>resumeEditor())));
-  else if(!state.editor&&rescuedInput()?.publishID)main.prepend(el('div',{class:'resume-bar'},el('span',{},'上次存入结果仍待核对。'),button('核对上次存入',()=>{const rescue=rescuedInput();return openDraft(rescue.reference,rescue);})));
+  document.querySelectorAll('.resume-bar').forEach(n=>n.remove());
+  showStorageCleanup();
+  if(!state.active)return;
+  if(state.editor?.live&&!main.contains(state.editor.node))main.prepend(el('div',{class:'resume-bar'},el('span',{},pendingWork(state.editor)?'有一篇文稿的输入或操作等待继续核对。':'进行中的文稿已保留。'),button('回到这篇文稿',()=>resumeEditor()),rescuedInput()||pendingWork(state.editor)?button('处理这份暂存',manageRescue):null));
+  else if(!state.editor){const rescue=rescuedInput();if(rescue?.reference)main.prepend(el('div',{class:'resume-bar'},el('span',{},rescue.publishID?'上次存入结果仍待核对。':'上次输入或操作仍待恢复，暂存已保留。'),button(rescue.publishID?'核对上次存入':'恢复上次文稿',()=>openDraft(rescue.reference)),button('处理这份暂存',manageRescue)));}
+}
+function showStorageCleanup(){
+  document.querySelectorAll('.rescue-cleanup').forEach(n=>n.remove());
+  if(rescueCleanupPending())(state.active?main:document.getElementById('entry')).prepend(el('div',{class:'rescue-cleanup resume-bar',role:'status'},el('span',{},'窗口已停止使用这份暂存，但浏览器副本尚未清除。请勿刷新或关闭，待浏览器恢复后重试清理。'),button('重试清理暂存',()=>{retryRescueCleanup();showStorageCleanup();})));
+}
+async function manageRescue(){
+  const editor=state.editor,current=scope();
+  const idle=()=>!editor||editor.live&&!editor.busy&&!editor.finishing&&!editor.composing;
+  if(!idle())throw new Error('这篇文稿的操作仍在进行，请稍后核对。');
+  editor?.persist();
+  const rescue=rescuedInput();if(!rescue&&!editor)return;
+  const editorState=()=>editor?JSON.stringify({snapshot:editor.snapshot(),rebase:editor.rebase,discardPending:editor.discardPending,conflict:editor.conflict}):null;
+  const snapshot=JSON.stringify(rescue),editorSnapshot=editorState(),input=editor?.value??rescue?.text;
+  const pending=editor?.publishID||editor?.rebase||editor?.discardPending||rescue?.publishID||rescue?.rebase||rescue?.discardPending;
+  await confirm('处理上次暂存',el('div',{},el('p',{},pending?'操作结果仍待核对。结束本窗口核对会放弃未同步的窗口文字，不会撤销已提交的操作，也不会删除已保存的文稿。':'尚未同步的文字只留在此窗口。可以先下载，再明确放弃；已保存的文稿不会被删除。'),typeof input==='string'?button('下载暂存文字',()=>download(new Blob([input],{type:'text/plain;charset=utf-8'}),'尚未同步的文稿.txt')):null),pending?'结束本窗口核对':'清除这份暂存',async()=>{
+    if(!current()||state.editor!==editor||!idle()||editorState()!==editorSnapshot||JSON.stringify(rescuedInput())!==snapshot)throw new Error('待处理内容已有变化，请重新核对。');
+    clearReceiptNotice();clearRescue(editor?.meta.reference||rescue.reference);editor?.destroy();state.editor=null;invalidate();state.epoch++;
+    if(editor){state.selection=null;await render();}else showResume();notice(rescueCleanupPending()?'窗口已停止使用这份暂存，浏览器副本仍待清理。':'已按你的选择清除这份窗口暂存。',rescueCleanupPending());
+  },true);
 }
 async function resumeEditor(){
   const editor=state.editor;if(!editor?.live)return;
@@ -105,33 +142,42 @@ async function draftsPage(epoch){
     section('文稿与资料',cards.childElementCount?cards:empty('这里还没有资料','文稿存入后，会和其他资料一同在这里。')),
     section('近期变动',activityList(recent.activity||[],epoch),button('查看全部动态',()=>navigate('events'))));
 }
-async function newDraft(){const current=scope(),editor=state.editor;if(editor)await editor.flush();if(!current()||state.editor!==editor)return;const result=await act({action:'create_draft',text:''});await openDraft(result.reference);}
-async function editAsset(asset){const current=scope(),editor=state.editor;if(editor)await editor.flush();if(!current()||state.editor!==editor)return;const result=await act({action:'create_draft',target:asset.handle});await openDraft(result.reference);}
-async function openDraft(reference,rescue){
-  const saved=rescue||rescuedInput();rescue=saved?.reference===reference?saved:null;
+// An unmounted rescue still owns the single writing workspace. Flush only
+// releases it after both the content and any pending operation are settled.
+async function prepareDraft(reference){
+  const current=scope(),editor=state.editor;
+  if(editor){await editor.flush();if(!current()||state.editor!==editor)return false;editor.persist();}
+  const rescue=rescuedInput();
+  if(pendingWork(editor)||rescue?.reference&&rescue.reference!==reference){showResume();throw new Error('请先恢复或处理上次文稿，再开始另一篇。');}
+  return state.active&&current();
+}
+async function newDraft(){if(!await prepareDraft())return;const result=await act({action:'create_draft',text:''});await openDraft(result.reference);}
+async function editAsset(asset){if(!await prepareDraft())return;const result=await act({action:'create_draft',target:asset.handle});await openDraft(result.reference);}
+async function openDraft(reference){
   if(state.editor?.meta.reference===reference){return resumeEditor();}
-  const current=scope(),previous=state.editor;
-  if(previous){await previous.flush();if(!current()||state.editor!==previous)return;previous.destroy();state.editor=null;}
+  if(!await prepareDraft(reference))return;
+  const saved=rescuedInput(),rescue=saved?.reference===reference?saved:null;
+  state.editor?.destroy();state.editor=null;
   invalidate();
-  if(rescue?.publishID){
-    const recovered=await query({view:'publish_receipt',operation_id:rescue.publishID});
-    if(['completed','changed'].includes(recovered.publication.state)){clearRescue();notice('已核对上次存入成功。');return openAsset({handle:recovered.publication.asset});}
-    if(recovered.publication.state==='unavailable'){clearRescue();notice('上次存入的资料已不可用，相关暂存已清除。');return navigate('drafts');}
-  }
   const epoch=++state.epoch,page=await resolve(reference);
   if(!valid(epoch))return;
   if(page.unavailable){
     if(rescue?.publishID){
       // A missing draft is also how discard/forget becomes visible. Preserve
-      // only the operation locator; never revive its unavailable body.
-      retainReceipt(rescue);notice('存入结果尚未确认，原稿已不可用。请核对近期动态，避免重复存入。',true);return render();
+      // only the operation locator before awaiting its outcome explanation.
+      const retained=retainReceipt(rescue);
+      const recovered=await query({view:'publish_receipt',operation_id:rescue.publishID});
+      if(!valid(epoch))return;
+      if(['completed','changed'].includes(recovered.publication.state)){clearReceiptNotice();clearRescue(reference);notice('已核对上次存入成功。');return openAsset({handle:recovered.publication.asset});}
+      if(recovered.publication.state==='unavailable'){clearReceiptNotice();clearRescue(reference);notice('上次存入的资料已不可用，相关暂存已清除。');return navigate('drafts');}
+      pendingReceiptNotice(retained);return render();
     }
-    clearRescue();notice('这篇文稿已不可用，相关窗口副本已清除。');await navigate('drafts');return;
+    clearRescue(reference);notice('这篇文稿已不可用，相关窗口副本已清除。');await navigate('drafts');return;
   }
   const meta=page.drafts[0],content=await text('draft_content',meta.handle,()=>valid(epoch));
   if(!valid(epoch))return;
   const editor=installEditor(meta,content,rescue);
-  if(editor.publishID)await editor.recoverPublication();
+  if(editor.discardPending||editor.publishID||editor.refreshPending)await editor.reconcile();
 }
 function installEditor(meta,content,rescue,show=true){
   if(show){state.surface='drafts';state.selection=null;navState();}
@@ -140,7 +186,7 @@ function installEditor(meta,content,rescue,show=true){
     rebased:async(meta,body,rescue)=>{const visible=releaseEditor(editor);if(visible!==null)installEditor(meta,body,rescue,visible);},
     discarded:async()=>{const visible=releaseEditor(editor);if(visible)await navigate('drafts');},
     published:async handle=>{const visible=releaseEditor(editor);if(visible)await openAsset({handle});else if(visible===false)notice('已确认文稿存入成功，可从资料页查看。');},
-    pendingReceipt:async()=>{const visible=releaseEditor(editor);if(visible===null)return;if(visible)await navigate('drafts');else showResume();notice('存入结果尚未确认，原稿已不可用。只保留核对线索，请核对近期动态，避免重复存入。',true);},
+    pendingReceipt:async retained=>{const visible=releaseEditor(editor);if(visible===null)return;if(visible)await navigate('drafts');else showResume();pendingReceiptNotice(retained);},
     unavailable:()=>{const visible=releaseEditor(editor);if(visible===null)return;notice('资料或文稿已不可用，相关窗口副本已清除。');if(visible){document.querySelectorAll('dialog').forEach(d=>d.remove());navigate('drafts');}}
   },rescue);
   state.editor=editor;
@@ -174,7 +220,8 @@ async function openAsset(asset){
     const details=JSON.parse(await text('original_details',asset.handle,()=>valid(epoch)));
     if(valid(epoch))dialog('来源原件 · 留作证据',el('div',{},el('p',{class:'source'},sourceLabel({actor:details.source?.actor,ref:details.source?.ref})),details.source?.ref?prose(details.source.ref,'source-ref'):null,prose(original)));
   });
-  main.replaceChildren(el('article',{class:'reading'},row(button('← 全部资料',()=>navigate('assets')),tag(statusName(asset.state),asset.state)),
+  state.selectionStatus=tag(statusName(asset.state),asset.state);
+  main.replaceChildren(el('article',{class:'reading'},row(button('← 全部资料',()=>navigate('assets')),state.selectionStatus),
     el('header',{class:'reading-heading'},el('p',{class:'eyebrow'},'原文 · 当前内容'),el('h1',{},body.trim().split(/\r?\n/)[0].slice(0,110)||'资料'),row(el('span',{class:'source'},sourceLabel(source)),el('time',{},date(asset.updated_at))),source.ref?prose(source.ref,'source-ref'):null),
     row(button('编辑这篇内容',()=>editAsset(asset),'primary'),button('查看关联',()=>showRelations(asset)),asset.has_original?switchOriginal:null,button('遗忘这份资料',()=>forget(asset,body),'danger-quiet')),
     content));showResume();
@@ -184,7 +231,8 @@ async function forget(asset,body){
   await confirm('遗忘整份资料',el('div',{},el('p',{},'将停止使用并清理这份资料、来源原件，以及绑定它的文稿。此处遗忘整份内容；只改一部分，请返回编辑。'),prose(body)), '确认遗忘',async()=>{
     const result=await act({action:'forget',handle:asset.handle,operation_id:operation});
     invalidate();state.selection=null;state.epoch++;document.querySelectorAll('dialog').forEach(d=>d.remove());
-    if(state.editor?.meta.target_reference===asset.reference){state.editor.destroy();state.editor=null;clearRescue();}
+    if(state.editor?.meta.target_reference===asset.reference){clearRescue(state.editor.meta.reference);state.editor.destroy();state.editor=null;}
+    const rescue=rescuedInput();if(rescue?.target_reference===asset.reference)clearRescue(rescue.reference);
     main.replaceChildren();notice(statusName(result.state));state.surface='control';state.after='';await render();
   },true);
 }
@@ -220,23 +268,29 @@ async function showRelations(asset,after=''){
   state.editor?.suspend();invalidate();
   const epoch=++state.epoch,page=after?{assets:[asset]}:await resolve(asset.reference,asset.handle);if(!valid(epoch))return;
   if(page.unavailable){notice('这份资料已不可用。');return navigate('relations');}
-  asset=page.assets[0];const relations=await loadPage({view:'relations',handle:asset.handle,after});
+  asset=page.assets[0];const node=await relationView(asset,after,epoch);if(!valid(epoch))return;
+  state.surface='relations';state.selection=asset;navState();main.replaceChildren(node);showResume();
+}
+async function relationView(asset,after,epoch){
+  const relations=await loadPage({view:'relations',handle:asset.handle,after});
   const first=await query({view:'content',handle:asset.handle});if(!valid(epoch))return;
-  state.surface='relations';state.selection=asset;navState();
   const list=el('div',{class:'relation-list'});
   for(const relation of relations.relations||[]){
     const reason=el('p',{},relation.evidence||'正在核对关联依据…');
     if(relation.meaning)text('relation_text',relation.meaning,()=>valid(epoch)).then(raw=>{if(valid(epoch))reason.textContent=readableMeaning(JSON.parse(raw))||relation.evidence||'请查看关联原文，核对具体依据。';}).catch(()=>{if(valid(epoch))reason.textContent='关联说明暂时无法读取，仍可核对两端原文。';});
     list.append(el('article',{class:'relation-card'},el('span',{class:'relation-line','aria-hidden':'true'},'↔'),el('div',{},el('h2',{},'资料之间的关联'),reason,row(button('查看一端原文',()=>openAsset({handle:relation.source})),button('查看另一端原文',()=>openAsset({handle:relation.target}))),...(relation.basis||[]).map((basis,i)=>button(`查看依据原文 ${i+1}`,()=>openAsset({handle:basis.asset}))))));
   }
-  main.replaceChildren(el('div',{class:'page'},button('← 选择其他起点',()=>navigate('relations')),heading(first.text.text.trim().split(/\r?\n/)[0].slice(0,80)||'这份资料','围绕它，逐条核对关系与来源。'),button('打开当前原文',()=>openAsset(asset)),
+  return el('div',{class:'page'},button('← 选择其他起点',()=>navigate('relations')),heading(first.text.text.trim().split(/\r?\n/)[0].slice(0,80)||'这份资料','围绕它，逐条核对关系与来源。'),button('打开当前原文',()=>openAsset(asset)),
     relations.organization!=='available'?el('p',{class:'callout'},relations.organization==='rebuilding'?'关系正在重新整理；以下是当前可用的部分。':'关系暂不可用，原文仍可打开。'):null,
-    list.childElementCount?list:empty(asset.state==='pending'?'还在等待整理':'暂未连上其他资料','没有连接不代表没有价值；此处不会补造关系。'),pager(relations,next=>showRelations(asset,next),'继续查看关联')));
+    list.childElementCount?list:empty(asset.state==='pending'?'还在等待整理':'暂未连上其他资料','没有连接不代表没有价值；此处不会补造关系。'),pager(relations,next=>showRelations(asset,next),'继续查看关联'));
 }
 async function refreshPending(){
+  state.pendingDirty=true;
   const page=await loadPage({view:'pending',limit:10});if(!state.active)return;
   document.getElementById('pending-count').textContent=page.next?'有待处理':String((page.decisions||[]).length);
   document.getElementById('pending-entry').classList.toggle('has-pending',!!page.decisions?.length);
+  state.pendingDirty=false;
+  state.pendingNotice?.();state.pendingNotice=null;
 }
 function decisionCard(d,historical=false){
   const node=el('article',{class:'decision-card'},row(el('h3',{},d.kind==='enrollment'?'接入申请':d.kind==='handoff'?'迁移确认':'资料与能力决定'),tag(statusName(d.state))),el('p',{},[d.subject,d.distinction].filter(Boolean).join(' · ')),el('p',{},d.consequence),d.verification?el('p',{class:'verification'},d.verification):null,
@@ -312,36 +366,62 @@ async function restoreArchive(){
 }
 async function poll(){
   if(!state.active||state.polling)return;
+  const run=state.run;
   clearTimeout(state.pollTimer);
   state.polling=true;
   try{
+    if(rescueCleanupPending()){retryRescueCleanup();showStorageCleanup();}
     const page=await query({view:'changes',cursor:state.cursor});
-    if(!state.active)return;
+    if(!state.active||run!==state.run)return;
     document.getElementById('connection-state').textContent='本机 · 物主已验证';
     if(page.changed){
       if(page.reset){
         invalidate();state.epoch++;state.after='';
+        const currentScope=scope();
         document.querySelectorAll('dialog').forEach(d=>d.remove());
         const visibleEditor=state.editor&&main.contains(state.editor.node);
         state.editor?.quarantine();main.replaceChildren(el('p',{class:'loading'},'正在核对资料是否仍可使用…'));
         if(state.editor){await state.editor.reconcile(true);}
+        if(!state.active||!currentScope())return;
+        const rescue=rescuedInput();if(rescue?.reference){const current=await resolve(rescue.reference);if(!state.active||!currentScope())return;if(current.unavailable){if(rescue.publishID)pendingReceiptNotice(retainReceipt(rescue));else clearRescue(rescue.reference);}}
         if(visibleEditor&&state.editor?.live){main.replaceChildren(state.editor.node);}
         else{state.selection=null;await render();}
-        const rescue=rescuedInput();if(rescue?.reference){const current=await resolve(rescue.reference);if(current.unavailable){if(rescue.publishID)retainReceipt(rescue);else clearRescue();}}
+        showResume();
       }else{
         // The retained draft and the visible reading/list surface are separate
         // obligations. Neither may consume the other's change checkpoint.
         if(state.editor)await state.editor.reconcile();
-        if(!state.active)return;
-        if(state.selection){const current=await resolve(state.selection.reference);if(current.unavailable){state.selection=null;await render();}else if(current.assets[0].version!==state.selection.version){state.selection=null;notice('内容有变化，请重新打开核对。');await render();}}
+        if(!state.active||run!==state.run)return;
+        if(state.selection){
+          const selected=state.selection,epoch=state.epoch,current=await resolve(selected.reference);
+          if(!valid(epoch)||state.selection!==selected)return;
+          if(current.unavailable){state.selection=null;await render();}
+          else if(current.assets[0].version!==selected.version){state.selection=null;notice('内容有变化，请重新打开核对。');await render();}
+          else{
+            const asset=current.assets[0];
+            // Body equality says nothing about organization or relations.
+            // Refresh only the visible projection, without navigation or
+            // invalidating an editor's in-flight operation.
+            if(state.surface==='relations'){
+              const node=await relationView(asset,'',epoch);
+              if(!valid(epoch)||state.selection!==selected)return;
+              main.replaceChildren(node);showResume();
+            }else if(state.surface==='assets'&&main.contains(state.selectionStatus)){
+              state.selectionStatus.textContent=statusName(asset.state);state.selectionStatus.className=`tag ${asset.state}`;
+            }
+            state.selection=asset;
+          }
+        }
         else if(!state.editor||!main.contains(state.editor.node)){
           if(main.contains(document.activeElement)&&['INPUT','SELECT'].includes(document.activeElement.tagName)){await refreshPending();return;}
           state.after='';await render();
         }
       }
+      if(!state.active||run!==state.run)return;
       await refreshPending();
+      if(!state.active||run!==state.run)return;
       state.cursor=page.cursor;
-    }
-  }catch(error){if(state.active&&error.status!==-1){document.getElementById('connection-state').textContent=error.status===429?'正在同步…':'连接暂时中断';}}
-  finally{state.polling=false;if(state.active)state.pollTimer=setTimeout(poll,document.hidden?12000:2200);}
+    }else if(state.pendingDirty)await refreshPending();
+  }catch(error){if(state.active&&run===state.run&&error.status!==-1){document.getElementById('connection-state').textContent=error.status===429?'正在同步…':'连接暂时中断';}}
+  finally{if(run===state.run){state.polling=false;if(state.active)state.pollTimer=setTimeout(poll,document.hidden?12000:2200);}}
 }

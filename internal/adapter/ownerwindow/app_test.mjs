@@ -10,10 +10,10 @@ async function harness(overrides={},editorOverrides={}){
   const nodes=new Map();
   const node=id=>{if(!nodes.has(id))nodes.set(id,{textContent:'',hidden:false,append:()=>{},prepend:()=>{},contains:n=>visible.has(n),replaceChildren:()=>calls.push(['clear',id])});return nodes.get(id);};
   const document={getElementById:node,querySelectorAll:()=>[],addEventListener:()=>{},activeElement:{tagName:'DIV'},hidden:false};
-  const api={query:async()=>({changed:true,cursor:'new-cursor'}),resolve:async()=>({assets:[{version:'v1'}]}),invalidate:()=>calls.push(['invalidate']),scope:()=>()=>true};
+  const api={query:async()=>({changed:true,cursor:'new-cursor'}),resolve:async()=>({assets:[{reference:'asset',version:'v1'}]}),invalidate:()=>calls.push(['invalidate']),scope:()=>()=>true};
   for(const n of ['act','text','request','logout','operationID'])api[n]=()=>{};
   Object.assign(api,overrides);
-  const editor={Editor:class{},rescuedInput:()=>null,clearRescue:()=>saved.clear(),retainReceipt:()=>{}};
+  const editor={Editor:class{},rescuedInput:()=>null,rescueNeedsWindow:()=>false,rescueCleanupPending:()=>false,retryRescueCleanup:()=>true,clearRescue:()=>saved.clear(),retainReceipt:()=>{}};
   Object.assign(editor,editorOverrides);
   const ui={};for(const n of ['el','button','row','heading','empty','prose','tag','date','notice','clearNotice','statusName','permissionName','dialog','confirm','download','errorMessage'])ui[n]=()=>{};
   ui.confirm=async(_,__,___,run)=>run();
@@ -36,7 +36,7 @@ test('explicit logout destroys dirty and conflicted editor without re-persisting
   }
 });
 
-test('opening a listed draft applies only its matching rescue and keeps late hooks on their own editor',async()=>{
+test('opening a listed draft protects unmatched rescue and keeps late hooks on their own editor',async()=>{
   for(const reference of ['successor','unrelated']){
     const rescue={reference:'successor',version:null,text:'my text'},constructed=[];
     let h;
@@ -45,6 +45,7 @@ test('opening a listed draft applies only its matching rescue and keeps late hoo
     }
     h=await harness({resolve:async()=>({drafts:[{reference,version:'v3',handle:'remote'}]}),text:async()=> 'other writer'},
       {Editor,rescuedInput:()=>rescue});
+    if(reference==='unrelated'){await assert.rejects(h.app.openDraft(reference),/恢复或处理/);assert.equal(constructed.length,0);continue;}
     await h.app.openDraft(reference);
     assert.equal(constructed[0].input,reference==='successor'?rescue:null);
     const old=constructed[0].editor,next={node:{}};h.app.state.editor=next;

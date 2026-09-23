@@ -7,7 +7,7 @@ export const operationID = () => crypto.randomUUID();
 export const storage = {
   get(key) { try { return sessionStorage.getItem(key); } catch { return null; } },
   set(key, value) { try { sessionStorage.setItem(key, value); return true; } catch { return false; } },
-  remove(key) { try { sessionStorage.removeItem(key); } catch {} }
+  remove(key) { try { sessionStorage.removeItem(key); return true; } catch { return false; } }
 };
 let session = storage.get(sessionKey), active = 0, generation = 0;
 export function invalidate(){generation++;}
@@ -39,12 +39,14 @@ export async function request(path, data = {}, options = {}) {
     return result;
   } catch (error) {
     if (error instanceof ApiError) throw error;
+    if(!current())throw new ApiError(-1,'操作页面已变化。');
     throw new ApiError(0, '连接暂时中断，尚未同步的输入已留在此窗口。');
   } finally { clearTimeout(timer); release(); }
 }
 export const query = input => request('query', input);
 export const act = input => request('action', input);
 export async function initialize() {
+  invalidate();
   const fragment = location.hash.slice(1), token = /^[a-f0-9]{64}$/.test(fragment)?fragment:''; history.replaceState(null, '', location.pathname);
   if (token) { const result = await request('bootstrap', {token}); session = result.session; storage.set(sessionKey, session); }
   if (!session) throw new ApiError(401, '请从本机物主入口打开这个窗口。');
@@ -74,6 +76,7 @@ async function replaceText(handle, value) {
   return request('draft-text', body, {raw: true, type: 'text/plain; charset=utf-8', headers: {'X-Ownward-Handle': handle}, timeout: 180000});
 }
 export async function logout() {
+  const previous=session;
   try { return await request('logout'); }
-  finally { storage.remove(sessionKey); session = null; }
+  finally { if(session===previous){storage.remove(sessionKey);session=null;} }
 }

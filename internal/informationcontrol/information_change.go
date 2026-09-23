@@ -5,9 +5,9 @@ import (
 	"github.com/HJSunDev/ownward/internal/contract"
 )
 
-func (p *Product) ReadInformation(ctx context.Context, id string) (contract.InformationRead, error) {
+func (p *Product) ReadInformation(ctx context.Context, id string, options ...contract.ReadOptions) (contract.InformationRead, error) {
 	return authorized(ctx, p.control, contract.ReadPermission, func(bound context.Context) (contract.InformationRead, error) {
-		return p.kernel.ReadInformation(bound, id)
+		return p.kernel.ReadInformation(bound, id, options...)
 	})
 }
 func (p *Product) ReadEvidenceWithBasis(ctx context.Context, id string) (contract.EvidenceRead, error) {

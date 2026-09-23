@@ -39,7 +39,7 @@ func TestBoundedRuntimeControlChangesBackupAndReopen(t *testing.T) {
 	}
 	id := created.Information.ID
 	reader := r.UnderlyingKernel().(interface {
-		ReadInformation(context.Context, string) (contract.InformationRead, error)
+		ReadInformation(context.Context, string, ...contract.ReadOptions) (contract.InformationRead, error)
 	})
 	read, e := reader.ReadInformation(ctx, id)
 	if e != nil {

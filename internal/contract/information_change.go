@@ -33,11 +33,27 @@ type InformationRead struct {
 	Information    domain.Information `json:"information"`
 	Basis          string             `json:"basis"`
 	Clarifications []Clarification    `json:"clarifications"`
+	Original       *OriginalEvidence  `json:"original,omitempty"`
+}
+
+// ReadOptions requests retained source evidence in addition to current use.
+// Basis continues to describe Information, not the historical Original.
+type ReadOptions struct {
+	IncludeOriginal bool `json:"include_original,omitempty"`
+}
+
+// OriginalEvidence identifies the first retained source, not edit history.
+// Content and Source are present only when explicitly requested.
+type OriginalEvidence struct {
+	Revision uint64         `json:"revision"`
+	Content  *string        `json:"content,omitempty"`
+	Source   *domain.Source `json:"source,omitempty"`
 }
 type EvidenceRead struct {
-	Evidence       domain.Evidence `json:"evidence"`
-	Basis          string          `json:"basis"`
-	Clarifications []Clarification `json:"clarifications"`
+	Evidence       domain.Evidence   `json:"evidence"`
+	Basis          string            `json:"basis"`
+	Clarifications []Clarification   `json:"clarifications"`
+	Original       *OriginalEvidence `json:"original,omitempty"`
 }
 type InformationCheck struct {
 	Basis          string          `json:"basis"`

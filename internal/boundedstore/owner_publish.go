@@ -315,6 +315,25 @@ func (s *Store) OwnerPublication(ctx context.Context, id string) (out OwnerPubli
 	return
 }
 
+// OriginalRevision discovers retained evidence without opening either payload.
+// Missing evidence is normal; invisible assets and revoked readers still fail.
+func (s *Store) OriginalRevision(ctx context.Context, id string) (uint64, error) {
+	ctx, e := s.BeginAccess(ctx, contract.AuthenticationDigest(ctx), contract.ReadPermission)
+	if e != nil {
+		return 0, e
+	}
+	var revision uint64
+	e = s.view(ctx, func(q queryer) error {
+		e := q.QueryRowContext(ctx, `SELECT COALESCE(o.revision,0) FROM live_assets a
+ LEFT JOIN asset_originals o ON o.asset=a.id WHERE a.id=?`, id).Scan(&revision)
+		if errors.Is(e, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return e
+	})
+	return revision, e
+}
+
 // OpenOriginal returns the separately retained evidence, not an arbitrary old
 // edit version. It shares live-asset visibility, authorization and forget state.
 func (s *Store) OpenOriginal(ctx context.Context, id string, details bool) (uint64, io.ReadCloser, error) {

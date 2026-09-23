@@ -112,7 +112,17 @@ func (s *StreamingAssets) ExecuteStream(ctx context.Context, request contract.St
 		if err != nil {
 			return nil, err
 		}
-		return s.deliver(ctx, []contract.MutationOutcome{{Asset: contract.AssetVersion{ID: strings.TrimSpace(id)}}}, true, false)
+		var options contract.ReadOptions
+		value, present, err := args.Root().Field("include_original")
+		if err != nil {
+			return nil, err
+		}
+		if present {
+			if err = value.DecodeSmall(&options.IncludeOriginal, 8); err != nil || value.Kind == 'n' {
+				return nil, errors.New("include_original 必须是布尔值")
+			}
+		}
+		return s.deliver(ctx, []contract.MutationOutcome{{Asset: contract.AssetVersion{ID: strings.TrimSpace(id)}}}, true, false, options)
 	}
 	if request.Operation != "ownward_create" && request.Operation != "ownward_create_batch" && request.Operation != "ownward_update" {
 		return nil, errors.New("该流式端口不承担此操作")
@@ -380,7 +390,7 @@ func (s *StreamingAssets) prepare(ctx context.Context, op contract.OperationIden
 	return out, nil
 }
 
-func (s *StreamingAssets) deliver(ctx context.Context, outcomes []contract.MutationOutcome, read, batch bool) (*contract.StreamResult, error) {
+func (s *StreamingAssets) deliver(ctx context.Context, outcomes []contract.MutationOutcome, read, batch bool, options ...contract.ReadOptions) (*contract.StreamResult, error) {
 	epochs := map[string]uint64{}
 	doc, err := streamjson.Build(ctx, s.Scratch, resourcebudget.FromContext(ctx, s.Budget), s.DiskBytes, func(w io.Writer) error {
 		if batch {
@@ -431,6 +441,9 @@ func (s *StreamingAssets) deliver(ctx context.Context, outcomes []contract.Mutat
 				return err
 			}
 			if read {
+				if err = s.writeOriginal(ctx, w, meta.ID, len(options) > 0 && options[0].IncludeOriginal); err != nil {
+					return err
+				}
 				if err = s.writeReadBasis(ctx, w, meta, hex.EncodeToString(hash.Sum(nil)), runes); err != nil {
 					return err
 				}

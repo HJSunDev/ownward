@@ -119,8 +119,9 @@ func (s *StreamingAssets) Update(ctx context.Context, v contract.UpdateInput) (c
 	}](ctx, s, "ownward_update", input)
 	return out.Result, e
 }
-func (s *StreamingAssets) ReadInformation(ctx context.Context, id string) (contract.InformationRead, error) {
-	return streamValue[contract.InformationRead](ctx, s, "ownward_read", map[string]any{"id": id})
+func (s *StreamingAssets) ReadInformation(ctx context.Context, id string, options ...contract.ReadOptions) (contract.InformationRead, error) {
+	include := len(options) > 0 && options[0].IncludeOriginal
+	return streamValue[contract.InformationRead](ctx, s, "ownward_read", map[string]any{"id": id, "include_original": include})
 }
 func (s *StreamingAssets) Read(ctx context.Context, id string) (domain.Information, error) {
 	out, e := s.ReadInformation(ctx, id)

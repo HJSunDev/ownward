@@ -190,7 +190,7 @@ func openOwnerWindow(ctx context.Context, dataDir, vectorBundle string, stdout, 
 	if state, e := assembly.ReadControlAtContext(ctx, dataDir); e == nil && state.Access != nil && state.Access.Handoff != nil && state.Access.Handoff.Phase == "retired" {
 		entry, e := discoverOwnerEntry(dataDir, state.InformationControl.SystemID, "", state.Access.Handoff)
 		if e != nil {
-			return e
+			fmt.Fprintln(stderr, "入口位置提示未能保存；将按资料的实际迁移位置引导。")
 		}
 		return fmt.Errorf("资料已迁往 %s；请在该部署位置使用物主入口", entry.Target.Endpoint)
 	}
@@ -241,13 +241,19 @@ func openOwnerWindow(ctx context.Context, dataDir, vectorBundle string, stdout, 
 	if e = h.controlCall(ctx, "owner-window", credential, struct{}{}, &result); e != nil {
 		return e
 	}
-	if _, e = discoverOwnerEntry(dataDir, identity.System, d.Endpoint, nil); e != nil {
-		return e
+	return launchOwnerWindow(dataDir, identity.System, d.Endpoint, result.Entry, stdout, stderr, openLocalBrowser)
+}
+
+// The authenticated service supplies the entry; location metadata is only a
+// rebuildable hint and must never veto an otherwise valid owner entry.
+func launchOwnerWindow(dataDir, system, endpoint, entry string, stdout, stderr io.Writer, open func(string) error) error {
+	if _, e := discoverOwnerEntry(dataDir, system, endpoint, nil); e != nil {
+		fmt.Fprintln(stderr, "入口位置提示未能保存；本次物主入口仍可使用。")
 	}
-	if e = openLocalBrowser(result.Entry); e != nil {
+	if e := open(entry); e != nil {
 		return fmt.Errorf("无法打开浏览器，请重新运行物主入口: %w", e)
 	}
-	_, e = fmt.Fprintln(stdout, "物主入口已在本机浏览器打开。")
+	_, e := fmt.Fprintln(stdout, "物主入口已在本机浏览器打开。")
 	return e
 }
 

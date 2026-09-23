@@ -17,14 +17,17 @@ export function button(label, action, style = 'quiet', attrs = {}) {
     finally {running=false;b.removeAttribute('aria-busy');}
   }}, label);
 }
+const noticeOwners = new WeakMap();
 export function notice(message, danger = false) {
-  const box = document.querySelector('dialog[open]:last-of-type .modal-notice') || document.getElementById('notice'); box.textContent = message; box.classList.toggle('danger', danger); box.hidden = false;
+  const box = document.querySelector('dialog[open]:last-of-type .modal-notice') || document.getElementById('notice'), owner = {};
+  noticeOwners.set(box, owner);box.textContent = message; box.classList.toggle('danger', danger); box.hidden = false;
+  return () => { if(noticeOwners.get(box)===owner){box.hidden=true;noticeOwners.delete(box);} };
 }
 export function errorMessage(error){
   if(error instanceof TypeError||error instanceof ReferenceError||error instanceof SyntaxError){console.error(error);return '窗口暂时无法完成这次操作，请保留输入并重试。';}
   return error.message;
 }
-export function clearNotice() { document.getElementById('notice').hidden = true; }
+export function clearNotice() { const box=document.getElementById('notice');box.hidden=true;noticeOwners.delete(box); }
 export const date = value => value ? new Intl.DateTimeFormat('zh-CN', {month:'long', day:'numeric', hour:'2-digit', minute:'2-digit'}).format(new Date(value)) : '';
 export const heading = (title, description, action) => el('header', {class:'page-heading'}, el('div',{},el('p',{class:'eyebrow'},'OWNWARD · 物主窗口'),el('h1',{},title),el('p',{class:'lead'},description)),action);
 export const empty = (title, description, action) => el('div',{class:'empty'},el('span',{class:'empty-mark','aria-hidden':'true'},'○'),el('h3',{},title),el('p',{},description),action);

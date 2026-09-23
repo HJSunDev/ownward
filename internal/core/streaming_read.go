@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 
 	"github.com/HJSunDev/ownward/internal/boundedstore"
@@ -20,6 +21,68 @@ import (
 type runeCounter struct {
 	io.Reader
 	count int64
+}
+
+// Retained evidence is discoverable on every read, but its potentially large
+// payload is streamed only on request. The enclosing delivery guards both
+// representations with the same source epoch and current authorization.
+func (s *StreamingAssets) writeOriginal(ctx context.Context, w io.Writer, id string, include bool) error {
+	revision, err := s.Store.OriginalRevision(ctx, id)
+	if err != nil || revision == 0 {
+		return err
+	}
+	if _, err = io.WriteString(w, `,"original":{"revision":`); err != nil {
+		return err
+	}
+	if err = writeJSON(w, revision); err != nil {
+		return err
+	}
+	if include {
+		rev, body, e := s.Store.OpenOriginal(ctx, id, false)
+		if e != nil {
+			return e
+		}
+		if rev != revision {
+			body.Close()
+			return errors.New("原件已变化，请重新读取")
+		}
+		_, err = io.WriteString(w, `,"content":`)
+		if err == nil {
+			err = streamjson.WriteString(ctx, w, body)
+		}
+		body.Close()
+		if err != nil {
+			return err
+		}
+		rev, metadata, e := s.Store.OpenOriginal(ctx, id, true)
+		if e != nil {
+			return e
+		}
+		if rev != revision {
+			metadata.Close()
+			return errors.New("原件已变化，请重新读取")
+		}
+		doc, e := streamjson.Parse(ctx, s.Scratch, metadata, resourcebudget.FromContext(ctx, s.Budget), s.DiskBytes)
+		metadata.Close()
+		if e != nil {
+			return e
+		}
+		defer doc.Close()
+		source, found, e := doc.Root().Field("source")
+		if e != nil {
+			return e
+		}
+		if found {
+			if _, err = io.WriteString(w, `,"source":`); err != nil {
+				return err
+			}
+			if err = source.Copy(w); err != nil {
+				return err
+			}
+		}
+	}
+	_, err = io.WriteString(w, "}")
+	return err
 }
 
 func (r *runeCounter) Read(b []byte) (int, error) {

@@ -76,7 +76,7 @@ func makeBasis(ctx context.Context, snapshot contract.SourceSnapshot, notes stri
 	data, _ := json.Marshal(informationBasis{contract.BasisSchema, contract.InformationSystem(ctx), v.ID, v.Revision, snapshot.Fingerprint, notes, start, end})
 	return "b1-" + base64.RawURLEncoding.EncodeToString(data)
 }
-func (s *Service) ReadInformation(ctx context.Context, id string) (contract.InformationRead, error) {
+func (s *Service) ReadInformation(ctx context.Context, id string, options ...contract.ReadOptions) (contract.InformationRead, error) {
 	snapshot, ok, err := s.source(ctx, id)
 	if err != nil {
 		return contract.InformationRead{}, err

@@ -49,7 +49,8 @@ type CreateBatchOutput struct {
 }
 
 type ReadInput struct {
-	ID string `json:"id" jsonschema:"稳定的信息标识"`
+	ID              string `json:"id" jsonschema:"稳定的信息标识"`
+	IncludeOriginal bool   `json:"include_original,omitempty" jsonschema:"需要核对留存原件时设为 true；默认只提示原件版本，不重复返回原件全文"`
 }
 
 type ReadOutput = contract.InformationRead
@@ -188,7 +189,7 @@ func New(service contract.ProductCapability, version string) *Server {
 	}, value.createBatch)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ownward_read",
-		Description: "按稳定标识读取一项个人信息及其当前版本。",
+		Description: "按稳定标识读取当前信息；original 提示留存原件，include_original 可按需取得原件正文与来源。basis 仅代表当前信息，原件是历史证据。",
 		Annotations: closedWorldAnnotations(true, false, true),
 	}, value.read)
 	mcp.AddTool(server, &mcp.Tool{
@@ -198,7 +199,7 @@ func New(service contract.ProductCapability, version string) *Server {
 	}, value.evidenceSearch)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ownward_evidence_read",
-		Description: "按证据检索给出的引用读取可追溯原文区间；来源资产、版本、区间和内容均由内核校验。需要完整信息时仍使用 ownward_read。",
+		Description: "按证据引用读取当前原文区间，来源、版本、区间及内容均经校验。original 提示留存原件；核对原件时用 source_id 调 ownward_read 并设 include_original=true。",
 		Annotations: closedWorldAnnotations(true, false, true),
 	}, value.evidenceRead)
 	mcp.AddTool(server, &mcp.Tool{
@@ -374,7 +375,7 @@ func coreCreateInput(input CreateInput) (contract.CreateInput, error) {
 }
 
 func (s *Server) read(ctx context.Context, _ *mcp.CallToolRequest, input ReadInput) (*mcp.CallToolResult, ReadOutput, error) {
-	value, err := s.service.ReadInformation(ctx, input.ID)
+	value, err := s.service.ReadInformation(ctx, input.ID, contract.ReadOptions{IncludeOriginal: input.IncludeOriginal})
 	if err != nil {
 		return nil, ReadOutput{}, err
 	}

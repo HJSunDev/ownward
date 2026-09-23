@@ -70,7 +70,7 @@
         {
           "name": "cmd-ownward-owner_window-go",
           "path": "cmd/ownward/owner_window.go",
-          "sha256": "7602b5147aa22a4ef1fe3578d413d01d1bab757def4afc9ecc2cfac31d4cb3b3"
+          "sha256": "2bcddb0ea92146982f14130255d370fe24cfedb1383473ac349e9f94fdab07d1"
         },
         {
           "name": "cmd-ownward-remote_access",
@@ -130,7 +130,7 @@
         {
           "name": "internal-adapter-mcpserver-streaming-go",
           "path": "internal/adapter/mcpserver/streaming.go",
-          "sha256": "d0275ff06b5bbc3dd8b6907e3693bf5b2928bd51030eab6943c4b3a3a77233fa"
+          "sha256": "44f4178a6ae126acb844d25487a254b82c322515484908989a734de2987ea9c4"
         },
         {
           "name": "internal-adapter-mcpserver-streaming_management-go",
@@ -145,22 +145,22 @@
         {
           "name": "internal-adapter-ownerwindow-static-api-js",
           "path": "internal/adapter/ownerwindow/static/api.js",
-          "sha256": "1b79290dcebf3649e00890fbe18057f8d78d217ebce8739b18137859a9917496"
+          "sha256": "2ea4f8f1d2294bbdf7b4ef70d0b52a65b59aa1a93a2069700dbf90c177eb433d"
         },
         {
           "name": "internal-adapter-ownerwindow-static-app-js",
           "path": "internal/adapter/ownerwindow/static/app.js",
-          "sha256": "826eaf9a2f64d56325590be6e6f57f107120ad92f153a373893ac97b824c1fb4"
+          "sha256": "3ef0ad58f6503c20b1c93c384eeea3355f15cd1e5fccc74a6ee6bb1d61372fdf"
         },
         {
           "name": "internal-adapter-ownerwindow-static-bootstrap-js",
           "path": "internal/adapter/ownerwindow/static/bootstrap.js",
-          "sha256": "cb8cbe8418470485015f6685678cc5ee7649843877d9915ec1232f82e356b9ef"
+          "sha256": "b07c23a34a6bc2b0f9fffab924ff1901d1ac209aa330293c24036a8a9caa690f"
         },
         {
           "name": "internal-adapter-ownerwindow-static-editor-js",
           "path": "internal/adapter/ownerwindow/static/editor.js",
-          "sha256": "e37bc3c0a290deae43e3edfbbe5724645140426696bbf28533cfb83240227f7d"
+          "sha256": "dc43bc09c96664fabb36ffa556156f27580312160da2e366f40d90ea713ef06e"
         },
         {
           "name": "internal-adapter-ownerwindow-static-go",
@@ -175,7 +175,7 @@
         {
           "name": "internal-adapter-ownerwindow-static-ui-js",
           "path": "internal/adapter/ownerwindow/static/ui.js",
-          "sha256": "692ba41425d3ccb29d1b79dbe2ea15f00936972dca60a8c278b8451dec8ab23b"
+          "sha256": "12dc9ff11cfdf949e3669b628896677da1c87408c71145c3b7c83cd15dd51816"
         },
         {
           "name": "internal-adapter-ownerwindow-static-window-css",
@@ -310,7 +310,7 @@
         {
           "name": "mcp-adapter",
           "path": "internal/adapter/mcpserver/server.go",
-          "sha256": "8822427676024a84dc5c5a47bb5d0229e71f6544bf2df842cc8f39007cf68711"
+          "sha256": "e13153ce636f99de153ec15ff5b7eef04a94ad40ad88cec71c8769c8fa3c43ac"
         },
         {
           "name": "shared-lock-unix",
@@ -349,14 +349,14 @@
       "dependencies": [
         {
           "role": "kernel",
-          "identity": "4f65d47fbd8222efcf45b8a82da9fbabb07f97cd857be0920c5df674090029c6"
+          "identity": "76cdb2fcffe2bf8bdc6dbad642702cf8802cd538fe0341a0ec9b7a043a984e73"
         },
         {
           "role": "product-rules",
           "identity": "1eb81993761504bd72d76fc2c0dc380e697cf9d1e1827845da552803e2b71fce"
         }
       ],
-      "identity": "3918db8c9f65b965bcc86f8d4ca1700c95d4c29eecd2d18a84a9a13583afa9f3"
+      "identity": "d2a171b78c49cbb17e2bca361db07282e361231423e8a11850b2584e4b3e28ae"
     },
     {
       "role": "assembly",
@@ -459,15 +459,15 @@
       "dependencies": [
         {
           "role": "access",
-          "identity": "3918db8c9f65b965bcc86f8d4ca1700c95d4c29eecd2d18a84a9a13583afa9f3"
+          "identity": "d2a171b78c49cbb17e2bca361db07282e361231423e8a11850b2584e4b3e28ae"
         },
         {
           "role": "authority-substrate",
-          "identity": "f6e345eb6425bfeec75e9cad5372f260b3f715c139c770a11a03e64877d3106f"
+          "identity": "5ce8fe854042a34176925470569587b26bdc8caf4ea4bfa924d5b5cf5e399b84"
         },
         {
           "role": "kernel",
-          "identity": "4f65d47fbd8222efcf45b8a82da9fbabb07f97cd857be0920c5df674090029c6"
+          "identity": "76cdb2fcffe2bf8bdc6dbad642702cf8802cd538fe0341a0ec9b7a043a984e73"
         },
         {
           "role": "product-rules",
@@ -482,7 +482,7 @@
           "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
         }
       ],
-      "identity": "e43147e2acc745f312b43d1dac9ab76dabe3785db0c384b89472d476d7403cdb"
+      "identity": "9d113843d9e242816ae4a8175bd1dacc716868bcb409e5f0d7777085e66b492a"
     },
     {
       "role": "authority-substrate",
@@ -772,7 +772,7 @@
         {
           "name": "internal-boundedstore-owner_publish-go",
           "path": "internal/boundedstore/owner_publish.go",
-          "sha256": "749d92e25b1b242ef8df2c4142d213021390e9e4680eef4d035f74cc3d0ab6f4"
+          "sha256": "99365d4c6a98124c2e221ea2e49c5556173dbf6d2d3a0bf740fe5802b8530e5d"
         },
         {
           "name": "internal-boundedstore-owner_schema-go",
@@ -922,7 +922,7 @@
         {
           "name": "internal-informationcontrol-information-change-go",
           "path": "internal/informationcontrol/information_change.go",
-          "sha256": "28eddc0e15e4e5b2adf5249989fff2ceb8e5bebb09f27283980de65dcf968114"
+          "sha256": "4891fa69e4614648f2c20bb3d2c674aa2083e018baece9c049d94532c7b20bc5"
         },
         {
           "name": "internal-informationcontrol-management",
@@ -1053,7 +1053,7 @@
         "storage_format": "ownward.sqlite-storage/v1"
       },
       "dependencies": [],
-      "identity": "f6e345eb6425bfeec75e9cad5372f260b3f715c139c770a11a03e64877d3106f"
+      "identity": "5ce8fe854042a34176925470569587b26bdc8caf4ea4bfa924d5b5cf5e399b84"
     },
     {
       "role": "kernel",
@@ -1066,7 +1066,7 @@
         {
           "id": "ownward.product-capability",
           "version": 2,
-          "definition_sha256": "8fe3b5c6e5a9f1e58844c45801f1449359264a881153c77a937cff54fbbf6268"
+          "definition_sha256": "7a4670be422d89d5e72744e683bf7c9a73b69f9c984edcdf159725ffff260cd9"
         }
       ],
       "content": [
@@ -1128,7 +1128,7 @@
         {
           "name": "internal-contract-information-change-go",
           "path": "internal/contract/information_change.go",
-          "sha256": "42ad3e15a06d346afec0f2d4ebf7433ed00756a0f4bc24bd57243081c47de8b5"
+          "sha256": "c23dac85d20644a4287163e69362375f225cf1c2d405529468720cb5b4228e42"
         },
         {
           "name": "internal-core-derived_lifecycle-go",
@@ -1143,7 +1143,7 @@
         {
           "name": "internal-core-information-change-go",
           "path": "internal/core/information_change.go",
-          "sha256": "cb29abc0e97561659fd27fd219b6def6b04a6f2e9e54dd449bc6ed5116092cb9"
+          "sha256": "95efb152406eb8a3b6272d9a8613dabda48a65ecaafe6163a1c5f4c16b8e82ca"
         },
         {
           "name": "internal-core-operation",
@@ -1163,7 +1163,7 @@
         {
           "name": "internal-core-streaming-go",
           "path": "internal/core/streaming.go",
-          "sha256": "c2bdb9100616386e48b549665f7dec1a71e1de6042e13b5cba691ea9be1f0553"
+          "sha256": "6f04dcf93831f9b4841def1ac46061f94fe49602391c72c3f68d5bb53e5960e2"
         },
         {
           "name": "internal-core-streaming_check-go",
@@ -1178,7 +1178,7 @@
         {
           "name": "internal-core-streaming_evidence-go",
           "path": "internal/core/streaming_evidence.go",
-          "sha256": "4f4013cf9ee620c9c107ef1a231fa4859fdb9da641c03d6a2f1cfa5762e39a45"
+          "sha256": "347a879481acdb7f420ff3bd9620c3cec680bfe802a45e6926c5f1c12738374c"
         },
         {
           "name": "internal-core-streaming_fields-go",
@@ -1213,7 +1213,7 @@
         {
           "name": "internal-core-streaming_product-go",
           "path": "internal/core/streaming_product.go",
-          "sha256": "a435909ca3e07f1cb7e5c56125850ebd6db23e85826326e25f552a4c40b3dee7"
+          "sha256": "18367ee106b96e07ce81eeb54abd7faf1ad548cbe32023b6f9aef68975edd568"
         },
         {
           "name": "internal-core-streaming_query-go",
@@ -1223,7 +1223,7 @@
         {
           "name": "internal-core-streaming_read-go",
           "path": "internal/core/streaming_read.go",
-          "sha256": "72cdf12d7b370bb8e03d0b0bdd8fb6d02c84880599dc1347e003de97259676f0"
+          "sha256": "edea4a8555ec4884195ec8781dc4ffa4bee4c25cdcc1cb7a4959bfc4a6376e30"
         },
         {
           "name": "internal-core-streaming_rebuild-go",
@@ -1320,7 +1320,7 @@
       "dependencies": [
         {
           "role": "authority-substrate",
-          "identity": "f6e345eb6425bfeec75e9cad5372f260b3f715c139c770a11a03e64877d3106f"
+          "identity": "5ce8fe854042a34176925470569587b26bdc8caf4ea4bfa924d5b5cf5e399b84"
         },
         {
           "role": "product-rules",
@@ -1335,7 +1335,7 @@
           "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
         }
       ],
-      "identity": "4f65d47fbd8222efcf45b8a82da9fbabb07f97cd857be0920c5df674090029c6"
+      "identity": "76cdb2fcffe2bf8bdc6dbad642702cf8802cd538fe0341a0ec9b7a043a984e73"
     },
     {
       "role": "product-rules",
@@ -1604,7 +1604,7 @@
       "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
     }
   ],
-  "identity": "2b848b88636c75c945af1f1b744b1f9065467b198ca2bab64f0887d2e8729ac4",
+  "identity": "6f3dd065fed1a1d184bf89b3c146ca6b1bd11d8f35cc4f192d500870872622ab",
   "audit": {
     "described_product_candidate": "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8",
     "migration_source_git": "dc2c7a09e67f06cfaacbe0a201c7ff27b20d6182"

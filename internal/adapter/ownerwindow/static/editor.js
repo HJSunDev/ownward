@@ -2,16 +2,39 @@ import {act, query, resolve, text, replace, pause, operationID, storage, scope} 
 import {el, button, row, prose, dialog, confirm, notice, download} from './ui.js';
 
 const rescueKey = 'ownward.owner-input';
-export function rescuedInput() { try { return JSON.parse(storage.get(rescueKey)); } catch { return null; } }
-export function clearRescue() { storage.remove(rescueKey); }
-export function retainReceipt(rescue){storage.set(rescueKey,JSON.stringify({reference:rescue.reference,publishID:rescue.publishID}));}
+// The running window owns its rescue even when browser storage is unavailable.
+// Storage is only the best-effort copy that can survive a page reload.
+let rescueValue=storage.get(rescueKey),rescueStored=true,cleanupPending=false;
+export function rescuedInput() { try { return JSON.parse(rescueValue); } catch { return null; } }
+export const rescueNeedsWindow=()=>cleanupPending||!!rescuedInput()&&!rescueStored;
+export const rescueCleanupPending=()=>cleanupPending;
+export function retryRescueCleanup(){if(cleanupPending)cleanupPending=storage.remove(rescueKey)===false;return !cleanupPending;}
+function eraseStoredRescue(){cleanupPending=storage.remove(rescueKey)===false;}
+// Automatic cleanup belongs to one draft. Only an explicit window-wide exit
+// clears without a reference; moving to a successor names the former owner.
+export function clearRescue(reference) { if(reference===undefined||rescuedInput()?.reference===reference){rescueValue=null;rescueStored=true;eraseStoredRescue();} }
+function storeRescue(rescue,previousReference=rescue.reference) {
+  const previous=rescuedInput();
+  if(previous&&previous.reference!==previousReference)return false;
+  const value=JSON.stringify(rescue),stored=storage.set(rescueKey,value);
+  // A failed successor transfer must leave the former owner's snapshot intact.
+  if(!stored&&previousReference!==rescue.reference)return false;
+  rescueValue=value;rescueStored=stored;if(stored)cleanupPending=false;return stored;
+}
+export function retainReceipt(rescue){
+  const retained=storeRescue({reference:rescue.reference,publishID:rescue.publishID});
+  // An unavailable body's privacy does not depend on storage accepting a new
+  // receipt. If replacement fails, remove only that body's old rescue.
+  if(!retained&&rescuedInput()?.reference===rescue.reference)eraseStoredRescue();
+  return retained;
+}
 
 // One editor, one ordered write stream. A response only acknowledges the exact
 // submitted string; typing that happened in flight remains dirty.
 export class Editor {
   constructor(meta, content, hooks, rescue) {
     this.meta=meta;this.base=content;this.value=content;this.hooks=hooks;this.live=true;
-    this.busy=null;this.queue=Promise.resolve();this.conflict=null;this.timer=null;this.lastWrite=0;this.composing=false;this.paused=false;this.quarantined=false;this.finishing=false;
+    this.busy=null;this.queue=Promise.resolve();this.conflict=null;this.timer=null;this.lastWrite=0;this.composing=false;this.paused=false;this.quarantined=false;this.finishing=false;this.refreshPending=!!rescue?.refreshPending||rescue?.pendingSave!==undefined;this.pendingSave=rescue?.pendingSave;
     this.publishID=rescue?.publishID || null;this.rebase=rescue?.rebase||null;this.discardPending=rescue?.discardPending||null;
     this.input=el('textarea',{'aria-label':'文稿正文',class:'draft-input',spellcheck:false,value:content});
     this.status=el('span',{class:'save-state',role:'status'},'输入已保存');
@@ -19,7 +42,7 @@ export class Editor {
     this.previewButton=button('预览并存入资料',()=>this.preview(),'primary');
     this.grantButton=button('交给接入者续写',()=>hooks.grant(this));
     this.discardButton=button('弃稿',()=>this.discard(),'danger-quiet');
-    this.retryButton=button('重试保存',()=>this.discardPending?this.retryDiscard():this.publishID?this.recoverPublication():this.save());this.retryButton.hidden=true;
+    this.retryButton=button('重试保存',()=>this.recoveryAction.run());this.retryButton.hidden=true;
     this.node=el('section',{class:'editor'},el('header',{class:'editor-toolbar'},row(button('返回文稿',()=>hooks.leave()),el('span',{class:'tag'},meta.target?'正在编辑资料':'进行中的文稿')),row(this.status,this.retryButton)),
       this.conflictBox,this.input,el('footer',{class:'editor-footer'},el('p',{class:'subtle'},'输入自动保存为文稿；确认后，整篇存入资料。'),row(this.grantButton,this.discardButton,this.previewButton)));
     this.input.addEventListener('compositionstart',()=>{this.composing=true;});
@@ -27,19 +50,28 @@ export class Editor {
     this.input.addEventListener('input',()=>this.changed());
     if (rescue && rescue.reference===meta.reference && typeof rescue.text==='string') {
       this.value=rescue.text;this.input.value=this.value;
-      if (rescue.version!==meta.version && this.value!==content) this.showConflict(meta,content);
+      if (this.refreshPending) {this.setStatus('保存结果等待核对；输入已保留');this.retryButton.hidden=false;}
+      else if (rescue.version!==meta.version && this.value!==content) this.showConflict(meta,content);
       else if(this.dirty) {this.setStatus('已救回尚未同步的输入');this.schedule();}
     }
-    if(this.publishID) {this.setStatus('上次存入结果待核对');this.retryButton.hidden=false;this.retryButton.textContent='核对存入结果';}
+    if(this.publishID) {this.setStatus('上次存入结果待核对');this.retryButton.hidden=false;}
     if(this.discardPending)this.discardStatus();
     this.updateButtons();
   }
   get dirty(){return this.value!==this.base;}
-  setStatus(value){if(this.live)this.status.textContent=value;}
+  // One current operation determines both the visible action and its effect.
+  get recoveryAction(){
+    if(this.discardPending)return {label:'重试弃稿',run:()=>this.retryDiscard()};
+    if(this.publishID)return {label:'核对存入结果',run:()=>this.reconcile()};
+    if(this.refreshPending)return {label:'重试核对文稿',run:()=>this.reconcile(true)};
+    return {label:'重试保存',run:()=>this.save()};
+  }
+  setStatus(value){if(this.live)this.status.textContent=value+(cleanupPending?'；浏览器暂存尚待清理，请勿刷新或关闭':rescueNeedsWindow()?'；暂存仅在当前窗口，请勿刷新或关闭':'');}
   updateButtons(){
-    this.previewButton.disabled=!this.value.trim()||!!this.conflict||!!this.publishID&&!this.retryPublishAllowed||this.composing||this.quarantined||this.finishing||!!this.discardPending;
-    this.input.readOnly=!!this.publishID&&!this.conflict||this.quarantined||this.finishing||!!this.discardPending;
-    this.discardButton.disabled=this.finishing||!!this.discardPending;
+    this.retryButton.textContent=this.recoveryAction.label;
+    this.previewButton.disabled=!this.value.trim()||!!this.conflict||!!this.publishID&&!this.retryPublishAllowed||this.composing||this.quarantined||this.finishing||!!this.discardPending||this.refreshPending;
+    this.input.readOnly=!!this.publishID&&!this.conflict||this.quarantined||this.finishing||!!this.discardPending||this.refreshPending;
+    this.discardButton.disabled=this.finishing||!!this.discardPending||!!this.unavailableBody||this.refreshPending;
     this.grantButton.disabled=this.discardButton.disabled||!!this.publishID;this.retryButton.disabled=this.finishing;
   }
   snapshot(){return {handle:this.meta.handle,version:this.meta.version,text:this.value,reference:this.meta.reference,publishID:this.publishID};}
@@ -48,7 +80,7 @@ export class Editor {
   // A confirmed operation owns the editor until its outcome is known. Closing
   // its dialog does not release this ownership or authorize deleting new input.
   async finish(label,task,discard=false){
-    if(!this.live||this.finishing||this.discardPending&&!discard)throw new Error('正在完成这篇文稿的操作，请稍候。');
+    if(!this.live||this.finishing||this.refreshPending||this.discardPending&&!discard)throw new Error('正在完成这篇文稿的操作，请稍候。');
     const current=scope();
     this.finishing=true;clearTimeout(this.timer);this.updateButtons();this.setStatus(label);
     try{return await this.serial(async()=>{
@@ -56,17 +88,18 @@ export class Editor {
       try{return await task();}
       catch(error){if(this.live&&current()&&error.status===409)await this.refresh(true);throw error;}
     });}
-    catch(error){if(this.live)this.setStatus(this.discardPending?'弃稿结果待核对':this.publishID?'存入结果待核对':this.conflict?'内容已有更新，需要核对':this.dirty?'操作未完成；输入已保留':'操作未完成；已保存内容仍在');throw error;}
+    catch(error){if(this.live)this.setStatus(this.discardPending?'弃稿结果待核对':this.publishID?'存入结果待核对':this.refreshPending?'文稿已有更新，等待核对':this.conflict?'内容已有更新，需要核对':this.dirty?'操作未完成；输入已保留':'操作未完成；已保存内容仍在');throw error;}
     finally{this.finishing=false;if(this.live){this.updateButtons();if(this.dirty)this.schedule();}}
   }
   persist(){
     if(!this.live)return;
-    if(!this.dirty&&!this.conflict&&!this.publishID&&!this.rebase&&!this.discardPending){clearRescue();return;}
-    const ok=storage.set(rescueKey,JSON.stringify({reference:this.meta.reference,target_reference:this.meta.target_reference,version:this.meta.version,text:this.value,publishID:this.publishID,rebase:this.rebase,discardPending:this.discardPending}));
-    if(!ok)this.setStatus('尚未同步；窗口暂存空间不足，请勿关闭');
+    if(this.unavailableBody){retainReceipt({reference:this.meta.reference,publishID:this.publishID});return;}
+    if(!this.dirty&&!this.conflict&&!this.publishID&&!this.rebase&&!this.discardPending&&!this.refreshPending&&this.pendingSave===undefined){clearRescue(this.meta.reference);return;}
+    const ok=storeRescue({reference:this.meta.reference,target_reference:this.meta.target_reference,version:this.meta.version,text:this.value,publishID:this.publishID,rebase:this.rebase,discardPending:this.discardPending,refreshPending:this.refreshPending,pendingSave:this.pendingSave});
+    if(!ok)this.setStatus('尚未同步');
   }
   changed(){if(this.input.readOnly){this.input.value=this.value;return;}this.value=this.input.value;this.persist();this.updateButtons();if(!this.conflict){this.setStatus('尚未同步');this.schedule();}}
-  schedule(){clearTimeout(this.timer);if(this.live&&!this.paused&&!this.quarantined&&!this.composing&&!this.conflict&&!this.publishID&&!this.finishing&&!this.discardPending)this.timer=setTimeout(()=>this.save().catch(()=>{}),1100);}
+  schedule(){clearTimeout(this.timer);if(this.live&&!this.paused&&!this.quarantined&&!this.composing&&!this.conflict&&!this.publishID&&!this.finishing&&!this.discardPending&&!this.refreshPending)this.timer=setTimeout(()=>this.save().catch(()=>{}),1100);}
   serial(task){
     const job=this.queue.then(async()=>{if(!this.live)return;this.busy=job;try{return await task();}finally{if(this.busy===job)this.busy=null;}});
     this.queue=job.catch(()=>{});return job;
@@ -76,7 +109,7 @@ export class Editor {
   quarantine(){this.quarantined=true;this.node.hidden=true;clearTimeout(this.timer);this.persist();this.updateButtons();}
   async save(){
     return this.serial(async()=>{
-      if(this.publishID||this.discardPending||!this.dirty||this.conflict||this.composing||this.quarantined||this.finishing)return;
+      if(this.publishID||this.discardPending||!this.dirty||this.conflict||this.composing||this.quarantined||this.finishing||this.refreshPending)return;
       await this.write();
     });
   }
@@ -86,39 +119,42 @@ export class Editor {
     if(!this.live||!current()||this.conflict||this.composing||this.quarantined)return;
     const value=this.value,handle=this.meta.handle;
     this.setStatus('正在保存…');this.lastWrite=Date.now();
+    // Own the uncertainty before sending, including a lost acknowledgement.
+    // Typing remains available while this request is in flight.
+    this.pendingSave=value;this.persist();
+    let accepted=false;
     try{
       const result=await replace(handle,value);
+      accepted=true;
       if(!this.live)return;
-      this.meta={...this.meta,handle:result.handle};this.base=value;
-      // Resolve returns an equality token independent of random transport handles.
-      const current=await resolve(this.meta.reference);
-      if(!this.live)return;
-      if(current.unavailable){this.unavailable();return;}
-      const remote=current.drafts[0],remoteText=await text('draft_content',remote.handle,()=>this.live);
-      if(!this.live)return;
-      if(remoteText!==value){this.showConflict(remote,remoteText);return;}
-      this.meta=remote;this.persist();this.retryButton.hidden=true;
-      this.setStatus(this.dirty?'尚未同步':'输入已保存');if(this.dirty)this.schedule();
+      // Acceptance does not complete the concurrency check. Keep the exact
+      // submitted string apart from later typing until metadata + text agree.
+      this.meta={...this.meta,handle:result.handle};this.pendingSave=value;this.refreshPending=true;
+      this.persist();this.updateButtons();await this.refresh();
     }catch(error){
       if(!this.live)return;
-      if(error.status===409&&current()){await this.refresh(true);return;}
-      this.setStatus(error.status===429?'正在等待保存；输入已保留':'保存未完成；输入已保留');this.persist();this.retryButton.hidden=false;
+      if(!accepted&&error.status===429){this.pendingSave=undefined;this.refreshPending=false;}
+      else this.refreshPending=true;
+      if(!accepted&&error.status===409&&current()){this.pendingSave=undefined;this.setStatus('文稿已有更新，等待核对');this.persist();this.updateButtons();this.retryButton.hidden=false;await this.refresh(true);return;}
+      this.setStatus(this.refreshPending?'保存结果等待核对；输入已保留':error.status===429?'正在等待保存；输入已保留':'保存未完成；输入已保留');this.persist();this.retryButton.hidden=false;this.updateButtons();
       if(error.status===429)this.schedule();
       throw error;
     }
   }
   async flush(){
     clearTimeout(this.timer);
-    if(this.finishing||this.discardPending)throw new Error('正在完成这篇文稿的操作，请稍候。');
+    if(this.finishing||this.discardPending||this.refreshPending)throw new Error('正在完成这篇文稿的操作，请稍候。');
     if(this.composing)throw new Error('请先完成正在输入的文字。');
     await this.save();
-    if(this.dirty||this.conflict||this.publishID&&!this.retryPublishAllowed)throw new Error('请先完成保存或核对，再继续。');
+    if(this.dirty||this.conflict||this.publishID&&!this.retryPublishAllowed||this.refreshPending||this.pendingSave!==undefined||this.discardPending||this.finishing||this.composing)throw new Error('请先完成保存或核对，再继续。');
   }
   async reconcile(force=false){
     const current=scope();return this.serial(()=>current()?this.refresh(force):undefined);
   }
   async refresh(force=false){
     if(!this.live)return;
+    force=force||this.refreshPending;
+    if(this.unavailableBody){await this.completeDiscard();return;}
     if(this.discardPending){await this.readDiscard();return;}
     if(this.publishID){await this.readPublication();return;}
     const page=await resolve(this.meta.reference);
@@ -128,14 +164,19 @@ export class Editor {
     if(!force&&meta.version===this.meta.version){this.quarantined=false;this.node.hidden=false;this.updateButtons();return;}
     const content=await text('draft_content',meta.handle,()=>this.live);
     if(!this.live)return;
-    this.quarantined=false;this.node.hidden=false;
-    if(content===this.value){this.meta=meta;this.base=content;this.conflict=null;this.persist();this.conflictBox.hidden=true;this.setStatus('输入已保存');this.updateButtons();return;}
-    if(this.dirty||force){this.showConflict(meta,content);return;}
+    const submitted=this.pendingSave;this.pendingSave=undefined;
+    this.refreshPending=false;this.quarantined=false;this.node.hidden=false;
+    if(content===this.value||content===submitted){
+      this.meta=meta;this.base=content;this.conflict=null;this.conflictBox.hidden=true;this.conflictBox.replaceChildren();this.persist();this.retryButton.hidden=true;
+      this.setStatus(this.dirty?'尚未同步':'输入已保存');this.updateButtons();if(this.dirty)this.schedule();return;
+    }
+    if(this.dirty||this.conflict||force){this.showConflict(meta,content);return;}
     this.meta=meta;this.base=content;this.value=content;this.input.value=content;
     this.setStatus('已接续最新内容');this.updateButtons();
   }
   showConflict(meta,content){
     clearTimeout(this.timer);const conflict=this.conflict={meta,content};this.persist();this.setStatus('内容已有更新，需要核对');
+    this.retryButton.hidden=!this.publishID;
     const choose=keep=>{const snapshot=this.snapshot();return this.finish('正在保存核对结果…',async()=>{
       this.requireSnapshot(snapshot);if(this.conflict!==conflict)throw new Error('另一处内容又有变化，请重新核对。');
       this.meta=meta;this.base=content;if(!keep){this.value=content;this.input.value=content;}
@@ -149,7 +190,7 @@ export class Editor {
     this.updateButtons();
   }
   finishConflict(){this.conflict=null;this.conflictBox.hidden=true;this.conflictBox.replaceChildren();this.retryPublishAllowed=!!this.publishID;this.persist();this.setStatus(this.dirty?'尚未同步':'输入已保存');this.updateButtons();}
-  unavailable(){clearRescue();this.destroy();this.hooks.unavailable();}
+  unavailable(){clearRescue(this.meta.reference);this.destroy();this.hooks.unavailable();}
   async preview(){
     const current=scope();
     await this.flush();if(!this.live||!current())return;
@@ -170,8 +211,8 @@ export class Editor {
       if(!this.live||!current()||!close.current())return close();
       await this.finish('正在核对存入结果…',async()=>{
         this.requireSnapshot(snapshot);if(this.dirty||this.conflict)throw new Error('请重新预览已保存的全文。');
-        this.publishID=this.publishID||operationID();this.retryPublishAllowed=false;this.persist();this.updateButtons();this.retryButton.hidden=false;this.retryButton.textContent='核对存入结果';
-        try{const result=await act({action:'publish_draft',handle:snapshot.handle,operation_id:this.publishID});if(this.live){clearRescue();this.destroy();close();await this.hooks.published(result.handle);}}
+        this.publishID=this.publishID||operationID();this.retryPublishAllowed=false;this.persist();this.updateButtons();this.retryButton.hidden=false;
+        try{const result=await act({action:'publish_draft',handle:snapshot.handle,operation_id:this.publishID});if(this.live){clearRescue(this.meta.reference);this.destroy();close();await this.hooks.published(result.handle);}}
         catch(error){close();if(this.live&&current())await this.readPublication();}
       });
     }}]);
@@ -207,7 +248,7 @@ export class Editor {
         // A revision and its full text form a pair. If a second writer changed
         // the successor, reopening must enter conflict, never autosave over it.
         const rescue={reference:meta.reference,target_reference:meta.target_reference,version:body===mine?meta.version:null,text:mine};
-        storage.set(rescueKey,JSON.stringify(rescue));
+        if(!storeRescue(rescue,this.meta.reference))throw new Error('接续暂存未完成，原稿仍保留，请重试。');
         this.destroy();close();
         // Transfer the protected workspace before awaiting old-draft cleanup.
         // A detached successor still owns its rescue and blocks unsafe switches.
@@ -216,16 +257,15 @@ export class Editor {
         });
       }}]);
   }
-  async recoverPublication(){const current=scope();return this.serial(()=>current()?this.readPublication():undefined);}
   async readPublication(){
     if(!this.publishID)return;
     const current=scope();
-    this.setStatus('存入结果待核对');this.retryButton.hidden=false;this.retryButton.textContent='核对存入结果';
+    this.setStatus('存入结果待核对');this.retryButton.hidden=false;this.updateButtons();
     const page=await query({view:'publish_receipt',operation_id:this.publishID});
     if(!this.live||!current())return;
     const result=page.publication;
     if(result.state==='completed'||result.state==='changed'){
-      clearRescue();this.destroy();notice(result.state==='changed'?'已确认上次存入；这份资料后来又有更新。':'已确认上次存入成功。');await this.hooks.published(result.asset);return;
+      clearRescue(this.meta.reference);this.destroy();notice(result.state==='changed'?'已确认上次存入；这份资料后来又有更新。':'已确认上次存入成功。');await this.hooks.published(result.asset);return;
     }
     if(result.state==='unavailable'){this.unavailable();return;}
     this.setStatus('尚未确认存入结果，请核对');
@@ -234,15 +274,15 @@ export class Editor {
     if(!draft.unavailable){
       const meta=draft.drafts[0],body=await text('draft_content',meta.handle,()=>this.live&&current());
       if(!this.live||!current())return;
-      this.quarantined=false;this.node.hidden=false;
+      this.refreshPending=false;this.quarantined=false;this.node.hidden=false;
       if(body!==this.value){this.showConflict(meta,body);}
       else{this.meta=meta;this.base=body;this.retryPublishAllowed=true;}
-      this.persist();this.retryButton.hidden=false;this.retryButton.textContent='核对存入结果';this.updateButtons();
+      this.persist();this.retryButton.hidden=false;this.updateButtons();
       notice('尚未确认上次存入。请重新核对全文；确认后会重试原次存入，不自动重复发布。');
     }
     else{
-      retainReceipt({reference:this.meta.reference,publishID:this.publishID});
-      this.destroy();await this.hooks.pendingReceipt();
+      const retained=retainReceipt({reference:this.meta.reference,publishID:this.publishID});
+      this.destroy();await this.hooks.pendingReceipt(retained);
     }
   }
   async discard(){
@@ -258,7 +298,7 @@ export class Editor {
       });
     },true);
   }
-  discardStatus(){this.setStatus('弃稿结果待核对；确认后可重试');this.retryButton.hidden=false;this.retryButton.textContent='重试弃稿';this.updateButtons();}
+  discardStatus(){this.setStatus('弃稿结果待核对；确认后可重试');this.retryButton.hidden=false;this.updateButtons();}
   async readDiscard(){
     const current=scope(),page=await resolve(this.meta.reference);if(!this.live||!current())return;
     if(page.unavailable){
@@ -269,8 +309,10 @@ export class Editor {
     if(page.drafts[0].version!==this.discardPending.version){
       // A newer revision cannot be deleted by the outstanding conditional
       // request. Preserve both texts instead of extending the old approval.
-      this.discardPending=null;this.persist();await this.refresh(true);return;
+      this.discardPending=null;this.refreshPending=true;
+      this.setStatus('文稿已有更新，等待核对');this.updateButtons();this.persist();await this.refresh(true);return;
     }
+    this.quarantined=false;this.node.hidden=false;
     this.discardPending.handle=page.drafts[0].handle;this.persist();this.discardStatus();
   }
   async submitDiscard(){
@@ -283,17 +325,24 @@ export class Editor {
     // A missing draft can mean either deletion or publication. Receipt absence
     // is not proof of deletion: bounded receipt retention can expire a result.
     if(this.publishID){
+      // Disappearance is already authoritative. Retire the body and deletion
+      // condition even if explaining the earlier publication must wait.
+      this.unavailableBody=true;this.discardPending=null;this.refreshPending=false;this.pendingSave=undefined;
+      this.quarantined=false;this.node.hidden=false;
+      this.input.value='';this.value='';this.base='';this.conflict=null;
+      this.conflictBox.replaceChildren();this.conflictBox.hidden=true;this.previewDialog?.close();
+      this.persist();this.setStatus('文稿已不可用，上次存入结果待核对');this.retryButton.hidden=false;this.updateButtons();
       const current=scope(),page=await query({view:'publish_receipt',operation_id:this.publishID});
       if(!this.live||!current())return;
       const result=page.publication;
       if(result.state==='completed'||result.state==='changed'){
-        clearRescue();this.destroy();notice('已确认上次存入成功；资料已保留。');await this.hooks.published(result.asset);return;
+        clearRescue(this.meta.reference);this.destroy();notice('已确认上次存入成功；资料已保留。');await this.hooks.published(result.asset);return;
       }
       if(result.state==='unavailable'){this.unavailable();return;}
-      retainReceipt({reference:this.meta.reference,publishID:this.publishID});
-      this.destroy();await this.hooks.pendingReceipt();return;
+      const retained=retainReceipt({reference:this.meta.reference,publishID:this.publishID});
+      this.destroy();await this.hooks.pendingReceipt(retained);return;
     }
-    clearRescue();this.destroy();await this.hooks.discarded();
+    clearRescue(this.meta.reference);this.destroy();await this.hooks.discarded();
   }
   async retryDiscard(){
     const current=scope();
@@ -301,5 +350,5 @@ export class Editor {
       await this.readDiscard();if(this.live&&current()&&this.discardPending)await this.submitDiscard();
     },true);
   }
-  destroy(){this.live=false;clearTimeout(this.timer);this.previewDialog?.close();this.input.value='';this.value='';this.base='';this.conflict=null;this.node.replaceChildren();}
+  destroy(){this.live=false;clearTimeout(this.timer);this.previewDialog?.close();this.input.value='';this.value='';this.base='';this.pendingSave=undefined;this.conflict=null;this.node.replaceChildren();}
 }
