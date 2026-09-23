@@ -16,7 +16,7 @@ User <-> external agent <-> replaceable adapter <-> stable core contract
                               durable user assets              rebuildable derived state
 ```
 
-Ownward does not include a user interface or an internal agent. The first adapter is an MCP server for existing software agents. Product intent, architecture invariants, and the exact first-version boundary are maintained in [docs](docs/README.md).
+External agents handle task conversations and semantic work. The embedded owner window lets the owner read original information, follow its relationships, write plain-text drafts, and control access directly. Both the window and the MCP adapter use the same authority; Ownward does not include an internal agent. Product intent, architecture invariants, and the exact first-version boundary are maintained in [docs](docs/README.md).
 
 ## Build
 
@@ -68,6 +68,18 @@ bin/ownward create --content "A durable piece of user information"
 bin/ownward search --query "What should I remember?"
 bin/ownward backup --output ownward-backup.zip
 ```
+
+Open the owner window for an existing information store, with no agent connection required:
+
+```sh
+bin/ownward owner-window --data-dir <data-directory>
+```
+
+This opens a locally verified browser window using the existing shared service.
+The five surfaces cover drafts, information, relationships, activity, and owner
+controls. Closing the window leaves the information service running. The page
+is embedded in the binary and requires no frontend build or external web assets.
+See [the owner-window design and validation](docs/tasks/owner-window.md).
 
 Run the MCP adapter with:
 

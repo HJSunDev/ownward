@@ -73,6 +73,36 @@ type OwnerAssetRow struct {
 	Original bool
 }
 
+// OwnerAsset is an exact bounded lookup for authenticated reconnects. It does
+// not enumerate the library and cannot return a forgotten body's metadata.
+func (s *Store) OwnerAsset(ctx context.Context, id string) (v OwnerAssetRow, err error) {
+	err = s.view(ctx, func(q queryer) error {
+		if _, e := requireOwner(ctx, q, false); e != nil {
+			return e
+		}
+		var created, updated string
+		e := q.QueryRowContext(ctx, `SELECT `+assetColumns+`,`+ownerOrganizationState+`,
+ EXISTS(SELECT 1 FROM asset_originals x WHERE x.asset=a.id)
+ FROM live_assets a JOIN payloads p ON p.id=a.payload
+ LEFT JOIN derived_state ds ON ds.singleton=1
+ LEFT JOIN organization_current oc ON oc.generation=ds.generation AND oc.asset=a.id
+ LEFT JOIN organizations o ON o.id=oc.organization AND o.revision=a.revision
+ WHERE a.id=? AND a.deleted=0`, id).Scan(&v.Meta.ID, &v.Meta.Revision, &created, &updated, &v.Meta.Kind, &v.Meta.ContentBytes, &v.Meta.ContentSHA256, &v.State, &v.Original)
+		if errors.Is(e, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		if e != nil {
+			return e
+		}
+		if v.Meta.CreatedAt, e = time.Parse(time.RFC3339Nano, created); e != nil {
+			return e
+		}
+		v.Meta.UpdatedAt, e = time.Parse(time.RFC3339Nano, updated)
+		return e
+	})
+	return
+}
+
 const ownerOrganizationState = `CASE WHEN o.status='ready' AND NOT EXISTS(
  SELECT 1 FROM dependencies dep LEFT JOIN live_assets input ON input.id=dep.asset AND input.revision=dep.revision
  WHERE dep.organization=o.id AND input.id IS NULL) THEN 'ready' ELSE 'pending' END`

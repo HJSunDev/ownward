@@ -43,6 +43,10 @@ type ownerHTTPFixture struct {
 }
 
 func ownerHTTP(t *testing.T) *ownerHTTPFixture {
+	return ownerHTTPWithHandler(t, nil)
+}
+
+func ownerHTTPWithHandler(t *testing.T, wrap func(http.Handler) http.Handler) *ownerHTTPFixture {
 	t.Helper()
 	ctx := context.Background()
 	root := filepath.Join(t.TempDir(), "library")
@@ -90,6 +94,9 @@ func ownerHTTP(t *testing.T) *ownerHTTPFixture {
 	server := httptest.NewUnstartedServer(nil)
 	origin := "http://" + server.Listener.Addr().String()
 	server.Config.Handler = mountOwnerWindow(bearerTokenHandler(control.HTTPHandler(), "transport-test"), w.Mount(origin))
+	if wrap != nil {
+		server.Config.Handler = wrap(server.Config.Handler)
+	}
 	server.Start()
 	t.Cleanup(server.Close)
 	f := &ownerHTTPFixture{s: s, c: c, p: p, k: k, w: w, server: server, owner: owner, root: root, ctx: informationcontrol.Authenticate(ctx, owner)}

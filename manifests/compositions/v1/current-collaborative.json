@@ -13,7 +13,7 @@
         {
           "id": "ownward.owner-view",
           "version": 1,
-          "definition_sha256": "7c8352e20338a5b0fd709d6dda2fc7f1a4b9b28277a201b15fda0b4a93489f80"
+          "definition_sha256": "c30459f86f3ca9c94263d99253f47dbaf1e65f87793492b558ee211e00c0ea64"
         }
       ],
       "content": [
@@ -140,22 +140,47 @@
         {
           "name": "internal-adapter-ownerwindow-http-go",
           "path": "internal/adapter/ownerwindow/http.go",
-          "sha256": "160ed140b2028f878225e13e827417a84401131796d3e061e5233d48c20bb7f2"
+          "sha256": "23ef918db70242f9ed57a03a6d10aa864281574bcee245d85629315704acdba5"
+        },
+        {
+          "name": "internal-adapter-ownerwindow-static-api-js",
+          "path": "internal/adapter/ownerwindow/static/api.js",
+          "sha256": "e1d83952d5b0fdea67f80c16a1e0ed3ea968d6d6b331392941ddb48795de6dd4"
+        },
+        {
+          "name": "internal-adapter-ownerwindow-static-app-js",
+          "path": "internal/adapter/ownerwindow/static/app.js",
+          "sha256": "659819971c435643b6fee2af47f07bf95437b7406f0b2d86f1eb1738f91f03b5"
         },
         {
           "name": "internal-adapter-ownerwindow-static-bootstrap-js",
           "path": "internal/adapter/ownerwindow/static/bootstrap.js",
-          "sha256": "17b36538bb56ad5a8a9ea84c75ba3ef50c82359092395f238f387c3fe8995c43"
+          "sha256": "cb8cbe8418470485015f6685678cc5ee7649843877d9915ec1232f82e356b9ef"
+        },
+        {
+          "name": "internal-adapter-ownerwindow-static-editor-js",
+          "path": "internal/adapter/ownerwindow/static/editor.js",
+          "sha256": "c53e6918e0603adf3155f59196205a03ed03add64fa031655f6741609d5f2c9f"
         },
         {
           "name": "internal-adapter-ownerwindow-static-go",
           "path": "internal/adapter/ownerwindow/static.go",
-          "sha256": "b2dae2c457a04fd6f011343dab91b057a769c142b1a2846d58a625f9731114a1"
+          "sha256": "6cd98bbb9f11dfbe770fa351d1d0038c898922b9f68e2a1e3325e0fec8e0fefe"
         },
         {
           "name": "internal-adapter-ownerwindow-static-index-html",
           "path": "internal/adapter/ownerwindow/static/index.html",
-          "sha256": "74a191cc4629a616ddc52c4d0411cd88ba3b7c796e87fb425661ddd2f2f017d1"
+          "sha256": "3fd40dde0ec303917af2aaa9dfe4db9dab82595cd9251bf0660455177434070d"
+        },
+        {
+          "name": "internal-adapter-ownerwindow-static-ui-js",
+          "path": "internal/adapter/ownerwindow/static/ui.js",
+          "sha256": "692ba41425d3ccb29d1b79dbe2ea15f00936972dca60a8c278b8451dec8ab23b"
+        },
+        {
+          "name": "internal-adapter-ownerwindow-static-window-css",
+          "path": "internal/adapter/ownerwindow/static/window.css",
+          "sha256": "c03d8a430f7cd1410823870c89bae133906a8fb23598ea57a7ef2cc1b2987467"
         },
         {
           "name": "internal-adapter-remote-transport",
@@ -248,9 +273,19 @@
           "sha256": "d287ee54b18adbc8c764314c7fa6f550bf49c5609486d03e1b1ab39847bfe735"
         },
         {
+          "name": "internal-ownerview-reference-go",
+          "path": "internal/ownerview/reference.go",
+          "sha256": "cce9e6a5ff7be03fc8578b9b023e47acaac644f53136a4541fb10e376a5697d4"
+        },
+        {
           "name": "internal-ownerview-service-go",
           "path": "internal/ownerview/service.go",
-          "sha256": "d32ee1255437ec3bcf39c33c2f04791cb687b28cf560b28b3e06c788fc120b59"
+          "sha256": "7ce201ad12b9d3b708448f65e99b0c503f9f2204ccae8e150c1a74e4c44c2dc2"
+        },
+        {
+          "name": "internal-ownerview-upload-go",
+          "path": "internal/ownerview/upload.go",
+          "sha256": "67c699851c630a4e0efbda21e5e9a1a584642284e7be245eb36bacebe440fbea"
         },
         {
           "name": "internal-rpcstream-client-go",
@@ -314,14 +349,14 @@
       "dependencies": [
         {
           "role": "kernel",
-          "identity": "a15461b202aba91fe087612de8aa6c1ed439eaaf572987071912ce164ce247ae"
+          "identity": "4f65d47fbd8222efcf45b8a82da9fbabb07f97cd857be0920c5df674090029c6"
         },
         {
           "role": "product-rules",
           "identity": "1eb81993761504bd72d76fc2c0dc380e697cf9d1e1827845da552803e2b71fce"
         }
       ],
-      "identity": "1d5db004dcc61f6b0d8bc0199172a4385bb0296cdaaf4163ca7e62c035f4921c"
+      "identity": "398a1d772cee613a42685fc435d96f49d399f1419d2c890cd4aca4564d3f1240"
     },
     {
       "role": "assembly",
@@ -424,15 +459,15 @@
       "dependencies": [
         {
           "role": "access",
-          "identity": "1d5db004dcc61f6b0d8bc0199172a4385bb0296cdaaf4163ca7e62c035f4921c"
+          "identity": "398a1d772cee613a42685fc435d96f49d399f1419d2c890cd4aca4564d3f1240"
         },
         {
           "role": "authority-substrate",
-          "identity": "48ec23fe25fede7159fb3b3bb0e57b9e56bcce11772759cb240d120744d2168a"
+          "identity": "f6e345eb6425bfeec75e9cad5372f260b3f715c139c770a11a03e64877d3106f"
         },
         {
           "role": "kernel",
-          "identity": "a15461b202aba91fe087612de8aa6c1ed439eaaf572987071912ce164ce247ae"
+          "identity": "4f65d47fbd8222efcf45b8a82da9fbabb07f97cd857be0920c5df674090029c6"
         },
         {
           "role": "product-rules",
@@ -447,7 +482,7 @@
           "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
         }
       ],
-      "identity": "b67997ccd979097bcec10a63e5066b761704fd4cf14ea2ab43751ac1f8ca44d8"
+      "identity": "9ea6a3ebc14c0793b0e49e6565160a5f1abcd9ddd07f2be259daaeb2d93aef01"
     },
     {
       "role": "authority-substrate",
@@ -727,7 +762,7 @@
         {
           "name": "internal-boundedstore-owner_events-go",
           "path": "internal/boundedstore/owner_events.go",
-          "sha256": "4c230a6a5b60f6f5e9b3d495fdc7e9ba763b1877928c339a544e3bb4bb99b9b0"
+          "sha256": "b370849abea59c473961c6a6d1c07b3f720f127710f6ca2cd7c20f22b1e6e134"
         },
         {
           "name": "internal-boundedstore-owner_forget-go",
@@ -737,7 +772,7 @@
         {
           "name": "internal-boundedstore-owner_publish-go",
           "path": "internal/boundedstore/owner_publish.go",
-          "sha256": "d7de7a13e1cd3c4ef79325615bb7ef3f55d20dac0e82fb4fc2fea5dfe2f0c690"
+          "sha256": "749d92e25b1b242ef8df2c4142d213021390e9e4680eef4d035f74cc3d0ab6f4"
         },
         {
           "name": "internal-boundedstore-owner_schema-go",
@@ -745,9 +780,19 @@
           "sha256": "328d2659c9176a6559bb8fe6d1f81bee183d0e202794ea40c2828d5627ac2877"
         },
         {
+          "name": "internal-boundedstore-owner_source-go",
+          "path": "internal/boundedstore/owner_source.go",
+          "sha256": "d3a802cce6d29371e2e4c3e79856c9d916637bb28e5345e471bc3a93b9e77191"
+        },
+        {
+          "name": "internal-boundedstore-owner_upload-go",
+          "path": "internal/boundedstore/owner_upload.go",
+          "sha256": "891eb94bbc276206a4062bafa771d395f5c1832881fb500c8e4dc8e1461b3009"
+        },
+        {
           "name": "internal-boundedstore-owner_view-go",
           "path": "internal/boundedstore/owner_view.go",
-          "sha256": "dbeea96ec01f8e8724868f048482efaa9dc279479191ab6584825555b9766f90"
+          "sha256": "6c4be830a8ae64621ee15dccd2a3297a90c67e7f38a6b9f86d944409d0205a1c"
         },
         {
           "name": "internal-boundedstore-owner_work-go",
@@ -1008,7 +1053,7 @@
         "storage_format": "ownward.sqlite-storage/v1"
       },
       "dependencies": [],
-      "identity": "48ec23fe25fede7159fb3b3bb0e57b9e56bcce11772759cb240d120744d2168a"
+      "identity": "f6e345eb6425bfeec75e9cad5372f260b3f715c139c770a11a03e64877d3106f"
     },
     {
       "role": "kernel",
@@ -1275,7 +1320,7 @@
       "dependencies": [
         {
           "role": "authority-substrate",
-          "identity": "48ec23fe25fede7159fb3b3bb0e57b9e56bcce11772759cb240d120744d2168a"
+          "identity": "f6e345eb6425bfeec75e9cad5372f260b3f715c139c770a11a03e64877d3106f"
         },
         {
           "role": "product-rules",
@@ -1290,7 +1335,7 @@
           "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
         }
       ],
-      "identity": "a15461b202aba91fe087612de8aa6c1ed439eaaf572987071912ce164ce247ae"
+      "identity": "4f65d47fbd8222efcf45b8a82da9fbabb07f97cd857be0920c5df674090029c6"
     },
     {
       "role": "product-rules",
@@ -1559,7 +1604,7 @@
       "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
     }
   ],
-  "identity": "d60398cfa5fda31849456cb100abfe5080ddfebb3175d5fc097b2ba999528b4b",
+  "identity": "2d6e83e53b52e5c76cebc4de28b31b85a136fe567e9be4d63ffc8e9ead247f0b",
   "audit": {
     "described_product_candidate": "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8",
     "migration_source_git": "dc2c7a09e67f06cfaacbe0a201c7ff27b20d6182"

@@ -31,6 +31,15 @@ func recordOwnerEventWithChanges(ctx context.Context, tx *sql.Tx, kind, id strin
 }
 
 func (s *Store) OwnerEvents(ctx context.Context, after uint64, limit int) (contract.OwnerEventPage, error) {
+	return s.ownerEvents(ctx, after, limit, false)
+}
+
+// RecentOwnerEvents pages newest first without reading older retained pages.
+func (s *Store) RecentOwnerEvents(ctx context.Context, before uint64, limit int) (contract.OwnerEventPage, error) {
+	return s.ownerEvents(ctx, before, limit, true)
+}
+
+func (s *Store) ownerEvents(ctx context.Context, after uint64, limit int, recent bool) (contract.OwnerEventPage, error) {
 	var out contract.OwnerEventPage
 	if limit < 1 || limit > 100 {
 		return out, errors.New("事件分页上限为 100")
@@ -46,6 +55,16 @@ func (s *Store) OwnerEvents(ctx context.Context, after uint64, limit int) (contr
 		}
 		out.Reset = after != 0 && after < floor
 		out.Next = max(after, floor)
+		condition, order := "e.sequence>?", "ASC"
+		position := max(after, floor)
+		if recent {
+			condition, order = "e.sequence<?", "DESC"
+			position = after
+			if position == 0 {
+				position = 1<<63 - 1
+			}
+			out.Next = 0
+		}
 		// A presentation does not need an unbounded replay identity. Keep short
 		// references for compatibility; omit oversized optional references in
 		// SQL before allocating/scoring the page. Never skip the event itself.
@@ -55,9 +74,9 @@ func (s *Store) OwnerEvents(ctx context.Context, after uint64, limit int) (contr
  coalesce(c.quote_missing,0),coalesce(c.quote_ambiguous,0),coalesce(c.target_unavailable,0),d.data
  FROM owner_events e LEFT JOIN owner_event_relation_changes c ON c.sequence=e.sequence
  LEFT JOIN owner_event_access d ON d.sequence=e.sequence
- WHERE e.sequence>? AND e.at>=? ORDER BY e.sequence LIMIT ?)
- SELECT * FROM (SELECT *,sum(coalesce(length(data),0)+length(operation)+length(asset)+length(status)+128) OVER(ORDER BY sequence) AS bytes FROM page)
-			WHERE bytes<=524288 ORDER BY sequence`, contract.OwnerEventReferenceBytes, max(after, floor), cutoff, limit)
+ WHERE `+condition+` AND e.sequence>? AND e.at>=? ORDER BY e.sequence `+order+` LIMIT ?)
+ SELECT * FROM (SELECT *,sum(coalesce(length(data),0)+length(operation)+length(asset)+length(status)+128) OVER(ORDER BY sequence `+order+`) AS bytes FROM page)
+			WHERE bytes<=524288 ORDER BY sequence `+order, contract.OwnerEventReferenceBytes, position, floor, cutoff, limit)
 		if e != nil {
 			return e
 		}

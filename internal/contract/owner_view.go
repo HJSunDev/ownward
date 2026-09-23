@@ -3,6 +3,7 @@ package contract
 import (
 	"context"
 	"errors"
+	"io"
 	"time"
 
 	"github.com/HJSunDev/ownward/internal/domain"
@@ -16,14 +17,15 @@ const OwnerViewSchema = "ownward.owner-view/v1"
 // A forget barrier invalidates event positions so clients clear obsolete views.
 // Poll active windows at 1–30 seconds; save edits no more than once per second.
 const (
-	OwnerPageLimit    = 100
-	OwnerTextBytes    = 64 << 10
-	OwnerRequestBytes = 1 << 20
-	OwnerPollMin      = time.Second
-	OwnerPollMax      = 30 * time.Second
-	OwnerAutosaveMin  = time.Second
-	OwnerHistoryDays  = 30
-	OwnerHistoryItems = 4096
+	OwnerPageLimit        = 100
+	OwnerTextBytes        = 64 << 10
+	OwnerRequestBytes     = 1 << 20
+	OwnerDraftUploadBytes = 256 << 20 // streamed UTF-8 replacement; old draft remains until complete
+	OwnerPollMin          = time.Second
+	OwnerPollMax          = 30 * time.Second
+	OwnerAutosaveMin      = time.Second
+	OwnerHistoryDays      = 30
+	OwnerHistoryItems     = 4096
 )
 
 var ErrOwnerRefresh = errors.New("内容或权限已变化，请保留未保存输入并刷新")
@@ -33,10 +35,15 @@ var ErrOwnerRefresh = errors.New("内容或权限已变化，请保留未保存�
 // All list results are bounded, including empty pages with a continuation.
 // Views: changes, assets, continuable, drafts, draft_grants, connections, pending, history,
 // events, content, details, original, original_details, draft_content, relations,
-// relation_text, overview, health, publish_receipt. Details and relation_text page raw JSON;
+// relation_text, overview, health, publish_receipt, resolve, source, recent.
+// resolve accepts a read-only Reference (or a current typed handle); references
+// survive transport restarts, but never grant authority or act as write handles.
+// recent pages newest first; events retains its existing incremental order.
+// Details and relation_text page raw JSON;
 // concatenate all text pages before decoding. Find matches any indexed query
 // token and can filter by kind/state; it is deterministic, not semantic search.
 type OwnerQuery struct {
+	Reference   string                 `json:"reference,omitempty"`    // resolve only: read locator, never write authority
 	OperationID string                 `json:"operation_id,omitempty"` // publish_receipt only; strictly read-only
 	View        string                 `json:"view"`
 	Handle      string                 `json:"handle,omitempty"`
@@ -50,6 +57,8 @@ type OwnerQuery struct {
 }
 
 type OwnerAsset struct {
+	Version     string                 `json:"version"` // equality token only, never a write precondition
+	Reference   string                 `json:"reference"`
 	Handle      string                 `json:"handle"`
 	Kind        domain.InformationKind `json:"kind"`
 	State       string                 `json:"state"`
@@ -60,10 +69,13 @@ type OwnerAsset struct {
 }
 
 type OwnerDraft struct {
-	Handle    string    `json:"handle"`
-	Target    string    `json:"target,omitempty"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Bytes     int64     `json:"bytes"`
+	Version         string    `json:"version"`
+	Reference       string    `json:"reference"`
+	TargetReference string    `json:"target_reference,omitempty"`
+	Handle          string    `json:"handle"`
+	Target          string    `json:"target,omitempty"`
+	UpdatedAt       time.Time `json:"updated_at"`
+	Bytes           int64     `json:"bytes"`
 }
 
 type OwnerText struct {
@@ -141,6 +153,8 @@ type OwnerOverview struct {
 }
 
 type OwnerPage struct {
+	Source       *OwnerSource      `json:"source,omitempty"`
+	Unavailable  bool              `json:"unavailable,omitempty"` // resolve: forgotten/discarded, not a transient read error
 	Schema       string            `json:"schema"`
 	Cursor       string            `json:"cursor"`
 	Changed      bool              `json:"changed"`
@@ -158,6 +172,13 @@ type OwnerPage struct {
 	Organization string            `json:"organization,omitempty"`
 	Reset        bool              `json:"reset,omitempty"`
 	Publication  *OwnerPublication `json:"publication,omitempty"`
+}
+
+type OwnerSource struct {
+	Actor            string `json:"actor,omitempty"`
+	Ref              string `json:"ref,omitempty"`
+	Authored         bool   `json:"authored"`
+	PreserveOriginal bool   `json:"preserve_original"`
 }
 
 // Publication recovery never writes or revives a draft. completed means the
@@ -186,16 +207,21 @@ type OwnerAction struct {
 }
 
 type OwnerResult struct {
-	Schema string `json:"schema"`
-	Handle string `json:"handle,omitempty"`
-	Grant  string `json:"grant,omitempty"`
-	State  string `json:"state"`
-	Cursor string `json:"cursor,omitempty"`
+	Reference string `json:"reference,omitempty"`
+	Schema    string `json:"schema"`
+	Handle    string `json:"handle,omitempty"`
+	Grant     string `json:"grant,omitempty"`
+	State     string `json:"state"`
+	Cursor    string `json:"cursor,omitempty"`
 }
 
 type OwnerView interface {
 	Query(context.Context, OwnerQuery) (OwnerPage, error)
 	Act(context.Context, OwnerAction) (OwnerResult, error)
+	// One complete UTF-8 replacement, bounded by OwnerDraftUploadBytes. The
+	// browser binding authenticates, checks origin and paces this like JSON
+	// writes. Interrupted uploads leave the previous draft intact.
+	ReplaceDraft(context.Context, string, io.Reader) (OwnerResult, error)
 }
 
 // AgentDraftWork is deliberately separate from ordinary asset capabilities.

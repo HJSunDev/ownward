@@ -124,12 +124,13 @@ func (s *Service) Query(ctx context.Context, q contract.OwnerQuery) (out contrac
 	if q.Cursor != "" {
 		h, e := s.open(q.Cursor)
 		out.Changed = e != nil || h.Type != "checkpoint" || h.Checkpoint == nil || *h.Checkpoint != cp
+		out.Reset = e != nil || h.Checkpoint == nil || h.Checkpoint.System != cp.System || h.Checkpoint.OwnerRevision != cp.OwnerRevision || h.Checkpoint.Deletion != cp.Deletion
 	}
 	position := ""
 	if q.After != "" {
 		h, e := s.open(q.After)
 		valid := e == nil && h.Type == "page" && h.Checkpoint != nil && h.Binding == queryBinding(q)
-		if valid && q.View == "events" {
+		if valid && (q.View == "events" || q.View == "recent") {
 			valid = h.Checkpoint.System == cp.System && h.Checkpoint.OwnerRevision == cp.OwnerRevision && h.Checkpoint.Deletion == cp.Deletion
 		} else if valid {
 			valid = *h.Checkpoint == cp
@@ -142,6 +143,16 @@ func (s *Service) Query(ctx context.Context, q contract.OwnerQuery) (out contrac
 	var next string
 	switch q.View {
 	case "changes":
+	case "resolve":
+		e = s.locate(ctx, cp, q, &out)
+	case "source":
+		var h handle
+		h, e = s.resolve(cp, q.Handle, "asset")
+		if e == nil {
+			var source contract.OwnerSource
+			source, e = s.Store.OwnerSource(ctx, h.ID, h.Revision)
+			out.Source = &source
+		}
 	case "publish_receipt":
 		var result boundedstore.OwnerPublicationRow
 		result, e = s.Store.OwnerPublication(ctx, q.OperationID)
@@ -158,11 +169,7 @@ func (s *Service) Query(ctx context.Context, q contract.OwnerQuery) (out contrac
 			break
 		}
 		for _, v := range rows {
-			kind := "asset"
-			if v.State == "stopped" {
-				kind = "stopped"
-			}
-			out.Assets = append(out.Assets, contract.OwnerAsset{Handle: s.object(cp, kind, v.Meta.ID, v.Meta.Revision), Kind: v.Meta.Kind, State: v.State, CreatedAt: v.Meta.CreatedAt, UpdatedAt: v.Meta.UpdatedAt, Bytes: v.Meta.ContentBytes, HasOriginal: v.Original})
+			out.Assets = append(out.Assets, s.asset(cp, v))
 		}
 		if q.View == "overview" {
 			out.Overview, e = s.overview(ctx, cp, rows)
@@ -172,11 +179,7 @@ func (s *Service) Query(ctx context.Context, q contract.OwnerQuery) (out contrac
 		page, e = s.Store.ListDrafts(ctx, position, q.Limit)
 		next = page.Next
 		for _, d := range page.Items {
-			v := contract.OwnerDraft{Handle: s.object(cp, "draft", d.ID, d.Revision), UpdatedAt: d.UpdatedAt, Bytes: d.ContentBytes}
-			if d.Target.ID != "" {
-				v.Target = s.object(cp, "asset", d.Target.ID, d.Target.Revision)
-			}
-			out.Drafts = append(out.Drafts, v)
+			out.Drafts = append(out.Drafts, s.draft(cp, d))
 		}
 	case "connections":
 		var rows []boundedstore.OwnerPrincipalRow
@@ -196,7 +199,7 @@ func (s *Service) Query(ctx context.Context, q contract.OwnerQuery) (out contrac
 		}
 	case "pending", "history":
 		out.Decisions, next, e = s.decisions(ctx, cp, position, q.Limit, q.View == "pending")
-	case "events":
+	case "events", "recent":
 		var after uint64
 		if position != "" {
 			after, e = strconv.ParseUint(position, 10, 64)
@@ -205,7 +208,11 @@ func (s *Service) Query(ctx context.Context, q contract.OwnerQuery) (out contrac
 			}
 		}
 		var page contract.OwnerEventPage
-		page, e = s.Store.OwnerEvents(ctx, after, q.Limit)
+		if q.View == "recent" {
+			page, e = s.Store.RecentOwnerEvents(ctx, after, q.Limit)
+		} else {
+			page, e = s.Store.OwnerEvents(ctx, after, q.Limit)
+		}
 		out.Reset = page.Reset
 		for _, v := range page.Items {
 			a := contract.OwnerActivity{Kind: v.Kind, State: v.Status, At: v.At, InvalidatedRelations: v.InvalidatedRelations}
@@ -243,7 +250,9 @@ func (s *Service) Query(ctx context.Context, q contract.OwnerQuery) (out contrac
 		}
 		// Event continuation is a stream position, including an empty tail.
 		// Ordinary writes do not invalidate it; forget requires a fresh view.
-		next = strconv.FormatUint(page.Next, 10)
+		if q.View != "recent" || page.Next != 0 {
+			next = strconv.FormatUint(page.Next, 10)
+		}
 	case "content", "details", "original", "original_details", "draft_content":
 		kind := "asset"
 		if q.View == "draft_content" {
@@ -428,6 +437,7 @@ func (s *Service) Act(ctx context.Context, in contract.OwnerAction) (out contrac
 	}
 	if d.ID != "" {
 		out.Handle = s.object(cp, "draft", d.ID, d.Revision)
+		out.Reference = locator(cp, "draft", d.ID)
 	}
 	if out.State == "" {
 		out.State = "completed"

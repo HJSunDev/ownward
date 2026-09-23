@@ -151,18 +151,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	path := strings.TrimPrefix(r.URL.Path, Prefix)
-	if path == "" || path == "bootstrap.js" {
+	if body, contentType, ok := staticAsset(path); ok {
 		if r.Method != "GET" {
 			http.Error(w, "method not allowed", 405)
 			return
 		}
-		if path == "" {
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			_, _ = w.Write(landing)
-		} else {
-			w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
-			_, _ = w.Write(bootstrapScript)
-		}
+		w.Header().Set("Content-Type", contentType)
+		_, _ = w.Write(body)
 		return
 	}
 	if r.Method != "POST" {
@@ -175,7 +170,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "来源验证失败", 403)
 		return
 	}
-	if path != "v1/restore" && !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+	if path != "v1/restore" && path != "v1/draft-text" && !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
 		http.Error(w, "须使用 JSON", 415)
 		return
 	}
@@ -215,6 +210,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	var value any
 	switch path {
+	case "v1/draft-text":
+		if r.Header.Get("Content-Type") != "text/plain; charset=utf-8" || r.ContentLength < 0 || r.ContentLength > contract.OwnerDraftUploadBytes {
+			http.Error(w, "文稿上传大小或格式无效", 413)
+			return
+		}
+		e = s.pace(key, true)
+		if e == nil {
+			value, e = s.View.ReplaceDraft(ctx, r.Header.Get("X-Ownward-Handle"), http.MaxBytesReader(w, r.Body, contract.OwnerDraftUploadBytes))
+		}
 	case "v1/query":
 		var in contract.OwnerQuery
 		e = decode(w, r, &in)

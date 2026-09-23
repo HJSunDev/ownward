@@ -111,7 +111,7 @@ func (s *Store) PublishDraft(ctx context.Context, id string, revision uint64, op
 			return out, e
 		}
 	}
-	keepOriginal := d.Target.ID != "" && (source.Ref != "" || (source.Actor != "" && source.Actor != ownerSourceActor))
+	keepOriginal := d.Target.ID != "" && sourceNeedsEvidence(source)
 	if d.Target.ID != "" && !keepOriginal {
 		e = s.view(ctx, func(q queryer) error {
 			return q.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM asset_originals WHERE asset=?)", d.Target.ID).Scan(&keepOriginal)
