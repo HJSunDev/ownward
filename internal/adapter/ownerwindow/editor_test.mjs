@@ -29,7 +29,7 @@ async function harness(overrides={}){
   const ui={
     el:(tag,attrs,...children)=>{const n=new Node(attrs);n.tag=tag;n.append(...children);return n;},
     button:(label,action)=>new Node({label,action}),row:(...c)=>new Node({children:c}),prose:value=>new Node({textContent:value}),
-    notice:message=>calls.push(['notice',message]),download:()=>{},confirm:()=>{},
+    notice:message=>calls.push(['notice',message]),download:()=>{},confirm:async(title,body,label,run)=>{const d={title,body,run};dialogs.push(d);},
     dialog:(title,body,actions)=>{const d={title,body,actions,close:()=>{d.closed=true;}};d.close.current=()=>!d.closed;dialogs.push(d);return d;}
   };
   const context=vm.createContext({console,Date,JSON,Blob,setTimeout:()=>1,clearTimeout:()=>{}});
@@ -129,4 +129,147 @@ test('pending publication conflict allows explicit manual merge without automati
   const h=await harness(),e=new h.Editor(h.meta(),'base',h.hooks,{reference:'draft-ref',version:'v0',text:'mine',publishID:'op'});
   await e.recoverPublication();assert.equal(e.input.readOnly,false);e.input.value='merged';e.changed();await e.save();
   assert.equal(h.calls.some(c=>c[0]==='replace'),false);e.destroy();
+});
+
+test('publication conflict can leave the editor without forcing publication or claiming an unknown result',async()=>{
+  const h=await harness();let discarded=false;h.hooks.discarded=async()=>{discarded=true;};
+  const e=new h.Editor(h.meta(),'base',h.hooks,{reference:'draft-ref',version:'v0',text:'mine',publishID:'op'});
+  await e.recoverPublication();assert.ok(e.conflict);assert.equal(e.discardButton.disabled,false);
+  await e.discard();await h.dialogs.at(-1).run();assert.equal(discarded,false);assert.equal(e.live,false);
+  assert.ok(h.calls.some(c=>c[0]==='pendingReceipt'));
+  assert.deepEqual(JSON.parse(h.saved.get('ownward.owner-input')),{reference:'draft-ref',publishID:'op'});
+  assert.equal(h.calls.some(c=>c[0]==='act'&&c[1].action==='publish_draft'),false);
+});
+
+test('discard after an uncertain publication reports the winning publication, including lost replies',async()=>{
+  for(const lostReply of [false,true]){
+    const h=await harness({resolve:async()=>({unavailable:true}),query:async()=>({publication:{state:'completed',asset:'kept-asset'}}),act:async()=>{if(lostReply)throw new Error('reply lost');return {};}});
+    let discarded=false;h.hooks.discarded=async()=>{discarded=true;};
+    const e=new h.Editor(h.meta(),'base',h.hooks,{reference:'draft-ref',version:'v1',text:'base',publishID:'op'});
+    await e.discard();await h.dialogs.at(-1).run();assert.equal(discarded,false);assert.equal(e.live,false);
+    assert.ok(h.calls.some(c=>c[0]==='published'&&c[1]==='kept-asset'));
+  }
+});
+
+test('receipt failure after discard retains protected recovery until both results are known',async()=>{
+  let offline=true,discarded=false;
+  const h=await harness({resolve:async()=>({unavailable:true}),query:async()=>{if(offline)throw new Error('offline');return {publication:{state:'unknown'}};}});
+  h.hooks.discarded=async()=>{discarded=true;};
+  const e=new h.Editor(h.meta(),'base',h.hooks,{reference:'draft-ref',version:'v1',text:'base',publishID:'op'});
+  await e.discard();await assert.rejects(h.dialogs.at(-1).run(),/offline/);
+  assert.equal(e.input.readOnly,true);assert.equal(discarded,false);assert.ok(e.discardPending);
+  offline=false;await e.retryDiscard();assert.equal(discarded,false);assert.equal(e.live,false);
+  assert.ok(h.calls.some(c=>c[0]==='pendingReceipt'));
+});
+
+test('preview loading cannot pair newly typed text with an older saved revision',async()=>{
+  const entered=deferred(),gate=deferred();let h;
+  h=await harness({text:async view=>{if(view==='content'){entered.resolve();await gate.promise;return 'original';}return h.remote.text;},query:async()=>({source:{preserve_original:true}})});
+  h.remote.target='asset';const e=new h.Editor(h.meta(),'base',h.hooks);
+  const preparing=e.preview();await entered.promise;e.input.value='later input';e.changed();gate.resolve();
+  await assert.rejects(preparing,/重新核对/);assert.equal(h.dialogs.length,0);assert.equal(e.value,'later input');
+  assert.equal(JSON.parse(h.saved.get('ownward.owner-input')).text,'later input');
+  await e.save();await e.preview();const d=h.dialogs.at(-1);
+  await d.actions.find(a=>a.label==='确认存入').run(d.close);
+  assert.equal(h.remote.text,'later input');assert.equal(h.calls.filter(c=>c[0]==='act'&&c[1].action==='publish_draft').length,1);
+});
+
+test('navigation during preview preparation cannot open a stale confirmation',async()=>{
+  const entered=deferred(),gate=deferred();let current=true,h;
+  h=await harness({scope:()=>()=>current,text:async view=>{if(view==='content'){entered.resolve();await gate.promise;return 'original';}return h.remote.text;},query:async()=>({source:{}})});
+  h.remote.target='asset';const e=new h.Editor(h.meta(),'base',h.hooks);
+  const preparing=e.preview();await entered.promise;current=false;gate.resolve();await preparing;
+  assert.equal(h.dialogs.length,0);assert.equal(e.live,true);e.destroy();
+});
+
+test('confirmed rebase owns input until completion even when its dialog is closed',async()=>{
+  const entered=deferred(),gate=deferred();let h,reads=0;
+  const successor={reference:'next',handle:'next-1',version:'v1',text:'remote asset'};
+  h=await harness({resolve:async ref=>ref==='target'?{assets:[{handle:'asset'}]}:{drafts:[{...successor}]},
+    text:async view=>{if(view==='content')return 'remote asset';if(++reads===1){entered.resolve();await gate.promise;}return successor.text;},
+    act:async a=>{h.calls.push(['act',a]);return a.action==='create_draft'?{reference:'next'}:{};},
+    replace:async(_,value)=>{successor.text=value;successor.version='v2';return {handle:'next-2'};}});
+  const e=new h.Editor({...h.meta(),target_reference:'target'},'mine',h.hooks);await e.targetConflict();
+  const d=h.dialogs.at(-1),rebasing=d.actions.find(a=>a.style==='primary').run(d.close);
+  await entered.promise;d.close();assert.equal(e.input.readOnly,true);await assert.rejects(e.flush(),/正在完成/);
+  e.input.value='synthetic input while read-only';e.changed();assert.equal(e.value,'mine');
+  gate.resolve();await rebasing;
+  assert.equal(successor.text,'mine');assert.equal(JSON.parse(h.saved.get('ownward.owner-input')).text,'mine');assert.equal(e.live,false);
+});
+
+test('failed rebase preserves the original editor and known successor for retry',async()=>{
+  let h,fail=true,created=0;
+  const successor={reference:'next',handle:'next-1',version:'v1',text:'remote asset'};
+  h=await harness({resolve:async ref=>ref==='target'?{assets:[{handle:'asset'}]}:{drafts:[{...successor}]},
+    text:async view=>view==='content'?'remote asset':successor.text,
+    act:async a=>{if(a.action==='create_draft'){created++;return {reference:'next'};}return {};},
+    replace:async(_,value)=>{if(fail)throw new Error('offline');successor.text=value;successor.version='v2';return {handle:'next-2'};}});
+  const e=new h.Editor({...h.meta(),target_reference:'target'},'mine',h.hooks);await e.targetConflict();let d=h.dialogs.at(-1);
+  await assert.rejects(d.actions.find(a=>a.style==='primary').run(d.close),/offline/);
+  assert.equal(e.live,true);assert.equal(e.input.readOnly,false);assert.equal(e.value,'mine');assert.equal(e.rebase.reference,'next');
+  fail=false;await e.targetConflict();d=h.dialogs.at(-1);await d.actions.find(a=>a.style==='primary').run(d.close);
+  assert.equal(created,1);assert.equal(successor.text,'mine');
+});
+
+test('unknown discard outcome remains read-only and can retry without clearing rescue',async()=>{
+  const entered=deferred(),gate=deferred();
+  const h=await harness({act:async()=>{entered.resolve();await gate.promise;throw new Error('offline');}});
+  const e=new h.Editor(h.meta(),'base',h.hooks);e.input.value='unsaved';e.changed();await e.discard();
+  const discarding=h.dialogs.at(-1).run();await entered.promise;
+  assert.equal(e.input.readOnly,true);await assert.rejects(e.flush(),/正在完成/);
+  gate.resolve();await assert.rejects(discarding,/offline/);
+  assert.equal(e.live,true);assert.equal(e.input.readOnly,true);assert.equal(e.value,'unsaved');
+  const rescue=JSON.parse(h.saved.get('ownward.owner-input'));assert.equal(rescue.text,'unsaved');assert.ok(rescue.discardPending);
+  assert.match(e.status.textContent,/待核对/);assert.equal(e.retryButton.hidden,false);
+  const reopened=new h.Editor(h.meta(),'base',h.hooks,rescue);assert.equal(reopened.input.readOnly,true);reopened.destroy();e.destroy();
+});
+
+test('discard committed with a lost reply cannot reopen a deleted draft for typing',async()=>{
+  let removed=false;
+  const h=await harness({act:async()=>{removed=true;throw new Error('lost reply');},resolve:async()=>removed?{unavailable:true}:{drafts:[]}});
+  const e=new h.Editor(h.meta(),'base',h.hooks);await e.discard();await h.dialogs.at(-1).run();
+  assert.equal(e.live,false);assert.equal(e.value,'');assert.equal(h.saved.size,0);
+});
+
+test('unresolved discard retries the same revision and releases only for a newer remote revision',async()=>{
+  let h,fail=true;
+  h=await harness({act:async a=>{h.calls.push(['act',a]);if(fail)throw new Error('offline');return {};}});
+  const e=new h.Editor(h.meta(),'base',h.hooks);await e.discard();await assert.rejects(h.dialogs.at(-1).run());
+  fail=false;await e.retryDiscard();assert.equal(e.live,false);assert.equal(h.calls.filter(c=>c[0]==='act').length,2);
+  fail=true;const other=new h.Editor(h.meta(),'base',h.hooks);await other.discard();await assert.rejects(h.dialogs.at(-1).run());
+  h.remote.version='v2';h.remote.text='other writer';await other.reconcile();
+  assert.equal(other.discardPending,null);assert.equal(other.conflict.content,'other writer');assert.equal(other.input.readOnly,false);other.destroy();
+});
+
+test('navigation invalidates queued confirmation, discard preparation and publication recovery',async()=>{
+  for(const kind of ['finish','discard','publication']){
+    let current=true;const gate=deferred(),h=await harness({scope:()=>()=>current});
+    const e=new h.Editor(h.meta(),'base',h.hooks);e.queue=gate.promise;
+    const job=kind==='finish'?e.finish('pending',async()=>h.calls.push(['obsolete'])):kind==='discard'?e.discard():e.recoverPublication();
+    current=false;gate.resolve();await job;
+    assert.equal(h.calls.some(c=>c[0]==='obsolete'||c[0]==='query'),false);assert.equal(h.dialogs.length,0);e.destroy();
+  }
+});
+
+test('publication response lost by navigation waits for explicit or current-view reconciliation',async()=>{
+  const entered=deferred(),gate=deferred();let current=true,h;
+  h=await harness({scope:()=>()=>current,act:async()=>{entered.resolve();await gate.promise;throw Object.assign(new Error('old page'),{status:-1});}});
+  const e=new h.Editor(h.meta(),'base',h.hooks);await e.preview();const d=h.dialogs.at(-1);
+  const job=d.actions.find(a=>a.label==='确认存入').run(d.close);await entered.promise;current=false;gate.resolve();await job;
+  assert.equal(h.calls.some(c=>c[0]==='query'),false);assert.ok(e.publishID);assert.equal(e.live,true);assert.equal(e.input.readOnly,true);e.destroy();
+});
+
+test('a discarded confirmation cannot silently adopt newer local or remote text',async()=>{
+  const h=await harness(),e=new h.Editor(h.meta(),'base',h.hooks);await e.discard();const d=h.dialogs.at(-1);
+  e.input.value='written after confirmation';e.changed();await assert.rejects(d.run(),/重新核对/);
+  assert.equal(h.calls.some(c=>c[0]==='act'),false);assert.equal(e.live,true);e.destroy();
+});
+
+test('receipt recovery queued during publication cannot deadlock or publish twice',async()=>{
+  const entered=deferred(),gate=deferred();let h;
+  h=await harness({act:async a=>{h.calls.push(['act',a]);entered.resolve();await gate.promise;throw new Error('lost reply');},query:async()=>({publication:{state:'completed',asset:'published'}})});
+  const e=new h.Editor(h.meta(),'base',h.hooks);await e.preview();const d=h.dialogs.at(-1);
+  const publishing=d.actions.find(a=>a.label==='确认存入').run(d.close);await entered.promise;
+  const recovering=e.recoverPublication();gate.resolve();await Promise.all([publishing,recovering]);
+  assert.equal(e.live,false);assert.equal(h.calls.filter(c=>c[0]==='act').length,1);assert.equal(h.calls.filter(c=>c[0]==='published').length,1);
 });

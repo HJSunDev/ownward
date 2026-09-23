@@ -73,4 +73,7 @@ async function replaceText(handle, value) {
   if (body.size > 256 * 1024 * 1024) throw new ApiError(413, '本次文字超出可提交大小，输入仍保留在窗口。');
   return request('draft-text', body, {raw: true, type: 'text/plain; charset=utf-8', headers: {'X-Ownward-Handle': handle}, timeout: 180000});
 }
-export async function logout() { await request('logout'); storage.remove(sessionKey); session = null; }
+export async function logout() {
+  try { return await request('logout'); }
+  finally { storage.remove(sessionKey); session = null; }
+}

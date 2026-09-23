@@ -3,7 +3,7 @@ import {Editor, rescuedInput, clearRescue, retainReceipt} from './editor.js';
 import {el, button, row, heading, empty, prose, tag, date, notice, clearNotice, statusName, permissionName, dialog, confirm, download, errorMessage} from './ui.js';
 
 const main=document.getElementById('main');
-const state={surface:'drafts',epoch:0,cursor:'',editor:null,selection:null,active:true,polling:false,after:'',search:'',filter:''};
+const state={surface:'drafts',epoch:0,cursor:'',editor:null,selection:null,active:true,polling:false,after:'',search:'',filter:'',exiting:false};
 const surfaces=[['drafts','文稿','01'],['assets','资料','02'],['relations','关系','03'],['events','动态','04'],['control','掌控','05']];
 const eventName={create:'存入资料',created:'存入资料',update:'更新资料',updated:'更新资料',correct:'更正资料',correction:'更正资料',draft_published:'文稿存入资料',forget:'遗忘资料',permissions:'调整接入能力',enrollment:'接入决定',handoff:'迁移决定',access:'接入变更'};
 const valid=epoch=>state.active&&epoch===state.epoch;
@@ -18,7 +18,13 @@ export async function start(health){
   document.getElementById('pending-entry').onclick=()=>navigate('control').catch(error=>notice(error.message,true));
   document.getElementById('logout').onclick=async()=>{
     try{
-      const exit=async()=>{await logout();lock('已退出物主窗口。',false);};
+      const exit=async()=>{
+        if(state.exiting)return;state.exiting=true;
+        lock('窗口内的暂存已清除，正在结束会话。',false);
+        let message='已退出物主窗口。';
+        try{await logout();}catch(error){if(error.status!==401)message='本窗口已退出并清除暂存；服务端会话结束尚未确认。';}
+        document.getElementById('status').textContent=message+' 请从本机物主入口重新验证。';
+      };
       if(state.editor?.dirty||state.editor?.conflict||state.editor?.publishID){await confirm('退出前保留文字',el('div',{},el('p',{},'还有尚未完成核对的文字。可以先保存一份文本到本机；确认退出会清除窗口内的暂存。'),button('下载当前文字',()=>download(new Blob([state.editor.value],{type:'text/plain;charset=utf-8'}),'未完成的文稿.txt'))),'清除暂存并退出',exit,true);}else await exit();
     }catch(error){notice(errorMessage(error),true);}
   };
@@ -33,7 +39,7 @@ export async function start(health){
   }
   setTimeout(poll,2200);
 }
-function lock(message,preserveInput=true){
+function lock(message,preserveInput=!state.exiting){
   invalidate();
   state.active=false;state.epoch++;
   if(preserveInput)state.editor?.persist();state.editor?.destroy();state.editor=null;state.selection=null;
@@ -99,10 +105,13 @@ async function draftsPage(epoch){
     section('文稿与资料',cards.childElementCount?cards:empty('这里还没有资料','文稿存入后，会和其他资料一同在这里。')),
     section('近期变动',activityList(recent.activity||[],epoch),button('查看全部动态',()=>navigate('events'))));
 }
-async function newDraft(){if(state.editor)await state.editor.flush();const result=await act({action:'create_draft',text:''});await openDraft(result.reference);}
+async function newDraft(){const current=scope(),editor=state.editor;if(editor)await editor.flush();if(!current()||state.editor!==editor)return;const result=await act({action:'create_draft',text:''});await openDraft(result.reference);}
+async function editAsset(asset){const current=scope(),editor=state.editor;if(editor)await editor.flush();if(!current()||state.editor!==editor)return;const result=await act({action:'create_draft',target:asset.handle});await openDraft(result.reference);}
 async function openDraft(reference,rescue){
+  const saved=rescue||rescuedInput();rescue=saved?.reference===reference?saved:null;
   if(state.editor?.meta.reference===reference){return resumeEditor();}
-  if(state.editor){await state.editor.flush();state.editor.destroy();state.editor=null;}
+  const current=scope(),previous=state.editor;
+  if(previous){await previous.flush();if(!current()||state.editor!==previous)return;previous.destroy();state.editor=null;}
   invalidate();
   if(rescue?.publishID){
     const recovered=await query({view:'publish_receipt',operation_id:rescue.publishID});
@@ -121,18 +130,24 @@ async function openDraft(reference,rescue){
   }
   const meta=page.drafts[0],content=await text('draft_content',meta.handle,()=>valid(epoch));
   if(!valid(epoch))return;
-  state.surface='drafts';state.selection=null;navState();
-  const editor=new Editor(meta,content,{
-    leave:()=>navigate('drafts'),open:reference=>openDraft(reference),grant:grantDraft,
-    rebased:async reference=>{state.editor=null;await openDraft(reference,rescuedInput());},
-    discarded:async()=>{state.editor=null;await navigate('drafts');},
-    published:async handle=>{state.editor=null;await openAsset({handle});},
-    pendingReceipt:async()=>{state.editor=null;await navigate('drafts');notice('存入结果尚未确认，原稿已不可用。只保留核对线索，请核对近期动态，避免重复存入。',true);},
-    unavailable:()=>{state.editor=null;document.querySelectorAll('dialog').forEach(d=>d.remove());notice('资料或文稿已不可用，相关窗口副本已清除。');navigate('drafts');}
-  },rescue);
-  state.editor=editor;main.replaceChildren(editor.node);editor.input.focus();
+  const editor=installEditor(meta,content,rescue);
   if(editor.publishID)await editor.recoverPublication();
 }
+function installEditor(meta,content,rescue,show=true){
+  if(show){state.surface='drafts';state.selection=null;navState();}
+  const editor=new Editor(meta,content,{
+    leave:()=>navigate('drafts'),open:reference=>openDraft(reference),grant:grantDraft,
+    rebased:async(meta,body,rescue)=>{const visible=releaseEditor(editor);if(visible!==null)installEditor(meta,body,rescue,visible);},
+    discarded:async()=>{const visible=releaseEditor(editor);if(visible)await navigate('drafts');},
+    published:async handle=>{const visible=releaseEditor(editor);if(visible)await openAsset({handle});else if(visible===false)notice('已确认文稿存入成功，可从资料页查看。');},
+    pendingReceipt:async()=>{const visible=releaseEditor(editor);if(visible===null)return;if(visible)await navigate('drafts');else showResume();notice('存入结果尚未确认，原稿已不可用。只保留核对线索，请核对近期动态，避免重复存入。',true);},
+    unavailable:()=>{const visible=releaseEditor(editor);if(visible===null)return;notice('资料或文稿已不可用，相关窗口副本已清除。');if(visible){document.querySelectorAll('dialog').forEach(d=>d.remove());navigate('drafts');}}
+  },rescue);
+  state.editor=editor;
+  if(show){main.replaceChildren(editor.node);editor.input.focus();}else{editor.suspend();showResume();}
+  return editor;
+}
+function releaseEditor(editor){if(state.editor!==editor)return null;const visible=main.contains(editor.node);state.editor=null;document.querySelectorAll('.resume-bar').forEach(n=>n.remove());return visible;}
 async function assetsPage(epoch){
   const input=el('input',{type:'search',placeholder:'按原文用词查找','aria-label':'查找资料',value:state.search});
   const filter=el('select',{'aria-label':'资料状态'},...Object.entries({'':'全部状态',ready:'已整理',pending:'待整理',stopped:'已停止使用'}).map(([value,label])=>el('option',{value,selected:state.filter===value},label)));
@@ -161,7 +176,7 @@ async function openAsset(asset){
   });
   main.replaceChildren(el('article',{class:'reading'},row(button('← 全部资料',()=>navigate('assets')),tag(statusName(asset.state),asset.state)),
     el('header',{class:'reading-heading'},el('p',{class:'eyebrow'},'原文 · 当前内容'),el('h1',{},body.trim().split(/\r?\n/)[0].slice(0,110)||'资料'),row(el('span',{class:'source'},sourceLabel(source)),el('time',{},date(asset.updated_at))),source.ref?prose(source.ref,'source-ref'):null),
-    row(button('编辑这篇内容',async()=>{if(state.editor)await state.editor.flush();const result=await act({action:'create_draft',target:asset.handle});await openDraft(result.reference);},'primary'),button('查看关联',()=>showRelations(asset)),asset.has_original?switchOriginal:null,button('遗忘这份资料',()=>forget(asset,body),'danger-quiet')),
+    row(button('编辑这篇内容',()=>editAsset(asset),'primary'),button('查看关联',()=>showRelations(asset)),asset.has_original?switchOriginal:null,button('遗忘这份资料',()=>forget(asset,body),'danger-quiet')),
     content));showResume();
 }
 async function forget(asset,body){

@@ -145,12 +145,12 @@
         {
           "name": "internal-adapter-ownerwindow-static-api-js",
           "path": "internal/adapter/ownerwindow/static/api.js",
-          "sha256": "e1d83952d5b0fdea67f80c16a1e0ed3ea968d6d6b331392941ddb48795de6dd4"
+          "sha256": "1b79290dcebf3649e00890fbe18057f8d78d217ebce8739b18137859a9917496"
         },
         {
           "name": "internal-adapter-ownerwindow-static-app-js",
           "path": "internal/adapter/ownerwindow/static/app.js",
-          "sha256": "659819971c435643b6fee2af47f07bf95437b7406f0b2d86f1eb1738f91f03b5"
+          "sha256": "826eaf9a2f64d56325590be6e6f57f107120ad92f153a373893ac97b824c1fb4"
         },
         {
           "name": "internal-adapter-ownerwindow-static-bootstrap-js",
@@ -160,7 +160,7 @@
         {
           "name": "internal-adapter-ownerwindow-static-editor-js",
           "path": "internal/adapter/ownerwindow/static/editor.js",
-          "sha256": "c53e6918e0603adf3155f59196205a03ed03add64fa031655f6741609d5f2c9f"
+          "sha256": "e37bc3c0a290deae43e3edfbbe5724645140426696bbf28533cfb83240227f7d"
         },
         {
           "name": "internal-adapter-ownerwindow-static-go",
@@ -356,7 +356,7 @@
           "identity": "1eb81993761504bd72d76fc2c0dc380e697cf9d1e1827845da552803e2b71fce"
         }
       ],
-      "identity": "398a1d772cee613a42685fc435d96f49d399f1419d2c890cd4aca4564d3f1240"
+      "identity": "3918db8c9f65b965bcc86f8d4ca1700c95d4c29eecd2d18a84a9a13583afa9f3"
     },
     {
       "role": "assembly",
@@ -459,7 +459,7 @@
       "dependencies": [
         {
           "role": "access",
-          "identity": "398a1d772cee613a42685fc435d96f49d399f1419d2c890cd4aca4564d3f1240"
+          "identity": "3918db8c9f65b965bcc86f8d4ca1700c95d4c29eecd2d18a84a9a13583afa9f3"
         },
         {
           "role": "authority-substrate",
@@ -482,7 +482,7 @@
           "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
         }
       ],
-      "identity": "9ea6a3ebc14c0793b0e49e6565160a5f1abcd9ddd07f2be259daaeb2d93aef01"
+      "identity": "e43147e2acc745f312b43d1dac9ab76dabe3785db0c384b89472d476d7403cdb"
     },
     {
       "role": "authority-substrate",
@@ -1604,7 +1604,7 @@
       "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
     }
   ],
-  "identity": "2d6e83e53b52e5c76cebc4de28b31b85a136fe567e9be4d63ffc8e9ead247f0b",
+  "identity": "2b848b88636c75c945af1f1b744b1f9065467b198ca2bab64f0887d2e8729ac4",
   "audit": {
     "described_product_candidate": "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8",
     "migration_source_git": "dc2c7a09e67f06cfaacbe0a201c7ff27b20d6182"

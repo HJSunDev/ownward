@@ -49,16 +49,21 @@ func (b *ownerBrowserFaults) wrap(next http.Handler) http.Handler {
 		b.mu.Lock()
 		b.counts[kind]++
 		fail := b.flags["offline"] || b.flags["uploads"] && kind == "draft-text" || b.flags["receipts"] && kind == "query/publish_receipt"
-		auth := b.flags["auth"]
+		auth := b.flags["auth"] || b.flags["logout-auth"] && kind == "logout"
+		delay := b.flags["delay-source"] && kind == "query/source" || b.flags["delay-rebase"] && kind == "action/create_draft" || b.flags["delay-discard"] && kind == "action/discard_draft"
 		if b.flags["resolve-once"] && kind == "query/resolve" {
 			fail = true
 			delete(b.flags, "resolve-once")
 		}
-		drop := b.flags["publish-reply"] && kind == "action/publish_draft"
+		drop := b.flags["publish-reply"] && kind == "action/publish_draft" || b.flags["discard-reply"] && kind == "action/discard_draft"
 		if drop {
 			delete(b.flags, "publish-reply")
+			delete(b.flags, "discard-reply")
 		}
 		b.mu.Unlock()
+		if delay {
+			time.Sleep(3 * time.Second)
+		}
 		if auth {
 			http.Error(w, "fixture expired session", 401)
 			return
