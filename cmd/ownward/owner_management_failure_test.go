@@ -119,7 +119,7 @@ func TestOwnerWindowStaleForgetEndsWithoutDeletingCurrentContent(t *testing.T) {
 			for _, v := range queryOwnerAfterRefresh(t, f, contract.OwnerQuery{View: "history"}).Decisions {
 				if v.State == want {
 					found = true
-					if want == "superseded" && !strings.Contains(v.Consequence, "遗忘") {
+					if want == "superseded" && !strings.Contains(v.Consequence, "本次删除未执行") {
 						t.Fatal("wrong operation explanation", v)
 					}
 				}

@@ -39,9 +39,9 @@ func (s *Service) decisions(ctx context.Context, cp boundedstore.OwnerCheckpoint
 				}
 				v.Subject = p.Name
 				v.Distinction = connectionDistinction(p.Order)
-				v.Consequence = "调整这个接入者可访问的资料与能力，持续到再次调整。"
+				v.Consequence = "更改这个应用的访问权限，直到你再次调整。"
 			} else {
-				v.Consequence = "遗忘所选完整资料，并清理体系内的相关副本；外部交付与独立旧备份不在清理范围。"
+				v.Consequence = "删除所选资料及其在 Ownward 中的副本。已导出的备份和其他应用保存的副本不受影响。"
 			}
 			for _, target := range op.Request.Targets {
 				v.Targets = append(v.Targets, s.object(cp, "asset", target.ID, target.Revision))
@@ -71,7 +71,7 @@ func (s *Service) decisions(ctx context.Context, cp boundedstore.OwnerCheckpoint
 			if e != nil {
 				return nil, "", e
 			}
-			out = append(out, contract.OwnerDecision{Handle: s.decisionHandle(cp, "enrollment", v.ID, 0, enrollmentBinding(preview, marker)), Kind: "enrollment", State: "awaiting_approval", Subject: v.Name, Verification: marker, Permissions: v.Permissions, Consequence: "核对目标显示的标记后，让这个接入者以所列能力访问资料，权限持续到你收回。"})
+			out = append(out, contract.OwnerDecision{Handle: s.decisionHandle(cp, "enrollment", v.ID, 0, enrollmentBinding(preview, marker)), Kind: "enrollment", State: "awaiting_approval", Subject: v.Name, Verification: marker, Permissions: v.Permissions, Consequence: "请确认下方验证码与申请连接的应用显示的一致。允许后，它将获得所列权限，直到你收回。"})
 			position = v.ID
 		}
 		after = "h:"
@@ -82,7 +82,7 @@ func (s *Service) decisions(ctx context.Context, cp boundedstore.OwnerCheckpoint
 			if len(out) == limit {
 				return out, "h:", nil
 			}
-			out = append(out, contract.OwnerDecision{Handle: s.decisionHandle(cp, "handoff", h.ID, h.Revision, h.Target), Kind: "handoff", State: "awaiting_approval", Subject: h.Target.Endpoint, Consequence: "把资料和连接关系迁往这个目的地；交接期间暂停修改，接管时短暂不可用。批准后由原迁移任务继续。"})
+			out = append(out, contract.OwnerDecision{Handle: s.decisionHandle(cp, "handoff", h.ID, h.Revision, h.Target), Kind: "handoff", State: "awaiting_approval", Subject: h.Target.Endpoint, Consequence: "将资料库迁移到此地址，已连接的应用会一同迁移。迁移期间暂停修改，切换时会短暂中断访问。"})
 		}
 	}
 	return out, "", nil
@@ -98,7 +98,7 @@ func (s *Service) history(ctx context.Context, cp boundedstore.OwnerCheckpoint, 
 		v := contract.OwnerDecision{Handle: s.object(cp, "history", row.Key, 0), Kind: row.Kind, State: row.Status, At: &row.At}
 		if row.Access != nil {
 			v.Subject, v.Permissions = row.Access.Subject, row.Access.Permissions
-			v.Consequence = "这是当时的决定记录；当前接入权限与迁移状态以体系现状为准。"
+			v.Consequence = "此记录保留当时的处理结果，权限和迁移状态可能已有后续变化。"
 		} else if row.Operation != nil {
 			op := row.Operation
 			v.Kind, v.Permissions = op.Request.Operation, op.Request.Permissions
@@ -112,11 +112,11 @@ func (s *Service) history(ctx context.Context, cp boundedstore.OwnerCheckpoint, 
 			for _, target := range op.Request.Targets {
 				v.Targets = append(v.Targets, s.object(cp, "asset", target.ID, target.Revision))
 			}
-			v.Consequence = "这是已处理的管理决定；记录不会再次执行该操作。"
+			v.Consequence = "此操作已处理。"
 			if op.Status == "superseded" {
-				v.Consequence = "接入权限已被其他决定改变，本次调整未执行；如仍需调整，请刷新后重新确认。"
+				v.Consequence = "访问权限已有变化，本次调整未执行。请重新打开权限设置后确认。"
 				if op.Request.Operation == "forget" {
-					v.Consequence = "遗忘目标已变化或不可用，本次遗忘未执行；请刷新后重新确认。"
+					v.Consequence = "资料已有变化或已不可用，本次删除未执行。请重新查看资料后确认。"
 				}
 			}
 		}

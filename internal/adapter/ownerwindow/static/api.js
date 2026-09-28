@@ -31,8 +31,8 @@ export async function request(path, data = {}, options = {}) {
     if (!response.ok) {
       if (response.status === 401) window.dispatchEvent(new Event('owner-auth-lost'));
       throw new ApiError(response.status, response.status === 409 ? '内容已更新，请核对后继续。' :
-        response.status === 401 ? '验证已失效，请从本机物主入口重新打开。' :
-        response.status === 429 ? '正在处理其他操作，请稍后重试。' : '这次操作未完成，请保留输入后重试。');
+        response.status === 401 ? '连接已过期，请重新打开 Ownward。' :
+        response.status === 429 ? '正在处理其他操作，请稍后重试。' : '暂时无法完成操作，请稍后重试。');
     }
     const result=options.blob ? await response.blob() : await response.json();
     if(!current())throw new ApiError(-1,'操作页面已变化。');
@@ -40,7 +40,7 @@ export async function request(path, data = {}, options = {}) {
   } catch (error) {
     if (error instanceof ApiError) throw error;
     if(!current())throw new ApiError(-1,'操作页面已变化。');
-    throw new ApiError(0, '连接暂时中断，尚未同步的输入已留在此窗口。');
+    throw new ApiError(0, '连接中断，请稍后重试。');
   } finally { clearTimeout(timer); release(); }
 }
 export const query = input => request('query', input);
@@ -49,7 +49,7 @@ export async function initialize() {
   invalidate();
   const fragment = location.hash.slice(1), token = /^[a-f0-9]{64}$/.test(fragment)?fragment:''; history.replaceState(null, '', location.pathname);
   if (token) { const result = await request('bootstrap', {token}); session = result.session; storage.set(sessionKey, session); }
-  if (!session) throw new ApiError(401, '请从本机物主入口打开这个窗口。');
+  if (!session) throw new ApiError(401, '请使用 Ownward 的打开命令进入。');
   return query({view: 'health'});
 }
 export const resolve = (reference, handle) => query({view: 'resolve', ...(reference ? {reference} : {handle})});
@@ -72,7 +72,7 @@ export function replace(handle,value){
 }
 async function replaceText(handle, value) {
   const body = new Blob([value], {type: 'text/plain;charset=utf-8'});
-  if (body.size > 256 * 1024 * 1024) throw new ApiError(413, '本次文字超出可提交大小，输入仍保留在窗口。');
+  if (body.size > 256 * 1024 * 1024) throw new ApiError(413, '文字超过 256 MB，暂时无法保存。请先下载保留，再拆分内容。');
   return request('draft-text', body, {raw: true, type: 'text/plain; charset=utf-8', headers: {'X-Ownward-Handle': handle}, timeout: 180000});
 }
 export async function logout() {

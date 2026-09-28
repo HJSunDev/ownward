@@ -74,7 +74,7 @@ test('accepted writes retain read-only verification through failures, later typi
     const e=new h.Editor(h.meta(),'base',h.hooks);e.input.value='accepted words';e.changed();const saving=e.save();await entered.promise;
     if(later){e.input.value='continued typing';e.changed();}gate.resolve();await assert.rejects(saving,/read offline/);
     const mine=later?'continued typing':'accepted words',rescue=JSON.parse(h.saved.get('ownward.owner-input'));
-    assert.equal(rescue.text,mine);assert.equal(e.refreshPending,true);assert.equal(e.retryButton.textContent,'重试核对文稿');assert.equal(e.input.readOnly,true);
+    assert.equal(rescue.text,mine);assert.equal(e.refreshPending,true);assert.equal(e.retryButton.textContent,'重新读取草稿');assert.equal(e.input.readOnly,true);
     await assert.rejects(e.retryButton.action(),/read offline/);assert.equal(writes,1);
     offline=false;await e.retryButton.action();assert.equal(writes,1);assert.equal(e.value,mine);assert.equal(!!e.conflict,concurrent);assert.equal(e.refreshPending,false);assert.equal(e.retryButton.hidden,true);
     if(!concurrent)assert.equal(e.base,'accepted words');
@@ -90,7 +90,7 @@ test('a rejected save still requires read verification when in-flight typing ret
   h=await harness({replace:async()=>{writes++;entered.resolve();await gate.promise;throw Object.assign(new Error('stale'),{status:409});},resolve:async()=>{if(offline)throw new Error('read offline');return {drafts:[h.meta()]};}});
   const e=new h.Editor(h.meta(),'base',h.hooks);e.input.value='first';e.changed();const saving=e.save();await entered.promise;
   e.input.value='base';e.changed();h.remote.text='other writer';h.remote.version='v2';gate.resolve();await assert.rejects(saving,/read offline/);
-  assert.equal(e.dirty,false);assert.equal(e.refreshPending,true);assert.equal(JSON.parse(h.saved.get('ownward.owner-input')).text,'base');assert.equal(e.retryButton.textContent,'重试核对文稿');
+  assert.equal(e.dirty,false);assert.equal(e.refreshPending,true);assert.equal(JSON.parse(h.saved.get('ownward.owner-input')).text,'base');assert.equal(e.retryButton.textContent,'重新读取草稿');
   offline=false;await e.retryButton.action();await e.reconcile();e.suspend();assert.equal(e.value,'base');assert.equal(e.conflict.content,'other writer');assert.equal(writes,1);e.destroy();
 });
 
@@ -100,7 +100,7 @@ test('a lost save response protects a reverted input and resolves by reading wit
     h=await harness({replace:async(_,value)=>{writes++;entered.resolve();await gate.promise;if(accepted){h.remote.text=value;h.remote.version='v2';}throw Object.assign(new Error('response lost'),{status:0});}});
     const e=new h.Editor(h.meta(),'base',h.hooks);e.input.value='first';e.changed();const saving=e.save();await entered.promise;
     e.input.value='base';e.changed();assert.equal(JSON.parse(h.saved.get('ownward.owner-input')).text,'base');assert.equal(e.input.readOnly,false);
-    gate.resolve();await assert.rejects(saving,/response lost/);assert.equal(e.refreshPending,true);assert.equal(e.retryButton.textContent,'重试核对文稿');
+    gate.resolve();await assert.rejects(saving,/response lost/);assert.equal(e.refreshPending,true);assert.equal(e.retryButton.textContent,'重新读取草稿');
     await e.retryButton.action();assert.equal(writes,1);assert.equal(e.value,'base');assert.equal(e.dirty,accepted);assert.equal(e.conflict,null);
     assert.equal(e.base,accepted?'first':'base');e.destroy();
   }
@@ -129,8 +129,8 @@ test('publication unknown retains its operation and only retries on explicit pre
   const rescue={reference:'draft-ref',version:'v1',text:h.remote.text,publishID:'original-operation'};
   const e=new h.Editor(h.meta(),h.remote.text,h.hooks,rescue);await e.reconcile();
   assert.equal(e.publishID,'original-operation');assert.equal(h.calls.some(c=>c[0]==='act'),false);
-  await e.preview();const preview=h.dialogs.at(-1);assert.equal(preview.title,'确认整篇内容');
-  await preview.actions.find(a=>a.label==='确认存入').run(preview.close);
+  await e.preview();const preview=h.dialogs.at(-1);assert.equal(preview.title,'预览文稿');
+  await preview.actions.find(a=>a.label==='加入资料').run(preview.close);
   const call=h.calls.find(c=>c[0]==='act')[1];assert.equal(call.operation_id,'original-operation');assert.equal(h.calls.some(c=>c[0]==='new-operation'),false);
 });
 
@@ -160,7 +160,7 @@ test('unknown publication with unavailable draft destroys text and retains only 
 test('failed receipt lookup leaves an explicit recovery action and honest state',async()=>{
   const h=await harness({query:async()=>{throw new Error('offline');}}),e=new h.Editor(h.meta(),'base',h.hooks);
   e.publishID='original-operation';await assert.rejects(e.reconcile());
-  assert.equal(e.retryButton.hidden,false);assert.equal(e.status.textContent,'存入结果待核对');e.destroy();
+  assert.equal(e.retryButton.hidden,false);assert.equal(e.status.textContent,'尚未确认是否保存成功');e.destroy();
 });
 
 test('successor changed after replace reopens as conflict without overwriting the other writer',async()=>{
@@ -184,7 +184,7 @@ test('failed rescue transfer retains the original editor and does not discard it
   h=await harness({resolve:async ref=>ref==='target'?{assets:[{handle:'current'}]}:{drafts:[successor]},text:async()=> 'mine',act:async a=>{h.calls.push(['act',a]);return {reference:successor.reference};}});
   const e=new h.Editor({...h.meta(),target_reference:'target'},'mine',h.hooks);
   const set=h.api.storage.set;h.api.storage.set=(key,value)=>JSON.parse(value).reference===successor.reference?false:set(key,value);
-  await e.targetConflict();const d=h.dialogs.at(-1);await assert.rejects(d.actions.find(a=>a.style==='primary').run(d.close),/接续暂存未完成/);
+  await e.targetConflict();const d=h.dialogs.at(-1);await assert.rejects(d.actions.find(a=>a.style==='primary').run(d.close),/未能保留合并后的文字/);
   assert.equal(e.live,true);assert.equal(e.value,'mine');assert.equal(JSON.parse(h.saved.get('ownward.owner-input')).reference,e.meta.reference);
   assert.equal(h.calls.some(c=>c[0]==='act'&&c[1].action==='discard_draft'),false);e.destroy();
 });
@@ -192,7 +192,7 @@ test('failed rescue transfer retains the original editor and does not discard it
 test('pending publication conflict allows explicit manual merge without automatic writes',async()=>{
   const h=await harness(),e=new h.Editor(h.meta(),'base',h.hooks,{reference:'draft-ref',version:'v0',text:'mine',publishID:'op'});
   await e.reconcile();assert.equal(e.input.readOnly,false);e.input.value='merged';e.changed();await e.save();
-  assert.equal(e.retryButton.hidden,false);assert.equal(e.retryButton.textContent,'核对存入结果');
+  assert.equal(e.retryButton.hidden,false);assert.equal(e.retryButton.textContent,'确认保存结果');
   assert.equal(h.calls.some(c=>c[0]==='replace'),false);e.destroy();
 });
 
@@ -223,7 +223,7 @@ test('receipt failure after discard retains protected recovery until both result
   const e=new h.Editor(h.meta(),'base',h.hooks,{reference:'draft-ref',version:'v1',text:'base',publishID:'op'});
   await e.discard();await assert.rejects(h.dialogs.at(-1).run(),/offline/);
   assert.equal(e.input.readOnly,true);assert.equal(discarded,false);assert.equal(e.discardPending,null);
-  assert.equal(e.value,'');assert.equal(e.retryButton.textContent,'核对存入结果');
+  assert.equal(e.value,'');assert.equal(e.retryButton.textContent,'确认保存结果');
   e.persist();assert.deepEqual(JSON.parse(h.saved.get('ownward.owner-input')),{reference:'draft-ref',publishID:'op'});
   offline=false;await e.reconcile();assert.equal(discarded,false);assert.equal(e.live,false);
   assert.ok(h.calls.some(c=>c[0]==='pendingReceipt'));
@@ -237,7 +237,8 @@ test('preview loading cannot pair newly typed text with an older saved revision'
   await assert.rejects(preparing,/重新核对/);assert.equal(h.dialogs.length,0);assert.equal(e.value,'later input');
   assert.equal(JSON.parse(h.saved.get('ownward.owner-input')).text,'later input');
   await e.save();await e.preview();const d=h.dialogs.at(-1);
-  await d.actions.find(a=>a.label==='确认存入').run(d.close);
+  assert.equal(d.title,'预览修改');
+  await d.actions.find(a=>a.label==='保存修改').run(d.close);
   assert.equal(h.remote.text,'later input');assert.equal(h.calls.filter(c=>c[0]==='act'&&c[1].action==='publish_draft').length,1);
 });
 
@@ -287,7 +288,7 @@ test('unknown discard outcome remains read-only and can retry without clearing r
   gate.resolve();await assert.rejects(discarding,/offline/);
   assert.equal(e.live,true);assert.equal(e.input.readOnly,true);assert.equal(e.value,'unsaved');
   const rescue=JSON.parse(h.saved.get('ownward.owner-input'));assert.equal(rescue.text,'unsaved');assert.ok(rescue.discardPending);
-  assert.match(e.status.textContent,/待核对/);assert.equal(e.retryButton.hidden,false);
+  assert.match(e.status.textContent,/尚未确认草稿是否删除/);assert.equal(e.retryButton.hidden,false);
   const reopened=new h.Editor(h.meta(),'base',h.hooks,rescue);assert.equal(reopened.input.readOnly,true);reopened.destroy();e.destroy();
 });
 
@@ -322,7 +323,7 @@ test('publication response lost by navigation waits for explicit or current-view
   const entered=deferred(),gate=deferred();let current=true,h;
   h=await harness({scope:()=>()=>current,act:async()=>{entered.resolve();await gate.promise;throw Object.assign(new Error('old page'),{status:-1});}});
   const e=new h.Editor(h.meta(),'base',h.hooks);await e.preview();const d=h.dialogs.at(-1);
-  const job=d.actions.find(a=>a.label==='确认存入').run(d.close);await entered.promise;current=false;gate.resolve();await job;
+  const job=d.actions.find(a=>a.label==='加入资料').run(d.close);await entered.promise;current=false;gate.resolve();await job;
   assert.equal(h.calls.some(c=>c[0]==='query'),false);assert.ok(e.publishID);assert.equal(e.live,true);assert.equal(e.input.readOnly,true);e.destroy();
 });
 
@@ -336,7 +337,7 @@ test('receipt recovery queued during publication cannot deadlock or publish twic
   const entered=deferred(),gate=deferred();let h;
   h=await harness({act:async a=>{h.calls.push(['act',a]);entered.resolve();await gate.promise;throw new Error('lost reply');},query:async()=>({publication:{state:'completed',asset:'published'}})});
   const e=new h.Editor(h.meta(),'base',h.hooks);await e.preview();const d=h.dialogs.at(-1);
-  const publishing=d.actions.find(a=>a.label==='确认存入').run(d.close);await entered.promise;
+  const publishing=d.actions.find(a=>a.label==='加入资料').run(d.close);await entered.promise;
   const recovering=e.reconcile();gate.resolve();await Promise.all([publishing,recovering]);
   assert.equal(e.live,false);assert.equal(h.calls.filter(c=>c[0]==='act').length,1);assert.equal(h.calls.filter(c=>c[0]==='published').length,1);
 });
@@ -349,7 +350,7 @@ test('discard recovery after reset restores only a verified draft and never subm
     await e.discard();await assert.rejects(h.dialogs.at(-1).run(),/lost/);
     e.quarantine();readable=false;await assert.rejects(e.reconcile(true),/offline/);assert.equal(e.node.hidden,true);
     readable=true;await e.reconcile(true);assert.equal(e.node.hidden,false);assert.equal(e.input.readOnly,true);
-    assert.equal(e.retryButton.textContent,'重试弃稿');assert.equal(e.value,'base');e.destroy();
+    assert.equal(e.retryButton.textContent,'重试删除草稿');assert.equal(e.value,'base');e.destroy();
   }
 });
 
@@ -361,7 +362,7 @@ test('a newer revision retires the old discard approval and its visible action t
     await e.discard();await assert.rejects(h.dialogs.at(-1).run(),/lost/);
     h.remote.version='v2';h.remote.text='new remote words';
     if(publication&&receiptFails)await assert.rejects(e.reconcile(),/receipt offline/);else await e.reconcile();
-    assert.equal(e.discardPending,null);assert.equal(e.retryButton.textContent,publication?'核对存入结果':'重试保存');
+    assert.equal(e.discardPending,null);assert.equal(e.retryButton.textContent,publication?'确认保存结果':'重试保存');
     if(publication&&receiptFails)await assert.rejects(e.retryButton.action(),/receipt offline/);else await e.retryButton.action();
     assert.equal(deletes,1);assert.equal(e.value,'base');assert.equal(h.remote.text,'new remote words');e.destroy();
   }
@@ -374,7 +375,7 @@ test('unavailable pending draft retires its body before a failed receipt and res
     const e=new h.Editor(h.meta(),'private body',h.hooks,{publishID:'op',discardPending:{version:'v1',handle:'old'}});
     e.persist();e.quarantine();await assert.rejects(e.reconcile(true),/receipt offline/);
     assert.equal(e.node.hidden,false);assert.equal(e.value,'');assert.equal(e.input.value,'');assert.equal(e.discardPending,null);
-    assert.equal(e.input.readOnly,true);assert.equal(e.discardButton.disabled,true);assert.equal(e.retryButton.textContent,'核对存入结果');
+    assert.equal(e.input.readOnly,true);assert.equal(e.discardButton.disabled,true);assert.equal(e.retryButton.textContent,'确认保存结果');
     e.persist();assert.deepEqual(JSON.parse(h.saved.get('ownward.owner-input')),{reference:'draft-ref',publishID:'op'});
     readable=true;await e.retryButton.action();assert.equal(e.live,false);assert.equal(h.calls.some(c=>c[0]==='act'),false);
     assert.ok(h.calls.some(c=>c[0]===(outcome==='unknown'?'pendingReceipt':outcome==='unavailable'?'unavailable':'published')));
@@ -388,7 +389,7 @@ test('failed reads after a superseded discard retain an effective read-only retr
     const e=new h.Editor(h.meta(),'base',h.hooks);if(dirty){e.input.value='my words';e.changed();}
     await e.discard();await assert.rejects(h.dialogs.at(-1).run(),/lost/);h.remote.version='v2';h.remote.text='other words';
     await assert.rejects(e.reconcile(),/read failed/);assert.equal(e.discardPending,null);assert.equal(e.input.readOnly,true);
-    assert.equal(e.retryButton.textContent,'重试核对文稿');assert.match(e.status.textContent,/文稿已有更新/);
+    assert.equal(e.retryButton.textContent,'重新读取草稿');assert.match(e.status.textContent,/文稿已有更新/);
     await assert.rejects(e.flush());await assert.rejects(e.finish('obsolete',async()=>assert.fail('stale choice ran')));await e.save();
     assert.equal(JSON.parse(h.saved.get('ownward.owner-input')).text,dirty?'my words':'base');
     assert.equal(h.calls.some(c=>c[0]==='replace'),false);

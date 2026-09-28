@@ -100,11 +100,25 @@ func TestOwnerWindowUnitThreeBrowser(t *testing.T) {
 	if n, e := strconv.Atoi(os.Getenv("OWNWARD_UI_ASSETS")); e == nil && n > 0 && n <= 10000 {
 		count = n
 	}
-	titles := []string{"关于留白的工作笔记", "一次有头有尾的积累", "阅读，是与过去的自己重逢", "把事情讲清楚，比讲复杂更难"}
+	titles := []string{"个人知识库的组织方式", "从问题出发做笔记", "检索与回忆的区别", "为什么保留原始来源", "写作提纲：把想法连起来", "周末去京都", "京都步行路线", "旅行轻装清单", "雨天的备用安排", "产品访谈记录", "访谈后的三个观察", "本周待读书目"}
+	bodies := []string{
+		"资料值得被保存，也值得被重新找到。\n\n以问题作为入口，保留原始来源，用关联把分散的笔记连起来。组织的目的，是让下一次阅读有一个清楚的起点。",
+		"先写下真正想回答的问题，再收集相关材料。\n\n一条笔记可以对应多个问题。写作时，从问题展开相关资料，比依赖文件夹路径更容易找到思路。",
+		"检索帮助我们找回已知内容，浏览关联帮助我们发现原本没有想到的联系。\n\n两种方式需要不同的界面：清晰的列表适合精确查找，空间里的连线适合观察上下文。",
+		"解释会变化，来源应该仍然可以查看。\n\n在引用观点时保留原始资料，可以回到当时的语境，检查结论是否适用。",
+		"开头：为什么我们存了很多资料，却仍然找不到思路？\n\n正文：从具体问题开始；沿关联收集依据；回到原文检查；最后写成自己的表达。",
+		"周六上午抵达，住在三条附近。\n\n这次以步行为主，每天安排两到三个地点，中间留出休息时间。下雨时切换到室内行程。",
+		"第一天：鸭川 → 哲学之道 → 银阁寺。\n\n午餐安排在路线上，不为了打卡反复折返。第二天去清水寺，傍晚回鸭川散步。",
+		"随身物品：证件、充电器、水杯、轻便外套。\n\n带一把小伞和容易步行的鞋，白天只背一个轻便的包。",
+		"大雨时调整户外路线，去博物馆和书店。\n\n预约事项保持不变，其余地点按当天交通和天气再决定。",
+		"受访者希望快速找回正在使用的材料，不想每次重新整理。\n\n当关系很多时，他首先关注的是：这一条与我当前的问题有什么关系？",
+		"一、先帮助用户辨认对象，再展示操作。\n二、展开关联时保留原来的位置，让用户知道自己从哪里来。\n三、把依据放在关系旁边，减少来回切换。",
+		"《设计心理学》\n《思考，快与慢》\n\n读完后各留下一条值得继续追问的问题。",
+	}
 	var ids []string
 	for i := 0; i < count; i++ {
-		body := titles[i%len(titles)] + "\n\n" + "想法可以零散地发生，但值得被完整地留下。每一次回看，都是重新建立联系的机会。\n\n" + "从原文出发，核对来源，再继续自己的文字。" + strconv.Itoa(i)
-		source := domain.Source{Actor: "我保存的阅读笔记", Ref: "读书记录 · 第三章"}
+		body := titles[i%len(titles)] + "\n\n" + bodies[i%len(bodies)]
+		source := domain.Source{Actor: "我的笔记", Ref: "个人记录"}
 		if i == 0 {
 			source = domain.Source{Actor: "ownward:owner"}
 		}
@@ -119,9 +133,27 @@ func TestOwnerWindowUnitThreeBrowser(t *testing.T) {
 	}
 	for i, id := range ids {
 		r := derived.Record{AssetID: id, AssetRevision: 1, Status: "ready", InputsKnown: true, Analysis: semantics.Analysis{Summary: "synthetic fixture"}}
-		if i == 0 {
-			r.Analysis.Organization = &semantics.Organization{Schema: semantics.OrganizationSchema, Snapshot: "fixture", Links: []semantics.GroundedLink{{ID: "related", Type: "supports", Meaning: "两篇笔记都强调保留原文，让后来形成的判断有据可查。", Source: semantics.GraphEndpoint{AssetID: id, Revision: 1}, Target: semantics.GraphEndpoint{AssetID: ids[1], Revision: 1}}}}
+		links := map[int][]int{0: {1, 2, 3}, 1: {4}, 2: {4}, 5: {6, 7, 8}, 6: {8}, 9: {10}, 10: {0}}
+		for _, target := range links[i] {
+			if target >= len(ids) {
+				continue
+			}
+			if r.Analysis.Organization == nil {
+				r.Analysis.Organization = &semantics.Organization{Schema: semantics.OrganizationSchema, Snapshot: "fixture"}
+			}
+			reason := "这两份资料讨论同一个问题的不同侧面，可以对照阅读。"
+			if i == 0 {
+				reason = "知识库的组织方式以问题为入口，并通过检索、关联与原始来源帮助理解资料。"
+			}
+			if i == 5 || i == 6 {
+				reason = "行程中的步行路线、随身准备与雨天替代安排相互补充。"
+			}
+			if i == 9 || i == 10 {
+				reason = "访谈观察关注资料查找和关联探索，为知识库的使用方式提供依据。"
+			}
+			r.Analysis.Organization.Links = append(r.Analysis.Organization.Links, semantics.GroundedLink{ID: "related-" + strconv.Itoa(target), Type: "supports", Meaning: reason, Source: semantics.GraphEndpoint{AssetID: id, Revision: 1}, Target: semantics.GraphEndpoint{AssetID: ids[target], Revision: 1}})
 		}
+
 		b, _ := json.Marshal(r)
 		v, e := f.s.StageOrganization(f.ctx, "browser-organized", boundedstore.StringSource(b))
 		if e != nil {
@@ -134,8 +166,8 @@ func TestOwnerWindowUnitThreeBrowser(t *testing.T) {
 	if e := f.s.ActivateGeneration(f.ctx, "browser-organized", ""); e != nil {
 		t.Fatal(e)
 	}
-	f.act(t, contract.OwnerAction{Action: "create_draft", Text: textPtr("给未来自己的几句话\n\n今天的想法，先在这里慢慢成形。")})
-	f.act(t, contract.OwnerAction{Action: "create_draft", Text: textPtr("一个值得继续的问题\n\n我们如何让积累真正变成自己的东西？")})
+	f.act(t, contract.OwnerAction{Action: "create_draft", Text: textPtr("文章草稿：让资料重新参与思考\n\n保存只是开始。一个有用的知识库，应当帮助我们沿着问题重新找到内容、理解联系，并继续写作。")})
+	f.act(t, contract.OwnerAction{Action: "create_draft", Text: textPtr("下次访谈的问题\n\n你最近一次找资料是为了什么？\n哪些线索帮助你找到了它？\n找不到的时候，你会怎么做？")})
 	write := func(file string, value any) {
 		b, _ := json.Marshal(value)
 		if e := os.WriteFile(file, b, 0600); e != nil {

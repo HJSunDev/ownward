@@ -7,7 +7,7 @@ const test=(name,run)=>nodeTest(name,{timeout:5000},run);
 // Exercise App + Editor together: restoring, switching and cleanup share the
 // real rescue slot. Transport substitutes enforce the API's page generation.
 class Node {
-  constructor(tag='div',attrs={},children=[]){Object.assign(this,{tagName:tag.toUpperCase(),value:'',children,hidden:false,isConnected:true,handlers:{},dataset:{},classList:{toggle(){}}},attrs);}
+  constructor(tag='div',attrs={},children=[]){Object.assign(this,{tagName:tag.toUpperCase(),value:'',children,hidden:false,isConnected:true,handlers:{},dataset:{},classList:{toggle(){},add(){},remove(){}}},attrs);}
   append(...items){this.children.push(...items);}
   prepend(...items){this.children.unshift(...items);}
   replaceChildren(...items){this.children=items;}
@@ -21,6 +21,30 @@ class Node {
   get lastChild(){return this.children.at(-1);}
 }
 const rescueKey='ownward.owner-input';
+test('visible activity names use bounded reads and stale responses cannot restore old titles',async()=>{
+  for(const stale of [false,true]){
+    const gate=deferred(),reads=[];
+    const h=await harness({overrides:{query:async q=>{reads.push(q);return gate.promise;}}});
+    const list=h.app.activityList([{kind:'create',asset:'one'},{kind:'forget',unavailable:true}],h.app.state.epoch);
+    const link=list.all().find(n=>n.tagName==='BUTTON');
+    assert.equal(reads.length,1);assert.deepEqual(JSON.parse(JSON.stringify(reads[0])),{view:'content',handle:'one'});
+    if(stale){h.api.invalidate();h.app.state.epoch++;}
+    gate.resolve({text:{text:'Meeting notes\nprivate body',more:true,next_offset:4096}});
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(reads.length,1,'name enrichment never follows full-body pages');
+    assert.equal(link.textContent,stale?undefined:'Meeting notes');
+  }
+});
+test('pending entry follows actual count and normal connection status stays out of the way',async()=>{
+  let decisions=[],next='',offline=false;
+  const h=await harness({overrides:{query:async q=>{if(offline)throw new Error('offline');return q.view==='pending'?{decisions,next}:{changed:false};}}});
+  await h.app.refreshPending();assert.equal(h.node('pending-entry').hidden,true);
+  decisions=[{handle:'d'}];next='more';await h.app.refreshPending();
+  assert.equal(h.node('pending-entry').hidden,false);assert.equal(h.node('pending-count').textContent,'1+');
+  offline=true;await h.app.poll();assert.equal(h.node('connection-state').hidden,false);
+  offline=false;await h.app.poll();assert.equal(h.node('connection-state').hidden,true);assert.equal(h.node('connection-state').textContent,'');
+  decisions=[];next='';await h.app.refreshPending();assert.equal(h.node('pending-entry').hidden,true);
+});
 function deferred(){let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};}
 async function harness({failFirst=false,rescue:initialRescue,overrides={}}={}){
   const saved=new Map(),calls=[],notices=[],nodes=new Map(),confirmations=[],handlers={},listeners={},downloads=[],timers=new Map();let generation=0,fail=failFirst,timerID=0;
@@ -44,7 +68,7 @@ async function harness({failFirst=false,rescue:initialRescue,overrides={}}={}){
   const ui={
     el:(tag,attrs,...children)=>new Node(tag,attrs,children),button:(label,run)=>new Node('button',{label,run}),
     row:(...children)=>new Node('div',{},children),heading:(...children)=>new Node('header',{},children),
-    empty:(...children)=>new Node('div',{},children),prose:value=>new Node('div',{textContent:value}),tag:value=>new Node('span',{textContent:value}),
+    empty:(...children)=>new Node('div',{},children),prose:(value,cls='')=>new Node('div',{textContent:value,class:`prose ${cls}`}),tag:value=>new Node('span',{textContent:value}),
     date:()=>'',notice:(message)=>notices.push(message),clearNotice(){},statusName:v=>v,permissionName:v=>v,
     dialog(){},confirm:async(title,body,label,run)=>confirmations.push({title,body,label,run}),download:(blob,name)=>downloads.push({blob,name}),errorMessage:e=>e.message
   };
@@ -57,8 +81,9 @@ async function harness({failFirst=false,rescue:initialRescue,overrides={}}={}){
   const apiModule=synthetic(api),uiModule=synthetic(ui);
   const editor=new vm.SourceTextModule(await readFile(new URL('editor.js',base),'utf8'),{context});
   await editor.link(spec=>spec.includes('api.js')?apiModule:uiModule);await editor.evaluate();
-  const app=new vm.SourceTextModule(await readFile(new URL('app.js',base),'utf8')+'\nexport {state,newDraft,openDraft,editAsset,navigate,manageRescue,forget,poll,showRelations,openAsset};',{context});
-  await app.link(spec=>spec.includes('api.js')?apiModule:spec.includes('editor.js')?editor:uiModule);await app.evaluate();
+  const app=new vm.SourceTextModule(await readFile(new URL('app.js',base),'utf8')+'\nexport {state,newDraft,openDraft,editAsset,navigate,manageRescue,forget,poll,showRelations,openAsset,activityList,refreshPending,assetsPage};',{context});
+  const graphModule=synthetic({createGraph:options=>({node:ui.el('div',{},options.organization==='available'?'暂无关联资料':'关系正在重新整理'),capture:()=>null,destroy(){}})});
+  await app.link(spec=>spec.includes('graph.js')?graphModule:spec.includes('api.js')?apiModule:spec.includes('editor.js')?editor:uiModule);await app.evaluate();
   const bootstrap=async()=>{const module=new vm.SourceTextModule(await readFile(new URL('bootstrap.js',base),'utf8'),{context});await module.link(spec=>spec.includes('api.js')?apiModule:app);await module.evaluate();};
   return {app:app.namespace,editor:editor.namespace,saved,drafts,rescue,calls,notices,node,api,ui,document,confirmations,handlers,listeners,timers,downloads,location,bootstrap};
 }
@@ -79,12 +104,12 @@ test('selected projections follow derived changes, retry failures and never stea
     }
     await h.app.poll();assert.equal(h.app.state.selection.state,'ready');assert.equal(h.app.state.cursor,'derived-next');assert.equal(currentScope(),true);
     const values=h.node('main').all().flatMap(n=>[n.textContent,...n.children.filter(c=>typeof c==='string')]);
-    assert.ok(values.includes(surface==='relations'?'暂未连上其他资料':'ready'));
+    assert.ok(values.includes(surface==='relations'?'暂无关联资料':'ready'));
     assert.equal(values.some(v=>typeof v==='string'&&v.includes('正在重新整理')),false);
     assert.equal(h.app.state.editor.meta.reference,'A');
     if(surface==='relations'){
       slow=true;const polling=h.app.poll();await entered.promise;await h.app.navigate('events');gate.resolve();await polling;
-      assert.equal(h.app.state.surface,'events');assert.equal(h.app.state.selection,null);assert.ok(h.node('main').all().some(n=>n.children.includes('发生过的变化')));
+      assert.equal(h.app.state.surface,'events');assert.equal(h.app.state.selection,null);assert.ok(h.node('main').all().some(n=>n.children.includes('动态')));
       assert.ok(queries.filter(q=>q.view==='relations').every(q=>!q.after));
     }
   }
@@ -109,10 +134,10 @@ test('reentry with pending publication and discard restores the discard action d
   let deletes=0,receipts=0;
   const h=await harness({rescue:{reference:'A',version:'v1',text:'A already saved',publishID:'op',discardPending:{version:'v1',handle:'old'}},overrides:{query:async q=>{if(q.view==='publish_receipt'){receipts++;throw new Error('receipt offline');}return {};},act:async()=>{deletes++;throw new Error('delete offline');}}});
   await h.app.start({cursor:'c1'});const e=h.app.state.editor;
-  assert.ok(e);assert.equal(e.retryButton.textContent,'重试弃稿');assert.equal(e.input.readOnly,true);assert.equal(receipts,0);assert.equal(deletes,0);
-  await h.app.navigate('assets');await h.app.openDraft('A');assert.equal(e.retryButton.textContent,'重试弃稿');
+  assert.ok(e);assert.equal(e.retryButton.textContent,'重试删除草稿');assert.equal(e.input.readOnly,true);assert.equal(receipts,0);assert.equal(deletes,0);
+  await h.app.navigate('assets');await h.app.openDraft('A');assert.equal(e.retryButton.textContent,'重试删除草稿');
   await assert.rejects(e.retryButton.run(),/delete offline/);assert.equal(deletes,1);assert.equal(receipts,0);
-  await h.handlers['owner-auth-lost']();await h.app.start({cursor:'c2'});assert.equal(h.app.state.editor.retryButton.textContent,'重试弃稿');assert.equal(deletes,1);
+  await h.handlers['owner-auth-lost']();await h.app.start({cursor:'c2'});assert.equal(h.app.state.editor.retryButton.textContent,'重试删除草稿');assert.equal(deletes,1);
 });
 
 test('unmounted unavailable rescue loses its body before receipt failure and remains explicitly releasable',async()=>{
@@ -126,7 +151,7 @@ test('unmounted unavailable rescue loses its body before receipt failure and rem
 test('ending receipt recovery withdraws only its own notice before another draft starts',async()=>{
   for(const superseded of [false,true]){
     const h=await harness({rescue:{reference:'A',publishID:'op'},overrides:{query:async q=>q.view==='publish_receipt'?{publication:{state:'unknown'}}:{}}});
-    h.drafts.delete('A');await h.app.start({cursor:'c1'});const target=h.node('notice');assert.match(target.textContent,/只保留核对线索/);
+    h.drafts.delete('A');await h.app.start({cursor:'c1'});const target=h.node('notice');assert.match(target.textContent,/草稿已无法打开/);
     await h.app.openDraft('A');assert.equal(target.hidden,false);
     if(superseded)h.ui.notice('另一项操作尚未完成',true);
     await h.app.manageRescue();h.document.modalNotice=new Node();await h.confirmations.at(-1).run();h.document.modalNotice=null;
@@ -141,11 +166,11 @@ test('receipt notices follow reauthentication and authoritative terminal outcome
   const h=await harness({rescue:{reference:'A',publishID:'op'},overrides:{query:async q=>q.view==='publish_receipt'?{publication:{state:outcome,asset:'winner'}}:q.view==='source'?{source:{}}:{}}});
   h.drafts.delete('A');await h.app.start({cursor:'c1'});assert.equal(h.node('notice').hidden,false);
   await h.handlers['owner-auth-lost']();assert.equal(h.node('notice').hidden,true);
-  await h.app.start({cursor:'c2'});assert.equal(h.node('notice').hidden,false);assert.match(h.node('notice').textContent,/只保留核对线索/);
+  await h.app.start({cursor:'c2'});assert.equal(h.node('notice').hidden,false);assert.match(h.node('notice').textContent,/草稿已无法打开/);
   outcome=terminal;h.api.resolve=async reference=>reference==='A'?{unavailable:true}:{assets:[{handle:'winner',reference:'asset',version:'v1',state:'pending'}]};
   h.api.text=async()=> 'published body';
   await h.app.openDraft('A');assert.equal(h.editor.rescuedInput(),null);assert.equal(h.app.state.receiptNotice,null);
-  assert.doesNotMatch(h.node('notice').hidden?'':h.node('notice').textContent,/只保留核对线索/);
+  assert.doesNotMatch(h.node('notice').hidden?'':h.node('notice').textContent,/草稿已无法打开/);
   }
 });
 
@@ -158,7 +183,7 @@ test('failed restoration protects input across every other-draft entry and keeps
   assert.equal(h.calls.filter(c=>c[0]==='act').length,0);
   for(const surface of ['drafts','assets','relations','events','control']){
     await h.app.navigate(surface);
-    assert.ok(h.node('main').all().some(n=>n.label==='恢复上次文稿'));
+    assert.ok(h.node('main').all().some(n=>n.label==='恢复文稿'));
     assert.equal(JSON.parse(h.saved.get(rescueKey)).text,h.rescue.text);
   }
   await h.app.openDraft('A');assert.equal(h.app.state.editor.value,h.rescue.text);
@@ -179,7 +204,7 @@ test('flush cannot release pending publication or a partially completed rebase',
     const e=h.app.state.editor;e[field]=field==='publishID'?'pending-operation':{reference:'successor'};e.retryPublishAllowed=true;e.persist();
     await assert.rejects(h.app.newDraft(),/恢复或处理/);assert.equal(h.calls.filter(c=>c[0]==='act').length,0);
     assert.equal(JSON.parse(h.saved.get(rescueKey)).reference,'A');
-    await h.app.navigate('drafts');assert.ok(h.node('main').all().some(n=>n.label==='处理这份暂存'));
+    await h.app.navigate('drafts');assert.ok(h.node('main').all().some(n=>n.label==='处理未保存内容'));
     await h.app.manageRescue();await h.confirmations.at(-1).run();
     assert.equal(e.live,false);assert.equal(h.drafts.get('A').text,h.rescue.text);
     await h.app.newDraft();assert.equal(h.app.state.editor.meta.reference,'B');
@@ -202,7 +227,7 @@ test('memory-only pending operations still own the workspace, recovery entry and
     assert.equal(h.saved.has(rescueKey),false);
     for(const [entry,arg] of [['newDraft'],['editAsset',{handle:'asset'}],['openDraft','B']])await assert.rejects(h.app[entry](arg),/恢复或处理/);
     assert.equal(e.live,true);assert.equal(h.calls.filter(c=>c[0]==='act').length,0);
-    await h.app.navigate('drafts');assert.ok(h.node('main').all().some(n=>n.label==='处理这份暂存'));
+    await h.app.navigate('drafts');assert.ok(h.node('main').all().some(n=>n.label==='处理未保存内容'));
     let prompted=false;h.handlers.beforeunload({preventDefault(){prompted=true;}});assert.equal(prompted,true);
     await h.node('logout').onclick();assert.equal(h.confirmations.at(-1).label,'清除暂存并退出');
     await h.app.manageRescue();await h.confirmations.at(-1).run();assert.equal(e.live,false);
@@ -227,7 +252,7 @@ test('locked reentry revalidates in place without duplicate handlers, navigation
     h.location.hash='#'+'b'.repeat(64);await h.handlers.hashchange();
     assert.equal(h.app.state.active,true);assert.equal(h.app.state.editor.value,h.rescue.text);
     assert.equal(h.calls.filter(c=>c[0]==='reload').length,0);assert.equal(beforeUnload(),true);
-    assert.equal(h.node('navigation').children.length,10);
+    assert.equal(h.node('navigation').children.length,5);
     for(const list of Object.values(h.listeners))assert.equal(list.length,1);
     assert.equal([...h.timers.values()].filter(t=>t.fn.name==='poll').length,1);
   }
@@ -283,7 +308,7 @@ test('automatic editor cleanup and receipt retention cannot mutate another draft
 test('unknown publication remains honest and can be explicitly released without publishing or deleting',async()=>{
   const h=await harness({rescue:{reference:'A',publishID:'unknown'},overrides:{query:async()=>({publication:{state:'unknown'}}),resolve:async()=>({unavailable:true})}});
   await h.app.start({cursor:'c1'});await assert.rejects(h.app.newDraft(),/恢复或处理/);
-  await h.app.manageRescue();const confirmation=h.confirmations.at(-1);assert.equal(confirmation.label,'结束本窗口核对');
+  await h.app.manageRescue();const confirmation=h.confirmations.at(-1);assert.equal(confirmation.label,'放弃继续恢复');
   await confirmation.run();assert.equal(h.saved.has(rescueKey),false);assert.equal(h.calls.filter(c=>c[0]==='act').length,0);
 });
 
@@ -297,14 +322,14 @@ test('unavailable text is removed when storing a receipt fails, including reset 
     else if(path==='editor')await h.app.state.editor.reconcile();else await h.app.openDraft('A');
     assert.equal(h.saved.has(rescueKey),false);assert.equal(h.app.state.editor,null);
     assert.deepEqual(JSON.parse(JSON.stringify(h.editor.rescuedInput())),{reference:'A',publishID:'unknown'});
-    assert.ok(h.notices.some(n=>n.includes('核对线索仅留在此窗口')));
+    assert.ok(h.notices.some(n=>n.includes('请保留此页面')));
   }
 });
 
 test('reset verifies rescue before redisplaying it and cannot return a detached editor to a new page',async()=>{
   const h=await harness({failFirst:true});await h.app.start({cursor:'c1'});h.drafts.delete('A');
   h.api.query=async()=>({changed:true,reset:true,cursor:'new'});await h.app.poll();
-  assert.equal(h.saved.has(rescueKey),false);assert.equal(h.node('main').all().some(n=>n.label==='恢复上次文稿'),false);
+  assert.equal(h.saved.has(rescueKey),false);assert.equal(h.node('main').all().some(n=>n.label==='恢复文稿'),false);
   const other=await harness();await other.app.start({cursor:'c1'});
   const entered=deferred(),gate=deferred();other.api.query=async()=>({changed:true,reset:true,cursor:'new'});
   other.app.state.editor.reconcile=async()=>{entered.resolve();await gate.promise;};
@@ -373,7 +398,7 @@ test('failed browser deletion is not mistaken for complete cleanup and retries w
   const remove=h.api.storage.remove;h.api.storage.remove=()=>false;
   await h.app.manageRescue();await h.confirmations.at(-1).run();
   assert.equal(h.editor.rescuedInput(),null);assert.equal(h.editor.rescueCleanupPending(),true);
-  assert.ok(h.node('main').all().some(n=>n.label==='重试清理暂存'));assert.match(h.notices.at(-1),/仍待清理/);
+  assert.ok(h.node('main').all().some(n=>n.label==='重新清除'));assert.match(h.notices.at(-1),/仍待清理/);
   let warned=false;h.handlers.beforeunload({preventDefault(){warned=true;}});assert.equal(warned,true);
   h.api.storage.set=()=>false;await h.app.newDraft();const e=h.app.state.editor;e.input.value='new B memory';e.changed();
   h.editor.clearRescue('A');assert.equal(h.editor.rescuedInput().text,'new B memory');
@@ -435,4 +460,40 @@ test('overlapping entry links serialize and preserve rescue through a failed fir
   h.location.hash='#'+'a'.repeat(64);const first=h.handlers.hashchange();await entered.promise;
   h.location.hash='#'+'b'.repeat(64);await h.handlers.hashchange();gate.resolve();await first;
   assert.equal(attempts,2);assert.equal(maximum,1);assert.equal(h.app.state.active,true);assert.equal(h.app.state.editor.value,h.rescue.text);
+});
+
+test('library reading follows the latest choice and requests more text only on demand',async()=>{
+  const a={reference:'asset-a',handle:'a',version:'1',state:'ready'},b={reference:'asset-b',handle:'b',version:'1',state:'ready'};
+  const gate=deferred(),reads=[];let holdA=true;
+  const h=await harness({overrides:{resolve:async ref=>{if(ref===a.reference&&holdA)await gate.promise;return {assets:[ref===a.reference?a:b]};},query:async q=>{
+    reads.push(q);if(q.view==='assets')return {assets:[a,b]};if(q.view==='source')return {source:{actor:'Notes'}};
+    if(q.view==='content')return {text:q.offset?{text:' second page',more:false}:{text:q.handle+'\n\nfirst page',more:true,next_offset:15}};
+    return {activity:[],decisions:[]};
+  }}});
+  const layout=await h.app.assetsPage(h.app.state.epoch);h.node('main').replaceChildren(layout);
+  const index=layout.all().find(n=>n.class==='library-index');await index.children[1].run();
+  holdA=false;gate.resolve();await new Promise(r=>setImmediate(r));
+  assert.equal(h.app.state.selection.reference,b.reference,'late first selection cannot replace the selected document');
+  assert.equal(reads.filter(q=>q.view==='content'&&q.offset).length,0,'initial preview never follows the full text');
+  await layout.all().find(n=>n.label==='继续阅读').run();
+  assert.equal(reads.filter(q=>q.view==='content'&&q.offset).length,1);
+  assert.ok(layout.all().some(n=>n.textContent==='first page second page'));
+});
+
+test('unrelated updates preserve the selected reader and its loaded text',async()=>{
+  const a={reference:'asset-a',handle:'a',version:'1',state:'ready'},b={reference:'asset-b',handle:'b',version:'1',state:'ready'},reads=[];let items=[a];
+  const h=await harness({overrides:{resolve:async()=>({assets:[a]}),query:async q=>{
+    reads.push(q);if(q.view==='assets')return {assets:items};if(q.view==='source')return {source:{actor:'Notes'}};
+    if(q.view==='content')return {text:{text:'Title\n\nActual text'}};
+    if(q.view==='changes')return {changed:true,cursor:'new'};
+    return {activity:[],decisions:[]};
+  }}});
+  const layout=await h.app.assetsPage(h.app.state.epoch);h.node('main').replaceChildren(layout);await new Promise(r=>setImmediate(r));
+  const before=reads.filter(q=>q.view==='content').length;
+  await h.app.poll();assert.ok(h.node('main').contains(layout));assert.equal(reads.filter(q=>q.view==='content').length,before);
+  assert.equal(h.app.state.cursor,'new');
+  const reader=layout.all().find(n=>n.class==='prose reader-body');assert.ok(reader);items=[a,b];await h.app.state.libraryRefresh();
+  const index=layout.all().find(n=>n.class==='library-index');assert.equal(index.children.length,2);assert.ok(layout.contains(reader));
+  items=[a,{...b,state:'stopped'}];await h.app.state.libraryRefresh();assert.equal(index.children[1].disabled,true);assert.ok(layout.contains(reader));
+  assert.equal(reads.filter(q=>q.view==='content'&&q.handle==='a').length,1,'directory changes never reload the active text');
 });

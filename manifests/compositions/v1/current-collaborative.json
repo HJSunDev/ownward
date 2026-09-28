@@ -145,42 +145,52 @@
         {
           "name": "internal-adapter-ownerwindow-static-api-js",
           "path": "internal/adapter/ownerwindow/static/api.js",
-          "sha256": "2ea4f8f1d2294bbdf7b4ef70d0b52a65b59aa1a93a2069700dbf90c177eb433d"
+          "sha256": "7c32a6cf4f083dfbba43c59a007c946522afa87804e7b1a933961f3f3d4e6e07"
         },
         {
           "name": "internal-adapter-ownerwindow-static-app-js",
           "path": "internal/adapter/ownerwindow/static/app.js",
-          "sha256": "3ef0ad58f6503c20b1c93c384eeea3355f15cd1e5fccc74a6ee6bb1d61372fdf"
+          "sha256": "fb8fc9dce22e2f5680561f3eff916f7e8a16c819c906365cdc7b9ce372d5647c"
         },
         {
           "name": "internal-adapter-ownerwindow-static-bootstrap-js",
           "path": "internal/adapter/ownerwindow/static/bootstrap.js",
-          "sha256": "b07c23a34a6bc2b0f9fffab924ff1901d1ac209aa330293c24036a8a9caa690f"
+          "sha256": "559192d94fbde689b2c428c571247696a07d881be7606bea635d20c5bc52d4f5"
         },
         {
           "name": "internal-adapter-ownerwindow-static-editor-js",
           "path": "internal/adapter/ownerwindow/static/editor.js",
-          "sha256": "dc43bc09c96664fabb36ffa556156f27580312160da2e366f40d90ea713ef06e"
+          "sha256": "12b4a233d6c2fb55de3d30dec0c2b12e1370b1bb714b8e5a3bff4e5d9273ca62"
         },
         {
           "name": "internal-adapter-ownerwindow-static-go",
           "path": "internal/adapter/ownerwindow/static.go",
-          "sha256": "6cd98bbb9f11dfbe770fa351d1d0038c898922b9f68e2a1e3325e0fec8e0fefe"
+          "sha256": "ebddf5cba13bebf325ece452f627c7b47030822ab449ecd3b70a1405fbaffc31"
+        },
+        {
+          "name": "internal-adapter-ownerwindow-static-graph-js",
+          "path": "internal/adapter/ownerwindow/static/graph.js",
+          "sha256": "59ffa57a8a22631b7c5c6a78c0bc2fea74c0b3c91d1ca8c5fb7b1fcbe82f2433"
+        },
+        {
+          "name": "internal-adapter-ownerwindow-static-graph-layout-js",
+          "path": "internal/adapter/ownerwindow/static/graph-layout.js",
+          "sha256": "5512a7d77e359e6af455b6c844c7e29a52b0a4554e2e0cb99370f2190a05ea72"
         },
         {
           "name": "internal-adapter-ownerwindow-static-index-html",
           "path": "internal/adapter/ownerwindow/static/index.html",
-          "sha256": "3fd40dde0ec303917af2aaa9dfe4db9dab82595cd9251bf0660455177434070d"
+          "sha256": "d5a3ba87ebf47c8cae769d2b9afb138ea64ace89de58f4ae660be4dd5cabe447"
         },
         {
           "name": "internal-adapter-ownerwindow-static-ui-js",
           "path": "internal/adapter/ownerwindow/static/ui.js",
-          "sha256": "12dc9ff11cfdf949e3669b628896677da1c87408c71145c3b7c83cd15dd51816"
+          "sha256": "ec8404f2b175361416f205211df0cd2e7b02c8c86ca3ad2e6fc10c45fd18de2a"
         },
         {
           "name": "internal-adapter-ownerwindow-static-window-css",
           "path": "internal/adapter/ownerwindow/static/window.css",
-          "sha256": "c03d8a430f7cd1410823870c89bae133906a8fb23598ea57a7ef2cc1b2987467"
+          "sha256": "d87c7029990014f3e31ca5c073b664b082c8df1e6ffac268c0c9646be4d9e23a"
         },
         {
           "name": "internal-adapter-remote-transport",
@@ -270,7 +280,7 @@
         {
           "name": "internal-ownerview-decisions-go",
           "path": "internal/ownerview/decisions.go",
-          "sha256": "d287ee54b18adbc8c764314c7fa6f550bf49c5609486d03e1b1ab39847bfe735"
+          "sha256": "fd31ef0f0cd778df687b3da016123fef2b62f20d8c6a07374feef86bac1a811d"
         },
         {
           "name": "internal-ownerview-reference-go",
@@ -356,7 +366,7 @@
           "identity": "1eb81993761504bd72d76fc2c0dc380e697cf9d1e1827845da552803e2b71fce"
         }
       ],
-      "identity": "d2a171b78c49cbb17e2bca361db07282e361231423e8a11850b2584e4b3e28ae"
+      "identity": "6d9f0a3f7312c61a837b749317429d78ccf01e8a8e1161deb951679dda6482bf"
     },
     {
       "role": "assembly",
@@ -459,7 +469,7 @@
       "dependencies": [
         {
           "role": "access",
-          "identity": "d2a171b78c49cbb17e2bca361db07282e361231423e8a11850b2584e4b3e28ae"
+          "identity": "6d9f0a3f7312c61a837b749317429d78ccf01e8a8e1161deb951679dda6482bf"
         },
         {
           "role": "authority-substrate",
@@ -482,7 +492,7 @@
           "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
         }
       ],
-      "identity": "9d113843d9e242816ae4a8175bd1dacc716868bcb409e5f0d7777085e66b492a"
+      "identity": "fbaf99944e85c257102caa3670040c4965a5013dd07d9fa4bb46eb8c90b55099"
     },
     {
       "role": "authority-substrate",
@@ -1604,7 +1614,7 @@
       "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
     }
   ],
-  "identity": "6f3dd065fed1a1d184bf89b3c146ca6b1bd11d8f35cc4f192d500870872622ab",
+  "identity": "6c7d189a5c92ea2bcec99693e847d1e9fc9e00f9b4abb9b2c99a52c08a2c3953",
   "audit": {
     "described_product_candidate": "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8",
     "migration_source_git": "dc2c7a09e67f06cfaacbe0a201c7ff27b20d6182"

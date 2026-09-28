@@ -1,3 +1,39 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light"><title>Ownward · 物主窗口</title><link rel="stylesheet" href="window.css"><script type="module" src="bootstrap.js"></script></head>
-<body><a class="skip-link" href="#main">跳到内容</a><div id="entry" class="entry"><div class="wordmark">ownward<span>物主窗口</span></div><h1>属于你的信息，<br>在这里看得见。</h1><p id="status" role="status">正在验证本机物主入口…</p><p class="subtle">无需智能体在线。文字、原文与掌控，同在一处。</p></div><div id="shell" hidden><aside class="sidebar"><div class="wordmark">ownward<span>物主窗口</span></div><nav id="navigation" aria-label="主要导航"></nav><div class="sidebar-note">让积累<br>成为自己的东西。</div><button id="logout" class="button quiet" type="button">退出窗口</button></aside><div class="workspace"><header class="topbar"><span id="connection-state">本机 · 物主已验证</span><button id="pending-entry" class="button pending-link" type="button">待处理事项 <span id="pending-count">—</span></button></header><div id="notice" role="status" hidden></div><main id="main" tabindex="-1"></main></div></div></body></html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Ownward</title>
+  <link rel="stylesheet" href="window.css">
+  <script type="module" src="bootstrap.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到内容</a>
+  <div id="entry" class="entry">
+    <div class="wordmark">ownward</div>
+    <h1>打开你的资料</h1>
+    <p id="status" role="status">正在打开…</p>
+    <details class="entry-help"><summary>如何重新打开</summary>
+      <p>在这台电脑的终端运行以下命令，再打开生成的链接。</p>
+      <pre class="prose">ownward owner-window</pre>
+      <p class="subtle">如果使用了指定的资料目录，请沿用原来的打开命令。</p>
+    </details>
+  </div>
+  <div id="shell" hidden>
+    <aside class="sidebar">
+      <div class="wordmark"><svg viewBox="0 0 32 32" width="26" height="26" fill="none" aria-hidden="true"><path d="M7 9L22 7L25 23L9 25Z M7 9L25 23" stroke="currentColor" stroke-width="1.5"/><circle cx="7" cy="9" r="4" fill="currentColor"/><circle cx="22" cy="7" r="3" fill="currentColor"/><circle cx="25" cy="23" r="4" fill="currentColor"/><circle cx="9" cy="25" r="3" fill="currentColor"/></svg><span>ownward</span></div>
+      <nav id="navigation" aria-label="主要导航"></nav>
+      <button id="logout" class="button quiet" type="button">退出</button>
+    </aside>
+    <div class="workspace">
+      <header class="topbar">
+        <span id="connection-state" role="status" hidden></span>
+        <button id="pending-entry" class="button pending-link" type="button" hidden>待确认 <span id="pending-count"></span></button>
+      </header>
+      <div id="notice" role="status" hidden></div>
+      <main id="main" tabindex="-1"></main>
+    </div>
+  </div>
+</body>
+</html>

@@ -21,7 +21,7 @@ async function harness(overrides={},editorOverrides={}){
   const context=vm.createContext({document,window,navigator:{},setTimeout:()=>1,clearTimeout:()=>{}});
   const source=await readFile(new URL('./static/app.js',import.meta.url),'utf8');
   const module=new vm.SourceTextModule(source+'\nexport {state,lock,poll,openDraft,newDraft,editAsset}; export function observe(renderPage,pending){render=renderPage;refreshPending=pending;}',{context});
-  await module.link(spec=>{const value=spec.includes('api.js')?api:spec.includes('editor.js')?editor:ui;return new vm.SyntheticModule(Object.keys(value),function(){for(const [k,v] of Object.entries(value))this.setExport(k,v);},{context});});
+  await module.link(spec=>{const value=spec.includes('graph.js')?{createGraph:()=>({node:{},capture:()=>null,destroy(){}})}:spec.includes('api.js')?api:spec.includes('editor.js')?editor:ui;return new vm.SyntheticModule(Object.keys(value),function(){for(const [k,v] of Object.entries(value))this.setExport(k,v);},{context});});
   await module.evaluate();const app=module.namespace;
   app.observe(async()=>calls.push(['render']),async()=>calls.push(['pending']));
   return {app,calls,saved,document,visible,handlers};
