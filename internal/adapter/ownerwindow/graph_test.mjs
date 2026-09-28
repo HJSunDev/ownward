@@ -50,6 +50,13 @@ test('opaque endpoint handles collapse to one document without fetching its full
   assert.equal(h.calls.filter(q=>q.view==='content'&&q.offset).length,0);
   assert.equal(h.errors.length,0);h.graph.destroy();
 });
+test('the same supplied evidence is drawn once and input order cannot move the map',async()=>{
+  const relation=edge('a','b','same reason'),h=await harness({relations:{a:[relation],b:[relation]}});
+  assert.equal(h.graph.node.querySelectorAll('.edge-ink').length,1);
+  const nodes=['a','b','c'].map(id=>({id})),edges=[{source:'a',target:'b'},{source:'b',target:'c'}];
+  const first=h.layout.layoutGraph(nodes,edges),second=h.layout.layoutGraph([...nodes].reverse(),[...edges].reverse());
+  for(const [id,p]of first){assert.equal(p.x,second.get(id).x);assert.equal(p.y,second.get(id).y);}h.graph.destroy();
+});
 test('different explanations for the same pair remain available; duplicate text is shown once',async()=>{
   const h=await harness({relations:{a:[edge('a','b','first reason'),edge('a','b','second reason')],b:[edge('a','b','first reason')]}});
   await h.graph.node.querySelector('.graph-edge').handlers.keydown({key:'Enter',preventDefault(){}});await tick();await tick();

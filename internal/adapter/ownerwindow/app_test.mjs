@@ -15,13 +15,13 @@ async function harness(overrides={},editorOverrides={}){
   Object.assign(api,overrides);
   const editor={Editor:class{},rescuedInput:()=>null,rescueNeedsWindow:()=>false,rescueCleanupPending:()=>false,retryRescueCleanup:()=>true,clearRescue:()=>saved.clear(),retainReceipt:()=>{}};
   Object.assign(editor,editorOverrides);
-  const ui={};for(const n of ['el','button','row','heading','empty','prose','tag','date','notice','clearNotice','statusName','permissionName','dialog','confirm','download','errorMessage'])ui[n]=()=>{};
+  const ui={};for(const n of ['el','button','row','heading','empty','prose','tag','date','notice','clearNotice','statusName','permissionName','dialog','confirm','download','errorMessage','documentView','appearanceControls','applyAppearance','setImmersive'])ui[n]=()=>{};
   ui.confirm=async(_,__,___,run)=>run();
   const handlers={},window={addEventListener:(name,run)=>handlers[name]=run};
   const context=vm.createContext({document,window,navigator:{},setTimeout:()=>1,clearTimeout:()=>{}});
   const source=await readFile(new URL('./static/app.js',import.meta.url),'utf8');
   const module=new vm.SourceTextModule(source+'\nexport {state,lock,poll,openDraft,newDraft,editAsset}; export function observe(renderPage,pending){render=renderPage;refreshPending=pending;}',{context});
-  await module.link(spec=>{const value=spec.includes('graph.js')?{createGraph:()=>({node:{},capture:()=>null,destroy(){}})}:spec.includes('api.js')?api:spec.includes('editor.js')?editor:ui;return new vm.SyntheticModule(Object.keys(value),function(){for(const [k,v] of Object.entries(value))this.setExport(k,v);},{context});});
+  await module.link(spec=>{const value=spec.includes('reading.js')?{createReader:()=>({node:{},status:{},destroy(){},markUpdated(){}})}:spec.includes('graph.js')?{createGraph:()=>({node:{},capture:()=>null,destroy(){}})}:spec.includes('api.js')?api:spec.includes('editor.js')?editor:ui;return new vm.SyntheticModule(Object.keys(value),function(){for(const [k,v] of Object.entries(value))this.setExport(k,v);},{context});});
   await module.evaluate();const app=module.namespace;
   app.observe(async()=>calls.push(['render']),async()=>calls.push(['pending']));
   return {app,calls,saved,document,visible,handlers};

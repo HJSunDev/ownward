@@ -10,6 +10,7 @@ class Node {
   append(...items){this.children.push(...items);}
   replaceChildren(...items){this.children=items;}
   addEventListener(){}
+  setAttribute(key,value){this[key]=value;}
   focus(){}
 }
 function deferred(){let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};}
@@ -29,6 +30,7 @@ async function harness(overrides={}){
   const ui={
     el:(tag,attrs,...children)=>{const n=new Node(attrs);n.tag=tag;n.append(...children);return n;},
     button:(label,action)=>new Node({label,action}),row:(...c)=>new Node({children:c}),prose:value=>new Node({textContent:value}),
+    documentView:(value,cls,editable)=>new Node({value,textContent:value}),comparison:(before,after)=>new Node({children:[before,after]}),immersionButton:()=>new Node(),
     notice:message=>calls.push(['notice',message]),download:()=>{},confirm:async(title,body,label,run)=>{const d={title,body,run};dialogs.push(d);},
     dialog:(title,body,actions)=>{const d={title,body,actions,close:()=>{d.closed=true;}};d.close.current=()=>!d.closed;dialogs.push(d);return d;}
   };

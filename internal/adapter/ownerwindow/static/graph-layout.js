@@ -1,5 +1,6 @@
 // Layout only: connected components come from supplied edges, never semantics.
 export function layoutGraph(nodes, edges) {
+  nodes=[...nodes].sort((a,b)=>a.id.localeCompare(b.id));edges=[...edges].sort((a,b)=>(a.source+a.target).localeCompare(b.source+b.target));
   const ids=new Set(nodes.map(n=>n.id)), parent=new Map(nodes.map(n=>[n.id,n.id]));
   const root=id=>{while(parent.get(id)!==id)id=parent.get(id);return id;};
   for(const e of edges)if(ids.has(e.source)&&ids.has(e.target))parent.set(root(e.target),root(e.source));

@@ -22,8 +22,9 @@
   </div>
   <div id="shell" hidden>
     <aside class="sidebar">
-      <div class="wordmark"><svg viewBox="0 0 32 32" width="26" height="26" fill="none" aria-hidden="true"><path d="M7 9L22 7L25 23L9 25Z M7 9L25 23" stroke="currentColor" stroke-width="1.5"/><circle cx="7" cy="9" r="4" fill="currentColor"/><circle cx="22" cy="7" r="3" fill="currentColor"/><circle cx="25" cy="23" r="4" fill="currentColor"/><circle cx="9" cy="25" r="3" fill="currentColor"/></svg><span>ownward</span></div>
+      <button id="home-entry" class="wordmark" type="button" aria-label="Ownward 首页">Ownward</button>
       <nav id="navigation" aria-label="主要导航"></nav>
+      <span id="health-state" class="health-state" role="status">资料库已连接</span>
       <button id="logout" class="button quiet" type="button">退出</button>
     </aside>
     <div class="workspace">
@@ -31,6 +32,7 @@
         <span id="connection-state" role="status" hidden></span>
         <button id="pending-entry" class="button pending-link" type="button" hidden>待确认 <span id="pending-count"></span></button>
       </header>
+      <section id="pending-panel" class="pending-panel" aria-label="待确认事项" hidden></section>
       <div id="notice" role="status" hidden></div>
       <main id="main" tabindex="-1"></main>
     </div>

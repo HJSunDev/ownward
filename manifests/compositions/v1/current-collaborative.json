@@ -150,7 +150,7 @@
         {
           "name": "internal-adapter-ownerwindow-static-app-js",
           "path": "internal/adapter/ownerwindow/static/app.js",
-          "sha256": "fb8fc9dce22e2f5680561f3eff916f7e8a16c819c906365cdc7b9ce372d5647c"
+          "sha256": "0045e415832f34fba9761de38db8b7c88774d437b14310e87843e1ee4f165975"
         },
         {
           "name": "internal-adapter-ownerwindow-static-bootstrap-js",
@@ -160,37 +160,37 @@
         {
           "name": "internal-adapter-ownerwindow-static-editor-js",
           "path": "internal/adapter/ownerwindow/static/editor.js",
-          "sha256": "12b4a233d6c2fb55de3d30dec0c2b12e1370b1bb714b8e5a3bff4e5d9273ca62"
+          "sha256": "b81e3f069b16f1acd920327c7595702389add3041df0bd8c10b03c69623cf84c"
         },
         {
           "name": "internal-adapter-ownerwindow-static-go",
           "path": "internal/adapter/ownerwindow/static.go",
-          "sha256": "ebddf5cba13bebf325ece452f627c7b47030822ab449ecd3b70a1405fbaffc31"
+          "sha256": "d4b7e9997b6e2c92604b62af2be6e1cd9b070ed3fb03b32d4abd09f4a5d37526"
         },
         {
           "name": "internal-adapter-ownerwindow-static-graph-js",
           "path": "internal/adapter/ownerwindow/static/graph.js",
-          "sha256": "59ffa57a8a22631b7c5c6a78c0bc2fea74c0b3c91d1ca8c5fb7b1fcbe82f2433"
+          "sha256": "0b230ac002475ed9d847a7954604711286ff3d584ab53803b9b2c42202c511f7"
         },
         {
           "name": "internal-adapter-ownerwindow-static-graph-layout-js",
           "path": "internal/adapter/ownerwindow/static/graph-layout.js",
-          "sha256": "5512a7d77e359e6af455b6c844c7e29a52b0a4554e2e0cb99370f2190a05ea72"
+          "sha256": "e8d6639642ebd17ddef7d6ef8f5b8d123fe59716dd624b27d387821dd0b2cae3"
         },
         {
           "name": "internal-adapter-ownerwindow-static-index-html",
           "path": "internal/adapter/ownerwindow/static/index.html",
-          "sha256": "d5a3ba87ebf47c8cae769d2b9afb138ea64ace89de58f4ae660be4dd5cabe447"
+          "sha256": "cb09bc7d667e2c1553366f2163d4500636ad7f973f80d1ac5a590e3d62b96531"
         },
         {
           "name": "internal-adapter-ownerwindow-static-ui-js",
           "path": "internal/adapter/ownerwindow/static/ui.js",
-          "sha256": "ec8404f2b175361416f205211df0cd2e7b02c8c86ca3ad2e6fc10c45fd18de2a"
+          "sha256": "98867c35d40d948f22c2fa43f311f32d757f0862957eca7c60e3421fc9a60e8e"
         },
         {
           "name": "internal-adapter-ownerwindow-static-window-css",
           "path": "internal/adapter/ownerwindow/static/window.css",
-          "sha256": "d87c7029990014f3e31ca5c073b664b082c8df1e6ffac268c0c9646be4d9e23a"
+          "sha256": "8cbb4e07b016c00ed39ea3876fd7d017b83b898a7e883f076ca95e310b101419"
         },
         {
           "name": "internal-adapter-remote-transport",
@@ -366,7 +366,7 @@
           "identity": "1eb81993761504bd72d76fc2c0dc380e697cf9d1e1827845da552803e2b71fce"
         }
       ],
-      "identity": "6d9f0a3f7312c61a837b749317429d78ccf01e8a8e1161deb951679dda6482bf"
+      "identity": "7ae5540d64288efcafc066335a83755d919788d5e4ffe2153e70de33d4e96e39"
     },
     {
       "role": "assembly",
@@ -469,7 +469,7 @@
       "dependencies": [
         {
           "role": "access",
-          "identity": "6d9f0a3f7312c61a837b749317429d78ccf01e8a8e1161deb951679dda6482bf"
+          "identity": "7ae5540d64288efcafc066335a83755d919788d5e4ffe2153e70de33d4e96e39"
         },
         {
           "role": "authority-substrate",
@@ -492,7 +492,7 @@
           "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
         }
       ],
-      "identity": "fbaf99944e85c257102caa3670040c4965a5013dd07d9fa4bb46eb8c90b55099"
+      "identity": "c2c391c873916fb6c20a991cb9006b43b19914a57aec03725047143ff7a76514"
     },
     {
       "role": "authority-substrate",
@@ -1614,7 +1614,7 @@
       "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
     }
   ],
-  "identity": "6c7d189a5c92ea2bcec99693e847d1e9fc9e00f9b4abb9b2c99a52c08a2c3953",
+  "identity": "8666cf6035f66a81fcb161bdeab2f0089fac4212a6ec32d091ad2e0a4216b0e2",
   "audit": {
     "described_product_candidate": "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8",
     "migration_source_git": "dc2c7a09e67f06cfaacbe0a201c7ff27b20d6182"

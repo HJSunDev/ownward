@@ -16,12 +16,6 @@ export function button(label, action, style = 'quiet', attrs = {}) {
     try { await action(event); } catch (error) { if (error.status !== -1) notice(errorMessage(error), true); }
     finally {running=false;b.removeAttribute('aria-busy');}
   }}, label);
-  const name=attrs['data-surface']||({'新建文稿':'plus','编辑':'edit','邀请应用协助':'spark','返回资料':'back','返回文稿':'back','查看关联':'relations'}[label]);
-  if(name){const paths={assets:'M4 4h6l2 2h8v14H4z M4 10h16',drafts:'M5 3h10l4 4v14H5z M9 12h6 M9 16h5 M14 3v5h5',relations:'M9 7l7 3 M8 9l2 8 M15 12l-3 5',events:'M4 12a8 8 0 1 0 3-6 M4 4v5h5 M12 7v5l3 2',control:'M5 7h14 M5 17h14 M9 4v6 M15 14v6',plus:'M12 5v14 M5 12h14',edit:'M4 20l4-1 12-12-4-4L4 15z M13 6l4 4',spark:'M12 3l2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z',back:'M14 5l-7 7 7 7 M7 12h14'};
-    const mark=document.createElementNS('http://www.w3.org/2000/svg','svg');for(const [k,v]of Object.entries({viewBox:'0 0 24 24',width:18,height:18,fill:'none',stroke:'currentColor','stroke-width':1.5,'stroke-linecap':'round','stroke-linejoin':'round','aria-hidden':'true',class:'button-icon'}))mark.setAttribute(k,v);
-    const path=document.createElementNS('http://www.w3.org/2000/svg','path');path.setAttribute('d',paths[name]||paths.assets);mark.append(path);
-    if(name==='relations')for(const [cx,cy]of [[7,6],[18,11],[11,19]]){const c=document.createElementNS('http://www.w3.org/2000/svg','circle');c.setAttribute('cx',cx);c.setAttribute('cy',cy);c.setAttribute('r','2.5');mark.append(c);}node.prepend(mark);
-  }
   return node;
 }
 const noticeOwners = new WeakMap();
@@ -48,6 +42,13 @@ export function dialog(title, contents, actions = []) {
   const close = () => { modal.close(); modal.replaceChildren();modal.remove(); if (previous?.isConnected) previous.focus(); };
   close.current=()=>modal.isConnected&&modal.open;
   modal.append(el('header',{},el('h2',{},title),button('关闭',close,'icon',{'aria-label':'关闭对话框'})),el('div',{class:'modal-body'},el('p',{class:'modal-notice',role:'status',hidden:true}),contents),el('footer',{},...actions.map(item=>button(item.label,()=>item.run(close),item.style || 'quiet'))));
+  modal.addEventListener('keydown',event=>{
+    if(event.key!=='Tab')return;
+    const targets=[...modal.querySelectorAll('button,input,select,textarea,a[href],summary,[tabindex]')].filter(n=>!n.disabled&&n.tabIndex>=0&&n.getClientRects().length);
+    const first=targets[0],last=targets.at(-1);if(!first){event.preventDefault();return;}
+    if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}
+    else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}
+  });
   modal.addEventListener('cancel',event=>{event.preventDefault();close();}); document.body.append(modal);modal.showModal();return {modal,close};
 }
 export function confirm(title, content, label, run, danger = false) {
@@ -59,3 +60,78 @@ export function confirm(title, content, label, run, danger = false) {
 export function download(blob, name) {
   const url = URL.createObjectURL(blob), a = el('a',{href:url,download:name}); document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
+
+// Reading and confirmation use the same literal-text renderer. Editing keeps
+// a native textarea, sharing its text and typography without an HTML roundtrip.
+export function documentView(value, cls = '', editable = false) {
+  if(editable)return el('textarea', {class:`document-text draft-input ${cls}`,value,spellcheck:false,'aria-label':'文稿正文'});
+  const node=prose('',`document-text ${cls}`);renderDocument(node,value);return node;
+}
+export function renderDocument(node,value,marks=[]){
+  // A separated first line is a typographic heading, never inferred content.
+  const title=/^([^\r\n]{1,110})\r?\n\s*\r?\n/.exec(value),end=title?title[1].length:0;
+  function parts(start,stop){const items=[];let at=start;
+    for(const m of marks){const empty=m.start===m.end;if(empty?!(m.start>=start&&(m.start<stop||stop===value.length&&m.start===stop)):m.end<=start||m.start>=stop)continue;const a=Math.max(start,m.start),b=Math.min(stop,m.end);if(a<at||b<a)continue;items.push(value.slice(at,a),el('mark',{class:m.class},value.slice(a,b)||'〔此处无文字〕'));at=b;}
+    items.push(value.slice(at,stop));return items;
+  }
+  node.replaceChildren(...(end?[el('span',{class:'document-title'},...parts(0,end)),...parts(end,value.length)]:parts(0,value.length)));
+}
+export function matchRanges(value, needle) {
+  if(!needle)return [];
+  const ranges=[];let at=0;
+  while(at<value.length){const start=value.indexOf(needle,at);if(start<0)break;ranges.push([start,start+needle.length]);at=start+needle.length;}
+  return ranges;
+}
+export function renderMatches(node, value, needle, selected=0) {
+  const ranges=matchRanges(value,needle);renderDocument(node,value,ranges.map(([start,end],i)=>({start,end,class:i===selected?'match current-match':'match'})));return ranges.length;
+}
+export function differences(before,after){
+  const lines=value=>{let at=0;return (value.match(/[^\n]*\n|[^\n]+$/g)||[]).map(text=>{const line={text,start:at};at+=text.length;return line;});};
+  const a=lines(before),b=lines(after),index=new Map(),counts=new Map();
+  for(const line of a)counts.set(line.text,(counts.get(line.text)||0)+1);
+  b.forEach((line,i)=>index.set(line.text,index.has(line.text)?-1:i));
+  // Unique unchanged lines anchor a monotone alignment in O(n log n).
+  // Repeated/ambiguous passages stay one range; no semantic diff is claimed.
+  const candidates=[];a.forEach((line,i)=>{const j=index.get(line.text);if(counts.get(line.text)===1&&j>=0)candidates.push({i,j});});
+  const tails=[],previous=[];
+  candidates.forEach((pair,i)=>{let lo=0,hi=tails.length;while(lo<hi){const mid=(lo+hi)>>1;if(candidates[tails[mid]].j<pair.j)lo=mid+1;else hi=mid;}previous[i]=lo?tails[lo-1]:-1;tails[lo]=i;});
+  const anchors=[];for(let at=tails.at(-1);at!==undefined&&at>=0;at=previous[at])anchors.push(candidates[at]);anchors.reverse();anchors.push({i:a.length,j:b.length});
+  const changes=[];let fromA=0,fromB=0;
+  for(const pair of anchors){let endA=a[pair.i]?.start??before.length,endB=b[pair.j]?.start??after.length,startA=fromA,startB=fromB;
+    while(startA<endA&&startB<endB&&before[startA]===after[startB]){startA++;startB++;}
+    while(endA>startA&&endB>startB&&before[endA-1]===after[endB-1]){endA--;endB--;}
+    if(startA!==endA||startB!==endB){if(startA>0&&/^[\uDC00-\uDFFF]$/.test(before[startA]||after[startB]||'')){startA--;startB--;}
+      if(/^[\uDC00-\uDFFF]$/.test(before[endA]||''))endA++;if(/^[\uDC00-\uDFFF]$/.test(after[endB]||''))endB++;
+      changes.push({before:{start:startA,end:endA},after:{start:startB,end:endB}});
+    }
+    fromA=(a[pair.i]?.start??before.length)+(a[pair.i]?.text.length||0);fromB=(b[pair.j]?.start??after.length)+(b[pair.j]?.text.length||0);
+  }
+  return changes;
+}
+export function comparison(before, after) {
+  const left=documentView(before),right=documentView(after),panels=[left,right];
+  const changes=differences(before,after);
+  for(const [node,value,side]of [[left,before,'before'],[right,after,'after']])renderDocument(node,value,changes.map((change,i)=>({...change[side],class:`difference change-${i}`})));
+  const tabs=row(),columns=el('div',{class:'comparison-columns'},el('section',{},el('h3',{},'现在'),left),el('section',{},el('h3',{},'将成为'),right));
+  const root=el('div',{class:'comparison', 'data-side':'after'},tabs,columns);
+  for(const [side,label]of [['before','现在'],['after','将成为']])tabs.append(button(label,()=>{root.setAttribute('data-side',side);for(const b of tabs.children)b.setAttribute('aria-pressed',String(b.textContent===label));},'compare-tab',{'aria-pressed':String(side==='after')}));
+  if(changes.length)root.prepend(el('div',{class:'change-navigation','aria-label':'修改位置'},...changes.map((_,i)=>button(`改动 ${i+1}`,()=>{root.querySelectorAll(`.change-${i}`).forEach(mark=>mark.scrollIntoView({block:'center',behavior:'auto'}));},'text-link'))));
+  let sync=false;
+  for(const [i,node]of panels.entries())node.addEventListener('scroll',()=>{if(sync)return;const other=panels[1-i],range=node.scrollHeight-node.clientHeight;sync=true;other.scrollTop=range?node.scrollTop/range*(other.scrollHeight-other.clientHeight):0;queueMicrotask(()=>sync=false);});
+  return root;
+}
+let appearance={theme:'system',size:'19'},immersive=false;
+export function applyAppearance(){
+  try{const saved=JSON.parse(localStorage.getItem('ownward.appearance')||'{}');if(['system','light','dark'].includes(saved.theme))appearance.theme=saved.theme;if(['17','19','21'].includes(saved.size))appearance.size=saved.size;}catch{}
+  document.documentElement.dataset.theme=appearance.theme;
+  document.documentElement.style.setProperty('--reading-size',appearance.size+'px');
+}
+export function appearanceControls(){
+  const theme=el('select',{'aria-label':'显示主题'},...Object.entries({system:'跟随系统',light:'浅色',dark:'深色'}).map(([value,label])=>el('option',{value,selected:appearance.theme===value},label)));
+  const size=el('select',{'aria-label':'正文字号'},...['17','19','21'].map(value=>el('option',{value,selected:appearance.size===value},`${value} px`)));
+  const save=()=>{appearance={theme:theme.value,size:size.value};try{localStorage.setItem('ownward.appearance',JSON.stringify(appearance));}catch{}document.documentElement.dataset.theme=appearance.theme;document.documentElement.style.setProperty('--reading-size',appearance.size+'px');};
+  theme.addEventListener('change',save);size.addEventListener('change',save);
+  return el('div',{class:'appearance-controls'},el('label',{},'主题',theme),el('label',{},'正文',size));
+}
+export function setImmersive(value){immersive=value;document.getElementById('shell').classList.toggle('immersive',value);for(const b of document.querySelectorAll('.immersion-toggle')){b.textContent=value?'显示导航':'专注模式';b.setAttribute('aria-pressed',String(value));}}
+export function immersionButton(){return button(immersive?'显示导航':'专注模式',()=>setImmersive(!immersive),'quiet immersion-toggle',{'aria-pressed':String(immersive)});}

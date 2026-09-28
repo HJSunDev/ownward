@@ -12,7 +12,9 @@ class Node {
   prepend(...items){this.children.unshift(...items);}
   replaceChildren(...items){this.children=items;}
   addEventListener(name,run){this.handlers[name]=run;}
-  setAttribute(){}
+  setAttribute(key,value){this[key]=value;}
+  querySelector(s){return this.querySelectorAll(s)[0]||null;}
+  querySelectorAll(s){return this.all().filter(n=>(n.class||n.className||" ").split(" ").includes(s.slice(1)));}
   focus(){}
   contains(node){return this===node||this.children.some(c=>c instanceof Node&&c.contains(node));}
   remove(){this.removed=true;}
@@ -69,11 +71,12 @@ async function harness({failFirst=false,rescue:initialRescue,overrides={}}={}){
     el:(tag,attrs,...children)=>new Node(tag,attrs,children),button:(label,run)=>new Node('button',{label,run}),
     row:(...children)=>new Node('div',{},children),heading:(...children)=>new Node('header',{},children),
     empty:(...children)=>new Node('div',{},children),prose:(value,cls='')=>new Node('div',{textContent:value,class:`prose ${cls}`}),tag:value=>new Node('span',{textContent:value}),
+    documentView:(value,cls='',editable=false)=>new Node(editable?'textarea':'pre',{value,textContent:value,class:'prose document-text '+cls}),comparison:(before,after)=>new Node('div',{},[before,after]),immersionButton:()=>new Node(),setImmersive(){},appearanceControls:()=>new Node(),applyAppearance(){},matchRanges:(value,needle)=>needle?Array(value.split(needle).length-1).fill([]):[],renderDocument:(node,value)=>{node.textContent=value;},renderMatches:(node,value,needle)=>{node.textContent=value;return needle?value.split(needle).length-1:0;},
     date:()=>'',notice:(message)=>notices.push(message),clearNotice(){},statusName:v=>v,permissionName:v=>v,
     dialog(){},confirm:async(title,body,label,run)=>confirmations.push({title,body,label,run}),download:(blob,name)=>downloads.push({blob,name}),errorMessage:e=>e.message
   };
   const location={hash:'',reload(){let blocked=false;handlers.beforeunload?.({preventDefault(){blocked=true;}});calls.push(['reload',blocked]);}};
-  const context=vm.createContext({console,Date,JSON,Blob,Event,location,document,window:{addEventListener:listen,dispatchEvent:event=>handlers[event.type]?.(event)},navigator:{},setTimeout:(fn,ms)=>{timers.set(++timerID,{fn,ms});return timerID;},clearTimeout:id=>timers.delete(id)});
+  const context=vm.createContext({console,Date,JSON,Blob,Event,queueMicrotask,location,document,window:{addEventListener:listen,dispatchEvent:event=>handlers[event.type]?.(event)},navigator:{},setTimeout:(fn,ms)=>{timers.set(++timerID,{fn,ms});return timerID;},clearTimeout:id=>timers.delete(id)});
   const synthetic=values=>new vm.SyntheticModule(Object.keys(values),function(){for(const[k,v]of Object.entries(values))this.setExport(k,values===api&&typeof v==='function'?(...args)=>values[k](...args):v);},{context});
   const base=new URL('./static/',import.meta.url);
   const actualUI=new vm.SourceTextModule(await readFile(new URL('ui.js',base),'utf8'),{context});await actualUI.link(()=>{});await actualUI.evaluate();
@@ -81,9 +84,10 @@ async function harness({failFirst=false,rescue:initialRescue,overrides={}}={}){
   const apiModule=synthetic(api),uiModule=synthetic(ui);
   const editor=new vm.SourceTextModule(await readFile(new URL('editor.js',base),'utf8'),{context});
   await editor.link(spec=>spec.includes('api.js')?apiModule:uiModule);await editor.evaluate();
+  const reader=new vm.SourceTextModule(await readFile(new URL('reading.js',base),'utf8'),{context});await reader.link(spec=>spec.includes('api.js')?apiModule:uiModule);await reader.evaluate();
   const app=new vm.SourceTextModule(await readFile(new URL('app.js',base),'utf8')+'\nexport {state,newDraft,openDraft,editAsset,navigate,manageRescue,forget,poll,showRelations,openAsset,activityList,refreshPending,assetsPage};',{context});
   const graphModule=synthetic({createGraph:options=>({node:ui.el('div',{},options.organization==='available'?'暂无关联资料':'关系正在重新整理'),capture:()=>null,destroy(){}})});
-  await app.link(spec=>spec.includes('graph.js')?graphModule:spec.includes('api.js')?apiModule:spec.includes('editor.js')?editor:uiModule);await app.evaluate();
+  await app.link(spec=>spec.includes('reading.js')?reader:spec.includes('graph.js')?graphModule:spec.includes('api.js')?apiModule:spec.includes('editor.js')?editor:uiModule);await app.evaluate();
   const bootstrap=async()=>{const module=new vm.SourceTextModule(await readFile(new URL('bootstrap.js',base),'utf8'),{context});await module.link(spec=>spec.includes('api.js')?apiModule:app);await module.evaluate();};
   return {app:app.namespace,editor:editor.namespace,saved,drafts,rescue,calls,notices,node,api,ui,document,confirmations,handlers,listeners,timers,downloads,location,bootstrap};
 }
@@ -163,7 +167,7 @@ test('ending receipt recovery withdraws only its own notice before another draft
 test('receipt notices follow reauthentication and authoritative terminal outcomes',async()=>{
   for(const terminal of ['completed','changed','unavailable']){
   let outcome='unknown';
-  const h=await harness({rescue:{reference:'A',publishID:'op'},overrides:{query:async q=>q.view==='publish_receipt'?{publication:{state:outcome,asset:'winner'}}:q.view==='source'?{source:{}}:{}}});
+  const h=await harness({rescue:{reference:'A',publishID:'op'},overrides:{query:async q=>q.view==='publish_receipt'?{publication:{state:outcome,asset:'winner'}}:q.view==='source'?{source:{}}:q.view==='content'?{text:{text:'published body',more:false}}:{}}});
   h.drafts.delete('A');await h.app.start({cursor:'c1'});assert.equal(h.node('notice').hidden,false);
   await h.handlers['owner-auth-lost']();assert.equal(h.node('notice').hidden,true);
   await h.app.start({cursor:'c2'});assert.equal(h.node('notice').hidden,false);assert.match(h.node('notice').textContent,/草稿已无法打开/);
@@ -471,13 +475,13 @@ test('library reading follows the latest choice and requests more text only on d
     return {activity:[],decisions:[]};
   }}});
   const layout=await h.app.assetsPage(h.app.state.epoch);h.node('main').replaceChildren(layout);
-  const index=layout.all().find(n=>n.class==='library-index');await index.children[1].run();
+  const index=layout.all().find(n=>n.class==='library-index');await index.children.filter(n=>n.tagName==='BUTTON')[1].run();
   holdA=false;gate.resolve();await new Promise(r=>setImmediate(r));
   assert.equal(h.app.state.selection.reference,b.reference,'late first selection cannot replace the selected document');
   assert.equal(reads.filter(q=>q.view==='content'&&q.offset).length,0,'initial preview never follows the full text');
   await layout.all().find(n=>n.label==='继续阅读').run();
   assert.equal(reads.filter(q=>q.view==='content'&&q.offset).length,1);
-  assert.ok(layout.all().some(n=>n.textContent==='first page second page'));
+  assert.ok(layout.all().some(n=>n.textContent==='b\n\nfirst page second page'));
 });
 
 test('unrelated updates preserve the selected reader and its loaded text',async()=>{
@@ -492,8 +496,8 @@ test('unrelated updates preserve the selected reader and its loaded text',async(
   const before=reads.filter(q=>q.view==='content').length;
   await h.app.poll();assert.ok(h.node('main').contains(layout));assert.equal(reads.filter(q=>q.view==='content').length,before);
   assert.equal(h.app.state.cursor,'new');
-  const reader=layout.all().find(n=>n.class==='prose reader-body');assert.ok(reader);items=[a,b];await h.app.state.libraryRefresh();
-  const index=layout.all().find(n=>n.class==='library-index');assert.equal(index.children.length,2);assert.ok(layout.contains(reader));
-  items=[a,{...b,state:'stopped'}];await h.app.state.libraryRefresh();assert.equal(index.children[1].disabled,true);assert.ok(layout.contains(reader));
+  const reader=layout.all().find(n=>n.class==='prose document-text reader-body');assert.ok(reader);items=[a,b];await h.app.state.libraryRefresh();
+  const index=layout.all().find(n=>n.class==='library-index');assert.equal(index.children.filter(n=>n.tagName==='BUTTON').length,2);assert.ok(layout.contains(reader));
+  items=[a,{...b,state:'stopped'}];await h.app.state.libraryRefresh();assert.equal(index.children.filter(n=>n.tagName==='BUTTON')[1].disabled,true);assert.ok(layout.contains(reader));
   assert.equal(reads.filter(q=>q.view==='content'&&q.handle==='a').length,1,'directory changes never reload the active text');
 });
