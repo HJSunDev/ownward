@@ -148,7 +148,7 @@ bin/ownward mcp
 ```
 
 The repository's [project-scoped Codex configuration](.codex/config.toml) launches
-the built adapter with isolated assets under `.ownward/development`. `mcp` is a
+the built adapter with isolated assets under `.ownward/codex`. `mcp` is a
 connect-or-start stdio adapter: the first client starts one authenticated loopback
 core for that data directory, and later clients connect to the same authoritative
 core. Client exit does not create or destroy private product state. The MCP server

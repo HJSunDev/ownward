@@ -1,6 +1,6 @@
 [mcp_servers.ownward]
 command = 'E:\Dev\ownward\bin\ownward.exe'
-args = ['mcp', '--data-dir', 'E:\Dev\ownward\.ownward\development']
+args = ['mcp', '--data-dir', 'E:\Dev\ownward\.ownward\codex']
 cwd = 'E:\Dev\ownward'
 enabled = true
 required = true
