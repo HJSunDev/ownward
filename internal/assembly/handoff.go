@@ -51,6 +51,16 @@ func ReadControlAt(root string) (contract.ControlState, error) {
 	return ReadControlAtContext(context.Background(), root)
 }
 
+// ReadLocalIdentity 用于本机入口定位；不争夺活动服务的写锁，不提供授权依据。
+func ReadLocalIdentity(ctx context.Context, root string) (contract.ControlState, error) {
+	if _, err := os.Stat(filepath.Join(root, "storage.json")); err == nil {
+		return boundedstore.ReadDeploymentIdentity(ctx, root)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return contract.ControlState{}, err
+	}
+	return ReadControlAtContext(ctx, root)
+}
+
 func ReadControlAtContext(ctx context.Context, root string) (contract.ControlState, error) {
 	if _, e := os.Stat(filepath.Join(root, "storage.json")); e == nil {
 		return boundedstore.ReadDeploymentControl(ctx, root, controlOptions())

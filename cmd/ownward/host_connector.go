@@ -51,7 +51,7 @@ type hostConnector struct {
 }
 
 func newHostConnector(ctx context.Context, descriptor *sharedMCPDescriptor, dataDir string) (*hostConnector, error) {
-	vault, err := localowner.Default()
+	vault, err := localowner.ForData(dataDir)
 	if err != nil {
 		return nil, err
 	}

@@ -9,8 +9,10 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/HJSunDev/ownward/internal/assetlog"
 	"github.com/HJSunDev/ownward/internal/contract"
@@ -322,6 +324,65 @@ func ReadDeploymentControl(ctx context.Context, root string, options Options) (c
 	}
 	defer s.Close()
 	return (&ControlAuthority{s}).ReadSelectedControl(contract.ControlSelection{Credential: contract.AuthenticationDigest(ctx)})
+}
+
+// ReadDeploymentIdentity 只读取已激活库的身份与交接元数据，不取得写入权或执行恢复。
+// 返回值不含主体凭据，不可用于授权判断；真正打开仍须经当前权威验证。
+func ReadDeploymentIdentity(ctx context.Context, root string) (contract.ControlState, error) {
+	var out contract.ControlState
+	var pointer storagePointer
+	if err := readSmallJSON(filepath.Join(root, "storage.json"), &pointer); err != nil {
+		return out, err
+	}
+	if pointer.Format != storageFormat || !validStoreID(pointer.ID) {
+		return out, errors.New("活动存储身份无效")
+	}
+	path := filepath.ToSlash(filepath.Join(root, "stores", pointer.ID, "ownward.sqlite"))
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	u := url.URL{Scheme: "file", Path: path, RawQuery: "mode=ro"}
+	db, err := sql.Open("sqlite", u.String())
+	if err != nil {
+		return out, err
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return out, err
+	}
+	defer conn.Close()
+	if _, err = conn.ExecContext(ctx, "PRAGMA query_only=ON; PRAGMA mmap_size=0; PRAGMA cache_size=-512; PRAGMA busy_timeout=1000;"); err != nil {
+		return out, err
+	}
+	tx, err := conn.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return out, err
+	}
+	defer tx.Rollback()
+	var format int
+	if err = tx.QueryRowContext(ctx, "SELECT value FROM store_meta WHERE key='format'").Scan(&format); err != nil {
+		return out, err
+	}
+	if format != schemaVersion {
+		return out, errors.New("资料格式需要经正式入口升级")
+	}
+	var data []byte
+	if err = tx.QueryRowContext(ctx, "SELECT data FROM authority_header WHERE singleton=1 AND length(data)<=524288").Scan(&data); err != nil {
+		return out, err
+	}
+	if err = json.Unmarshal(data, &out); err != nil {
+		return out, err
+	}
+	var after storagePointer
+	if err = readSmallJSON(filepath.Join(root, "storage.json"), &after); err != nil {
+		return out, err
+	}
+	if after != pointer {
+		return out, errors.New("资料正在切换，请重试")
+	}
+	return out, nil
 }
 
 func ActivateDeploymentHandoff(ctx context.Context, root string, permit contract.Handoff, options Options) error {

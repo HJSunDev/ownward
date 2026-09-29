@@ -18,27 +18,85 @@ User <-> external agent <-> replaceable adapter <-> stable core contract
 
 External agents handle task conversations and semantic work. The embedded owner window lets the owner read original information, follow its relationships, write plain-text drafts, and control access directly. Both the window and the MCP adapter use the same authority; Ownward does not include an internal agent. Product intent, architecture invariants, and the exact first-version boundary are maintained in [docs](docs/README.md).
 
+## Get and open Ownward
+
+Ask an agent with permission to run local programs: **“Install and open Ownward.”**
+The agent obtains a release for the device's operating system and processor,
+verifies its published checksum, and runs the bundle's installation command.
+The repository is still in development; an agent must not claim that an
+unpublished release is available. Developers can build a complete bundle below.
+
+For a new user, after confirming there is no existing information to resume:
+
+```sh
+<release>/bin/ownward install --new --open
+```
+
+For existing information, use `install --data-dir <existing-directory> --open`.
+Use `ownward.exe` on Windows. Add `--desktop` only when a desktop entry is wanted.
+The installer never grants the agent access to the information. It reports
+newline-delimited `ownward.install/v1` JSON: `working`, `ready`, `needs_input`, or
+`failed`, with the actual phase and a retry indication. A `needs_input` result is
+not success; retain the current installation and resolve the stated decision.
+Successful results include the installed executable's persistent path.
+
+After installation, click **Ownward** in Start/search (Windows), your Applications
+folder (macOS), or the application menu (Linux). The entry opens your information
+in the default browser without an agent. A later agent can run the installed
+executable with `owner-window`. Closing the page does not lose saved drafts.
+The program also offers a first-use dialog when opened without arguments.
+Linux desktop interaction requires a graphical session, `zenity`, and `xdg-open`;
+headless devices retain command access and do not claim to display a browser.
+No store account, paid registration, administrator installation or automatic
+startup service is required.
+
+Settings → restore results opens recovered information directly. Choosing it as
+the daily default is a separate confirmation; existing connections and the
+original information are retained. An unavailable selected directory is never
+replaced by an empty library.
+
 ## Build
 
-Requirements: Go 1.25 or newer. The first release target also requires the exact
+Requirements: Go 1.25. The first release target also requires the exact
 EmbeddingGemma and llama.cpp artifacts pinned in
 [the vector model selection](docs/research/vector-model-selection.md).
 
 ```sh
 go test ./...
-go build -trimpath -ldflags="-s -w" -o bin/ownward ./cmd/ownward
 go run ./cmd/ownward-bundle \
   --model <embeddinggemma-300m-qat-Q8_0.gguf> \
-  --runtime-archive <llama-b10488-bin-win-cpu-x64.zip> \
+  --runtime-archive <pinned-ownward-runtime.zip> \
   --legal-root third_party \
   --output bin/embedding
 go run ./cmd/ownward-release \
-  --binary bin/ownward.exe \
+  --build --version <version> \
   --embedding bin/embedding \
-  --output dist/ownward-windows-amd64
+  --output dist/ownward-<os>-<arch>
 ```
 
-On Windows, use `bin/ownward.exe` as the output path.
+Run release construction on the target platform. It seals the actual vector
+bundle into the executable through a build overlay, leaving the source
+composition unchanged. Windows releases use the GUI subsystem, preserving
+automation streams while avoiding a console flash when clicked. Packaging
+checks the platform, runtime executable and all distributed file hashes.
+
+For Linux/macOS, build the pinned CPU runtime with Python, CMake, Ninja and a
+C++17 compiler, then pass its receipt to the bundle builder:
+
+```sh
+python third_party/llama.cpp/build_portable_runtime.py \
+  --source-archive <pinned-llama-source.tar.gz> --output .tmp/native-runtime
+go run ./cmd/ownward-bundle \
+  --model <embeddinggemma-300m-qat-Q8_0.gguf> \
+  --runtime-archive .tmp/native-runtime/llama-b10488-ownward-<os>-<arch>.zip \
+  --runtime-build .tmp/native-runtime/build-identity.json \
+  --legal-root third_party --output bin/embedding
+```
+
+The model, source and allocation patch remain pinned. Each platform's artifact
+identity is distinct; existing vector data must follow the normal migration and
+rebuild rules. A successful cross-build alone does not qualify a release: run
+the complete installation, desktop opening and real vector tests on the target.
 
 ## Bundled vector capability
 
@@ -55,9 +113,11 @@ work contract by the connected external agent. Ownward does not require an
 additional model endpoint or API key and never replaces missing understanding
 with content-specific heuristics.
 
-`OWNWARD_DATA_DIR` selects the user-asset directory. If omitted, Ownward uses the
-operating system's user configuration directory. Never commit personal information
-assets.
+An explicit `--data-dir` or existing connection selects its original store.
+For new local calls, `--data-dir` takes precedence over `OWNWARD_DATA_DIR`, then
+the saved daily selection, then the operating system's user configuration
+directory. Clicking the system entry uses the saved selection regardless of
+inherited environment variables. Never commit personal information assets.
 
 ## Use
 

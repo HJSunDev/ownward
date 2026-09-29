@@ -42,3 +42,73 @@
 .change-navigation{display:flex;flex-wrap:wrap;gap:8px 20px;margin-bottom:16px;max-height:120px;overflow:auto}.change-navigation .button{font-size:12px}
 
 .connection-card{flex-wrap:wrap}.permission-confirm{flex-basis:100%;padding:12px 16px;background:var(--deep);border-left:2px solid var(--accent)}.permission-confirm>.row{justify-content:flex-end;margin-top:10px}
+
+/* ===== v3 控件与间距规范（2026-09-28，Linus 实施） ===== */
+:root{--space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-6:24px;--space-8:32px;--space-10:40px;--space-12:48px;--space-16:64px;--space-20:80px;--gutter-page:max(32px,6vw);--gutter:max(32px,3vw);--font-caption:12px;--font-ui:13px;--font-body:14px;--font-lead:15px;--font-title-sm:16px;--font-title:20px;--font-display:25px;--font-hero:31px}
+/* 暗色 accent 沿用 #E28176：实测 #D06055 对比仅 3.8:1，不达标（v3 §7.4 已同步） */
+/* 间距归一：容器内边距只取标尺；一切可见内容距可视边 ≥32px（gutter 令牌保证） */
+.page{padding:var(--space-16) var(--gutter-page) var(--space-20)}
+.graph-page{padding:var(--space-10) var(--gutter) var(--space-6)}
+.editor{padding:0 var(--space-10) var(--space-16)}
+.library-browser{padding:var(--space-10) var(--gutter) var(--space-6)}
+.index-entry{padding:var(--space-4) var(--space-4) var(--space-3);height:auto;min-height:112px}
+.reading-layout{padding:var(--space-12) var(--gutter) var(--space-20)}
+.reader-toolbar{padding:var(--space-3) var(--gutter)}
+.topbar{padding:var(--space-2) var(--gutter)}
+.pending-panel{padding:var(--space-6) var(--gutter) var(--space-8)}
+.reader-find{padding:0 var(--space-8)}
+.reader-preferences{padding:0 var(--gutter) var(--space-12)}
+#notice{margin:var(--space-4) var(--gutter)}
+/* 字阶归一（B2） */
+.subtle,.source,time,.empty-line,.tag,.tag.pending,.listed-count,.index-excerpt,.index-origin,.activity-list strong,.activity-list p,.activity-list time{font-size:var(--font-caption)}
+/* B 清单 */
+.tag.pending{color:var(--muted)}
+#shell{grid-template-columns:200px minmax(0,1fr)}
+@media(max-width:1250px){#shell{grid-template-columns:150px minmax(0,1fr)}}
+@media(max-width:1000px){#shell{grid-template-columns:110px minmax(0,1fr)}}
+@media(max-width:768px){#shell,#shell.immersive{grid-template-columns:none}}
+.wordmark{font-family:var(--serif)}
+.health-state{font-size:var(--font-caption)}
+/* 按钮：对齐语境（文本列左对齐）与紧凑变体 */
+.button.align-start{justify-content:flex-start;padding-left:0}
+.button.compact{min-height:32px;padding:var(--space-1) var(--space-3);font-size:var(--font-caption)}
+/* 有事条：画布顶部整条常驻；沉浸＝2px 朱砂发丝线（线宽即非颜色线索，命中区 40px） */
+.pending-strip{display:block;width:100%;min-height:40px;padding:var(--space-2) var(--gutter);border:0;border-bottom:1px solid var(--line);border-radius:0;background:var(--deep);color:var(--accent);text-align:left;font-size:var(--font-ui);animation:surface-in var(--open) var(--spring)}
+.pending-strip #pending-count{font-variant-numeric:tabular-nums}
+.immersive .pending-strip{position:relative;z-index:30;min-height:2px;height:2px;padding:0;overflow:visible;background:var(--accent);border:0;font-size:0;color:transparent}
+.immersive .pending-strip::after{content:'';position:absolute;left:0;right:0;top:-19px;height:40px}
+.topbar:has(#connection-state[hidden]){display:none}
+.workspace:has(#pending-entry:not([hidden])) .library-layout{height:calc(100dvh - 41px)}
+/* Select（自绘 Combobox，替代原生 <select>） */
+.select{position:relative;display:inline-flex;align-items:center}
+.select.field{gap:var(--space-3)}
+.select-trigger{display:inline-flex;align-items:center;gap:var(--space-2);min-height:40px;min-width:0;max-width:100%;padding:var(--space-2) var(--space-3);border:1px solid var(--line);border-radius:3px;background:var(--surface);color:var(--ink);font:inherit}
+.select.toolbar .select-trigger{padding:var(--space-1) 0;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;min-height:32px}
+.select-trigger:hover{background:var(--wash)}
+.select-trigger[aria-expanded=true]{border-color:var(--ink)}
+.select-trigger:focus-visible{outline:2px solid var(--ink);outline-offset:4px}
+.select-value{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.select-caret{color:var(--muted)}
+.select-list{position:absolute;z-index:60;top:calc(100% + var(--space-1));left:0;min-width:100%;max-height:min(320px,60vh);overflow:auto;margin:0;padding:var(--space-1);list-style:none;background:var(--paper);border:1px solid var(--line);border-radius:4px;box-shadow:0 12px 40px #0002;animation:surface-in var(--open) var(--spring)}
+.select-option{padding:var(--space-2) var(--space-3);border-radius:3px;cursor:pointer;font-size:var(--font-ui)}
+.select-option[aria-selected=true]{color:var(--ink);font-weight:600}
+.select-option.active,.select-option:hover{background:var(--deep)}
+.select-option.active{outline:1px solid var(--line)}
+
+/* Inspector：图谱检视与阅读边注收敛为同一组件的两种姿态（共享基类与槽位契约） */
+.graph-inspector,.reader-notes{font-size:var(--font-caption);color:var(--muted)}
+.graph-inspector .inspector-heading,.reader-notes .inspector-heading{display:flex;align-items:center;justify-content:space-between;gap:var(--space-3)}
+.graph-inspector .inspector-section,.reader-notes .inspector-section{margin-top:var(--space-6)}
+.graph-inspector .inspector-excerpt,.reader-notes .inspector-excerpt{margin:var(--space-3) 0}
+.inspector{--inspector-slot-gap:var(--space-6)}
+
+/* 对齐语境全量应用＋文稿列表列对齐＋图谱视觉（2026-09-28 用户实测反馈 1/2/3/4/5，v3 §7.2 补全） */
+.button{justify-content:flex-start}
+.primary,.danger,.topbar .button,.reader-toolbar .button,.editor-toolbar .button,.modal>footer .button,.graph-controls .button,.resume-bar .button,.pagination .button,.decision-card .row .button,.conflict-box .row .button{justify-content:center}
+.reader-toolbar .text-link,.editor-toolbar .text-link{padding:7px 9px}
+.drafts-page .draft-list .draft-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;column-gap:24px;align-items:center;justify-content:normal;padding:24px 32px 24px 0}
+.drafts-page .draft-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.drafts-page .draft-continue{font-size:12px;color:var(--muted)}
+.node-dot{stroke-width:1.5}
+.edge-ink{opacity:.5}
+.graph-edge:hover .edge-ink,.graph-edge:focus-visible .edge-ink,.graph-edge[data-selected=true] .edge-ink{opacity:1}

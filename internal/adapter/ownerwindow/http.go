@@ -35,6 +35,7 @@ type session struct {
 type Archives struct {
 	Backup  func(context.Context) (string, error)
 	Restore func(context.Context, io.Reader) (string, error)
+	Resume  func(context.Context, string, string, uint64) (any, error)
 }
 type Server struct {
 	View       *ownerview.Service
@@ -252,6 +253,20 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			var target string
 			target, e = s.Archives.Restore(ctx, r.Body)
 			value = map[string]string{"state": "verification_required", "data_dir": target}
+		}
+	case "v1/restored":
+		var in struct {
+			ID       string `json:"id"`
+			Action   string `json:"action"`
+			Revision uint64 `json:"revision"`
+		}
+		e = decode(w, r, &in)
+		if e == nil {
+			if s.Archives.Resume == nil {
+				e = errors.New("恢复接续不可用")
+			} else {
+				value, e = s.Archives.Resume(ctx, in.ID, in.Action, in.Revision)
+			}
 		}
 	default:
 		http.NotFound(w, r)

@@ -6,12 +6,42 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 )
 
 // Vault 属于部署适配，不进入资产备份；Windows 使用当前用户 DPAPI 保护秘密。
 type Vault struct {
 	Root    string
 	Machine bool
+	Scope   string
+}
+
+// ForData isolates restored instances while preserving read access to legacy
+// account-scoped connections. Callers must still authenticate every value.
+func ForData(dataDir string) (Vault, error) {
+	v, err := Default()
+	if err != nil {
+		return v, err
+	}
+	v.Scope, err = DataScope(dataDir)
+	return v, err
+}
+
+func DataScope(dataDir string) (string, error) {
+	path, err := filepath.Abs(dataDir)
+	if err != nil {
+		return "", err
+	}
+	if resolved, e := filepath.EvalSymlinks(path); e == nil {
+		path = resolved
+	}
+	path = filepath.Clean(path)
+	if runtime.GOOS == "windows" {
+		path = strings.ToLower(path)
+	}
+	sum := sha256.Sum256([]byte(path))
+	return "local-recovery:" + hex.EncodeToString(sum[:]), nil
 }
 
 func Default() (Vault, error) {
@@ -26,7 +56,11 @@ func (v Vault) path(system, connection string) (string, error) {
 	if system == "" || connection == "" || !filepath.IsAbs(v.Root) {
 		return "", errors.New("连接凭据位置无效")
 	}
-	sum := sha256.Sum256([]byte(system + "\x00" + connection))
+	key := system + "\x00" + connection
+	if v.Scope != "" {
+		key += "\x00instance\x00" + v.Scope
+	}
+	sum := sha256.Sum256([]byte(key))
 	return filepath.Join(v.Root, hex.EncodeToString(sum[:])+".key"), nil
 }
 
@@ -36,6 +70,11 @@ func (v Vault) Load(system, connection string) (string, error) {
 		return "", err
 	}
 	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) && v.Scope != "" {
+		legacy := v
+		legacy.Scope = ""
+		return legacy.Load(system, connection)
+	}
 	if err != nil {
 		return "", err
 	}

@@ -1,5 +1,7 @@
 /bin/
 /dist/
+/ownward
+/ownward.exe
 /coverage.out
 /.ownward/
 /.tmp/

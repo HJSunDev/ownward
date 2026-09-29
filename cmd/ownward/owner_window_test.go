@@ -519,6 +519,10 @@ func TestOwnerWindowBackupRestoreUsesNoKernelRebuild(t *testing.T) {
 		t.Fatal(e)
 	}
 	defer result.Body.Close()
+	if result.StatusCode != 200 {
+		body, _ := io.ReadAll(result.Body)
+		t.Fatalf("restore HTTP %d: %s", result.StatusCode, body)
+	}
 	var restored struct {
 		State string `json:"state"`
 		Dir   string `json:"data_dir"`

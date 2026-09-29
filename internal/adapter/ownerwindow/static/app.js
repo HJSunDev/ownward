@@ -2,7 +2,7 @@ import {createReader} from './reading.js';
 import {createGraph} from './graph.js';
 import {query, act, resolve, text, request, logout, operationID, invalidate, scope} from './api.js';
 import {Editor, rescuedInput, rescueNeedsWindow, rescueCleanupPending, retryRescueCleanup, clearRescue, retainReceipt} from './editor.js';
-import {el, button, row, heading, empty, prose, tag, date, notice, clearNotice, statusName, permissionName, dialog, confirm, download, errorMessage, documentView, appearanceControls, applyAppearance, setImmersive} from './ui.js';
+import {el, button, row, heading, empty, prose, tag, date, notice, clearNotice, statusName, permissionName, dialog, confirm, download, errorMessage, documentView, appearanceControls, applyAppearance, setImmersive, createSelect} from './ui.js';
 
 const main=document.getElementById('main');
 const state={surface:'home',reader:null,readPositions:new Map(),graphMem:new Map(),epoch:0,graph:null,graphView:null,cursor:'',editor:null,selection:null,active:true,polling:false,after:'',search:'',filter:'',exiting:false,bound:false,run:0,pendingDirty:true};
@@ -231,9 +231,9 @@ function installEditor(meta,content,rescue,show=true){
 function releaseEditor(editor){if(state.editor!==editor)return null;const visible=main.contains(editor.node);state.editor=null;document.querySelectorAll('.resume-bar').forEach(n=>n.remove());return visible;}
 async function assetsPage(epoch){
   const input=el('input',{type:'search',placeholder:'搜索资料','aria-label':'查找资料',value:state.search});
-  const filter=el('select',{'aria-label':'资料状态'},...Object.entries({'':'全部状态',ready:'已整理',pending:'待整理',stopped:'已停止使用'}).map(([value,label])=>el('option',{value,selected:state.filter===value},label)));
-  const search=async()=>{state.search=input.value;state.filter=filter.value;state.after='';state.libraryReference=null;await render();};
-  input.addEventListener('keydown',event=>{if(event.key==='Enter')search();});filter.addEventListener('change',search);
+  const filter=createSelect({label:'资料状态',skin:'toolbar',value:state.filter,options:Object.entries({'':'全部状态',ready:'已整理',pending:'待整理',stopped:'已停止使用'}).map(([value,label])=>({value,label})),onChange:value=>{state.filter=value;search();}});
+  const search=async()=>{state.search=input.value;state.after='';state.libraryReference=null;await render();};
+  input.addEventListener('keydown',event=>{if(event.key==='Enter')search();});
   const page=await loadPage({view:'assets',query:state.search,state:state.filter,after:state.after});if(!valid(epoch))return;
   state.selection=null;
   let assets=page.assets||[],selection=0,nextPage=page.next,indexLoading=false,windowStart=-1;
@@ -242,7 +242,7 @@ async function assetsPage(epoch){
   const layout=el('div',{class:'library-layout'},el('aside',{class:'library-browser'},
     el('header',{class:'library-heading'},el('h1',{},'资料'),button('+',newDraft,'new-document',{'aria-label':'新建文稿',title:'新建文稿'})),
     el('div',{class:'library-search'},input,button('查找',search,'search-button')),
-    el('div',{class:'library-filter'},filter),list,
+    el('div',{class:'library-filter'},filter.node),list,
     pagination,state.after?button('回到第一页',async()=>{state.after='';await render();},'text-link'):null),reader);
   const alive=()=>valid(epoch)&&current();
   const listed=el('span',{class:'listed-count',role:'status'});layout.querySelector?.('.library-filter')?.append(listed);
@@ -416,7 +416,7 @@ async function controlPage(epoch){
   const people=el('div',{class:'connection-list'});
   for(const person of (connections.connections||[]).filter(p=>!p.owner))people.append(connectionCard(person));
   const archive=el('div',{class:'archive-grid'},el('div',{},el('h3',{},'下载备份'),el('p',{},'包含资料、草稿和访问权限。请妥善保管备份文件。'),button('下载备份',async()=>{const blob=await request('backup',{}, {blob:true,timeout:180000});download(blob,'ownward-backup.zip');notice('备份已交给浏览器保存。');},'primary')),
-    el('div',{},el('h3',{},'从备份恢复'),el('p',{},'从备份创建一份资料库，当前资料不变。'),button('选择备份',restoreArchive)));
+    el('div',{},el('h3',{},'从备份恢复'),el('p',{},'从备份创建一份资料库，当前资料不变。'),button('选择备份',restoreArchive),button('查看恢复结果',restoredArchives)));
   const older=el('details',{},el('summary',{},'查看处理记录'),...(history.decisions||[]).map(d=>decisionCard(d,true)),!history.decisions?.length?el('p',{class:'subtle'},'暂无处理记录。'):null,pager(history,after=>historyDialog(after),'查看更多处理记录'));
   return el('div',{class:'page settings-page'},heading('设置',''),
     section('显示',appearanceControls()),
@@ -465,10 +465,29 @@ async function restoreArchive(){
   const file=el('input',{type:'file','aria-label':'选择 Ownward 备份'});
   dialog('恢复备份',el('div',{},el('p',{},'选择 Ownward 备份文件。恢复后的资料会保存到新目录，当前资料不变。'),file),[{label:'开始恢复',style:'primary',run:async close=>{
     if(!file.files[0])throw new Error('请先选择备份文件。');
-    const result=await request('restore',file.files[0],{raw:true,type:'application/octet-stream',timeout:180000});if(!close.current())return;close();
-    const quoted="'"+result.data_dir.replaceAll("'",navigator.platform.startsWith('Win')?"''":"'\\''")+"'";
-    dialog('备份已恢复',el('div',{},el('p',{},'资料已恢复到新目录。复制并在终端运行下方的打开命令，即可使用；当前资料保持不变。'),button('复制打开命令',async()=>{await navigator.clipboard.writeText(`ownward owner-window --data-dir ${quoted}`);notice('已复制打开命令。');})));
+    await request('restore',file.files[0],{raw:true,type:'application/octet-stream',timeout:180000});if(!close.current())return;close();
+    await restoredArchives();
   }}]);
+}
+async function restoredArchives(){
+  const current=scope(),items=await request('restored',{action:'list'});if(!current())return;
+  const body=el('div',{},el('p',{},'恢复出的资料可以单独打开。原资料和日常入口保持不变。'));
+  let view;
+  for(const item of items||[]){
+    const actions=row(),entry=el('div',{},el('p',{},`恢复于 ${date(item.created)}`),actions);
+    if(item.ready){const open=button('打开恢复的资料',async()=>{
+      const result=await request('restored',{action:'open',id:item.id},{timeout:180000});if(!current()||!view.close.current())return;notice('恢复的资料已在浏览器中打开。');
+      if(!result.default_available)return;
+      actions.replaceChildren(open,button('以后打开这份资料',()=>dialog('更换日常打开的资料',el('p',{},'以后点击 Ownward 将打开这份恢复的资料。原资料会保留，已连接的应用不会自动切换。'),[
+        {label:'取消',run:close=>close()},
+        {label:'确认更换',style:'primary',run:async close=>{await request('restored',{action:'default',id:item.id,revision:result.default_revision});if(!current()||!close.current())return;close();if(view.close.current())actions.replaceChildren(open,el('span',{class:'subtle'},'当前日常资料'));notice('日常入口已更新。');}}
+      ])));
+    });actions.append(open);}else actions.append(el('p',{class:'subtle'},'恢复尚未完成。重新选择同一份备份即可继续。'),button('重新选择备份',()=>{view.close();restoreArchive();}));
+    body.append(entry);
+  }
+  if(!items?.length)body.append(el('p',{class:'subtle'},'暂无恢复结果。'));
+  if(items?.length>=64)body.append(el('p',{class:'subtle'},'显示最近 64 次恢复。较早的资料仍保存在原处。'));
+  view=dialog('恢复结果',body);
 }
 async function poll(){
   if(!state.active||state.polling)return;

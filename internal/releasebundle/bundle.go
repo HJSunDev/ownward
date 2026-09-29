@@ -1,6 +1,7 @@
 package releasebundle
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -10,8 +11,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/HJSunDev/ownward/internal/codexplugin"
 	"github.com/HJSunDev/ownward/internal/embedding"
@@ -25,6 +28,8 @@ type Options struct {
 	License      string
 	Readme       string
 	Output       string
+	TargetOS     string
+	TargetArch   string
 }
 
 type Manifest struct {
@@ -33,11 +38,63 @@ type Manifest struct {
 	Files                   map[string]string `json:"files"`
 	EmbeddingSpace          string            `json:"embedding_space"`
 	EmbeddingLegalMaterials string            `json:"embedding_legal_materials"`
+	OS                      string            `json:"os,omitempty"`
+	Arch                    string            `json:"arch,omitempty"`
+	Executable              string            `json:"executable,omitempty"`
+	Requirements            []string          `json:"requirements,omitempty"`
 }
 
-// Assemble 原子生成完整的 Windows 第一版发布包。
+func ExecutableName(targetOS string) string {
+	if targetOS == "windows" {
+		return "ownward.exe"
+	}
+	return "ownward"
+}
+
+// 发布前置条件与真实平台验收一起维护，不能把编译通过等同于支持成立。
+func PlatformRequirements(targetOS string) []string {
+	common := []string{"graphical desktop session", "default web browser"}
+	switch targetOS {
+	case "windows":
+		return append(common, "Windows 10 or later")
+	case "darwin":
+		return append(common, "macOS 12 or later")
+	case "linux":
+		return append(common, "Linux kernel 3.2 or later", "zenity", "xdg-open", "vector runtime built for this distribution or statically linked")
+	}
+	return nil
+}
+
+// Entry includes compatibility with already distributed Windows bundles.
+func (m Manifest) Entry() string {
+	if m.Executable != "" {
+		return m.Executable
+	}
+	return "bin/ownward.exe"
+}
+
+func (m Manifest) Target() (string, string) {
+	if m.OS == "" && m.Arch == "" {
+		return "windows", "amd64"
+	}
+	return m.OS, m.Arch
+}
+
+// Assemble 原子生成带平台身份的完整发布包。
 // 调用方必须提供已经校验的向量能力，组包过程不得下载或静默替换制品。
 func Assemble(options Options) (Manifest, error) {
+	if options.TargetOS == "" {
+		options.TargetOS = runtime.GOOS
+	}
+	if options.TargetArch == "" {
+		options.TargetArch = runtime.GOARCH
+	}
+	if PlatformRequirements(options.TargetOS) == nil {
+		return Manifest{}, errors.New("发布平台不受支持")
+	}
+	if options.TargetOS != runtime.GOOS || options.TargetArch != runtime.GOARCH {
+		return Manifest{}, fmt.Errorf("发布组包须在目标平台运行并验证二进制: %s/%s", options.TargetOS, options.TargetArch)
+	}
 	binary, err := regularFile(options.Binary)
 	if err != nil {
 		return Manifest{}, fmt.Errorf("发布二进制: %w", err)
@@ -67,6 +124,14 @@ func Assemble(options Options) (Manifest, error) {
 	if err != nil {
 		return Manifest{}, fmt.Errorf("校验向量能力包: %w", err)
 	}
+	if err := embedding.VerifyRuntimeTarget(embeddingBundle, options.TargetOS, options.TargetArch); err != nil {
+		return Manifest{}, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := exec.CommandContext(ctx, embeddingBundle.RuntimePath, "--version").Run(); err != nil {
+		return Manifest{}, fmt.Errorf("目标平台运行时未能实际运行: %w", err)
+	}
 
 	parent := filepath.Dir(output)
 	if err := os.MkdirAll(parent, 0o755); err != nil {
@@ -83,10 +148,14 @@ func Assemble(options Options) (Manifest, error) {
 		}
 	}()
 
-	if err := copyFile(binary, filepath.Join(temporary, "bin", "ownward.exe"), 0o755); err != nil {
+	entry := "bin/" + ExecutableName(options.TargetOS)
+	if err := copyFile(binary, filepath.Join(temporary, filepath.FromSlash(entry)), 0o755); err != nil {
 		return Manifest{}, err
 	}
 	if err := copyTree(embeddingRoot, filepath.Join(temporary, "bin", "embedding")); err != nil {
+		return Manifest{}, err
+	}
+	if err := writeIcons(filepath.Join(temporary, "bin")); err != nil {
 		return Manifest{}, err
 	}
 	if err := copyFile(license, filepath.Join(temporary, "LICENSE"), 0o644); err != nil {
@@ -95,8 +164,10 @@ func Assemble(options Options) (Manifest, error) {
 	if err := copyFile(readme, filepath.Join(temporary, "README.md"), 0o644); err != nil {
 		return Manifest{}, err
 	}
-	if err := codexplugin.Write(temporary); err != nil {
-		return Manifest{}, err
+	if options.TargetOS == "windows" {
+		if err := codexplugin.Write(temporary); err != nil {
+			return Manifest{}, err
+		}
 	}
 	files, err := fileManifest(temporary)
 	if err != nil {
@@ -105,6 +176,8 @@ func Assemble(options Options) (Manifest, error) {
 	manifest := Manifest{
 		Schema: ManifestSchema, Candidate: candidate, Files: files,
 		EmbeddingSpace: embeddingBundle.Manifest.Space.ID, EmbeddingLegalMaterials: embeddingBundle.Manifest.Legal.LegalMaterialsID,
+		OS: options.TargetOS, Arch: options.TargetArch, Executable: entry,
+		Requirements: PlatformRequirements(options.TargetOS),
 	}
 	manifestBytes, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {

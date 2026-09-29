@@ -39,14 +39,19 @@ func main() {
 
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
-		printUsage(stderr)
-		return errors.New("缺少命令")
+		return runDesktop(ctx, stderr)
 	}
 	if args[0] == "version" {
 		fmt.Fprintln(stdout, version)
 		return nil
 	}
 	command := args[0]
+	if command == "install" {
+		return runInstall(ctx, args[1:], stdout, stderr)
+	}
+	if command == "owner-window" && len(args) == 2 && args[1] == "--interactive" {
+		return runDesktop(ctx, stderr)
+	}
 	if command == "codex-configure" {
 		return configureCodex(args[1:], stdout, stderr)
 	}
@@ -89,6 +94,12 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if loaded.System != "" {
+		state, err := assembly.ReadLocalIdentity(ctx, loaded.DataDir)
+		if err != nil || state.InformationControl == nil || state.InformationControl.SystemID != loaded.System {
+			return errors.New("已选择的资料暂不可用，请从 Ownward 入口重新定位；未创建替代资料")
+		}
+	}
 	vectorBundleDir, err := currentVectorBundleDirectory()
 	if err != nil {
 		return err
@@ -107,7 +118,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		// 活动服务仍持有资产锁；通过独立 OS 保护通道恢复，不杀进程或争夺写入权。
 		if descriptor, readErr := readSharedMCPDescriptor(filepath.Join(loaded.DataDir, "runtime", "mcp-service.json")); readErr == nil {
 			if _, probeErr := probeSharedMCP(ctx, descriptor); probeErr == nil {
-				vault, err := localowner.Default()
+				vault, err := localowner.ForData(loaded.DataDir)
 				if err != nil {
 					return err
 				}
@@ -146,7 +157,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	kernel := runtime.Kernel()
 	if command == "restore" {
 		// 显式本机恢复属于 OS 保护的所有者入口；资产恢复已使旧凭据失效。
-		vault, err := localowner.Default()
+		vault, err := localowner.ForData(loaded.DataDir)
 		if err != nil {
 			return err
 		}
@@ -164,7 +175,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		}
 	}
 	if command == "setup" || command == "recover-owner" {
-		vault, err := localowner.Default()
+		vault, err := localowner.ForData(loaded.DataDir)
 		if err != nil {
 			return err
 		}
@@ -183,7 +194,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return writeJSON(stdout, map[string]string{"status": "ready", "message": "管理连接已建立"})
 	}
 	if command != "mcp-http" && command != "rules" {
-		vault, err := localowner.Default()
+		vault, err := localowner.ForData(loaded.DataDir)
 		if err != nil {
 			return err
 		}
@@ -389,8 +400,12 @@ func runHTTPMCP(ctx context.Context, server httpMCPServer, address, token string
 					return
 				}
 				writer.Header().Set("Content-Type", "application/json")
-				_ = json.NewEncoder(writer).Encode(map[string]string{"service_identity": os.Getenv(sharedMCPIdentityEnvironment)})
+				_ = json.NewEncoder(writer).Encode(map[string]string{"service_identity": os.Getenv(sharedMCPIdentityEnvironment), "composition_identity": os.Getenv(sharedMCPCompositionEnvironment)})
 			case sharedMCPShutdownPath:
+				if request.Header.Get("X-Ownward-Explicit-Stop") != "1" {
+					http.Error(writer, "explicit version transition required", http.StatusConflict)
+					return
+				}
 				if request.Method != http.MethodPost {
 					http.Error(writer, "method not allowed", http.StatusMethodNotAllowed)
 					return
@@ -468,7 +483,7 @@ func bearerTokenHandler(next http.Handler, token string) http.Handler {
 }
 
 func printUsage(writer io.Writer) {
-	fmt.Fprintln(writer, "用法: ownward <setup|recover-owner|owner-window|mcp|mcp-http|codex-configure|codex-connect|create|update|read|evidence-read|check|search|navigate|rules|backup|restore|maintain|rebuild|version> [选项]")
+	fmt.Fprintln(writer, "用法: ownward <install|setup|recover-owner|owner-window|mcp|mcp-http|codex-configure|codex-connect|create|update|read|evidence-read|check|search|navigate|rules|backup|restore|maintain|rebuild|version> [选项]")
 	fmt.Fprintln(writer, "信息类型:", strings.Join(kindNames(), ", "))
 }
 

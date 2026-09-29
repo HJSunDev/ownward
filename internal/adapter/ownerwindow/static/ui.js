@@ -18,6 +18,58 @@ export function button(label, action, style = 'quiet', attrs = {}) {
   }}, label);
   return node;
 }
+// Accessible listbox combobox replacing native <select>. Self-contained; the
+// pure index helpers are exported so the contract can be asserted without a DOM.
+let selectUid = 0;
+export function stepIndex(count, from, delta, wrap = true) {
+  if (count <= 0) return -1;
+  const next = wrap ? (((from + delta) % count) + count) % count : from + delta;
+  return Math.max(0, Math.min(count - 1, next));
+}
+export function typeaheadIndex(labels, query, from = 0) {
+  const q = String(query || '').toLowerCase();
+  if (!q) return -1;
+  for (let i = 0; i < labels.length; i++) {
+    const at = stepIndex(labels.length, from + i, 1);
+    if (String(labels[at]).toLowerCase().startsWith(q)) return at;
+  }
+  return -1;
+}
+export function createSelect({ label = '', options = [], value, onChange = () => {}, skin = 'field', className = '' } = {}) {
+  const opts = options.map(o => (o && typeof o === 'object' ? { value: o.value, label: o.label ?? String(o.value) } : { value: o, label: String(o) }));
+  let current = opts.some(o => o.value === value) ? value : (opts[0]?.value ?? '');
+  let active = Math.max(0, opts.findIndex(o => o.value === current)), typed = '', typedAt = 0;
+  const labelOf = v => opts.find(o => o.value === v)?.label ?? '';
+  const id = `select-${++selectUid}`;
+  const wrap = el('div', { class: `select ${skin} ${className}`.trim() });
+  const valueText = el('span', { class: 'select-value' }, labelOf(current));
+  const trig = el('button', { type: 'button', class: 'select-trigger', role: 'combobox', 'aria-haspopup': 'listbox', 'aria-expanded': 'false', 'aria-controls': id, 'aria-label': label || undefined }, valueText, el('span', { class: 'select-caret', 'aria-hidden': 'true' }, '▾'));
+  const list = el('ul', { id, class: 'select-list', role: 'listbox', tabindex: '-1', hidden: true, 'aria-label': label || undefined });
+  const items = opts.map((o, i) => el('li', { class: 'select-option', role: 'option', id: `${id}-${i}`, 'aria-selected': String(o.value === current) }, o.label));
+  list.append(...items); wrap.append(trig, list);
+  function setActive(i, reveal = false) {
+    active = i;
+    items.forEach((it, n) => it.classList.toggle('active', n === i));
+    if (i >= 0) { trig.setAttribute('aria-activedescendant', items[i].id); if (reveal) items[i].scrollIntoView({ block: 'nearest' }); }
+    else trig.removeAttribute('aria-activedescendant');
+  }
+  function open() { if (!list.hidden) return; list.hidden = false; trig.setAttribute('aria-expanded', 'true'); setActive(Math.max(0, opts.findIndex(o => o.value === current)), true); document.addEventListener('pointerdown', outside, true); }
+  function close(focus = true) { if (list.hidden) return; list.hidden = true; trig.setAttribute('aria-expanded', 'false'); trig.removeAttribute('aria-activedescendant'); document.removeEventListener('pointerdown', outside, true); if (focus) trig.focus(); }
+  function outside(event) { if (!wrap.contains(event.target)) close(false); }
+  function commit(i) { const o = opts[i]; if (!o) return; current = o.value; valueText.textContent = o.label; items.forEach((it, n) => it.setAttribute('aria-selected', String(n === i))); close(); onChange(current, o); }
+  trig.addEventListener('click', () => (list.hidden ? open() : close()));
+  trig.addEventListener('keydown', event => {
+    const k = event.key;
+    if (k === 'Escape') { if (!list.hidden) { event.preventDefault(); close(); } return; }
+    if (k === 'ArrowDown' || k === 'ArrowUp') { event.preventDefault(); if (list.hidden) open(); else setActive(stepIndex(opts.length, active, k === 'ArrowDown' ? 1 : -1), true); return; }
+    if (k === 'Home' || k === 'End') { if (list.hidden) return; event.preventDefault(); setActive(k === 'Home' ? 0 : opts.length - 1, true); return; }
+    if (k === 'Enter' || k === ' ') { if (list.hidden) return; event.preventDefault(); commit(active); return; }
+    if (k.length === 1) { const now = Date.now(); typed = now - typedAt < 700 ? typed + k : k; typedAt = now; const at = typeaheadIndex(opts.map(o => o.label), typed, active); if (at >= 0) { if (list.hidden) open(); setActive(at, true); } }
+  });
+  items.forEach((it, i) => { it.addEventListener('mousedown', event => event.preventDefault()); it.addEventListener('click', () => commit(i)); it.addEventListener('mousemove', () => setActive(i)); });
+  wrap.addEventListener('focusout', event => { if (!wrap.contains(event.relatedTarget)) close(false); });
+  return { node: wrap, value: () => current, set: v => { const i = opts.findIndex(o => o.value === v); if (i >= 0) commit(i); }, focus: () => trig.focus() };
+}
 const noticeOwners = new WeakMap();
 export function notice(message, danger = false) {
   const box = document.querySelector('dialog[open]:last-of-type .modal-notice') || document.getElementById('notice'), owner = {};
@@ -31,7 +83,7 @@ export function errorMessage(error){
 export function clearNotice() { const box=document.getElementById('notice');box.hidden=true;noticeOwners.delete(box); }
 export const date = value => value ? new Intl.DateTimeFormat('zh-CN', {month:'long', day:'numeric', hour:'2-digit', minute:'2-digit'}).format(new Date(value)) : '';
 export const heading = (title, description, action) => el('header', {class:'page-heading'}, el('div',{},el('h1',{},title),description?el('p',{class:'lead'},description):null),action);
-export const empty = (title, description, action) => el('div',{class:'empty'},el('h3',{},title),description?el('p',{},description):null,action);
+export const empty = (title, description, action) => { if(action?.classList)action.classList.add('align-start'); return el('div',{class:'empty'},el('h3',{},title),description?el('p',{},description):null,action); };
 export const prose = (value, cls = '') => el('pre',{class:`prose ${cls}`},value);
 export const tag = (value, cls = '') => el('span',{class:`tag ${cls}`},value);
 export const row = (...children) => el('div',{class:'row'},...children);
@@ -127,11 +179,10 @@ export function applyAppearance(){
   document.documentElement.style.setProperty('--reading-size',appearance.size+'px');
 }
 export function appearanceControls(){
-  const theme=el('select',{'aria-label':'显示主题'},...Object.entries({system:'跟随系统',light:'浅色',dark:'深色'}).map(([value,label])=>el('option',{value,selected:appearance.theme===value},label)));
-  const size=el('select',{'aria-label':'正文字号'},...['17','19','21'].map(value=>el('option',{value,selected:appearance.size===value},`${value} px`)));
-  const save=()=>{appearance={theme:theme.value,size:size.value};try{localStorage.setItem('ownward.appearance',JSON.stringify(appearance));}catch{}document.documentElement.dataset.theme=appearance.theme;document.documentElement.style.setProperty('--reading-size',appearance.size+'px');};
-  theme.addEventListener('change',save);size.addEventListener('change',save);
-  return el('div',{class:'appearance-controls'},el('label',{},'主题',theme),el('label',{},'正文',size));
+  const save=patch=>{appearance={...appearance,...patch};try{localStorage.setItem('ownward.appearance',JSON.stringify(appearance));}catch{}applyAppearance();};
+  const theme=createSelect({label:'显示主题',skin:'field',value:appearance.theme,options:Object.entries({system:'跟随系统',light:'浅色',dark:'深色'}).map(([value,label])=>({value,label})),onChange:value=>save({theme:value})});
+  const size=createSelect({label:'正文字号',skin:'field',value:appearance.size,options:['17','19','21'].map(value=>({value,label:`${value} px`})),onChange:value=>save({size:value})});
+  return el('div',{class:'appearance-controls'},el('label',{},'主题',theme.node),el('label',{},'正文',size.node));
 }
 export function setImmersive(value){immersive=value;document.getElementById('shell').classList.toggle('immersive',value);for(const b of document.querySelectorAll('.immersion-toggle')){b.textContent=value?'显示导航':'专注模式';b.setAttribute('aria-pressed',String(value));}}
 export function immersionButton(){return button(immersive?'显示导航':'专注模式',()=>setImmersive(!immersive),'quiet immersion-toggle',{'aria-pressed':String(immersive)});}

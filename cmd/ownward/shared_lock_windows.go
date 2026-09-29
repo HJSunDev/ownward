@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -17,8 +18,14 @@ type serviceStartupLock struct {
 }
 
 func acquireServiceStartupLock(path string, timeout time.Duration) (*serviceStartupLock, error) {
+	return acquireServiceStartupLockContext(context.Background(), path, timeout)
+}
+func acquireServiceStartupLockContext(ctx context.Context, path string, timeout time.Duration) (*serviceStartupLock, error) {
 	deadline := time.Now().Add(timeout)
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 		if err != nil {
 			return nil, err

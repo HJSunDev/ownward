@@ -26,6 +26,41 @@ func deploymentOptions() DeploymentOptions {
 	b, _ := resourcebudget.New(16*resourcebudget.MiB, resourcebudget.MiB)
 	return DeploymentOptions{Options: Options{Budget: b}}
 }
+
+func TestDeploymentIdentityDoesNotTakeActiveWriterLock(t *testing.T) {
+	ctx := context.Background()
+	root := filepath.Join(t.TempDir(), "资料 #1")
+	o := deploymentOptions()
+	o.Initialize = func(ctx context.Context, s *Store, _ string) error {
+		a, err := s.OpenControlAuthority(ctx, contract.ControlState{Schema: contract.ControlStateSchema, Revision: 1, ActiveComposition: "composition", ActiveKernelGeneration: "kernel"})
+		if err != nil {
+			return err
+		}
+		_, err = informationcontrol.New(a).InitializeOwner("owner")
+		return err
+	}
+	s, err := OpenDeployment(ctx, root, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	for i := 0; i < 2; i++ {
+		state, err := ReadDeploymentIdentity(ctx, root)
+		if err != nil || state.InformationControl == nil || state.InformationControl.SystemID == "" || state.ActiveComposition != "composition" {
+			t.Fatal(state, err)
+		}
+		if len(state.InformationControl.Principals) != 0 {
+			t.Fatal("identity inspection returned credentials")
+		}
+	}
+	missing := filepath.Join(t.TempDir(), "missing")
+	if _, err = ReadDeploymentIdentity(ctx, missing); !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if _, err = os.Stat(missing); !os.IsNotExist(err) {
+		t.Fatal("inspection created missing data", err)
+	}
+}
 func legacyFixture(t *testing.T, root string) string {
 	t.Helper()
 	dir := filepath.Join(root, "assets")

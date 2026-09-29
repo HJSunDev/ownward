@@ -2,11 +2,10 @@ package resourcebudget
 
 import (
 	"golang.org/x/sys/windows"
-	"path/filepath"
 )
 
 func freeBytes(path string) (uint64, error) {
-	p, err := windows.UTF16PtrFromString(filepath.Dir(path))
+	p, err := windows.UTF16PtrFromString(path)
 	if err != nil {
 		return 0, err
 	}

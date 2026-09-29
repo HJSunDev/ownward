@@ -33,6 +33,8 @@ type RuntimeArtifact struct {
 	Entry               string            `json:"entry"`
 	SourceArchiveSHA256 string            `json:"source_archive_sha256"`
 	Files               map[string]string `json:"files"`
+	OS                  string            `json:"os,omitempty"`
+	Arch                string            `json:"arch,omitempty"`
 }
 
 type LegalArtifacts struct {

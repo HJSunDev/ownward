@@ -37,3 +37,28 @@ func TestVaultSeparatesConnectionsAndReplacesCredentials(t *testing.T) {
 		}
 	}
 }
+
+func TestRestoredInstanceCannotOverwriteSourceCredentials(t *testing.T) {
+	root := t.TempDir()
+	a := Vault{Root: root, Scope: "source"}
+	b := Vault{Root: root, Scope: "restored"}
+	legacy := Vault{Root: root}
+	if err := legacy.Save("same-system", "owner", "legacy-test"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := a.Load("same-system", "owner"); err != nil || got != "legacy-test" {
+		t.Fatal(err)
+	}
+	if err := b.Save("same-system", "owner", "restored-test"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := a.Load("same-system", "owner"); err != nil || got != "legacy-test" {
+		t.Fatal("restore changed source", err)
+	}
+	if err := a.Save("same-system", "owner", "source-test"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := b.Load("same-system", "owner"); err != nil || got != "restored-test" {
+		t.Fatal("source changed restore", err)
+	}
+}

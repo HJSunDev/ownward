@@ -26,11 +26,12 @@ import (
 )
 
 const (
-	sharedMCPDescriptorEnvironment = "OWNWARD_SHARED_MCP_DESCRIPTOR"
-	sharedMCPTokenEnvironment      = "OWNWARD_SHARED_MCP_TOKEN"
-	sharedMCPIdentityEnvironment   = "OWNWARD_SHARED_MCP_IDENTITY"
-	sharedMCPStatusPath            = "/__ownward/service"
-	sharedMCPShutdownPath          = "/__ownward/shutdown"
+	sharedMCPDescriptorEnvironment  = "OWNWARD_SHARED_MCP_DESCRIPTOR"
+	sharedMCPTokenEnvironment       = "OWNWARD_SHARED_MCP_TOKEN"
+	sharedMCPIdentityEnvironment    = "OWNWARD_SHARED_MCP_IDENTITY"
+	sharedMCPCompositionEnvironment = "OWNWARD_SHARED_MCP_COMPOSITION"
+	sharedMCPStatusPath             = "/__ownward/service"
+	sharedMCPShutdownPath           = "/__ownward/shutdown"
 )
 
 type sharedMCPDescriptor struct {
@@ -179,7 +180,7 @@ func ensureSharedMCPService(ctx context.Context, dataDir, binaryVersion, composi
 	if err := os.MkdirAll(runtimeDir, 0o700); err != nil {
 		return nil, err
 	}
-	lock, err := acquireServiceStartupLock(filepath.Join(runtimeDir, "mcp-service.lock"), 130*time.Second)
+	lock, err := acquireServiceStartupLockContext(ctx, filepath.Join(runtimeDir, "mcp-service.lock"), 130*time.Second)
 	if err != nil {
 		return nil, err
 	}
@@ -194,26 +195,20 @@ func ensureSharedMCPService(ctx context.Context, dataDir, binaryVersion, composi
 			return nil, errors.New("系统托管服务暂不可用，请保留原连接等待服务恢复")
 		}
 		if probeErr == nil {
+			if existing.DataIdentity == dataIdentity && aliveIdentity == existing.ServiceIdentity {
+				if compatible, e := sharedComposition(ctx, existing); e == nil && compatible == compositionIdentity {
+					return existing, nil
+				}
+			}
 			if existing.ManagedRoot != "" {
 				return nil, errors.New("此信息体系由系统服务托管，请通过部署入口更新服务")
 			}
-			if shutdownErr := shutdownSharedMCP(ctx, existing); shutdownErr != nil {
-				return nil, fmt.Errorf("已有 Ownward 内核身份不兼容且无法安全切换: %w", shutdownErr)
-			}
-			deadline := time.Now().Add(15 * time.Second)
-			for time.Now().Before(deadline) {
-				if _, probeErr = probeSharedMCP(ctx, existing); probeErr != nil {
-					break
-				}
-				time.Sleep(50 * time.Millisecond)
-			}
-			if probeErr == nil {
-				return nil, errors.New("已有 Ownward 内核未在安全关闭期限内退出")
-			}
+			return nil, errors.New("资料仍由另一版本使用，当前页面与连接已保留；请完成版本切换后重试")
 		}
 		_ = os.Remove(descriptorPath)
 	}
-	if err := startSharedMCPService(normalizedDataDir, descriptorPath, identity, stderr); err != nil {
+	startup, err := startSharedMCPService(normalizedDataDir, descriptorPath, identity, stderr, compositionIdentity)
+	if err != nil {
 		return nil, err
 	}
 	deadline := time.Now().Add(120 * time.Second)
@@ -222,6 +217,8 @@ func ensureSharedMCPService(ctx context.Context, dataDir, binaryVersion, composi
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
+		case err := <-startup:
+			return nil, fmt.Errorf("资料服务在准备完成前退出，请核对安装与运行日志后重试: %v", err)
 		default:
 		}
 		descriptor, readErr := readSharedMCPDescriptor(descriptorPath)
@@ -255,6 +252,10 @@ func normalizeDataDirectory(path string) (string, error) {
 }
 
 func sharedMCPIdentity(dataDir, binaryVersion, compositionIdentity string) (string, string, error) {
+	dataDir, err := normalizeDataDirectory(dataDir)
+	if err != nil {
+		return "", "", err
+	}
 	executable, err := os.Executable()
 	if err != nil {
 		return "", "", err
@@ -283,35 +284,40 @@ func sharedMCPIdentityFromArtifacts(dataDir, binaryVersion string, binary, bundl
 	return "sha256:" + hex.EncodeToString(hash.Sum(nil)), dataIdentity
 }
 
-func startSharedMCPService(dataDir, descriptorPath, identity string, stderr io.Writer) error {
+func startSharedMCPService(dataDir, descriptorPath, identity string, stderr io.Writer, composition ...string) (<-chan error, error) {
 	executable, err := os.Executable()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	tokenBytes := make([]byte, 32)
 	if _, err := rand.Read(tokenBytes); err != nil {
-		return err
+		return nil, err
 	}
 	token := hex.EncodeToString(tokenBytes)
 	logPath := filepath.Join(filepath.Dir(descriptorPath), "mcp-service.log")
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	command := exec.Command(executable, "mcp-http", "--data-dir", dataDir, "--listen", "127.0.0.1:0")
 	command.Env = append(os.Environ(), sharedMCPDescriptorEnvironment+"="+descriptorPath, sharedMCPTokenEnvironment+"="+token, sharedMCPIdentityEnvironment+"="+identity)
+	if len(composition) > 0 {
+		command.Env = append(command.Env, sharedMCPCompositionEnvironment+"="+composition[0])
+	}
 	command.Stdout = logFile
 	command.Stderr = logFile
 	configureSharedServiceProcess(command)
 	if err := command.Start(); err != nil {
 		_ = logFile.Close()
-		return fmt.Errorf("启动共享 Ownward 内核: %w", err)
+		return nil, fmt.Errorf("启动共享 Ownward 内核: %w", err)
 	}
 	if stderr != nil {
 		_, _ = fmt.Fprintf(stderr, "Ownward shared core starting (pid %d)\n", command.Process.Pid)
 	}
-	_ = command.Process.Release()
-	return logFile.Close()
+	_ = logFile.Close()
+	done := make(chan error, 1)
+	go func() { done <- command.Wait() }()
+	return done, nil
 }
 
 func readSharedMCPDescriptor(path string) (*sharedMCPDescriptor, error) {
@@ -370,6 +376,7 @@ func shutdownSharedMCP(parent context.Context, descriptor *sharedMCPDescriptor) 
 		return err
 	}
 	request.Header.Set("Authorization", "Bearer "+descriptor.BearerToken)
+	request.Header.Set("X-Ownward-Explicit-Stop", "1")
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return err
@@ -379,6 +386,32 @@ func shutdownSharedMCP(parent context.Context, descriptor *sharedMCPDescriptor) 
 		return fmt.Errorf("共享 Ownward 安全关闭返回 %s", response.Status)
 	}
 	return nil
+}
+
+func sharedComposition(parent context.Context, d *sharedMCPDescriptor) (string, error) {
+	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
+	defer cancel()
+	r, err := http.NewRequestWithContext(ctx, http.MethodGet, d.Endpoint+sharedMCPStatusPath, nil)
+	if err != nil {
+		return "", err
+	}
+	r.Header.Set("Authorization", "Bearer "+d.BearerToken)
+	response, err := http.DefaultClient.Do(r)
+	if err != nil {
+		return "", err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return "", errors.New("当前运行状态无法核实")
+	}
+	var status map[string]string
+	if err = json.NewDecoder(io.LimitReader(response.Body, 4096)).Decode(&status); err != nil {
+		return "", err
+	}
+	if status["service_identity"] != d.ServiceIdentity {
+		return "", errors.New("服务身份已变化")
+	}
+	return status["composition_identity"], nil
 }
 
 func publishSharedMCPDescriptorFromEnvironment(endpoint string) (func(), error) {

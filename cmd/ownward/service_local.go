@@ -38,7 +38,7 @@ func startManagedLocal(s installation, r *assembly.Runtime) (func(), error) {
 	base := secured.HTTPHandler()
 	handler := http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		if request.URL.Path == sharedMCPStatusPath {
-			_ = json.NewEncoder(w).Encode(map[string]string{"service_identity": identity})
+			_ = json.NewEncoder(w).Encode(map[string]string{"service_identity": identity, "composition_identity": r.Composition().Composition})
 			return
 		}
 		if request.URL.Path == sharedMCPShutdownPath {

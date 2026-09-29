@@ -5,7 +5,7 @@ import {readFile} from 'node:fs/promises';
 
 // Exercise the actual application lifecycle, with rendering/transport replaced
 // at its edges. Browser acceptance separately covers the real DOM and HTTP.
-async function harness(overrides={},editorOverrides={}){
+async function harness(overrides={},editorOverrides={},uiOverrides={}){
   const calls=[],saved=new Map(),visible=new Set();
   const nodes=new Map();
   const node=id=>{if(!nodes.has(id))nodes.set(id,{textContent:'',hidden:false,append:()=>{},prepend:()=>{},contains:n=>visible.has(n),replaceChildren:()=>calls.push(['clear',id])});return nodes.get(id);};
@@ -16,11 +16,13 @@ async function harness(overrides={},editorOverrides={}){
   const editor={Editor:class{},rescuedInput:()=>null,rescueNeedsWindow:()=>false,rescueCleanupPending:()=>false,retryRescueCleanup:()=>true,clearRescue:()=>saved.clear(),retainReceipt:()=>{}};
   Object.assign(editor,editorOverrides);
   const ui={};for(const n of ['el','button','row','heading','empty','prose','tag','date','notice','clearNotice','statusName','permissionName','dialog','confirm','download','errorMessage','documentView','appearanceControls','applyAppearance','setImmersive'])ui[n]=()=>{};
+  ui.createSelect=()=>({node:{},value:()=>'',set(){},focus(){}});
   ui.confirm=async(_,__,___,run)=>run();
+  Object.assign(ui,uiOverrides);
   const handlers={},window={addEventListener:(name,run)=>handlers[name]=run};
   const context=vm.createContext({document,window,navigator:{},setTimeout:()=>1,clearTimeout:()=>{}});
   const source=await readFile(new URL('./static/app.js',import.meta.url),'utf8');
-  const module=new vm.SourceTextModule(source+'\nexport {state,lock,poll,openDraft,newDraft,editAsset}; export function observe(renderPage,pending){render=renderPage;refreshPending=pending;}',{context});
+  const module=new vm.SourceTextModule(source+'\nexport {state,lock,poll,openDraft,newDraft,editAsset,restoredArchives}; export function observe(renderPage,pending){render=renderPage;refreshPending=pending;}',{context});
   await module.link(spec=>{const value=spec.includes('reading.js')?{createReader:()=>({node:{},status:{},destroy(){},markUpdated(){}})}:spec.includes('graph.js')?{createGraph:()=>({node:{},capture:()=>null,destroy(){}})}:spec.includes('api.js')?api:spec.includes('editor.js')?editor:ui;return new vm.SyntheticModule(Object.keys(value),function(){for(const [k,v] of Object.entries(value))this.setExport(k,v);},{context});});
   await module.evaluate();const app=module.namespace;
   app.observe(async()=>calls.push(['render']),async()=>calls.push(['pending']));
@@ -33,6 +35,29 @@ test('explicit logout destroys dirty and conflicted editor without re-persisting
     h.app.state.editor={dirty:true,conflict,persist:()=>h.saved.set('input','private'),destroy:()=>h.calls.push(['destroy'])};
     h.app.lock('bye',false);assert.equal(h.saved.size,0);assert.equal(h.app.state.editor,null);assert.equal(h.app.state.active,false);
     assert.ok(h.calls.some(c=>c[0]==='destroy'));
+  }
+});
+
+test('restore opening keeps the displayed revision and ignores a closed result dialog',async()=>{
+  for(const closeEarly of [false,true]){
+    const buttons=[],dialogs=[],notices=[],requests=[];let release;
+    const opening=new Promise(resolve=>{release=resolve;});
+    const node=(...children)=>({children,append(...items){this.children.push(...items);},replaceChildren(...items){this.children=items;}});
+    const ui={el:(_tag,_attrs,...children)=>node(...children),row:(...children)=>node(...children),date:()=> '今天',notice:s=>notices.push(s),
+      button:(label,run)=>{const value={label,run};buttons.push(value);return value;},
+      dialog:(title,body,actions=[])=>{let live=true;const close=()=>{live=false;};close.current=()=>live;const value={title,body,actions,close};dialogs.push(value);return value;}};
+    const h=await harness({request:async(_path,body)=>{requests.push(body);if(body.action==='list')return [{id:'result',created:'today',ready:true}];if(body.action==='open')return opening;return {state:'default_updated'};}},{},ui);
+    await h.app.restoredArchives();const pending=buttons.find(b=>b.label==='打开恢复的资料').run();
+    if(closeEarly)dialogs[0].close();release({default_available:true,default_revision:17});await pending;
+    const change=buttons.find(b=>b.label==='以后打开这份资料');
+    if(closeEarly){assert.equal(change,undefined);assert.equal(notices.length,0);continue;}
+    const attached=(root,label)=>root.label===label||root.children?.some(child=>typeof child==='object'&&child&&attached(child,label));
+    assert.ok(attached(dialogs[0].body,'打开恢复的资料'),'restored result must remain reopenable');
+    change.run();const confirm=dialogs.at(-1);await confirm.actions.find(a=>a.label==='确认更换').run(confirm.close);
+    assert.equal(requests.at(-1).revision,17);assert.equal(requests.at(-1).id,'result');
+    assert.ok(attached(dialogs[0].body,'打开恢复的资料'));
+    assert.ok(!attached(dialogs[0].body,'以后打开这份资料'),'completed selection is no longer offered as pending');
+    await buttons.find(b=>b.label==='打开恢复的资料').run();assert.equal(requests.at(-1).action,'open');
   }
 });
 

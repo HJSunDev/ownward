@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"sync"
 )
 
@@ -17,6 +18,22 @@ type Disk struct {
 func NewDisk(limit int64) *Disk { return &Disk{limit: limit} }
 
 func CheckFree(path string, required uint64) error {
+	// 预留空间时目标文件尚未创建；在最近的现存目录查询同一文件系统。
+	path = filepath.Clean(path)
+	for {
+		info, err := os.Stat(path)
+		if err == nil && info.IsDir() {
+			break
+		}
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		parent := filepath.Dir(path)
+		if parent == path {
+			return err
+		}
+		path = parent
+	}
 	available, e := freeBytes(path)
 	if e != nil {
 		return e

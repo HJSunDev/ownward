@@ -51,6 +51,7 @@ type BuildOptions struct {
 	RuntimeArchive string
 	LegalRoot      string
 	Output         string
+	RuntimeBuild   string
 }
 
 // BuildSelectedBundle 使用锁定的上游制品组装第一版向量能力。
@@ -80,7 +81,11 @@ func BuildSelectedBundle(options BuildOptions) (Bundle, error) {
 	if err := verifyFile(modelPath, SelectedModelSHA256); err != nil {
 		return Bundle{}, fmt.Errorf("模型制品不是锁定版本: %w", err)
 	}
-	if err := verifyFile(runtimeArchive, SelectedRuntimeArchiveSHA256); err != nil {
+	profile, err := runtimeProfile(options.RuntimeBuild)
+	if err != nil {
+		return Bundle{}, err
+	}
+	if err := verifyFile(runtimeArchive, profile.Archive); err != nil {
 		return Bundle{}, fmt.Errorf("运行时制品不是锁定版本: %w", err)
 	}
 	parent := filepath.Dir(output)
@@ -101,12 +106,17 @@ func BuildSelectedBundle(options BuildOptions) (Bundle, error) {
 	if err := copyFile(modelPath, modelTarget); err != nil {
 		return Bundle{}, err
 	}
-	runtimeFiles, err := extractRuntime(runtimeArchive, filepath.Join(temporary, "runtime"))
+	runtimeFiles, err := extractRuntimeProfile(runtimeArchive, filepath.Join(temporary, "runtime"), profile.Files)
 	if err != nil {
 		return Bundle{}, err
 	}
-	if _, exists := runtimeFiles[selectedRuntimeEntry]; !exists {
-		return Bundle{}, errors.New("锁定运行时不包含 llama-server.exe")
+	if _, exists := runtimeFiles[profile.Entry]; !exists {
+		return Bundle{}, errors.New("锁定运行时缺少程序入口")
+	}
+	for name, digest := range profile.Digests {
+		if runtimeFiles["runtime/"+name] != digest {
+			return Bundle{}, errors.New("运行时文件与构建记录不一致")
+		}
 	}
 	legalFiles, err := copyLegalFiles(legalRoot, temporary)
 	if err != nil {
@@ -117,7 +127,7 @@ func BuildSelectedBundle(options BuildOptions) (Bundle, error) {
 		Capability: selectedCapability,
 		Model:      ModelArtifact{Path: filepath.ToSlash(filepath.Join("model", selectedModelName)), SHA256: SelectedModelSHA256},
 		Runtime: RuntimeArtifact{
-			Entry: selectedRuntimeEntry, SourceArchiveSHA256: SelectedRuntimeArchiveSHA256, Files: runtimeFiles,
+			Entry: profile.Entry, SourceArchiveSHA256: profile.Archive, Files: runtimeFiles, OS: profile.OS, Arch: profile.Arch,
 		},
 		Legal: LegalArtifacts{Files: legalFiles},
 		Space: SpaceDefinition{
@@ -184,6 +194,9 @@ func copyLegalFiles(root, target string) (map[string]string, error) {
 }
 
 func extractRuntime(archivePath, target string) (map[string]string, error) {
+	return extractRuntimeProfile(archivePath, target, selectedRuntimeFiles)
+}
+func extractRuntimeProfile(archivePath, target string, selected map[string]struct{}) (map[string]string, error) {
 	archive, err := zip.OpenReader(archivePath)
 	if err != nil {
 		return nil, fmt.Errorf("打开运行时压缩包: %w", err)
@@ -198,7 +211,10 @@ func extractRuntime(archivePath, target string) (map[string]string, error) {
 		if filepath.IsAbs(cleaned) || cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {
 			return nil, fmt.Errorf("运行时压缩包包含越界路径 %q", entry.Name)
 		}
-		if _, required := selectedRuntimeFiles[filepath.ToSlash(cleaned)]; !required {
+		if entry.Mode()&os.ModeSymlink != 0 {
+			return nil, errors.New("运行时压缩包包含链接")
+		}
+		if _, required := selected[filepath.ToSlash(cleaned)]; !required {
 			continue
 		}
 		relative := filepath.ToSlash(filepath.Join("runtime", cleaned))
@@ -215,9 +231,9 @@ func extractRuntime(archivePath, target string) (map[string]string, error) {
 		}
 		files[relative] = digest
 	}
-	if len(files) != len(selectedRuntimeFiles) {
+	if len(files) != len(selected) {
 		missing := make([]string, 0)
-		for name := range selectedRuntimeFiles {
+		for name := range selected {
 			if _, exists := files[filepath.ToSlash(filepath.Join("runtime", name))]; !exists {
 				missing = append(missing, name)
 			}

@@ -2,17 +2,18 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"strings"
+	"time"
 
 	"github.com/HJSunDev/ownward/internal/adapter/localowner"
 	"github.com/HJSunDev/ownward/internal/adapter/ownerwindow"
@@ -20,6 +21,7 @@ import (
 	"github.com/HJSunDev/ownward/internal/boundedstore"
 	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/core"
+	"github.com/HJSunDev/ownward/internal/desktop"
 	"github.com/HJSunDev/ownward/internal/informationcontrol"
 	"github.com/HJSunDev/ownward/internal/ownerview"
 )
@@ -38,6 +40,9 @@ func newOwnerWindow(r *assembly.Runtime, dataDir string) (*ownerwindow.Server, e
 
 func localOwnerArchives(k *core.StreamingAssets, control *informationcontrol.Control, dataDir string) ownerwindow.Archives {
 	return ownerwindow.Archives{
+		Resume: func(ctx context.Context, id, action string, revision uint64) (any, error) {
+			return resumeRestore(ctx, control, dataDir, id, action, revision)
+		},
 		Backup: func(ctx context.Context) (string, error) {
 			path := filepath.Join(k.Scratch, "owner-backup-"+connectionID()+".zip")
 			if e := k.Store.ExportArchive(ctx, path); e != nil {
@@ -60,7 +65,8 @@ func localOwnerArchives(k *core.StreamingAssets, control *informationcontrol.Con
 				return "", e
 			}
 			maxArchive := int64(free / 3)
-			n, e := io.CopyBuffer(f, io.LimitReader(input, maxArchive+1), make([]byte, 64<<10))
+			digest := sha256.New()
+			n, e := io.CopyBuffer(io.MultiWriter(f, digest), io.LimitReader(input, maxArchive+1), make([]byte, 64<<10))
 			if e == nil && n > maxArchive {
 				e = errors.New("恢复材料超过本次上传预算")
 			}
@@ -77,8 +83,50 @@ func localOwnerArchives(k *core.StreamingAssets, control *informationcontrol.Con
 			if _, e = control.Owner(ctx); e != nil {
 				return "", e
 			}
-			target := filepath.Join(filepath.Dir(dataDir), filepath.Base(dataDir)+"-restored-"+connectionID())
+			lock, e := lockRestoreResults(dataDir)
+			if e != nil {
+				return "", e
+			}
+			defer lock.release()
+			// Identical uploads resume the same operation, including a lost response.
+			id := hex.EncodeToString(digest.Sum(nil)[:24])
+			target, e := restoredPath(dataDir, id)
+			if e != nil {
+				return "", e
+			}
+			record := restoredEntry{ID: id, Source: control.SystemID(), Created: time.Now().UTC()}
+			if previous, err := loadRestoreRecord(dataDir, id); err == nil {
+				if previous.Source != record.Source {
+					return "", errors.New("恢复记录不属于当前资料")
+				}
+				record, e = reconcileRestore(ctx, dataDir, previous)
+				if e != nil {
+					return "", e
+				}
+				if record.Ready {
+					return target, nil
+				}
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return "", err
+			}
+			if e = reserveRestore(dataDir, record); e != nil {
+				return "", e
+			}
 			_, e = boundedstore.RestoreArchive(ctx, f.Name(), target, boundedstore.Options{Budget: k.Budget})
+			if e == nil {
+				state, err := assembly.ReadLocalIdentity(ctx, target)
+				if err != nil {
+					return "", err
+				}
+				if state.InformationControl == nil {
+					return "", errors.New("恢复资料没有所有者身份")
+				}
+				record.Ready, record.System = true, state.InformationControl.SystemID
+				e = saveRestoreRecord(dataDir, record)
+			} else {
+				record.Failed = true
+				e = errors.Join(e, saveRestoreRecord(dataDir, record))
+			}
 			return target, e
 		},
 	}
@@ -185,19 +233,33 @@ func discoverOwnerEntry(dataDir, system, endpoint string, handoff *contract.Hand
 }
 
 func openOwnerWindow(ctx context.Context, dataDir, vectorBundle string, stdout, stderr io.Writer) error {
+	return openOwnerWindowProgress(ctx, dataDir, vectorBundle, stdout, stderr, func(string) {})
+}
+
+func openOwnerWindowProgress(ctx context.Context, dataDir, vectorBundle string, stdout, stderr io.Writer, progress func(string)) error {
+	progress("正在定位资料…")
+	state, e := readOwnerEntry(ctx, dataDir)
+	if e != nil {
+		return e
+	}
 	// Inspect retired authority before connect-or-start; do not wait 120 seconds
 	// trying to reopen a source that already handed its authority to another place.
-	if state, e := assembly.ReadControlAtContext(ctx, dataDir); e == nil && state.Access != nil && state.Access.Handoff != nil && state.Access.Handoff.Phase == "retired" {
+	if state.Access != nil && state.Access.Handoff != nil && state.Access.Handoff.Phase == "retired" {
 		entry, e := discoverOwnerEntry(dataDir, state.InformationControl.SystemID, "", state.Access.Handoff)
 		if e != nil {
 			fmt.Fprintln(stderr, "入口位置提示未能保存；将按资料的实际迁移位置引导。")
 		}
-		return fmt.Errorf("资料已迁往 %s；请在该部署位置使用物主入口", entry.Target.Endpoint)
+		return &entryProblem{message: "这份资料已经迁往另一处，请在资料所在设备打开 Ownward。", cause: fmt.Errorf("迁移目标：%s", entry.Target.Endpoint)}
 	}
+	progress("正在检查运行资源…")
 	verified, e := assembly.PreflightSharedConnector(assembly.Collaborative, vectorBundle)
 	if e != nil {
 		return e
 	}
+	if state.ActiveComposition != verified.Composition {
+		return &entryProblem{message: "这份资料需要先完成版本迁移。请让智能体协助完成迁移后再打开；当前资料保持不变。"}
+	}
+	progress("正在连接资料库…")
 	d, e := ensureSharedMCPService(ctx, dataDir, version, verified.Composition, stderr)
 	if e != nil {
 		return e
@@ -209,7 +271,8 @@ func openOwnerWindow(ctx context.Context, dataDir, vectorBundle string, stdout, 
 	if e = h.controlCall(ctx, "identity", "", nil, &identity); e != nil {
 		return e
 	}
-	vault, e := localowner.Default()
+	progress("正在验证访问…")
+	vault, e := localowner.ForData(dataDir)
 	if e != nil {
 		return e
 	}
@@ -225,7 +288,7 @@ func openOwnerWindow(ctx context.Context, dataDir, vectorBundle string, stdout, 
 	if e != nil || h.controlCall(ctx, "self", credential, nil, &p) != nil {
 		proof, e := vault.Load(ownerRecoveryScope(dataDir), "owner-recovery")
 		if e != nil {
-			return errors.New("当前系统账户无法验证物主，请使用 recover-owner 恢复入口")
+			return &entryProblem{message: "当前系统账户无法验证这份资料的访问权。请使用原来的系统账户打开，或请智能体协助恢复访问。", cause: e}
 		}
 		if e = h.controlCall(ctx, "recover", proof, struct{}{}, &identity); e != nil {
 			return e
@@ -241,7 +304,20 @@ func openOwnerWindow(ctx context.Context, dataDir, vectorBundle string, stdout, 
 	if e = h.controlCall(ctx, "owner-window", credential, struct{}{}, &result); e != nil {
 		return e
 	}
+	progress("正在打开浏览器…")
 	return launchOwnerWindow(dataDir, identity.System, d.Endpoint, result.Entry, stdout, stderr, openLocalBrowser)
+}
+
+// 打开只接续已经启用的资料；空目录的初始化属于明确的首次启用。
+func readOwnerEntry(ctx context.Context, dataDir string) (contract.ControlState, error) {
+	state, err := assembly.ReadLocalIdentity(ctx, dataDir)
+	if err != nil {
+		return state, &entryProblem{message: "暂时无法读取这份资料。请检查磁盘是否已连接，并确认资料所在位置。", cause: err}
+	}
+	if state.InformationControl == nil || state.InformationControl.SystemID == "" {
+		return state, &entryProblem{message: "这份资料尚未完成首次启用。请从 Ownward 入口开始使用，或请智能体完成准备。"}
+	}
+	return state, nil
 }
 
 // The authenticated service supplies the entry; location metadata is only a
@@ -251,25 +327,12 @@ func launchOwnerWindow(dataDir, system, endpoint, entry string, stdout, stderr i
 		fmt.Fprintln(stderr, "入口位置提示未能保存；本次物主入口仍可使用。")
 	}
 	if e := open(entry); e != nil {
-		return fmt.Errorf("无法打开浏览器，请重新运行物主入口: %w", e)
+		return &entryProblem{message: "浏览器未能打开。请确认默认浏览器可用后重试。", cause: e}
 	}
 	_, e := fmt.Fprintln(stdout, "物主入口已在本机浏览器打开。")
 	return e
 }
 
 func openLocalBrowser(address string) error {
-	var command *exec.Cmd
-	switch runtime.GOOS {
-	case "windows":
-		command = exec.Command("rundll32.exe", "url.dll,FileProtocolHandler", address)
-	case "darwin":
-		command = exec.Command("open", address)
-	default:
-		command = exec.Command("xdg-open", address)
-	}
-	configureSharedServiceProcess(command)
-	if e := command.Start(); e != nil {
-		return e
-	}
-	return command.Process.Release()
+	return desktop.OpenBrowser(address)
 }

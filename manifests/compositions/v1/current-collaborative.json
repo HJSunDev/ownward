@@ -28,6 +28,11 @@
           "sha256": "7bcf8f9c64962ad91db30a5da80d4280ea96cb25874d75a56d8a006daf74ef64"
         },
         {
+          "name": "cmd-ownward-desktop_restore-go",
+          "path": "cmd/ownward/desktop_restore.go",
+          "sha256": "7d7cc16d66070d5d0515cd36ee7c66616d9e03ed9c60d31585472b5368021f3b"
+        },
+        {
           "name": "cmd-ownward-host-materials-go",
           "path": "cmd/ownward/host_materials.go",
           "sha256": "c98a0d0c09135037bb4aeb6ae7247330c805fcd160a3a918a83e5ce54bb050c3"
@@ -35,12 +40,12 @@
         {
           "name": "cmd-ownward-host_connector",
           "path": "cmd/ownward/host_connector.go",
-          "sha256": "c887e62929b3d6a035b81df227f573444e25e74c615a05a4c6f080964f45494c"
+          "sha256": "75dcbf99c1e964537fc7b74f3ec4bcd056a622c145d0e964ba8ff4337290c6e4"
         },
         {
           "name": "cmd-ownward-information_control",
           "path": "cmd/ownward/information_control.go",
-          "sha256": "e8f32df870e71a08cf3a8c69c24e0165a6dd07e8c88751a0a440954ec7c875c1"
+          "sha256": "079449c837cf3d74588b38b9bc300b9f8ae56c1f592980bd8fca1062048e75e5"
         },
         {
           "name": "cmd-ownward-information_use-go",
@@ -70,7 +75,7 @@
         {
           "name": "cmd-ownward-owner_window-go",
           "path": "cmd/ownward/owner_window.go",
-          "sha256": "2bcddb0ea92146982f14130255d370fe24cfedb1383473ac349e9f94fdab07d1"
+          "sha256": "4c886d19869fc7f7f3382985e74ad06c69fa054b70502fc55d5f8326d552081e"
         },
         {
           "name": "cmd-ownward-remote_access",
@@ -115,7 +120,7 @@
         {
           "name": "internal-adapter-localowner-vault",
           "path": "internal/adapter/localowner/vault.go",
-          "sha256": "c5cba50deed4c2fd28efcc5b3e11d81dfe50b5e84846c9c6ac1edde236a0c704"
+          "sha256": "100bcb888763e42d08ca33970ae538069edf55cde5929e19780d0ac9a528d430"
         },
         {
           "name": "internal-adapter-mcpserver-management",
@@ -140,7 +145,7 @@
         {
           "name": "internal-adapter-ownerwindow-http-go",
           "path": "internal/adapter/ownerwindow/http.go",
-          "sha256": "23ef918db70242f9ed57a03a6d10aa864281574bcee245d85629315704acdba5"
+          "sha256": "eb7ec0431c901e3e0ff37c370a1c1472657e811e7eded367b10974054e35ec49"
         },
         {
           "name": "internal-adapter-ownerwindow-static-api-js",
@@ -150,7 +155,7 @@
         {
           "name": "internal-adapter-ownerwindow-static-app-js",
           "path": "internal/adapter/ownerwindow/static/app.js",
-          "sha256": "0045e415832f34fba9761de38db8b7c88774d437b14310e87843e1ee4f165975"
+          "sha256": "53c382411ee24c38da83b92fefc7f8b9722f9b1f9e4dae81a9f20407ab838e10"
         },
         {
           "name": "internal-adapter-ownerwindow-static-bootstrap-js",
@@ -170,7 +175,7 @@
         {
           "name": "internal-adapter-ownerwindow-static-graph-js",
           "path": "internal/adapter/ownerwindow/static/graph.js",
-          "sha256": "0b230ac002475ed9d847a7954604711286ff3d584ab53803b9b2c42202c511f7"
+          "sha256": "5ca26914d06a5309beff8f26f47db232cc00023c498928f2144a0e79cb4d16bd"
         },
         {
           "name": "internal-adapter-ownerwindow-static-graph-layout-js",
@@ -180,17 +185,17 @@
         {
           "name": "internal-adapter-ownerwindow-static-index-html",
           "path": "internal/adapter/ownerwindow/static/index.html",
-          "sha256": "cb09bc7d667e2c1553366f2163d4500636ad7f973f80d1ac5a590e3d62b96531"
+          "sha256": "8f731d73b0e0aa97a8bb79766aa3db5b35c66014157222b3b1e4b27b0f2b510e"
         },
         {
           "name": "internal-adapter-ownerwindow-static-ui-js",
           "path": "internal/adapter/ownerwindow/static/ui.js",
-          "sha256": "98867c35d40d948f22c2fa43f311f32d757f0862957eca7c60e3421fc9a60e8e"
+          "sha256": "a8059bb37ee9c86f2d54b7fbd7e68648001b545b5c1996c8b4374052c0cfbe85"
         },
         {
           "name": "internal-adapter-ownerwindow-static-window-css",
           "path": "internal/adapter/ownerwindow/static/window.css",
-          "sha256": "8cbb4e07b016c00ed39ea3876fd7d017b83b898a7e883f076ca95e310b101419"
+          "sha256": "e09d9d67e3567dfebbdc964a2d945ed83ca8f74009360532d88e2eef00267925"
         },
         {
           "name": "internal-adapter-remote-transport",
@@ -263,6 +268,51 @@
           "sha256": "2aa7aa9d1509f3aea056ac394412189607a74be700b3da30cc76b0982078a27c"
         },
         {
+          "name": "internal-desktop-dialog_other-go",
+          "path": "internal/desktop/dialog_other.go",
+          "sha256": "9c375340d369d3ab93777dd36ae9ed2f72b53e06a1687a1b657fb43c30d540bd"
+        },
+        {
+          "name": "internal-desktop-dialog_windows-go",
+          "path": "internal/desktop/dialog_windows.go",
+          "sha256": "535e3103246e8aed23732a5b984ec3d2b3abf003da7cec1e0fada8fc87babca8"
+        },
+        {
+          "name": "internal-desktop-install-go",
+          "path": "internal/desktop/install.go",
+          "sha256": "0debfcde351c59ab570fb5d1a9c9aea757b37c2f6938021d7c1966ad70bc4831"
+        },
+        {
+          "name": "internal-desktop-launchers-go",
+          "path": "internal/desktop/launchers.go",
+          "sha256": "e1dc347032281a236cc6baefc9a5d92e67525de0372d12848b1228bc8d0e21a0"
+        },
+        {
+          "name": "internal-desktop-platform_other-go",
+          "path": "internal/desktop/platform_other.go",
+          "sha256": "0019f6c41d474ead6d069361c0a09a41fb8dfc702b2e8db60330834425196299"
+        },
+        {
+          "name": "internal-desktop-platform_windows-go",
+          "path": "internal/desktop/platform_windows.go",
+          "sha256": "c7f73937afe9fdee8f66d9a95564753f4f9d88aed4a466a1837bcfe70ea82ea3"
+        },
+        {
+          "name": "internal-desktop-progress_other-go",
+          "path": "internal/desktop/progress_other.go",
+          "sha256": "c583fe9a68c32ec0e34c488614908c6e7225cce4563a508bd4b1ad661af51ae7"
+        },
+        {
+          "name": "internal-desktop-progress_windows-go",
+          "path": "internal/desktop/progress_windows.go",
+          "sha256": "695287ed17aa141cfe5ca8726f9d74a63b54bbb3680dc5e90cafdb39dc9683aa"
+        },
+        {
+          "name": "internal-desktop-state-go",
+          "path": "internal/desktop/state.go",
+          "sha256": "b65c1de8085447079def22bf57418f29c6f4a11caab4c3d740dac7d9505f3e28"
+        },
+        {
           "name": "internal-hostmaterials-materials-go",
           "path": "internal/hostmaterials/materials.go",
           "sha256": "a62e7053de5d2c71ff37f4795cd378125e64b0feba053c358f4998bb8d750624"
@@ -325,17 +375,17 @@
         {
           "name": "shared-lock-unix",
           "path": "cmd/ownward/shared_lock_unix.go",
-          "sha256": "8e1b6181ef94615d68cb71c05719d8a7ea56a15c3d65aca2e0951f14c994fcd7"
+          "sha256": "df8b2c203054dfcd12825d2fd136a809a71d039bfb1396b9ece5721435fa07b8"
         },
         {
           "name": "shared-lock-windows",
           "path": "cmd/ownward/shared_lock_windows.go",
-          "sha256": "1b6db63eee55519410197615f4d8594dd715385ac7d5b99d834d83e46f071075"
+          "sha256": "e349976ca407cb7acbc9d10b5b1cd61026a1048d534a600db850e088e9897296"
         },
         {
           "name": "shared-mcp",
           "path": "cmd/ownward/shared_mcp.go",
-          "sha256": "ffb25e085ee008f813129cb9bbdee2709e1f40cb7c467f00cb50b19c53631ea3"
+          "sha256": "3d7be52960cc0358f06f190117eeed44ae855058b5db4fa796a5d42366d91278"
         },
         {
           "name": "shared-process-unix",
@@ -359,14 +409,14 @@
       "dependencies": [
         {
           "role": "kernel",
-          "identity": "76cdb2fcffe2bf8bdc6dbad642702cf8802cd538fe0341a0ec9b7a043a984e73"
+          "identity": "78d49e7cac39b95b882c8f1a096bbcdc0a23b3237a83dc7c345cf1962b1bded2"
         },
         {
           "role": "product-rules",
           "identity": "1eb81993761504bd72d76fc2c0dc380e697cf9d1e1827845da552803e2b71fce"
         }
       ],
-      "identity": "7ae5540d64288efcafc066335a83755d919788d5e4ffe2153e70de33d4e96e39"
+      "identity": "b971b0424edb2c3e5ada4b1616db449bf15d3983ee9ba44d25e3c8d8e67ea1dc"
     },
     {
       "role": "assembly",
@@ -379,6 +429,11 @@
       ],
       "content": [
         {
+          "name": "cmd-ownward-desktop_entry-go",
+          "path": "cmd/ownward/desktop_entry.go",
+          "sha256": "d29cdad3b7536c2180f2976170fc9f0a7fbff13bece48dcd9083e7dcf5a1a32b"
+        },
+        {
           "name": "cmd-ownward-service_install",
           "path": "cmd/ownward/service_install.go",
           "sha256": "1652d0a2dcd00d7306ab13bc9815cb6b4c1e8b4b2e7d48ecc2eb5f6813c6936e"
@@ -386,7 +441,7 @@
         {
           "name": "cmd-ownward-service_local",
           "path": "cmd/ownward/service_local.go",
-          "sha256": "89aa041cdf640bb920148052cca17f43fe18bb5379afb0c336f33e018e0911d9"
+          "sha256": "6af4ae724d3afc70f45349c9db5b8f245d4989287dcd27f03d97d358a54715d6"
         },
         {
           "name": "cmd-ownward-service_other",
@@ -416,7 +471,7 @@
         {
           "name": "current-command-assembly",
           "path": "cmd/ownward/main.go",
-          "sha256": "db21e0ec31de755a5ddb33e19d80c91ed1c0887ee0abe037d6bf2fe9d5f671ca"
+          "sha256": "df60decfda3cc5c5a6ccd8c80d9aeb1866f4283e9015ea679313543a74c05e27"
         },
         {
           "name": "explicit-assembly",
@@ -441,7 +496,22 @@
         {
           "name": "internal-assembly-handoff",
           "path": "internal/assembly/handoff.go",
-          "sha256": "1223e11935a400e7116b60a035473a975dc0b115130c16d89550f448f624f0ac"
+          "sha256": "2ca6fb0fec524758a443cd38a372e700aea664c28169617e51d733f3cfb1ab38"
+        },
+        {
+          "name": "internal-releasebundle-build-go",
+          "path": "internal/releasebundle/build.go",
+          "sha256": "7b29ee1a38ca86001fde89a93b7c7274abbcbcd56713bc67a919f8a339d26c25"
+        },
+        {
+          "name": "internal-releasebundle-bundle-go",
+          "path": "internal/releasebundle/bundle.go",
+          "sha256": "aa90a5d5043a4124972789acc2f93deae5da4c05c70158dee20169534994c6f0"
+        },
+        {
+          "name": "internal-releasebundle-icons-go",
+          "path": "internal/releasebundle/icons.go",
+          "sha256": "176e9caf8f29fe00af2722cebf7ae8a2bd9133d1abb3f6c3ea2806df0dfbf76c"
         },
         {
           "name": "kernel-generation-runtime",
@@ -456,7 +526,7 @@
         {
           "name": "runtime-config",
           "path": "internal/config/config.go",
-          "sha256": "4a197d700be2bc905387293367fe166b01bcda8ce70c0f99d6e33cca5dee4f01"
+          "sha256": "86dbd44b35a89e33fc4c0c4c7930b67af47e039935d4336ebc1684af3bb99dec"
         }
       ],
       "config": {
@@ -469,15 +539,15 @@
       "dependencies": [
         {
           "role": "access",
-          "identity": "7ae5540d64288efcafc066335a83755d919788d5e4ffe2153e70de33d4e96e39"
+          "identity": "b971b0424edb2c3e5ada4b1616db449bf15d3983ee9ba44d25e3c8d8e67ea1dc"
         },
         {
           "role": "authority-substrate",
-          "identity": "5ce8fe854042a34176925470569587b26bdc8caf4ea4bfa924d5b5cf5e399b84"
+          "identity": "1608c723f08910638d328fca57d13cfaa3ebb6258be01974ff7b7dccc2539ddb"
         },
         {
           "role": "kernel",
-          "identity": "76cdb2fcffe2bf8bdc6dbad642702cf8802cd538fe0341a0ec9b7a043a984e73"
+          "identity": "78d49e7cac39b95b882c8f1a096bbcdc0a23b3237a83dc7c345cf1962b1bded2"
         },
         {
           "role": "product-rules",
@@ -489,10 +559,10 @@
         },
         {
           "role": "vector",
-          "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
+          "identity": "c0af8126f2d9b51e70d27299b7f0cd2024ceab7a75789fffdc730be96b711a38"
         }
       ],
-      "identity": "c2c391c873916fb6c20a991cb9006b43b19914a57aec03725047143ff7a76514"
+      "identity": "fbaeee65a1a266270d9c675123eba34bf2cfc16925eef00a0a7a2bb8adb12477"
     },
     {
       "role": "authority-substrate",
@@ -637,7 +707,7 @@
         {
           "name": "internal-boundedstore-deployment_archive-go",
           "path": "internal/boundedstore/deployment_archive.go",
-          "sha256": "c47b513061b53dcd423a50abc47ccbe574635d0ecc26324a4469ec182d31fb16"
+          "sha256": "447ec04cdf5a680f9c7a633ba6f17129dccdf3f09335c802ef5879115e5e45e8"
         },
         {
           "name": "internal-boundedstore-deployment_cancel-go",
@@ -967,7 +1037,7 @@
         {
           "name": "internal-resourcebudget-disk-go",
           "path": "internal/resourcebudget/disk.go",
-          "sha256": "585c542516a3eb425b7c9b901eaf523d338c6049462e11111fe7466c238417e0"
+          "sha256": "4b785d9431e2d7656961b8defad9f7b7c63396e146a7e864e878b121469df6bc"
         },
         {
           "name": "internal-resourcebudget-disk_unix-go",
@@ -977,7 +1047,7 @@
         {
           "name": "internal-resourcebudget-disk_windows-go",
           "path": "internal/resourcebudget/disk_windows.go",
-          "sha256": "bcade663e0b39af518d3c3374c763518fb472b55bf0164d9696f586f3a7dbf35"
+          "sha256": "3136e961f7e3e499dc9035569145e06396b4d49150624f9e882716cf8b281007"
         },
         {
           "name": "internal-resourcebudget-ephemeral_unix-go",
@@ -1063,7 +1133,7 @@
         "storage_format": "ownward.sqlite-storage/v1"
       },
       "dependencies": [],
-      "identity": "5ce8fe854042a34176925470569587b26bdc8caf4ea4bfa924d5b5cf5e399b84"
+      "identity": "1608c723f08910638d328fca57d13cfaa3ebb6258be01974ff7b7dccc2539ddb"
     },
     {
       "role": "kernel",
@@ -1330,7 +1400,7 @@
       "dependencies": [
         {
           "role": "authority-substrate",
-          "identity": "5ce8fe854042a34176925470569587b26bdc8caf4ea4bfa924d5b5cf5e399b84"
+          "identity": "1608c723f08910638d328fca57d13cfaa3ebb6258be01974ff7b7dccc2539ddb"
         },
         {
           "role": "product-rules",
@@ -1342,10 +1412,10 @@
         },
         {
           "role": "vector",
-          "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
+          "identity": "c0af8126f2d9b51e70d27299b7f0cd2024ceab7a75789fffdc730be96b711a38"
         }
       ],
-      "identity": "76cdb2fcffe2bf8bdc6dbad642702cf8802cd538fe0341a0ec9b7a043a984e73"
+      "identity": "78d49e7cac39b95b882c8f1a096bbcdc0a23b3237a83dc7c345cf1962b1bded2"
     },
     {
       "role": "product-rules",
@@ -1441,7 +1511,7 @@
         {
           "name": "bundle-loader",
           "path": "internal/embedding/manifest.go",
-          "sha256": "373b9be22ac1841c3027f62870e8f77777cf801c652d232930b411307dceb4d0"
+          "sha256": "7760d98409e9bd7b4bc0883baf6b175c0b87d164a172109ad37f19a75c423f37"
         },
         {
           "name": "internal-embedding-acceptance_replace_other-go",
@@ -1456,7 +1526,7 @@
         {
           "name": "internal-embedding-builder-go",
           "path": "internal/embedding/builder.go",
-          "sha256": "4363ba17323830a879b4451bfe7b1b8f7de9fbf82de41ab3c8834a15d288edfd"
+          "sha256": "a340ae3e77a581ebb998451752d38989dc9fb7cca6336ce1e331194d576f864a"
         },
         {
           "name": "internal-embedding-compatibility-go",
@@ -1467,6 +1537,11 @@
           "name": "internal-embedding-query_stream-go",
           "path": "internal/embedding/query_stream.go",
           "sha256": "c09931f1b7a08185400c76cc64981e871b4d17b06f3c01d07a91e2be10880842"
+        },
+        {
+          "name": "internal-embedding-runtime_build-go",
+          "path": "internal/embedding/runtime_build.go",
+          "sha256": "55b7aa9357d8cf686ce163b81ff9f4d8b82f7a802d059667e1766c42f531d0e6"
         },
         {
           "name": "managed-runtime",
@@ -1594,6 +1669,11 @@
           "sha256": "b578e8bd2b919ff78e0649a5ee41fa69d73166f67a5a38afb814d8d579983536"
         },
         {
+          "name": "third_party-llama-cpp-build_portable_runtime-py",
+          "path": "third_party/llama.cpp/build_portable_runtime.py",
+          "sha256": "833da918ad2b7fffb5b443fe7be5e16b05de1e464dfe4b93d9bfe8b69d491d51"
+        },
+        {
           "name": "third_party-llama-cpp-build_runtime-py",
           "path": "third_party/llama.cpp/build_runtime.py",
           "sha256": "370534d326158889cef127e6264d591eeb4002f0135feb9a8a2cee7b5952e06b"
@@ -1611,10 +1691,10 @@
         "space": "emb_3ea351940b656cd8366a5581c2758852"
       },
       "dependencies": [],
-      "identity": "2c06b503060279e2943aa332558572b326311391a2f71ad4fdbcbe15bbacc0e9"
+      "identity": "c0af8126f2d9b51e70d27299b7f0cd2024ceab7a75789fffdc730be96b711a38"
     }
   ],
-  "identity": "8666cf6035f66a81fcb161bdeab2f0089fac4212a6ec32d091ad2e0a4216b0e2",
+  "identity": "2e49a55e4f5c3f3c27f000b40bac016df7f37cb90857b1eb536484d1efe5f8a1",
   "audit": {
     "described_product_candidate": "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8",
     "migration_source_git": "dc2c7a09e67f06cfaacbe0a201c7ff27b20d6182"

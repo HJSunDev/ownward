@@ -3,14 +3,12 @@ package main
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -36,9 +34,8 @@ func (s controlHTTPServer) previewAsset(ctx context.Context, v contract.AssetVer
 
 // 只定位本机受保护恢复通道；不是体系或主体身份。
 func ownerRecoveryScope(dataDir string) string {
-	abs, _ := filepath.Abs(dataDir)
-	digest := sha256.Sum256([]byte(strings.ToLower(filepath.Clean(abs))))
-	return "local-recovery:" + hex.EncodeToString(digest[:])
+	scope, _ := localowner.DataScope(dataDir)
+	return scope
 }
 
 type controlHTTPServer struct {
@@ -59,6 +56,7 @@ func (s *controlHTTPServer) prepareRecovery(scope string) error {
 	if err != nil {
 		return err
 	}
+	vault.Scope = scope
 	var token [32]byte
 	if _, err := rand.Read(token[:]); err != nil {
 		return err
