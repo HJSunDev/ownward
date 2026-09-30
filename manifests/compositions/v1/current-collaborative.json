@@ -155,7 +155,7 @@
         {
           "name": "internal-adapter-ownerwindow-static-app-js",
           "path": "internal/adapter/ownerwindow/static/app.js",
-          "sha256": "bad697fe7b44c73db6e77f4385bcd4373f7a09864c5719c57fcd6af33fcc6614"
+          "sha256": "50ac2ae8ebbcc40a059394c6e6c04c8b6f6fac0926881476bf02c73d2de3fd53"
         },
         {
           "name": "internal-adapter-ownerwindow-static-bootstrap-js",
@@ -190,12 +190,12 @@
         {
           "name": "internal-adapter-ownerwindow-static-ui-js",
           "path": "internal/adapter/ownerwindow/static/ui.js",
-          "sha256": "a8059bb37ee9c86f2d54b7fbd7e68648001b545b5c1996c8b4374052c0cfbe85"
+          "sha256": "137c735743accb80357a2d9a9992ec25308fd0d28b3771bea0a42e34695a7a2c"
         },
         {
           "name": "internal-adapter-ownerwindow-static-window-css",
           "path": "internal/adapter/ownerwindow/static/window.css",
-          "sha256": "e516d56f55591dcab6299150b9404ec7c3f407c172fbfde730253c26332958f7"
+          "sha256": "afe42bce0ab00e5aa801da41980d117bfcf6cfb5ee856da2eea496d31df7e07b"
         },
         {
           "name": "internal-adapter-remote-transport",
@@ -416,7 +416,7 @@
           "identity": "1eb81993761504bd72d76fc2c0dc380e697cf9d1e1827845da552803e2b71fce"
         }
       ],
-      "identity": "b222efe37a59bc8ce00087783375711f436892ab17ad9f4a85a224dc7e7aedaf"
+      "identity": "cdf636b46db6fb43a1db24b3a1ea4b8a599ebb4f97fc71bf21bc0ed2dfd5bea8"
     },
     {
       "role": "assembly",
@@ -539,7 +539,7 @@
       "dependencies": [
         {
           "role": "access",
-          "identity": "b222efe37a59bc8ce00087783375711f436892ab17ad9f4a85a224dc7e7aedaf"
+          "identity": "cdf636b46db6fb43a1db24b3a1ea4b8a599ebb4f97fc71bf21bc0ed2dfd5bea8"
         },
         {
           "role": "authority-substrate",
@@ -562,7 +562,7 @@
           "identity": "c0af8126f2d9b51e70d27299b7f0cd2024ceab7a75789fffdc730be96b711a38"
         }
       ],
-      "identity": "bd1c1380314a4e2361e1cfc3e4ac446ddef6bd2673af4decc290d8a030299c82"
+      "identity": "bd889d1e7555209c39f2b853ce7a928c77cbd61b9e71d16fb511b5a7e9d9c4f0"
     },
     {
       "role": "authority-substrate",
@@ -1694,7 +1694,7 @@
       "identity": "c0af8126f2d9b51e70d27299b7f0cd2024ceab7a75789fffdc730be96b711a38"
     }
   ],
-  "identity": "43a4a90220cf855e9de50cc5d47c1b7fc9cf49c657feec7436ec25d728fa0c33",
+  "identity": "96504e08431658ccd00016856ffaeb1293673c485d4b2012bf626b30f376f23a",
   "audit": {
     "described_product_candidate": "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8",
     "migration_source_git": "dc2c7a09e67f06cfaacbe0a201c7ff27b20d6182"

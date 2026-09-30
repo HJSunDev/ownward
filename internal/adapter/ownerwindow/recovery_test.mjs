@@ -85,7 +85,7 @@ async function harness({failFirst=false,rescue:initialRescue,overrides={}}={}){
   const editor=new vm.SourceTextModule(await readFile(new URL('editor.js',base),'utf8'),{context});
   await editor.link(spec=>spec.includes('api.js')?apiModule:uiModule);await editor.evaluate();
   const reader=new vm.SourceTextModule(await readFile(new URL('reading.js',base),'utf8'),{context});await reader.link(spec=>spec.includes('api.js')?apiModule:uiModule);await reader.evaluate();
-  const app=new vm.SourceTextModule((await readFile(new URL('app.js',base),'utf8'))+'\nexport {stopOwnward};'+'\nexport {state,newDraft,openDraft,editAsset,navigate,manageRescue,forget,poll,showRelations,openAsset,activityList,refreshPending,assetsPage};',{context});
+  const app=new vm.SourceTextModule((await readFile(new URL('app.js',base),'utf8'))+'\nexport {stopOwnward};'+'\nexport {state,newDraft,openDraft,editAsset,navigate,manageRescue,forget,poll,showRelations,openAsset,activityList,refreshPending,assetsPage,homePage,draftsPage,libraryEmptyState,relationsPage};',{context});
   const graphModule=synthetic({createGraph:options=>({node:ui.el('div',{},options.organization==='available'?'暂无关联资料':'关系正在重新整理'),capture:()=>null,destroy(){}})});
   await app.link(spec=>spec.includes('reading.js')?reader:spec.includes('graph.js')?graphModule:spec.includes('api.js')?apiModule:spec.includes('editor.js')?editor:uiModule);await app.evaluate();
   const bootstrap=async()=>{const module=new vm.SourceTextModule(await readFile(new URL('bootstrap.js',base),'utf8'),{context});await module.link(spec=>spec.includes('api.js')?apiModule:app);await module.evaluate();};
@@ -523,4 +523,55 @@ test('unrelated updates preserve the selected reader and its loaded text',async(
   const index=layout.all().find(n=>n.class==='library-index');assert.equal(index.children.filter(n=>n.tagName==='BUTTON').length,2);assert.ok(layout.contains(reader));
   items=[a,{...b,state:'stopped'}];await h.app.state.libraryRefresh();assert.equal(index.children.filter(n=>n.tagName==='BUTTON')[1].disabled,true);assert.ok(layout.contains(reader));
   assert.equal(reads.filter(q=>q.view==='content'&&q.handle==='a').length,1,'directory changes never reload the active text');
+});
+
+
+test('library empty states respect search, status filters, pagination and stopped content',async()=>{
+  const h=await harness();
+  for(const input of [{query:'missing'},{filter:'pending'},{query:'missing',filter:'ready',after:'page2'}]){
+    const value=h.app.libraryEmptyState(input);assert.equal(value.action,'clear');assert.doesNotMatch(value.title,/还没有资料/);
+  }
+  assert.equal(h.app.libraryEmptyState({after:'page2'}).action,'first');
+  assert.equal(h.app.libraryEmptyState().action,'create');
+  assert.equal(h.app.libraryEmptyState({count:2,filter:'stopped'}).action,undefined);
+});
+
+test('empty drafts collapse duplicate groups but a later empty page retains a way back',async()=>{
+  const h=await harness(),epoch=h.app.state.epoch;
+  const empty=await h.app.draftsPage(epoch);
+  const labels=empty.all().filter(n=>n.tagName==='BUTTON').map(n=>n.label);
+  assert.deepEqual(labels,['新建文稿']);
+  assert.equal(empty.all().filter(n=>n.tagName==='SECTION').length,0);
+  h.app.state.after='later';
+  const paged=await h.app.draftsPage(epoch);
+  assert.ok(paged.all().some(n=>n.label==='回到第一页'));
+});
+
+test('clearing empty search results resets both conditions and keeps recovery available in the directory',async()=>{
+  const h=await harness();h.app.state.search='missing';h.app.state.filter='pending';h.app.state.surface='assets';
+  const page=await h.app.assetsPage(h.app.state.epoch);
+  const directory=page.querySelector('.library-browser');
+  const clear=directory.all().find(n=>n.label==='清除查找条件');assert.ok(clear);
+  h.app.state.editor=null;h.saved.clear();await clear.run();
+  assert.equal(h.app.state.search,'');assert.equal(h.app.state.filter,'');assert.equal(h.app.state.after,'');
+  assert.ok(h.calls.some(c=>c[0]==='query'&&c[1].view==='assets'&&c[1].query===''&&c[1].state===''));
+});
+
+
+test('first arriving material replaces an empty reader without requiring a page reload',async()=>{
+  let items=[];const asset={reference:'new-material',handle:'new-handle',version:'v1',state:'ready'};
+  const h=await harness({overrides:{query:async q=>q.view==='assets'?{assets:items}:q.view==='source'?{source:{actor:'test'}}:{text:{text:'First material',more:false}},resolve:async()=>({assets:[asset]})}});
+  const page=await h.app.assetsPage(h.app.state.epoch);items=[asset];await h.app.state.libraryRefresh();
+  await new Promise(r=>setImmediate(r));
+  assert.equal(h.app.state.selection?.reference,asset.reference);
+  assert.ok(page.querySelector('.library-reader').querySelector('.reading-surface'));
+});
+
+
+test('empty relationship overview offers a start without an inoperative graph, but populated overview keeps the graph',async()=>{
+  let assets=[];const h=await harness({overrides:{query:async()=>({assets,organization:'available'})}});
+  const empty=await h.app.relationsPage(h.app.state.epoch);
+  assert.equal(h.app.state.graph,null);assert.ok(empty.all().some(n=>n.label==='新建文稿'));
+  assets=[{reference:'one',state:'ready'}];await h.app.relationsPage(h.app.state.epoch);
+  assert.ok(h.app.state.graph);
 });

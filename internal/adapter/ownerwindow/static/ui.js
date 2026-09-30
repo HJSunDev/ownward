@@ -83,7 +83,7 @@ export function errorMessage(error){
 export function clearNotice() { const box=document.getElementById('notice');box.hidden=true;noticeOwners.delete(box); }
 export const date = value => value ? new Intl.DateTimeFormat('zh-CN', {month:'long', day:'numeric', hour:'2-digit', minute:'2-digit'}).format(new Date(value)) : '';
 export const heading = (title, description, action) => el('header', {class:'page-heading'}, el('div',{},el('h1',{},title),description?el('p',{class:'lead'},description):null),action);
-export const empty = (title, description, action) => { if(action?.classList)action.classList.add('align-start'); return el('div',{class:'empty'},el('h3',{},title),description?el('p',{},description):null,action); };
+export const empty = (title, description, action, style='') => el('div',{class:`empty ${style}`.trim()},el('h3',{},title),description?el('p',{},description):null,action);
 export const prose = (value, cls = '') => el('pre',{class:`prose ${cls}`},value);
 export const tag = (value, cls = '') => el('span',{class:`tag ${cls}`},value);
 export const row = (...children) => el('div',{class:'row'},...children);

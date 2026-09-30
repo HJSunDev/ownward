@@ -26,6 +26,17 @@ class Node {
 }
 const tick=()=>new Promise(r=>setImmediate(r));
 const deferred=()=>{let resolve;return {promise:new Promise(r=>resolve=r),resolve:v=>resolve(v)};};
+test('empty state preserves the supplied action style and click behaviour',async()=>{
+  const {ui}=await harness();let clicks=0;
+  for(const style of ['primary','quiet','text-link']){
+    const action=ui.button('开始',()=>clicks++,style),before=action.className;
+    const state=ui.empty('没有内容','说明',action);
+    assert.equal(action.className,before,'the parent must not change action alignment or padding');
+    assert.equal(state.querySelectorAll('button').length,1);
+    await action.click();
+  }
+  assert.equal(clicks,3);
+});
 async function harness({query=async()=>({text:{text:' second needle',more:false}}),text=async()=>'{"source":{"actor":"Original source"}}',first={text:{text:'Title\n\nfirst needle',more:true,next_offset:19}},...options}={}){
   const nodes=new Map(),calls=[],document={createElement:tag=>new Node(tag),querySelector:()=>null,querySelectorAll:()=>[],getElementById:id=>{if(!nodes.has(id))nodes.set(id,new Node('div'));return nodes.get(id);}};
   const context=vm.createContext({document,window:{getSelection:()=>null},queueMicrotask,console,Date,Intl});

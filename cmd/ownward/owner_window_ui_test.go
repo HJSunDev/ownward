@@ -110,7 +110,7 @@ func TestOwnerWindowUnitThreeBrowser(t *testing.T) {
 	principal, _, agent := f.agent(t, "写作伙伴")
 	f.agent(t, "写作伙伴")
 	count := 28
-	if n, e := strconv.Atoi(os.Getenv("OWNWARD_UI_ASSETS")); e == nil && n > 0 && n <= 10000 {
+	if n, e := strconv.Atoi(os.Getenv("OWNWARD_UI_ASSETS")); e == nil && n >= 0 && n <= 10000 {
 		count = n
 	}
 	titles := []string{"个人知识库的组织方式", "从问题出发做笔记", "检索与回忆的区别", "为什么保留原始来源", "写作提纲：把想法连起来", "周末去京都", "京都步行路线", "旅行轻装清单", "雨天的备用安排", "产品访谈记录", "访谈后的三个观察", "本周待读书目"}
@@ -179,8 +179,14 @@ func TestOwnerWindowUnitThreeBrowser(t *testing.T) {
 	if e := f.s.ActivateGeneration(f.ctx, "browser-organized", ""); e != nil {
 		t.Fatal(e)
 	}
-	f.act(t, contract.OwnerAction{Action: "create_draft", Text: textPtr("文章草稿：让资料重新参与思考\n\n保存只是开始。一个有用的知识库，应当帮助我们沿着问题重新找到内容、理解联系，并继续写作。")})
-	f.act(t, contract.OwnerAction{Action: "create_draft", Text: textPtr("下次访谈的问题\n\n你最近一次找资料是为了什么？\n哪些线索帮助你找到了它？\n找不到的时候，你会怎么做？")})
+	draftTexts := []string{"文章草稿：让资料重新参与思考\n\n保存只是开始。一个有用的知识库，应当帮助我们沿着问题重新找到内容、理解联系，并继续写作。", "下次访谈的问题\n\n你最近一次找资料是为了什么？\n哪些线索帮助你找到了它？\n找不到的时候，你会怎么做？"}
+	draftCount := len(draftTexts)
+	if n, e := strconv.Atoi(os.Getenv("OWNWARD_UI_DRAFTS")); e == nil && n >= 0 && n <= len(draftTexts) {
+		draftCount = n
+	}
+	for _, content := range draftTexts[:draftCount] {
+		f.act(t, contract.OwnerAction{Action: "create_draft", Text: textPtr(content)})
+	}
 	write := func(file string, value any) {
 		b, _ := json.Marshal(value)
 		if e := os.WriteFile(file, b, 0600); e != nil {

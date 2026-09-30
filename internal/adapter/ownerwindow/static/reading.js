@@ -10,12 +10,12 @@ export function createReader({asset,first,source,valid,onEdit,onRelations,onForg
   const progress=el('progress',{max:1,value:0,'aria-label':'当前已加载内容的阅读位置'});
   const find=el('input',{type:'search',placeholder:'在正文中查找','aria-label':'在正文中查找'}),count=el('span',{class:'find-count',role:'status'});
   const edit=button('编辑',()=>{if(ok()&&!updated)return onEdit();},'text-link'),relations=button('查看关联',()=>{if(ok()&&!updated)return onRelations();},'text-link');
-  const remove=button('删除资料',async()=>{if(updated)return;const all=await text('content',asset.handle,ok);if(ok()&&!updated)return onForget(all);},'danger-quiet');
+  const remove=button('删除资料',async()=>{if(updated)return;const all=await text('content',asset.handle,ok);if(ok()&&!updated)return onForget(all);},'danger-quiet align-start');
   const sourceText=el('div'),sourcePanel=el('aside',{class:'reader-notes','aria-label':'来源与状态'},el('h3',{},'来源'),sourceText,status,el('time',{},date(asset.updated_at)),edit,relations,remove);
   function showSource(value){sourceText.replaceChildren(el('p',{},value?.authored?'我创建的':value?.actor||'未注明来源'),...(value?.ref?[el('p',{class:'source-ref'},value.ref)]:[]));}
   showSource(source);
   const notes=button('来源',()=>{const open=getComputedStyle(sourcePanel).display==='none';node.classList.toggle('notes-open',open);node.classList.toggle('notes-closed',!open);notes.setAttribute('aria-expanded',String(open));},'quiet',{'aria-expanded':'false'});
-  sourcePanel.prepend(button('收起来源',()=>{node.classList.remove('notes-open');node.classList.add('notes-closed');notes.setAttribute('aria-expanded','false');notes.focus();},'notes-close'));
+  sourcePanel.prepend(button('收起来源',()=>{node.classList.remove('notes-open');node.classList.add('notes-closed');notes.setAttribute('aria-expanded','false');notes.focus();},'notes-close align-start'));
   const load=button('继续阅读',()=>next(true),'read-continuation'),end=el('div',{class:'reading-sentinel'},load);
   const changed=button('这份资料已更新 · 重新打开',onReload,'reading-update');changed.hidden=true;
   const jump=button(basis?'继续定位引用':'继续到上次阅读的位置',()=>restorePosition(),'text-link');jump.hidden=true;

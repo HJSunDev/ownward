@@ -178,11 +178,11 @@ function draftRows(drafts,epoch){
 async function homePage(epoch){
   const [drafts,assets,recent]=await Promise.all([loadPage({view:'drafts',limit:3}),loadPage({view:'assets',limit:4}),loadPage({view:'recent',limit:5})]);if(!valid(epoch))return;
   const shelf=el('div',{class:'home-shelf'});for(const asset of assets.assets||[])shelf.append(await assetCard(asset,epoch));
-  return el('div',{class:'page home-page'},heading('最近','',button('新建文稿',newDraft,'primary')),
-    el('section',{class:'home-writing'},el('div',{class:'section-title'},el('h2',{},'进行中的文稿'),button('全部文稿',()=>navigate('drafts'),'text-link')),
-      drafts.drafts?.length?draftRows(drafts.drafts,epoch):el('p',{class:'empty-line'},'没有进行中的文稿。',button('新建',newDraft,'text-link'))),
-    el('div',{class:'home-lower'},section('近期资料',shelf.childElementCount?shelf:el('p',{class:'empty-line'},'还没有保存的资料。'),button('查看资料',()=>navigate('assets'),'text-link')),
-      section('最近动态',activityList(recent.activity||[],epoch),button('全部动态',()=>navigate('events'),'text-link'))));
+  return el('div',{class:'page home-page'},heading('最近','',button('新建文稿',newDraft,'primary heading-action')),
+    el('section',{class:'home-writing'},el('div',{class:'section-title'},el('h2',{},'进行中的文稿'),button('全部文稿',()=>navigate('drafts'),'text-link heading-action')),
+      drafts.drafts?.length?draftRows(drafts.drafts,epoch):empty('还没有进行中的文稿','新建一篇文稿开始写作，草稿会自动保存。',null,'empty-feature')),
+    el('div',{class:'home-lower'},section('近期资料',shelf.childElementCount?shelf:el('p',{class:'empty-line'},'保存的资料会出现在这里。'),shelf.childElementCount?button('查看资料',()=>navigate('assets'),'text-link'):null),
+      section('最近动态',recent.activity?.length?activityList(recent.activity,epoch):el('p',{class:'empty-line'},'暂时没有新的动态。'),recent.activity?.length?button('全部动态',()=>navigate('events'),'text-link'):null)));
 }
 function pager(page,run,label='继续查看'){
   return page.next?el('div',{class:'pagination'},button(label,()=>run(page.next))):null;
@@ -199,7 +199,9 @@ async function assetCard(asset,epoch,open=openAsset){
 async function draftsPage(epoch){
   const [drafts,assets]=await Promise.all([loadPage({view:'drafts',after:state.after}),loadPage({view:'continuable',limit:4})]);if(!valid(epoch))return;
   const cards=el('div',{class:'continuable-list'});for(const asset of assets.assets||[])cards.append(await assetCard(asset,epoch));
-  return el('div',{class:'page drafts-page'},heading('文稿','',button('新建文稿',newDraft,'primary')),section('进行中',drafts.drafts?.length?draftRows(drafts.drafts,epoch):el('p',{class:'empty-line'},'没有进行中的文稿。'),pager(drafts,async after=>{state.after=after;await render();})),section('可以继续',cards.childElementCount?cards:el('p',{class:'empty-line'},'保存后的文稿可以在这里继续编辑。')));
+  const pageHeading=heading('文稿','',button('新建文稿',newDraft,'primary heading-action'));
+  if(!drafts.drafts?.length&&!cards.childElementCount&&!state.after&&!drafts.next&&!assets.next)return el('div',{class:'page drafts-page'},pageHeading,empty('还没有文稿','新建一篇文稿开始写作，草稿会自动保存。',null,'empty-feature'));
+  return el('div',{class:'page drafts-page'},pageHeading,section('进行中',drafts.drafts?.length?draftRows(drafts.drafts,epoch):el('p',{class:'empty-line'},state.after?'这一页没有文稿。':'没有进行中的文稿。'),pager(drafts,async after=>{state.after=after;await render();}),state.after?button('回到第一页',async()=>{state.after='';await render();},'text-link'):null),section('可以继续',cards.childElementCount?cards:el('p',{class:'empty-line'},'保存到资料的文稿，可以在这里继续编辑。')));
 }
 // An unmounted rescue still owns the single writing workspace. Flush only
 // releases it after both the content and any pending operation are settled.
@@ -255,6 +257,12 @@ function installEditor(meta,content,rescue,show=true){
   return editor;
 }
 function releaseEditor(editor){if(state.editor!==editor)return null;const visible=main.contains(editor.node);state.editor=null;document.querySelectorAll('.resume-bar').forEach(n=>n.remove());return visible;}
+function libraryEmptyState({count=0,query='',filter='',after=''}={}){
+  if(count)return {title:'资料正在清理',description:'清理完成后会从目录中移除。'};
+  if(query||filter)return {index:'当前条件下没有资料',title:'没有匹配的资料',description:'试试其他关键词或状态，也可以清除条件查看全部资料。',action:'clear'};
+  if(after)return {index:'这一页没有资料',title:'已浏览到末尾',description:'回到第一页查看当前资料。',action:'first'};
+  return {index:'还没有资料',title:'资料会收在这里',description:'可以新建文稿，也可以让已连接的应用保存资料。',action:'create'};
+}
 async function assetsPage(epoch){
   const input=el('input',{type:'search',placeholder:'搜索资料','aria-label':'查找资料',value:state.search});
   const filter=createSelect({label:'资料状态',skin:'toolbar',value:state.filter,options:Object.entries({'':'全部状态',ready:'已整理',pending:'待整理',stopped:'已停止使用'}).map(([value,label])=>({value,label})),onChange:value=>{state.filter=value;search();}});
@@ -266,11 +274,14 @@ async function assetsPage(epoch){
   const entries=new Map(),previews=new Map(),versions=new Map(),current=scope(),pagination=el('div');
   const list=el('div',{class:'library-index','aria-label':'资料目录'}),reader=el('section',{class:'library-reader','aria-label':'阅读资料'});
   const layout=el('div',{class:'library-layout'},el('aside',{class:'library-browser'},
-    el('header',{class:'library-heading'},el('h1',{},'资料'),button('+',newDraft,'new-document',{'aria-label':'新建文稿',title:'新建文稿'})),
+    el('header',{class:'library-heading'},el('h1',{},'资料'),button(el('span',{class:'plus-icon','aria-hidden':'true'}),newDraft,'new-document',{'aria-label':'新建文稿',title:'新建文稿'})),
     el('div',{class:'library-search'},input,button('查找',search,'search-button')),
     el('div',{class:'library-filter'},filter.node),list,
     pagination,state.after?button('回到第一页',async()=>{state.after='';await render();},'text-link'):null),reader);
   const alive=()=>valid(epoch)&&current();
+  const emptyState=()=>libraryEmptyState({count:assets.length,query:state.search,filter:state.filter,after:state.after});
+  const emptyAction=kind=>kind==='create'?button('新建文稿',newDraft,'primary'):kind?button(kind==='clear'?'清除查找条件':'回到第一页',async()=>{if(kind==='clear'){state.search='';state.filter='';}state.after='';state.libraryReference=null;await render();},'quiet empty-recovery'):null;
+  function showEmptyReader(){const info=emptyState();reader.replaceChildren(empty(info.title,info.description,emptyAction(info.action)));}
   const listed=el('span',{class:'listed-count',role:'status'});layout.querySelector?.('.library-filter')?.append(listed);
   function makeEntry(asset){
     const identity=JSON.stringify([asset.version,asset.state]);
@@ -292,7 +303,7 @@ async function assetsPage(epoch){
     const top=el('div',{'aria-hidden':'true',style:`height:${rows[start]?.top||0}px;flex-shrink:0`}),bottom=el('div',{'aria-hidden':'true',style:`height:${Math.max(0,height-bottomAt)}px;flex-shrink:0`});
     list.replaceChildren(top,...visible.map(r=>r.asset?makeEntry(r.asset):el('h2',{class:'index-group'},r.label)),bottom);
     for(const [id,entry]of entries)entry.setAttribute('aria-current',String(id===state.libraryReference));
-    if(!assets.length)list.append(empty(state.search?'没有找到资料':'这里还没有资料',''));
+    if(!assets.length){const info=emptyState();list.append(el('div',{class:'index-empty'},el('p',{},info.index),el('div',{class:'narrow-empty-help'},el('p',{},info.description),emptyAction(info.action))));}
     listed.textContent=`已列出 ${assets.length} 条`;
   }
   async function moreIndex(){
@@ -313,7 +324,7 @@ async function assetsPage(epoch){
   state.libraryRefresh=async()=>{
     if(!alive())return;const fresh=await loadPage({view:'assets',query:state.search,state:state.filter,after:state.after});if(!alive())return;
     const signature=items=>JSON.stringify((items||[]).map(a=>[a.reference,a.version,a.state]));
-    if(signature(fresh.assets)!==signature(assets)||fresh.next!==nextPage)populate(fresh);
+    if(signature(fresh.assets)!==signature(assets)||fresh.next!==nextPage){populate(fresh);if(!state.selection&&!state.libraryReference){const available=assets.find(a=>a.state!=='stopped');if(available)select(available,false);else showEmptyReader();}}
   };
   async function select(asset,explicit){
     const at=++selection,active=()=>alive()&&at===selection,cachedPreview=previews.get(asset.reference);state.libraryReference=asset.reference;state.selection=null;
@@ -334,7 +345,7 @@ async function assetsPage(epoch){
     }catch(error){if(active())reader.replaceChildren(empty('暂时无法打开',errorMessage(error),button('重试',()=>select(asset,explicit))));}
   }
   const initial=assets.find(a=>a.reference===state.libraryReference&&a.state!=='stopped')||assets.find(a=>a.state!=='stopped');
-  if(initial)select(initial,false);else reader.append(empty(assets.length?'资料正在清理':'还没有可阅读的资料',state.search?'可以换个关键词再试。':'新建一篇文稿，或通过已连接的应用保存资料。',button('新建文稿',newDraft,'primary')));
+  if(initial)select(initial,false);else showEmptyReader();
   return layout;
 }
 async function openAsset(asset){
@@ -370,7 +381,7 @@ function activityList(items,epoch){
 }
 async function eventsPage(epoch){
   const page=await loadPage({view:'recent',after:state.after});
-  return el('div',{class:'page events-page'},heading('动态','资料的更新与访问变更。'),activityList(page.activity||[],epoch),pager(page,async after=>{state.after=after;await render();},'查看更早'),state.after?button('回到最近',async()=>{state.after='';await render();}):null);
+  return el('div',{class:'page events-page'},heading('动态','资料的更新与访问变更。'),page.activity?.length?activityList(page.activity,epoch):empty(state.after?'没有更早的动态':'暂无动态','',null,'empty-feature'),pager(page,async after=>{state.after=after;await render();},'查看更早'),state.after?button('回到最近',async()=>{state.after='';await render();}):null);
 }
 async function openGraphAsset(asset,neighborhood=false,basis=null){
   const epoch=state.epoch,current=scope(),page=await resolve(asset.reference,asset.handle);if(!valid(epoch)||!current())return;
@@ -387,6 +398,7 @@ function graphPage(epoch,assets,page,center=null,relations=null){
 }
 async function relationsPage(epoch){
   const page=await loadPage({view:'overview',after:state.after});if(!valid(epoch))return;
+  if(!page.assets?.length&&!page.next&&!state.after)return el('div',{class:'page graph-page'},heading('关联图',''),empty('还没有资料','保存资料后，可以在这里浏览它们的联系。',button('新建文稿',newDraft,'primary'),'empty-feature'));
   return graphPage(epoch,page.assets||[],page);
 }
 async function showRelations(asset,after='',quote=''){
