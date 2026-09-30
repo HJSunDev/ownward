@@ -17,6 +17,38 @@ import (
 	"github.com/HJSunDev/ownward/internal/desktop"
 )
 
+type entryReadBusy struct{}
+
+func (entryReadBusy) Error() string { return "database is busy" }
+func (entryReadBusy) Code() int     { return 5 }
+
+func TestDesktopIdentityReadRecoversTransientFailure(t *testing.T) {
+	for _, recover := range []bool{true, false} {
+		calls := 0
+		_, err := readDesktopIdentity(context.Background(), "existing", func(context.Context, string) (contract.ControlState, error) {
+			calls++
+			if calls == 1 {
+				return contract.ControlState{}, entryReadBusy{}
+			}
+			if recover {
+				return contract.ControlState{ActiveComposition: "unchanged"}, nil
+			}
+			return contract.ControlState{}, os.ErrNotExist
+		})
+		if calls != 2 || (recover && err != nil) || (!recover && !errors.Is(err, os.ErrNotExist)) {
+			t.Fatal(calls, err)
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := readDesktopIdentity(ctx, "existing", func(context.Context, string) (contract.ControlState, error) {
+		return contract.ControlState{}, entryReadBusy{}
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+}
+
 func TestDesktopDetailsDoNotRepeatFailedOperation(t *testing.T) {
 	attempts, prompts, details := 0, 0, 0
 	problem := &entryProblem{message: "请先完成迁移。", cause: errors.New("test diagnostic")}

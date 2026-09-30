@@ -68,6 +68,37 @@ func TestWindowsShortcutsAreDurableUserLaunchers(t *testing.T) {
 	}
 }
 
+func TestWindowsFreshAccountPathsAvoidHostAppData(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("APPDATA", filepath.Join(home, "AppData", "Roaming"))
+	root, e := AccountRoot()
+	if e != nil || root != filepath.Join(home, ".ownward") {
+		t.Fatal(root, e)
+	}
+	state, e := StatePath()
+	if e != nil || state != filepath.Join(root, "desktop.json") {
+		t.Fatal(state, e)
+	}
+	if e = os.MkdirAll(root, 0700); e != nil {
+		t.Fatal(e)
+	}
+	if e = ValidateSharedDirectory(root); e != nil {
+		t.Fatal(e)
+	}
+	legacy := filepath.Join(home, "AppData", "Roaming", "Ownward", "desktop.json")
+	if e = os.MkdirAll(filepath.Dir(legacy), 0700); e != nil {
+		t.Fatal(e)
+	}
+	if e = os.WriteFile(legacy, []byte("{}"), 0600); e != nil {
+		t.Fatal(e)
+	}
+	state, e = StatePath()
+	if e != nil || state != legacy {
+		t.Fatal("existing location was lost", state, e)
+	}
+}
+
 func TestWindowsNativeChoiceDependency(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()

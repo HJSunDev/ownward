@@ -13,7 +13,7 @@ import (
 	"github.com/HJSunDev/ownward/internal/assembly"
 )
 
-func startManagedLocal(s installation, r *assembly.Runtime) (func(), error) {
+func startManagedLocal(s installation, r *assembly.Runtime, quit ...func()) (func(), error) {
 	identity, dataIdentity, err := sharedMCPIdentity(s.DataDir, version, r.Composition().Composition)
 	if err != nil {
 		return nil, err
@@ -26,6 +26,9 @@ func startManagedLocal(s installation, r *assembly.Runtime) (func(), error) {
 	secured.window, err = newOwnerWindow(r, s.DataDir)
 	if err != nil {
 		return nil, err
+	}
+	if len(quit) > 0 {
+		secured.SetOwnerQuit(quit[0])
 	}
 	if err := s.vault().Save(ownerRecoveryScope(s.DataDir), "owner-recovery", secured.recovery); err != nil {
 		return nil, err
@@ -47,17 +50,25 @@ func startManagedLocal(s installation, r *assembly.Runtime) (func(), error) {
 		}
 		base.ServeHTTP(w, request)
 	})
-	server := &http.Server{Handler: mountOwnerWindow(bearerTokenHandler(handler, d.BearerToken), secured.BrowserHandler(d.Endpoint)), ReadHeaderTimeout: 5 * time.Second}
+	life, cancel := context.WithCancel(context.Background())
+	server := &http.Server{Handler: mountOwnerWindow(bearerTokenHandler(handler, d.BearerToken), secured.BrowserHandler(d.Endpoint)), ReadHeaderTimeout: 5 * time.Second, BaseContext: func(net.Listener) context.Context { return life }}
 	_ = secured.PublishOwnerEntry(d.Endpoint) // optional, rebuildable window hint
 	path := filepath.Join(s.DataDir, "runtime", "mcp-service.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		cancel()
 		listener.Close()
 		return nil, err
 	}
 	if err := atomicWriteSharedMCPDescriptor(path, d); err != nil {
+		cancel()
 		listener.Close()
 		return nil, err
 	}
 	go server.Serve(listener)
-	return func() { _ = remote.Shutdown(context.Background(), server); _ = os.Remove(path) }, nil
+	return func() {
+		cancel()
+		_ = remote.Shutdown(context.Background(), server)
+		_ = server.Close()
+		_ = os.Remove(path)
+	}, nil
 }

@@ -8,10 +8,10 @@ import {readFile} from 'node:fs/promises';
 async function harness(overrides={},editorOverrides={},uiOverrides={}){
   const calls=[],saved=new Map(),visible=new Set();
   const nodes=new Map();
-  const node=id=>{if(!nodes.has(id))nodes.set(id,{textContent:'',hidden:false,append:()=>{},prepend:()=>{},contains:n=>visible.has(n),replaceChildren:()=>calls.push(['clear',id])});return nodes.get(id);};
+  const node=id=>{if(!nodes.has(id))nodes.set(id,{textContent:'',hidden:false,dataset:{},append:()=>{},prepend:()=>{},contains:n=>visible.has(n),replaceChildren:()=>calls.push(['clear',id])});return nodes.get(id);};
   const document={getElementById:node,querySelectorAll:()=>[],addEventListener:()=>{},activeElement:{tagName:'DIV'},hidden:false};
   const api={query:async()=>({changed:true,cursor:'new-cursor'}),resolve:async()=>({assets:[{reference:'asset',version:'v1'}]}),invalidate:()=>calls.push(['invalidate']),scope:()=>()=>true};
-  for(const n of ['act','text','request','logout','operationID'])api[n]=()=>{};
+  for(const n of ['act','text','request','quit','operationID'])api[n]=()=>{};
   Object.assign(api,overrides);
   const editor={Editor:class{},rescuedInput:()=>null,rescueNeedsWindow:()=>false,rescueCleanupPending:()=>false,retryRescueCleanup:()=>true,clearRescue:()=>saved.clear(),retainReceipt:()=>{}};
   Object.assign(editor,editorOverrides);
@@ -22,7 +22,7 @@ async function harness(overrides={},editorOverrides={},uiOverrides={}){
   const handlers={},window={addEventListener:(name,run)=>handlers[name]=run};
   const context=vm.createContext({document,window,navigator:{},setTimeout:()=>1,clearTimeout:()=>{}});
   const source=await readFile(new URL('./static/app.js',import.meta.url),'utf8');
-  const module=new vm.SourceTextModule(source+'\nexport {state,lock,poll,openDraft,newDraft,editAsset,restoredArchives}; export function observe(renderPage,pending){render=renderPage;refreshPending=pending;}',{context});
+  const module=new vm.SourceTextModule(source+'\nexport {stopOwnward,state,lock,poll,openDraft,newDraft,editAsset,restoredArchives}; export function observe(renderPage,pending){render=renderPage;refreshPending=pending;}',{context});
   await module.link(spec=>{const value=spec.includes('reading.js')?{createReader:()=>({node:{},status:{},destroy(){},markUpdated(){}})}:spec.includes('graph.js')?{createGraph:()=>({node:{},capture:()=>null,destroy(){}})}:spec.includes('api.js')?api:spec.includes('editor.js')?editor:ui;return new vm.SyntheticModule(Object.keys(value),function(){for(const [k,v] of Object.entries(value))this.setExport(k,v);},{context});});
   await module.evaluate();const app=module.namespace;
   app.observe(async()=>calls.push(['render']),async()=>calls.push(['pending']));
@@ -98,21 +98,54 @@ test('focused list defers its checkpoint and refreshes after blur without a new 
   assert.ok(h.calls.some(c=>c[0]==='render'));assert.equal(h.app.state.cursor,'new-cursor');
 });
 
-test('confirmed logout clears input before success, expired-session or disconnected replies',async()=>{
+test('application quit clears input only after accepted shutdown',async()=>{
   for(const status of [200,401,503,0]){
     let h;
-    h=await harness({logout:async()=>{
-      assert.equal(h.saved.size,0);assert.equal(h.app.state.editor,null);assert.equal(h.app.state.active,false);
-      if(status===401)h.handlers['owner-auth-lost']();
+    h=await harness({quit:async()=>{
+      assert.equal(h.saved.size,1);assert.ok(h.app.state.editor);assert.equal(h.app.state.active,true);
       if(status!==200)throw Object.assign(new Error('transport'),{status});
     }});
     await h.app.start({cursor:'initial'});h.saved.set('input','private');
     h.app.state.editor={dirty:true,persist:()=>h.saved.set('input','private'),destroy:()=>h.calls.push(['destroy'])};
-    await h.document.getElementById('logout').onclick();
-    assert.equal(h.saved.size,0);assert.equal(h.app.state.editor,null);
-    assert.match(h.document.getElementById('status').textContent,status===200||status===401?/已退出/:/尚未确认/);
-    h.handlers['owner-auth-lost']();assert.equal(h.saved.size,0);
+    await h.app.stopOwnward();
+    assert.equal(h.saved.size,status===200?0:1);
+    assert.equal(h.app.state.editor===null,status===200);
+    if(status===200){assert.equal(h.document.getElementById('entry').dataset.phase,'closed');assert.equal(h.document.getElementById('entry-help').hidden,true);}
+    else assert.equal(h.app.state.active,true);
   }
+});
+
+test('stop is visibly pending, blocks duplicate requests and polling, and reports its result in place',async()=>{
+  for(const failed of [false,true]){
+    let finish,stops=0,reads=0;
+    const response=new Promise((resolve,reject)=>{finish=()=>failed?reject(Object.assign(new Error('offline'),{status:0})):resolve();});
+    const h=await harness({quit:()=>{stops++;return response;},query:async()=>{reads++;return {};}});
+    const stopping=h.app.stopOwnward(),control=h.document.getElementById('stop-ownward'),feedback=h.document.getElementById('stop-feedback');
+    assert.equal(control.textContent,'正在停止…');assert.equal(control.disabled,true);
+    assert.equal(feedback.hidden,false);assert.match(feedback.textContent,/正在停止后台服务/);
+    await h.app.stopOwnward();await h.app.poll();assert.equal(stops,1);assert.equal(reads,0);
+    finish();await stopping;
+    if(failed){
+      assert.equal(control.disabled,false);assert.equal(control.textContent,'停止 Ownward');
+      assert.equal(feedback.hidden,false);assert.match(feedback.textContent,/尚未确认停止/);
+      assert.equal(h.app.state.exiting,false);assert.equal(h.app.state.active,true);
+    }else{
+      assert.equal(h.document.getElementById('entry-title').textContent,'Ownward 已停止');
+      assert.equal(h.app.state.active,false);assert.match(h.document.getElementById('status').textContent,/重新启动/);
+    }
+  }
+});
+
+test('stopping cannot discard text changed after confirmation or interrupt an editor operation',async()=>{
+  let action,stops=0;
+  const h=await harness({quit:async()=>{stops++;}},{},{confirm:async(_title,_body,_label,run)=>{action=run;}});
+  await h.app.start({cursor:'initial'});
+  h.app.state.editor={dirty:true,value:'shown text',busy:false};
+  await h.app.stopOwnward();
+  h.app.state.editor.value='newer text';
+  await assert.rejects(action(),/已有变化/);assert.equal(stops,0);
+  await h.app.stopOwnward();h.app.state.editor.busy=true;
+  await assert.rejects(action(),/仍在进行/);assert.equal(stops,0);
 });
 
 test('delayed draft switch cannot destroy a replacement editor or create another draft',async()=>{

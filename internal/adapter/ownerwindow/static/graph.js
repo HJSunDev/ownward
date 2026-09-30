@@ -20,13 +20,13 @@ export function createGraph({assets=[],next='',organization='available',center=n
   const clearSelection=()=>{if(center)return onOverview();serial++;focused=false;selected=null;draw();inspect();fit();};
   const back=button('返回概览',clearSelection,'graph-back');back.hidden=true;
   const more=button('显示更多资料',()=>loadMore(),'quiet');more.hidden=!next;
-  const scene=el('div',{class:'graph-scene'},viewport,el('div',{class:'graph-corner'},back),el('div',{class:'graph-controls'},button('−',()=>zoom(1/1.2),'icon',{'aria-label':'缩小'}),zoomLabel,button('+',()=>zoom(1.2),'icon',{'aria-label':'放大'}),button('适应画面',fit,'quiet')),el('div',{class:'graph-legend'},el('span',{class:'legend-dot'}),'已整理',el('span',{class:'legend-dot pending'}),'待整理',el('span',{class:'gesture-hint'},'拖动平移 · 滚轮缩放')));
+  const groupingNote=el('span',{class:'grouping-note',hidden:true},'阴影为近似分组');
+  const scene=el('div',{class:'graph-scene'},viewport,el('div',{class:'graph-corner'},back),el('div',{class:'graph-controls'},button('−',()=>zoom(1/1.2),'icon',{'aria-label':'缩小'}),zoomLabel,button('+',()=>zoom(1.2),'icon',{'aria-label':'放大'}),button('适应画面',fit,'quiet')),el('div',{class:'graph-legend'},el('span',{class:'legend-dot'}),'已整理',el('span',{class:'legend-dot pending'}),'待整理',groupingNote,el('span',{class:'gesture-hint'},'拖动平移 · 滚轮缩放')));
   const node=el('div',{class:'graph-explorer'},el('div',{class:'graph-workspace'},scene,details),el('div',{class:'graph-foot'},status,more));
   const touch=new Map();let pinch=null,velocity={x:0,y:0},motionPoint=null,motionAt=0;
   function coordinates(event){const p=new DOMPoint(event.clientX,event.clientY).matrixTransform(viewport.getScreenCTM().inverse());return {x:p.x,y:p.y};}
   function applyCamera(){
     world.setAttribute('transform',`translate(${camera.x} ${camera.y}) scale(${camera.k})`);zoomLabel.textContent=Math.round(camera.k*100)+'%';
-    for(const label of regions.querySelectorAll('text'))label.setAttribute('font-size',12/camera.k);
     // Labels and hit targets keep their physical size while the space zooms.
     const occupied=[];
     const groups=[...nodeLayer.children].sort((a,b)=>Number(b.getAttribute('data-node')===selected)-Number(a.getAttribute('data-node')===selected));
@@ -80,7 +80,8 @@ export function createGraph({assets=[],next='',organization='available',center=n
   function visibleGraph(){const all=[...nodes.values()],allEdges=[...edges.values()];if(!focused||!selected)return {nodes:all,edges:allEdges};const ids=new Set([selected]);for(const e of allEdges)if(e.source===selected||e.target===selected){ids.add(e.source);ids.add(e.target);}return {nodes:all.filter(n=>ids.has(n.id)),edges:allEdges.filter(e=>ids.has(e.source)&&ids.has(e.target))};}
   function draw(){
     if(!ok())return;const active=document.activeElement?.getAttribute('data-node'),shown=visibleGraph();points=layoutGraph(shown.nodes,shown.edges);for(const [id,p]of points){if(retainedPoints.has(id))Object.assign(p,{x:retainedPoints.get(id).x,y:retainedPoints.get(id).y});else retainedPoints.set(id,{x:p.x,y:p.y});}edgeLayer.replaceChildren();nodeLayer.replaceChildren();regions.replaceChildren();
-    if(!focused){const clusters=new Map();for(const p of points.values()){if(!clusters.has(p.group))clusters.set(p.group,[]);clusters.get(p.group).push(p);}for(const group of clusters.values()){if(group.length<2)continue;const minX=Math.min(...group.map(p=>p.x)),maxX=Math.max(...group.map(p=>p.x)),minY=Math.min(...group.map(p=>p.y)),maxY=Math.max(...group.map(p=>p.y));regions.append(svg('ellipse',{cx:(minX+maxX)/2,cy:(minY+maxY)/2,rx:(maxX-minX)/2+45,ry:(maxY-minY)/2+50,class:'cluster-wash'}));const label=svg('text',{x:minX-5,y:maxY+43,class:'cluster-label'});label.textContent='近似';regions.append(label);}}
+    if(!focused){const clusters=new Map();for(const p of points.values()){if(!clusters.has(p.group))clusters.set(p.group,[]);clusters.get(p.group).push(p);}for(const group of clusters.values()){if(group.length<2)continue;const minX=Math.min(...group.map(p=>p.x)),maxX=Math.max(...group.map(p=>p.x)),minY=Math.min(...group.map(p=>p.y)),maxY=Math.max(...group.map(p=>p.y));regions.append(svg('ellipse',{cx:(minX+maxX)/2,cy:(minY+maxY)/2,rx:(maxX-minX)/2+45,ry:(maxY-minY)/2+50,class:'cluster-wash'}));}}
+    groupingNote.hidden=regions.childElementCount===0;
 
     const neighbors=new Set([selected]);for(const e of shown.edges)if(e.source===selected||e.target===selected){neighbors.add(e.source);neighbors.add(e.target);}
     let spareLines=MAX_EDGES-shown.edges.length;

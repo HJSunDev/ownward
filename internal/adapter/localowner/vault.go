@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"github.com/HJSunDev/ownward/internal/desktop"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -45,11 +46,23 @@ func DataScope(dataDir string) (string, error) {
 }
 
 func Default() (Vault, error) {
-	dir, err := os.UserConfigDir()
+	dir, err := desktop.AccountRoot()
 	if err != nil {
 		return Vault{}, err
 	}
-	return Vault{Root: filepath.Join(dir, "Ownward", "connections")}, nil
+	root := filepath.Join(dir, "connections")
+	if _, e := os.Stat(root); errors.Is(e, os.ErrNotExist) {
+		if legacy, e := os.UserConfigDir(); e == nil {
+			legacy = filepath.Join(legacy, "Ownward", "connections")
+			if _, e = os.Stat(legacy); e == nil {
+				if e = desktop.ValidateSharedDirectory(legacy); e != nil {
+					return Vault{}, e
+				}
+				root = legacy
+			}
+		}
+	}
+	return Vault{Root: root}, nil
 }
 
 func (v Vault) path(system, connection string) (string, error) {

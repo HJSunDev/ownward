@@ -64,7 +64,7 @@ async function harness({failFirst=false,rescue:initialRescue,overrides={}}={}){
     text:async(_,handle)=>[...drafts.values()].find(d=>d.handle===handle)?.text,
     act:async input=>{calls.push(['act',input]);assert.equal(input.action,'create_draft');drafts.set('B',{reference:'B',handle:'hB',version:'v1',text:''});return {reference:'B',handle:'hB'};},
     replace:async(handle,value)=>{const d=[...drafts.values()].find(d=>d.handle===handle);d.text=value;d.version='v2';return {handle:d.handle};},
-    request:async()=>{},logout:async()=>{},initialize:async()=>{location.hash='';api.invalidate();return {cursor:'initial'};},...overrides
+    request:async()=>{},quit:async()=>{},initialize:async()=>{location.hash='';api.invalidate();return {cursor:'initial'};},...overrides
   };
   for(const name of ['query','resolve','text','act','replace']){const run=api[name];api[name]=async(...args)=>{const current=api.scope();const result=await run(...args);if(!current())throw Object.assign(new Error('old page'),{status:-1});return result;};}
   const ui={
@@ -85,7 +85,7 @@ async function harness({failFirst=false,rescue:initialRescue,overrides={}}={}){
   const editor=new vm.SourceTextModule(await readFile(new URL('editor.js',base),'utf8'),{context});
   await editor.link(spec=>spec.includes('api.js')?apiModule:uiModule);await editor.evaluate();
   const reader=new vm.SourceTextModule(await readFile(new URL('reading.js',base),'utf8'),{context});await reader.link(spec=>spec.includes('api.js')?apiModule:uiModule);await reader.evaluate();
-  const app=new vm.SourceTextModule(await readFile(new URL('app.js',base),'utf8')+'\nexport {state,newDraft,openDraft,editAsset,navigate,manageRescue,forget,poll,showRelations,openAsset,activityList,refreshPending,assetsPage};',{context});
+  const app=new vm.SourceTextModule((await readFile(new URL('app.js',base),'utf8'))+'\nexport {stopOwnward};'+'\nexport {state,newDraft,openDraft,editAsset,navigate,manageRescue,forget,poll,showRelations,openAsset,activityList,refreshPending,assetsPage};',{context});
   const graphModule=synthetic({createGraph:options=>({node:ui.el('div',{},options.organization==='available'?'暂无关联资料':'关系正在重新整理'),capture:()=>null,destroy(){}})});
   await app.link(spec=>spec.includes('reading.js')?reader:spec.includes('graph.js')?graphModule:spec.includes('api.js')?apiModule:spec.includes('editor.js')?editor:uiModule);await app.evaluate();
   const bootstrap=async()=>{const module=new vm.SourceTextModule(await readFile(new URL('bootstrap.js',base),'utf8'),{context});await module.link(spec=>spec.includes('api.js')?apiModule:app);await module.evaluate();};
@@ -233,22 +233,23 @@ test('memory-only pending operations still own the workspace, recovery entry and
     assert.equal(e.live,true);assert.equal(h.calls.filter(c=>c[0]==='act').length,0);
     await h.app.navigate('drafts');assert.ok(h.node('main').all().some(n=>n.label==='处理未保存内容'));
     let prompted=false;h.handlers.beforeunload({preventDefault(){prompted=true;}});assert.equal(prompted,true);
-    await h.node('logout').onclick();assert.equal(h.confirmations.at(-1).label,'清除暂存并退出');
+    await h.app.stopOwnward();assert.equal(h.confirmations.at(-1).label,'清除暂存并停止');
     await h.app.manageRescue();await h.confirmations.at(-1).run();assert.equal(e.live,false);
   }
 });
 
-test('unmounted rescue participates in unload and explicit logout, including an expired session',async()=>{
-  let h;h=await harness({failFirst:true,overrides:{logout:async()=>{h.handlers['owner-auth-lost']();throw Object.assign(new Error('expired'),{status:401});}}});
+test('failed application quit preserves unmounted rescue',async()=>{
+  let h;h=await harness({failFirst:true,overrides:{quit:async()=>{throw Object.assign(new Error('expired'),{status:401});}}});
   await h.app.start({cursor:'c1'});let prompted=false;h.handlers.beforeunload({preventDefault(){prompted=true;}});assert.equal(prompted,true);
-  await h.node('logout').onclick();assert.equal(h.saved.has(rescueKey),true);
-  const confirmation=h.confirmations.at(-1);assert.equal(confirmation.label,'清除暂存并退出');
+  await h.app.stopOwnward();assert.equal(h.saved.has(rescueKey),true);
+  const confirmation=h.confirmations.at(-1);assert.equal(confirmation.label,'清除暂存并停止');
   await confirmation.body.all().find(n=>n.label==='下载当前文字').run();assert.equal(await h.downloads[0].blob.text(),h.rescue.text);
-  await confirmation.run();assert.equal(h.saved.has(rescueKey),false);assert.equal(h.app.state.active,false);
+  await confirmation.run();assert.equal(h.saved.has(rescueKey),true);assert.equal(h.app.state.active,true);
 });
 
 test('locked reentry revalidates in place without duplicate handlers, navigation or polling',async()=>{
   const h=await harness();await h.bootstrap();
+  const listenerCounts=new Map(Object.entries(h.listeners).map(([name,list])=>[name,list.length]));
   const beforeUnload=()=>{let blocked=false;h.handlers.beforeunload({preventDefault(){blocked=true;}});return blocked;};
   for(let i=0;i<3;i++){
     await h.handlers['owner-auth-lost']();assert.equal(beforeUnload(),true);
@@ -257,8 +258,19 @@ test('locked reentry revalidates in place without duplicate handlers, navigation
     assert.equal(h.app.state.active,true);assert.equal(h.app.state.editor.value,h.rescue.text);
     assert.equal(h.calls.filter(c=>c[0]==='reload').length,0);assert.equal(beforeUnload(),true);
     assert.equal(h.node('navigation').children.length,5);
-    for(const list of Object.values(h.listeners))assert.equal(list.length,1);
+    for(const [name,list] of Object.entries(h.listeners))assert.equal(list.length,listenerCounts.get(name));
     assert.equal([...h.timers.values()].filter(t=>t.fn.name==='poll').length,1);
+  }
+});
+
+test('entry recovers transient startup failures automatically and stops retrying expired authorization',async()=>{
+  for(const status of [0,401]){
+    const h=await harness();let calls=0;const initialize=h.api.initialize;
+    h.api.initialize=async()=>{if(++calls<=2)throw Object.assign(new Error('startup unavailable'),{status});return initialize();};
+    await h.bootstrap();
+    if(status===401){assert.equal(h.node('entry').dataset.phase,'waiting');assert.equal(h.node('entry-retry').hidden,true);assert.equal(h.node('entry-help').hidden,false);assert.equal(h.timers.size,0);continue;}
+    for(const delay of [500,1000]){const [id,timer]=[...h.timers].find(([,t])=>t.ms===delay);h.timers.delete(id);await timer.fn();}
+    assert.equal(calls,3);assert.equal(h.node('entry').hidden,true);assert.equal(h.node('shell').hidden,false);
   }
 });
 
@@ -390,7 +402,7 @@ test('explicit clear, logout and forget do not resurrect memory-only rescue',asy
     h.drafts.get('A').target_reference='asset';
     await h.app.start({cursor:'c1'});h.api.storage.set=()=>false;h.app.state.editor.input.value='private memory';h.app.state.editor.changed();
     if(path==='clear')await h.app.manageRescue();
-    else if(path==='logout')await h.node('logout').onclick();
+    else if(path==='logout')await h.app.stopOwnward();
     else await h.app.forget({reference:'asset',handle:'asset'},'body');
     await h.confirmations.at(-1).run();assert.equal(h.editor.rescuedInput(),null);assert.equal(h.saved.has(rescueKey),false);
     await h.app.start({cursor:'c1'});assert.equal(h.app.state.editor,null);
@@ -408,6 +420,17 @@ test('failed browser deletion is not mistaken for complete cleanup and retries w
   h.editor.clearRescue('A');assert.equal(h.editor.rescuedInput().text,'new B memory');
   h.api.storage.remove=remove;h.api.query=async()=>({changed:false});await h.app.poll();
   assert.equal(h.saved.has(rescueKey),false);assert.equal(h.editor.rescuedInput().text,'new B memory');assert.equal(h.editor.rescueCleanupPending(),false);
+});
+
+test('failed initial page recovers without needing a data change',async()=>{
+  let healthy=false,attempts=0;
+  const h=await harness({rescue:{},overrides:{query:async q=>{
+    if(q.view==='assets'){attempts++;if(!healthy)throw Object.assign(new Error('temporary read failure'),{status:503});}
+    return {changed:false,cursor:'c1',assets:[],drafts:[],activity:[],decisions:[]};
+  }}});
+  await h.app.start({cursor:'c1'});assert.equal(h.app.state.renderFailed,true);
+  healthy=true;await h.app.poll();assert.equal(h.app.state.renderFailed,false);assert.equal(attempts,2);
+  await h.app.poll();assert.equal(attempts,2,'successful page is not rebuilt every poll');
 });
 
 test('initial pending read retries independently of changes and stops retrying after success',async()=>{

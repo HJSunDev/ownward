@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 const Schema = "ownward.desktop/v1"
@@ -18,11 +19,11 @@ type Paths struct {
 }
 
 func DefaultPaths() (Paths, error) {
-	config, err := os.UserConfigDir()
+	account, err := AccountRoot()
 	if err != nil {
 		return Paths{}, err
 	}
-	root, err := installRoot(config)
+	root, err := installRoot(filepath.Dir(account))
 	if err != nil {
 		return Paths{}, err
 	}
@@ -30,15 +31,59 @@ func DefaultPaths() (Paths, error) {
 	if err != nil {
 		return Paths{}, err
 	}
-	return Paths{Root: root, State: filepath.Join(config, "Ownward", "desktop.json"), Data: filepath.Join(config, "Ownward"), Programs: programs, Desktop: desk}, nil
+	state, err := StatePath()
+	if err != nil {
+		return Paths{}, err
+	}
+	return Paths{Root: root, State: state, Data: filepath.Join(account, "Library"), Programs: programs, Desktop: desk}, nil
 }
 
 func StatePath() (string, error) {
+	account, err := AccountRoot()
+	if err != nil {
+		return "", err
+	}
+	path := filepath.Join(account, "desktop.json")
+	if _, err := os.Stat(path); err == nil {
+		return path, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	// Existing independent installations keep their registered location.
 	base, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(base, "Ownward", "desktop.json"), nil
+	legacy := filepath.Join(base, "Ownward", "desktop.json")
+	if _, err := os.Stat(legacy); err == nil {
+		if e := ValidateSharedDirectory(filepath.Dir(legacy)); e != nil {
+			return "", e
+		}
+		return legacy, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	return path, nil
+}
+
+// AccountRoot stays outside Windows package AppData virtualization. A packaged
+// host and Explorer must see the same installation, credentials and library.
+// Explicit nonstandard configuration roots (including isolated tests) remain valid.
+func AccountRoot() (string, error) {
+	base, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	if runtime.GOOS == "windows" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		if strings.EqualFold(filepath.Clean(base), filepath.Join(home, "AppData", "Roaming")) {
+			return filepath.Join(home, ".ownward"), nil
+		}
+	}
+	return filepath.Join(base, "Ownward"), nil
 }
 
 func installRoot(config string) (string, error) {

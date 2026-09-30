@@ -50,7 +50,7 @@ func (b *ownerBrowserFaults) wrap(next http.Handler) http.Handler {
 		b.counts[kind]++
 		fail := b.flags["offline"] || b.flags["uploads"] && kind == "draft-text" || b.flags["draft-reads"] && kind == "query/draft_content" || b.flags["receipts"] && kind == "query/publish_receipt" || b.flags["pending"] && kind == "query/pending"
 		auth := b.flags["auth"] || b.flags["logout-auth"] && kind == "logout"
-		delay := b.flags["delay-source"] && kind == "query/source" || b.flags["delay-rebase"] && kind == "action/create_draft" || b.flags["delay-discard"] && kind == "action/discard_draft"
+		delay := b.flags["delay-quit"] && kind == "quit" || b.flags["delay-source"] && kind == "query/source" || b.flags["delay-rebase"] && kind == "action/create_draft" || b.flags["delay-discard"] && kind == "action/discard_draft"
 		if b.flags["resolve-once"] && kind == "query/resolve" {
 			fail = true
 			delete(b.flags, "resolve-once")
@@ -90,7 +90,20 @@ func TestOwnerWindowUnitThreeBrowser(t *testing.T) {
 		t.Skip("opt-in real-browser acceptance")
 	}
 	faults := &ownerBrowserFaults{flags: map[string]bool{}, counts: map[string]int{}}
-	f := ownerHTTPWithHandler(t, faults.wrap)
+	var f *ownerHTTPFixture
+	f = ownerHTTPWithHandler(t, func(next http.Handler) http.Handler {
+		handler := faults.wrap(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Opt-in synthetic fixture only: open without exposing test credentials
+			// to browser automation logs. No such route exists in product builds.
+			if r.URL.Path == "/__test/open" && f != nil {
+				http.Redirect(w, r, f.server.URL+ownerwindow.Prefix+"#"+f.bootstrap(t), http.StatusFound)
+				return
+			}
+			handler.ServeHTTP(w, r)
+		})
+	})
+	f.w.SetQuit(func() { _ = os.WriteFile(path+".stop", []byte("browser quit"), 0600) })
 	faults.mu.Lock()
 	faults.internalSession = f.session
 	faults.mu.Unlock()

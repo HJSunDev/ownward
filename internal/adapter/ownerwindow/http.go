@@ -31,6 +31,8 @@ type session struct {
 	expires    time.Time
 	poll, save time.Time
 	used       uint64
+	exchange   string
+	sessionKey string
 }
 type Archives struct {
 	Backup  func(context.Context) (string, error)
@@ -47,7 +49,12 @@ type Server struct {
 	sessions   map[string]session
 	activity   uint64
 	admission  chan struct{}
+	quit       func()
 }
+
+// SetQuit binds the browser's explicit application exit to its actual runtime.
+// Configure before serving; browser credentials never expose the native stop token.
+func (s *Server) SetQuit(quit func()) { s.quit = quit }
 
 func New(view *ownerview.Service, archives Archives) *Server {
 	return &Server{View: view, Archives: archives, bootstraps: map[string]session{}, sessions: map[string]session{}, admission: make(chan struct{}, 4)}
@@ -243,6 +250,17 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		delete(s.sessions, key)
 		s.mu.Unlock()
 		value = map[string]bool{"closed": true}
+	case "v1/quit":
+		if s.quit == nil {
+			http.Error(w, "当前运行环境没有提供退出能力", 503)
+			return
+		}
+		// Deliver the receipt before shutdown cancels active request contexts.
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"state": "stopping"})
+		_ = http.NewResponseController(w).Flush()
+		s.quit()
+		return
 	case "v1/backup":
 		s.backup(ctx, w)
 		return
@@ -336,10 +354,15 @@ func (s *Server) pace(key string, save bool) error {
 }
 func (s *Server) exchange(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Token string `json:"token"`
+		Token   string `json:"token"`
+		Request string `json:"request,omitempty"`
 	}
 	if e := decode(w, r, &in); e != nil {
 		writeError(w, e)
+		return
+	}
+	if len(in.Request) > 64 {
+		http.Error(w, "入口请求无效", 400)
 		return
 	}
 	id, e := token()
@@ -348,12 +371,9 @@ func (s *Server) exchange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.prune(time.Now())
 	v, ok := s.bootstraps[in.Token]
-	if ok {
-		delete(s.bootstraps, in.Token)
-	}
-	s.mu.Unlock()
 	if !ok {
 		http.Error(w, "引导令牌已失效，请重新打开", 401)
 		return
@@ -362,11 +382,30 @@ func (s *Server) exchange(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "物主验证失效", 401)
 		return
 	}
-	v.expires = time.Now().Add(sessionTTL)
-	s.mu.Lock()
-	s.prune(time.Now())
-	s.putBounded(s.sessions, id, v)
-	s.mu.Unlock()
+	if v.sessionKey != "" {
+		if in.Request == "" || in.Request != v.exchange {
+			http.Error(w, "入口已使用，请重新打开", 401)
+			return
+		}
+		id = v.sessionKey
+		v, ok = s.sessions[id]
+		if !ok {
+			http.Error(w, "物主会话已失效", 401)
+			return
+		}
+	} else {
+		// A retry of the same browser exchange may recover a lost response,
+		// but cannot mint another session or revive one after logout/expiry.
+		if in.Request == "" {
+			delete(s.bootstraps, in.Token)
+		} else {
+			entry := v
+			entry.exchange, entry.sessionKey = in.Request, id
+			s.bootstraps[in.Token] = entry
+		}
+		v.expires = time.Now().Add(sessionTTL)
+		s.putBounded(s.sessions, id, v)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"session": id, "expires": v.expires, "schema": contract.OwnerViewSchema, "poll_seconds": 2, "poll_min_seconds": 1, "poll_max_seconds": 30, "autosave_min_seconds": 1, "page_limit": contract.OwnerPageLimit, "text_bytes": contract.OwnerTextBytes, "history_days": contract.OwnerHistoryDays, "history_items": contract.OwnerHistoryItems})
 }

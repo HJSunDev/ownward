@@ -139,6 +139,12 @@ func (s controlHTTPServer) BrowserHandler(origin string) http.Handler {
 	return s.window.Mount(origin)
 }
 
+func (s controlHTTPServer) SetOwnerQuit(quit func()) {
+	if s.window != nil {
+		s.window.SetQuit(quit)
+	}
+}
+
 func (s controlHTTPServer) PublishOwnerEntry(endpoint string) error {
 	if s.window == nil || s.dataDir == "" {
 		return nil
@@ -310,9 +316,12 @@ func openOwnerWindowProgress(ctx context.Context, dataDir, vectorBundle string, 
 
 // 打开只接续已经启用的资料；空目录的初始化属于明确的首次启用。
 func readOwnerEntry(ctx context.Context, dataDir string) (contract.ControlState, error) {
-	state, err := assembly.ReadLocalIdentity(ctx, dataDir)
+	state, err := readDesktopIdentity(ctx, dataDir, assembly.ReadLocalIdentity)
 	if err != nil {
-		return state, &entryProblem{message: "暂时无法读取这份资料。请检查磁盘是否已连接，并确认资料所在位置。", cause: err}
+		if errors.Is(err, os.ErrNotExist) {
+			return state, &entryProblem{message: "找不到资料所在位置。请确认原来的磁盘或文件夹仍可使用。", cause: err}
+		}
+		return state, &entryProblem{message: "暂时无法打开资料，请稍后再试。", cause: err}
 	}
 	if state.InformationControl == nil || state.InformationControl.SystemID == "" {
 		return state, &entryProblem{message: "这份资料尚未完成首次启用。请从 Ownward 入口开始使用，或请智能体完成准备。"}

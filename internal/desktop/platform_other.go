@@ -12,6 +12,8 @@ import (
 	"time"
 )
 
+func ValidateSharedDirectory(path string) error { _, err := os.Stat(path); return err }
+
 func shortcutFolders() (string, string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {

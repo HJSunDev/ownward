@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -373,6 +374,44 @@ func TestDesktopFormalReleaseReusesCompatibleManagedService(t *testing.T) {
 	}
 	if _, err = probeSharedMCP(ctx, d); err != nil {
 		t.Fatal("rejected open interrupted live service", err)
+	}
+	// A connected application can keep an SSE stream open. Stopping Ownward
+	// must cancel that request, rather than waiting for the drain timeout.
+	client := &http.Client{Timeout: 10 * time.Second}
+	init, _ := http.NewRequest("POST", d.Endpoint, strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"stop-verification","version":"1"}}}`))
+	init.Header.Set("Authorization", "Bearer "+d.BearerToken)
+	init.Header.Set("Content-Type", "application/json")
+	init.Header.Set("Accept", "application/json, text/event-stream")
+	response, err := client.Do(init)
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, response.Body)
+	response.Body.Close()
+	session := response.Header.Get("Mcp-Session-Id")
+	if response.StatusCode != 200 || session == "" {
+		t.Fatal("could not initialize connected application", response.StatusCode)
+	}
+	stream, _ := http.NewRequest("GET", d.Endpoint, nil)
+	stream.Header.Set("Authorization", "Bearer "+d.BearerToken)
+	stream.Header.Set("Accept", "text/event-stream")
+	stream.Header.Set("Mcp-Session-Id", session)
+	stream.Header.Set("Mcp-Protocol-Version", "2025-03-26")
+	response, err = client.Do(stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != 200 {
+		t.Fatal("connected application has no active stream", response.StatusCode)
+	}
+	started := time.Now()
+	stop()
+	if time.Since(started) > 2*time.Second {
+		t.Fatal("stopping waited for the active connection instead of cancelling it")
+	}
+	if _, err = io.Copy(io.Discard, response.Body); err != nil {
+		t.Fatal("active stream was not closed cleanly", err)
 	}
 }
 

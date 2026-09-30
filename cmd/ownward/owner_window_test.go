@@ -171,6 +171,28 @@ func (f *ownerHTTPFixture) call(t *testing.T, path string, input, output any) {
 		}
 	}
 }
+func TestOwnerEntryExchangeRecoversLostReplyWithoutReopeningAuthorization(t *testing.T) {
+	f := ownerHTTP(t)
+	entry := f.bootstrap(t)
+	in := map[string]string{"token": entry, "request": "same-window-exchange"}
+	var first, retry map[string]any
+	f.call(t, "bootstrap", in, &first)
+	f.call(t, "bootstrap", in, &retry)
+	if first["session"] != retry["session"] || first["expires"] != retry["expires"] {
+		t.Fatal("retry minted or extended a session")
+	}
+	r, _ := f.request(t, "bootstrap", map[string]string{"token": entry, "request": "another-window"}, nil)
+	if r.StatusCode != 401 {
+		t.Fatal("entry reused by a different exchange", r.StatusCode)
+	}
+	f.session = first["session"].(string)
+	f.call(t, "logout", nil, nil)
+	r, _ = f.request(t, "bootstrap", in, nil)
+	if r.StatusCode != 401 {
+		t.Fatal("retry revived a logged-out session", r.StatusCode)
+	}
+}
+
 func (f *ownerHTTPFixture) query(t *testing.T, q contract.OwnerQuery) contract.OwnerPage {
 	t.Helper()
 	var out contract.OwnerPage
@@ -1022,6 +1044,122 @@ func TestOwnerWindowDamagedHintDoesNotBlockMachineService(t *testing.T) {
 	if e := <-done; e != nil {
 		t.Fatal(e)
 	}
+}
+
+func TestOwnerQuitDeliversReceiptBeforeCancellingRequests(t *testing.T) {
+	f := ownerHTTP(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	response := httptest.NewRecorder()
+	acknowledged := false
+	f.w.SetQuit(func() {
+		acknowledged = response.Flushed && strings.Contains(response.Body.String(), `"state":"stopping"`)
+		cancel()
+	})
+	request := httptest.NewRequest("POST", f.server.URL+ownerwindow.Prefix+"v1/quit", strings.NewReader(`{}`)).WithContext(ctx)
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Origin", f.server.URL)
+	request.Header.Set("X-Ownward-View", contract.OwnerViewSchema)
+	request.Header.Set("Authorization", "Bearer "+f.session)
+	f.w.Mount(f.server.URL).ServeHTTP(response, request)
+	if !acknowledged || response.Code != http.StatusOK {
+		t.Fatalf("stopped before delivering the receipt: flushed=%v status=%d", acknowledged, response.Code)
+	}
+}
+
+func TestOwnerQuitRequiresOwnerAndStopsActualListener(t *testing.T) {
+	f := ownerHTTP(t)
+	server := controlHTTPServer{server: mcpserver.NewStreamingStorage(f.k, "test", f.k.Scratch, f.k.Budget, f.k.DiskBytes), control: f.c, window: f.w, dataDir: f.root}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	reader, writer := io.Pipe()
+	defer reader.Close()
+	done := make(chan error, 1)
+	go func() {
+		e := runHTTPMCP(ctx, server, "127.0.0.1:0", "transport-test", writer)
+		writer.CloseWithError(e)
+		done <- e
+	}()
+	var address struct {
+		Endpoint string `json:"endpoint"`
+	}
+	if e := json.NewDecoder(reader).Decode(&address); e != nil {
+		t.Fatal(e)
+	}
+	f.server.URL = address.Endpoint
+	for _, mutate := range []func(*http.Request){func(r *http.Request) { r.Header.Del("Authorization") }, func(r *http.Request) { r.Header.Set("Origin", "http://other.invalid") }} {
+		response, _ := f.request(t, "quit", struct{}{}, mutate)
+		if response.StatusCode == 200 {
+			t.Fatal("untrusted exit was accepted")
+		}
+		select {
+		case e := <-done:
+			t.Fatal("untrusted exit stopped server", e)
+		default:
+		}
+	}
+	response, _ := f.request(t, "quit", struct{}{}, nil)
+	if response.StatusCode != 200 {
+		t.Fatal(response.StatusCode)
+	}
+	select {
+	case e := <-done:
+		if e != nil {
+			t.Fatal(e)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("exit did not stop HTTP service")
+	}
+	if response, e := http.Get(address.Endpoint + ownerwindow.Prefix); e == nil {
+		response.Body.Close()
+		t.Fatal("listener survived application exit")
+	}
+}
+
+type entryQuitRequestServer struct {
+	quit    func()
+	entered chan struct{}
+}
+
+func (s *entryQuitRequestServer) SetOwnerQuit(quit func()) { s.quit = quit }
+func (s *entryQuitRequestServer) HTTPHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { close(s.entered); <-r.Context().Done() })
+}
+func TestOwnerQuitCancelsActiveRequests(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s := &entryQuitRequestServer{entered: make(chan struct{})}
+	r, w := io.Pipe()
+	defer r.Close()
+	done := make(chan error, 1)
+	go func() { e := runHTTPMCP(ctx, s, "127.0.0.1:0", "", w); w.CloseWithError(e); done <- e }()
+	var address struct{ Endpoint string }
+	if e := json.NewDecoder(r).Decode(&address); e != nil {
+		t.Fatal(e)
+	}
+	requestDone := make(chan struct{})
+	go func() {
+		response, e := http.Get(address.Endpoint)
+		if e == nil {
+			response.Body.Close()
+		}
+		close(requestDone)
+	}()
+	select {
+	case <-s.entered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("request did not enter")
+	}
+	s.quit()
+	select {
+	case e := <-done:
+		if e != nil {
+			t.Fatal(e)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("exit retained an active request")
+	}
+	<-requestDone
 }
 
 func TestOwnerWindowGrantAndConnectionIdentitySurviveReopen(t *testing.T) {

@@ -10,6 +10,7 @@ export const storage = {
   remove(key) { try { sessionStorage.removeItem(key); return true; } catch { return false; } }
 };
 let session = storage.get(sessionKey), active = 0, generation = 0;
+let pendingEntry = null;
 export function invalidate(){generation++;}
 export function scope(){const current=generation;return ()=>current===generation;}
 const waiting = [];
@@ -17,7 +18,9 @@ async function slot() { if (active >= 3) await new Promise(resolve => waiting.pu
 function release() { const next=waiting.shift(); if(next)next();else active--; }
 export async function request(path, data = {}, options = {}) {
   const current=scope();
-  await slot();
+  // Shutdown must remain reachable while content reads occupy the queue.
+  const queued=path!=='quit';
+  if(queued)await slot();
   const abort = new AbortController(), timer = setTimeout(() => abort.abort(), options.timeout || 45000);
   try {
     if(!current())throw new ApiError(-1,'操作页面已变化。');
@@ -29,7 +32,10 @@ export async function request(path, data = {}, options = {}) {
     });
     if(!current())throw new ApiError(-1,'操作页面已变化。');
     if (!response.ok) {
-      if (response.status === 401) window.dispatchEvent(new Event('owner-auth-lost'));
+      if (response.status === 401 && path !== 'bootstrap' && path !== 'quit') {
+        storage.remove(sessionKey); session = null;
+        window.dispatchEvent(new Event('owner-auth-lost'));
+      }
       throw new ApiError(response.status, response.status === 409 ? '内容已更新，请核对后继续。' :
         response.status === 401 ? '连接已过期，请重新打开 Ownward。' :
         response.status === 429 ? '正在处理其他操作，请稍后重试。' : '暂时无法完成操作，请稍后重试。');
@@ -41,16 +47,23 @@ export async function request(path, data = {}, options = {}) {
     if (error instanceof ApiError) throw error;
     if(!current())throw new ApiError(-1,'操作页面已变化。');
     throw new ApiError(0, '连接中断，请稍后重试。');
-  } finally { clearTimeout(timer); release(); }
+  } finally { clearTimeout(timer); if(queued)release(); }
 }
 export const query = input => request('query', input);
 export const act = input => request('action', input);
 export async function initialize() {
   invalidate();
-  const fragment = location.hash.slice(1), token = /^[a-f0-9]{64}$/.test(fragment)?fragment:''; history.replaceState(null, '', location.pathname);
-  if (token) { const result = await request('bootstrap', {token}); session = result.session; storage.set(sessionKey, session); }
-  if (!session) throw new ApiError(401, '请使用 Ownward 的打开命令进入。');
-  return query({view: 'health'});
+  const fragment = location.hash.slice(1), token = /^[a-f0-9]{64}$/.test(fragment)?fragment:'';
+  if (token && pendingEntry?.token !== token) pendingEntry = {token, request: crypto.randomUUID()};
+  // Keep the same exchange identity until its reply arrives. A slow/lost reply
+  // must not strand a window after consuming its one-time entry.
+  if (pendingEntry) {
+    const result = await request('bootstrap', pendingEntry, {timeout:8000});
+    session = result.session; storage.set(sessionKey, session); pendingEntry = null;
+    if(location.hash.slice(1)===token)history.replaceState(null, '', location.pathname);
+  }
+  if (!session) throw new ApiError(401, '请从系统中的 Ownward 入口重新打开。');
+  return request('query', {view:'health'}, {timeout:8000});
 }
 export const resolve = (reference, handle) => query({view: 'resolve', ...(reference ? {reference} : {handle})});
 export async function text(view, handle, valid = () => true) {
@@ -79,4 +92,10 @@ export async function logout() {
   const previous=session;
   try { return await request('logout'); }
   finally { if(session===previous){storage.remove(sessionKey);session=null;} }
+}
+export async function quit() {
+  const previous=session;
+  const result=await request('quit',{}, {timeout:8000});
+  if(session===previous){storage.remove(sessionKey);session=null;}
+  return result;
 }

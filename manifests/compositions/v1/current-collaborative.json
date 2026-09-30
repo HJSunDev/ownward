@@ -75,7 +75,7 @@
         {
           "name": "cmd-ownward-owner_window-go",
           "path": "cmd/ownward/owner_window.go",
-          "sha256": "4c886d19869fc7f7f3382985e74ad06c69fa054b70502fc55d5f8326d552081e"
+          "sha256": "3fe5e59913203fb3e53d1362206a37096b98f053f23b4c33e862d8b710dead92"
         },
         {
           "name": "cmd-ownward-remote_access",
@@ -120,7 +120,7 @@
         {
           "name": "internal-adapter-localowner-vault",
           "path": "internal/adapter/localowner/vault.go",
-          "sha256": "100bcb888763e42d08ca33970ae538069edf55cde5929e19780d0ac9a528d430"
+          "sha256": "0f97e4620d54988b760a2571e11f1fc780c430a3ca2b01f673d3f97d2997e5b4"
         },
         {
           "name": "internal-adapter-mcpserver-management",
@@ -145,22 +145,22 @@
         {
           "name": "internal-adapter-ownerwindow-http-go",
           "path": "internal/adapter/ownerwindow/http.go",
-          "sha256": "eb7ec0431c901e3e0ff37c370a1c1472657e811e7eded367b10974054e35ec49"
+          "sha256": "38112a72eecf206e819a57f8b0eeb62ad96328efa4b22f8bc45016f37faca194"
         },
         {
           "name": "internal-adapter-ownerwindow-static-api-js",
           "path": "internal/adapter/ownerwindow/static/api.js",
-          "sha256": "7c32a6cf4f083dfbba43c59a007c946522afa87804e7b1a933961f3f3d4e6e07"
+          "sha256": "5353f94195a07f0975ab3dcea13ae1cc5cc065c0ba14db3fcc90cf1f71441bc3"
         },
         {
           "name": "internal-adapter-ownerwindow-static-app-js",
           "path": "internal/adapter/ownerwindow/static/app.js",
-          "sha256": "53c382411ee24c38da83b92fefc7f8b9722f9b1f9e4dae81a9f20407ab838e10"
+          "sha256": "bad697fe7b44c73db6e77f4385bcd4373f7a09864c5719c57fcd6af33fcc6614"
         },
         {
           "name": "internal-adapter-ownerwindow-static-bootstrap-js",
           "path": "internal/adapter/ownerwindow/static/bootstrap.js",
-          "sha256": "559192d94fbde689b2c428c571247696a07d881be7606bea635d20c5bc52d4f5"
+          "sha256": "d68bfb0b36c51323dbae70ea9a23d7642ea8c05883a7db3c3dc24e1dc4e3103a"
         },
         {
           "name": "internal-adapter-ownerwindow-static-editor-js",
@@ -175,7 +175,7 @@
         {
           "name": "internal-adapter-ownerwindow-static-graph-js",
           "path": "internal/adapter/ownerwindow/static/graph.js",
-          "sha256": "5ca26914d06a5309beff8f26f47db232cc00023c498928f2144a0e79cb4d16bd"
+          "sha256": "b6ca55f0552cc624615c2e958e739c5bd389e6bd2f54b2468cda38a023731fa0"
         },
         {
           "name": "internal-adapter-ownerwindow-static-graph-layout-js",
@@ -185,7 +185,7 @@
         {
           "name": "internal-adapter-ownerwindow-static-index-html",
           "path": "internal/adapter/ownerwindow/static/index.html",
-          "sha256": "8f731d73b0e0aa97a8bb79766aa3db5b35c66014157222b3b1e4b27b0f2b510e"
+          "sha256": "835238a640cfd42c54e35ec0e1d3f9d7e648c102d1003b01694c42f75a24bbed"
         },
         {
           "name": "internal-adapter-ownerwindow-static-ui-js",
@@ -195,7 +195,7 @@
         {
           "name": "internal-adapter-ownerwindow-static-window-css",
           "path": "internal/adapter/ownerwindow/static/window.css",
-          "sha256": "e09d9d67e3567dfebbdc964a2d945ed83ca8f74009360532d88e2eef00267925"
+          "sha256": "e516d56f55591dcab6299150b9404ec7c3f407c172fbfde730253c26332958f7"
         },
         {
           "name": "internal-adapter-remote-transport",
@@ -290,12 +290,12 @@
         {
           "name": "internal-desktop-platform_other-go",
           "path": "internal/desktop/platform_other.go",
-          "sha256": "0019f6c41d474ead6d069361c0a09a41fb8dfc702b2e8db60330834425196299"
+          "sha256": "258edea09a9ce349a2e84de23061e05344f46ed7b0ea04f03dfb1c06ae5f5246"
         },
         {
           "name": "internal-desktop-platform_windows-go",
           "path": "internal/desktop/platform_windows.go",
-          "sha256": "c7f73937afe9fdee8f66d9a95564753f4f9d88aed4a466a1837bcfe70ea82ea3"
+          "sha256": "88e98e9078610558c145621fd88dbcdbf01958ad6c30c5384e64fc5795fb125f"
         },
         {
           "name": "internal-desktop-progress_other-go",
@@ -310,7 +310,7 @@
         {
           "name": "internal-desktop-state-go",
           "path": "internal/desktop/state.go",
-          "sha256": "b65c1de8085447079def22bf57418f29c6f4a11caab4c3d740dac7d9505f3e28"
+          "sha256": "f3b129cdde6626ed4f4803a45eed92f6c32291a456f5578ec2e8b916388e3d3e"
         },
         {
           "name": "internal-hostmaterials-materials-go",
@@ -416,7 +416,7 @@
           "identity": "1eb81993761504bd72d76fc2c0dc380e697cf9d1e1827845da552803e2b71fce"
         }
       ],
-      "identity": "b971b0424edb2c3e5ada4b1616db449bf15d3983ee9ba44d25e3c8d8e67ea1dc"
+      "identity": "b222efe37a59bc8ce00087783375711f436892ab17ad9f4a85a224dc7e7aedaf"
     },
     {
       "role": "assembly",
@@ -431,7 +431,7 @@
         {
           "name": "cmd-ownward-desktop_entry-go",
           "path": "cmd/ownward/desktop_entry.go",
-          "sha256": "d29cdad3b7536c2180f2976170fc9f0a7fbff13bece48dcd9083e7dcf5a1a32b"
+          "sha256": "a42c4a9aaf5de79df8c225cf3ecffdeac5d1e07661e929c5d2794891480d9fa3"
         },
         {
           "name": "cmd-ownward-service_install",
@@ -441,7 +441,7 @@
         {
           "name": "cmd-ownward-service_local",
           "path": "cmd/ownward/service_local.go",
-          "sha256": "6af4ae724d3afc70f45349c9db5b8f245d4989287dcd27f03d97d358a54715d6"
+          "sha256": "0c43989ea6d08c0b38b616ac26329b776abc4b23612804adab44cd49c89379b3"
         },
         {
           "name": "cmd-ownward-service_other",
@@ -451,7 +451,7 @@
         {
           "name": "cmd-ownward-service_runtime",
           "path": "cmd/ownward/service_runtime.go",
-          "sha256": "c0dd8c03d06cbe49cd8d60557404fa56eeef5fd9684a1f20e1cab1ea1085549d"
+          "sha256": "639b102c1a8ec2ac0adf07eed96d19f6ce1f3189a88343f9ef58cbc9ba3fa7ed"
         },
         {
           "name": "cmd-ownward-service_space_other",
@@ -471,7 +471,7 @@
         {
           "name": "current-command-assembly",
           "path": "cmd/ownward/main.go",
-          "sha256": "df60decfda3cc5c5a6ccd8c80d9aeb1866f4283e9015ea679313543a74c05e27"
+          "sha256": "ab17a7d3abde8cce0b5f6f39c03d47d62e04e4060871cd8a84760857b14036af"
         },
         {
           "name": "explicit-assembly",
@@ -526,7 +526,7 @@
         {
           "name": "runtime-config",
           "path": "internal/config/config.go",
-          "sha256": "86dbd44b35a89e33fc4c0c4c7930b67af47e039935d4336ebc1684af3bb99dec"
+          "sha256": "cd6736e8c7722ebdaa74b2e63dd9773b00f3eae059203b51cecb8ca943e8b81d"
         }
       ],
       "config": {
@@ -539,7 +539,7 @@
       "dependencies": [
         {
           "role": "access",
-          "identity": "b971b0424edb2c3e5ada4b1616db449bf15d3983ee9ba44d25e3c8d8e67ea1dc"
+          "identity": "b222efe37a59bc8ce00087783375711f436892ab17ad9f4a85a224dc7e7aedaf"
         },
         {
           "role": "authority-substrate",
@@ -562,7 +562,7 @@
           "identity": "c0af8126f2d9b51e70d27299b7f0cd2024ceab7a75789fffdc730be96b711a38"
         }
       ],
-      "identity": "fbaeee65a1a266270d9c675123eba34bf2cfc16925eef00a0a7a2bb8adb12477"
+      "identity": "bd1c1380314a4e2361e1cfc3e4ac446ddef6bd2673af4decc290d8a030299c82"
     },
     {
       "role": "authority-substrate",
@@ -1694,7 +1694,7 @@
       "identity": "c0af8126f2d9b51e70d27299b7f0cd2024ceab7a75789fffdc730be96b711a38"
     }
   ],
-  "identity": "2e49a55e4f5c3f3c27f000b40bac016df7f37cb90857b1eb536484d1efe5f8a1",
+  "identity": "43a4a90220cf855e9de50cc5d47c1b7fc9cf49c657feec7436ec25d728fa0c33",
   "audit": {
     "described_product_candidate": "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8",
     "migration_source_git": "dc2c7a09e67f06cfaacbe0a201c7ff27b20d6182"

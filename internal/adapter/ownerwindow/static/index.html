@@ -10,22 +10,22 @@
 </head>
 <body>
   <a class="skip-link" href="#main">跳到内容</a>
-  <div id="entry" class="entry">
+  <div id="entry" class="entry" data-phase="opening">
     <div class="wordmark">ownward</div>
-    <h1>打开你的资料</h1>
-    <p id="status" role="status">正在打开…</p>
-    <details class="entry-help"><summary>如何重新打开</summary>
-      <p>在这台电脑的终端运行以下命令，再打开生成的链接。</p>
-      <pre class="prose">ownward owner-window</pre>
-      <p class="subtle">如果使用了指定的资料目录，请沿用原来的打开命令。</p>
+    <div class="entry-progress" aria-hidden="true"></div>
+    <h1 id="entry-title">正在打开你的资料</h1>
+    <p id="status" role="status">稍等片刻，即可继续。</p>
+    <button id="entry-retry" class="button primary" type="button" hidden>再试一次</button>
+    <details id="entry-help" class="entry-help" hidden><summary>如何打开 Ownward</summary>
+      <p>在电脑的应用搜索中找到 Ownward，点击打开。</p>
+      <p class="subtle">也可以请智能体“打开 Ownward”。无需查找网址或运行命令。</p>
     </details>
   </div>
   <div id="shell" hidden>
     <aside class="sidebar">
       <button id="home-entry" class="wordmark" type="button" aria-label="Ownward 首页">Ownward</button>
       <nav id="navigation" aria-label="主要导航"></nav>
-      <span id="health-state" class="health-state" role="status">资料库已连接</span>
-      <button id="logout" class="button quiet" type="button">退出</button>
+      <span id="health-state" class="health-state" role="status" hidden></span>
     </aside>
     <div class="workspace">
       <header class="topbar">

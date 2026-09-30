@@ -35,6 +35,7 @@ type serviceHost struct {
 	receiver   receiverState
 	open       func() (*assembly.Runtime, error)
 	life       context.Context
+	quit       context.CancelFunc
 	jobsMu     sync.Mutex
 	jobs       map[string]*migrationJob
 }
@@ -65,7 +66,7 @@ func serveInstallationReady(parent context.Context, s installation, identity rem
 	if err != nil {
 		return err
 	}
-	h := &serviceHost{settings: s, identity: identity, life: ctx, jobs: map[string]*migrationJob{}}
+	h := &serviceHost{settings: s, identity: identity, life: ctx, quit: cancel, jobs: map[string]*migrationJob{}}
 	h.open = func() (*assembly.Runtime, error) {
 		bundle, err := currentVectorBundleDirectory()
 		if err != nil {
@@ -112,7 +113,7 @@ func serveInstallationReady(parent context.Context, s installation, identity rem
 	if err != nil {
 		return err
 	}
-	server := &http.Server{Handler: h, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 90 * time.Second, TLSConfig: &tls.Config{MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{certificate}, ClientAuth: tls.RequestClientCert}}
+	server := &http.Server{Handler: h, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 90 * time.Second, BaseContext: func(net.Listener) context.Context { return ctx }, TLSConfig: &tls.Config{MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{certificate}, ClientAuth: tls.RequestClientCert}}
 	if ready != nil {
 		ready()
 	}
@@ -159,7 +160,7 @@ func (h *serviceHost) activateRuntime() error {
 	s := controlHTTPServer{server: productServer(r), control: r.UserControl(), product: r.Management(), kernel: r.UnderlyingKernel(), generation: r.OperationGeneration}
 	var closeLocal func()
 	if h.settings.Name != "" {
-		closeLocal, err = startManagedLocal(h.settings, r)
+		closeLocal, err = startManagedLocal(h.settings, r, h.quit)
 		if err != nil {
 			r.Close()
 			return err

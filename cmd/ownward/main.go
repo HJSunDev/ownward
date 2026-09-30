@@ -379,6 +379,8 @@ type httpMCPServer interface {
 }
 
 func runHTTPMCP(ctx context.Context, server httpMCPServer, address, token string, stdout io.Writer) error {
+	ctx, stopRequests := context.WithCancel(ctx)
+	defer stopRequests()
 	listener, err := net.Listen("tcp", strings.TrimSpace(address))
 	if err != nil {
 		return fmt.Errorf("启动 Streamable HTTP MCP: %w", err)
@@ -389,6 +391,14 @@ func runHTTPMCP(ctx context.Context, server httpMCPServer, address, token string
 		return errors.New("Streamable HTTP MCP 只允许监听本机回环地址")
 	}
 	shutdownRequested := make(chan struct{}, 1)
+	if owner, ok := server.(interface{ SetOwnerQuit(func()) }); ok {
+		owner.SetOwnerQuit(func() {
+			select {
+			case shutdownRequested <- struct{}{}:
+			default:
+			}
+		})
+	}
 	baseHandler := server.HTTPHandler()
 	var handler http.Handler = baseHandler
 	if strings.TrimSpace(os.Getenv(sharedMCPDescriptorEnvironment)) != "" {
@@ -435,6 +445,7 @@ func runHTTPMCP(ctx context.Context, server httpMCPServer, address, token string
 	httpServer := &http.Server{
 		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
+		BaseContext:       func(net.Listener) context.Context { return ctx },
 	}
 	cleanupDescriptor, err := publishSharedMCPDescriptorFromEnvironment(endpoint)
 	if err != nil {
@@ -459,6 +470,7 @@ func runHTTPMCP(ctx context.Context, server httpMCPServer, address, token string
 	}
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	stopRequests()
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		return err
 	}

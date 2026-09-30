@@ -38,6 +38,17 @@ func Load(override string) (Config, error) {
 			return Config{}, fmt.Errorf("确定默认数据目录: %w", err)
 		}
 		dir = filepath.Join(base, "Ownward")
+		// Retain an existing pre-entry library. New data uses the independent
+		// account location rather than a host's virtualized AppData directory.
+		if _, err := os.Stat(filepath.Join(dir, "storage.json")); errors.Is(err, os.ErrNotExist) {
+			if _, err := os.Stat(filepath.Join(dir, "authority", "control.json")); errors.Is(err, os.ErrNotExist) {
+				account, e := desktop.AccountRoot()
+				if e != nil {
+					return Config{}, e
+				}
+				dir = filepath.Join(account, "Library")
+			}
+		}
 	}
 	absolute, err := filepath.Abs(dir)
 	if err != nil {

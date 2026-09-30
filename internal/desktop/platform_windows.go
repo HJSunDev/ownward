@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 	"unsafe"
 
@@ -14,6 +15,38 @@ import (
 )
 
 var ole = windows.NewLazySystemDLL("ole32.dll")
+
+// Absolute AppData paths can name different directories inside and outside a
+// packaged host. Do not publish such a binding as a working system entry.
+func ValidateSharedDirectory(path string) error {
+	logical, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return err
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	buf := make([]uint16, 32768)
+	n, err := windows.GetFinalPathNameByHandle(windows.Handle(f.Fd()), &buf[0], uint32(len(buf)), 0)
+	if err != nil {
+		return err
+	}
+	if n >= uint32(len(buf)) {
+		return fmt.Errorf("资料路径过长")
+	}
+	actual := windows.UTF16ToString(buf[:n])
+	if strings.HasPrefix(actual, `\\?\UNC\`) {
+		actual = `\\` + strings.TrimPrefix(actual, `\\?\UNC\`)
+	} else {
+		actual = strings.TrimPrefix(actual, `\\?\`)
+	}
+	if !strings.EqualFold(filepath.Clean(logical), filepath.Clean(actual)) {
+		return fmt.Errorf("资料位置被当前宿主重定向，系统入口无法使用该位置；请选择用户目录中的独立位置：%s", path)
+	}
+	return nil
+}
 
 func shortcutFolders() (string, string, error) {
 	p, err := windows.KnownFolderPath(windows.FOLDERID_Programs, 0)

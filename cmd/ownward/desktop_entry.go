@@ -15,6 +15,7 @@ import (
 
 	"github.com/HJSunDev/ownward/internal/assembly"
 	"github.com/HJSunDev/ownward/internal/config"
+	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/desktop"
 	"github.com/HJSunDev/ownward/internal/embedding"
 )
@@ -121,6 +122,14 @@ func installAt(ctx context.Context, args []string, stdout, stderr io.Writer, exe
 			if err = checkNewDataDirectory(selected.DataDir, p.State); err != nil {
 				return err
 			}
+		}
+	}
+	if readErr == nil || *initialize || pending {
+		if err = os.MkdirAll(selected.DataDir, 0700); err != nil {
+			return err
+		}
+		if err = desktop.ValidateSharedDirectory(selected.DataDir); err != nil {
+			return err
 		}
 	}
 	// 修改入口前核对持久权威，普通安装不隐式迁移资料。
@@ -357,15 +366,19 @@ func desktopAttempt(ctx context.Context, stderr io.Writer) error {
 			return errors.New("尚未选择资料，请重新执行安装并选择已有资料")
 		}
 		invalid := false
-		err = desktop.WithProgress(ctx, func(ctx context.Context, update func(string)) error {
+		// Daily opening has no wizard: prepare completely, then reveal the page.
+		err = func(ctx context.Context, update func(string)) error {
 			update("正在定位资料…")
-			control, e := assembly.ReadLocalIdentity(ctx, state.Binding.Data)
-			if e != nil || control.InformationControl == nil || control.InformationControl.SystemID != state.Binding.System {
-				invalid = true
-				return errors.New("原资料暂时无法打开")
+			control, e := readDesktopIdentity(ctx, state.Binding.Data, assembly.ReadLocalIdentity)
+			if e != nil {
+				invalid = errors.Is(e, os.ErrNotExist)
+				return &entryProblem{message: "暂时无法打开资料，请稍后再试。", cause: e}
+			}
+			if control.InformationControl == nil || control.InformationControl.SystemID != state.Binding.System {
+				return &entryProblem{message: "这个位置的资料与原来的选择不一致。原资料不会被替换，请让智能体协助核对。"}
 			}
 			return openOwnerWindowProgress(ctx, state.Binding.Data, filepath.Join(filepath.Dir(state.Executable), "embedding"), io.Discard, stderr, update)
-		})
+		}(ctx, func(string) {})
 		if errors.Is(err, context.Canceled) {
 			return err
 		}
@@ -398,6 +411,30 @@ func desktopAttempt(ctx context.Context, stderr io.Writer) error {
 		}
 	}
 	return err
+}
+
+// SQLite can briefly refuse a read while another process recovers its journal.
+// Only retry those transient reads; missing files and identity mismatches must
+// never fall through to a fresh library or an unrelated location.
+func readDesktopIdentity(ctx context.Context, data string, read func(context.Context, string) (contract.ControlState, error)) (contract.ControlState, error) {
+	for attempt := 0; ; attempt++ {
+		state, err := read(ctx, data)
+		var sqliteError interface{ Code() int }
+		if err == nil || attempt == 3 || !errors.As(err, &sqliteError) {
+			return state, err
+		}
+		code := sqliteError.Code()
+		if code&255 != 5 && code&255 != 6 && code != 264 { // BUSY, LOCKED, READONLY_RECOVERY
+			return state, err
+		}
+		timer := time.NewTimer(time.Duration(attempt+1) * 150 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return contract.ControlState{}, ctx.Err()
+		case <-timer.C:
+		}
+	}
 }
 
 type entryProgress struct {

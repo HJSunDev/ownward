@@ -1,6 +1,6 @@
 import {createReader} from './reading.js';
 import {createGraph} from './graph.js';
-import {query, act, resolve, text, request, logout, operationID, invalidate, scope} from './api.js';
+import {query, act, resolve, text, request, quit, operationID, invalidate, scope} from './api.js';
 import {Editor, rescuedInput, rescueNeedsWindow, rescueCleanupPending, retryRescueCleanup, clearRescue, retainReceipt} from './editor.js';
 import {el, button, row, heading, empty, prose, tag, date, notice, clearNotice, statusName, permissionName, dialog, confirm, download, errorMessage, documentView, appearanceControls, applyAppearance, setImmersive, createSelect} from './ui.js';
 
@@ -37,20 +37,7 @@ export async function start(health){
   for(const [id,label] of surfaces)nav.append(button(label,()=>navigate(id),'nav-item',{'data-surface':id,'aria-label':label}));
   document.getElementById('home-entry').onclick=()=>navigate('home');
   document.getElementById('pending-entry').onclick=()=>{const panel=document.getElementById('pending-panel');panel.hidden=!panel.hidden;document.getElementById('pending-entry').setAttribute('aria-expanded',String(!panel.hidden));};
-  document.getElementById('logout').onclick=async()=>{
-    try{
-      const exit=async()=>{
-        if(state.exiting)return;state.exiting=true;
-        lock('正在结束会话。',false);
-        let message='已退出。';
-        try{await logout();}catch(error){if(error.status!==401)message='已退出此页面；连接中断，尚未确认是否已退出服务。';}
-        if(!state.active)document.getElementById('status').textContent=message;
-      };
-      const rescue=rescuedInput(),input=state.editor?.value??rescue?.text;
-      if(pendingWork(state.editor)||rescue?.reference){await confirm('退出前保留文字',el('div',{},el('p',{},'还有尚未完成核对的输入或操作。确认退出会清除窗口内的暂存，不会删除已保存的文稿，也不会撤销已提交的操作。'),typeof input==='string'?button('下载当前文字',()=>download(new Blob([input],{type:'text/plain;charset=utf-8'}),'未完成的文稿.txt')):null),'清除暂存并退出',exit,true);}else await exit();
-    }catch(error){notice(errorMessage(error),true);}
-  };
-  window.addEventListener('owner-auth-lost',()=>lock('连接已过期，请重新打开 Ownward。未保存的文字仍保留在此页面。'));
+  window.addEventListener('owner-auth-lost',()=>lock('从电脑中的 Ownward 入口重新打开，即可继续。未保存的文字仍保留在此页面。',true));
   window.addEventListener('beforeunload',event=>{retryRescueCleanup();if(pendingWork(state.editor)||state.editor?.busy||rescuedInput()?.reference||rescueNeedsWindow()){state.editor?.persist();event.preventDefault();event.returnValue='';}});
   window.addEventListener('online',()=>poll());
   document.addEventListener('visibilitychange',()=>{if(!document.hidden){retryRescueCleanup();showStorageCleanup();poll();}});
@@ -65,6 +52,39 @@ export async function start(health){
   }
   if(state.active&&run===state.run)state.pollTimer=setTimeout(poll,2200);
 }
+async function stopOwnward(){
+  if(state.exiting||!state.active)return;
+  try{
+    const editor=state.editor,current=scope();
+    const snapshot=()=>JSON.stringify([state.editor?.value,state.editor?.dirty,state.editor?.conflict,state.editor?.publishID,state.editor?.rebase,state.editor?.discardPending,state.editor?.refreshPending,state.editor?.pendingSave,rescuedInput()]);
+    const shown=snapshot();
+    const exit=async()=>{
+      if(state.exiting)return;
+      if(!state.active||!current()||state.editor!==editor||snapshot()!==shown)throw new Error('待处理内容已有变化，请重新核对后停止。');
+      if(editor?.busy||editor?.finishing||editor?.composing)throw new Error('文稿操作仍在进行，请稍后停止。');
+      state.exiting=true;state.run++;clearTimeout(state.pollTimer);state.polling=false;invalidate();
+      stopFeedback(true);
+      try{
+        await quit();
+        lock('可以关闭这个页面。再次点击电脑中的 Ownward，即可重新启动并打开，已保存的资料仍在。',false);
+        document.getElementById('entry-title').textContent='Ownward 已停止';
+        document.getElementById('entry-help').hidden=true;
+        document.getElementById('entry').dataset.phase='closed';
+      }catch(error){
+        state.exiting=false;
+        stopFeedback(false,error.status===401?'未能停止，请从电脑中的 Ownward 入口重新打开后再试。':'尚未确认停止，请重试。未保存的文字仍保留。');
+        if(state.active)state.pollTimer=setTimeout(poll,2200);
+      }
+    };
+    const rescue=rescuedInput(),input=state.editor?.value??rescue?.text;
+    if(pendingWork(state.editor)||rescue?.reference){await confirm('停止前保留文字',el('div',{},el('p',{},'还有尚未完成核对的输入或操作。停止后会清除未保存的暂存文字；已保存的资料和草稿会保留，其他应用与这份资料的连接也会断开。'),typeof input==='string'?button('下载当前文字',()=>download(new Blob([input],{type:'text/plain;charset=utf-8'}),'未完成的文稿.txt')):null),'清除暂存并停止',exit,true);}else await exit();
+  }catch(error){notice(errorMessage(error),true);}
+}
+function stopFeedback(stopping,message=''){
+  const control=document.getElementById('stop-ownward'),feedback=document.getElementById('stop-feedback');
+  if(control){control.disabled=stopping;control.textContent=stopping?'正在停止…':'停止 Ownward';}
+  if(feedback){feedback.hidden=!stopping&&!message;feedback.textContent=stopping?'正在停止后台服务，请稍候。':message;}
+}
 function lock(message,preserveInput=!state.exiting){
   releaseReader();state.readPositions.clear();state.graphMem.clear();state.pendingSignature=null;document.getElementById('pending-panel').replaceChildren();document.getElementById('pending-panel').hidden=true;
   state.libraryRefresh=null;
@@ -76,11 +96,14 @@ function lock(message,preserveInput=!state.exiting){
   if(!preserveInput)clearRescue();
   document.querySelectorAll('dialog').forEach(d=>d.remove());main.replaceChildren();
   document.getElementById('shell').hidden=true;document.getElementById('entry').hidden=false;
+  document.getElementById('entry').dataset.phase='waiting';
+  document.getElementById('entry-title').textContent=state.exiting?'Ownward 已停止':'请重新打开 Ownward';
+  document.getElementById('entry-help').hidden=false;document.getElementById('entry-retry').hidden=true;
   document.getElementById('status').textContent=message+(rescueCleanupPending()?' 浏览器暂存尚待清理，请勿刷新或关闭。':rescueNeedsWindow()?' 暂存仅在当前窗口，请勿刷新或关闭；重新验证会在此窗口继续核对。':'');
   showStorageCleanup();
 }
 async function navigate(surface){
-  if(!state.active)return;releaseReader();setImmersive(false);releaseGraph(true);state.graphView=null;
+  if(!state.active||state.exiting)return;releaseReader();setImmersive(false);releaseGraph(true);state.graphView=null;
   state.editor?.suspend();
   invalidate();
   state.surface=surface;state.selection=null;state.after='';clearNotice();await render();
@@ -91,6 +114,7 @@ function readingPosition(asset){const p=state.readPositions.get(asset.reference)
 function rememberPosition(asset,scroll){state.readPositions.set(asset.reference,{version:asset.version,scroll});if(state.readPositions.size>50)state.readPositions.delete(state.readPositions.keys().next().value);}
 function releaseGraph(remember=false){if(state.graph){state.graphView=remember?state.graph.capture():null;if(remember&&state.graphKey){state.graphMem.set(state.graphKey,state.graphView);if(state.graphMem.size>30)state.graphMem.delete(state.graphMem.keys().next().value);}state.graph.destroy();state.graph=null;}}
 async function render(){
+  state.renderFailed=false;
   releaseReader();setImmersive(false);
   state.libraryRefresh=null;
   releaseGraph(state.surface==='relations');
@@ -101,7 +125,9 @@ async function render(){
     if(valid(epoch)){main.replaceChildren(node);showResume();main.focus({preventScroll:true});}
   }catch(error){if(valid(epoch)){
     if(error.status===409&&state.after){state.after='';notice('资料有变化，已返回当前筛选的第一页。');return render();}
-    main.replaceChildren(empty('暂时无法读取',errorMessage(error),button('重试',()=>{state.after='';return render();})));showResume();
+    state.renderFailed=error.status===0||error.status===429||error.status>=500;
+    const failure=state.renderFailed?empty('正在恢复资料','稍后会自动继续。'):empty('暂时无法读取',errorMessage(error),button('重试',()=>{state.after='';return render();}));
+    main.replaceChildren(state.surface==='control'?el('div',{class:'page settings-page'},heading('设置',''),failure,runtimeSettings()):failure);showResume();
   }}
 }
 function showResume(){
@@ -423,7 +449,16 @@ async function controlPage(epoch){
     section('处理记录',older),
     section('已连接的应用',people.childElementCount?people:el('p',{class:'subtle'},'暂无应用连接。'),pager(connections,after=>connectionsDialog(after))),
     section('草稿编辑权限',...(grants.grants||[]).map(g=>row(el('span',{},`${g.connection.name} · ${connectionLabel(g.connection)} · 有效至 ${date(g.expires_at)}`),button('取消编辑权限',async()=>{await act({action:'revoke_grant',handle:g.handle});await render();}))),!grants.grants?.length?el('p',{class:'subtle'},'暂无应用获准编辑草稿。'):null,pager(grants,after=>grantsDialog(after))),
-    section('备份',health.health!=='normal'?el('p',{class:'callout'},'资料库有未完成的操作，请查看待确认事项。'):null,archive));
+    section('备份',health.health!=='normal'?el('p',{class:'callout'},'资料库有未完成的操作，请查看待确认事项。'):null,archive),
+    runtimeSettings());
+}
+function runtimeSettings(){
+  return el('section',{class:'runtime-settings','aria-label':'关闭与停止'},
+    el('div',{class:'runtime-note'},el('h2',{},'关闭网页'),el('p',{},'直接关闭网页，Ownward 仍会在后台正常运行，已连接的应用不受影响。再次点击电脑中的 Ownward，即可打开网页。')),
+    el('div',{class:'runtime-stop'},
+      el('div',{},el('h2',{},'停止运行'),el('p',{id:'runtime-description'},'停止后台服务，已连接的应用也会断开，已保存的资料会保留。再次点击电脑中的 Ownward，会自动启动服务并打开网页。')),
+      button('停止 Ownward',stopOwnward,'quiet',{id:'stop-ownward','aria-describedby':'runtime-description stop-feedback'})),
+    el('p',{id:'stop-feedback',class:'stop-feedback',role:'status',hidden:true}));
 }
 async function pagedDialog(title,view,after,items,limit){
   const body=el('div',{}),d=dialog(title,body),current=scope();
@@ -490,7 +525,7 @@ async function restoredArchives(){
   view=dialog('恢复结果',body);
 }
 async function poll(){
-  if(!state.active||state.polling)return;
+  if(!state.active||state.exiting||state.polling)return;
   const run=state.run;
   clearTimeout(state.pollTimer);
   state.polling=true;
@@ -499,7 +534,8 @@ async function poll(){
     const page=await query({view:'changes',cursor:state.cursor});
     if(!state.active||run!==state.run)return;
     document.getElementById('connection-state').hidden=true;
-    document.getElementById('connection-state').textContent='';document.getElementById('health-state').textContent='资料库已连接';
+    document.getElementById('connection-state').textContent='';document.getElementById('health-state').hidden=true;
+    if(state.renderFailed){await render();if(!state.active||run!==state.run)return;}
     if(page.changed){
       if(page.reset){
         releaseReader();state.readPositions.clear();state.graphMem.clear();invalidate();state.epoch++;state.after='';
@@ -550,6 +586,6 @@ async function poll(){
       if(!state.active||run!==state.run)return;
       state.cursor=page.cursor;
     }else if(state.pendingDirty)await refreshPending();
-  }catch(error){if(state.active&&run===state.run&&error.status!==-1){document.getElementById('health-state').textContent='连接暂时中断';document.getElementById('connection-state').hidden=false;document.getElementById('connection-state').textContent=error.status===429?'更新稍有延迟，稍后自动重试。':'暂时无法更新，正在重试。';}}
+  }catch(error){if(state.active&&run===state.run&&error.status!==-1){document.getElementById('connection-state').hidden=false;document.getElementById('connection-state').textContent=error.status===429?'稍后自动更新。':'正在恢复更新。未保存的文字会留在本页。';}}
   finally{if(run===state.run){state.polling=false;if(state.active)state.pollTimer=setTimeout(poll,document.hidden?12000:2200);}}
 }
