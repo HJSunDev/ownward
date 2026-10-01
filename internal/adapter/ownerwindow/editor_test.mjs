@@ -12,6 +12,7 @@ class Node {
   addEventListener(){}
   setAttribute(key,value){this[key]=value;}
   focus(){}
+  querySelector(){return null;}
 }
 function deferred(){let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};}
 async function harness(overrides={}){
@@ -30,9 +31,9 @@ async function harness(overrides={}){
   const ui={
     el:(tag,attrs,...children)=>{const n=new Node(attrs);n.tag=tag;n.append(...children);return n;},
     button:(label,action)=>new Node({label,action}),row:(...c)=>new Node({children:c}),prose:value=>new Node({textContent:value}),
-    documentView:(value,cls,editable)=>new Node({value,textContent:value}),comparison:(before,after)=>new Node({children:[before,after]}),immersionButton:()=>new Node(),
+    documentView:(value,cls,editable)=>new Node({value,textContent:value}),comparison:(before,after)=>new Node({children:[before,after]}),immersionButton:()=>new Node(),documentOptions:()=>({node:new Node(),close(){}}),editingPosition:()=>()=>{},revealDocument(){},
     notice:message=>calls.push(['notice',message]),download:()=>{},confirm:async(title,body,label,run)=>{const d={title,body,run};dialogs.push(d);},
-    dialog:(title,body,actions)=>{const d={title,body,actions,close:()=>{d.closed=true;}};d.close.current=()=>!d.closed;dialogs.push(d);return d;}
+    dialog:(title,body,actions,options)=>{const d={title,body,actions,options,close:()=>{d.closed=true;}};d.close.current=()=>!d.closed;dialogs.push(d);return d;}
   };
   const context=vm.createContext({console,Date,JSON,Blob,setTimeout:()=>1,clearTimeout:()=>{}});
   const source=await readFile(new URL('./static/editor.js',import.meta.url),'utf8');
@@ -398,4 +399,24 @@ test('failed reads after a superseded discard retain an effective read-only retr
     readingFailed=false;await e.retryButton.action();assert.equal(e.conflict.content,'other words');assert.equal(e.value,dirty?'my words':'base');
     assert.equal(e.refreshPending,false);assert.equal(e.input.readOnly,false);assert.equal(deletes,1);e.destroy();
   }
+});
+
+// 显示变化不得重设正文，否则会丢失原生撤销、选区及正在组合的输入。
+test('document presentation tracks text without replacing the native input during saves',async()=>{
+  const h=await harness(),e=new h.Editor(h.meta(),'base',h.hooks),input=e.input;
+  input.value='中文草稿\n\n第二段';e.changed();
+  let resets=0,value=input.value;Object.defineProperty(input,'value',{get:()=>value,set:v=>{resets++;value=v;}});
+  await e.save();e.updateButtons();
+  assert.equal(e.input,input);assert.equal(resets,0);assert.equal(e.measure.textContent,value+'\n');
+  assert.equal(e.title.textContent,'中文草稿');
+  h.remote.text='另一处接受的新文字';h.remote.version='next';await e.reconcile();
+  assert.equal(e.measure.textContent,h.remote.text+'\n');assert.equal(e.title.textContent,h.remote.text);
+  e.destroy();assert.equal(e.measure.textContent,'');
+});
+test('full document review retains the explicit publication gate and disposes its text',async()=>{
+  const h=await harness(),e=new h.Editor(h.meta(),'base',h.hooks);await e.preview();
+  const review=h.dialogs.at(-1);assert.equal(review.options.document,true);
+  assert.equal(h.calls.some(c=>c[0]==='act'),false);
+  assert.equal(review.actions.filter(a=>a.style==='primary').length,1);
+  e.destroy();assert.equal(review.closed,true);assert.equal(e.measure.textContent,'');
 });

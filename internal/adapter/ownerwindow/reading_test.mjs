@@ -99,3 +99,12 @@ test('separate edits have separate anchors and every indicated replacement recon
     assert.equal(result,b);
   }
 });
+
+test('returning to writing restores selection and scroll without rewriting text',async()=>{
+  const {ui}=await harness();let focusOptions,selection;
+  const parent={scrollTop:900,scrollLeft:0,parentElement:null};
+  const input={isConnected:true,value:'保留原文',selectionStart:2,selectionEnd:4,selectionDirection:'backward',scrollTop:0,scrollLeft:0,parentElement:parent,focus:o=>{focusOptions=o;},setSelectionRange:(...v)=>{selection=v;}};
+  const restore=ui.editingPosition(input);parent.scrollTop=0;restore();
+  assert.deepEqual(selection,[2,4,'backward']);assert.equal(parent.scrollTop,900);assert.equal(input.value,'保留原文');assert.equal(focusOptions.preventScroll,true);
+  input.isConnected=false;parent.scrollTop=0;restore();assert.equal(parent.scrollTop,0);
+});

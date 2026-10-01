@@ -1,5 +1,5 @@
 import {act, query, resolve, text, replace, pause, operationID, storage, scope} from './api.js';
-import {el, button, row, prose, dialog, confirm, notice, download, documentView, comparison, immersionButton} from './ui.js';
+import {el, button, row, prose, dialog, confirm, notice, download, documentView, comparison, immersionButton, documentOptions, editingPosition, revealDocument} from './ui.js';
 
 const rescueKey = 'ownward.owner-input';
 // The running window owns its rescue even when browser storage is unavailable.
@@ -37,14 +37,20 @@ export class Editor {
     this.busy=null;this.queue=Promise.resolve();this.conflict=null;this.timer=null;this.lastWrite=0;this.composing=false;this.paused=false;this.quarantined=false;this.finishing=false;this.refreshPending=!!rescue?.refreshPending||rescue?.pendingSave!==undefined;this.pendingSave=rescue?.pendingSave;
     this.publishID=rescue?.publishID || null;this.rebase=rescue?.rebase||null;this.discardPending=rescue?.discardPending||null;
     this.input=documentView(content,'',true);
+    // 同排版的不可见文本只负责撑高；实际输入始终保留在同一原生控件中。
+    this.measure=el('pre',{class:'document-text writing-measure','aria-hidden':'true'},content+'\n');
+    this.title=el('h1',{class:'editor-title'});
     this.status=el('span',{class:'save-state',role:'status'},'草稿已保存');
     this.conflictBox=el('section',{class:'conflict-box',hidden:true,'aria-label':'内容核对'});
     this.previewButton=button(meta.target?'预览修改':'预览文稿',()=>this.preview(),'primary');
     this.grantButton=button('邀请应用协助',()=>hooks.grant(this));
     this.discardButton=button('删除草稿',()=>this.discard(),'danger-quiet');
     this.retryButton=button('重试保存',()=>this.recoveryAction.run());this.retryButton.hidden=true;
-    this.node=el('section',{class:'editor'},el('header',{class:'editor-toolbar'},row(button('返回文稿',()=>hooks.leave(),'back-link'),immersionButton(),el('span',{class:'editor-mode'},meta.target?'编辑资料':'草稿')),row(this.status,this.retryButton,this.previewButton)),
-      this.conflictBox,el('div',{class:'writing-paper'},this.input),el('footer',{class:'editor-footer'},el('p',{class:'subtle'},meta.target?'修改自动保存为草稿，确认后生效。':'文字自动保存为草稿。'),row(this.grantButton,this.discardButton)));
+    this.options=documentOptions(immersionButton(),this.grantButton,this.discardButton);
+    this.node=el('section',{class:'editor'},el('header',{class:'editor-toolbar'},
+      el('div',{class:'editor-location'},button('返回文稿',()=>hooks.leave(),'back-link'),this.title),
+      el('div',{class:'editor-actions'},this.status,this.retryButton,this.previewButton,this.options.node)),
+      this.conflictBox,el('div',{class:'writing-paper'},el('p',{class:'writing-caption'},meta.target?'编辑草稿 · 确认后更新资料':'草稿 · 确认后加入资料'),el('div',{class:'writing-input'},this.measure,this.input)));
     this.input.addEventListener('compositionstart',()=>{this.composing=true;});
     this.input.addEventListener('compositionend',()=>{this.composing=false;this.changed();});
     this.input.addEventListener('input',()=>this.changed());
@@ -68,6 +74,9 @@ export class Editor {
   }
   setStatus(value){if(this.live){if(value!==this.lastStatus){this.status.setAttribute('data-saved',String(value==='草稿已保存'));this.lastStatus=value;}this.status.textContent=value+(cleanupPending?'；浏览器暂存尚待清理，请勿刷新或关闭':rescueNeedsWindow()?'；暂存仅在当前窗口，请勿刷新或关闭':'');}}
   updateButtons(){
+    if(this.measure.textContent!==this.value+'\n')this.measure.textContent=this.value+'\n';
+    const title=this.value.split('\n',1)[0].trim()||(this.meta.target?'编辑资料':'新文稿');
+    if(this.title.textContent!==title)this.title.textContent=title;
     this.retryButton.textContent=this.recoveryAction.label;
     this.previewButton.disabled=!this.value.trim()||!!this.conflict||!!this.publishID&&!this.retryPublishAllowed||this.composing||this.quarantined||this.finishing||!!this.discardPending||this.refreshPending;
     this.input.readOnly=!!this.publishID&&!this.conflict||this.quarantined||this.finishing||!!this.discardPending||this.refreshPending;
@@ -104,9 +113,9 @@ export class Editor {
     const job=this.queue.then(async()=>{if(!this.live)return;this.busy=job;try{return await task();}finally{if(this.busy===job)this.busy=null;}});
     this.queue=job.catch(()=>{});return job;
   }
-  suspend(){this.paused=true;clearTimeout(this.timer);this.persist();}
+  suspend(){this.paused=true;this.options.close();clearTimeout(this.timer);this.persist();}
   async resume(){this.paused=false;await this.reconcile();if(this.dirty)this.schedule();}
-  quarantine(){this.quarantined=true;this.node.hidden=true;clearTimeout(this.timer);this.persist();this.updateButtons();}
+  quarantine(){this.quarantined=true;this.options.close();this.node.hidden=true;clearTimeout(this.timer);this.persist();this.updateButtons();}
   async save(){
     return this.serial(async()=>{
       if(this.publishID||this.discardPending||!this.dirty||this.conflict||this.composing||this.quarantined||this.finishing||this.refreshPending)return;
@@ -192,6 +201,7 @@ export class Editor {
   finishConflict(){this.conflict=null;this.conflictBox.hidden=true;this.conflictBox.replaceChildren();this.retryPublishAllowed=!!this.publishID;this.persist();this.setStatus(this.dirty?'尚未保存':'草稿已保存');this.updateButtons();}
   unavailable(){clearRescue(this.meta.reference);this.destroy();this.hooks.unavailable();}
   async preview(){
+    const restore=editingPosition(this.input,this.measure);
     const current=scope();
     await this.flush();if(!this.live||!current())return;
     await this.reconcile(true);if(this.conflict||!this.live)return;
@@ -205,9 +215,9 @@ export class Editor {
       }catch(error){if(error.status===409){await this.targetConflict();return;}throw error;}
     }
     if(!current())return;this.requireSnapshot(snapshot);
-    const content=el('div',{},source?.preserve_original?el('p',{class:'preview-note'},'保存后将使用修改后的内容，原始来源仍可查看。'):null,
+    const content=el('div',{class:this.meta.target?'review-comparison':'review-document'},source?.preserve_original?el('p',{class:'preview-note'},'保存后将使用修改后的内容，原始来源仍可查看。'):null,
       this.meta.target?comparison(before,snapshot.text):documentView(snapshot.text));
-    const d=dialog(this.meta.target?'预览修改':'预览文稿',content,[{label:'返回编辑',run:close=>close()},{label:this.meta.target?'保存修改':'加入资料',style:'primary',run:async close=>{
+    const d=dialog(this.meta.target?'预览修改':'预览文稿',content,[{label:this.meta.target?'保存修改':'加入资料',style:'primary',run:async close=>{
       if(!this.live||!current()||!close.current())return close();
       await this.finish('正在确认保存结果…',async()=>{
         this.requireSnapshot(snapshot);if(this.dirty||this.conflict)throw new Error('请重新预览已保存的全文。');
@@ -215,18 +225,19 @@ export class Editor {
         try{const result=await act({action:'publish_draft',handle:snapshot.handle,operation_id:this.publishID});if(this.live){clearRescue(this.meta.reference);this.destroy();close();await this.hooks.published(result.handle);}}
         catch(error){close();if(this.live&&current())await this.readPublication();}
       });
-    }}]);
+    }}],{document:true,restore:()=>{if(this.live&&!this.quarantined)restore();}});
     this.previewDialog=d;
+    revealDocument(content.querySelector(this.meta.target?'.comparison-columns>section:last-child .document-text':'.document-text'),restore.offset);
   }
   async targetConflict(){
+    const restore=editingPosition(this.input);
     const currentScope=scope();
     const page=await resolve(this.meta.target_reference);
     if(!this.live||!currentScope())return;if(page.unavailable){this.unavailable();return;}
     const target=page.assets[0],current=await text('content',target.handle,()=>this.live);
     if(!this.live||!currentScope())return;
     const snapshot=this.snapshot(),mine=snapshot.text,previousHandle=snapshot.handle;
-    dialog('资料已在另一处更新',el('div',{},el('p',{},'原稿仍然保留。请核对双方全文，再决定是否以最新资料为基础继续编辑。'),el('div',{class:'comparison'},el('section',{},el('h3',{},'当前资料'),prose(current)),el('section',{},el('h3',{},'你的文稿'),prose(mine)))),[
-      {label:'返回核对',run:close=>close()},
+    this.previewDialog=dialog('资料已在另一处更新',el('div',{class:'review-comparison'},el('p',{class:'preview-note'},'原稿仍然保留。请核对双方全文，再决定是否以最新资料为基础继续编辑。'),comparison(current,mine,['当前资料','你的文稿'])),[
       {label:'以最新资料为基础继续',style:'primary',run:async close=>{
         if(!this.live||!currentScope()||!close.current())return;
         await this.finish('正在保存合并后的草稿…',async()=>{
@@ -255,7 +266,7 @@ export class Editor {
         await this.hooks.rebased(meta,body,rescue);
         try{await act({action:'discard_draft',handle:previousHandle});}catch(error){if(error.status!==-1)notice('新文稿已完整保存；旧稿有变化，已保留供你核对。');}
         });
-      }}]);
+      }}],{document:true,restore:()=>{if(this.live&&!this.quarantined)restore();}});
   }
   async readPublication(){
     if(!this.publishID)return;
@@ -350,5 +361,5 @@ export class Editor {
       await this.readDiscard();if(this.live&&current()&&this.discardPending)await this.submitDiscard();
     },true);
   }
-  destroy(){this.live=false;clearTimeout(this.timer);this.previewDialog?.close();this.input.value='';this.value='';this.base='';this.pendingSave=undefined;this.conflict=null;this.node.replaceChildren();}
+  destroy(){this.live=false;this.options.close();clearTimeout(this.timer);this.previewDialog?.close();this.input.value='';this.measure.textContent='';this.value='';this.base='';this.pendingSave=undefined;this.conflict=null;this.node.replaceChildren();}
 }

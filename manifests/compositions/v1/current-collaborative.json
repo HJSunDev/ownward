@@ -165,7 +165,7 @@
         {
           "name": "internal-adapter-ownerwindow-static-editor-js",
           "path": "internal/adapter/ownerwindow/static/editor.js",
-          "sha256": "b81e3f069b16f1acd920327c7595702389add3041df0bd8c10b03c69623cf84c"
+          "sha256": "29492c9fbbc6c676aa6fef6bd8599db7a7c7a3fd1e01875621aeb62d08af4cb6"
         },
         {
           "name": "internal-adapter-ownerwindow-static-go",
@@ -175,12 +175,12 @@
         {
           "name": "internal-adapter-ownerwindow-static-graph-js",
           "path": "internal/adapter/ownerwindow/static/graph.js",
-          "sha256": "b6ca55f0552cc624615c2e958e739c5bd389e6bd2f54b2468cda38a023731fa0"
+          "sha256": "034e50ad059544636adc092a36b8983024170c59bb126b2c15ae9fd47cbd65ee"
         },
         {
           "name": "internal-adapter-ownerwindow-static-graph-layout-js",
           "path": "internal/adapter/ownerwindow/static/graph-layout.js",
-          "sha256": "e8d6639642ebd17ddef7d6ef8f5b8d123fe59716dd624b27d387821dd0b2cae3"
+          "sha256": "4c60453f703e676687a756e248453098667c28cb0e5e8e328a3c09a7153d9c5c"
         },
         {
           "name": "internal-adapter-ownerwindow-static-index-html",
@@ -190,12 +190,12 @@
         {
           "name": "internal-adapter-ownerwindow-static-ui-js",
           "path": "internal/adapter/ownerwindow/static/ui.js",
-          "sha256": "137c735743accb80357a2d9a9992ec25308fd0d28b3771bea0a42e34695a7a2c"
+          "sha256": "850bac918130defe305edc3d221b3cb0765d4d20956e9b6d268da63f244f559f"
         },
         {
           "name": "internal-adapter-ownerwindow-static-window-css",
           "path": "internal/adapter/ownerwindow/static/window.css",
-          "sha256": "afe42bce0ab00e5aa801da41980d117bfcf6cfb5ee856da2eea496d31df7e07b"
+          "sha256": "86c79a7905e6d45af97af0ee836380fa366fc2bc9fa1dcec71e844d1ae1fb61a"
         },
         {
           "name": "internal-adapter-remote-transport",
@@ -416,7 +416,7 @@
           "identity": "1eb81993761504bd72d76fc2c0dc380e697cf9d1e1827845da552803e2b71fce"
         }
       ],
-      "identity": "cdf636b46db6fb43a1db24b3a1ea4b8a599ebb4f97fc71bf21bc0ed2dfd5bea8"
+      "identity": "f8dc2819eae77b1e55e15d68fecc1bedeeaa3172b58d970cca31307bec32f465"
     },
     {
       "role": "assembly",
@@ -539,7 +539,7 @@
       "dependencies": [
         {
           "role": "access",
-          "identity": "cdf636b46db6fb43a1db24b3a1ea4b8a599ebb4f97fc71bf21bc0ed2dfd5bea8"
+          "identity": "f8dc2819eae77b1e55e15d68fecc1bedeeaa3172b58d970cca31307bec32f465"
         },
         {
           "role": "authority-substrate",
@@ -562,7 +562,7 @@
           "identity": "c0af8126f2d9b51e70d27299b7f0cd2024ceab7a75789fffdc730be96b711a38"
         }
       ],
-      "identity": "bd889d1e7555209c39f2b853ce7a928c77cbd61b9e71d16fb511b5a7e9d9c4f0"
+      "identity": "1fc52b5489b33f66889f844cc0a68594fd0ac4e226af46059541b9d6dd579704"
     },
     {
       "role": "authority-substrate",
@@ -1694,7 +1694,7 @@
       "identity": "c0af8126f2d9b51e70d27299b7f0cd2024ceab7a75789fffdc730be96b711a38"
     }
   ],
-  "identity": "96504e08431658ccd00016856ffaeb1293673c485d4b2012bf626b30f376f23a",
+  "identity": "a6d71100ff4550d956b12bc9987170f591b12c208fb576c57e9650414bc7ef90",
   "audit": {
     "described_product_candidate": "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8",
     "migration_source_git": "dc2c7a09e67f06cfaacbe0a201c7ff27b20d6182"

@@ -24,7 +24,7 @@ const asset=id=>({reference:id,handle:id,state:'ready'});
 const edge=(source,target,explanation)=>({source,target,type:'supports',meaning:explanation});
 const tick=()=>new Promise(r=>setImmediate(r));
 async function ready(graph){for(let i=0;i<200;i++){await tick();if(!graph.node.getAttribute('aria-busy'))return;}throw Error('graph did not settle');}
-async function harness({assets=[asset('a'),asset('b')],relations={},override={},valid=()=>true,center=null,onOverview=()=>{}}={}){
+async function harness({assets=[asset('a'),asset('b')],relations={},override={},valid=()=>true,center=null,onOverview=()=>{},snapshot=null}={}){
   const calls=[],errors=[],opened=[];
   const api={scope:()=>()=>true,resolve:async(_,handle)=>({assets:[asset(handle.split(':')[0])]}),text:async(_,handle)=>JSON.stringify(handle),query:async q=>{
     calls.push(q);
@@ -39,7 +39,7 @@ async function harness({assets=[asset('a'),asset('b')],relations={},override={},
   const layout=await module('./static/graph-layout.js');await layout.link(()=>{});await layout.evaluate();
   const graph=await module('./static/graph.js');
   await graph.link(spec=>{if(spec.includes('graph-layout'))return layout;const values=spec.includes('api')?api:ui;return new vm.SyntheticModule(Object.keys(values),function(){for(const[k,v]of Object.entries(values))this.setExport(k,v);},{context});});
-  await graph.evaluate();const result=graph.namespace.createGraph({assets,valid,center,onOverview,onOpen:(...v)=>opened.push(v)});await ready(result);
+  await graph.evaluate();const result=graph.namespace.createGraph({assets,valid,center,onOverview,snapshot,onOpen:(...v)=>opened.push(v)});await ready(result);
   return {graph:result,calls,errors,opened,layout:layout.namespace,button:label=>result.node.all().find(n=>n.tag==='button'&&n.textContent===label)};
 }
 
@@ -110,5 +110,70 @@ test('layout distinguishes connected components and fits finite coordinates, inc
   const h=await harness();const p=h.layout.layoutGraph([{id:'a'},{id:'b'},{id:'c'}],[{source:'a',target:'b'}]);
   assert.equal(p.get('a').group,p.get('b').group);assert.notEqual(p.get('a').group,p.get('c').group);
   for(const size of [[1000,660],[350,440]])for(const point of [p,new Map()])assert.ok(Object.values(h.layout.fitGraph(point,...size)).every(Number.isFinite));
+  h.graph.destroy();
+});
+
+test('new relationships replace stale saved positions; unchanged selection and return preserve the space',async()=>{
+  const first=await harness(),old=first.graph.capture();first.graph.destroy();
+  const h=await harness({snapshot:old,relations:{a:[edge('a','b','new connection')]}});
+  const organized=h.graph.capture(),before=new Map(old.points),after=new Map(organized.points);
+  assert.notEqual(organized.topology,old.topology);
+  assert.ok([...after].some(([id,p])=>Math.hypot(p.x-before.get(id).x,p.y-before.get(id).y)>10));
+  h.graph.node.querySelector('.graph-node').handlers.keydown({key:'Enter',preventDefault(){}});await ready(h.graph);
+  assert.deepEqual(h.graph.capture().points,organized.points,'selection must not rerun the layout');
+  const snapshot=h.graph.capture();h.graph.destroy();
+  const restored=await harness({snapshot,relations:{a:[edge('a','b','new connection')]}});
+  assert.deepEqual(JSON.parse(JSON.stringify(restored.graph.capture().points)),JSON.parse(JSON.stringify(snapshot.points)));
+  assert.deepEqual(JSON.parse(JSON.stringify(restored.graph.capture().camera)),JSON.parse(JSON.stringify(snapshot.camera)));
+  restored.graph.destroy();
+});
+
+test('labels keep readable non-overlapping boxes and prioritize the current target',async()=>{
+  const h=await harness(),items=[{id:'selected',x:190,y:100,width:150,priority:1000},{id:'b',x:240,y:105,width:150,priority:0},{id:'c',x:80,y:180,width:130,priority:0}];
+  const placed=h.layout.placeLabels(items,390,300),boxes=[...placed.values()].map(p=>p.box);
+  assert.ok(placed.has('selected'));
+  for(let i=0;i<boxes.length;i++){const a=boxes[i];assert.ok(a.left>=8&&a.right<=382&&a.top>=8&&a.bottom<=292);for(let j=i+1;j<boxes.length;j++){const b=boxes[j];assert.ok(!(a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top));}}
+  h.graph.destroy();
+});
+
+test('representative topologies remain finite, separated and independent of repeated evidence',async()=>{
+  const h=await harness(),nodes=Array.from({length:18},(_,i)=>({id:String(i).padStart(2,'0')}));
+  const chain=nodes.slice(1).map((n,i)=>({source:nodes[i].id,target:n.id})),star=nodes.slice(1).map(n=>({source:'00',target:n.id})),cycle=[...chain,{source:'17',target:'00'}];
+  for(const links of [[],chain,star,cycle]){
+    const points=h.layout.layoutGraph(nodes,links),values=[...points.values()];
+    assert.ok(values.every(p=>Number.isFinite(p.x)&&Number.isFinite(p.y)));
+    for(let i=0;i<values.length;i++)for(let j=i+1;j<values.length;j++)assert.ok(Math.hypot(values[i].x-values[j].x,values[i].y-values[j].y)>70,'nodes need space for labels and picking');
+    assert.equal(h.layout.graphSignature(nodes,links),h.layout.graphSignature([...nodes].reverse(),[...links,...links].reverse()));
+    assert.deepEqual(h.layout.layoutGraph(nodes,links),h.layout.layoutGraph(nodes,[...links,...links]));
+  }
+  h.graph.destroy();
+});
+
+test('opposite directions, relationship types and self links have separate visible paths',async()=>{
+  const h=await harness({relations:{a:[edge('a','b','forward'),edge('b','a','back'),{...edge('a','b','different type'),type:'contrasts'}],b:[edge('a','a','self')]}});
+  const paths=h.graph.node.querySelectorAll('.edge-ink').map(p=>p.getAttribute('d'));
+  assert.equal(new Set(paths).size,paths.length);
+  assert.equal(new Set(paths.filter(p=>p.includes(' Q')).map(p=>p.split(' Q')[1].split(' ')[0])).size,3,'opposite directions must not share the same geometric curve');
+  assert.ok(paths.some(p=>p.includes(' C')),'a self link needs a visible loop');
+  h.graph.destroy();
+});
+
+test('returning to the graph restores the selected relationship and its explanation',async()=>{
+  const relations={a:[edge('a','b','preserved explanation')]},first=await harness({relations});
+  await first.graph.node.querySelector('.graph-edge').handlers.keydown({key:'Enter',preventDefault(){}});await tick();await tick();
+  const snapshot=first.graph.capture();first.graph.destroy();
+  const restored=await harness({relations,snapshot});
+  assert.match(restored.graph.node.querySelector('.graph-inspector').textContent,/preserved explanation/);
+  assert.equal(restored.graph.node.querySelector('.graph-edge').getAttribute('data-selected'),'true');restored.graph.destroy();
+});
+
+test('selecting a node keeps it above an overlapping details drawer',async()=>{
+  const h=await harness(),view=h.graph.node.querySelector('.graph-canvas'),panel=h.graph.node.querySelector('.graph-inspector');
+  view.getBoundingClientRect=()=>({left:0,right:1000,top:100,bottom:760,height:660});
+  panel.getBoundingClientRect=()=>({left:20,right:980,top:350,bottom:760,height:410});
+  const target=h.graph.node.querySelector('.graph-node'),id=target.getAttribute('data-node');
+  await target.handlers.keydown({key:'Enter',preventDefault(){}});await ready(h.graph);
+  const state=h.graph.capture(),point=new Map(state.points).get(id),screenY=100+point.y*state.camera.k+state.camera.y;
+  assert.ok(screenY<=305&&screenY>=145,'the selected node must stay inside the uncovered canvas');
   h.graph.destroy();
 });

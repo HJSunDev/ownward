@@ -89,11 +89,15 @@ export const tag = (value, cls = '') => el('span',{class:`tag ${cls}`},value);
 export const row = (...children) => el('div',{class:'row'},...children);
 export const statusName = value => ({ready:'已整理',pending:'待整理',stopped:'已停止使用',completed:'已完成',declined:'已拒绝',superseded:'内容已变化',awaiting_approval:'待确认',cleaning:'正在删除',stopping:'正在停止使用',approved:'已允许',rebuilding:'正在重新整理'})[value] || '处理中';
 export const permissionName = value => ({read:'查看资料',maintain:'添加与修改资料',manage:'管理资料与访问权限'})[value] || '其他权限';
-export function dialog(title, contents, actions = []) {
-  const previous = document.activeElement, modal = el('dialog',{class:'modal','aria-label':title});
-  const close = () => { modal.close(); modal.replaceChildren();modal.remove(); if (previous?.isConnected) previous.focus(); };
+export function dialog(title, contents, actions = [], options = {}) {
+  const active=document.activeElement,previous=active?.closest('.document-options')?.querySelector('summary')||active,modal = el('dialog',{class:options.document?'modal document-review':'modal','aria-label':title});
+  let closed=false;
+  const close = () => { if(closed)return;closed=true;modal.close();modal.replaceChildren();modal.remove();if(options.restore)options.restore();else if(previous?.isConnected)previous.focus({preventScroll:true}); };
   close.current=()=>modal.isConnected&&modal.open;
-  modal.append(el('header',{},el('h2',{},title),button('关闭',close,'icon',{'aria-label':'关闭对话框'})),el('div',{class:'modal-body'},el('p',{class:'modal-notice',role:'status',hidden:true}),contents),el('footer',{},...actions.map(item=>button(item.label,()=>item.run(close),item.style || 'quiet'))));
+  const controls=actions.map(item=>button(item.label,()=>item.run(close),item.style || 'quiet'));
+  const heading=el('h2',{},title),dismiss=button(options.document?'返回编辑':'关闭',close,options.document?'back-link':'icon',{'aria-label':options.document?'返回编辑':'关闭对话框'});
+  modal.append(options.document?el('header',{},row(dismiss,heading),row(...controls)):el('header',{},heading,dismiss),el('div',{class:'modal-body'},el('p',{class:'modal-notice',role:'status',hidden:true}),contents));
+  if(!options.document)modal.append(el('footer',{},...controls));
   modal.addEventListener('keydown',event=>{
     if(event.key!=='Tab')return;
     const targets=[...modal.querySelectorAll('button,input,select,textarea,a[href],summary,[tabindex]')].filter(n=>!n.disabled&&n.tabIndex>=0&&n.getClientRects().length);
@@ -112,18 +116,53 @@ export function confirm(title, content, label, run, danger = false) {
 export function download(blob, name) {
   const url = URL.createObjectURL(blob), a = el('a',{href:url,download:name}); document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
+// 只记住编辑现场，不替换输入节点或赋值正文，保留原生撤销栈与输入法状态。
+export function editingPosition(input,measure){
+  const start=input.selectionStart,end=input.selectionEnd,direction=input.selectionDirection,positions=[];
+  for(let node=input;node;node=node.parentElement)positions.push([node,node.scrollTop,node.scrollLeft]);
+  const restore=()=>{if(!input.isConnected)return;input.focus({preventScroll:true});input.setSelectionRange(start,end,direction);for(const [node,top,left]of positions){node.scrollTop=top;node.scrollLeft=left;}};
+  // 用实际文字位置衔接查看；标题放大、两列重排后不按滚动百分比猜段落。
+  restore.offset=0;
+  if(measure?.firstChild){
+    const range=document.createRange(),text=measure.firstChild,top=input.closest('.editor').querySelector('.editor-toolbar').getBoundingClientRect().bottom;
+    let lo=0,hi=input.value.length;
+    while(lo<hi){const mid=(lo+hi)>>1;range.setStart(text,mid);range.setEnd(text,Math.min(mid+1,text.length));if(range.getBoundingClientRect().bottom<=top)lo=mid+1;else hi=mid;}
+    restore.offset=lo;
+  }
+  return restore;
+}
+export function revealDocument(node,offset){
+  if(!node||!offset)return;
+  const walk=document.createTreeWalker(node,NodeFilter.SHOW_TEXT);let text,left=offset;
+  while((text=walk.nextNode())){if(text.parentElement?.getAttribute('data-literal-gap')==='true')continue;if(left<text.length)break;left-=text.length;}
+  if(!text)return;
+  const range=document.createRange();range.setStart(text,left);range.setEnd(text,Math.min(left+1,text.length));
+  const scroll=node.scrollHeight>node.clientHeight?node:node.closest('.modal-body');
+  if(scroll)scroll.scrollTop+=range.getBoundingClientRect().top-scroll.getBoundingClientRect().top-(parseFloat(getComputedStyle(scroll).paddingTop)||0);
+}
+export function documentOptions(...items){
+  const summary=el('summary',{'aria-label':'文稿选项',class:'button'},'更多');
+  const node=el('details',{class:'document-options'},summary,el('div',{class:'document-options-panel'},...items));
+  const close=()=>{node.open=false;document.removeEventListener('pointerdown',outside,true);};
+  const outside=event=>{if(!node.contains(event.target))close();};
+  node.addEventListener('toggle',()=>{if(node.open)document.addEventListener('pointerdown',outside,true);else close();});
+  node.addEventListener('focusout',event=>{if(!node.contains(event.relatedTarget))close();});
+  node.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();close();summary.focus();}});
+  node.addEventListener('click',event=>{if(event.target.closest('button')){close();summary.focus({preventScroll:true});}});
+  return {node,close};
+}
 
 // Reading and confirmation use the same literal-text renderer. Editing keeps
 // a native textarea, sharing its text and typography without an HTML roundtrip.
 export function documentView(value, cls = '', editable = false) {
-  if(editable)return el('textarea', {class:`document-text draft-input ${cls}`,value,spellcheck:false,'aria-label':'文稿正文'});
+  if(editable)return el('textarea', {class:`document-text draft-input ${cls}`,value,rows:1,placeholder:'从这里开始写…',spellcheck:false,'aria-label':'文稿正文'});
   const node=prose('',`document-text ${cls}`);renderDocument(node,value);return node;
 }
 export function renderDocument(node,value,marks=[]){
   // A separated first line is a typographic heading, never inferred content.
   const title=/^([^\r\n]{1,110})\r?\n\s*\r?\n/.exec(value),end=title?title[1].length:0;
   function parts(start,stop){const items=[];let at=start;
-    for(const m of marks){const empty=m.start===m.end;if(empty?!(m.start>=start&&(m.start<stop||stop===value.length&&m.start===stop)):m.end<=start||m.start>=stop)continue;const a=Math.max(start,m.start),b=Math.min(stop,m.end);if(a<at||b<a)continue;items.push(value.slice(at,a),el('mark',{class:m.class},value.slice(a,b)||'〔此处无文字〕'));at=b;}
+    for(const m of marks){const empty=m.start===m.end;if(empty?!(m.start>=start&&(m.start<stop||stop===value.length&&m.start===stop)):m.end<=start||m.start>=stop)continue;const a=Math.max(start,m.start),b=Math.min(stop,m.end);if(a<at||b<a)continue;items.push(value.slice(at,a),el('mark',{class:m.class,'data-literal-gap':String(empty)},value.slice(a,b)||'〔此处无文字〕'));at=b;}
     items.push(value.slice(at,stop));return items;
   }
   node.replaceChildren(...(end?[el('span',{class:'document-title'},...parts(0,end)),...parts(end,value.length)]:parts(0,value.length)));
@@ -160,16 +199,14 @@ export function differences(before,after){
   }
   return changes;
 }
-export function comparison(before, after) {
-  const left=documentView(before),right=documentView(after),panels=[left,right];
+export function comparison(before, after, labels=['现在','将成为']) {
+  const left=documentView(before),right=documentView(after);
   const changes=differences(before,after);
   for(const [node,value,side]of [[left,before,'before'],[right,after,'after']])renderDocument(node,value,changes.map((change,i)=>({...change[side],class:`difference change-${i}`})));
-  const tabs=row(),columns=el('div',{class:'comparison-columns'},el('section',{},el('h3',{},'现在'),left),el('section',{},el('h3',{},'将成为'),right));
+  const tabs=row(),columns=el('div',{class:'comparison-columns'},el('section',{},el('h3',{},labels[0]),left),el('section',{},el('h3',{},labels[1]),right));
   const root=el('div',{class:'comparison', 'data-side':'after'},tabs,columns);
-  for(const [side,label]of [['before','现在'],['after','将成为']])tabs.append(button(label,()=>{root.setAttribute('data-side',side);for(const b of tabs.children)b.setAttribute('aria-pressed',String(b.textContent===label));},'compare-tab',{'aria-pressed':String(side==='after')}));
+  for(const [side,label]of [['before',labels[0]],['after',labels[1]]])tabs.append(button(label,()=>{root.setAttribute('data-side',side);for(const b of tabs.children)b.setAttribute('aria-pressed',String(b.textContent===label));},'compare-tab',{'aria-pressed':String(side==='after')}));
   if(changes.length)root.prepend(el('div',{class:'change-navigation','aria-label':'修改位置'},...changes.map((_,i)=>button(`改动 ${i+1}`,()=>{root.querySelectorAll(`.change-${i}`).forEach(mark=>mark.scrollIntoView({block:'center',behavior:'auto'}));},'text-link'))));
-  let sync=false;
-  for(const [i,node]of panels.entries())node.addEventListener('scroll',()=>{if(sync)return;const other=panels[1-i],range=node.scrollHeight-node.clientHeight;sync=true;other.scrollTop=range?node.scrollTop/range*(other.scrollHeight-other.clientHeight):0;queueMicrotask(()=>sync=false);});
   return root;
 }
 let appearance={theme:'system',size:'19'},immersive=false;
