@@ -49,6 +49,25 @@ type DraftPage struct {
 	Next  string  `json:"next,omitempty"`
 }
 
+// Public references locate a request, but never authorize draft access.
+type DraftInvitation struct {
+	ID        string    `json:"id"`
+	DraftID   string    `json:"-"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+type DraftCollaboration struct {
+	ID           string    `json:"id"`
+	Invitation   string    `json:"invitation"`
+	DraftID      string    `json:"-"`
+	Principal    string    `json:"-"`
+	Revision     uint64    `json:"-"`
+	State        string    `json:"state"`
+	Verification string    `json:"verification"`
+	ExpiresAt    time.Time `json:"expires_at"`
+	Grant        string    `json:"-"`
+}
+
 // OwnerWork is a base contract; public browser and agent bindings are separate.
 // IDs are opaque. Revisions are mandatory compare-and-swap preconditions.
 // A work grant permits only this draft's read/write, not publication or listing.

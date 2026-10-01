@@ -19,7 +19,7 @@ func (s *Service) decisions(ctx context.Context, cp boundedstore.OwnerCheckpoint
 	if !pending {
 		return s.history(ctx, cp, after, limit)
 	}
-	// One ordered projection, three existing authoritative record types. The
+	// One ordered projection of authoritative decisions. The
 	// continuation carries the source position, never a duplicate approval.
 	if after == "" || strings.HasPrefix(after, "m:") {
 		rows, position, e := s.Store.OwnerOperations(ctx, strings.TrimPrefix(after, "m:"), limit, pending)
@@ -85,6 +85,31 @@ func (s *Service) decisions(ctx context.Context, cp boundedstore.OwnerCheckpoint
 			out = append(out, contract.OwnerDecision{Handle: s.decisionHandle(cp, "handoff", h.ID, h.Revision, h.Target), Kind: "handoff", State: "awaiting_approval", Subject: h.Target.Endpoint, Consequence: "将资料库迁移到此地址，已连接的应用会一同迁移。迁移期间暂停修改，切换时会短暂中断访问。"})
 		}
 	}
+	if after == "h:" || strings.HasPrefix(after, "d:") {
+		draftAfter := strings.TrimPrefix(strings.TrimPrefix(after, "h:"), "d:")
+		rows, position, e := s.Store.DraftCollaborations(ctx, "", draftAfter, max(1, limit-len(out)), "awaiting_approval", "")
+		if e != nil {
+			return nil, "", e
+		}
+		for _, v := range rows {
+			if len(out) == limit {
+				return out, "d:" + draftAfter, nil
+			}
+			p, e := s.Store.OwnerPrincipal(ctx, v.Principal)
+			if e != nil {
+				return nil, "", e
+			}
+			d, e := s.Store.DraftMetadata(ctx, v.DraftID, "")
+			if e != nil {
+				return nil, "", e
+			}
+			draft := s.draft(cp, d)
+			out = append(out, contract.OwnerDecision{Handle: s.object(cp, "collaboration", v.ID, v.Revision), Kind: "draft_collaboration", State: v.State, Subject: p.Name, Distinction: connectionDistinction(p.Order), Verification: v.Verification, Draft: &draft, Consequence: "允许这个智能体在一小时内查看和编辑下面这篇草稿；不能代你加入资料。请核对智能体对话中的标记。"})
+		}
+		if position != "" {
+			return out, "d:" + position, nil
+		}
+	}
 	return out, "", nil
 }
 
@@ -131,6 +156,10 @@ func (s *Service) decide(ctx context.Context, cp boundedstore.OwnerCheckpoint, i
 		return contract.ErrOwnerRefresh
 	}
 	switch h.Type {
+	case "collaboration":
+		v, e := s.Store.DecideDraftCollaboration(ctx, h.ID, h.Revision, in.Accept)
+		out.State = v.State
+		return e
 	case "operation":
 		op, e := s.Management.Receipt(ctx, h.ID)
 		if e != nil {

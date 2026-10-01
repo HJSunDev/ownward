@@ -55,11 +55,12 @@ func (s *Store) OwnerCheckpoint(ctx context.Context) (out OwnerCheckpoint, err e
  UNION ALL SELECT min(updated)+?+1 FROM owner_operation_times WHERE state='declined' AND updated>=?
  UNION ALL SELECT min(updated)+?+1 FROM owner_operation_times WHERE state='superseded' AND updated>=?
  UNION ALL SELECT min(expires) FROM owner_draft_grants WHERE expires>?
+ UNION ALL SELECT min(expires) FROM owner_draft_requests WHERE state='awaiting_approval' AND expires>?
  UNION ALL SELECT min(CAST((julianday(json_extract(e.value,'$.expires'))-2440587.5)*86400000 AS INTEGER))
  FROM authority_header h,json_each(h.data,'$.access.enrollments') e
  WHERE json_extract(e.value,'$.status') IN ('pending','approved') AND coalesce(json_extract(e.value,'$.claimed'),0)=0
  AND (julianday(json_extract(e.value,'$.expires'))-2440587.5)*86400000>?
- )`, retention, now-retention, retention, now-retention, retention, now-retention, retention, now-retention, now, now).Scan(&out.VisibleUntil)
+ )`, retention, now-retention, retention, now-retention, retention, now-retention, retention, now-retention, now, now, now).Scan(&out.VisibleUntil)
 	})
 	s.maintenanceMu.Lock()
 	out.Attention = out.Attention || s.maintenanceErr != nil
@@ -221,15 +222,16 @@ type OwnerPrincipalRow struct {
 	Order uint64
 }
 
-func (s *Store) OwnerPrincipals(ctx context.Context, after string, limit int) (out []OwnerPrincipalRow, next string, err error) {
+func (s *Store) OwnerPrincipals(ctx context.Context, after string, limit int, external bool) (out []OwnerPrincipalRow, next string, err error) {
 	if limit < 1 || limit > contract.OwnerPageLimit {
 		return nil, "", errors.New("接入分页范围无效")
 	}
 	err = s.view(ctx, func(q queryer) error {
-		if _, e := requireOwner(ctx, q, false); e != nil {
+		a, e := requireOwner(ctx, q, false)
+		if e != nil {
 			return e
 		}
-		rows, e := q.QueryContext(ctx, `SELECT id,json_extract(data,'$.name'),json_extract(data,'$.revision'),json_extract(data,'$.permissions'),sequence FROM authority_items WHERE kind='principals' AND id>? ORDER BY id LIMIT ?`, after, limit+1)
+		rows, e := q.QueryContext(ctx, `SELECT id,json_extract(data,'$.name'),json_extract(data,'$.revision'),json_extract(data,'$.permissions'),sequence FROM authority_items WHERE kind='principals' AND id>? AND (?=0 OR id<>?) ORDER BY id LIMIT ?`, after, external, a.owner, limit+1)
 		if e != nil {
 			return e
 		}
@@ -294,7 +296,7 @@ func (s *Store) OwnerGrants(ctx context.Context, after string, limit int) (out [
 		rows, e := q.QueryContext(ctx, `SELECT g.id,g.draft,d.revision,g.principal,g.expires
  FROM owner_draft_grants g JOIN owner_drafts d ON d.id=g.draft
  JOIN access_principals p ON p.id=g.principal AND p.revision=g.principal_revision AND length(p.credential)=64
- WHERE g.id>? AND g.owner_revision=? AND g.expires>?
+ WHERE g.id>? AND g.owner_revision=? AND g.expires>? AND `+validDraftDelegation+`
  AND (d.target='' OR EXISTS(SELECT 1 FROM live_assets a WHERE a.id=d.target))
  ORDER BY g.id LIMIT ?`, after, a.ownerRevision, time.Now().UnixMilli(), limit+1)
 		if e != nil {

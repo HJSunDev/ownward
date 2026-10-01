@@ -46,6 +46,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return nil
 	}
 	command := args[0]
+	if command == "draft-work" {
+		return runDraftWork(ctx, args[1:], stdout, stderr)
+	}
 	if command == "install" {
 		return runInstall(ctx, args[1:], stdout, stderr)
 	}

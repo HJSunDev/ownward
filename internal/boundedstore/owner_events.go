@@ -57,7 +57,9 @@ func (s *Store) ownerEvents(ctx context.Context, after uint64, limit int, recent
 		out.Next = max(after, floor)
 		condition, order := "e.sequence>?", "ASC"
 		position := max(after, floor)
+		pageLimit := limit
 		if recent {
+			pageLimit++
 			condition, order = "e.sequence<?", "DESC"
 			position = after
 			if position == 0 {
@@ -75,19 +77,24 @@ func (s *Store) ownerEvents(ctx context.Context, after uint64, limit int, recent
  FROM owner_events e LEFT JOIN owner_event_relation_changes c ON c.sequence=e.sequence
  LEFT JOIN owner_event_access d ON d.sequence=e.sequence
  WHERE `+condition+` AND e.sequence>? AND e.at>=? ORDER BY e.sequence `+order+` LIMIT ?)
- SELECT * FROM (SELECT *,sum(coalesce(length(data),0)+length(operation)+length(asset)+length(status)+128) OVER(ORDER BY sequence `+order+`) AS bytes FROM page)
-			WHERE bytes<=524288 ORDER BY sequence `+order, contract.OwnerEventReferenceBytes, position, floor, cutoff, limit)
+ SELECT * FROM (SELECT *,sum(coalesce(length(data),0)+length(operation)+length(asset)+length(status)+128) OVER(ORDER BY sequence `+order+`) AS bytes,
+ row_number() OVER(ORDER BY sequence `+order+`)<count(*) OVER() AS more FROM page)
+			WHERE bytes<=524288 ORDER BY sequence `+order, contract.OwnerEventReferenceBytes, position, floor, cutoff, pageLimit)
 		if e != nil {
 			return e
 		}
 		defer rows.Close()
 		for rows.Next() {
+			if len(out.Items) == limit {
+				break
+			}
 			var v contract.OwnerEvent
 			var at int64
 			var changes contract.RelationInvalidationCounts
 			var access []byte
 			var bytes int64
-			if e = rows.Scan(&v.Sequence, &v.Kind, &v.Asset.ID, &v.Asset.Revision, &v.Operation, &v.Status, &at, &changes.QuoteMissing, &changes.QuoteAmbiguous, &changes.TargetUnavailable, &access, &bytes); e != nil {
+			var more bool
+			if e = rows.Scan(&v.Sequence, &v.Kind, &v.Asset.ID, &v.Asset.Revision, &v.Operation, &v.Status, &at, &changes.QuoteMissing, &changes.QuoteAmbiguous, &changes.TargetUnavailable, &access, &bytes, &more); e != nil {
 				return e
 			}
 			if len(access) > 0 {
@@ -102,6 +109,9 @@ func (s *Store) ownerEvents(ctx context.Context, after uint64, limit int, recent
 			v.At = time.UnixMilli(at).UTC()
 			out.Items = append(out.Items, v)
 			out.Next = v.Sequence
+			if recent && !more {
+				out.Next = 0
+			}
 		}
 		return rows.Err()
 	})
@@ -129,19 +139,23 @@ func (s *Store) OwnerOperations(ctx context.Context, after string, limit int, pe
 		if !pending {
 			args = append(args, time.Now().Add(-OwnerHistoryRetention).UnixMilli())
 		}
-		args = append(args, limit)
+		args = append(args, limit+1)
 		rows, e := q.QueryContext(ctx, `WITH page AS (SELECT a.id,a.data FROM authority_items a
  WHERE a.kind='operations' AND a.id>? AND `+condition+` ORDER BY a.id LIMIT ?)
- SELECT id,data FROM (SELECT id,data,sum(length(data)) OVER(ORDER BY id) AS bytes FROM page)
+ SELECT id,data,more FROM (SELECT id,data,sum(length(data)) OVER(ORDER BY id) AS bytes, row_number() OVER(ORDER BY id)<count(*) OVER() AS more FROM page)
  WHERE bytes<=524288 ORDER BY id`, args...)
 		if e != nil {
 			return e
 		}
 		defer rows.Close()
 		for rows.Next() {
+			if len(out) == limit {
+				break
+			}
+			var more bool
 			var id string
 			var b []byte
-			if e = rows.Scan(&id, &b); e != nil {
+			if e = rows.Scan(&id, &b, &more); e != nil {
 				return e
 			}
 			var v contract.ManagementReceipt
@@ -149,7 +163,10 @@ func (s *Store) OwnerOperations(ctx context.Context, after string, limit int, pe
 				return e
 			}
 			out = append(out, v)
-			next = id
+			next = ""
+			if more {
+				next = id
+			}
 		}
 		return rows.Err()
 	})

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"io"
 	"time"
 
@@ -31,6 +32,48 @@ func ownerStreamContext(ctx context.Context) error {
 type ownerActor struct {
 	id, owner, system       string
 	revision, ownerRevision uint64
+	permissions             int
+}
+
+type draftAuthorityKey struct{}
+
+func (a ownerActor) binding() string {
+	return fmt.Sprintf("%s:%s:%d:%d", a.system, a.id, a.revision, a.ownerRevision)
+}
+
+// BindDraftAuthority pins a previously reviewed authority through transaction
+// commit and streaming delivery. Revoking and regranting cannot revive a handle.
+func BindDraftAuthority(ctx context.Context, authority string) context.Context {
+	return context.WithValue(ctx, draftAuthorityKey{}, authority)
+}
+
+func (s *Store) DraftAuthority(ctx context.Context, author bool) (binding string, err error) {
+	err = s.view(ctx, func(q queryer) error {
+		a, e := requireDraftManager(ctx, q, false)
+		if author {
+			a, e = requireDraftAuthor(ctx, q, false)
+		}
+		binding = a.binding()
+		return e
+	})
+	return
+}
+
+// Bound multi-row projections to one current control/work state. This is a
+// small epoch check, not a second enumeration or an unbounded snapshot.
+func (s *Store) DraftCheckpoint(ctx context.Context) (value string, err error) {
+	err = s.view(ctx, func(q queryer) error {
+		if _, e := requireDraftManager(ctx, q, false); e != nil {
+			return e
+		}
+		var work, control, deletion uint64
+		if e := q.QueryRowContext(ctx, `SELECT (SELECT value FROM store_meta WHERE key='owner_work_epoch'),revision,deletion_epoch FROM access_header WHERE singleton=1`).Scan(&work, &control, &deletion); e != nil {
+			return e
+		}
+		value = fmt.Sprintf("%d:%d:%d", work, control, deletion)
+		return nil
+	})
+	return
 }
 
 func authenticateWork(ctx context.Context, q querier, writing bool) (ownerActor, error) {
@@ -41,15 +84,18 @@ func authenticateWork(ctx context.Context, q querier, writing bool) (ownerActor,
 	}
 	var frozen, retired, stopping bool
 	e := q.QueryRowContext(ctx, `SELECT p.id,p.revision,h.system,h.frozen,h.retired,h.stopping,
- json_extract(a.data,'$.information_control.owner_id'),o.revision
+ json_extract(a.data,'$.information_control.owner_id'),o.revision,p.permissions
  FROM access_header h JOIN access_principals p ON p.credential=?
  JOIN authority_header a ON a.singleton=h.singleton
  JOIN access_principals o ON o.id=json_extract(a.data,'$.information_control.owner_id')
- WHERE h.singleton=1`, digest).Scan(&a.id, &a.revision, &a.system, &frozen, &retired, &stopping, &a.owner, &a.ownerRevision)
+ WHERE h.singleton=1`, digest).Scan(&a.id, &a.revision, &a.system, &frozen, &retired, &stopping, &a.owner, &a.ownerRevision, &a.permissions)
 	if e != nil && !errors.Is(e, sql.ErrNoRows) {
 		return a, e
 	}
 	if e != nil || retired || stopping || (writing && frozen) {
+		return a, ErrAccess
+	}
+	if expected, ok := ctx.Value(draftAuthorityKey{}).(string); ok && expected != a.binding() {
 		return a, ErrAccess
 	}
 	return a, nil
@@ -63,17 +109,40 @@ func requireOwner(ctx context.Context, q querier, writing bool) (ownerActor, err
 	return a, e
 }
 
+// A trusted management connection is replaceable and explicitly authorized.
+// Ordinary maintenance does not expose private drafts; management alone does
+// not imply permission to read or change their contents.
+func requireDraftManager(ctx context.Context, q querier, writing bool) (ownerActor, error) {
+	a, e := authenticateWork(ctx, q, writing)
+	if e == nil && a.permissions&4 == 0 {
+		e = ErrAccess
+	}
+	return a, e
+}
+func requireDraftAuthor(ctx context.Context, q querier, writing bool) (ownerActor, error) {
+	a, e := requireDraftManager(ctx, q, writing)
+	if e == nil && a.permissions&3 != 3 {
+		e = ErrAccess
+	}
+	return a, e
+}
+
+// Used in every read, commit and delivery check, including owner projections.
+const validDraftDelegation = `NOT EXISTS(SELECT 1 FROM owner_draft_delegations gk
+ LEFT JOIN access_principals gp ON gp.id=gk.approver
+ WHERE gk.grant_id=g.id AND (gp.id IS NULL OR gp.revision<>gk.revision OR length(gp.credential)<>64 OR (gp.permissions & 4)=0))`
+
 func authorizeDraft(ctx context.Context, q querier, id, grant string, writing bool) error {
 	a, e := authenticateWork(ctx, q, writing)
 	if e != nil {
 		return e
 	}
-	if a.id == a.owner {
+	if a.id == a.owner || grant == "" && a.permissions&7 == 7 {
 		return nil
 	}
 	var allowed bool
-	e = q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM owner_draft_grants
- WHERE id=? AND draft=? AND principal=? AND principal_revision=? AND owner_revision=? AND expires>?)`,
+	e = q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM owner_draft_grants g
+ WHERE id=? AND draft=? AND principal=? AND principal_revision=? AND owner_revision=? AND expires>? AND `+validDraftDelegation+`)`,
 		grant, id, a.id, a.revision, a.ownerRevision, time.Now().UnixMilli()).Scan(&allowed)
 	if e != nil {
 		return e
@@ -126,7 +195,7 @@ func (s *Store) ownerWorkspace(ctx context.Context) (context.Context, func(), er
 
 func (s *Store) CreateDraft(ctx context.Context, in contract.DraftInput) (contract.Draft, error) {
 	var out contract.Draft
-	if e := s.view(ctx, func(q queryer) error { _, e := requireOwner(ctx, q, true); return e }); e != nil {
+	if e := s.view(ctx, func(q queryer) error { _, e := requireDraftAuthor(ctx, q, true); return e }); e != nil {
 		return out, e
 	}
 	ctx, release, e := s.ownerWorkspace(ctx)
@@ -172,7 +241,7 @@ func (s *Store) CreateDraft(ctx context.Context, in contract.DraftInput) (contra
 	now := time.Now().UTC()
 	out = contract.Draft{ID: id, Revision: 1, Target: in.Target, Kind: in.Kind, CreatedAt: now, UpdatedAt: now, ContentBytes: p.ContentBytes, ContentSHA256: p.ContentSHA256}
 	e = s.write(ctx, func(tx *sql.Tx) error {
-		if _, e := requireOwner(ctx, tx, true); e != nil {
+		if _, e := requireDraftAuthor(ctx, tx, true); e != nil {
 			return e
 		}
 		if in.Target.ID != "" {
@@ -228,7 +297,7 @@ func (s *Store) openDraftPart(ctx context.Context, id, grant, payload string, re
 
 func (s *Store) openOwnerAssetPart(ctx context.Context, id string, revision uint64, part int) (io.ReadCloser, error) {
 	return s.openOwnerPart(ctx, part, func(q queryer) (string, error) {
-		if _, e := requireOwner(ctx, q, false); e != nil {
+		if _, e := requireDraftAuthor(ctx, q, false); e != nil {
 			return "", e
 		}
 		var p string
@@ -421,7 +490,7 @@ func (s *Store) ListDrafts(ctx context.Context, after string, limit int) (contra
 		return out, errors.New("文稿分页上限为 100")
 	}
 	e := s.view(ctx, func(q queryer) error {
-		if _, e := requireOwner(ctx, q, false); e != nil {
+		if _, e := requireDraftAuthor(ctx, q, false); e != nil {
 			return e
 		}
 		rows, e := q.QueryContext(ctx, `SELECT d.id FROM owner_drafts d WHERE id>? AND (target='' OR EXISTS(SELECT 1 FROM live_assets a WHERE a.id=d.target)) ORDER BY id LIMIT ?`, after, limit+1)
@@ -545,7 +614,7 @@ func deleteDraft(ctx context.Context, tx *sql.Tx, id, payload string) error {
 
 func (s *Store) DiscardDraft(ctx context.Context, id string, expected uint64) error {
 	return s.write(workContext(ctx, controlWork), func(tx *sql.Tx) error {
-		if _, e := requireOwner(ctx, tx, true); e != nil {
+		if _, e := requireDraftAuthor(ctx, tx, true); e != nil {
 			return e
 		}
 		d, p, e := loadDraft(ctx, tx, id)

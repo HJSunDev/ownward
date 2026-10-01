@@ -43,12 +43,13 @@ var ErrOwnerRefresh = errors.New("内容或权限已变化，请保留未保存�
 // concatenate all text pages before decoding. Find matches any indexed query
 // token and can filter by kind/state; it is deterministic, not semantic search.
 type OwnerQuery struct {
-	Reference   string                 `json:"reference,omitempty"`    // resolve only: read locator, never write authority
+	Reference   string                 `json:"reference,omitempty"`    // read locator; resolve, or one invitation in draft_collaborations; never write authority
 	OperationID string                 `json:"operation_id,omitempty"` // publish_receipt only; strictly read-only
 	View        string                 `json:"view"`
 	Handle      string                 `json:"handle,omitempty"`
 	Cursor      string                 `json:"cursor,omitempty"`
 	After       string                 `json:"after,omitempty"`
+	Refresh     bool                   `json:"refresh,omitempty"` // re-read a list position against current authority; never renews write/text handles
 	Query       string                 `json:"query,omitempty"`
 	State       string                 `json:"state,omitempty"`
 	Kind        domain.InformationKind `json:"kind,omitempty"`
@@ -100,6 +101,7 @@ type OwnerGrant struct {
 }
 
 type OwnerDecision struct {
+	Draft        *OwnerDraft  `json:"draft,omitempty"`
 	Handle       string       `json:"handle"`
 	Kind         string       `json:"kind"`
 	State        string       `json:"state"`
@@ -153,25 +155,26 @@ type OwnerOverview struct {
 }
 
 type OwnerPage struct {
-	Source       *OwnerSource      `json:"source,omitempty"`
-	Unavailable  bool              `json:"unavailable,omitempty"` // resolve: forgotten/discarded, not a transient read error
-	Schema       string            `json:"schema"`
-	Cursor       string            `json:"cursor"`
-	Changed      bool              `json:"changed"`
-	Next         string            `json:"next,omitempty"`
-	Assets       []OwnerAsset      `json:"assets,omitempty"`
-	Drafts       []OwnerDraft      `json:"drafts,omitempty"`
-	Connections  []OwnerConnection `json:"connections,omitempty"`
-	Grants       []OwnerGrant      `json:"grants,omitempty"`
-	Decisions    []OwnerDecision   `json:"decisions,omitempty"`
-	Activity     []OwnerActivity   `json:"activity,omitempty"`
-	Relations    []OwnerRelation   `json:"relations,omitempty"`
-	Text         *OwnerText        `json:"text,omitempty"`
-	Overview     *OwnerOverview    `json:"overview,omitempty"`
-	Health       string            `json:"health,omitempty"`
-	Organization string            `json:"organization,omitempty"`
-	Reset        bool              `json:"reset,omitempty"`
-	Publication  *OwnerPublication `json:"publication,omitempty"`
+	Collaborations []OwnerCollaboration `json:"collaborations,omitempty"`
+	Source         *OwnerSource         `json:"source,omitempty"`
+	Unavailable    bool                 `json:"unavailable,omitempty"` // resolve: forgotten/discarded, not a transient read error
+	Schema         string               `json:"schema"`
+	Cursor         string               `json:"cursor"`
+	Changed        bool                 `json:"changed"`
+	Next           string               `json:"next,omitempty"`
+	Assets         []OwnerAsset         `json:"assets,omitempty"`
+	Drafts         []OwnerDraft         `json:"drafts,omitempty"`
+	Connections    []OwnerConnection    `json:"connections,omitempty"`
+	Grants         []OwnerGrant         `json:"grants,omitempty"`
+	Decisions      []OwnerDecision      `json:"decisions,omitempty"`
+	Activity       []OwnerActivity      `json:"activity,omitempty"`
+	Relations      []OwnerRelation      `json:"relations,omitempty"`
+	Text           *OwnerText           `json:"text,omitempty"`
+	Overview       *OwnerOverview       `json:"overview,omitempty"`
+	Health         string               `json:"health,omitempty"`
+	Organization   string               `json:"organization,omitempty"`
+	Reset          bool                 `json:"reset,omitempty"`
+	Publication    *OwnerPublication    `json:"publication,omitempty"`
 }
 
 type OwnerSource struct {
@@ -207,12 +210,14 @@ type OwnerAction struct {
 }
 
 type OwnerResult struct {
-	Reference string `json:"reference,omitempty"`
-	Schema    string `json:"schema"`
-	Handle    string `json:"handle,omitempty"`
-	Grant     string `json:"grant,omitempty"`
-	State     string `json:"state"`
-	Cursor    string `json:"cursor,omitempty"`
+	Invitation  *DraftInvitation `json:"invitation,omitempty"`
+	Instruction string           `json:"instruction,omitempty"`
+	Reference   string           `json:"reference,omitempty"`
+	Schema      string           `json:"schema"`
+	Handle      string           `json:"handle,omitempty"`
+	Grant       string           `json:"grant,omitempty"`
+	State       string           `json:"state"`
+	Cursor      string           `json:"cursor,omitempty"`
 }
 
 type OwnerView interface {
@@ -227,16 +232,57 @@ type OwnerView interface {
 // AgentDraftWork is deliberately separate from ordinary asset capabilities.
 // A grant is bound to the authenticated principal, never a bearer substitute.
 type AgentDraftRequest struct {
-	Action string `json:"action" jsonschema:"read, replace or append; never publishes or lists drafts"`
-	Draft  string `json:"draft"`
-	Grant  string `json:"grant"`
-	Handle string `json:"handle,omitempty" jsonschema:"Current handle returned by read; required for writes"`
-	Offset int64  `json:"offset,omitempty"`
-	Text   string `json:"text,omitempty"`
+	Action      string       `json:"action" jsonschema:"Primary (read+maintain+manage): list/create/read/replace/append/publish/publication/discard/invite. Manager: requests/decide/end/cancel. Temporary collaborator: request/status/read/replace/append only."`
+	Invitation  string       `json:"invitation,omitempty" jsonschema:"Public collaboration invitation; request only"`
+	Request     string       `json:"request,omitempty" jsonschema:"Request ID returned by request; status or authorized read/write"`
+	System      string       `json:"system,omitempty" jsonschema:"Expected library identity from invitation; required for request"`
+	WaitSeconds int          `json:"wait_seconds,omitempty" jsonschema:"Bounded approval wait, 0 to 25 seconds; no model polling"`
+	Draft       string       `json:"draft,omitempty"`
+	Grant       string       `json:"grant,omitempty"`
+	Handle      string       `json:"handle,omitempty" jsonschema:"Current handle returned by read; required for writes"`
+	Offset      int64        `json:"offset,omitempty"`
+	Text        string       `json:"text,omitempty"`
+	After       string       `json:"after,omitempty" jsonschema:"Next cursor for list or requests"`
+	Limit       int          `json:"limit,omitempty" jsonschema:"Page size 1 to 20, default 20"`
+	Accept      bool         `json:"accept,omitempty" jsonschema:"Approve the exact request from its decision handle; decide only"`
+	Operation   string       `json:"operation,omitempty" jsonschema:"Stable operation ID for publish retries; reuse with the same draft handle"`
+	Target      AssetVersion `json:"target,omitempty" jsonschema:"Optional existing asset version to edit; create only"`
 }
 type AgentDraftResult struct {
-	Handle  string     `json:"handle"`
-	Content *OwnerText `json:"content,omitempty"`
+	Request      string                    `json:"request,omitempty"`
+	State        string                    `json:"state,omitempty"`
+	Verification string                    `json:"verification,omitempty"`
+	ExpiresAt    *time.Time                `json:"expires_at,omitempty"`
+	Message      string                    `json:"message,omitempty"`
+	Handle       string                    `json:"handle,omitempty"`
+	Content      *OwnerText                `json:"content,omitempty"`
+	Draft        string                    `json:"draft,omitempty"`
+	Drafts       []Draft                   `json:"drafts,omitempty"`
+	Next         string                    `json:"next,omitempty"`
+	Invitation   *DraftInvitation          `json:"invitation,omitempty"`
+	Instruction  string                    `json:"instruction,omitempty"`
+	Requests     []AgentDraftCollaboration `json:"requests,omitempty"`
+	Asset        *AssetVersion             `json:"asset,omitempty"`
+}
+
+type AgentDraftCollaboration struct {
+	Request      string    `json:"request"`
+	Draft        string    `json:"draft"`
+	State        string    `json:"state"`
+	Subject      string    `json:"subject"`
+	Distinction  string    `json:"distinction"`
+	Verification string    `json:"verification"`
+	ExpiresAt    time.Time `json:"expires_at"`
+	Handle       string    `json:"handle"`
+}
+
+type OwnerCollaboration struct {
+	Handle       string          `json:"handle"`
+	Invitation   string          `json:"invitation"` // public request reference, never an authorization
+	State        string          `json:"state"`
+	Connection   OwnerConnection `json:"connection"`
+	ExpiresAt    time.Time       `json:"expires_at"`
+	Verification string          `json:"verification"`
 }
 type AgentDraftWork interface {
 	DraftWork(context.Context, AgentDraftRequest) (AgentDraftResult, error)

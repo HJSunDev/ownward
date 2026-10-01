@@ -14,6 +14,19 @@ CREATE TABLE IF NOT EXISTS owner_draft_grants(
  owner_revision INTEGER NOT NULL, expires INTEGER NOT NULL) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS owner_grant_draft ON owner_draft_grants(draft,id);
 CREATE INDEX IF NOT EXISTS owner_grant_expiry ON owner_draft_grants(expires,id);
+CREATE TABLE IF NOT EXISTS owner_draft_delegations(
+ grant_id TEXT PRIMARY KEY REFERENCES owner_draft_grants(id) ON DELETE CASCADE,
+ approver TEXT NOT NULL, revision INTEGER NOT NULL) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS owner_draft_invitations(
+ id TEXT PRIMARY KEY, draft TEXT NOT NULL REFERENCES owner_drafts(id) ON DELETE CASCADE,
+ owner_revision INTEGER NOT NULL, expires INTEGER NOT NULL) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS owner_invitation_draft ON owner_draft_invitations(draft,expires);
+CREATE INDEX IF NOT EXISTS owner_invitation_expiry ON owner_draft_invitations(expires);
+CREATE TABLE IF NOT EXISTS owner_draft_requests(
+ id TEXT PRIMARY KEY, invitation TEXT NOT NULL REFERENCES owner_draft_invitations(id) ON DELETE CASCADE,
+ principal TEXT NOT NULL, principal_revision INTEGER NOT NULL, owner_revision INTEGER NOT NULL,
+ revision INTEGER NOT NULL, state TEXT NOT NULL, grant_id TEXT NOT NULL,
+ expires INTEGER NOT NULL, UNIQUE(invitation,principal)) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS asset_originals(
  asset TEXT PRIMARY KEY, revision INTEGER NOT NULL,
  payload TEXT NOT NULL REFERENCES payloads(id)) WITHOUT ROWID;

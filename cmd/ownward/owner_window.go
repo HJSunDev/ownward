@@ -35,6 +35,9 @@ func newOwnerWindow(r *assembly.Runtime, dataDir string) (*ownerwindow.Server, e
 	if e != nil {
 		return nil, e
 	}
+	view.DraftInstruction = func(inv contract.DraftInvitation, instruction string) string {
+		return draftInstruction(dataDir, r.UserControl().SystemID())(inv, instruction)
+	}
 	return ownerwindow.New(view, localOwnerArchives(k, r.UserControl(), dataDir)), nil
 }
 

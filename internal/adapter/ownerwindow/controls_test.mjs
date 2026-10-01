@@ -1,7 +1,26 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {stepIndex, typeaheadIndex} from './static/ui.js';
+import {stepIndex, typeaheadIndex, selectPlacement, createPageNavigation} from './static/ui.js';
+
+test('paged views reject late responses and refresh the newest requested position',async()=>{
+  const pending=[],shown=[];
+  const pages=createPageNavigation(after=>new Promise(resolve=>pending.push({after,resolve})),(page,after)=>shown.push([page,after]));
+  const first=pages.load('one'),second=pages.load('two'),refresh=pages.load();
+  assert.deepEqual(pending.map(p=>p.after),['one','two','two']);
+  pending[2].resolve('fresh');await refresh;
+  pending[0].resolve('old');pending[1].resolve('old');await Promise.all([first,second]);
+  assert.deepEqual(shown,[['fresh','two']]);
+  const closing=pages.load();pages.cancel();pending[3].resolve('closed');await closing;
+  assert.equal(shown.length,1);
+});
+
+test('a rejected list position recovers once; failures and stale views cannot loop',async()=>{
+  const calls=[],shown=[];let live=true;
+  const pages=createPageNavigation(async after=>{calls.push(after);if(after)throw Object.assign(new Error('expired'),{status:409});return 'current';},p=>shown.push(p),()=>live);
+  await pages.load('expired');assert.deepEqual(calls,['expired','']);assert.deepEqual(shown,['current']);
+  live=false;await pages.load('expired');assert.equal(shown.length,1);
+});
 
 // v3 control-layer acceptance floor: each control keeps one mechanical assertion.
 // The DOM combobox behaviour is exercised in a real browser by the acceptance
@@ -19,6 +38,12 @@ test('Select: typeahead matches cyclically and ignores misses', () => {
   assert.equal(typeaheadIndex(['Alpha', 'Beta', 'Gamma'], 'g'), 2);
   assert.equal(typeaheadIndex(['Alpha', 'Beta', 'Gamma'], 'b', 2), 1);
   assert.equal(typeaheadIndex(['Alpha', 'Beta'], 'z'), -1);
+});
+
+test('Select: popup stays within its scroll container, flips when needed and bounds long lists',()=>{
+  assert.deepEqual(selectPlacement({top:100,bottom:140},{top:0,bottom:700},180),{upward:false,maxHeight:180});
+  assert.deepEqual(selectPlacement({top:340,bottom:380},{top:80,bottom:430},180),{upward:true,maxHeight:180});
+  assert.deepEqual(selectPlacement({top:220,bottom:260},{top:120,bottom:360},320),{upward:false,maxHeight:96});
 });
 
 test('window.css: spacing/type tokens and the control contract exist', async () => {

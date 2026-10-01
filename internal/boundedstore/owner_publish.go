@@ -23,7 +23,7 @@ func (s *Store) PublishDraft(ctx context.Context, id string, revision uint64, op
 	automaticGeneration := op.Generation == 0
 	e := s.view(ctx, func(q queryer) error {
 		var e error
-		actor, e = requireOwner(ctx, q, true)
+		actor, e = requireDraftAuthor(ctx, q, true)
 		if e != nil {
 			return e
 		}
@@ -213,7 +213,7 @@ func (s *Store) PublishDraft(ctx context.Context, id string, revision uint64, op
 	out = contract.AssetVersion{ID: m.ID, Revision: m.Revision}
 	receipt := contract.MutationReceipt{Operation: op, Results: []contract.MutationOutcome{{Asset: out}}}
 	before := func(tx *sql.Tx) error {
-		if _, e := requireOwner(ctx, tx, true); e != nil {
+		if _, e := requireDraftAuthor(ctx, tx, true); e != nil {
 			return e
 		}
 		current, currentPayload, e := loadDraft(ctx, tx, id)
@@ -237,7 +237,7 @@ func (s *Store) PublishDraft(ctx context.Context, id string, revision uint64, op
 
 func (s *Store) draftReceipt(ctx context.Context, op contract.OperationIdentity) (out contract.AssetVersion, found bool, err error) {
 	err = s.view(ctx, func(q queryer) error {
-		if _, e := requireOwner(ctx, q, true); e != nil {
+		if _, e := requireDraftAuthor(ctx, q, true); e != nil {
 			return e
 		}
 		r, ok, e := lookupReceipt(ctx, q, op)
@@ -275,7 +275,7 @@ func (s *Store) OwnerPublication(ctx context.Context, id string) (out OwnerPubli
 	}
 	out.State = "unknown"
 	err = s.view(ctx, func(q queryer) error {
-		actor, e := requireOwner(ctx, q, false)
+		actor, e := requireDraftAuthor(ctx, q, false)
 		if e != nil {
 			return e
 		}

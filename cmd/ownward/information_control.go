@@ -101,6 +101,29 @@ func (s controlHTTPServer) HTTPHandler() http.Handler {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == controlPrefix+"draft-work" {
+			if r.Method != http.MethodPost || s.window == nil {
+				http.NotFound(w, r)
+				return
+			}
+			var in contract.AgentDraftRequest
+			d := json.NewDecoder(http.MaxBytesReader(w, r.Body, contract.OwnerRequestBytes))
+			d.DisallowUnknownFields()
+			if e := d.Decode(&in); e != nil {
+				http.Error(w, "invalid draft request", 400)
+				return
+			}
+			out, e := s.window.View.DraftWork(ctx, in)
+			if e == nil {
+				e = s.window.View.CheckDraftWork(ctx, in, out.Handle)
+			}
+			if e != nil {
+				http.Error(w, e.Error(), 403)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(out)
+			return
+		}
 		var input struct {
 			Name     string `json:"name"`
 			ID       string `json:"id"`

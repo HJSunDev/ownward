@@ -2,12 +2,13 @@ import {createReader} from './reading.js';
 import {createGraph} from './graph.js';
 import {query, act, resolve, text, request, quit, operationID, invalidate, scope} from './api.js';
 import {Editor, rescuedInput, rescueNeedsWindow, rescueCleanupPending, retryRescueCleanup, clearRescue, retainReceipt} from './editor.js';
-import {el, button, row, heading, empty, prose, tag, date, notice, clearNotice, statusName, permissionName, dialog, confirm, download, errorMessage, documentView, appearanceControls, applyAppearance, setImmersive, createSelect} from './ui.js';
+import {el, button, row, heading, empty, prose, tag, date, notice, clearNotice, statusName, permissionName, dialog, confirm, download, errorMessage, documentView, appearanceControls, applyAppearance, setImmersive, createSelect, createPageNavigation} from './ui.js';
 
+import {openCollaboration,refreshCollaboration} from './collaboration.js';
 const main=document.getElementById('main');
 const state={surface:'home',reader:null,readPositions:new Map(),graphMem:new Map(),epoch:0,graph:null,graphView:null,cursor:'',editor:null,selection:null,active:true,polling:false,after:'',search:'',filter:'',exiting:false,bound:false,run:0,pendingDirty:true};
 const surfaces=[['drafts','文稿'],['assets','资料'],['relations','关联'],['events','动态'],['control','设置']];
-const eventName={create:'添加了资料',created:'添加了资料',update:'更新了资料',updated:'更新了资料',correct:'更正了资料',correction:'更正了资料',draft_published:'保存了文稿',forget:'删除资料',permissions:'更新访问权限',enrollment:'应用连接申请',handoff:'资料库迁移',access:'访问权限变更'};
+const eventName={create:'添加了资料',created:'添加了资料',update:'更新了资料',updated:'更新了资料',correct:'更正了资料',correction:'更正了资料',draft_published:'保存了文稿',draft_collaboration:'文稿协作授权',forget:'删除资料',permissions:'更新访问权限',enrollment:'应用连接申请',handoff:'资料库迁移',access:'访问权限变更'};
 const valid=epoch=>state.active&&epoch===state.epoch;
 const section=(title,...content)=>el('section',{class:'section'},el('div',{class:'section-title'},el('h2',{},title)),...content);
 const sourceLabel=s=>s?.authored?'我创建的':s?.actor||s?.ref||'未注明来源';
@@ -36,7 +37,9 @@ export async function start(health){
   const nav=document.getElementById('navigation');
   for(const [id,label] of surfaces)nav.append(button(label,()=>navigate(id),'nav-item',{'data-surface':id,'aria-label':label}));
   document.getElementById('home-entry').onclick=()=>navigate('home');
-  document.getElementById('pending-entry').onclick=()=>{const panel=document.getElementById('pending-panel');panel.hidden=!panel.hidden;document.getElementById('pending-entry').setAttribute('aria-expanded',String(!panel.hidden));};
+  document.getElementById('pending-entry').onclick=()=>{const panel=document.getElementById('pending-panel');panel.hidden=!panel.hidden;document.getElementById('pending-entry').setAttribute('aria-expanded',String(!panel.hidden));if(!panel.hidden)panel.querySelector?.('button')?.focus();};
+  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!document.getElementById('pending-panel').hidden){event.preventDefault();closePending(true);}});
+  document.addEventListener('pointerdown',event=>{const panel=document.getElementById('pending-panel'),trigger=document.getElementById('pending-entry');if(!panel.hidden&&!panel.contains(event.target)&&!trigger.contains(event.target))closePending();});
   window.addEventListener('owner-auth-lost',()=>lock('从电脑中的 Ownward 入口重新打开，即可继续。未保存的文字仍保留在此页面。',true));
   window.addEventListener('beforeunload',event=>{retryRescueCleanup();if(pendingWork(state.editor)||state.editor?.busy||rescuedInput()?.reference||rescueNeedsWindow()){state.editor?.persist();event.preventDefault();event.returnValue='';}});
   window.addEventListener('online',()=>poll());
@@ -104,6 +107,7 @@ function lock(message,preserveInput=!state.exiting){
 }
 async function navigate(surface){
   if(!state.active||state.exiting)return;releaseReader();setImmersive(false);releaseGraph(true);state.graphView=null;
+  closePending();
   state.editor?.suspend();
   invalidate();
   state.surface=surface;state.selection=null;state.after='';clearNotice();await render();
@@ -113,16 +117,17 @@ function releaseReader(){state.reader?.destroy();state.reader=null;}
 function readingPosition(asset){const p=state.readPositions.get(asset.reference);return p?.version===asset.version?p.scroll:0;}
 function rememberPosition(asset,scroll){state.readPositions.set(asset.reference,{version:asset.version,scroll});if(state.readPositions.size>50)state.readPositions.delete(state.readPositions.keys().next().value);}
 function releaseGraph(remember=false){if(state.graph){state.graphView=remember?state.graph.capture():null;if(remember&&state.graphKey){state.graphMem.set(state.graphKey,state.graphView);if(state.graphMem.size>30)state.graphMem.delete(state.graphMem.keys().next().value);}state.graph.destroy();state.graph=null;}}
-async function render(){
+async function render(background=false){
+  const scroll=main.scrollTop;
   state.renderFailed=false;
   releaseReader();setImmersive(false);
   state.libraryRefresh=null;
   releaseGraph(state.surface==='relations');
   const epoch=++state.epoch;navState();
-  main.replaceChildren(el('p',{class:'loading',role:'status'},'正在读取…'));
+  if(!background)main.replaceChildren(el('p',{class:'loading',role:'status'},'正在读取…'));
   try{
     const node=await ({home:homePage,drafts:draftsPage,assets:assetsPage,relations:relationsPage,events:eventsPage,control:controlPage}[state.surface])(epoch);
-    if(valid(epoch)){main.replaceChildren(node);showResume();main.focus({preventScroll:true});}
+    if(valid(epoch)){main.replaceChildren(node);showResume();if(background)main.scrollTop=scroll;else main.focus({preventScroll:true});}
   }catch(error){if(valid(epoch)){
     if(error.status===409&&state.after){state.after='';notice('资料有变化，已返回当前筛选的第一页。');return render();}
     state.renderFailed=error.status===0||error.status===429||error.status>=500;
@@ -165,7 +170,7 @@ async function resumeEditor(){
   state.epoch++;state.surface='drafts';state.selection=null;navState();main.replaceChildren(editor.node);
   await editor.resume();if(editor.live&&!editor.quarantined)editor.input.focus();
 }
-async function loadPage(input){return query({limit:12,...input});}
+async function loadPage(input){const refresh=['assets','continuable','overview','drafts','connections','draft_grants','draft_collaborations','pending','history','events','recent'].includes(input.view);return query({limit:12,refresh,...input});}
 function draftRows(drafts,epoch){
   const list=el('div',{class:'draft-list'});
   for(const draft of drafts){
@@ -245,7 +250,7 @@ async function openDraft(reference){
 function installEditor(meta,content,rescue,show=true){
   if(show){setImmersive(true);state.surface='drafts';state.selection=null;navState();}
   const editor=new Editor(meta,content,{
-    leave:()=>navigate('drafts'),open:reference=>openDraft(reference),grant:grantDraft,
+    leave:()=>navigate('drafts'),open:reference=>openDraft(reference),grant:openCollaboration,
     rebased:async(meta,body,rescue)=>{const visible=releaseEditor(editor);if(visible!==null)installEditor(meta,body,rescue,visible);},
     discarded:async()=>{const visible=releaseEditor(editor);if(visible)await navigate('drafts');},
     published:async handle=>{const visible=releaseEditor(editor);if(visible)await openAsset({handle});else if(visible===false)notice('文稿已加入资料。');},
@@ -253,6 +258,7 @@ function installEditor(meta,content,rescue,show=true){
     unavailable:()=>{const visible=releaseEditor(editor);if(visible===null)return;notice('资料或文稿已不可用，相关窗口副本已清除。');if(visible){document.querySelectorAll('dialog').forEach(d=>d.remove());navigate('drafts');}}
   },rescue);
   state.editor=editor;
+  refreshCollaboration(editor).catch(error=>{if(editor.live&&state.editor===editor)notice(errorMessage(error),true);});
   if(show){main.replaceChildren(editor.node);editor.input.focus();}else{editor.suspend();showResume();}
   return editor;
 }
@@ -270,14 +276,16 @@ async function assetsPage(epoch){
   input.addEventListener('keydown',event=>{if(event.key==='Enter')search();});
   const page=await loadPage({view:'assets',query:state.search,state:state.filter,after:state.after});if(!valid(epoch))return;
   state.selection=null;
-  let assets=page.assets||[],selection=0,nextPage=page.next,indexLoading=false,windowStart=-1;
-  const entries=new Map(),previews=new Map(),versions=new Map(),current=scope(),pagination=el('div');
-  const list=el('div',{class:'library-index','aria-label':'资料目录'}),reader=el('section',{class:'library-reader','aria-label':'阅读资料'});
+  let assets=page.assets||[],selection=0,nextPage=page.next,indexLoading=false,indexRead=0,windowStart=-1;
+  const entries=new Map(),previews=new Map(),versions=new Map(),current=scope(),pagination=el('div',{class:'index-pagination'});
+  // The virtual spacers and the rendered rows share one geometry contract.
+  const rowHeight=96,groupHeight=36;
+  const list=el('div',{class:'library-index','aria-label':'资料目录',tabindex:'0',style:`--index-row-height:${rowHeight}px;--index-group-height:${groupHeight}px`}),reader=el('section',{class:'library-reader','aria-label':'阅读资料'});
   const layout=el('div',{class:'library-layout'},el('aside',{class:'library-browser'},
     el('header',{class:'library-heading'},el('h1',{},'资料'),button(el('span',{class:'plus-icon','aria-hidden':'true'}),newDraft,'new-document',{'aria-label':'新建文稿',title:'新建文稿'})),
     el('div',{class:'library-search'},input,button('查找',search,'search-button')),
     el('div',{class:'library-filter'},filter.node),list,
-    pagination,state.after?button('回到第一页',async()=>{state.after='';await render();},'text-link'):null),reader);
+    state.after?button('回到第一页',async()=>{state.after='';await render();},'text-link'):null),reader);
   const alive=()=>valid(epoch)&&current();
   const emptyState=()=>libraryEmptyState({count:assets.length,query:state.search,filter:state.filter,after:state.after});
   const emptyAction=kind=>kind==='create'?button('新建文稿',newDraft,'primary'):kind?button(kind==='clear'?'清除查找条件':'回到第一页',async()=>{if(kind==='clear'){state.search='';state.filter='';}state.after='';state.libraryReference=null;await render();},'quiet empty-recovery'):null;
@@ -296,19 +304,20 @@ async function assetsPage(epoch){
   }
   function drawIndex(force=false){
     const rows=[];let height=0;
-    for(const value of ['ready','pending','stopped']){const group=assets.filter(a=>a.state===value);if(!group.length)continue;rows.push({top:height,height:36,label:`${statusName(value)} · 已列出 ${group.length} 条`});height+=36;for(const asset of group){rows.push({top:height,height:112,asset});height+=112;}}
-    const scroll=Math.min(list.scrollTop||0,Math.max(0,height-112)),start=Math.max(0,rows.findIndex(r=>r.top+r.height>=Math.max(0,scroll-336)));
+    for(const value of ['ready','pending','stopped']){const group=assets.filter(a=>a.state===value);if(!group.length)continue;rows.push({top:height,height:groupHeight,label:`${statusName(value)} · 已列出 ${group.length} 条`});height+=groupHeight;for(const asset of group){rows.push({top:height,height:rowHeight,asset});height+=rowHeight;}}
+    const scroll=Math.min(list.scrollTop||0,Math.max(0,height-rowHeight)),start=Math.max(0,rows.findIndex(r=>r.top+r.height>=Math.max(0,scroll-rowHeight*3)));
     if(!force&&start===windowStart)return;windowStart=start;
     const visible=rows.slice(start,start+28),bottomAt=visible.length?visible.at(-1).top+visible.at(-1).height:0;
     const top=el('div',{'aria-hidden':'true',style:`height:${rows[start]?.top||0}px;flex-shrink:0`}),bottom=el('div',{'aria-hidden':'true',style:`height:${Math.max(0,height-bottomAt)}px;flex-shrink:0`});
     list.replaceChildren(top,...visible.map(r=>r.asset?makeEntry(r.asset):el('h2',{class:'index-group'},r.label)),bottom);
     for(const [id,entry]of entries)entry.setAttribute('aria-current',String(id===state.libraryReference));
     if(!assets.length){const info=emptyState();list.append(el('div',{class:'index-empty'},el('p',{},info.index),el('div',{class:'narrow-empty-help'},el('p',{},info.description),emptyAction(info.action))));}
+    list.append(pagination);
     listed.textContent=`已列出 ${assets.length} 条`;
   }
   async function moreIndex(){
-    if(indexLoading||!nextPage||!alive())return;indexLoading=true;
-    try{const fresh=await loadPage({view:'assets',query:state.search,state:state.filter,after:nextPage});if(!alive())return;
+    if(indexLoading||!nextPage||!alive())return;indexLoading=true;const ticket=++indexRead;
+    try{const fresh=await loadPage({view:'assets',query:state.search,state:state.filter,after:nextPage});if(!alive()||ticket!==indexRead)return;
       if(assets.length>=192){state.after=nextPage;await render();return;}
       const ids=new Set(assets.map(a=>a.reference));assets.push(...(fresh.assets||[]).filter(a=>!ids.has(a.reference)));nextPage=fresh.next;drawIndex(true);showPagination();
     }finally{indexLoading=false;}
@@ -322,10 +331,22 @@ async function assetsPage(epoch){
   list.addEventListener('scroll',()=>{drawIndex();if(list.scrollHeight-list.scrollTop-list.clientHeight<200&&assets.length<192)moreIndex().catch(e=>notice(errorMessage(e),true));},{passive:true});
   populate(page);
   state.libraryRefresh=async()=>{
-    if(!alive())return;const fresh=await loadPage({view:'assets',query:state.search,state:state.filter,after:state.after});if(!alive())return;
-    const signature=items=>JSON.stringify((items||[]).map(a=>[a.reference,a.version,a.state]));
-    if(signature(fresh.assets)!==signature(assets)||fresh.next!==nextPage){populate(fresh);if(!state.selection&&!state.libraryReference){const available=assets.find(a=>a.state!=='stopped');if(available)select(available,false);else showEmptyReader();}}
+    if(!alive())return;
+    const ticket=++indexRead,count=Math.max(12,Math.min(192,assets.length)),items=[];
+    let after=state.after,fresh,reads=0;
+    // Re-read only the expanded window, at most two protocol-sized pages.
+    // Following pages belong to the fresh snapshot, not to mixed generations.
+    do{
+      reads++;fresh=await loadPage({view:'assets',query:state.search,state:state.filter,after,limit:Math.min(100,count-items.length),refresh:items.length===0});
+      if(!alive()||ticket!==indexRead)return;
+      items.push(...(fresh.assets||[]));after=fresh.next;
+    }while(after&&items.length<count&&reads<2);
+    const signature=values=>JSON.stringify((values||[]).map(a=>[a.reference,a.version,a.state]));
+    const changed=signature(items)!==signature(assets),continued=!!nextPage!==!!fresh.next;
+    if(changed){const scroll=list.scrollTop;populate({...fresh,assets:items});list.scrollTop=scroll;if(!state.selection&&!state.libraryReference){const available=assets.find(a=>a.state!=='stopped');if(available)select(available,false);else showEmptyReader();}}
+    else {assets=items;nextPage=fresh.next;if(continued)showPagination();}
   };
+
   async function select(asset,explicit){
     const at=++selection,active=()=>alive()&&at===selection,cachedPreview=previews.get(asset.reference);state.libraryReference=asset.reference;state.selection=null;
     for(const [id,entry]of entries)entry.setAttribute('aria-current',String(id===asset.reference));
@@ -414,27 +435,53 @@ async function relationView(asset,after,epoch){
   if(!valid(epoch))return;
   return graphPage(epoch,[asset],{organization:relations.organization},asset,relations);
 }
+function closePending(focus=false){
+  const panel=document.getElementById('pending-panel'),trigger=document.getElementById('pending-entry');
+  panel.hidden=true;trigger.setAttribute('aria-expanded','false');if(focus&&!trigger.hidden)trigger.focus();
+}
+let pendingNavigation=null,pendingScope=()=>false,pendingRead=0;
+function pendingPages(){
+  if(pendingNavigation&&pendingScope())return pendingNavigation;
+  pendingNavigation?.cancel();const current=scope();pendingScope=current;
+  pendingNavigation=createPageNavigation(after=>loadPage({view:'pending',limit:10,after}),drawPending,()=>state.active&&current());
+  return pendingNavigation;
+}
+function drawPending(page,after){
+  const panel=document.getElementById('pending-panel'),trigger=document.getElementById('pending-entry');
+  const signature=JSON.stringify([after,page.decisions||[]],(key,value)=>key==='handle'?undefined:value)+!!page.next;
+  if(signature===state.pendingSignature)return;
+  const scroll=panel.scrollTop,focused=panel.contains(document.activeElement);
+  panel.replaceChildren(...[el('div',{class:'pending-heading'},el('h2',{},'待确认'),button('收起',()=>closePending(true),'quiet')),
+    el('div',{class:'decision-list'},...(page.decisions||[]).map(d=>decisionCard(d))),
+    !page.decisions?.length?el('p',{class:'empty-line'},'这一页的事项已处理。'):null,
+    pager(page,pendingMore,'继续查看'),after?button('回到第一页',()=>pendingMore(''),'text-link'):null].filter(Boolean));
+  panel.scrollTop=scroll;state.pendingSignature=signature;
+  if(focused&&!panel.hidden&&!panel.contains(document.activeElement))panel.querySelector('button')?.focus();
+}
 async function refreshPending(){
-  state.pendingDirty=true;const current=scope();
-  const page=await loadPage({view:'pending',limit:10});if(!state.active||!current())return;
+  state.pendingDirty=true;const current=scope(),ticket=++pendingRead;
+  const page=await loadPage({view:'pending',limit:10});if(!state.active||!current()||ticket!==pendingRead)return;
   const trigger=document.getElementById('pending-entry'),panel=document.getElementById('pending-panel');
+  const focused=panel.contains(document.activeElement)||document.activeElement===trigger;
   document.getElementById('pending-count').textContent=String((page.decisions||[]).length)+(page.next?'+':'');
   trigger.hidden=!page.next&&!page.decisions?.length;trigger.classList.toggle('has-pending',!!page.decisions?.length);
-  const signature=JSON.stringify(page.decisions||[])+page.next;
-  if(signature!==state.pendingSignature){panel.replaceChildren(...[el('div',{class:'pending-heading'},el('h2',{},'待确认'),button('收起',()=>{panel.hidden=true;trigger.setAttribute('aria-expanded','false');trigger.focus();},'quiet')),el('div',{class:'decision-list'},...(page.decisions||[]).map(d=>decisionCard(d))),pager(page,after=>pendingMore(after),'继续查看')].filter(Boolean));state.pendingSignature=signature;}
-  if(trigger.hidden)panel.hidden=true;
+  const pages=pendingPages();
+  if(trigger.hidden){pages.cancel();pendingNavigation=null;state.pendingSignature=null;panel.replaceChildren();closePending();if(focused)main.focus({preventScroll:true});}
+  else await pages.load(pages.position,pages.position?undefined:page);
+  if(ticket!==pendingRead||!current())return;
   state.pendingDirty=false;state.pendingNotice?.();state.pendingNotice=null;
 }
-async function pendingMore(after){
-  const current=scope(),page=await loadPage({view:'pending',limit:10,after});if(!current())return;
-  const panel=document.getElementById('pending-panel');panel.replaceChildren(...[el('h2',{},'待确认'),...(page.decisions||[]).map(d=>decisionCard(d)),pager(page,pendingMore),button('回到最近',()=>{state.pendingSignature=null;return refreshPending();})].filter(Boolean));
-}
+async function pendingMore(after){await pendingPages().load(after);}
+
 function decisionCard(d,historical=false){
-  const node=el('article',{class:'decision-card'},row(el('h3',{},d.kind==='enrollment'?'连接应用':d.kind==='handoff'?'迁移资料库':d.kind==='forget'?'删除资料':'更改访问权限'),tag(statusName(d.state))),el('p',{},[d.subject,connectionLabel(d)].filter(Boolean).join(' · ')),el('p',{},d.consequence),d.verification?el('p',{class:'verification'},d.verification):null,
+  const current=scope(),draftLink=d.draft?button('查看这篇文稿',()=>openDraft(d.draft.reference),'text-link'):null;
+  if(draftLink)query({view:'draft_content',handle:d.draft.handle}).then(page=>{if(current()&&draftLink.isConnected)draftLink.textContent=`查看文稿：${page.text.text.trim().split(/\r?\n/)[0].slice(0,80)||'未命名文稿'}`;}).catch(()=>{});
+  const node=el('article',{class:'decision-card'},row(el('h3',{},d.kind==='draft_collaboration'?'协助编辑文稿':d.kind==='enrollment'?'连接应用':d.kind==='handoff'?'迁移资料库':d.kind==='forget'?'删除资料':'更改访问权限'),tag(statusName(d.state))),el('p',{},[d.subject,connectionLabel(d)].filter(Boolean).join(' · ')),el('p',{},d.consequence),d.verification?el('p',{class:'verification'},d.verification):null,
+    draftLink,
     d.permissions?.length?el('p',{class:'subtle'},d.permissions.map(permissionName).join('、')):null,historical?el('time',{},date(d.at)):null,
     ...(d.targets||[]).map(target=>assetLink(target,state.epoch)));
   if(!historical&&(d.state==='awaiting_approval'||['enrollment','handoff'].includes(d.kind)&&d.state==='pending')){
-    for(const [accept,label]of [[false,'拒绝'],[true,d.kind==='enrollment'?'允许连接':d.kind==='handoff'?'同意迁移':'确认']])node.append(button(label,async()=>{
+    for(const [accept,label]of [[false,'拒绝'],[true,d.kind==='draft_collaboration'?'允许编辑':d.kind==='enrollment'?'允许连接':d.kind==='handoff'?'同意迁移':'确认']])node.append(button(label,async()=>{
       await act({action:'decide',handle:d.handle,accept});node.classList.add('decided');
       if(!matchMedia('(prefers-reduced-motion: reduce)').matches)await new Promise(r=>setTimeout(r,220));
       state.after='';await refreshPending();if(['control','events'].includes(state.surface))await render();
@@ -442,15 +489,15 @@ function decisionCard(d,historical=false){
   }
   return node;
 }
-function connectionCard(person){
+function connectionCard(person,onChanged=()=>render()){
   const current=scope(),confirmation=el('div',{class:'permission-confirm',hidden:true});
   const node=el('article',{class:'connection-card'},el('div',{},el('h3',{},person.name),el('p',{class:'subtle'},connectionLabel(person)),el('p',{},person.permissions?.length?person.permissions.map(permissionName).join(' · '):'未授予资料访问权限')));
-  const controls=row(button('设置权限',()=>permissions(person)));
-  if(person.permissions?.length)controls.append(button('收回权限',()=>{const operation=operationID();controls.hidden=true;confirmation.hidden=false;confirmation.replaceChildren(el('p',{},'收回后，这个应用将不能查看或修改资料；已有资料保留。'),row(button('保留权限',()=>{confirmation.hidden=true;controls.hidden=false;}),button('确认收回',async()=>{if(!current()||!node.isConnected)return;const result=await act({action:'permissions',handle:person.handle,permissions:[],operation_id:operation});if(!current()||!node.isConnected)return;notice(statusName(result.state));await render();},'danger-quiet')));},'text-link'));
+  const controls=row(button('设置权限',()=>permissions(person,onChanged)));
+  if(person.permissions?.length)controls.append(button('收回权限',()=>{const operation=operationID();controls.hidden=true;confirmation.hidden=false;confirmation.replaceChildren(el('p',{},'收回后，这个应用将不能查看或修改资料；已有资料保留。'),row(button('保留权限',()=>{confirmation.hidden=true;controls.hidden=false;}),button('确认收回',async()=>{if(!current()||!node.isConnected)return;const result=await act({action:'permissions',handle:person.handle,permissions:[],operation_id:operation});if(!current()||!node.isConnected)return;notice(statusName(result.state));await onChanged();},'danger-quiet')));},'text-link'));
   node.append(controls,confirmation);return node;
 }
 async function controlPage(epoch){
-  const [connections,health,history,grants]=await Promise.all([loadPage({view:'connections'}),query({view:'health'}),loadPage({view:'history',limit:8}),loadPage({view:'draft_grants'})]);
+  const [connections,health,history,grants]=await Promise.all([loadPage({view:'connections',state:'external'}),query({view:'health'}),loadPage({view:'history',limit:8}),loadPage({view:'draft_grants'})]);
   const people=el('div',{class:'connection-list'});
   for(const person of (connections.connections||[]).filter(p=>!p.owner))people.append(connectionCard(person));
   const archive=el('div',{class:'archive-grid'},el('div',{},el('h3',{},'下载备份'),el('p',{},'包含资料、草稿和访问权限。请妥善保管备份文件。'),button('下载备份',async()=>{const blob=await request('backup',{}, {blob:true,timeout:180000});download(blob,'ownward-backup.zip');notice('备份已交给浏览器保存。');},'primary')),
@@ -473,40 +520,30 @@ function runtimeSettings(){
     el('p',{id:'stop-feedback',class:'stop-feedback',role:'status',hidden:true}));
 }
 async function pagedDialog(title,view,after,items,limit){
-  const body=el('div',{}),d=dialog(title,body),current=scope();
-  async function load(next){
-    try{
-      const p=await loadPage({view,after:next,...(limit?{limit}:{})});
-      if(current()&&d.close.current())body.replaceChildren(...[...items(p),pager(p,load)].filter(Boolean));
-    }catch(error){
-      if(!current()||!d.close.current())return;
-      if(error.status===409&&next)return load('');
-      notice(errorMessage(error),true);
-    }
-  }
-  await load(after);
+  const body=el('div',{tabindex:'-1'}),d=dialog(title,body),current=scope();let signature='';
+  const pages=createPageNavigation(position=>loadPage({view,after:position,...(view==='connections'?{state:'external'}:{}),...(limit?{limit}:{})}),p=>{
+    const nextSignature=JSON.stringify([pages.position,p],(key,value)=>['handle','cursor','next'].includes(key)?undefined:value)+!!p.next;
+    if(signature===nextSignature)return;signature=nextSignature;
+    const scroller=d.modal?.querySelector?.('.modal-body')||body,scroll=scroller.scrollTop,focused=body.contains(document.activeElement);
+    body.replaceChildren(...[...items(p,()=>pages.load()),!Object.values(p).some(v=>Array.isArray(v)&&v.length)?el('p',{class:'empty-line'},'这一页已没有记录。'):null,
+      pager(p,next=>pages.load(next)),pages.position?button('回到第一页',()=>pages.load(''),'text-link'):null].filter(Boolean));
+    scroller.scrollTop=scroll;if(focused)body.focus({preventScroll:true});
+  },()=>current()&&d.close.current());
+  const refresh=async()=>{if(state.active&&current()&&d.close.current())await pages.load();else if(state.dialogRefresh===refresh)state.dialogRefresh=null;};
+  state.dialogRefresh=refresh;
+  await pages.load(after);
 }
+
 async function historyDialog(after){return pagedDialog('处理记录','history',after,p=>(p.decisions||[]).map(d=>decisionCard(d,true)),8);}
-async function connectionsDialog(after){return pagedDialog('更多应用','connections',after,p=>(p.connections||[]).filter(c=>!c.owner).map(connectionCard));}
-async function grantsDialog(after){return pagedDialog('草稿编辑权限','draft_grants',after,p=>(p.grants||[]).map(g=>row(el('span',{},`${g.connection.name} · ${date(g.expires_at)}`),button('撤销',async()=>{await act({action:'revoke_grant',handle:g.handle});await render();}))));}
-async function permissions(person){
+async function connectionsDialog(after){return pagedDialog('更多应用','connections',after,(p,refresh)=>(p.connections||[]).map(person=>connectionCard(person,refresh)));}
+async function grantsDialog(after){return pagedDialog('草稿编辑权限','draft_grants',after,(p,refresh)=>(p.grants||[]).map(g=>row(el('span',{},`${g.connection.name} · ${date(g.expires_at)}`),button('撤销',async()=>{await act({action:'revoke_grant',handle:g.handle});await refresh();}))));}
+async function permissions(person,onChanged=()=>render()){
   const checks=['read','maintain','manage'].map(value=>el('label',{class:'check-row'},el('input',{type:'checkbox',value,checked:(person.permissions||[]).includes(value)}),permissionName(value)));
   const panel=el('div',{},el('p',{},`${person.name} · ${connectionLabel(person)}`),el('p',{},'取消勾选即可收回对应权限。全部取消后，这个应用将不能访问资料。'),...checks);
   const op=operationID();dialog('设置访问权限',panel,[{label:'取消',run:close=>close()},{label:'保存权限',style:'primary',run:async close=>{
     const selected=checks.map(c=>c.querySelector('input')).filter(c=>c.checked).map(c=>c.value);
-    const result=await act({action:'permissions',handle:person.handle,permissions:selected,operation_id:op});if(!close.current())return;close();state.after='';notice(statusName(result.state));await render();
+    const result=await act({action:'permissions',handle:person.handle,permissions:selected,operation_id:op});if(!close.current())return;close();notice(statusName(result.state));await onChanged();
   }}]);
-}
-async function grantDraft(editor,after=''){
-  const current=scope();await editor.flush();if(!current()||!editor.live)return;const p=await loadPage({view:'connections',after}),list=el('div',{},el('p',{},'选择一个应用，允许它在一小时内查看和编辑这篇草稿。加入资料或删除草稿后，权限自动结束；对方不能代你确认加入资料。'));
-  for(const person of p.connections||[]){if(person.owner)continue;list.append(button(`${person.name} · ${connectionLabel(person)}`,async()=>{
-    const result=await act({action:'grant_draft',handle:editor.meta.handle,target:person.handle,seconds:3600});
-    // Work-item handles are protocol inputs for the external agent, not owner credentials.
-    const instruction=`请继续这篇 Ownward 文稿。使用 ownward_draft_work 先读取当前内容，再按当前版本提交。draft=${result.handle}\ngrant=${result.grant}`;
-    dialog('已允许编辑这篇草稿',el('div',{},el('p',{},'复制编辑邀请，粘贴到所选应用的对话中。对方的修改会显示在这篇草稿里。'),button('复制编辑邀请',async()=>{await navigator.clipboard.writeText(instruction);notice('编辑邀请已复制，可粘贴到所选应用的对话中。');})));
-  }));}
-  if(!(p.connections||[]).some(c=>!c.owner))list.append(el('p',{},'暂无可选择的应用。连接应用后，可以邀请它协助编辑。'));
-  list.append(pager(p,next=>grantDraft(editor,next))||'');dialog('让应用协助编辑',list);
 }
 async function restoreArchive(){
   const file=el('input',{type:'file','aria-label':'选择 Ownward 备份'});
@@ -589,12 +626,14 @@ async function poll(){
           }
         }
         else if(!state.editor||!main.contains(state.editor.node)){
-          if(main.contains(document.activeElement)&&['INPUT','SELECT'].includes(document.activeElement.tagName)){await refreshPending();return;}
-          state.after='';await render();
+          if(main.contains(document.activeElement)&&['INPUT','SELECT','TEXTAREA','BUTTON','SUMMARY'].includes(document.activeElement.tagName)){await refreshPending();return;}
+          await render(true);
         }
       }
       if(!state.active||run!==state.run)return;
       await refreshPending();
+      await refreshCollaboration(state.editor);
+      await state.dialogRefresh?.();
       if(!state.active||run!==state.run)return;
       state.cursor=page.cursor;
     }else if(state.pendingDirty)await refreshPending();

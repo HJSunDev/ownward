@@ -111,7 +111,13 @@ func (h *hostConnector) initialize(ctx context.Context, request *mcp.CallToolReq
 	if params == nil || params.ClientInfo == nil || params.ClientInfo.Name == "" {
 		return errors.New("宿主未提供接入名称")
 	}
-	h.profile = "agent:" + params.ClientInfo.Name
+	return h.initializeLocalPrincipal(ctx, params.ClientInfo.Name, func() (string, error) { return h.ensureOwner(ctx, request.Session) })
+}
+
+// Both MCP and the command entry register an unprivileged principal. Only the
+// owner decision can grant draft access; registration does not imply approval.
+func (h *hostConnector) initializeLocalPrincipal(ctx context.Context, name string, ownerCredential func() (string, error)) error {
+	h.profile = "agent:" + name
 	if data, err := h.vault.Load(h.system, h.profile); err == nil {
 		var record connectorRecord
 		if json.Unmarshal([]byte(data), &record) != nil {
@@ -130,7 +136,7 @@ func (h *hostConnector) initialize(ctx context.Context, request *mcp.CallToolReq
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	owner, err := h.ensureOwner(ctx, request.Session)
+	owner, err := ownerCredential()
 	if err != nil {
 		return err
 	}
@@ -138,7 +144,7 @@ func (h *hostConnector) initialize(ctx context.Context, request *mcp.CallToolReq
 		Principal  contract.Principal `json:"principal"`
 		Credential string             `json:"credential"`
 	}
-	if err := h.controlCall(ctx, "enroll", owner, map[string]string{"name": params.ClientInfo.Name}, &enrollment); err != nil {
+	if err := h.controlCall(ctx, "enroll", owner, map[string]string{"name": name}, &enrollment); err != nil {
 		return err
 	}
 	h.mu.Lock()

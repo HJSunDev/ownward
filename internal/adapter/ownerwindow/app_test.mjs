@@ -1,3 +1,4 @@
+import {createPageNavigation} from './static/ui.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -9,13 +10,14 @@ async function harness(overrides={},editorOverrides={},uiOverrides={}){
   const calls=[],saved=new Map(),visible=new Set();
   const nodes=new Map();
   const node=id=>{if(!nodes.has(id))nodes.set(id,{textContent:'',hidden:false,dataset:{},append:()=>{},prepend:()=>{},contains:n=>visible.has(n),replaceChildren:()=>calls.push(['clear',id])});return nodes.get(id);};
-  const document={getElementById:node,querySelectorAll:()=>[],addEventListener:()=>{},activeElement:{tagName:'DIV'},hidden:false};
+  const documentHandlers={};
+  const document={getElementById:node,querySelectorAll:()=>[],addEventListener:(name,run)=>{documentHandlers[name]=run;},activeElement:{tagName:'DIV'},hidden:false};
   const api={query:async()=>({changed:true,cursor:'new-cursor'}),resolve:async()=>({assets:[{reference:'asset',version:'v1'}]}),invalidate:()=>calls.push(['invalidate']),scope:()=>()=>true};
   for(const n of ['act','text','request','quit','operationID'])api[n]=()=>{};
   Object.assign(api,overrides);
   const editor={Editor:class{},rescuedInput:()=>null,rescueNeedsWindow:()=>false,rescueCleanupPending:()=>false,retryRescueCleanup:()=>true,clearRescue:()=>saved.clear(),retainReceipt:()=>{}};
   Object.assign(editor,editorOverrides);
-  const ui={};for(const n of ['el','button','row','heading','empty','prose','tag','date','notice','clearNotice','statusName','permissionName','dialog','confirm','download','errorMessage','documentView','appearanceControls','applyAppearance','setImmersive'])ui[n]=()=>{};
+  const ui={createPageNavigation,openCollaboration:async()=>{},refreshCollaboration:async()=>{}};for(const n of ['el','button','row','heading','empty','prose','tag','date','notice','clearNotice','statusName','permissionName','dialog','confirm','download','errorMessage','documentView','appearanceControls','applyAppearance','setImmersive'])ui[n]=()=>{};
   ui.createSelect=()=>({node:{},value:()=>'',set(){},focus(){}});
   ui.confirm=async(_,__,___,run)=>run();
   Object.assign(ui,uiOverrides);
@@ -26,8 +28,23 @@ async function harness(overrides={},editorOverrides={},uiOverrides={}){
   await module.link(spec=>{const value=spec.includes('reading.js')?{createReader:()=>({node:{},status:{},destroy(){},markUpdated(){}})}:spec.includes('graph.js')?{createGraph:()=>({node:{},capture:()=>null,destroy(){}})}:spec.includes('api.js')?api:spec.includes('editor.js')?editor:ui;return new vm.SyntheticModule(Object.keys(value),function(){for(const [k,v] of Object.entries(value))this.setExport(k,v);},{context});});
   await module.evaluate();const app=module.namespace;
   app.observe(async()=>calls.push(['render']),async()=>calls.push(['pending']));
-  return {app,calls,saved,document,visible,handlers};
+  return {app,calls,saved,document,visible,handlers,documentHandlers};
 }
+
+test('pending disclosure can close without disturbing the reading surface or stealing outside focus',async()=>{
+  const h=await harness();await h.app.start({cursor:'initial'});
+  const panel=h.document.getElementById('pending-panel'),trigger=h.document.getElementById('pending-entry'),inside={},outside={};
+  let focus='outside';panel.hidden=true;panel.contains=target=>target===inside;trigger.contains=target=>target===trigger;
+  trigger.setAttribute=(name,value)=>{trigger[name]=value;};trigger.focus=()=>{focus='trigger';};
+  panel.querySelector=()=>({focus(){focus='panel';}});
+  trigger.onclick();assert.equal(panel.hidden,false);assert.equal(focus,'panel');assert.equal(trigger['aria-expanded'],'true');
+  h.documentHandlers.pointerdown({target:inside});assert.equal(panel.hidden,false);
+  const before=h.calls.length;let prevented=false;
+  h.documentHandlers.keydown({key:'Escape',preventDefault(){prevented=true;}});
+  assert.equal(panel.hidden,true);assert.equal(focus,'trigger');assert.ok(prevented);assert.equal(h.calls.length,before,'closing must not replace the reader');
+  trigger.onclick();focus='outside';h.documentHandlers.pointerdown({target:outside});
+  assert.equal(panel.hidden,true);assert.equal(focus,'outside');assert.equal(trigger['aria-expanded'],'false');
+});
 
 test('explicit logout destroys dirty and conflicted editor without re-persisting input',async()=>{
   for(const conflict of [false,true]){
@@ -96,6 +113,11 @@ test('focused list defers its checkpoint and refreshes after blur without a new 
   await h.app.poll();assert.equal(h.app.state.cursor,'');assert.ok(!h.calls.some(c=>c[0]==='render'));
   h.document.activeElement={tagName:'DIV'};await h.app.poll();
   assert.ok(h.calls.some(c=>c[0]==='render'));assert.equal(h.app.state.cursor,'new-cursor');
+});
+
+test('background list refresh retains its continuation instead of resetting to the first page',async()=>{
+  const h=await harness();h.app.state.surface='events';h.app.state.after='older-events';
+  await h.app.poll();assert.equal(h.app.state.after,'older-events');assert.ok(h.calls.some(c=>c[0]==='render'));
 });
 
 test('application quit clears input only after accepted shutdown',async()=>{

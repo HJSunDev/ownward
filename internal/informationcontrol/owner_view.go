@@ -7,7 +7,7 @@ import (
 )
 
 // Owner access is narrower than ManagePermission: a delegated manager never
-// becomes the owner of the window or of private drafts.
+// becomes the owner of the window.
 func (c *Control) Owner(ctx context.Context) (contract.Principal, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -92,17 +92,20 @@ func visibleHandoff(s contract.ControlState, h contract.Handoff) contract.Handof
 // The authority implements atomic grant removal + frozen-handoff cancellation.
 // Notify its existing observers only after commit; no second decision is made.
 func (c *Control) RevokeDraftGrant(ctx context.Context, work contract.OwnerWork, id string) error {
+	return c.ChangeOwnerWork(ctx, func() error { return work.RevokeDraftGrant(ctx, id) })
+}
+
+// Keep control observers in step with transactional private-work revocation,
+// including cancellation of a frozen migration that contained that authority.
+func (c *Control) ChangeOwnerWork(ctx context.Context, change func() error) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	s := c.selected(ctx, contract.ControlSelection{})
-	p, e := principal(ctx, s, contract.ManagePermission)
+	_, e := principal(ctx, s, contract.ManagePermission)
 	if e != nil {
 		return e
 	}
-	if p.ID != s.InformationControl.OwnerID {
-		return ErrDenied
-	}
-	if e = work.RevokeDraftGrant(ctx, id); e != nil {
+	if e = change(); e != nil {
 		return e
 	}
 	if c.changed != nil {

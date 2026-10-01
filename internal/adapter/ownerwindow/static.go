@@ -14,7 +14,7 @@ func staticAsset(path string) ([]byte, string, bool) {
 	if path == "" {
 		return landing, "text/html; charset=utf-8", true
 	}
-	allowed := map[string]string{"bootstrap.js": "text/javascript", "api.js": "text/javascript", "editor.js": "text/javascript", "app.js": "text/javascript", "ui.js": "text/javascript", "reading.js": "text/javascript", "graph.js": "text/javascript", "graph-layout.js": "text/javascript", "window.css": "text/css"}
+	allowed := map[string]string{"bootstrap.js": "text/javascript", "api.js": "text/javascript", "editor.js": "text/javascript", "app.js": "text/javascript", "collaboration.js": "text/javascript", "ui.js": "text/javascript", "reading.js": "text/javascript", "graph.js": "text/javascript", "graph-layout.js": "text/javascript", "window.css": "text/css"}
 	t, ok := allowed[path]
 	if !ok {
 		return nil, "", false

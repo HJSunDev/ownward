@@ -1,3 +1,4 @@
+import {createPageNavigation} from './static/ui.js';
 import nodeTest from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -48,7 +49,45 @@ test('pending entry follows actual count and normal connection status stays out 
   decisions=[];next='';await h.app.refreshPending();assert.equal(h.node('pending-entry').hidden,true);
 });
 function deferred(){let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};}
-async function harness({failFirst=false,rescue:initialRescue,overrides={}}={}){
+
+test('pending summary refresh does not navigate its open second page',async()=>{
+  let changed=false;
+  const h=await harness({overrides:{query:async q=>({decisions:[{handle:q.after?'later':'first',subject:q.after?'Later request':changed?'New first':'First request',state:'awaiting_approval'}],next:q.after?'':'two'})}});
+  await h.app.refreshPending();await h.app.pendingMore('two');
+  const panel=h.node('pending-panel');panel.scrollTop=90;
+  changed=true;await h.app.refreshPending();
+  assert.ok(panel.all().some(n=>n.children?.some(c=>c==='Later request')));
+  assert.equal(panel.scrollTop,90);
+  assert.equal(h.node('pending-count').textContent,'1+');
+});
+
+test('revocation refreshes the granting dialog at its current page',async()=>{
+  let revoked=false,modal;const reads=[];
+  const h=await harness({overrides:{query:async q=>{reads.push(q);return {grants:revoked?[]:[{handle:'grant',connection:{name:'Writer'}}]};},act:async q=>{assert.equal(q.action,'revoke_grant');revoked=true;}},uiOverrides:{dialog:(_title,body)=>{const close=()=>{};close.current=()=>true;modal=body;return {close};}}});
+  await h.app.grantsDialog('later-page');
+  await modal.all().find(n=>n.label==='撤销').run();
+  assert.equal(modal.all().some(n=>n.label==='撤销'),false);
+  assert.equal(reads.at(-1).after,'later-page');
+  assert.equal(reads.at(-1).refresh,true);
+});
+
+test('an expanded material directory keeps its loaded window and scroll after background writes',async()=>{
+  const assets=Array.from({length:30},(_,i)=>({reference:`a${i}`,handle:`a${i}`,version:'1',state:'ready'})),reads=[];
+  const h=await harness({overrides:{resolve:async ref=>({assets:[assets.find(a=>a.reference===ref)]}),query:async q=>{
+    reads.push(q);if(q.view==='assets'){const from=Number(q.after||0),end=Math.min(assets.length,from+(q.limit||12));return {assets:assets.slice(from,end),next:end<assets.length?String(end):''};}
+    if(q.view==='source')return {source:{}};
+    if(q.view==='content')return {text:{text:'Title\n\nBody'}};
+    return {};
+  }}});
+  const layout=await h.app.assetsPage(h.app.state.epoch);h.node('main').replaceChildren(layout);await new Promise(r=>setImmediate(r));
+  await layout.all().find(n=>n.label==='继续查看更多').run();
+  const index=layout.all().find(n=>n.class==='library-index');index.scrollTop=600;
+  const before=reads.length;await h.app.state.libraryRefresh();
+  assert.equal(reads.slice(before).filter(q=>q.view==='assets').length,1);
+  assert.equal(reads.at(-1).limit,24);assert.equal(index.scrollTop,600);
+  assert.ok(layout.all().some(n=>n.textContent==='已列出 24 条'));
+});
+async function harness({failFirst=false,rescue:initialRescue,overrides={},uiOverrides={}}={}){
   const saved=new Map(),calls=[],notices=[],nodes=new Map(),confirmations=[],handlers={},listeners={},downloads=[],timers=new Map();let generation=0,fail=failFirst,timerID=0;
   const listen=(name,run)=>{(listeners[name]??=[]).push(run);handlers[name]=(...args)=>Promise.all(listeners[name].map(f=>f(...args)));};
   const drafts=new Map([['A',{reference:'A',handle:'hA',version:'v1',text:'A already saved'}]]);
@@ -67,7 +106,7 @@ async function harness({failFirst=false,rescue:initialRescue,overrides={}}={}){
     request:async()=>{},quit:async()=>{},initialize:async()=>{location.hash='';api.invalidate();return {cursor:'initial'};},...overrides
   };
   for(const name of ['query','resolve','text','act','replace']){const run=api[name];api[name]=async(...args)=>{const current=api.scope();const result=await run(...args);if(!current())throw Object.assign(new Error('old page'),{status:-1});return result;};}
-  const ui={
+  const ui={createPageNavigation,openCollaboration:async()=>{},refreshCollaboration:async()=>{},
     el:(tag,attrs,...children)=>new Node(tag,attrs,children),button:(label,run)=>new Node('button',{label,run}),
     row:(...children)=>new Node('div',{},children),heading:(...children)=>new Node('header',{},children),
     empty:(...children)=>new Node('div',{},children),prose:(value,cls='')=>new Node('div',{textContent:value,class:`prose ${cls}`}),tag:value=>new Node('span',{textContent:value}),
@@ -75,6 +114,7 @@ async function harness({failFirst=false,rescue:initialRescue,overrides={}}={}){
     date:()=>'',notice:(message)=>notices.push(message),clearNotice(){},statusName:v=>v,permissionName:v=>v,
     documentOptions:()=>({node:new Node(),close(){}}),editingPosition:()=>()=>{},revealDocument(){},dialog(){},confirm:async(title,body,label,run)=>confirmations.push({title,body,label,run}),download:(blob,name)=>downloads.push({blob,name}),errorMessage:e=>e.message
   };
+  Object.assign(ui,uiOverrides);
   const location={hash:'',reload(){let blocked=false;handlers.beforeunload?.({preventDefault(){blocked=true;}});calls.push(['reload',blocked]);}};
   const context=vm.createContext({console,Date,JSON,Blob,Event,queueMicrotask,location,document,window:{addEventListener:listen,dispatchEvent:event=>handlers[event.type]?.(event)},navigator:{},setTimeout:(fn,ms)=>{timers.set(++timerID,{fn,ms});return timerID;},clearTimeout:id=>timers.delete(id)});
   const synthetic=values=>new vm.SyntheticModule(Object.keys(values),function(){for(const[k,v]of Object.entries(values))this.setExport(k,values===api&&typeof v==='function'?(...args)=>values[k](...args):v);},{context});
@@ -85,7 +125,7 @@ async function harness({failFirst=false,rescue:initialRescue,overrides={}}={}){
   const editor=new vm.SourceTextModule(await readFile(new URL('editor.js',base),'utf8'),{context});
   await editor.link(spec=>spec.includes('api.js')?apiModule:uiModule);await editor.evaluate();
   const reader=new vm.SourceTextModule(await readFile(new URL('reading.js',base),'utf8'),{context});await reader.link(spec=>spec.includes('api.js')?apiModule:uiModule);await reader.evaluate();
-  const app=new vm.SourceTextModule((await readFile(new URL('app.js',base),'utf8'))+'\nexport {stopOwnward};'+'\nexport {state,newDraft,openDraft,editAsset,navigate,manageRescue,forget,poll,showRelations,openAsset,activityList,refreshPending,assetsPage,homePage,draftsPage,libraryEmptyState,relationsPage};',{context});
+  const app=new vm.SourceTextModule((await readFile(new URL('app.js',base),'utf8'))+'\nexport {stopOwnward};'+'\nexport {state,newDraft,openDraft,editAsset,navigate,manageRescue,forget,poll,showRelations,openAsset,activityList,refreshPending,pendingMore,grantsDialog,assetsPage,homePage,draftsPage,libraryEmptyState,relationsPage};',{context});
   const graphModule=synthetic({createGraph:options=>({node:ui.el('div',{},options.organization==='available'?'暂无关联资料':'关系正在重新整理'),capture:()=>null,destroy(){}})});
   await app.link(spec=>spec.includes('reading.js')?reader:spec.includes('graph.js')?graphModule:spec.includes('api.js')?apiModule:spec.includes('editor.js')?editor:uiModule);await app.evaluate();
   const bootstrap=async()=>{const module=new vm.SourceTextModule(await readFile(new URL('bootstrap.js',base),'utf8'),{context});await module.link(spec=>spec.includes('api.js')?apiModule:app);await module.evaluate();};

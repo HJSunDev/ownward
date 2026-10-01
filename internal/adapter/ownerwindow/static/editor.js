@@ -43,14 +43,15 @@ export class Editor {
     this.status=el('span',{class:'save-state',role:'status'},'草稿已保存');
     this.conflictBox=el('section',{class:'conflict-box',hidden:true,'aria-label':'内容核对'});
     this.previewButton=button(meta.target?'预览修改':'预览文稿',()=>this.preview(),'primary');
-    this.grantButton=button('邀请应用协助',()=>hooks.grant(this));
+    this.grantButton=button('交给智能体协助',()=>hooks.grant(this));
+    this.collaboration=el('aside',{class:'editor-collaboration',hidden:true,'aria-label':'文稿协作'});
     this.discardButton=button('删除草稿',()=>this.discard(),'danger-quiet');
     this.retryButton=button('重试保存',()=>this.recoveryAction.run());this.retryButton.hidden=true;
     this.options=documentOptions(immersionButton(),this.grantButton,this.discardButton);
     this.node=el('section',{class:'editor'},el('header',{class:'editor-toolbar'},
       el('div',{class:'editor-location'},button('返回文稿',()=>hooks.leave(),'back-link'),this.title),
       el('div',{class:'editor-actions'},this.status,this.retryButton,this.previewButton,this.options.node)),
-      this.conflictBox,el('div',{class:'writing-paper'},el('p',{class:'writing-caption'},meta.target?'编辑草稿 · 确认后更新资料':'草稿 · 确认后加入资料'),el('div',{class:'writing-input'},this.measure,this.input)));
+      this.conflictBox,el('div',{class:'writing-paper'},this.collaboration,el('p',{class:'writing-caption'},meta.target?'编辑草稿 · 确认后更新资料':'草稿 · 确认后加入资料'),el('div',{class:'writing-input'},this.measure,this.input)));
     this.input.addEventListener('compositionstart',()=>{this.composing=true;});
     this.input.addEventListener('compositionend',()=>{this.composing=false;this.changed();});
     this.input.addEventListener('input',()=>this.changed());

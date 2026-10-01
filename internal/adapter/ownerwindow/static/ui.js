@@ -35,6 +35,32 @@ export function typeaheadIndex(labels, query, from = 0) {
   }
   return -1;
 }
+// Each independently browsed list owns its position and response order. A late
+// refresh cannot replace a newer navigation; leaving a view cancels delivery.
+export function createPageNavigation(read,show,valid=()=>true){
+  let position='',serial=0;
+  return {
+    get position(){return position;},
+    async load(after=position,initial){
+      position=after||'';const ticket=++serial;
+      try{
+        const page=initial??await read(position);
+        if(ticket===serial&&valid()){show(page,position);return page;}
+      }catch(error){
+        if(ticket!==serial||!valid())return;
+        if(error.status===409&&position){return this.load('');}
+        throw error;
+      }
+    },
+    cancel(){serial++;}
+  };
+}
+
+export function selectPlacement(trigger, bounds, desired, gap=4) {
+  const below=Math.max(0,bounds.bottom-trigger.bottom-gap),above=Math.max(0,trigger.top-bounds.top-gap);
+  const upward=below<desired&&above>below;
+  return {upward,maxHeight:Math.min(desired,upward?above:below)};
+}
 export function createSelect({ label = '', options = [], value, onChange = () => {}, skin = 'field', className = '' } = {}) {
   const opts = options.map(o => (o && typeof o === 'object' ? { value: o.value, label: o.label ?? String(o.value) } : { value: o, label: String(o) }));
   let current = opts.some(o => o.value === value) ? value : (opts[0]?.value ?? '');
@@ -50,11 +76,22 @@ export function createSelect({ label = '', options = [], value, onChange = () =>
   function setActive(i, reveal = false) {
     active = i;
     items.forEach((it, n) => it.classList.toggle('active', n === i));
-    if (i >= 0) { trig.setAttribute('aria-activedescendant', items[i].id); if (reveal) items[i].scrollIntoView({ block: 'nearest' }); }
+    if (i >= 0) { trig.setAttribute('aria-activedescendant', items[i].id); if (reveal) {const item=items[i],top=item.offsetTop,bottom=top+item.offsetHeight;if(top<list.scrollTop)list.scrollTop=top;else if(bottom>list.scrollTop+list.clientHeight)list.scrollTop=bottom-list.clientHeight;} }
     else trig.removeAttribute('aria-activedescendant');
   }
-  function open() { if (!list.hidden) return; list.hidden = false; trig.setAttribute('aria-expanded', 'true'); setActive(Math.max(0, opts.findIndex(o => o.value === current)), true); document.addEventListener('pointerdown', outside, true); }
-  function close(focus = true) { if (list.hidden) return; list.hidden = true; trig.setAttribute('aria-expanded', 'false'); trig.removeAttribute('aria-activedescendant'); document.removeEventListener('pointerdown', outside, true); if (focus) trig.focus(); }
+  function place(){
+    const bounds={top:0,bottom:window.innerHeight};
+    for(let parent=wrap.parentElement;parent;parent=parent.parentElement){if(/auto|scroll|hidden|clip/.test(getComputedStyle(parent).overflowY)){const r=parent.getBoundingClientRect();bounds.top=Math.max(bounds.top,r.top);bounds.bottom=Math.min(bounds.bottom,r.bottom);}}
+    // Measure the unconstrained border box: scrollHeight excludes borders and
+    // rounds fractional pixels, so using it as a border-box limit creates overflow.
+    list.style.maxHeight='none';
+    const desired=Math.ceil(list.getBoundingClientRect().height);
+    const position=selectPlacement(trig.getBoundingClientRect(),bounds,Math.min(320,desired));
+    list.style.maxHeight=`${position.maxHeight}px`;list.style.top=position.upward?'auto':'calc(100% + 4px)';list.style.bottom=position.upward?'calc(100% + 4px)':'auto';
+  }
+  function shifted(event){if(event.type==='resize'||!list.contains(event.target))close(false);}
+  function open() { if (!list.hidden) return; list.hidden = false;place();trig.setAttribute('aria-expanded', 'true'); setActive(Math.max(0, opts.findIndex(o => o.value === current)), true); document.addEventListener('pointerdown', outside, true);document.addEventListener('scroll',shifted,true);window.addEventListener('resize',shifted); }
+  function close(focus = true) { if (list.hidden) return; list.hidden = true; trig.setAttribute('aria-expanded', 'false'); trig.removeAttribute('aria-activedescendant'); document.removeEventListener('pointerdown', outside, true);document.removeEventListener('scroll',shifted,true);window.removeEventListener('resize',shifted);if (focus) trig.focus(); }
   function outside(event) { if (!wrap.contains(event.target)) close(false); }
   function commit(i) { const o = opts[i]; if (!o) return; current = o.value; valueText.textContent = o.label; items.forEach((it, n) => it.setAttribute('aria-selected', String(n === i))); close(); onChange(current, o); }
   trig.addEventListener('click', () => (list.hidden ? open() : close()));

@@ -24,10 +24,11 @@ import (
 )
 
 type Service struct {
-	Store      *boundedstore.Store
-	Control    *informationcontrol.Control
-	Management *informationcontrol.Product
-	codec      cipher.AEAD
+	DraftInstruction func(contract.DraftInvitation, string) string
+	Store            *boundedstore.Store
+	Control          *informationcontrol.Control
+	Management       *informationcontrol.Product
+	codec            cipher.AEAD
 }
 
 var _ contract.OwnerView = (*Service)(nil)
@@ -88,6 +89,8 @@ func queryBinding(q contract.OwnerQuery) string {
 	q.After = ""
 	q.Cursor = ""
 	q.Offset = 0
+	q.Refresh = false
+	q.Limit = 0 // The position binds the collection, not a presentation page size.
 	b, _ := json.Marshal(q)
 	d := sha256.Sum256(b)
 	return hex.EncodeToString(d[:])
@@ -127,11 +130,21 @@ func (s *Service) Query(ctx context.Context, q contract.OwnerQuery) (out contrac
 		out.Reset = e != nil || h.Checkpoint == nil || h.Checkpoint.System != cp.System || h.Checkpoint.OwnerRevision != cp.OwnerRevision || h.Checkpoint.Deletion != cp.Deletion
 	}
 	position := ""
+	refreshable := false
+	switch q.View {
+	case "assets", "continuable", "overview", "drafts", "connections", "draft_grants", "draft_collaborations", "pending", "history":
+		refreshable = true
+	}
+	if q.Refresh && !refreshable && q.View != "events" && q.View != "recent" {
+		return out, contract.ErrOwnerRefresh
+	}
 	if q.After != "" {
 		h, e := s.open(q.After)
 		valid := e == nil && h.Type == "page" && h.Checkpoint != nil && h.Binding == queryBinding(q)
-		if valid && (q.View == "events" || q.View == "recent") {
-			valid = h.Checkpoint.System == cp.System && h.Checkpoint.OwnerRevision == cp.OwnerRevision && h.Checkpoint.Deletion == cp.Deletion
+		if valid && (q.View == "events" || q.View == "recent" || q.Refresh && refreshable) {
+			// Explicit refresh reads a new bounded snapshot at the same list
+			// position. Identity and forget barriers still invalidate that position.
+			valid = h.Checkpoint.System == cp.System && h.Checkpoint.Owner == cp.Owner && h.Checkpoint.OwnerRevision == cp.OwnerRevision && h.Checkpoint.Deletion == cp.Deletion
 		} else if valid {
 			valid = *h.Checkpoint == cp
 		}
@@ -182,8 +195,11 @@ func (s *Service) Query(ctx context.Context, q contract.OwnerQuery) (out contrac
 			out.Drafts = append(out.Drafts, s.draft(cp, d))
 		}
 	case "connections":
+		if q.State != "" && q.State != "external" {
+			return out, contract.ErrOwnerRefresh
+		}
 		var rows []boundedstore.OwnerPrincipalRow
-		rows, next, e = s.Store.OwnerPrincipals(ctx, position, q.Limit)
+		rows, next, e = s.Store.OwnerPrincipals(ctx, position, q.Limit, q.State == "external")
 		for _, p := range rows {
 			out.Connections = append(out.Connections, s.connection(cp, p))
 		}
@@ -196,6 +212,33 @@ func (s *Service) Query(ctx context.Context, q contract.OwnerQuery) (out contrac
 				return out, readErr
 			}
 			out.Grants = append(out.Grants, contract.OwnerGrant{Handle: s.object(cp, "grant", g.ID, 0), Draft: s.object(cp, "draft", g.DraftID, g.DraftRevision), Connection: s.connection(cp, p), ExpiresAt: g.ExpiresAt})
+		}
+	case "draft_collaborations":
+		h, err := s.resolve(cp, q.Handle, "draft")
+		if err != nil {
+			return out, err
+		}
+		if q.Reference != "" {
+			draft, err := s.Store.ResolveDraftInvitation(ctx, q.Reference)
+			if errors.Is(err, boundedstore.ErrAccess) {
+				out.Unavailable = true
+				break
+			}
+			if err != nil {
+				return out, err
+			}
+			if draft != h.ID {
+				return out, contract.ErrOwnerRefresh
+			}
+		}
+		var rows []contract.DraftCollaboration
+		rows, next, e = s.Store.DraftCollaborations(ctx, h.ID, position, q.Limit, q.State, q.Reference)
+		for _, v := range rows {
+			p, err := s.Store.OwnerPrincipal(ctx, v.Principal)
+			if err != nil {
+				return out, err
+			}
+			out.Collaborations = append(out.Collaborations, contract.OwnerCollaboration{Handle: s.object(cp, "collaboration", v.ID, v.Revision), Invitation: v.Invitation, State: v.State, Connection: s.connection(cp, p), ExpiresAt: v.ExpiresAt, Verification: v.Verification})
 		}
 	case "pending", "history":
 		out.Decisions, next, e = s.decisions(ctx, cp, position, q.Limit, q.View == "pending")
@@ -329,6 +372,30 @@ func (s *Service) Act(ctx context.Context, in contract.OwnerAction) (out contrac
 	out.Schema = contract.OwnerViewSchema
 	var d contract.Draft
 	switch in.Action {
+	case "invite_draft":
+		h, err := s.resolve(cp, in.Handle, "draft")
+		if err != nil {
+			return out, err
+		}
+		var invitation contract.DraftInvitation
+		invitation, e = s.Store.InviteDraft(ctx, h.ID, h.Revision)
+		if e == nil {
+			out.Invitation = &invitation
+			out.Handle = s.object(cp, "invitation", invitation.ID, 0)
+			out.Instruction = s.collaborationInstruction(invitation)
+		}
+	case "end_collaboration":
+		h, err := s.resolve(cp, in.Handle, "collaboration")
+		if err != nil {
+			return out, err
+		}
+		e = s.Control.ChangeOwnerWork(ctx, func() error { return s.Store.EndDraftCollaboration(ctx, h.ID) })
+	case "cancel_invitation":
+		h, err := s.resolve(cp, in.Handle, "invitation")
+		if err != nil {
+			return out, err
+		}
+		e = s.Control.ChangeOwnerWork(ctx, func() error { return s.Store.CancelDraftInvitation(ctx, h.ID) })
 	case "create_draft":
 		input := contract.DraftInput{}
 		if in.Target != "" {
@@ -456,69 +523,6 @@ func (s *Service) connection(cp boundedstore.OwnerCheckpoint, p boundedstore.Own
 	return contract.OwnerConnection{Handle: s.object(cp, "principal", p.ID, p.Revision), Name: p.Name, Distinction: connectionDistinction(p.Order), Permissions: p.Permissions, Owner: p.ID == cp.Owner}
 }
 
-func (s *Service) DraftWork(ctx context.Context, in contract.AgentDraftRequest) (out contract.AgentDraftResult, err error) {
-	if in.Grant == "" || in.Draft == "" {
-		return out, errors.New("缺少物主授予的工作项")
-	}
-	d, e := s.Store.DraftMetadata(ctx, in.Draft, in.Grant)
-	if e != nil {
-		return out, e
-	}
-	binding := contract.AuthenticationDigest(ctx) + ":" + in.Grant
-	if in.Handle != "" {
-		h, e := s.open(in.Handle)
-		if e != nil || h.Type != "agent-draft" || h.ID != d.ID || h.Revision != d.Revision || h.Binding != binding {
-			return out, contract.ErrOwnerRefresh
-		}
-	}
-	switch in.Action {
-	case "read":
-		if in.Offset != 0 && in.Handle == "" {
-			return out, contract.ErrOwnerRefresh
-		}
-		var v contract.OwnerText
-		v, e = s.Store.OwnerText(ctx, d.ID, d.Revision, "draft_content", in.Offset, in.Grant)
-		out.Content = &v
-	case "replace", "append":
-		if in.Handle == "" {
-			return out, contract.ErrOwnerRefresh
-		}
-		if len(in.Text) > contract.OwnerRequestBytes {
-			return out, errors.New("单次文本超过提交上限")
-		}
-		d, e = s.Store.WriteDraft(ctx, contract.DraftWrite{ID: d.ID, ExpectedRevision: d.Revision, GrantID: in.Grant, Append: in.Action == "append", Content: boundedstore.StringSource(in.Text)})
-	default:
-		e = errors.New("工作项只允许读取、替换或追加")
-	}
-	if e != nil {
-		return out, e
-	}
-	current, e := s.Store.DraftMetadata(ctx, d.ID, in.Grant)
-	if e != nil {
-		return out, e
-	}
-	if current.Revision != d.Revision {
-		return out, contract.ErrOwnerRefresh
-	}
-	out.Handle = s.seal(handle{Type: "agent-draft", ID: d.ID, Revision: d.Revision, Binding: binding})
-	return out, nil
-}
-
-func (s *Service) CheckDraftWork(ctx context.Context, in contract.AgentDraftRequest, value string) error {
-	h, e := s.open(value)
-	if e != nil || h.Type != "agent-draft" || h.ID != in.Draft || h.Binding != contract.AuthenticationDigest(ctx)+":"+in.Grant {
-		return contract.ErrOwnerRefresh
-	}
-	d, e := s.Store.DraftMetadata(ctx, in.Draft, in.Grant)
-	if e != nil {
-		return e
-	}
-	if d.Revision != h.Revision {
-		return contract.ErrOwnerRefresh
-	}
-	return ctx.Err()
-}
-
 func (s *Service) relations(ctx context.Context, cp boundedstore.OwnerCheckpoint, id, after string, limit int) (out []contract.OwnerRelation, next string, err error) {
 	if cp.Generation == "" {
 		return nil, "", nil
@@ -626,7 +630,11 @@ func (s *Service) assets(ctx context.Context, q contract.OwnerQuery, position st
 	}
 	if q.View == "assets" && q.State == "" && q.Query == "" && q.Kind == "" {
 		if len(rows) == q.Limit {
-			return rows, "s:", nil
+			stopped, _, e := s.Store.OwnerStopped(ctx, "", 1)
+			if len(stopped) > 0 {
+				return rows, "s:", e
+			}
+			return rows, "", e
 		}
 		stopped, next, e := s.Store.OwnerStopped(ctx, "", q.Limit-len(rows))
 		if next != "" {

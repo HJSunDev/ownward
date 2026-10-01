@@ -113,18 +113,22 @@ func (s *Store) OwnerHistory(ctx context.Context, after string, limit int) (out 
  FROM owner_events e JOIN owner_event_access d ON d.sequence=e.sequence WHERE e.at>=?
  ), retained AS (SELECT * FROM facts ORDER BY at DESC,key DESC LIMIT ?),
  page AS (SELECT * FROM retained WHERE ?='' OR at<? OR (at=? AND key<?) ORDER BY at DESC,key DESC LIMIT ?)
- SELECT key,kind,at,status,data FROM (
- SELECT *,sum(length(data)) OVER(ORDER BY at DESC,key DESC) AS bytes FROM page
- ) WHERE bytes<=524288 ORDER BY at DESC,key DESC`, cutoff, cutoff, OwnerEventLimit, after, at, at, key, limit)
+ SELECT key,kind,at,status,data,more FROM (
+ SELECT *,sum(length(data)) OVER(ORDER BY at DESC,key DESC) AS bytes, row_number() OVER(ORDER BY at DESC,key DESC)<count(*) OVER() AS more FROM page
+ ) WHERE bytes<=524288 ORDER BY at DESC,key DESC`, cutoff, cutoff, OwnerEventLimit, after, at, at, key, limit+1)
 		if e != nil {
 			return e
 		}
 		defer rows.Close()
 		for rows.Next() {
+			if len(out) == limit {
+				break
+			}
+			var more bool
 			var v OwnerHistoryRow
 			var stamp int64
 			var b []byte
-			if e = rows.Scan(&v.Key, &v.Kind, &stamp, &v.Status, &b); e != nil {
+			if e = rows.Scan(&v.Key, &v.Kind, &stamp, &v.Status, &b, &more); e != nil {
 				return e
 			}
 			v.At = time.UnixMilli(stamp).UTC()
@@ -139,7 +143,10 @@ func (s *Store) OwnerHistory(ctx context.Context, after string, limit int) (out 
 				return e
 			}
 			out = append(out, v)
-			next = strconv.FormatInt(stamp, 10) + ":" + v.Key
+			next = ""
+			if more {
+				next = strconv.FormatInt(stamp, 10) + ":" + v.Key
+			}
 		}
 		return rows.Err()
 	})
