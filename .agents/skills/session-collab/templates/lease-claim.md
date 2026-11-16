@@ -1,16 +1,21 @@
-# 资源租约声明模板（collab/resources/claims/<lease_id>.md）
+# 资源租约声明
+
+使用共享工作区的资源槽时，将声明保存为 `collab/resources/claims/<lease_id>.md`。获取、续期、回收与抢占按[资源协调规则](../../../../docs/workbench/cross-session-collaboration.md#四资源协调)执行。
 
 ```yaml
-lease_id: <id>；role: <角色slug>；action: <动作>；class: heavy|external|workspace-write
-estimate: <内存/CPU/时长/费用估算>；preemptible: true|false；safe_point: <描述>
-granted_at: <时间>；expires_at: <时间>；heartbeat: <时间>
+lease_id: <唯一ID>
+role: <持有角色>
+action: <动作与目标>
+class: heavy|external|workspace-write
+estimate: <CPU、内存、时长或费用估算>
+preemptible: true|false
+safe_point: <可安全交接或终止的位置>
+granted_at: <时间>
+expires_at: <时间>
+heartbeat: <最近确认仍在执行的时间>
 status: running|released|expired|preempted
-actual: <实际用量>；result: <结果摘要>
+actual: <实际用量，完成时填写>
+result: <结果摘要，完成时填写>
 ```
 
-规则：
-- 先原子创建槽目录（`resources/slots/<class>/slot-1`）再写声明；占用则写 `claims/pending/`，下一自然回合重试。
-- `expires_at` 覆盖最大预期运行时间；长任务拆检查点续期。
-- 回收：仅当持有者空闲且已过期，原子重命名入 `claims/expired/`；busy 不回收。
-- 抢占：协作式——记录理由并通知；确认持有者空闲后才接管；仍在运行则记录违规并升级用户。
-- 完成：声明移入 `claims/done/`，删除槽目录。
+确认独占获取成功后才能执行；槽已存在不算获取成功。记录持有者与 `lease_id`，释放或回收前核对身份。完成后更新声明、移入 `claims/done/`，再释放本人持有的槽；不得清除其他角色的有效租约。
