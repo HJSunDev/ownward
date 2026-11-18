@@ -20,4 +20,4 @@ Ownward维护通用外部智能端口、测试编排、任务提示、工具预�
 
 `fixtures/external-intelligence-runtime.json` 是保留历史driver与角色字段的合同测试夹具；它只加载 `fixtures/fake_adapter.py`，没有模型调用、认证或网络能力，不能用于真实测试。CI通过环境变量显式选择该夹具，不安装任何供应商客户端。
 
-本机工具安装与使用说明位于仓库外 `E:/Dev/external-intelligence/README.md`；该路径是当前安装位置，不是产品依赖。
+外部工具的安装与使用说明见所选工具自身的文档；实际位置由上述本机清单指定，不是产品的固定目录依赖。

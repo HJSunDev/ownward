@@ -9,7 +9,7 @@
       "embeddinggemma_300m",
       "bge_m3"
     ],
-    "output": "E:\\Dev\\ownward\\.tmp\\vector-model-evaluation\\results\\resources-v4-repeat",
+    "output": "results/resources-v4-repeat",
     "script_sha256": "b18703863b127bb36000e931758ab2108e75380b2ab5f7be5931969dedc8166b",
     "settling_seconds": 10,
     "status": "frozen_before_repeat_results"

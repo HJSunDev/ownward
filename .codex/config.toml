@@ -1,7 +1,6 @@
 [mcp_servers.ownward]
-command = 'E:\Dev\ownward\bin\ownward.exe'
-args = ['mcp', '--data-dir', 'E:\Dev\ownward\.ownward\codex']
-cwd = 'E:\Dev\ownward'
+command = "git"
+args = ["-c", "alias.ownward-mcp=!exec ./bin/ownward mcp --data-dir .ownward/codex", "ownward-mcp"]
 enabled = true
 required = true
 startup_timeout_sec = 120

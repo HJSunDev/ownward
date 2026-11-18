@@ -6,13 +6,13 @@
 
 ## 当前目标与下一步
 
-**剩余19题复验（2026-09-07）：** 按用户要求排除先前5题，使用 `candidate-05-boundary`、默认自主调用入口重新检索并完成剩余19题，**19／19通过，0运行错误，约480秒**。18题直接完成，vs-c076自主调用组件后通过；复用未变化的资产和语义数据，没有复用旧检索或答案。[完整现场](../../.tmp/kernel-fast-iteration/candidate-05-boundary/reader-replay-20260907-180541/summary.json)。先前5题仍保留原4／5，rs6-01另有内核定点修复证据；不能合称新内核24／24端到端通过。已停止，未续跑最终测试。
+**剩余19题复验（2026-09-07）：** 按用户要求排除先前5题，使用 `candidate-05-boundary`、默认自主调用入口重新检索并完成剩余19题，**19／19通过，0运行错误，约480秒**。18题直接完成，vs-c076自主调用组件后通过；复用未变化的资产和语义数据，没有复用旧检索或答案。完整现场（本地工件 `.tmp/kernel-fast-iteration/candidate-05-boundary/reader-replay-20260907-180541/summary.json`）。先前5题仍保留原4／5，rs6-01另有内核定点修复证据；不能合称新内核24／24端到端通过。已停止，未续跑最终测试。
 
-**2026-09-07 内核补修：** rs6-01 属第 1 类信息交付缺陷：V2 语义线索后固定 64 字符窗口将 `PCM WAV` 截成 `PC`，此前判对掩盖了缺失，不是本次组件退化。已改为在有界余量内补齐当前句尾；原资产、原语义线索与原查询回读完整，末尾从 70238 延至 70244，仅增加 6 字符；内核候选与 derived 包测试通过。新构建及证据位于 [candidate-05-boundary](../../.tmp/kernel-fast-iteration/candidate-05-boundary)，执行配置为该目录的 `execution.json`，后续内核运行使用新候选；历史 candidate-04 制品与结果保留。当前没有重跑 Reader 或最终测试，五题中的原始 4／5 判分不改写。
+**2026-09-07 内核补修：** rs6-01 属第 1 类信息交付缺陷：V2 语义线索后固定 64 字符窗口将 `PCM WAV` 截成 `PC`，此前判对掩盖了缺失，不是本次组件退化。已改为在有界余量内补齐当前句尾；原资产、原语义线索与原查询回读完整，末尾从 70238 延至 70244，仅增加 6 字符；内核候选与 derived 包测试通过。新构建及证据位于 candidate-05-boundary（本地工件 `.tmp/kernel-fast-iteration/candidate-05-boundary`），执行配置为该目录的 `execution.json`，后续内核运行使用新候选；历史 candidate-04 制品与结果保留。当前没有重跑 Reader 或最终测试，五题中的原始 4／5 判分不改写。
 
 **当前结论：** 最终测试开发覆盖至第 117 题，已发现问题中，82、89、97、112、114、116 已通过复验；72、87、90、95 已登记放弃追求标答，没有剩余待修复的最终测试题。保留现有组件，不采用三方案比较或新增顶层规则。后续使用 `candidate-05-boundary`；固定回归的 rs6-01 已定点修复，其端到端复验状态见上文，不混为最终测试遗留题。
 
-**97 已关闭：** 原版组件在[首次对照](../../.tmp/information-use-product/three-and-principle-20260907-182804/summary.json)与[再次对照](../../.tmp/information-use-product/three-and-principle-20260907-185303/summary.json)中连续两次通过，取代“尚未通过／尚未关闭”的当前结论。两次复用相同原始材料及既有候选，重新执行比较与后续处理；Reader 均为 xhigh，裁判依次为 medium、xhigh，不宣称两次独立全流程或必然通过。
+**97 已关闭：** 原版组件在首次对照（本地工件 `.tmp/information-use-product/three-and-principle-20260907-182804/summary.json`）与再次对照（本地工件 `.tmp/information-use-product/three-and-principle-20260907-185303/summary.json`）中连续两次通过，取代“尚未通过／尚未关闭”的当前结论。两次复用相同原始材料及既有候选，重新执行比较与后续处理；Reader 均为 xhigh，裁判依次为 medium、xhigh，不宣称两次独立全流程或必然通过。
 
 - **当前下一步：** 本批最终测试问题已处理完；续跑位置为第 118 题，本次仅更新结论，不启动测试。
 - **探索方式：** 按[持续探索方法](../engineering/information-use-exploration.md)从真实偏差提出机制假设，小样本配对筛选，有实质收益再扩大；已试方向与当前下一步只在探索记录维护。
@@ -48,9 +48,9 @@
 | **112／`d851d5ba`：筹款总额** | **2：混用不同归属层级的金额。** 四笔本人明确筹集或帮助筹集的金额，以及协助组织的音乐会总额均已交付；原答直接把后者全额归入本人总数，主报约 $8,750，脚注不能替代主结论中的归属区分。$3,750 可作为四笔明确参与金额的合计，音乐会另列；该预期有合理限定支持，不据此归为第 4 类坏题。 |
 
 
-**本次归因复核：** [三题判断依据与原文](../../.tmp/information-use-product/three-case-attribution-20260907.json)。第 90 题已按用户要求登记放弃追求标答，正式评分与测试数据不变。
+**本次归因复核：** 三题判断依据与原文（本地工件 `.tmp/information-use-product/three-case-attribution-20260907.json`）。第 90 题已按用户要求登记放弃追求标答，正式评分与测试数据不变。
 
-**证据：** [六题原题、原始答法及实际交付材料](../../.tmp/information-use-product/six-case-triage-20260907.json)；主测试现场以文末入口为准。关键片段：72 F93/F154/F173，87 F164/F198，89 F118/F217，90 F132，97 F45/F46，112 F214；原始完整对话分别包含 `2e4430d8_2`、`81b971b8_2`、`ultrachat_359327`、`d77d4ac9_1`，标签仅供人工归因，不交给处理流程。
+**证据：** 六题原题、原始答法及实际交付材料（本地工件 `.tmp/information-use-product/six-case-triage-20260907.json`）；主测试现场以文末入口为准。关键片段：72 F93/F154/F173，87 F164/F198，89 F118/F217，90 F132，97 F45/F46，112 F214；原始完整对话分别包含 `2e4430d8_2`、`81b971b8_2`、`ultrachat_359327`、`d77d4ac9_1`，标签仅供人工归因，不交给处理流程。
 
 ### 初版五题验证（历史结果，已被后续复验与弃题结论取代）
 
@@ -64,7 +64,7 @@
 | 97 | **任务结果通过：** 主报 Thrive Market，且不再臆测平分 $80；本轮新版本继续复验，不把不影响主结果的附加解释另设为失败条件。 |
 | 112 | **未解决：** 仍主报 $8,750，未分开直接筹款与协助组织活动的全场金额。 |
 
-官方提示判对 89、97（2／5）：97 已完成实际任务；89 主报 3、仅附带 4，实际遗漏仍需修复。89、112 已生成更合理候选但最终未采用，是本轮继续迭代的依据；72、87 的标答处置见下方登记。[原始五题现场](../../.tmp/information-use-product/unchanged-remaining5-20260907-104520/review.json)保留当时较严的审阅记录，当前通过标准以任务结果和本文为准。
+官方提示判对 89、97（2／5）：97 已完成实际任务；89 主报 3、仅附带 4，实际遗漏仍需修复。89、112 已生成更合理候选但最终未采用，是本轮继续迭代的依据；72、87 的标答处置见下方登记。原始五题现场（本地工件 `.tmp/information-use-product/unchanged-remaining5-20260907-104520/review.json`）保留当时较严的审阅记录，当前通过标准以任务结果和本文为准。
 
 ## 不再以答对为优化目标的题目登记
 
@@ -74,17 +74,17 @@
 
 仅部分评分条件缺乏依据的题目，只停止追求该条件，其余有依据的用户需求仍须满足。
 
-**证据来源：** [官方S数据副本](E:/Ownward/acceptance/longmemeval-s/assets/v1/data/longmemeval_s_cleaned.json)，按题号定位；表内消息序号从0开始。
+**证据来源：** 官方S数据副本（本地评测数据根下的 `longmemeval-s/assets/v1/data/longmemeval_s_cleaned.json`），按题号定位；表内消息序号从0开始。
 
 | 题号 | 题目ID | 问题 | 弃题原因 | 证据位置 |
 | --- | --- | --- | --- | --- |
-| 72 | `6d550036` | 本人主导的项目数量 | 标答2计入独立Data Mining项目，却漏计更明确的带领五名工程师推进新功能的项目，无法用一致标准得出总数2。 | `2e4430d8_2`；[归因证据](../../.tmp/information-use-product/three-case-attribution-20260907.json)第72题，交付片段F173。 |
-| 87 | `gpt4_2f8be40d` | 参加婚礼的数量 | 标答3遗漏近期姐姐婚礼及上月表亲婚礼；无依据把它们全部删除或合并到标答三场，精确总数3缺乏支持。 | `81b971b8_2`、`1d6e01e8`；[归因证据](../../.tmp/information-use-product/three-case-attribution-20260907.json)第87题，F198、F164。 |
+| 72 | `6d550036` | 本人主导的项目数量 | 标答2计入独立Data Mining项目，却漏计更明确的带领五名工程师推进新功能的项目，无法用一致标准得出总数2。 | `2e4430d8_2`；归因证据（本地工件 `.tmp/information-use-product/three-case-attribution-20260907.json`）第72题，交付片段F173。 |
+| 87 | `gpt4_2f8be40d` | 参加婚礼的数量 | 标答3遗漏近期姐姐婚礼及上月表亲婚礼；无依据把它们全部删除或合并到标答三场，精确总数3缺乏支持。 | `81b971b8_2`、`1d6e01e8`；归因证据（本地工件 `.tmp/information-use-product/three-case-attribution-20260907.json`）第87题，F198、F164。 |
 | 90 | `88432d0a` | 过去两周烘焙次数 | 标答4漏计5月20日完成的苹果派，发生在问题要求的两周内，且不同于已计入的四次经历。 | `ultrachat_359327`（2023-05-20），消息10推荐苹果派、消息13确认做成；交付片段F132。 |
 | 95 | `7024f17c` | 上周慢跑与瑜伽总时长 | 标答0.5小时对应的慢跑在5月20日已被描述为过去活动，不在所问上周；瑜伽仅有旧习惯和计划，没有上周已完成时长。 | 问题日期2023-05-30；`answer_a21f3697_1`（5月20日）、`answer_a21f3697_2`（5月22日）、`answer_a21f3697_3`（5月23日）首条用户消息；全部47段历史无补充。 |
-| 123 | `bf659f65` | 购买或下载的专辑／EP数量 | 标答3把签名黑胶计作购买／下载，但原文只确认持有与收藏，未说明取得方式；有依据的交付是确认2项、计入黑胶则3项。两轮同类结论一对一错，停止追求确定主答3。 | [首测原答及判分](../../.tmp/evidence-answer-improvement-20260913/runs/full14-examples-sentences-1/examples_sentences/questions/bf659f65/)、[复验原文、回答及判分](../../.tmp/evidence-answer-improvement-20260913/runs/full14-exact-syntax-1/examples_sentences/questions/bf659f65/)；后者 `ownward-data/assets/information.jsonl` 中黑胶来源 `01a09a4b-0573-777b-97dd-b9cab42788cf`。 |
+| 123 | `bf659f65` | 购买或下载的专辑／EP数量 | 标答3把签名黑胶计作购买／下载，但原文只确认持有与收藏，未说明取得方式；有依据的交付是确认2项、计入黑胶则3项。两轮同类结论一对一错，停止追求确定主答3。 | 首测原答及判分（本地工件 `.tmp/evidence-answer-improvement-20260913/runs/full14-examples-sentences-1/examples_sentences/questions/bf659f65/`）、复验原文、回答及判分（本地工件 `.tmp/evidence-answer-improvement-20260913/runs/full14-exact-syntax-1/examples_sentences/questions/bf659f65/`）；后者 `ownward-data/assets/information.jsonl` 中黑胶原文的资产记录。 |
 | 135 | `75832dbd` | 推荐感兴趣的出版物或会议 | 标答排除医疗以外的AI主题，但本人申请陈述明确最感兴趣多智能体／多模态强化学习，并列出通用AI目标会议，排他要求与原文冲突。 | `sharegpt_xni9yYO_6`（2023-05-23）消息0；医疗兴趣见`answer_d87a6ef8`（5月22日），没有排除其他兴趣的表述。 |
-| 139 | `195a1a1b` | 按个人偏好推荐晚间活动 | 评分附加“手机／电视损害睡眠且用户不愿被推荐”，完整46份会话无该用户原述；用户反而请求睡前冥想应用，减少屏幕是助手建议。仅停止追求这项无据禁忌，仍须遵守用户9:30前放松等真实偏好。 | [完整原文核查](../../.tmp/evidence-answer-improvement-20260913/diagnostics/139-raw-preference-check/)、[复验回答及评分要求](../../.tmp/evidence-answer-improvement-20260913/runs/full14-exact-syntax-1/examples_sentences/questions/195a1a1b/)；原文核查中的第45会话。 |
+| 139 | `195a1a1b` | 按个人偏好推荐晚间活动 | 评分附加“手机／电视损害睡眠且用户不愿被推荐”，完整46份会话无该用户原述；用户反而请求睡前冥想应用，减少屏幕是助手建议。仅停止追求这项无据禁忌，仍须遵守用户9:30前放松等真实偏好。 | 完整原文核查（本地工件 `.tmp/evidence-answer-improvement-20260913/diagnostics/139-raw-preference-check/`）、复验回答及评分要求（本地工件 `.tmp/evidence-answer-improvement-20260913/runs/full14-exact-syntax-1/examples_sentences/questions/195a1a1b/`）；原文核查中的第45会话。 |
 | 152 | `75f70248` | 客厅是否导致打喷嚏 | 标答要求结合“近期客厅大扫除扬尘”，但历史只有清洁建议请求，没有该事件已发生的记录，命中该要求需补造经历。 | `answer_8ee04a2e`（2023-05-26）消息2、4仅询问除尘方法及吸尘器；完整历史无已完成客厅大扫除记录。 |
 | 264 | `370a8ff4` | 流感康复到第10次慢跑相隔几周 | 原始日期相差81天，即11周4天；标答15周对应105天，与日期计算不符。 | `answer_61d1be50_1`消息0“今天康复”，日期2023-01-19；`answer_61d1be50_2`消息0“今天第10次慢跑”，日期2023-04-10。 |
 | 302 | `0bc8ad93` | 两个月前逛博物馆是否与朋友同行 | 对应访问未说明同伴，标答却确定“没有与朋友同行”；其他日期的同行记录不能证明该次没有朋友。 | 问题日期2023-03-11；`answer_f4ea84fc_2`（1月11日）消息0未说明同伴；`answer_f4ea84fc_3`的10月朋友同行、`answer_f4ea84fc_1`的2月父亲同行均为其他事件。 |
@@ -164,9 +164,9 @@
 
 ## 必要证据入口
 
-- [当前主测试现场](E:/Ownward/acceptance/longmemeval-s/runs/kernel-fast-candidate-04-formal-20260906-122216/questions)：按题号读取 `result.json`、`retrieval.json` 与 `judge/input.json`，核对答案、实际取得的信息与判分；[暂停清单](E:/Ownward/acceptance/longmemeval-s/runs/kernel-fast-candidate-04-formal-20260906-122216/paused.json)保留本批失败与服务状态，[执行配置](../../.tmp/kernel-fast-iteration/candidate-04/execution.json)保留续跑依据。
-- [当前候选资格与回归报告](E:/Ownward/acceptance/longmemeval-s/runs/kernel-fast-candidate-04-qualification-20260906-115752/report.json)：六道原缺陷及固定 24 题的结果与现场。
-- [首轮 110 题统计入口](../../.tmp/final-test-ready/bailian-resume22/summary.json)及[首轮逐题现场](E:/Ownward/acceptance/longmemeval-s/runs/15eaa12c101c2eb307d20c4172c4582bacafef093442b26d2468940bc98205ff/formal-go-api/questions)：保存优化前失败、调用与整理证据。
-- [官方 S 数据副本](E:/Ownward/acceptance/longmemeval-s/assets/v1/data/longmemeval_s_cleaned.json)：核对原始任务、历史、日期与标答；第 116 题的近期参与澄清位于 `answer_826d51da_1` 第 11 条消息，已在原 Reader 工具返回中交付。
+- 当前主测试现场（本地评测数据根下的 `longmemeval-s/runs/kernel-fast-candidate-04-formal-20260906-122216/questions`）：按题号读取 `result.json`、`retrieval.json` 与 `judge/input.json`，核对答案、实际取得的信息与判分；暂停清单（本地评测数据根下的 `longmemeval-s/runs/kernel-fast-candidate-04-formal-20260906-122216/paused.json`）保留本批失败与服务状态，执行配置（本地工件 `.tmp/kernel-fast-iteration/candidate-04/execution.json`）保留续跑依据。
+- 当前候选资格与回归报告（本地评测数据根下的 `longmemeval-s/runs/kernel-fast-candidate-04-qualification-20260906-115752/report.json`）：六道原缺陷及固定 24 题的结果与现场。
+- 首轮 110 题统计入口（本地工件 `.tmp/final-test-ready/bailian-resume22/summary.json`）及首轮逐题现场（本地评测数据根下的 `longmemeval-s/runs/15eaa12c101c2eb307d20c4172c4582bacafef093442b26d2468940bc98205ff/formal-go-api/questions`）：保存优化前失败、调用与整理证据。
+- 官方 S 数据副本（本地评测数据根下的 `longmemeval-s/assets/v1/data/longmemeval_s_cleaned.json`）：核对原始任务、历史、日期与标答；第 116 题的近期参与澄清位于 `answer_826d51da_1` 第 11 条消息，已在原 Reader 工具返回中交付。
 - [信息使用能力探索记录](../research/information-use-exploration.md)：统一保留已尝试的方向、效果、淘汰理由及原始实验入口；[信息使用模块](../modules/information-use/README.md)说明产品实现状态。
 - [此前来源归属修复](kernel-v2-50-gate-failure-triage.md)：既有来源正确性不得在后续优化中退化。

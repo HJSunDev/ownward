@@ -376,7 +376,7 @@ class BindingManifestTests(unittest.TestCase):
     def test_public_example_freezes_official_longmem_protocol(self) -> None:
         config = binding.load_json(self.root / "execution.example.json")
         community = config["community"]
-        self.assertEqual("E:\\Ownward\\acceptance\\longmemeval-s\\manifests\\v1.json", community["environment_manifest"])
+        self.assertEqual("E:\\path\\to\\evaluation\\longmemeval-s\\manifests\\v1.json", community["environment_manifest"])
         self.assertNotIn("driver", community["external_intelligence"])
         binary = community["external_intelligence"]["binary"].replace("\\", "/")
         self.assertIn("/external-intelligence/", binary)

@@ -1,6 +1,8 @@
 $ErrorActionPreference = "Stop"
 
 $isHook = $args.Count -ge 1 -and $args[0] -eq "hook"
+# 旧宿主可能仍持有注册缓存；治理已退出当前工作，回调不得读取或推进旧任务。
+if ($isHook) { [Console]::Out.WriteLine("{}"); exit 0 }
 
 function Exit-GovernanceFailure([int]$Code) {
     if ($isHook) {

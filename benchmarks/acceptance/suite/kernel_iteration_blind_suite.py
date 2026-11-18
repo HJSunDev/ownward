@@ -516,7 +516,7 @@ def open_partition_for_evaluation(
     cases, partition_identity = _correct_partition_questions(
         cases, partition["identity"],
         suite_root / "iteration" / version / "stage6-question-corrections.json",
-        suite_identity=suite_identity, level=level,
+        suite_identity=suite_identity, level=level, sealed_dir=sealed_path.parent,
     )
     materials = _materials(cases, expected_profiles=[case["suite_profile"] for case in cases])
     return {
@@ -537,6 +537,7 @@ def _correct_partition_questions(
     *,
     suite_identity: str,
     level: int,
+    sealed_dir: Path,
 ) -> tuple[list[dict[str, Any]], str]:
     """只应用已登记的提问修正，保留封存原件并使旧执行身份失效。"""
     if not correction_path.is_file():
@@ -544,7 +545,7 @@ def _correct_partition_questions(
     correction = _load_json(correction_path)
     if correction.get("suite_identity") != suite_identity or correction.get("level") != level:
         return cases, partition_identity
-    corrected_path = Path(str(correction.get("corrected_dataset", ""))).resolve()
+    corrected_path = (sealed_dir / str(correction.get("corrected_dataset", ""))).resolve()
     _require(corrected_path.is_file(), "提问修正数据缺失，禁止退回旧题")
     _require(evidence.file_sha256(corrected_path) == correction.get("corrected_dataset_sha256"), "提问修正数据摘要漂移")
     try:

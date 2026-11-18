@@ -18,8 +18,8 @@
 
 ## 共同事实
 
-1. Codex 任务“own项目”（任务 ID：`01a0294d-3776-73b1-9b39-f410cc655c51`）的历史能够完整读取，任务可以接收消息；历史目录迁移到 E 盘与本次故障没有因果关系。
-2. 主任务已运行 `E:\Dev\ownward\bin\ownward.exe mcp --data-dir E:\Dev\ownward\.ownward\development`，并持有信息资产目录的独占锁。
+1. 项目主会话的历史能够完整读取，任务可以接收消息；历史目录迁移到另一磁盘与本次故障没有因果关系。
+2. 主任务已运行 `./bin/ownward.exe mcp --data-dir .ownward/development`，并持有信息资产目录的独占锁。
 3. 第二个进程打开同一目录时稳定返回“目录正由另一个 Ownward 进程使用”。该保护由 `internal/assetlog/directory_lock_windows.go` 中的 `LockFileEx` 实现，本身是正确的数据安全边界。
 4. 故障任务中的 Governor 仍尝试初始化必需的 Ownward MCP，并在返回 MCP `initialize` 前退出；Codex 因而只看到 `connection closed: initialize response`。
 5. 当前 `.codex/agents/governor.toml` 已完整定义同名 MCP transport 并设置 `enabled = false`、`required = false`，但它是在故障任务启动后形成的；修改磁盘文件不能证明既有任务已经重新加载配置。
@@ -450,7 +450,7 @@ Governor 启动失败
 4. 治理状态增加活动任务所有权代次与一次性交接；竞争任务保持只读，旧所有者不能抢回写权限。
 5. 状态写锁改为操作系统持有的排他锁，进程退出后自动释放；短暂争用采用有界等待，不再由残留哨兵文件永久阻塞。
 
-真实恢复验证已完成：原故障任务 `01a0294d-3776-73b1-9b39-f410cc655c51` 的完整已完成历史被保留，并恢复到同目录任务 `01a02ca8-849b-7dc2-9094-8dffae1e3dc5`。恢复任务原子取得治理所有权，Governor 完成一次只读复核，`accept-review` 与 `apply-review` 均成功；复核期间系统只有一组 Ownward 共享核心进程，没有为 Governor 启动第二个产品 MCP。原任务没有被误报为热修复，恢复任务在验证后停止，未开展或修改主线产品工作。
+真实恢复验证已完成：原故障任务 的完整已完成历史被保留，并恢复到同目录任务。恢复任务原子取得治理所有权，Governor 完成一次只读复核，`accept-review` 与 `apply-review` 均成功；复核期间系统只有一组 Ownward 共享核心进程，没有为 Governor 启动第二个产品 MCP。原任务没有被误报为热修复，恢复任务在验证后停止，未开展或修改主线产品工作。
 
 验证证据：
 

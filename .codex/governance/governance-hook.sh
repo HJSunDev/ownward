@@ -1,5 +1,10 @@
 #!/bin/sh
 set -u
+# Retired governance callbacks never start the historical runtime.
+if [ "${1-}" = "hook" ]; then
+  printf '{}\n'
+  exit 0
+fi
 
 governance_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 binary="$governance_root/bin/governance-cli"

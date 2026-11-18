@@ -4,7 +4,7 @@
   "plan_identity": "53760d7f38f11cb9ff1da527aedc3588a3bccb6e8234d2e1e5cfd5ced3422ae4",
   "result_identity": "8841a424d192590f5baa87bc03db2faaf950f408ceb904c9995429b31c3817c9",
   "result_sha256": "780d80c6450301a6f1a2d5798681888b6dc41b5927af1dc06473238783a5cbbf",
-  "result": "E:\\Dev\\ownward\\.tmp\\kernel-v2-major-iteration\\stage6\\evaluator-reliability-v2\\evaluator-qualification\\53760d7f38f11cb9ff1da527aedc3588a3bccb6e8234d2e1e5cfd5ced3422ae4\\result.json",
+  "result": ".tmp/kernel-v2-major-iteration/stage6/evaluator-reliability-v2/evaluator-qualification/53760d7f38f11cb9ff1da527aedc3588a3bccb6e8234d2e1e5cfd5ced3422ae4/result.json",
   "passed": true,
   "candidate_executions": 0,
   "product_executions": 0,
@@ -39,5 +39,6 @@
   },
   "formal_state_sha256": "1d15b26785e0958a73393f9655a0d38ec0543b5e3cd907c0ddd9a5c087c042eb",
   "next_action": "run-fresh-nonoverlapping-15-question-gate-from-valid-5-question-predecessor",
-  "identity": "c58dd793db110f39dd5d64c1efaeeb5639eafd249d0a1ea6d7ada02503fefe5d"
+  "identity": "c58dd793db110f39dd5d64c1efaeeb5639eafd249d0a1ea6d7ada02503fefe5d",
+  "publication_digest": "05b6f862c008beb2ddbf8ed408d040642a20925f0ba2e2bd7e9a4e39d58ec45d"
 }

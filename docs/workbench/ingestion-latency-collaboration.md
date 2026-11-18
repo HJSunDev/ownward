@@ -4,13 +4,13 @@
 
 ## 长期规则
 
-| 参与方 | 任务名称与ID |
+| 参与方 | 历史任务角色 |
 | --- | --- |
-| A | ownward新星；`01a0bdc1-a50a-7f60-82cb-fcd06488b6d5` |
-| B | 乔布斯；`01a09993-f7ba-7970-8a4a-1d03b4781a10` |
+| A | ownward新星 |
+| B | 乔布斯 |
 
 - 遵循用户确定的分工和顺序。并行探索可交流中间发现；独立审查按“理解背景 → 固定版本完整审查 → 统一报告 → 集中修复与自验 → 一次性交付复审”推进，审查期间不改被审版本、不插入复审要求。
-- 使用 `mcp__codex_app__send_message_to_thread` 向对方ID交接，保持模型设置；消息只含任务、结论、证据和下一步职责。
+- 使用 `mcp__codex_app__send_message_to_thread` 向本机登记的对方会话交接，保持模型设置；消息只含任务、结论、证据和下一步职责。
 - 同一文件由一方统一修改；重型测试协调使用资源，避免竞争，复用有效证据，不重复运行。
 - 变更须经必要验证，保留可恢复成果与依据；未经授权不操作Git，不启动定时任务。
 - 接续或压缩后先核对本页的当前任务、版本和阶段，历史记录不作为待办。
@@ -34,7 +34,7 @@
 
 **结束条件：** 范围内核心体验与架构义务完整，实际发现经集中修复及复审关闭，必要验证、最终身份和全局结论保存后停止。问题须有合同依据及可达场景；不为假设风险扩展功能，不追求无限完善。未经新授权不操作Git、不启动定时任务。
 
-**当前阶段：** [最终独立复核](../../.tmp/information-availability-global-review-20260920/r3/report.md)确认既有四项实现缺陷已关闭；本轮宿主独立性修复后组合重新封存为`dbb755f465ec6802967e4a7e77eb909255994bc0d5c32b403a675e41a7277ed3`，组合校验通过，活动状态未改写。真实整链仍受组织认证/调用失败阻断，固定14题质量与完整成本未验收；不重复无效调用，不扩大题集。一条预检合成资料仍待兼容入口安全清理，准确位置和边界见[全局复审](../../.tmp/information-availability-global-review-20260920/r2/report.md)。
+**当前阶段：** 最终独立复核（本地工件 `.tmp/information-availability-global-review-20260920/r3/report.md`）确认既有四项实现缺陷已关闭；本轮宿主独立性修复后组合重新封存为`dbb755f465ec6802967e4a7e77eb909255994bc0d5c32b403a675e41a7277ed3`，组合校验通过，活动状态未改写。真实整链仍受组织认证/调用失败阻断，固定14题质量与完整成本未验收；不重复无效调用，不扩大题集。一条预检合成资料仍待兼容入口安全清理，准确位置和边界见全局复审（本地工件 `.tmp/information-availability-global-review-20260920/r2/report.md`）。
 
 **宿主独立性复审结论（2026-09-20，已完成）：** 通用运行时只依赖 `OrganizationExecutionPolicy` 与 `OrganizationExecutor`，Codex 进程、模型和文件配置留在适配器；连接器先注册并本地校验执行器，再按注册结果协商延后组织能力。共享与远程入口均已接入该顺序；无 Codex profile 的通用执行器注册、能力声明隔离、Codex 适配及 `cmd/ownward` 集成回归均通过。该结论证明能力边界已与具体宿主解耦，不把 fixture 当作真实模型质量成绩；整体质量与真实整链仍由 G3-01 单独验收。
 
@@ -45,30 +45,30 @@
 | 编号 | 问题 | 根因与影响 | 当前证据 | 处理顺序与关闭条件 |
 | --- | --- | --- | --- | --- |
 | HOST-01 | 延后组织的正式宿主入口曾以 Codex 配置判定能力，通用执行器不能正式装配。 | 通用接口把 Codex 进程配置混进运行时，能力声明又旁路读取 `OWNWARD_ORGANIZATION_PROFILE`。现已拆出宿主无关执行策略，能力声明改由显式注册且通过本地校验的执行器驱动；共享与远程入口在生成能力目录前完成注册。 | `internal/contract/organization_executor.go`、`internal/organization` 不依赖 Codex；`cmd/ownward/organization_registration_test.go` 验证无 Codex profile 的执行器注册与能力声明；全仓 Go 测试、`go vet ./...`、组合校验均通过。 | **已关闭（结构与装配边界）。** 任意宿主仍须提供自己的 `OrganizationExecutor` 适配器；本项不替代 G3-01 的真实模型质量与整链验收。 |
-| G3-01 | 本需求整体尚未验收关闭，真实组织失败且固定14题质量/时效目标未达到。 | 外部组织执行在两次提交后失败并留下不完整用量；Reader 最佳仅12/14，最新固定集8/14，阶段4与完整等待没有稳定达到约60秒量级。认证阻碍、真实成本和模型语义缺口不能靠代码回归推断解决。 | [全局复审R3](../../.tmp/information-availability-global-review-20260920/r3/report.md)；[固定14题证据](../../.tmp/evidence-answer-improvement-20260913/retained-full14-examples-sentences.json)；[质量登记](../tasks/task-quality-improvement.md#累计问题登记待解决4题)。 | HOST-01 已闭合；仍需恢复合规真实执行条件，先完成组织→依赖取用整链，再以同一最终版本验证固定14题至少13/14、阶段4约60秒量级、完整等待与总成本后关闭。 |
+| G3-01 | 本需求整体尚未验收关闭，真实组织失败且固定14题质量/时效目标未达到。 | 外部组织执行在两次提交后失败并留下不完整用量；Reader 最佳仅12/14，最新固定集8/14，阶段4与完整等待没有稳定达到约60秒量级。认证阻碍、真实成本和模型语义缺口不能靠代码回归推断解决。 | 全局复审R3（本地工件 `.tmp/information-availability-global-review-20260920/r3/report.md`）；固定14题证据（本地工件 `.tmp/evidence-answer-improvement-20260913/retained-full14-examples-sentences.json`）；[质量登记](../tasks/task-quality-improvement.md#累计问题登记待解决4题)。 | HOST-01 已闭合；仍需恢复合规真实执行条件，先完成组织→依赖取用整链，再以同一最终版本验证固定14题至少13/14、阶段4约60秒量级、完整等待与总成本后关闭。 |
 
 ---
 
 ## 历史协作证据：信息可用时效·执行单元三
 
-**完成状态（2026-09-20）：** 完整独立审查、集中修复及最终核对通过，批读接续、前台依赖恢复、工具目录与规则边界问题均关闭，440项被审身份一致。最终组合`f94121a90a35859e1d175bb3959d3441aaa01a6bd5288ebfffbbab669024612e`，提交`6586de9`；[最终复核](../../.tmp/information-availability-unit-three-20260920/review/r3/report.md)、[关闭记录](../../.tmp/information-availability-unit-three-20260920/review/closure.json)。单元关闭不代表原质量改进目标或全量发布通过，新路径仍显式启用。
+**完成状态（2026-09-20）：** 完整独立审查、集中修复及最终核对通过，批读接续、前台依赖恢复、工具目录与规则边界问题均关闭，440项被审身份一致。最终组合`f94121a90a35859e1d175bb3959d3441aaa01a6bd5288ebfffbbab669024612e`，提交`6586de9`；最终复核（本地工件 `.tmp/information-availability-unit-three-20260920/review/r3/report.md`）、关闭记录（本地工件 `.tmp/information-availability-unit-three-20260920/review/closure.json`）。单元关闭不代表原质量改进目标或全量发布通过，新路径仍显式启用。
 
 ---
 
 ## 历史协作证据：信息可用时效·执行单元二
 
-**完成状态（2026-09-20）：** B完整独立复审通过，R1/R2七项发现全部关闭；受影响回归、静态检查及制品校验通过，423项被审身份一致。最终组合 `4b81b40ac89a949c0c9499af2fada41617333786eb0941565ae6b86cb50ef5b1`；[关闭记录](../../.tmp/information-availability-unit-two-20260920/review/closure.json)与[最终复审](../../.tmp/information-availability-unit-two-20260920/review/r3/report.md)。本单元结束，不追加优化或测试；当时单元三尚未实施，新路径默认关闭。
+**完成状态（2026-09-20）：** B完整独立复审通过，R1/R2七项发现全部关闭；受影响回归、静态检查及制品校验通过，423项被审身份一致。最终组合 `4b81b40ac89a949c0c9499af2fada41617333786eb0941565ae6b86cb50ef5b1`；关闭记录（本地工件 `.tmp/information-availability-unit-two-20260920/review/closure.json`）与最终复审（本地工件 `.tmp/information-availability-unit-two-20260920/review/r3/report.md`）。本单元结束，不追加优化或测试；当时单元三尚未实施，新路径默认关闭。
 
 ---
 
 ## 历史协作证据：信息可用时效·执行单元一
-**完成状态（2026-09-19）：** 完整独立审查、集中修复与完整复审结束，远程工具分页、完成占用阻塞新待办、部分完成向量恢复三项问题全部关闭。最终组合 `e55821c02c8b6d9e3407d04dc3cf2ee6a8161f2eebdc1bcf6ec3171aeab4e9f2`，397项被审身份首尾一致；受影响模块回归、静态检查、制品校验及B最终5个独立场景通过。见[关闭记录](../../.tmp/information-availability-unit-one-20260919/review/closure.json)与[完整复审](../../.tmp/information-availability-unit-one-20260919/review/r3/report.md)。单元一结束，不追加优化或模型评测；单元二、三尚未实施。
+**完成状态（2026-09-19）：** 完整独立审查、集中修复与完整复审结束，远程工具分页、完成占用阻塞新待办、部分完成向量恢复三项问题全部关闭。最终组合 `e55821c02c8b6d9e3407d04dc3cf2ee6a8161f2eebdc1bcf6ec3171aeab4e9f2`，397项被审身份首尾一致；受影响模块回归、静态检查、制品校验及B最终5个独立场景通过。见关闭记录（本地工件 `.tmp/information-availability-unit-one-20260919/review/closure.json`）与完整复审（本地工件 `.tmp/information-availability-unit-one-20260919/review/r3/report.md`）。单元一结束，不追加优化或模型评测；单元二、三尚未实施。
 
 ---
 
 ## 历史协作证据：外部智能工具与项目边界审查
 
-**完成状态（2026-09-19）：** B完整审查、A集中修复和B完整复审结束；Qoder结束事件校验、完整响应收尾、队列截止时间和管道超时回收四项缺陷全部关闭。104项外部客户端、12项Node回归及5组独立边界验证通过，977项文件身份首尾一致，迁移与原百炼／Go兼容成立。本轮修复仅涉及项目外Qoder工具与专用测试；没有真实模型调用、正式题集续跑或Git写操作。[完整复审报告](E:/Dev/external-intelligence/review/r2/report.md)与[最终身份及关闭记录](E:/Dev/external-intelligence/review/closure.json)已保留；历史在线成绩和旧验收失败保留原边界。本任务结束，不追加优化。
+**完成状态（2026-09-19）：** B完整审查、A集中修复和B完整复审结束；Qoder结束事件校验、完整响应收尾、队列截止时间和管道超时回收四项缺陷全部关闭。104项外部客户端、12项Node回归及5组独立边界验证通过，977项文件身份首尾一致，迁移与原百炼／Go兼容成立。本轮修复仅涉及项目外Qoder工具与专用测试；没有真实模型调用、正式题集续跑或Git写操作。完整复审报告（外部智能工具根下的 `review/r2/report.md`）与最终身份及关闭记录（外部智能工具根下的 `review/closure.json`）已保留；历史在线成绩和旧验收失败保留原边界。本任务结束，不追加优化。
 
 ---
 
@@ -117,7 +117,7 @@
 | 5. 等价并发与衔接 | 冷导入按原顺序发布已就绪批次，与后续生成重叠；涉及旧组织时保持原屏障。 | 50来源真实组织、关系、向量及原文取用一致；正式整合的冷／暖导入和失败恢复检查通过。固定服务耗时回放预计减少80.64秒，**不是新整批实测**。`a/ordered-pipeline-candidate/retained.json`；`b/independent/item5-integration/existing-checks.json`。 |
 | 6. 传输开销 | 去掉HTTP请求JSON封装的冗余空白，提示、Schema及字段值不变；沿用已有提示缓存。 | 117份真实请求减少3739字节，收益很小，无新增调用。连接复用需要额外处理流尾，尚无足够收益证据，未引入。`a/independent/transport-byte-audit.json`。 |
 
-正式实现的146项离线检查通过，包含中断恢复与缓存失效边界；[完整检查及自审结果](../../.tmp/ingestion-latency-collab-20260914/a/independent/body-preservation/verification.json)。自审覆盖响应事件逐字节截断、正文及Markdown包装逐字符截断、Unicode正文原样保留、格式纠错、逐来源校验及恢复后的调用次数，未发现此独立项范围内仍需修复的问题。这些改动不新增AI阶段、不改变原文、语义提示、模型档位及预算；不构成新的全套答题成绩或整批时效成绩。独立优化已收敛，组合优化不在此范围。
+正式实现的146项离线检查通过，包含中断恢复与缓存失效边界；完整检查及自审结果（本地工件 `.tmp/ingestion-latency-collab-20260914/a/independent/body-preservation/verification.json`）。自审覆盖响应事件逐字节截断、正文及Markdown包装逐字符截断、Unicode正文原样保留、格式纠错、逐来源校验及恢复后的调用次数，未发现此独立项范围内仍需修复的问题。这些改动不新增AI阶段、不改变原文、语义提示、模型档位及预算；不构成新的全套答题成绩或整批时效成绩。独立优化已收敛，组合优化不在此范围。
 
 ### 机制验证与可复用进展
 
@@ -209,7 +209,7 @@
 
 后续复审撤回原“未发现缺陷、停止优化”的结论：结构、兼容及原文一致性验证仍有效，不能替代关系含义与实际依据的核对。更大规模导入的实际等待与费用须在相应准备任务中测量，不以局部比例代替。
 
-证据与恢复：[完整验证与版本清单](../../.tmp/ingestion-combined-20260914/retained/manifest.json)、[原始对照](../../.tmp/ingestion-combined-20260914/paired-4/summary.json)、[补充场景](../../.tmp/ingestion-combined-20260914/holdout-1/summary.json)、[正式输入一致性](../../.tmp/ingestion-combined-20260914/formal-request-parity.json)、[正式产物复放](../../.tmp/ingestion-combined-20260914/formal-replay.json)、[公开取用验证](../../.tmp/ingestion-combined-20260914/formal-publication-review.json)。最优实现已进入工作区正式源码；隔离产物与恢复文件保留，未提交。
+证据与恢复：完整验证与版本清单（本地工件 `.tmp/ingestion-combined-20260914/retained/manifest.json`）、原始对照（本地工件 `.tmp/ingestion-combined-20260914/paired-4/summary.json`）、补充场景（本地工件 `.tmp/ingestion-combined-20260914/holdout-1/summary.json`）、正式输入一致性（本地工件 `.tmp/ingestion-combined-20260914/formal-request-parity.json`）、正式产物复放（本地工件 `.tmp/ingestion-combined-20260914/formal-replay.json`）、公开取用验证（本地工件 `.tmp/ingestion-combined-20260914/formal-publication-review.json`）。最优实现已进入工作区正式源码；隔离产物与恢复文件保留，未提交。
 
 ### 后续修复与自审（2026-09-15）
 
@@ -221,7 +221,7 @@
 
 已采用的上下文修复通过Unicode／换行边界、公开导航、过期原文拒绝及6个相关Go包验证。它只补齐已选片段所在行，不会自动发现模型未选择的其他依据，也不修正模型的语义判断；最终取舍见下方收敛结论。
 
-本阶段运行已停止，未改变暂存区；保留先前可恢复实现与新增无损修复，未用失败实验替换正式语义方案。[修复、自审与接续证据](../../.tmp/ingestion-combined-repair-20260915/review.json)、[公开取用对照](../../.tmp/ingestion-combined-repair-20260915/context-fix/public-check/result.json)。
+本阶段运行已停止，未改变暂存区；保留先前可恢复实现与新增无损修复，未用失败实验替换正式语义方案。修复、自审与接续证据（本地工件 `.tmp/ingestion-combined-repair-20260915/review.json`）、公开取用对照（本地工件 `.tmp/ingestion-combined-repair-20260915/context-fix/public-check/result.json`）。
 
 ### 等价边界与推导方向验证（2026-09-15）
 
@@ -235,7 +235,7 @@
 
 **未采用的依据是新增错误、有效关联遗漏或成本问题，不是仍有偶发错误。** 两条约束能改善局部判断，尚未证明整体语义质量提升；也未据此得出总体错误率。保留的已知短板包括：模型描述了某个真实联系，却选中了不能支持它的原文位置。
 
-正式实现保留已验证的关系接口、任务分工及原文上下文修复；12份相关代码文件与既有恢复清单逐一校验一致，实验均未进入正式代码。各方案、对照、局部收益、失败及恢复位置见[约束验证记录](../../.tmp/ingestion-relation-constraints-20260915/review.json)。
+正式实现保留已验证的关系接口、任务分工及原文上下文修复；12份相关代码文件与既有恢复清单逐一校验一致，实验均未进入正式代码。各方案、对照、局部收益、失败及恢复位置见约束验证记录（本地工件 `.tmp/ingestion-relation-constraints-20260915/review.json`）。
 
 ### 关联定位与分类的接续验证（2026-09-15）
 
@@ -248,7 +248,7 @@
 | 明确证据导航目标 | 保留原文与一次调用方式，仍把一般习惯当作具体时长的依据，并产生错误冲突；不采用。 |
 | 完整输入输出示例 | 四组11份来源均通过结构校验，通勤关系不再标为完全等价，部分推导方向改善；长资料仍遗漏有用联系，并把问题之间的先后联系标成支持。平均每组80.53秒，对照74.67秒，累计输入增加；不采用。 |
 
-各机制的完整输入、原始响应、质量核对及运行记录见[验证记录](../../.tmp/ingestion-relation-constraints-20260915/review.json)，未采用的实验不进入正式版。
+各机制的完整输入、原始响应、质量核对及运行记录见验证记录（本地工件 `.tmp/ingestion-relation-constraints-20260915/review.json`），未采用的实验不进入正式版。
 
 ### 组合优化最终收敛（2026-09-15）
 
@@ -261,7 +261,7 @@
 | 保留已知语义短板 | 错误等价、方向和依据定位可能误导关联解释、排序或按类型导航；不会由内核自动纠正，也不能承诺外部智能每次都纠正。 |
 | 发布影响 | 定向验证故意提交错误等价和推导关系：两端原文及身份不变、关系标为派生解释、具体时长与天气条件仍可检索读取，更正后旧关系失效。无证据表明这些错误阻塞基本保存与取用，可带此短板进入发布验收；这不是整体质量或总体错误率达标的证明。 |
 
-最终相关源码与两份保留清单的12个文件逐一核对；本轮未替换正式代码、模型或提示词，未改变暂存区。恢复时在隔离检出中依次应用[已采用实现](../../.tmp/ingestion-combined-20260914/retained/manifest.json)与[上下文修复](../../.tmp/ingestion-combined-repair-20260915/retained-context-fix/manifest.json)，以[最终收敛清单](../../.tmp/ingestion-relation-constraints-20260915/final-boundary/closure.json)的源码哈希和本节结论为准。历史清单中“无剩余缺陷”的旧结论不再适用。
+最终相关源码与两份保留清单的12个文件逐一核对；本轮未替换正式代码、模型或提示词，未改变暂存区。恢复时在隔离检出中依次应用已采用实现（本地工件 `.tmp/ingestion-combined-20260914/retained/manifest.json`）与上下文修复（本地工件 `.tmp/ingestion-combined-repair-20260915/retained-context-fix/manifest.json`），以最终收敛清单（本地工件 `.tmp/ingestion-relation-constraints-20260915/final-boundary/closure.json`）的源码哈希和本节结论为准。历史清单中“无剩余缺陷”的旧结论不再适用。
 
 ### 纠错上下文优化（2026-09-15）
 
@@ -279,4 +279,4 @@
 
 质量核对：前两组仅改超长分类字段，其他内容及关系原样保留；第三组保留已有分析，补交的13条关系与历史同现场成功产物的类型、两端原文及条件一致，未发现有用联系丢失。正式解码及内核校验通过；既有关系含义短板未由此消除。135项相关测试覆盖完整校验、越界修改拒绝、中断保留、工具历史及准备复用边界。
 
-**到此结束该项优化。** 继续删减原文、候选或已有结果需要改变语义依赖，缺乏可证明无损的进一步裁剪依据；不以减少材料或调用失败换取表面速度。实现、请求、响应、核对及恢复说明见[保留清单](../../.tmp/repair-context-20260915/retained/manifest.json)。
+**到此结束该项优化。** 继续删减原文、候选或已有结果需要改变语义依赖，缺乏可证明无损的进一步裁剪依据；不以减少材料或调用失败换取表面速度。实现、请求、响应、核对及恢复说明见保留清单（本地工件 `.tmp/repair-context-20260915/retained/manifest.json`）。

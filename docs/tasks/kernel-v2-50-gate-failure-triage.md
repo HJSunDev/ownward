@@ -60,7 +60,7 @@ V2 内核通过。c051、c064 的题目缺陷已修正并经真实入口验证�
 
 本轮结束于缺陷修复和有证据的方向优化。该候选证明了来源可靠性提升，但**不是已经证明端到端全面更优的晋升版本**；未运行新候选完整四级关卡或正式 LongMemEval-S，不继承旧候选的关卡通过状态，也不宣称世界前沿水平。后续优化须有新的瓶颈证据，不继续无收益的参数试验。
 
-结果入口：[22 题报告](E:/Ownward/acceptance/longmemeval-s/runs/source-ownership/owned-passages-validation/report.json)、[同题旧 V2 对照](E:/Ownward/acceptance/longmemeval-s/runs/source-ownership/old-v2-comparison/report.json)；原始工作、模型输出与实际工具调用均在对应 `questions/` 中。
+结果入口：22 题报告（本地评测数据根下的 `longmemeval-s/runs/source-ownership/owned-passages-validation/report.json`）、同题旧 V2 对照（本地评测数据根下的 `longmemeval-s/runs/source-ownership/old-v2-comparison/report.json`）；原始工作、模型输出与实际工具调用均在对应 `questions/` 中。
 
 ## 质量优先裁决（2026-09-05）
 
@@ -85,7 +85,7 @@ V2 内核通过。c051、c064 的题目缺陷已修正并经真实入口验证�
 
 ## 复核入口
 
-- [原题、完整历史与冻结答案](E:/Ownward/acceptance/longmemeval-s/runs/kvs/8e1500b3630384e4d4230d54ed74f509392fce64d29d88c65cfbbca113139980/accepted/dataset.json)：按上述题号定位。
-- [本批失败现场](E:/Ownward/acceptance/longmemeval-s/runs/kvs/8e1500b3630384e4d4230d54ed74f509392fce64d29d88c65cfbbca113139980/candidate/questions)：每题 `result.json` 保存调用次序与答案；`checkpoint.json` 映射 session/asset；`semantic-traces/*/work.json`、`analysis.json` 及 `_analysis/*/unit-000/codex/complete.json` 对照输入、原始模型输出和提交结果。
-- [冻结展示实现](E:/Dev/ownward/.tmp/kernel-v2-major-iteration/stage6/read-frontier-candidate-lossless-short-context/core-service.go.overlay:637)：文件 SHA-256 为 `60b42d9821005c6ae3779197de317b3e4005c46bca725fa0ce75c8603b156ece`，与候选登记一致。
-- [语义输入契约](E:/Dev/ownward/benchmarks/longmemeval_s/semantic_representation.py:43)、[提交装配](E:/Dev/ownward/benchmarks/longmemeval_s/run.py:574)、[内核接收](E:/Dev/ownward/internal/semantics/work.go:247)、[失败参数留痕边界](E:/Dev/ownward/benchmarks/longmemeval_s/run.py:881)。
+- 原题、完整历史与冻结答案（本地评测数据根下的 `longmemeval-s/runs/kvs/8e1500b3630384e4d4230d54ed74f509392fce64d29d88c65cfbbca113139980/accepted/dataset.json`）：按上述题号定位。
+- 本批失败现场（本地评测数据根下的 `longmemeval-s/runs/kvs/8e1500b3630384e4d4230d54ed74f509392fce64d29d88c65cfbbca113139980/candidate/questions`）：每题 `result.json` 保存调用次序与答案；`checkpoint.json` 映射 session/asset；`semantic-traces/*/work.json`、`analysis.json` 及 `_analysis/*/unit-000/codex/complete.json` 对照输入、原始模型输出和提交结果。
+- 冻结展示实现（本地工件：`.tmp/kernel-v2-major-iteration/stage6/read-frontier-candidate-lossless-short-context/core-service.go.overlay`）：文件 SHA-256 为 `60b42d9821005c6ae3779197de317b3e4005c46bca725fa0ce75c8603b156ece`，与候选登记一致。
+- [语义输入契约](../../benchmarks/longmemeval_s/semantic_representation.py)（原记录第43行）、[提交装配](../../benchmarks/longmemeval_s/run.py)（原记录第574行）、[内核接收](../../internal/semantics/work.go)（原记录第247行）、[失败参数留痕边界](../../benchmarks/longmemeval_s/run.py)（原记录第881行）。

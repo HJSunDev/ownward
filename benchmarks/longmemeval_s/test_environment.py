@@ -32,7 +32,7 @@ class EnvironmentTest(unittest.TestCase):
                 environment._validate_dataset(path)
 
     def test_fixed_and_run_paths_cannot_overlap(self) -> None:
-        paths = environment._layout(Path("E:/Ownward/acceptance/longmemeval-s"))
+        paths = environment._layout(Path("example-evaluation-root").resolve())
         environment._validate_layout(paths)
         paths["runs"] = paths["source"] / "runs"
         with self.assertRaisesRegex(environment.EnvironmentError, "overlaps"):

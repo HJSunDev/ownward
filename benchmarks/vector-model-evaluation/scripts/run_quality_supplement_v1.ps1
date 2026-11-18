@@ -1,6 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
-$evaluationRoot = 'E:\Dev\ownward\.tmp\vector-model-evaluation'
+$repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
+$evaluationRoot = Join-Path $repositoryRoot '.tmp/vector-model-evaluation'
 $python = Join-Path $evaluationRoot 'venv\Scripts\python.exe'
 $evaluator = Join-Path $evaluationRoot 'scripts\evaluate_ownward.py'
 $summarizer = Join-Path $evaluationRoot 'scripts\summarize_quality_supplement_v1.py'

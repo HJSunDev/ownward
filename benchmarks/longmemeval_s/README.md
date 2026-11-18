@@ -24,19 +24,19 @@ Reader 每次工具调用结束即保存该次尝试的 `reader/codex/attempt-*/
 
 整轮耗时采用 `execution.full_wall_policy: report-only`：5 小时 40 分及校准外推只作为报告中的参考指标，不拒绝启动、不截断正在推进的整轮测试，也不改变准确率。报告仍如实记录是否超过参考时间；单题、单次调用的超时和重试保护继续生效。省略该字段的旧协议保留原有硬时限行为，关卡自身的预算不变。
 
-正式机器固定在 E 盘：
+在本机设置 `OWNWARD_LONGMEMEVAL_ROOT` 为所选评测目录，以下命令均使用该目录。
 
 ```powershell
 python benchmarks/longmemeval_s/environment.py install `
-  --root E:\Ownward\acceptance\longmemeval-s `
-  --bootstrap-python C:\path\to\Python39\python.exe
+  --root "$env:OWNWARD_LONGMEMEVAL_ROOT" `
+  --bootstrap-python (Get-Command python).Source
 ```
 
 `install` 仅在清单不存在时联网取得固定源码和数据；环境已经成立后，同一命令只进行本地复核，不会克隆、下载或安装。日常及 Acceptance Suite 接入前使用完全离线的检查入口：
 
 ```powershell
 python benchmarks/longmemeval_s/environment.py check `
-  --root E:\Ownward\acceptance\longmemeval-s `
+  --root "$env:OWNWARD_LONGMEMEVAL_ROOT" `
   --smoke
 ```
 

@@ -1,5 +1,7 @@
 # 已部署的本机适配器
 
+OWNWARD 当前的双向投递使用[Antigravity 本机接入](#antigravity-本机接入)。下方“会话信箱”与“本机文件桥”是其他环境的调用参考，本项目未部署对应目录。
+
 目标接收说明指向相应实例时，使用本节的入口。路径相对于部署该实例的项目根，角色别名与会话身份取自本机配置。尖括号须替换为实际登记值，不冒用角色或代造对方回复。
 
 ## 会话信箱
@@ -32,7 +34,7 @@ node collab/bridge/bridge.mjs send --from <回复方别名> --to <原发送方�
 
 ## Antigravity 本机接入
 
-工具为 `collab/antigravity/tool/bridge.mjs`，固定会话与项目绑定在 `collab/antigravity/config.json`。Antigravity App 中绑定本项目的对话接收 Sidecar 承接请求，随宿主运行；停用时只关闭该 Sidecar，保留未处理消息与结果。
+工具为 `collab/antigravity/tool/bridge.mjs`，固定会话与项目绑定在 `collab/antigravity/config.json`。Antigravity App 的 `ownward-conversation-receiver` Sidecar 承接请求，随宿主运行；停用时只关闭该 Sidecar，保留未处理消息与结果。
 
 ```text
 node collab/antigravity/tool/bridge.mjs status
@@ -55,3 +57,11 @@ node collab/antigravity/tool/bridge.mjs ack <消息ID> --evidence <实际读取�
 排除上述原因后，按回执的 `failure.rpcCode`、`failure.categories`、退出码或超时标记继续定位宿主与原生入口。错误细节缺失时，先补充不含消息正文及凭据的分类记录。
 
 本适配器对已认领的投递 ID 只返回已有状态，不会再次发送。`unknown` 或遗留的 `dispatching` 须按消息 ID 与接收会话对账。确认未收到且故障已消除后，保留原请求与核对依据，使用新投递 ID 重投同一任务，正文标明原请求 ID；无法确认时保留未知状态，不盲目重发。
+
+
+本项目当前会话与目标别名以 `collab/antigravity/config.json` 为准，别名不规定任务职责。已有原生会话工具能完成时直接使用；需本机适配时：
+
+| 接收方 | 投递 | 查询回执 |
+|---|---|---|
+| antigravity-ownward-worker | `node collab/antigravity/tool/bridge.mjs send --to worker --id <消息ID> --file <消息文件>` | `node collab/antigravity/tool/bridge.mjs status <消息ID>` |
+| codex-ownward-worker | `node collab/antigravity/tool/bridge.mjs send-codex --to worker --id <消息ID> --file <消息文件>` | `node collab/antigravity/tool/bridge.mjs status-codex <消息ID>` |

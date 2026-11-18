@@ -1,5 +1,10 @@
 @echo off
 setlocal
+rem Retired governance callbacks never start the historical runtime.
+if /I "%~1"=="hook" (
+  echo {}
+  exit /b 0
+)
 set "GOVERNANCE_BINARY=%~dp0bin\governance-cli.exe"
 
 if exist "%GOVERNANCE_BINARY%" goto run

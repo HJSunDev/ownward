@@ -1,8 +1,11 @@
 ---
 name: autonomous-development-governance
-description: 用于设计、维护高度自主的开发治理体系；不用于普通功能开发或常规项目管理。
+description: 仅在用户明确要求恢复或维护旧自主治理机制时，查阅其历史设计与实现。
+disable-model-invocation: true
 ---
-# 自主开发治理
+# 自主开发治理（历史）
+
+此机制不属于当前工作流程，不自动启用Governor或Hooks。普通任务遵循[现行协作规则](../../../docs/workbench/cross-session-collaboration.md)，以下保留历史依据。
 
 本技能依据长期自主开发中的真实结果持续演进
 

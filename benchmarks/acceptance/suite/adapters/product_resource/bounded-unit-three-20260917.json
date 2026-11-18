@@ -82,6 +82,7 @@
     "Unit-two full-process memory and latency evidence retains its original source identity; it is not relabeled as a unit-three measurement."
   ],
   "reproduction_archive": "bounded-unit-three-20260917.zip",
-  "reproduction_archive_sha256": "ae07ebe8ab198d3db5356ea3336db728355f78fe2ad8099c29621015ab00e50a",
+  "original_reproduction_archive_sha256": "ae07ebe8ab198d3db5356ea3336db728355f78fe2ad8099c29621015ab00e50a",
+  "reproduction_archive_sha256": "295ecb7fd439775b5d17d942271f51676a20372fd9821f47fd546e8e58c20f5f",
   "measurement_composition_identity": "ea977db7cec47705f49ec41415d684ed6d82b3c2d5bbf24e23851b2306419fd4"
 }

@@ -193,7 +193,7 @@ def main() -> None:
         "models": [key for key, _ in MODELS],
         "settling_seconds": SETTLING_SECONDS,
         "idle_seconds": int(config["execution"]["idle_seconds"]),
-        "output": str(OUTPUT),
+        "output": OUTPUT.relative_to(ROOT).as_posix(),
     }
     FREEZE.write_text(
         json.dumps(freeze, ensure_ascii=False, indent=2, sort_keys=True) + "\n",

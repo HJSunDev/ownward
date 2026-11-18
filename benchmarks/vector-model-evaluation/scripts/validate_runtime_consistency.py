@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import subprocess
+import os
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -9,8 +11,10 @@ import numpy as np
 from onnx_embedder import OnnxTextEmbedder
 
 
-ROOT = Path(r"E:\Dev\ownward\.tmp\vector-model-evaluation")
-NODE = Path(r"C:\Users\lenovo\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe")
+ROOT = Path(__file__).resolve().parents[3] / ".tmp" / "vector-model-evaluation"
+NODE = os.environ.get("OWNWARD_NODE_BINARY") or shutil.which("node")
+if not NODE:
+    raise RuntimeError("Node.js not found; install Node.js or set OWNWARD_NODE_BINARY")
 MODELS = (
     ("qwen3_embedding_0_6b", "qwen3-int8"),
     ("embeddinggemma_300m", "embeddinggemma-int8"),

@@ -1,14 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import net from 'node:net';
 import {randomUUID} from 'node:crypto';
-import {deliverCodex, resolveDefaultQueueExe} from './codex-delivery.mjs';
+import {deliverCodex} from './codex-delivery.mjs';
 
 async function host(t, steer) {
-  const pipePath = `\\\\.\\pipe\\agent-delivery-test-${randomUUID()}`;
+  const pipePath = `\\\\.\\pipe\\ownward-delivery-test-${randomUUID()}`;
   const seen = [], sockets = new Set();
   const server = net.createServer(socket => {
     sockets.add(socket); socket.on('close', () => sockets.delete(socket)); socket.on('error', () => {});
@@ -54,24 +51,6 @@ test('only explicit inactive-turn rejection permits ordinary idle delivery',asyn
   let args;
   const result=await deliverCodex({...inputs,pipePath:h.pipePath,queueMessage:async(...value)=>{args=value;return{phase:'submitted',mode:'queue-idle'};}});
   assert.deepEqual(args,[inputs.queueExe,inputs.threadId,inputs.message]);assert.equal(result.mode,'queue-idle');
-});
-test('resolveDefaultQueueExe picks newest bundled desktop codex.exe without reading PATH',t=>{
-  const tempRoot=fs.mkdtempSync(path.join(os.tmpdir(),'codex-bin-test-'));
-  t.after(()=>fs.rmSync(tempRoot,{recursive:true,force:true}));
-  const olderDir=path.join(tempRoot,'OpenAI','Codex','bin','older');
-  const newerDir=path.join(tempRoot,'OpenAI','Codex','bin','newer');
-  const emptyDir=path.join(tempRoot,'OpenAI','Codex','bin','empty');
-  fs.mkdirSync(olderDir,{recursive:true});
-  fs.mkdirSync(newerDir,{recursive:true});
-  fs.mkdirSync(emptyDir,{recursive:true});
-  const olderExe=path.join(olderDir,'codex.exe');
-  const newerExe=path.join(newerDir,'codex.exe');
-  fs.writeFileSync(olderExe,'old');
-  fs.writeFileSync(newerExe,'new');
-  fs.utimesSync(olderExe,new Date('2026-01-01T00:00:00Z'),new Date('2026-01-01T00:00:00Z'));
-  fs.utimesSync(newerExe,new Date('2026-11-01T00:00:00Z'),new Date('2026-11-01T00:00:00Z'));
-  assert.equal(resolveDefaultQueueExe({platform:'win32',localAppData:tempRoot}),newerExe);
-  assert.equal(resolveDefaultQueueExe({platform:'linux',localAppData:tempRoot}),null);
 });
 test('non-idle rejection never silently falls back to queue',async t=>{
   const h=await host(t,(msg,_result,respond)=>respond({type:'response',requestId:msg.requestId,resultType:'error',error:'request-version-mismatch'}));

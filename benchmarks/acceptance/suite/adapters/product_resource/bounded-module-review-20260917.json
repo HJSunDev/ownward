@@ -110,7 +110,8 @@
   },
   "inherited_evidence": {
     "path": "bounded-unit-four-20260917.json",
-    "sha256": "a9fb900054e120c09f24a04bfeb9212aa5494f3cd97a604ae19d140ad30dee4f",
+    "original_sha256": "a9fb900054e120c09f24a04bfeb9212aa5494f3cd97a604ae19d140ad30dee4f",
+    "sha256": "81ed7e616540285951293970e53a828b59ddb14030833d2b0e008e9e1bbff8cc",
     "boundary": "Original identified memory, performance and AI-quality observations retain their own versions and conditions; this review adds no AI score or new full resource measurement."
   },
   "source_hashes": {
@@ -930,6 +931,7 @@
     "manifests/kernel-generations/v1/catalog.json": "e92ab851e553760feeb32d5e18c368f3c8cc06d542444171e8f6502d92c2e56d"
   },
   "reproduction_archive": "bounded-module-review-20260917.zip",
-  "reproduction_archive_sha256": "671ad5ec5a7d67f1fa5dcd1c0356549d08c81e0fd24eb41837471c4a74f7f47a",
+  "original_reproduction_archive_sha256": "671ad5ec5a7d67f1fa5dcd1c0356549d08c81e0fd24eb41837471c4a74f7f47a",
+  "reproduction_archive_sha256": "2382a8d3f8497e65446b14d928264f38ab64087f78471113ae649d63c238d662",
   "reproduction": "Use base_commit, then overlay repository/ from the archive. Review files identify the measured revisions. Go tests require no external AI. Environment-specific measurements are referenced separately."
 }

@@ -58,7 +58,7 @@ def run(suite_root: Path, config: dict[str, Any], isolation_dir: Path) -> dict[s
     except (binding.BindingError, relationships.RelationshipError) as error:
         raise PreflightError(str(error)) from error
     isolation_dir = isolation_dir.resolve()
-    _require(isolation_dir.drive.upper() != "C:", "验收隔离目录不得位于系统盘")
+    _require(os.name != "nt" or isolation_dir.drive.casefold() != Path(os.environ["SystemRoot"]).drive.casefold(), "验收隔离目录不得位于系统盘")
     _require(not isolation_dir.exists(), "验收隔离目录必须为空白且尚未存在")
     isolation_dir.mkdir(parents=True)
     try:

@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 
-ROOT = Path(r"E:\Dev\ownward\.tmp\vector-model-evaluation")
+ROOT = Path(__file__).resolve().parents[3] / ".tmp" / "vector-model-evaluation"
 RESULTS = ROOT / "results" / "quality-supplement-v1"
 MODELS = ("bge_m3", "embeddinggemma_300m", "qwen3_embedding_0_6b")
 

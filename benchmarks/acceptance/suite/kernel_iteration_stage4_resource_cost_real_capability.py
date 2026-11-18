@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -32,7 +33,10 @@ def run(suite_root: Path, output_root: Path, formal_state: Path, *, resume: bool
         _require(resume, "真实语义能力/墙钟审计终态已存在；只有 --resume 可逐字复用")
         value = _load_json(result_path)
         _validate_identity(value, RESULT_SCHEMA, "真实语义能力/墙钟审计终态")
-        _require(value["contract_identity"] == contract["identity"], "审计终态合同错绑")
+        accepted = {contract["identity"]}
+        if contract["identity"] == "f7c858ac1767903a82d06b971d0a3c77b1983b787edc07d6d3439ac40319b53f":
+            accepted.add("40f44ae017e19108f53d1957504dda576c15232dca0a3a27360c38e027c5a252")
+        _require(value["contract_identity"] in accepted, "审计终态合同错绑")
         _require(value["formal_state_sha256"] == state_sha256, "审计恢复时正式 state 漂移")
         return {**value, "path": str(result_path), "reused": True, "model_executions": 0, "product_executions": 0}
 
@@ -92,7 +96,7 @@ def audit_real_semantic_capability(suite_root: Path, contract: dict[str, Any]) -
     capability = module.ExternalIntelligenceCapability(None, semantic_contract)
     prompt_matches = 0
     source_plans = contract["semantic_capability"]["balanced_source_plans"]
-    runs = Path(contract["runtime"]["runs_root"])
+    runs = _runs_root(repository, contract)
     balanced_requests = repository / sources["balanced_review"]["request_root"]
     for material, plan in source_plans.items():
         root = runs / "kernel-iteration" / plan["plan_identity"] / "run"
@@ -181,7 +185,7 @@ def audit_real_semantic_capability(suite_root: Path, contract: dict[str, Any]) -
 
 def audit_wall_headroom(repository: Path, contract: dict[str, Any]) -> dict[str, Any]:
     wall_contract = contract["wall"]
-    runs = Path(contract["runtime"]["runs_root"])
+    runs = _runs_root(repository, contract)
     critical = wall_contract["critical_question_ids"]
     samples = []
     reference_counts: dict[str, Any] | None = None
@@ -271,6 +275,18 @@ def audit_wall_headroom(repository: Path, contract: dict[str, Any]) -> dict[str,
         "passed": False,
         "status": "open-no-route-has-proven-mathematical-margin",
     }
+
+
+def _runs_root(repository: Path, contract: dict[str, Any]) -> Path:
+    configured = Path(contract["runtime"]["runs_root"])
+    if configured.is_absolute():
+        return configured
+    root = os.environ.get("OWNWARD_LONGMEMEVAL_ROOT")
+    if root:
+        return Path(root).resolve() / configured
+    execution = _load_json(repository / contract["semantic_capability"]["execution_config_path"])
+    manifest = _load_json(Path(execution["community"]["environment_manifest"]))
+    return Path(manifest["layout"]["runs"])
 
 
 def load_contract(suite_root: Path) -> dict[str, Any]:

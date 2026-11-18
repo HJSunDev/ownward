@@ -1,5 +1,7 @@
 # LongMemEval‑S 社区基准迁移
 
+文中的“评测数据根”指部署时选定的仓库外评测目录；其绝对位置由本机配置维护。历史工件不随仓库分发，结果身份与数据摘要保持原记录含义。
+
 状态：LongMemEval‑S 迁移、Production Profile 执行链、诊断、恢复和正式运行前成本校准均已完成；并发 8 的完整代表预检满足稳定性与 20,400 秒硬上限，已具备正式 500 题 community 运行条件。
 
 ## 目标
@@ -15,7 +17,7 @@
 
 ## 持久运行环境
 
-- 当前机器的正式环境根固定为 `E:\Ownward\acceptance\longmemeval-s`；[`benchmarks/longmemeval_s/environment.py`](../../benchmarks/longmemeval_s/environment.py) 是唯一安装与离线完整性检查入口。
+- 当前机器的正式环境根固定为 `评测数据根/longmemeval-s`；[`benchmarks/longmemeval_s/environment.py`](../../benchmarks/longmemeval_s/environment.py) 是唯一安装与离线完整性检查入口。
 - `assets/v1`、`runtime/v1` 和 `manifests/v1.json` 是可跨候选复用的固定只读环境；`runs/<candidate>/` 才能承载候选绑定、报告、日志和临时产物。正式 community 配置必须引用环境清单并把全部输出放在对应候选运行目录。
 - 安装动作显式联网一次；清单存在后的重复安装以及 `check` 均只能离线验证并复用，不得隐式克隆、下载或安装。正式验收前必须通过带最小官方入口夹具的 `check --smoke`。
 - Suite 的 community 机器实现已经统一为 LongMemEval‑S；正式 500 题仍须在迁移规定的全部非正式验证通过、当前工具形成干净提交并完成 community 绑定后才能执行。
@@ -51,5 +53,5 @@
 - 正式结果标识为 `Ownward LongMemEval-S Production Profile`。不得把不同 Reader、裁判、题目子集或检索预算下的公开成绩设为通过线或直接排名；完整报告必须封存当前评测口径与原始证据。
 - 每题使用独立产品数据目录，逐阶段持久化创建与语义组织检查点；正式报告分别记录官方准确率、Ownward search/read 时延、上下文量、模型 token、语义批次和总墙钟。
 - 已复用的 500 题无模型 dry-plan 证明 23,867 个会话与 1,498 个自然工作批完整，摘要为 `8dc1f4c0…b8d56`。历史池 1/2/4 校准继续作为审计证据，但活动选择规则已替换为：在独立单 turn 池 8/12 中选择稳定且完整余量上界不超过 20,400 秒的最低并发。
-- 并发 8 的历史四类代表预检共 187 个会话、12 个自然语义工作批、20 次 Codex 调用；20/20 首次完成，0 重试、0 限流、0 中断、0 transport 超时、0 worker 重启，12 批原序提交，20 个独立只读新 thread，报告与检查点恢复后逐字节不变，墙钟 132.359 秒。该结果绑定旧 Luna/medium Reader，只保留传输、批次和历史成本基线价值，不能冒充当前 xhigh community preflight；路径为 `E:\Ownward\acceptance\longmemeval-s\runs\preflight\77600820-89e959e3ae7c92f1-production-profile`。
+- 并发 8 的历史四类代表预检共 187 个会话、12 个自然语义工作批、20 次 Codex 调用；20/20 首次完成，0 重试、0 限流、0 中断、0 transport 超时、0 worker 重启，12 批原序提交，20 个独立只读新 thread，报告与检查点恢复后逐字节不变，墙钟 132.359 秒。该结果绑定旧 Luna/medium Reader，只保留传输、批次和历史成本基线价值，不能冒充当前 xhigh community preflight；路径为 `评测数据根/longmemeval-s/runs/preflight/77600820-89e959e3ae7c92f1-production-profile`。
 - xhigh 成本迁移收据 `8ec2dc56…5e96` 把 8.447 秒 Reader p95 对 500 次请求、四并发全部视为新增开销，并只扣除 Stage 4 已封存且含重复误差的 V2 本地关键路径节省；修正后的原始投影为 12,339.621 秒，加入 20% 正常波动、10% 有界重试与 3,600 秒恢复余量后为 19,635.850 秒，低于 20,400 秒硬上限并保留 764.150 秒余量。该收据只证明新 Reader 具有成本可行性，不替代当前候选的 community 重绑与正式四题 preflight；正式 500 题仍未解锁。

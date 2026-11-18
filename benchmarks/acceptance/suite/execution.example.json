@@ -28,7 +28,7 @@
     "production_storage_report": "E:\\path\\to\\ownward-evidence\\production-storage.json",
     "external_intelligence": {
       "binary": "E:/path/to/external-intelligence/providers/go_api_external_intelligence.py",
-      "credential_file": "E:/Ownward/credentials/bailian.json"
+      "credential_file": "E:/path/to/local-credentials/provider.json"
     }
   },
   "final_validation_gate": {
@@ -38,12 +38,12 @@
     "terminal_plan_identity": "replace-with-the-50-question-plan-identity"
   },
   "community": {
-    "environment_manifest": "E:\\Ownward\\acceptance\\longmemeval-s\\manifests\\v1.json",
+    "environment_manifest": "E:\\path\\to\\evaluation\\longmemeval-s\\manifests\\v1.json",
     "protocol": "E:\\path\\to\\ownward\\benchmarks\\longmemeval_s\\protocol.json",
-    "output_dir": "E:\\Ownward\\acceptance\\longmemeval-s\\runs\\candidate-commit\\formal",
+    "output_dir": "E:\\path\\to\\evaluation\\longmemeval-s\\runs\\candidate-commit\\formal",
     "external_intelligence": {
       "binary": "E:/path/to/external-intelligence/providers/go_api_external_intelligence.py",
-      "credential_file": "E:/Ownward/credentials/bailian.json"
+      "credential_file": "E:/path/to/local-credentials/provider.json"
     }
   }
 }

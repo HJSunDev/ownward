@@ -10,11 +10,17 @@
 
 已验证环境：Windows Codex 桌面版 `26.1103.4239.0`。目标会话在同一活动回合结束前实际收到消息，回执为 `mode: steer`，且 `turnId` 一致。宿主升级后出现协议不匹配时重新核验。
 
-## 现有本机调用
+## 当前项目调用
 
 原生会话工具可直接完成时直接使用；需要适配时，选用已部署实例或其中复用的[投递脚本](../scripts/codex-delivery.mjs)，不能把本机配置当成其他环境现成可用。
 
-- [会话信箱](local-adapters.md#会话信箱)：接收别名 `controller`，具体 ID 在 `collab/mailbox/tool/config.json`。
-- [本机文件桥](local-adapters.md#本机文件桥)：Codex 身份在 `collab/bridge/config.json` 的 `controller.thread`。保留消息 ID、模式与活动 turnId；空闲投递使用本机已确认版本的 `codex queue`，不盲用 PATH 中另一版本。
+OWNWARD 使用[当前本机接入](local-adapters.md#antigravity-本机接入)向 `codex-ownward-worker` 投递：
+
+```text
+node collab/antigravity/tool/bridge.mjs send-codex --to worker --id <消息ID> --file <消息文件>
+node collab/antigravity/tool/bridge.mjs status-codex <消息ID>
+```
+
+目标会话、工作区及空闲投递所用CLI由 `collab/antigravity/config.json` 的 `codexTargets.worker` 与 `controller` 配置确定。保留消息ID与投递回执；`submitted` 不是实际读取或完成。遇到 `unknown` 先对账，不以新ID盲目重发。
 
 不得以 resume、exec、新会话或第二个执行者替代原会话接收。实例与角色发生变化时重新核对绑定，不按旧岗位别名误投。

@@ -1898,7 +1898,7 @@
           "vector_bytes": 98304
         },
         "exact": true,
-        "source": "E:\\Dev\\ownward\\.tmp\\bounded-unit4\\materials14\\questions\\gpt4_a56e767c\\ownward-data\\stores\\9f166a0ceb3b6bdad81a103fff81012a063d273908fd521a\\ownward.sqlite",
+        "source": ".tmp\\bounded-unit4\\materials14\\questions\\gpt4_a56e767c\\ownward-data\\stores\\9f166a0ceb3b6bdad81a103fff81012a063d273908fd521a\\ownward.sqlite",
         "upgrade_seconds": 21.3993166
       },
       {
@@ -2073,7 +2073,7 @@
           "vector_bytes": 327680
         },
         "exact": true,
-        "source": "E:\\Dev\\ownward\\.tmp\\bounded-unit4\\cost-probe-1688724810\\stores\\a2b44417b889c2e8b11427c4cd3ef13d3113d9bd33c5b68c\\ownward.sqlite",
+        "source": ".tmp\\bounded-unit4\\cost-probe-1688724810\\stores\\a2b44417b889c2e8b11427c4cd3ef13d3113d9bd33c5b68c\\ownward.sqlite",
         "upgrade_seconds": 4.7710356
       },
       {
@@ -2248,7 +2248,7 @@
           "vector_bytes": 163840
         },
         "exact": true,
-        "source": "E:\\Dev\\ownward\\.tmp\\bounded-unit4\\cost-probe-3735392436\\stores\\116582c596fab7a51e38c6439143f2249e205a7bf40200b4\\ownward.sqlite",
+        "source": ".tmp\\bounded-unit4\\cost-probe-3735392436\\stores\\116582c596fab7a51e38c6439143f2249e205a7bf40200b4\\ownward.sqlite",
         "upgrade_seconds": 2.7178896
       }
     ]
@@ -2262,7 +2262,8 @@
     "quality_scope": "Storage migration and cost closure only. Recorded natural-language results remain 11/14 and 24/24; this is not a claim that all information-use failures are solved or that the complete product is release-certified."
   },
   "reproduction_archive": "bounded-unit-four-20260917.zip",
-  "reproduction_archive_sha256": "9b9ad9221587115e4e819efa24d67d70622da2a0b65e653c38fe4070604c287f",
+  "original_reproduction_archive_sha256": "9b9ad9221587115e4e819efa24d67d70622da2a0b65e653c38fe4070604c287f",
+  "reproduction_archive_sha256": "21e937f9d27c1e29032d8528f968e9d94bd161c1ba3ca0ff26fa675194a3e75d",
   "history": {
     "invalid_replay_attempt": "An intermediate SQLite snapshot still carried its prior product composition; final code correctly rejects this incompatible binding. The accepted replay migrates independent original prepared materials through the formal entry point and verifies equivalence. No product guard or stored identity was bypassed.",
     "pre_closeout_report": "history/pre-closeout/report.json",

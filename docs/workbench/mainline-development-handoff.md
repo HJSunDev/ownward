@@ -1,12 +1,14 @@
 # Ownward 主线开发交接
 
+> 本交接属于历史阶段，不是当前参与者的职责或启动依据。当前任务与分工以用户最新要求、会话登记和[跨会话协作规则](cross-session-collaboration.md)为准，不据本文启用旧治理。
+
 > **使用边界**：本文只用于把当前主线背景和仓库状态交接给新的 Codex 任务，不是开发提示词，也不授权执行任何开发、修复、验收或 Git 操作。新任务读完后只需确认已经恢复理解，必须等待用户另行发送主线开启提示词。
 
 ## 一、为什么需要交接
 
-当前对话虽然长期在处理 Ownward，但 Codex 任务实际绑定的是 `E:\Dev\longxia\zhixing`。通过绝对路径可以操作 `E:\Dev\ownward`，却无法加载和真实验证 Ownward 的项目级 Hook。
+当前对话虽然长期在处理 Ownward，但 Codex 任务当时绑定在另一个项目工作区，虽可操作 OWNWARD 文件，却无法加载和真实验证 OWNWARD 的项目级 Hook。
 
-Ownward 已经建立自主开发治理运行时。要让主 Agent、Governor 和跨上下文状态闭环按正式流程生效，后续任务必须绑定 `E:\Dev\ownward`，并由用户在该项目中审阅和信任 `.codex/hooks.json`。本次迁移、精确信任和真实冷启动验证均已完成；Hook 定义变化后仍需重新审阅。
+Ownward 已经建立自主开发治理运行时。要让主 Agent、Governor 和跨上下文状态闭环按正式流程生效，后续任务必须绑定 OWNWARD 仓库工作区，并由用户在该项目中审阅和信任 `.codex/hooks.json`。本次迁移、精确信任和真实冷启动验证均已完成；Hook 定义变化后仍需重新审阅。
 
 这次迁移只改变 Codex 任务的项目归属，不改变 Ownward 的产品方向、开发阶段或下一项工作。
 
@@ -30,7 +32,7 @@ Ownward 的持续开发体系原本已经明确：产品目标和需求回答“
 
 交接形成时的事实如下，恢复时仍须以仓库最新状态重新核对：
 
-- 项目：`E:\Dev\ownward`
+- 项目：OWNWARD 仓库
 - 分支：`main`
 - 迁移前基线提交：`1f714e3`；恢复时必须以最新 `git log` 为准
 - 形成本文前 Ownward 工作区干净
@@ -47,7 +49,7 @@ Ownward 的持续开发体系原本已经明确：产品目标和需求回答“
 
 - `.codex/hooks.json`
 - `.codex/config.toml`
-- `.codex/agents/governor.toml`
+- [Governor 角色定义（已归档）](../../.codex/governance/archive/governor.toml)
 - `.codex/governance/README.md`
 - `.agents/skills/autonomous-development-governance/SKILL.md`
 
@@ -94,9 +96,9 @@ Ownward 的持续开发体系原本已经明确：产品目标和需求回答“
 
 ## 六、已经清理且不得恢复的旧路径
 
-此前为了一个过度拆小的独立任务，在 `E:\Dev\ownward-acceptance` 建立过候选副本、缓存和 `stage-status.json`。这套平行状态与新的自主治理闭环职责重叠，已经清理。
+此前为了一个过度拆小的独立任务，在 独立验收副本目录 建立过候选副本、缓存和 `stage-status.json`。这套平行状态与新的自主治理闭环职责重叠，已经清理。
 
-- `E:\Dev\ownward-acceptance` 已删除；
+- 独立验收副本目录 已删除；
 - 旧 `stage-status.json` 不再是有效状态；
 - 旧候选和旧外部检查点不得恢复或作为当前证据使用；
 - 首个内核基线任务本身仍然需要完成，只是必须由主线和新的治理状态推进。

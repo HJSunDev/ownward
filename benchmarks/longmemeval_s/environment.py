@@ -91,9 +91,12 @@ def _layout(root: Path) -> dict[str, Path]:
 
 
 def _validate_root(root: Path) -> Path:
+    _require(root.is_absolute(), "specify an absolute, persistent environment root outside the checkout")
     resolved = root.resolve()
-    _require(resolved.is_absolute(), "environment root must be absolute")
-    _require(resolved.drive.upper() == "E:", "LongMemEval-S persistent environment must be on E drive")
+    _require(not resolved.is_relative_to(Path(__file__).resolve().parents[2]), "use an environment root outside the checkout")
+    if os.name == "nt":
+        system_drive = Path(os.environ["SystemRoot"]).drive.casefold()
+        _require(resolved.drive.casefold() != system_drive, "use a persistent data volume outside the system drive")
     lowered = str(resolved).lower()
     _require("\\temp\\" not in lowered and "\\tmp\\" not in lowered, "persistent environment cannot use a temporary directory")
     _require("appdata" not in lowered and "codex" not in lowered, "persistent environment cannot use an application or Codex directory")

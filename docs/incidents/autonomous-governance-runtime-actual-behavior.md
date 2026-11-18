@@ -59,7 +59,7 @@ Hook 是固定的确定性程序，不具备语义判断能力，也不会自行
 
 Governor 输入由两部分组成：
 
-- 固定角色契约位于 [governor.toml](../../.codex/agents/governor.toml)，要求它从宏观视角识别无价值工作、重复工作、范围扩张和低效率路径，并给出可以执行的更优建议；同时明确禁止实现产品、修改状态、批准或阻止动作。
+- 固定角色契约位于 [governor.toml（已归档）](../../.codex/governance/archive/governor.toml)，要求它从宏观视角识别无价值工作、重复工作、范围扩张和低效率路径，并给出可以执行的更优建议；同时明确禁止实现产品、修改状态、批准或阻止动作。
 - 动态请求位于 `runtime/review-request.json`，绑定当前权威依据、完成条件、仓库身份、执行快照、证据引用、检查点、资源事实、待处理用户事项和触发身份。
 
 Governor 的 `recommendation` 只能作为建议进入主 Agent 的判断。即使 Governor 建议调整路线，主 Agent 也可以基于证据采纳、拒绝或确认后继续。
@@ -158,6 +158,6 @@ PreCompact 尽力确认状态可读
 - Hook 行为：[hooks.go](../../.codex/governance/internal/governance/hooks.go)
 - 所有权与交接：[control_plane.go](../../.codex/governance/internal/governance/control_plane.go)
 - Review、证据与完成生命周期：[runtime.go](../../.codex/governance/internal/governance/runtime.go)
-- Governor 固定契约：[governor.toml](../../.codex/agents/governor.toml)
+- Governor 固定契约：[governor.toml（已归档）](../../.codex/governance/archive/governor.toml)
 - 当前运行说明：[README.md](../../.codex/governance/README.md)
 - 当前状态：`../../.codex/governance/runtime/state.json`（本地、不提交）

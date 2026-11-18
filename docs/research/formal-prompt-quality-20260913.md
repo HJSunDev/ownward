@@ -6,11 +6,11 @@
 
 固定14题两轮均 **10／14**；平均取用等待分别 **149.39秒、164.71秒**。需求准备明显提速，整体质量提升未获证实，具体失败题仍有波动。
 
-被测版本为提交 `6822113bc85161ea1532160dbd8ba233f2bdcc5f` 加当时工作区中的正式变更，并非提交本身；[源码指纹](../../.tmp/evidence-answer-improvement-20260913/baseline/identity.json)固定27份相关文件，[首次执行版本与差异](../../.tmp/formal-prompt14-20260913-recovery/)及[复跑版本与差异](../../.tmp/formal-prompt14-retest-20260913-1953/)中的身份文件、`formal-code.patch`／`final-formal-code.patch`固定实测版本。
+被测版本为提交 `6822113bc85161ea1532160dbd8ba233f2bdcc5f` 加当时工作区中的正式变更，并非提交本身；源码指纹（本地工件 `.tmp/evidence-answer-improvement-20260913/baseline/identity.json`）固定27份相关文件，首次执行版本与差异（本地工件 `.tmp/formal-prompt14-20260913-recovery/`）及复跑版本与差异（本地工件 `.tmp/formal-prompt14-retest-20260913-1953/`）中的身份文件、`formal-code.patch`／`final-formal-code.patch`固定实测版本。
 
 ### 被测版本流程表
 
-以下均为该版本首次完整14题验证的每题平均值，来自[逐题实测汇总](../../.tmp/formal-prompt14-20260913-recovery/verified-results.json)。
+以下均为该版本首次完整14题验证的每题平均值，来自逐题实测汇总（本地工件 `.tmp/formal-prompt14-20260913-recovery/verified-results.json`）。
 
 | 环节 | 归属 | 实际工作 | 平均耗时 | 是否调用外部 AI | 平均调用次数／题 |
 | --- | --- | --- | --- | --- | --- |
@@ -38,7 +38,7 @@
 
 首次验证同时修复了语义输出格式及执行恢复缺陷，已交付答案不重复生成；原始资料准备及纠错的预算超限记录仍保留，不算整题耗时通过验收。相比修订前的同口径178.47秒，两轮取用等待分别下降16.3%和7.7%；语义组织提示词也发生变化，不能将质量差异单独归因于需求准备提示词。
 
-证据：[首次结果](../../.tmp/formal-prompt14-20260913-recovery/verified-results.json)、[复跑对照](../../.tmp/formal-prompt14-retest-20260913-1953/comparison.json)。逐题目录保存需求解析、工具取证、原始回答及裁判结果，未重新归因的失败不补写推测原因。
+证据：首次结果（本地工件 `.tmp/formal-prompt14-20260913-recovery/verified-results.json`）、复跑对照（本地工件 `.tmp/formal-prompt14-retest-20260913-1953/comparison.json`）。逐题目录保存需求解析、工具取证、原始回答及裁判结果，未重新归因的失败不补写推测原因。
 
 ## 2026-09-13｜需求准备与主动取证流程：提示词修订前
 
@@ -48,7 +48,7 @@
 
 被测代码为提交 `595edec6a7872ddf65cb6a95e4f3c62a7008ce84` 加运行时正式变更，完整差异及指纹已封存。保留既有内核修复与四个工作包；信息使用流程为“明确需求 → 主动取证并形成结果 → 原样交付”，不含独立复核或实验候选替换。14题的执行代码、内核二进制及模型配置一致，原始资料、语义组织、检索预算和判分条件未变。
 
-[验证证据](../../.tmp/formal-two-stage-14-20260913-1546/)：`identity.json`、`formal-code.patch`、`verification.json` 固定代码及条件；`summary.json` 汇总结果；逐题 `manifest.json`、`retrieval.json`、`reader/information-use-result.json`、`judge/complete.json` 保存配置、实际取证、交付和判分。`evidence-audit.json` 区分已返回的引用与真正读入的文本。
+验证证据（本地工件 `.tmp/formal-two-stage-14-20260913-1546/`）：`identity.json`、`formal-code.patch`、`verification.json` 固定代码及条件；`summary.json` 汇总结果；逐题 `manifest.json`、`retrieval.json`、`reader/information-use-result.json`、`judge/complete.json` 保存配置、实际取证、交付和判分。`evidence-audit.json` 区分已返回的引用与真正读入的文本。
 
 ### 当时登记的待解决问题（3题）
 

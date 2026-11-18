@@ -1,5 +1,7 @@
 # V1 内核大版本迭代
 
+文中的“评测数据根”指部署时选定的仓库外评测目录；其绝对位置由本机配置维护。历史工件不随仓库分发，结果身份与数据摘要保持原记录含义。
+
 状态：干净产品候选 `3e712f2` 已在当前验收工具身份下通过正式完整内核、core、qualification 8/8 和 full 24/24；V1 内部整体验证完成，已达到运行最终 LongMemEval-S 的标准。V0 仍是唯一正式基线，V1 尚未晋升，最终 LongMemEval-S 尚未运行。
 
 ## 职责
@@ -64,11 +66,11 @@
 
 ## 存储方向入口、结果与恢复
 
-唯一非正式入口：
+在本机设置 `OWNWARD_LONGMEMEVAL_ROOT` 为评测环境目录。唯一非正式入口：
 
 ```powershell
 python benchmarks/acceptance/suite/run.py kernel-storage `
-  --formal-run E:\Ownward\acceptance\longmemeval-s\runs\99f5190\formal `
+  --formal-run (Join-Path $env:OWNWARD_LONGMEMEVAL_ROOT "runs/99f5190/formal") `
   --output .tmp\kernel-v1-major-iteration\storage-deposition-v1-final-2 `
   --candidate worktree `
   --resume
@@ -96,11 +98,11 @@ python benchmarks/acceptance/suite/run.py kernel-storage `
 
 ## 执行状态入口、结果与恢复
 
-唯一非正式入口：
+在本机设置 `OWNWARD_LONGMEMEVAL_ROOT` 为评测环境目录。唯一非正式入口：
 
 ```powershell
 python benchmarks/acceptance/suite/run.py kernel-execution `
-  --formal-run E:\Ownward\acceptance\longmemeval-s\runs\99f5190\formal `
+  --formal-run (Join-Path $env:OWNWARD_LONGMEMEVAL_ROOT "runs/99f5190/formal") `
   --output .tmp\kernel-v1-major-iteration\execution-state-v1 `
   --candidate worktree `
   --resume

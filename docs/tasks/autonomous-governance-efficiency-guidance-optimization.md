@@ -2,7 +2,7 @@
 
 > **状态**：已完成；实现、无损迁移、事故回放、真实 Codex 冷启动与对抗式复审均已通过。
 > **职责**：定义一次自主治理支线的效率引导能力修复任务，使支线能够及时获得主线的真实事实、识别低价值路径并给出有依据的改进建议。本文不规定 Ownward 主线应采用的开发、调试或验收流程，不修改产品需求与验收标准，也不替代自主治理核心 Skill 及其运行时规范。
-> **项目根目录**：本任务唯一作用于 `E:\Dev\ownward`；所有相对路径、Git 读取、构建与验证均以此为基准，承载 Codex 对话的其他项目目录不属于本任务范围。
+> **项目根目录**：本任务唯一作用于 当前 Ownward 检出目录；所有相对路径、Git 读取、构建与验证均以此为基准，承载 Codex 对话的其他项目目录不属于本任务范围。
 
 ## 一、两个真实低效率场景
 
@@ -193,7 +193,7 @@ Governor 将活动焦点中未经权威来源证明的“最多八次调用”�
 
 - `go test ./...`、`go vet ./...` 与治理 `doctor` 全部通过；两次事故的早期事实回放分别证明零净进展可在扩大投入前被指出，普通短任务保持零复核、零等待和零协议劳动。
 - 正式 Hook 只保留 `SessionStart`、`UserPromptSubmit` 及只匹配唯一 Governor 的 `SubagentStart`、异步 `SubagentStop`；项目配置与已安装配置摘要一致，通用工具、压缩前和 Stop Hook 均未注册。
-- 真实 Codex 冷启动 `01a033da-d586-7293-96ae-3a56e80c15af` 成功以 `agent_type="governor"`、`fork_turns="none"` 启动唯一 Governor `01a033db-bdaa-7ee0-8f01-c487dd55ca29`；主线并行完成 `doctor`，Governor 返回后 `SubagentStop` 自动保存并校验 `review_7d2db7fa2a3dde4d70e12555`，隔离运行态随后已清理。
+- 真实 Codex 冷启动 成功以 `agent_type="governor"`、`fork_turns="none"` 启动唯一 Governor；主线并行完成 `doctor`，Governor 返回后 `SubagentStop` 自动保存并校验 `review_7d2db7fa2a3dde4d70e12555`，隔离运行态随后已清理。
 - 真实活动状态已从旧版幂等迁移到 Schema 3，原主任务、所有者、完成条件、执行焦点、证据、Review、回应和下一动作均保留；重复迁移与失败回滚由定向测试通过，日常运行仍只维护三份当前态文件。
 - 自主治理核心 Skill 无差异；Ownward 产品与验收主线的既有变更保持原样。本任务产生的隔离副本、冷启动状态和旧根级临时二进制均已清理。
 - 最终对抗式复审未发现真实偏差：Governor 只提供建议，主 Agent 保持执行决定；普通消息、旁支工作、治理失败和迟到反馈均不能阻塞、接管或改变主线权限。
@@ -207,7 +207,7 @@ Governor 将活动焦点中未经权威来源证明的“最多八次调用”�
 
 `.agents/skills/autonomous-development-governance/SKILL.md` 是本任务唯一核心需求依据，已经定稿，不得修改。`docs/tasks/autonomous-governance-efficiency-guidance-optimization.md` 规定必须完成的优化事项、明确排除和结束边界；两个低效率场景只用于验证治理能力，不得被固化为主线开发流程。
 
-本任务唯一项目根目录为 `E:\Dev\ownward`；所有相对路径、Git 读取、构建和验证均以此为基准。承载当前 Codex 对话的其他项目目录不属于任务范围，不得修改。
+本任务唯一项目根目录为 当前 Ownward 检出目录；所有相对路径、Git 读取、构建和验证均以此为基准。承载当前 Codex 对话的其他项目目录不属于任务范围，不得修改。
 
 每次首次开始、恢复或上下文压缩后，重新完整读取上述文件，检查 Git 状态、治理运行时源码、Schema、CLI、Hooks、Governor 配置、可复用资产与引用、三个当前态文件、迁移状态、测试和有效证据，依据仓库事实恢复进度，不依赖旧上下文转述，不覆盖或丢弃已有变更。
 

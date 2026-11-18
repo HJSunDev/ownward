@@ -16,7 +16,7 @@ import numpy as np
 import psutil
 
 
-ROOT = Path(r"E:\Dev\ownward\.tmp\vector-model-evaluation")
+ROOT = Path(__file__).resolve().parents[3] / ".tmp" / "vector-model-evaluation"
 BASE = ROOT / "llama-q8"
 SERVER = BASE / "runtime" / "llama-server.exe"
 MODEL = BASE / "embeddinggemma-300m-qat-Q8_0.gguf"
@@ -442,7 +442,7 @@ def main() -> None:
         STATE / "llama-q8-complete.json",
         {
             "status": "complete",
-            "result": str(RESULTS / "summary.json"),
+            "result": (RESULTS / "summary.json").relative_to(ROOT).as_posix(),
             "model_sha256": sha256(MODEL),
             "runtime_build": 10488,
         },

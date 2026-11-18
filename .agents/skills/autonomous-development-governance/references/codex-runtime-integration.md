@@ -6,7 +6,7 @@
 
 2026-08-22 的故障与修复发生在以下组合环境：
 
-- Windows 上的 Codex Desktop 项目任务，工作区绑定 `E:\Dev\ownward`；同机 Codex CLI 用于建立全新会话执行冷启动验证；
+- Windows 上的 Codex Desktop 项目任务，工作区绑定 当前 Ownward 检出目录；同机 Codex CLI 用于建立全新会话执行冷启动验证；
 - Codex 上层本机配置定义了 Ownward stdio MCP 的完整 `command`、`args`、`cwd` 并默认禁用；项目 `.codex/config.toml` 只把同名服务设为 `enabled = true`、`required = true`，合并后使用仓库内二进制和固定 `.ownward/development` 数据目录；
 - Governor 是只读自定义子 Agent，不需要调用 Ownward 产品 MCP；
 - 项目使用 `.codex/hooks.json` 中的非托管 Hooks，需要 Codex 对当前定义的精确哈希完成信任；

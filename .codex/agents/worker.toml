@@ -6,8 +6,7 @@ developer_instructions = """
 """
 
 [mcp_servers.ownward]
-command = 'E:\Dev\ownward\bin\ownward.exe'
-args = ['mcp', '--data-dir', 'E:\Dev\ownward\.ownward\development']
-cwd = 'E:\Dev\ownward'
+command = "git"
+args = ["-c", "alias.ownward-mcp=!exec ./bin/ownward mcp --data-dir .ownward/development", "ownward-mcp"]
 enabled = false
 required = false

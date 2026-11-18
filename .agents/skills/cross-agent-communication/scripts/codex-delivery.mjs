@@ -14,32 +14,6 @@ const frame = value => {
   return result;
 };
 
-export function resolveDefaultQueueExe({
-  platform = process.platform,
-  localAppData = process.env.LOCALAPPDATA,
-} = {}) {
-  if (platform !== 'win32' || !localAppData) return null;
-  const binRoot = path.join(localAppData, 'OpenAI', 'Codex', 'bin');
-  try {
-    const candidates = fs.readdirSync(binRoot, { withFileTypes: true })
-      .filter(entry => entry.isDirectory())
-      .map(entry => {
-        const exe = path.join(binRoot, entry.name, 'codex.exe');
-        try {
-          const stat = fs.statSync(exe);
-          return stat.isFile() ? { exe, mtimeMs: stat.mtimeMs } : null;
-        } catch {
-          return null;
-        }
-      })
-      .filter(Boolean)
-      .sort((a, b) => b.mtimeMs - a.mtimeMs);
-    return candidates[0]?.exe || null;
-  } catch {
-    return null;
-  }
-}
-
 function queueIdle(exe, threadId, message) {
   return new Promise(resolve => {
     let settled = false;
@@ -100,7 +74,7 @@ export async function deliverCodex({ threadId, message, cwd, queueExe, deliveryI
       socket.once('connect', () => { clearTimeout(timer); resolve(); });
       socket.once('error', error => { clearTimeout(timer); reject(error); });
     });
-    const initialized = await request('initialize', { clientType: 'agent-mailbox' }, 0);
+    const initialized = await request('initialize', { clientType: 'ownward-mailbox' }, 0);
     if (initialized.resultType !== 'success' || !initialized.result?.clientId) throw new Error('ipc-initialize-rejected');
     clientId = initialized.result.clientId;
     const owner = await request('thread-owner-discovery', { hostId: 'local', conversationId: threadId }, 1);
@@ -115,10 +89,7 @@ export async function deliverCodex({ threadId, message, cwd, queueExe, deliveryI
     if (reply.resultType !== 'success') {
       steerRejected = true;
       socket.destroy();
-      const resolvedQueueExe = queueExe || resolveDefaultQueueExe();
-      if (INACTIVE.test(reply.error || '') && resolvedQueueExe) {
-        return await queueMessage(resolvedQueueExe, threadId, message);
-      }
+      if (INACTIVE.test(reply.error || '') && queueExe) return await queueMessage(queueExe, threadId, message);
       return { phase: 'failed', code: reply.error || 'steer-rejected' };
     }
     const turnId = reply.result?.result?.turnId;
@@ -136,10 +107,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     options[args[i].slice(2)] = args[i + 1];
   }
   const message = options.file ? fs.readFileSync(options.file, 'utf8') : options.message;
-  const rawQueueExe = options['queue-exe'];
-  const queueExe = rawQueueExe && fs.existsSync(rawQueueExe) ? rawQueueExe : resolveDefaultQueueExe();
   const result = await deliverCodex({ threadId: options.thread, message, cwd: options.cwd,
-    queueExe, deliveryId: options.id });
+    queueExe: options['queue-exe'], deliveryId: options.id });
   console.log(JSON.stringify(result));
   if (result.phase !== 'submitted') process.exitCode = 1;
 }
