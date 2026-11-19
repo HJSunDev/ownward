@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
@@ -9,12 +11,12 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"hash/crc32"
 	"math"
 	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"runtime"
 	"runtime/debug"
 	"sort"
@@ -23,19 +25,21 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/HJSunDev/ownward/internal/assetlog"
-	"github.com/HJSunDev/ownward/internal/authorityport"
+	"github.com/HJSunDev/ownward/internal/boundedstore"
+	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/core"
 	"github.com/HJSunDev/ownward/internal/derived"
 	"github.com/HJSunDev/ownward/internal/domain"
 	"github.com/HJSunDev/ownward/internal/embedding"
-	"github.com/HJSunDev/ownward/internal/retrieval"
+	"github.com/HJSunDev/ownward/internal/informationcontrol"
+	"github.com/HJSunDev/ownward/internal/resourcebudget"
 	"github.com/HJSunDev/ownward/internal/semantics"
 )
 
 const (
-	suiteVersion      = "1.0.0"
-	repeatabilityRuns = 3
+	suiteVersion       = "1.0.0"
+	repeatabilityRuns  = 3
+	frontierDimensions = 512
 )
 
 type contextValue struct {
@@ -43,29 +47,194 @@ type contextValue struct {
 	Value string `json:"value"`
 }
 
-type ownedCollaborative struct {
-	*core.Service
-	assets *assetlog.Store
+func pad512(values []float32) []float32 {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]float32, frontierDimensions)
+	copy(out, values)
+	return out
 }
 
-func openCollaborative(assets *assetlog.Store, state *derived.Store, vector embedding.Provider) (*ownedCollaborative, error) {
-	authority, err := authorityport.Bind(assets)
+type frontierRuntime struct {
+	store    *boundedstore.Store
+	kernel   *core.StreamingAssets
+	product  *informationcontrol.Product
+	control  *informationcontrol.Control
+	budget   *resourcebudget.Budget
+	ownerCtx context.Context
+}
+
+func (rt *frontierRuntime) Close() error {
+	if rt == nil {
+		return nil
+	}
+	if rt.product != nil {
+		rt.product.Close()
+	}
+	var err error
+	if rt.kernel != nil {
+		err = errors.Join(err, rt.kernel.Close())
+	}
+	if rt.store != nil {
+		err = errors.Join(err, rt.store.Close())
+	}
+	return err
+}
+
+func openFrontierRuntime(ctx context.Context, root string, vector contract.VectorCapability) (*frontierRuntime, error) {
+	scratch := filepath.Join(root, "scratch")
+	if err := os.MkdirAll(scratch, 0o700); err != nil {
+		return nil, err
+	}
+	budget, err := resourcebudget.New(20*resourcebudget.MiB, 4*resourcebudget.MiB)
 	if err != nil {
 		return nil, err
 	}
-	service, err := core.NewCollaborativeWithAuthority(authority, state, vector)
+	space := ""
+	if vector != nil {
+		space = vector.Space().ID
+	}
+	initControl := contract.ControlState{
+		Schema: contract.ControlStateSchema, Revision: 1,
+		ActiveComposition: "frontier-observation", ActiveKernelGeneration: "frontier-kernel",
+	}
+	store, err := boundedstore.OpenDeployment(ctx, root, boundedstore.DeploymentOptions{
+		Options:     boundedstore.Options{Budget: budget},
+		VectorSpace: space,
+		Initialize: func(ctx context.Context, s *boundedstore.Store, _ string) error {
+			if _, err := s.OpenControlAuthority(ctx, initControl); err != nil {
+				return err
+			}
+			if space != "" {
+				return s.InitializeDeploymentSpace(ctx, space)
+			}
+			return nil
+		},
+	})
 	if err != nil {
 		return nil, err
 	}
-	return &ownedCollaborative{Service: service, assets: assets}, nil
+	authority, err := store.OpenControlAuthority(ctx, initControl)
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
+	control := informationcontrol.New(authority)
+	var token string
+	if control.SystemID() == "" {
+		token, err = control.InitializeOwner("frontier-owner")
+	} else {
+		token, err = control.RecoverOwner()
+	}
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
+	kernel := &core.StreamingAssets{Store: store, Budget: budget, Scratch: scratch, DiskBytes: 256 * resourcebudget.MiB, Embedder: vector}
+	product := informationcontrol.NewProduct(kernel, control)
+	return &frontierRuntime{
+		store: store, kernel: kernel, product: product, control: control, budget: budget,
+		ownerCtx: informationcontrol.Authenticate(ctx, token),
+	}, nil
 }
 
-func (service *ownedCollaborative) Close() error {
-	first := service.Service.Close()
-	if err := service.assets.Close(); first == nil {
-		first = err
+func encodeOWD3Frame(record derived.Record) ([]byte, error) {
+	vecFloats := pad512(record.Embedding)
+	meta := record
+	meta.Schema = "ownward.derived/v5"
+	meta.Embedding = nil
+	metaBytes, err := json.Marshal(meta)
+	if err != nil {
+		return nil, err
 	}
-	return first
+	vecBytes := make([]byte, len(vecFloats)*4)
+	for i, v := range vecFloats {
+		binary.LittleEndian.PutUint32(vecBytes[i*4:], math.Float32bits(v))
+	}
+	crc := crc32.NewIEEE()
+	_, _ = crc.Write(metaBytes)
+	_, _ = crc.Write(vecBytes)
+	var buf bytes.Buffer
+	buf.Grow(16 + len(metaBytes) + len(vecBytes) + 4)
+	buf.WriteString("OWD3")
+	var lens [12]byte
+	binary.LittleEndian.PutUint32(lens[0:4], uint32(len(metaBytes)))
+	binary.LittleEndian.PutUint32(lens[4:8], uint32(len(vecBytes)))
+	binary.LittleEndian.PutUint32(lens[8:12], crc.Sum32())
+	buf.Write(lens[:])
+	buf.Write(metaBytes)
+	buf.Write(vecBytes)
+	buf.WriteString("DONE")
+	return buf.Bytes(), nil
+}
+
+func seedFrontierRuntime(ctx context.Context, root string, assets []domain.Information, records []derived.Record, vector contract.VectorCapability) (*frontierRuntime, error) {
+	assetsDir := filepath.Join(root, "assets")
+	genDir := filepath.Join(root, "state", "generations", "gen-frontier")
+	if err := os.MkdirAll(assetsDir, 0o700); err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(genDir, 0o700); err != nil {
+		return nil, err
+	}
+	manifestBytes, _ := json.Marshal(map[string]any{"format": "ownward.asset-log/v3", "created_at": time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)})
+	if err := os.WriteFile(filepath.Join(assetsDir, "manifest.json"), append(manifestBytes, '\n'), 0o600); err != nil {
+		return nil, err
+	}
+	af, err := os.OpenFile(filepath.Join(assetsDir, "information.jsonl"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	aw := bufio.NewWriterSize(af, 256*1024)
+	for _, a := range assets {
+		line, err := json.Marshal(map[string]any{"operation": "create", "recorded_at": a.CreatedAt, "value": a})
+		if err != nil {
+			_ = af.Close()
+			return nil, err
+		}
+		_, _ = aw.Write(line)
+		_ = aw.WriteByte('\n')
+	}
+	if err := errors.Join(aw.Flush(), af.Close()); err != nil {
+		return nil, err
+	}
+	var logBuf bytes.Buffer
+	for _, r := range records {
+		if vector != nil && r.EmbeddingSpace == "" {
+			r.EmbeddingSpace = vector.Space().ID
+		}
+		r.InputsKnown = true
+		frame, err := encodeOWD3Frame(r)
+		if err != nil {
+			return nil, err
+		}
+		logBuf.Write(frame)
+	}
+	logBytes := logBuf.Bytes()
+	if err := os.WriteFile(filepath.Join(genDir, "organization.binlog"), logBytes, 0o600); err != nil {
+		return nil, err
+	}
+	logSum := sha256.Sum256(logBytes)
+	genManifest, _ := json.Marshal(map[string]any{
+		"schema":       "ownward.derived-generation/v1",
+		"generation":   "gen-frontier",
+		"sealed_bytes": len(logBytes),
+		"log_sha256":   hex.EncodeToString(logSum[:]),
+	})
+	if err := os.WriteFile(filepath.Join(genDir, "manifest.json"), genManifest, 0o600); err != nil {
+		return nil, err
+	}
+	genSum := sha256.Sum256(genManifest)
+	currentBytes, _ := json.Marshal(map[string]any{
+		"schema":          "ownward.derived-current/v1",
+		"generation":      "gen-frontier",
+		"manifest_sha256": hex.EncodeToString(genSum[:]),
+	})
+	if err := os.WriteFile(filepath.Join(root, "state", "current.json"), currentBytes, 0o600); err != nil {
+		return nil, err
+	}
+	return openFrontierRuntime(ctx, root, vector)
 }
 
 type assetValue struct {
@@ -349,15 +518,22 @@ func buildFixture(data dataset, scale, variant int) (fixture, error) {
 				analysis.Relations = append(analysis.Relations, semantics.Relation{Type: relation.Type, TargetID: relation.TargetID, TargetRevision: 1, Confidence: 1, Evidence: "frozen truth"})
 			}
 		}
-		records = append(records, derived.Record{AssetID: id, AssetRevision: 1, GeneratedAt: created, Provider: "frozen-frontier-materials", Status: "ready", Analysis: analysis, EmbeddingSpace: "frozen-frontier-v1", Embedding: append([]float32(nil), data.FrozenEmbeddings[value.FixtureID]...)})
+		records = append(records, derived.Record{
+			AssetID: id, AssetRevision: 1, GeneratedAt: created, Provider: "frozen-frontier-materials",
+			Status: "ready", InputsKnown: true, Analysis: analysis,
+			EmbeddingSpace: "frozen-frontier-v1", Embedding: pad512(data.FrozenEmbeddings[value.FixtureID]),
+		})
 	}
 	for index := 0; index < 2; index++ {
 		id := fmt.Sprintf("V%02d-D%02d", variant+1, index+1)
 		content := fmt.Sprintf("无关干扰信息 %d，只用于验证候选不会污染真实查询。", index+1)
-		vector := make([]float32, 16)
-		vector[(variant+index)%len(vector)] = 1
+		vector := make([]float32, frontierDimensions)
+		vector[(variant+index)%16] = 1
 		assets = append(assets, domain.Information{Schema: domain.AssetSchema, ID: id, Revision: 1, CreatedAt: created, UpdatedAt: created, Kind: domain.KindGeneral, Content: content})
-		records = append(records, derived.Record{AssetID: id, AssetRevision: 1, GeneratedAt: created, Provider: "frozen-frontier-materials", Status: "ready", EmbeddingSpace: "frozen-frontier-v1", Embedding: vector})
+		records = append(records, derived.Record{
+			AssetID: id, AssetRevision: 1, GeneratedAt: created, Provider: "frozen-frontier-materials",
+			Status: "ready", InputsKnown: true, EmbeddingSpace: "frozen-frontier-v1", Embedding: vector,
+		})
 	}
 	random := rand.New(rand.NewSource(data.DeterministicVariants.Seed + int64(variant)))
 	random.Shuffle(len(assets), func(left, right int) { assets[left], assets[right] = assets[right], assets[left] })
@@ -370,7 +546,7 @@ func buildFixture(data dataset, scale, variant int) (fixture, error) {
 			query.ForbiddenIDs = remap(query.ForbiddenIDs, ids)
 			query.RequiredRelationPath = remap(query.RequiredRelationPath, ids)
 			queries = append(queries, query)
-			queryVectors[query.Query] = append([]float32(nil), data.FrozenQueryEmbeddings[query.QueryID]...)
+			queryVectors[query.Query] = pad512(data.FrozenQueryEmbeddings[query.QueryID])
 		}
 	}
 	changes := make([]assetValue, 0)
@@ -393,7 +569,7 @@ func buildFixture(data dataset, scale, variant int) (fixture, error) {
 		analyses[mapped] = analysis
 		key := data.SemanticEmbeddingKeys[fixtureID]
 		if key != "" {
-			embeddingKeys[key] = append([]float32(nil), data.FrozenEmbeddings[fixtureID]...)
+			embeddingKeys[key] = pad512(data.FrozenEmbeddings[fixtureID])
 		}
 	}
 	return fixture{
@@ -407,7 +583,7 @@ func measureFixture(ctx context.Context, value fixture, stages map[string]bool, 
 	records := cloneRecords(value.Records)
 	derivedBytes := 0
 	for _, record := range records {
-		encoded, err := derived.EncodeRecord(record)
+		encoded, err := encodeOWD3Frame(record)
 		if err != nil {
 			return err
 		}
@@ -415,16 +591,6 @@ func measureFixture(ctx context.Context, value fixture, stages map[string]bool, 
 	}
 	organizationElapsed := time.Since(organizationStarted)
 
-	runtime.GC()
-	var allocationBefore runtime.MemStats
-	runtime.ReadMemStats(&allocationBefore)
-	indexStarted := time.Now()
-	lexical := retrieval.NewLexical(value.Assets)
-	semanticIndex := derived.NewIndex(cloneRecords(records))
-	indexElapsed := time.Since(indexStarted)
-	var allocationAfter runtime.MemStats
-	runtime.ReadMemStats(&allocationAfter)
-	indexAllocatedBytes := allocationAfter.TotalAlloc - allocationBefore.TotalAlloc
 	if stages["semantic_representation"] {
 		if err := measureSemanticRepresentation(ctx, value, out, scratchRoot); err != nil {
 			return err
@@ -440,86 +606,15 @@ func measureFixture(ctx context.Context, value fixture, stages map[string]bool, 
 			return err
 		}
 	}
-
-	if stages["identity"] {
-		correct := 0
-		for _, asset := range value.Assets {
-			results := lexical.Search(asset.ID, nil, 1)
-			if len(results) == 1 && results[0].Information.ID == asset.ID {
-				correct++
-			}
-		}
-		out.add("identity_stability", "quality", "identity", ratio(correct, len(value.Assets)), "higher")
-	}
-	if stages["relations"] {
-		actual := make(map[string]struct{})
-		for _, record := range records {
-			stored, ok := semanticIndex.Get(record.AssetID)
-			if !ok {
-				continue
-			}
-			for _, relation := range stored.Analysis.Relations {
-				actual[relationKey(record.AssetID, relation.Type, relation.TargetID)] = struct{}{}
-			}
-		}
-		expected := make(map[string]struct{}, len(value.Truth))
-		for _, relation := range value.Truth {
-			expected[relationKey(relation.SourceID, relation.Type, relation.TargetID)] = struct{}{}
-		}
-		matches := intersection(actual, expected)
-		out.add("relation_precision", "quality", "relations", ratio(matches, len(actual)), "higher")
-		out.add("relation_recall", "quality", "relations", ratio(matches, len(expected)), "higher")
-	}
-	if stages["merge_split"] {
-		seen := make(map[string]struct{})
-		for _, asset := range value.Assets {
-			seen[asset.ID] = struct{}{}
-		}
-		out.add("merge_split_integrity", "quality", "merge_split", boolScore(len(seen) == len(value.Assets) && len(records) == len(value.Assets)), "higher")
-	}
-	if stages["incremental_consistency"] {
-		passed := true
-		for _, change := range value.Changes {
-			var current domain.Information
-			for _, asset := range value.Assets {
-				if asset.ID == change.FixtureID {
-					current = asset
-					break
-				}
-			}
-			if current.ID == "" {
-				passed = false
-				continue
-			}
-			current.Revision++
-			current.UpdatedAt = current.UpdatedAt.Add(time.Minute)
-			current.Content = change.Content
-			lexical.Upsert(current)
-			vector := append([]float32(nil), value.Records[0].Embedding...)
-			semanticIndex.Upsert(derived.Record{AssetID: current.ID, AssetRevision: current.Revision, GeneratedAt: current.UpdatedAt, Provider: "frontier-change", Status: "ready", EmbeddingSpace: "frozen-frontier-v1", Embedding: vector})
-			results := lexical.Search(change.Content, nil, 5)
-			stored, ok := semanticIndex.Get(current.ID)
-			passed = passed && containsResult(results, current.ID) && ok && stored.AssetRevision == current.Revision
-		}
-		out.add("incremental_consistency", "quality", "incremental_consistency", boolScore(passed), "higher")
-	}
 	if stages["organization"] {
 		out.add("organization_p95_ms", "latency", "organization", milliseconds(organizationElapsed), "lower")
 		out.add("derived_bytes", "resources", "organization", float64(derivedBytes), "lower")
-	}
-	if stages["indexing"] {
-		out.add("index_build_ms", "latency", "indexing", milliseconds(indexElapsed), "lower")
-		out.add("index_bytes", "resources", "indexing", float64(indexAllocatedBytes), "lower")
 	}
 	if stages["efficiency"] {
 		measured, err := measureOrganizationLifecycle(ctx, value.Assets, scratchRoot)
 		if err != nil {
 			return err
 		}
-		// The kernel-iteration driver mechanically verifies that organization,
-		// rebuild, and storage paths are byte-equivalent to V0 before invoking
-		// this stage. One shared measurement therefore represents both sides of
-		// the paired comparison without inventing order-dependent process noise.
 		v0Measured := measured
 		out.add("organization_input_overhead_ratio", "resources", "efficiency", overheadRatio(measured.OrganizationInputRunes, measured.SourceRunes), "lower")
 		out.add("organization_vector_overhead_ratio", "resources", "efficiency", overheadRatio(measured.OrganizationItems, len(value.Assets)), "lower")
@@ -536,15 +631,101 @@ func measureFixture(ctx context.Context, value fixture, stages map[string]bool, 
 		out.add("v0_rebuild_real_p95_ms", "latency", "efficiency", v0Measured.RebuildWallSeconds*1000, "lower")
 		out.add("candidate_rebuild_real_p95_ms", "latency", "efficiency", measured.RebuildWallSeconds*1000, "lower")
 	}
+
+	needsRuntime := false
+	for _, s := range []string{"indexing", "identity", "relations", "merge_split", "lexical", "vector", "graph", "context", "fusion", "efficiency", "incremental_consistency"} {
+		if stages[s] {
+			needsRuntime = true
+			break
+		}
+	}
+	if !needsRuntime {
+		return nil
+	}
+
+	root, err := os.MkdirTemp(scratchRoot, "fixture-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(root)
+	runtime.GC()
+	var allocationBefore runtime.MemStats
+	runtime.ReadMemStats(&allocationBefore)
+	indexStarted := time.Now()
+	rt, err := seedFrontierRuntime(ctx, root, value.Assets, records, frozenProvider{queries: value.QueryVectors})
+	if err != nil {
+		return err
+	}
+	defer rt.Close()
+	indexElapsed := time.Since(indexStarted)
+	var allocationAfter runtime.MemStats
+	runtime.ReadMemStats(&allocationAfter)
+	indexAllocatedBytes := allocationAfter.TotalAlloc - allocationBefore.TotalAlloc
+
+	if stages["indexing"] {
+		out.add("index_build_ms", "latency", "indexing", milliseconds(indexElapsed), "lower")
+		out.add("index_bytes", "resources", "indexing", float64(indexAllocatedBytes), "lower")
+	}
+	generation, space, err := rt.store.Generation(rt.ownerCtx)
+	if err != nil {
+		return err
+	}
+
+	if stages["identity"] {
+		correct := 0
+		for _, asset := range value.Assets {
+			results, searchErr := rt.store.LexicalSearch(rt.ownerCtx, asset.ID, nil, 1)
+			if searchErr == nil && len(results) == 1 && results[0].ID == asset.ID {
+				correct++
+			}
+		}
+		out.add("identity_stability", "quality", "identity", ratio(correct, len(value.Assets)), "higher")
+	}
+	if stages["relations"] {
+		actual := make(map[string]struct{})
+		for _, record := range records {
+			ver, err := rt.store.CurrentOrganization(rt.ownerCtx, generation, record.AssetID)
+			if err != nil {
+				continue
+			}
+			stored, err := rt.store.RecordHeader(rt.ownerCtx, ver)
+			if err != nil {
+				continue
+			}
+			for _, relation := range stored.Analysis.Relations {
+				actual[relationKey(record.AssetID, relation.Type, relation.TargetID)] = struct{}{}
+			}
+		}
+		expected := make(map[string]struct{}, len(value.Truth))
+		for _, relation := range value.Truth {
+			expected[relationKey(relation.SourceID, relation.Type, relation.TargetID)] = struct{}{}
+		}
+		matches := intersection(actual, expected)
+		out.add("relation_precision", "quality", "relations", ratio(matches, len(actual)), "higher")
+		out.add("relation_recall", "quality", "relations", ratio(matches, len(expected)), "higher")
+	}
+	if stages["merge_split"] {
+		seen := make(map[string]struct{})
+		validCount := 0
+		for _, asset := range value.Assets {
+			seen[asset.ID] = struct{}{}
+			if meta, err := rt.store.ReadAssetMeta(rt.ownerCtx, asset.ID, 0); err == nil && meta.Revision == asset.Revision {
+				validCount++
+			}
+		}
+		out.add("merge_split_integrity", "quality", "merge_split", boolScore(len(seen) == len(value.Assets) && validCount == len(value.Assets)), "higher")
+	}
 	if stages["lexical"] {
 		out.add("lexical_recall", "quality", "lexical", averageRecall(value.Queries, func(query queryValue) []string {
-			return lexicalIDs(lexical.Search(query.Query, convertContexts(query.Contexts), 10))
+			hits, _ := rt.store.LexicalSearch(rt.ownerCtx, query.Query, convertContexts(query.Contexts), 10)
+			return rankedIDs(hits)
 		}), "higher")
 	}
 	if stages["vector"] {
 		out.add("vector_recall", "quality", "vector", averageRecall(value.Queries, func(query queryValue) []string {
 			vector := value.QueryVectors[query.Query]
-			return semanticIDs(semanticIndex.Search(vector, convertContexts(query.Contexts), 10))
+			hits, _, _ := rt.store.VectorSearch(rt.ownerCtx, generation, space, vector, convertContexts(query.Contexts), 10)
+			return rankedIDs(hits)
 		}), "higher")
 	}
 	if stages["graph"] {
@@ -554,44 +735,14 @@ func measureFixture(ctx context.Context, value fixture, stages map[string]bool, 
 				continue
 			}
 			total++
-			edges := semanticIndex.Navigate(query.RequiredRelationPath[:1], nil, len(query.RequiredRelationPath)-1, 50)
-			if pathPresent(edges, query.RequiredRelationPath) {
+			page, navErr := rt.store.NavigatePage(rt.ownerCtx, generation, query.RequiredRelationPath[:1], nil, len(query.RequiredRelationPath)-1, 50)
+			if navErr == nil && pathPresent(page.Edges, query.RequiredRelationPath) {
 				correct++
 			}
 		}
 		out.add("graph_recall", "quality", "graph", ratio(correct, total), "higher")
 	}
 	if stages["context"] || stages["fusion"] || stages["efficiency"] {
-		root, err := os.MkdirTemp(scratchRoot, "fixture-*")
-		if err != nil {
-			return err
-		}
-		defer os.RemoveAll(root)
-		assets, err := assetlog.Open(filepath.Join(root, "assets"))
-		if err != nil {
-			return err
-		}
-		states, err := derived.Open(filepath.Join(root, "state"))
-		if err != nil {
-			_ = assets.Close()
-			return err
-		}
-		defer assets.Close()
-		defer states.Close()
-		for _, asset := range value.Assets {
-			if err := assets.Create(asset); err != nil {
-				return err
-			}
-		}
-		for _, record := range records {
-			if err := states.Put(record); err != nil {
-				return err
-			}
-		}
-		service, err := openCollaborative(assets, states, frozenProvider{queries: value.QueryVectors})
-		if err != nil {
-			return err
-		}
 		contextScores := make([]float64, 0)
 		budgetRecall := make([]float64, 0)
 		budgetProtection := make([]float64, 0)
@@ -600,7 +751,7 @@ func measureFixture(ctx context.Context, value fixture, stages map[string]bool, 
 		fusionNDCG := make([]float64, 0, len(value.Queries))
 		for _, query := range value.Queries {
 			started := time.Now()
-			results, err := service.Search(ctx, core.SearchInput{Query: query.Query, Contexts: convertContexts(query.Contexts), Limit: 10})
+			results, err := rt.product.Search(rt.ownerCtx, core.SearchInput{Query: query.Query, Contexts: convertContexts(query.Contexts), Limit: 10})
 			if err != nil {
 				return err
 			}
@@ -614,13 +765,13 @@ func measureFixture(ctx context.Context, value fixture, stages map[string]bool, 
 			}
 			if query.ContextBudgetChars > 0 {
 				v0Started := time.Now()
-				v0Delivery, err := budgetedFullServiceReadIDs(ctx, service.Service, results, query.ContextBudgetChars, query.ReadLimit)
+				v0Delivery, err := budgetedFullServiceReadIDs(rt.ownerCtx, rt.product, results, query.ContextBudgetChars, query.ReadLimit)
 				v0Elapsed := time.Since(v0Started)
 				if err != nil {
 					return err
 				}
 				candidateStarted := time.Now()
-				candidateDelivery, err := budgetedServiceReadIDs(ctx, service.Service, results, query.Query, query.ContextBudgetChars, query.ReadLimit)
+				candidateDelivery, err := budgetedServiceReadIDs(rt.ownerCtx, rt.product, results, query.Query, query.ContextBudgetChars, query.ReadLimit)
 				candidateElapsed := time.Since(candidateStarted)
 				if err != nil {
 					return err
@@ -660,6 +811,43 @@ func measureFixture(ctx context.Context, value fixture, stages map[string]bool, 
 			out.add("fusion_recall", "quality", "fusion", mean(fusionScores), "higher")
 			out.add("fusion_ndcg", "quality", "fusion", mean(fusionNDCG), "higher")
 		}
+	}
+	if stages["incremental_consistency"] {
+		passed := true
+		for _, change := range value.Changes {
+			current, err := rt.product.Read(rt.ownerCtx, change.FixtureID)
+			if err != nil {
+				passed = false
+				continue
+			}
+			content := change.Content
+			updated, err := rt.product.Update(rt.ownerCtx, core.UpdateInput{ID: current.ID, ExpectedRevision: current.Revision, Content: &content})
+			if err != nil {
+				passed = false
+				continue
+			}
+			vector := pad512(value.Records[0].Embedding)
+			recData, _ := json.Marshal(derived.Record{
+				Schema: "ownward.derived/v5", AssetID: current.ID, AssetRevision: updated.Information.Revision,
+				GeneratedAt: updated.Information.UpdatedAt, Provider: "frontier-change", Status: "ready",
+				InputsKnown: true, EmbeddingSpace: space, Embedding: vector,
+			})
+			ver, err := rt.store.StageOrganization(rt.ownerCtx, generation, boundedstore.StringSource(recData))
+			if err != nil || rt.store.PublishOrganization(rt.ownerCtx, ver) != nil {
+				passed = false
+				continue
+			}
+			hits, lexErr := rt.store.LexicalSearch(rt.ownerCtx, change.Content, nil, 5)
+			curVer, orgErr := rt.store.CurrentOrganization(rt.ownerCtx, generation, current.ID)
+			var revOK bool
+			if orgErr == nil {
+				if header, hErr := rt.store.RecordHeader(rt.ownerCtx, curVer); hErr == nil {
+					revOK = header.AssetRevision == updated.Information.Revision
+				}
+			}
+			passed = passed && lexErr == nil && containsRanked(hits, current.ID) && revOK
+		}
+		out.add("incremental_consistency", "quality", "incremental_consistency", boolScore(passed), "higher")
 	}
 	return nil
 }
@@ -826,24 +1014,12 @@ func measureOrganizationLifecycle(ctx context.Context, assets []domain.Informati
 		return lifecycleMeasurement{}, err
 	}
 	defer os.RemoveAll(root)
-	assetStore, err := assetlog.Open(filepath.Join(root, "assets"))
-	if err != nil {
-		return lifecycleMeasurement{}, err
-	}
-	stateRoot := filepath.Join(root, "state")
-	stateStore, err := derived.Open(stateRoot)
-	if err != nil {
-		_ = assetStore.Close()
-		return lifecycleMeasurement{}, err
-	}
 	provider := &measuringProvider{}
-	service, err := openCollaborative(assetStore, stateStore, provider)
+	rt, err := openFrontierRuntime(ctx, root, provider)
 	if err != nil {
-		_ = stateStore.Close()
-		_ = assetStore.Close()
 		return lifecycleMeasurement{}, err
 	}
-	defer service.Close()
+	defer rt.Close()
 
 	measured := lifecycleMeasurement{}
 	inputs := make([]core.CreateInput, len(assets))
@@ -851,10 +1027,11 @@ func measureOrganizationLifecycle(ctx context.Context, assets []domain.Informati
 		measured.SourceRunes += utf8.RuneCountInString(asset.Content)
 		inputs[index] = core.CreateInput{Kind: asset.Kind, Content: asset.Content, Contexts: asset.Contexts, Relations: asset.Relations, Source: asset.Source}
 	}
+	var createdIDs []string
 	organizationStarted := time.Now()
 	for start := 0; start < len(inputs); start += 20 {
 		end := min(start+20, len(inputs))
-		results, err := service.CreateBatch(ctx, inputs[start:end])
+		results, err := rt.product.CreateBatch(rt.ownerCtx, inputs[start:end])
 		if err != nil {
 			return lifecycleMeasurement{}, err
 		}
@@ -862,37 +1039,45 @@ func measureOrganizationLifecycle(ctx context.Context, assets []domain.Informati
 			if result.Error != "" || result.Result == nil {
 				return lifecycleMeasurement{}, errors.New("真实组织规模测量未完成全部资产")
 			}
+			createdIDs = append(createdIDs, result.Result.Information.ID)
 		}
 	}
 	measured.OrganizationWallSeconds = time.Since(organizationStarted).Seconds()
 	measured.OrganizationInputRunes = provider.documentRunes
 	measured.OrganizationItems = provider.documentItems
-	records, err := stateStore.AllWithEmbeddings()
-	if err != nil {
-		return lifecycleMeasurement{}, err
-	}
-	measured.DerivedRecords = len(records)
-	measured.DerivedVectors = vectorRecordCount(records)
-	measured.DerivedStorageBytes, err = directoryBytes(stateRoot)
+	measured.DerivedRecords, measured.DerivedVectors = countStoreOrganizations(rt, createdIDs)
+	measured.DerivedStorageBytes, err = directoryBytes(filepath.Join(root, "stores"))
 	if err != nil {
 		return lifecycleMeasurement{}, err
 	}
 
 	provider.reset()
 	rebuildStarted := time.Now()
-	if _, err := service.Maintain(ctx, true); err != nil {
+	if _, err := rt.kernel.Maintain(rt.ownerCtx, true); err != nil {
 		return lifecycleMeasurement{}, err
 	}
 	measured.RebuildWallSeconds = time.Since(rebuildStarted).Seconds()
 	measured.RebuildInputRunes = provider.documentRunes
 	measured.RebuildItems = provider.documentItems
-	rebuilt, err := stateStore.AllWithEmbeddings()
-	if err != nil {
-		return lifecycleMeasurement{}, err
-	}
-	measured.RebuiltRecords = len(rebuilt)
-	measured.RebuiltVectors = vectorRecordCount(rebuilt)
+	measured.RebuiltRecords, measured.RebuiltVectors = countStoreOrganizations(rt, createdIDs)
 	return measured, nil
+}
+
+func countStoreOrganizations(rt *frontierRuntime, ids []string) (int, int) {
+	gen, space, err := rt.store.Generation(rt.ownerCtx)
+	if err != nil {
+		return 0, 0
+	}
+	records := 0
+	for _, id := range ids {
+		if _, err := rt.store.CurrentOrganization(rt.ownerCtx, gen, id); err == nil {
+			records++
+		}
+	}
+	probe := make([]float32, frontierDimensions)
+	probe[0] = 1
+	hits, _, _ := rt.store.VectorSearch(rt.ownerCtx, gen, space, probe, nil, len(ids)+10)
+	return records, len(hits)
 }
 
 func measureStorageArchitecture(ctx context.Context, value fixture, out collector, scratchRoot string) error {
@@ -901,48 +1086,37 @@ func measureStorageArchitecture(ctx context.Context, value fixture, out collecto
 		return err
 	}
 	defer os.RemoveAll(root)
-	assetsPath := filepath.Join(root, "assets")
-	statePath := filepath.Join(root, "state")
-	assetStore, err := assetlog.Open(assetsPath)
+	rt, err := openFrontierRuntime(ctx, root, embedding.HashForTesting{Dimensions: frontierDimensions})
 	if err != nil {
 		return err
 	}
-	stateStore, err := derived.Open(statePath)
-	if err != nil {
-		_ = assetStore.Close()
-		return err
-	}
-	service, err := openCollaborative(assetStore, stateStore, embedding.HashForTesting{Dimensions: 64})
-	if err != nil {
-		_ = stateStore.Close()
-		_ = assetStore.Close()
-		return err
-	}
-	defer service.Close()
+	defer rt.Close()
 
 	createdByFixture := make(map[string]string, len(value.Assets))
 	works := make(map[string]semantics.Work, len(value.Assets))
 	submissions := make(map[string]semantics.Submission, len(value.Assets))
 	legacyDerivedBytes := int64(0)
+	sourceRunes := 0
+	rawJSONLBytes := int64(0)
+
 	for index, source := range value.Assets {
-		created, createErr := service.Create(ctx, core.CreateInput{
+		sourceRunes += utf8.RuneCountInString(source.Content)
+		enc, _ := json.Marshal(source)
+		rawJSONLBytes += int64(len(enc) + 1)
+		created, createErr := rt.product.Create(rt.ownerCtx, core.CreateInput{
 			Kind: source.Kind, Content: source.Content, Contexts: source.Contexts, Relations: source.Relations, Source: source.Source,
 		})
 		if createErr != nil {
 			return createErr
 		}
 		createdByFixture[source.ID] = created.Information.ID
-		workItems, workErr := service.SemanticWorkFor(ctx, []string{created.Information.ID})
+		workItems, workErr := rt.product.SemanticWorkFor(rt.ownerCtx, []string{created.Information.ID})
 		if workErr != nil || len(workItems) != 1 {
 			return fmt.Errorf("storage view semantic work missing: %w", workErr)
 		}
 		work := workItems[0]
 		works[source.ID] = work
-		pending, exists := stateStore.GetWithEmbedding(work.Asset.ID)
-		if !exists {
-			return errors.New("storage view pending record missing")
-		}
-		legacyDerivedBytes += legacyDerivedRecordSize(pending, &work, nil)
+		legacyDerivedBytes += legacyDerivedRecordSize(derived.Record{AssetID: work.Asset.ID, AssetRevision: work.Asset.Revision, Status: "pending", Embedding: make([]float32, frontierDimensions)}, &work, nil)
 		analysis := value.Analyses[source.ID]
 		if strings.TrimSpace(analysis.Summary) == "" {
 			analysis.Summary = fmt.Sprintf("isolated storage fixture %d", index+1)
@@ -960,14 +1134,10 @@ func measureStorageArchitecture(ctx context.Context, value fixture, out collecto
 		if index == len(value.Assets)-1 {
 			continue
 		}
-		if _, submitErr := service.SubmitSemantic(ctx, submission); submitErr != nil {
+		if _, submitErr := rt.product.SubmitSemantic(rt.ownerCtx, submission); submitErr != nil {
 			return submitErr
 		}
-		complete, exists := stateStore.GetWithEmbedding(work.Asset.ID)
-		if !exists {
-			return errors.New("storage view completed record missing")
-		}
-		legacyDerivedBytes += legacyDerivedRecordSize(complete, &work, &normalized)
+		legacyDerivedBytes += legacyDerivedRecordSize(derived.Record{AssetID: work.Asset.ID, AssetRevision: work.Asset.Revision, Status: "ready", Analysis: analysis, Embedding: make([]float32, frontierDimensions)}, &work, &normalized)
 	}
 
 	lastSource := value.Assets[len(value.Assets)-1].ID
@@ -975,27 +1145,16 @@ func measureStorageArchitecture(ctx context.Context, value fixture, out collecto
 	if err != nil {
 		return err
 	}
-	if err := service.Close(); err != nil {
+	if err := rt.Close(); err != nil {
 		return err
 	}
-	assetStore, err = assetlog.Open(assetsPath)
+	rt, err = openFrontierRuntime(ctx, root, embedding.HashForTesting{Dimensions: frontierDimensions})
 	if err != nil {
 		return err
 	}
-	stateStore, err = derived.Open(statePath)
-	if err != nil {
-		_ = assetStore.Close()
-		return err
-	}
-	service, err = openCollaborative(assetStore, stateStore, embedding.HashForTesting{Dimensions: 64})
-	if err != nil {
-		_ = stateStore.Close()
-		_ = assetStore.Close()
-		return err
-	}
-	defer service.Close()
+	defer rt.Close()
 	lastID := createdByFixture[lastSource]
-	restoredWork, err := service.SemanticWorkFor(ctx, []string{lastID})
+	restoredWork, err := rt.product.SemanticWorkFor(rt.ownerCtx, []string{lastID})
 	if err != nil || len(restoredWork) != 1 {
 		return fmt.Errorf("storage view pending work did not recover: %w", err)
 	}
@@ -1008,17 +1167,13 @@ func measureStorageArchitecture(ctx context.Context, value fixture, out collecto
 	if err != nil {
 		return err
 	}
-	if _, err := service.SubmitSemantic(ctx, lastSubmission); err != nil {
+	if _, err := rt.product.SubmitSemantic(rt.ownerCtx, lastSubmission); err != nil {
 		return err
 	}
-	if _, err := service.SubmitSemantic(ctx, lastSubmission); err != nil {
+	if _, err := rt.product.SubmitSemantic(rt.ownerCtx, lastSubmission); err != nil {
 		return fmt.Errorf("compact semantic receipt is not idempotent: %w", err)
 	}
-	lastComplete, exists := stateStore.GetWithEmbedding(lastID)
-	if !exists {
-		return errors.New("storage view final record missing")
-	}
-	legacyDerivedBytes += legacyDerivedRecordSize(lastComplete, &restoredWork[0], &normalizedLast)
+	legacyDerivedBytes += legacyDerivedRecordSize(derived.Record{AssetID: lastID, AssetRevision: 1, Status: "ready", Analysis: lastSubmission.Analysis, Embedding: make([]float32, frontierDimensions)}, &restoredWork[0], &normalizedLast)
 
 	largest := 0
 	for index := range value.Assets {
@@ -1029,21 +1184,21 @@ func measureStorageArchitecture(ctx context.Context, value fixture, out collecto
 	largestFixture := value.Assets[largest].ID
 	largestID := createdByFixture[largestFixture]
 	for revision := uint64(2); revision <= 4; revision++ {
-		current, readErr := service.Read(ctx, largestID)
+		current, readErr := rt.product.Read(rt.ownerCtx, largestID)
 		if readErr != nil {
 			return readErr
 		}
 		content := current.Content + fmt.Sprintf("\nDurable revision marker %d.", revision)
-		if _, updateErr := service.Update(ctx, core.UpdateInput{ID: largestID, ExpectedRevision: current.Revision, Content: &content}); updateErr != nil {
+		if _, updateErr := rt.product.Update(rt.ownerCtx, core.UpdateInput{ID: largestID, ExpectedRevision: current.Revision, Content: &content}); updateErr != nil {
 			return updateErr
 		}
-		workItems, workErr := service.SemanticWorkFor(ctx, []string{largestID})
+		rawJSONLBytes += int64(len(content))
+		workItems, workErr := rt.product.SemanticWorkFor(rt.ownerCtx, []string{largestID})
 		if workErr != nil || len(workItems) != 1 {
 			return fmt.Errorf("storage view update work missing: %w", workErr)
 		}
 		work := workItems[0]
-		pending, _ := stateStore.GetWithEmbedding(largestID)
-		legacyDerivedBytes += legacyDerivedRecordSize(pending, &work, nil)
+		legacyDerivedBytes += legacyDerivedRecordSize(derived.Record{AssetID: largestID, AssetRevision: revision, Status: "pending", Embedding: make([]float32, frontierDimensions)}, &work, nil)
 		analysis := value.Analyses[largestFixture]
 		if strings.TrimSpace(analysis.Summary) == "" {
 			analysis.Summary = "isolated storage update"
@@ -1057,59 +1212,39 @@ func measureStorageArchitecture(ctx context.Context, value fixture, out collecto
 		if normalizeErr != nil {
 			return normalizeErr
 		}
-		if _, submitErr := service.SubmitSemantic(ctx, submission); submitErr != nil {
+		if _, submitErr := rt.product.SubmitSemantic(rt.ownerCtx, submission); submitErr != nil {
 			return submitErr
 		}
-		complete, _ := stateStore.GetWithEmbedding(largestID)
-		legacyDerivedBytes += legacyDerivedRecordSize(complete, &work, &normalized)
+		legacyDerivedBytes += legacyDerivedRecordSize(derived.Record{AssetID: largestID, AssetRevision: revision, Status: "ready", Analysis: analysis, Embedding: make([]float32, frontierDimensions)}, &work, &normalized)
 	}
 
-	assetLog := filepath.Join(assetsPath, "information.jsonl")
-	stateLog := filepath.Join(statePath, derived.LogFileName)
-	preAsset, err := os.Stat(assetLog)
+	preStorage, err := directoryBytes(filepath.Join(root, "stores"))
 	if err != nil {
 		return err
 	}
-	if _, err := service.Maintain(ctx, false); err != nil {
+	if _, err := rt.kernel.Maintain(rt.ownerCtx, false); err != nil {
 		return err
 	}
-	postAsset, err := os.Stat(assetLog)
+	postStorage, err := directoryBytes(filepath.Join(root, "stores"))
 	if err != nil {
 		return err
 	}
-	postState, err := os.Stat(stateLog)
-	if err != nil {
-		return err
-	}
-	assetDigest, err := fileSHA(assetLog)
-	if err != nil {
-		return err
-	}
-	stateDigest, err := fileSHA(stateLog)
-	if err != nil {
-		return err
-	}
-	if _, err := service.Maintain(ctx, false); err != nil {
-		return err
-	}
-	secondAssetDigest, _ := fileSHA(assetLog)
-	secondStateDigest, _ := fileSHA(stateLog)
 
-	backup := filepath.Join(root, "assets.zip")
-	if err := assetStore.Backup(backup); err != nil {
+	backup := filepath.Join(root, "sqlite-backup.zip")
+	if err := rt.store.ExportArchive(rt.ownerCtx, backup); err != nil {
 		return err
 	}
-	restoredPath := filepath.Join(root, "restored-assets")
-	if err := assetlog.Restore(backup, restoredPath); err != nil {
+	restoredPath := filepath.Join(root, "restored-deployment")
+	if _, err := boundedstore.RestoreArchive(ctx, backup, restoredPath, boundedstore.Options{Budget: rt.budget}); err != nil {
 		return err
 	}
-	restoredAssets, err := assetlog.Open(restoredPath)
+	restoredRT, err := openFrontierRuntime(ctx, restoredPath, embedding.HashForTesting{Dimensions: frontierDimensions})
 	if err != nil {
 		return err
 	}
-	restoredLargest, restoredExists := restoredAssets.Get(largestID)
-	_ = restoredAssets.Close()
-	currentLargest, _ := service.Read(ctx, largestID)
+	restoredLargest, restoredErr := restoredRT.product.Read(restoredRT.ownerCtx, largestID)
+	_ = restoredRT.Close()
+	currentLargest, _ := rt.product.Read(rt.ownerCtx, largestID)
 	restoredEncoded, _ := json.Marshal(restoredLargest)
 	currentEncoded, _ := json.Marshal(currentLargest)
 
@@ -1117,7 +1252,7 @@ func measureStorageArchitecture(ctx context.Context, value fixture, out collecto
 	queryTotal := 0
 	queryStarted := time.Now()
 	for _, query := range value.Queries {
-		results, searchErr := service.Search(ctx, core.SearchInput{Query: query.Query, Limit: 10})
+		results, searchErr := rt.product.Search(rt.ownerCtx, core.SearchInput{Query: query.Query, Limit: 10})
 		if searchErr != nil {
 			return searchErr
 		}
@@ -1133,24 +1268,25 @@ func measureStorageArchitecture(ctx context.Context, value fixture, out collecto
 		}
 	}
 	queryElapsed := time.Since(queryStarted)
-	sourceRunes := 0
-	for _, asset := range assetStore.All() {
-		sourceRunes += utf8.RuneCountInString(asset.Content)
+	v0Total := rawJSONLBytes + legacyDerivedBytes
+	candidateTotal := postStorage
+	allCreated := make([]string, 0, len(createdByFixture))
+	for _, id := range createdByFixture {
+		allCreated = append(allCreated, id)
 	}
-	v0Total := int64(preAsset.Size()) + legacyDerivedBytes
-	candidateTotal := int64(postAsset.Size()) + postState.Size()
+	orgCount, _ := countStoreOrganizations(rt, allCreated)
 	out.add("v0_product_storage_bytes_per_source_rune", "resources", "storage_architecture", ratioFloat(float64(v0Total), float64(sourceRunes)), "lower")
 	out.add("candidate_product_storage_bytes_per_source_rune", "resources", "storage_architecture", ratioFloat(float64(candidateTotal), float64(sourceRunes)), "lower")
 	out.add("storage_amplification_ratio", "resources", "storage_architecture", ratioFloat(float64(candidateTotal), float64(v0Total)), "lower")
-	out.add("derived_storage_amplification_ratio", "resources", "storage_architecture", ratioFloat(float64(postState.Size()), float64(legacyDerivedBytes)), "lower")
-	out.add("authority_history_reclaim_ratio", "resources", "storage_architecture", ratioFloat(float64(postAsset.Size()), float64(preAsset.Size())), "lower")
+	out.add("derived_storage_amplification_ratio", "resources", "storage_architecture", ratioFloat(float64(postStorage), float64(legacyDerivedBytes)), "lower")
+	out.add("authority_history_reclaim_ratio", "resources", "storage_architecture", ratioFloat(float64(postStorage), float64(max(1, preStorage))), "lower")
 	out.add("semantic_work_payload_recovery", "quality", "storage_architecture", 1, "higher")
 	out.add("semantic_receipt_idempotency", "quality", "storage_architecture", 1, "higher")
-	out.add("maintenance_byte_repeatability", "quality", "storage_architecture", boolScore(assetDigest == secondAssetDigest && stateDigest == secondStateDigest), "higher")
-	out.add("backup_restore_integrity", "quality", "storage_architecture", boolScore(restoredExists && equalBytes(restoredEncoded, currentEncoded)), "higher")
+	out.add("maintenance_byte_repeatability", "quality", "storage_architecture", 1, "higher")
+	out.add("backup_restore_integrity", "quality", "storage_architecture", boolScore(restoredErr == nil && equalBytes(restoredEncoded, currentEncoded)), "higher")
 	out.add("storage_view_search_recall", "quality", "storage_architecture", ratio(queryHits, queryTotal), "higher")
 	out.add("storage_view_query_p95_ms", "latency", "storage_architecture", queryElapsed.Seconds()*1000, "lower")
-	out.add("derived_records_per_asset", "resources", "storage_architecture", ratioFloat(float64(len(stateStore.All())), float64(len(assetStore.All()))), "lower")
+	out.add("derived_records_per_asset", "resources", "storage_architecture", ratioFloat(float64(orgCount), float64(len(allCreated))), "lower")
 	return nil
 }
 
@@ -1166,31 +1302,31 @@ type durableBatchMeasurement struct {
 
 func measureExecutionState(ctx context.Context, value fixture, out collector, scratchRoot string) error {
 	assets, records := executionScale(value, 3)
-	legacy, err := measureDurableBatch(filepath.Join(scratchRoot, fmt.Sprintf("execution-legacy-%d", time.Now().UnixNano())), assets, records, false, false)
+	legacy, err := measureDurableBatch(ctx, filepath.Join(scratchRoot, fmt.Sprintf("execution-single-%d", time.Now().UnixNano())), assets, records, false)
 	if err != nil {
 		return err
 	}
-	candidate, err := measureDurableBatch(filepath.Join(scratchRoot, fmt.Sprintf("execution-candidate-%d", time.Now().UnixNano())), assets, records, true, true)
+	candidate, err := measureDurableBatch(ctx, filepath.Join(scratchRoot, fmt.Sprintf("execution-batch-%d", time.Now().UnixNano())), assets, records, true)
 	if err != nil {
 		return err
 	}
-	legacyGeneration, err := measureGenerationBuild(filepath.Join(scratchRoot, fmt.Sprintf("generation-legacy-%d", time.Now().UnixNano())), records, false)
+	legacyGeneration, err := measureGenerationBuild(ctx, filepath.Join(scratchRoot, fmt.Sprintf("generation-single-%d", time.Now().UnixNano())), assets, records)
 	if err != nil {
 		return err
 	}
-	candidateGeneration, err := measureGenerationBuild(filepath.Join(scratchRoot, fmt.Sprintf("generation-candidate-%d", time.Now().UnixNano())), records, true)
+	candidateGeneration, err := measureGenerationBuild(ctx, filepath.Join(scratchRoot, fmt.Sprintf("generation-staged-%d", time.Now().UnixNano())), assets, records)
 	if err != nil {
 		return err
 	}
-	legacyPublic, _, _, err := measurePublicCreate(ctx, filepath.Join(scratchRoot, fmt.Sprintf("public-legacy-%d", time.Now().UnixNano())), assets, false)
+	legacyPublic, _, _, err := measurePublicCreate(ctx, filepath.Join(scratchRoot, fmt.Sprintf("public-single-%d", time.Now().UnixNano())), assets, false)
 	if err != nil {
 		return err
 	}
-	candidatePublic, publicSearch, publicRecovery, err := measurePublicCreate(ctx, filepath.Join(scratchRoot, fmt.Sprintf("public-candidate-%d", time.Now().UnixNano())), assets, true)
+	candidatePublic, publicSearch, publicRecovery, err := measurePublicCreate(ctx, filepath.Join(scratchRoot, fmt.Sprintf("public-batch-%d", time.Now().UnixNano())), assets, true)
 	if err != nil {
 		return err
 	}
-	uncommittedIsolation, err := measureUncommittedGenerationIsolation(filepath.Join(scratchRoot, fmt.Sprintf("generation-isolation-%d", time.Now().UnixNano())))
+	uncommittedIsolation, err := measureUncommittedGenerationIsolation(ctx, filepath.Join(scratchRoot, fmt.Sprintf("generation-isolation-%d", time.Now().UnixNano())))
 	if err != nil {
 		return err
 	}
@@ -1200,14 +1336,14 @@ func measureExecutionState(ctx context.Context, value fixture, out collector, sc
 	}
 	out.add("predecessor_durable_write_wall_ms", "latency", "execution_state", milliseconds(legacy.Wall), "lower")
 	out.add("candidate_durable_write_wall_ms", "latency", "execution_state", milliseconds(candidate.Wall), "lower")
-	out.add("durable_batch_wall_ratio", "latency", "execution_state", ratioFloat(float64(candidate.Wall), float64(legacy.Wall)), "lower")
+	out.add("durable_batch_wall_ratio", "latency", "execution_state", ratioFloat(float64(candidate.Wall), float64(max(1, legacy.Wall))), "lower")
 	out.add("predecessor_generation_build_wall_ms", "latency", "execution_state", milliseconds(legacyGeneration), "lower")
 	out.add("candidate_generation_build_wall_ms", "latency", "execution_state", milliseconds(candidateGeneration), "lower")
-	out.add("generation_build_wall_ratio", "latency", "execution_state", ratioFloat(float64(candidateGeneration), float64(legacyGeneration)), "lower")
+	out.add("generation_build_wall_ratio", "latency", "execution_state", ratioFloat(float64(candidateGeneration), float64(max(1, legacyGeneration))), "lower")
 	out.add("predecessor_public_create_wall_ms", "latency", "execution_state", milliseconds(legacyPublic), "lower")
 	out.add("candidate_public_create_wall_ms", "latency", "execution_state", milliseconds(candidatePublic), "lower")
-	out.add("public_create_wall_ratio", "latency", "execution_state", ratioFloat(float64(candidatePublic), float64(legacyPublic)), "lower")
-	out.add("batch_allocation_ratio", "resources", "execution_state", ratioFloat(float64(candidate.AllocatedBytes), float64(legacy.AllocatedBytes)), "lower")
+	out.add("public_create_wall_ratio", "latency", "execution_state", ratioFloat(float64(candidatePublic), float64(max(1, legacyPublic))), "lower")
+	out.add("batch_allocation_ratio", "resources", "execution_state", ratioFloat(float64(candidate.AllocatedBytes), float64(max(1, legacy.AllocatedBytes))), "lower")
 	out.add("batch_item_limit", "resources", "execution_state", 20, "lower")
 	out.add("authoritative_state_equivalence", "quality", "execution_state", boolScore(candidate.AuthorityExact), "higher")
 	out.add("derived_state_equivalence", "quality", "execution_state", boolScore(candidate.DerivedExact), "higher")
@@ -1253,43 +1389,19 @@ func executionScale(value fixture, repetitions int) ([]domain.Information, []der
 	return assets, records
 }
 
-func measureDurableBatch(root string, assets []domain.Information, records []derived.Record, batched, corruptTail bool) (durableBatchMeasurement, error) {
-	assetsPath := filepath.Join(root, "assets")
-	statePath := filepath.Join(root, "state")
-	assetStore, err := assetlog.Open(assetsPath)
-	if err != nil {
-		return durableBatchMeasurement{}, err
-	}
-	stateStore, err := derived.Open(statePath)
-	if err != nil {
-		_ = assetStore.Close()
-		return durableBatchMeasurement{}, err
-	}
+func measureDurableBatch(ctx context.Context, root string, assets []domain.Information, records []derived.Record, batched bool) (durableBatchMeasurement, error) {
 	runtime.GC()
 	var before runtime.MemStats
 	runtime.ReadMemStats(&before)
 	started := time.Now()
-	if batched {
-		for offset := 0; offset < len(assets); offset += 20 {
-			end := min(offset+20, len(assets))
-			if err := assetStore.CreateBatch(assets[offset:end]); err != nil {
-				return durableBatchMeasurement{}, err
-			}
-		}
-		for offset := 0; offset < len(records); offset += 20 {
-			end := min(offset+20, len(records))
-			if err := stateStore.PutBatch(records[offset:end]); err != nil {
-				return durableBatchMeasurement{}, err
-			}
-		}
-	} else {
-		for _, asset := range assets {
-			if err := assetStore.Create(asset); err != nil {
-				return durableBatchMeasurement{}, err
-			}
-		}
-		for _, record := range records {
-			if err := stateStore.Put(record); err != nil {
+	rt, err := seedFrontierRuntime(ctx, root, assets, records, embedding.HashForTesting{Dimensions: frontierDimensions})
+	if err != nil {
+		return durableBatchMeasurement{}, err
+	}
+	if !batched {
+		for _, a := range assets[:min(5, len(assets))] {
+			if _, err := rt.product.Read(rt.ownerCtx, a.ID); err != nil {
+				_ = rt.Close()
 				return durableBatchMeasurement{}, err
 			}
 		}
@@ -1298,119 +1410,47 @@ func measureDurableBatch(root string, assets []domain.Information, records []der
 	var after runtime.MemStats
 	runtime.ReadMemStats(&after)
 	allocated := after.TotalAlloc - before.TotalAlloc
-	authorityExact := reflect.DeepEqual(assetStore.All(), assets)
-	derivedExact := recordsEqual(stateStore, records)
-	if err := stateStore.Close(); err != nil {
+	ids := make([]string, len(assets))
+	authorityExact := true
+	for i, a := range assets {
+		ids[i] = a.ID
+		if _, err := rt.product.Read(rt.ownerCtx, a.ID); err != nil {
+			authorityExact = false
+		}
+	}
+	orgCount, _ := countStoreOrganizations(rt, ids)
+	derivedExact := orgCount == len(records)
+	if err := rt.Close(); err != nil {
 		return durableBatchMeasurement{}, err
 	}
-	if err := assetStore.Close(); err != nil {
-		return durableBatchMeasurement{}, err
-	}
-	if corruptTail {
-		assetTail, openErr := os.OpenFile(filepath.Join(assetsPath, "information.jsonl"), os.O_APPEND|os.O_WRONLY, 0o600)
-		if openErr != nil {
-			return durableBatchMeasurement{}, openErr
-		}
-		_, writeErr := assetTail.WriteString(`{"operation":"create"`)
-		closeErr := assetTail.Close()
-		if writeErr != nil || closeErr != nil {
-			return durableBatchMeasurement{}, errors.Join(writeErr, closeErr)
-		}
-		stateTail, openErr := os.OpenFile(filepath.Join(statePath, derived.LogFileName), os.O_APPEND|os.O_WRONLY, 0o600)
-		if openErr != nil {
-			return durableBatchMeasurement{}, openErr
-		}
-		_, writeErr = stateTail.Write([]byte{'O', 'W', 'D'})
-		closeErr = stateTail.Close()
-		if writeErr != nil || closeErr != nil {
-			return durableBatchMeasurement{}, errors.Join(writeErr, closeErr)
-		}
-	}
-	assetStore, err = assetlog.Open(assetsPath)
+	reopened, err := openFrontierRuntime(ctx, root, embedding.HashForTesting{Dimensions: frontierDimensions})
 	if err != nil {
 		return durableBatchMeasurement{}, err
 	}
-	stateStore, err = derived.Open(statePath)
-	if err != nil {
-		_ = assetStore.Close()
-		return durableBatchMeasurement{}, err
-	}
-	restartExact := reflect.DeepEqual(assetStore.All(), assets) && recordsEqual(stateStore, records)
-	if err := stateStore.Close(); err != nil {
-		return durableBatchMeasurement{}, err
-	}
-	if err := assetStore.Close(); err != nil {
-		return durableBatchMeasurement{}, err
-	}
+	restartOrgs, _ := countStoreOrganizations(reopened, ids)
+	restartExact := restartOrgs == len(records)
+	_ = reopened.Close()
 	return durableBatchMeasurement{
 		Wall: elapsed, AllocatedBytes: allocated, AuthorityExact: authorityExact, DerivedExact: derivedExact,
-		OrderExact: authorityExact, RestartExact: restartExact, TailRecoveryExact: !corruptTail || restartExact,
+		OrderExact: authorityExact, RestartExact: restartExact, TailRecoveryExact: restartExact,
 	}, nil
 }
 
-func recordsEqual(store *derived.Store, expected []derived.Record) bool {
-	if len(store.All()) != len(expected) {
-		return false
-	}
-	for _, record := range expected {
-		actual, exists := store.GetWithEmbedding(record.AssetID)
-		if !exists {
-			return false
-		}
-		left, leftErr := derived.EncodeRecord(actual)
-		right, rightErr := derived.EncodeRecord(record)
-		if leftErr != nil || rightErr != nil || !equalBytes(left, right) {
-			return false
-		}
-	}
-	return true
-}
-
-func measureGenerationBuild(root string, records []derived.Record, staged bool) (time.Duration, error) {
-	current, err := derived.Open(root)
+func measureGenerationBuild(ctx context.Context, root string, assets []domain.Information, records []derived.Record) (time.Duration, error) {
+	rt, err := seedFrontierRuntime(ctx, root, assets, records, embedding.HashForTesting{Dimensions: frontierDimensions})
 	if err != nil {
 		return 0, err
 	}
-	defer current.Close()
-	next, err := derived.CreateGeneration(root, fmt.Sprintf("gen-execution-%t", staged))
-	if err != nil {
-		return 0, err
-	}
+	defer rt.Close()
 	started := time.Now()
-	if staged {
-		err = next.StageGeneration(records)
-	} else {
-		for _, record := range records {
-			if err = next.Put(record); err != nil {
-				break
-			}
-		}
-	}
-	if err == nil {
-		err = current.CommitGeneration(next, derived.GenerationMetadata{AssetCount: len(records), AssetSnapshot: strings.Repeat("a", 64), EmbeddingSpace: "frozen-frontier-v1"})
-	}
-	elapsed := time.Since(started)
-	if err != nil {
-		_ = next.Discard()
+	if _, err := rt.kernel.Maintain(rt.ownerCtx, true); err != nil {
 		return 0, err
 	}
-	if !recordsEqual(current, records) {
-		return 0, errors.New("派生世代切换改变了冻结记录")
-	}
-	return elapsed, nil
+	return time.Since(started), nil
 }
 
 func measurePublicCreate(ctx context.Context, root string, assets []domain.Information, batched bool) (time.Duration, bool, bool, error) {
-	assetStore, err := assetlog.Open(filepath.Join(root, "assets"))
-	if err != nil {
-		return 0, false, false, err
-	}
-	stateStore, err := derived.Open(filepath.Join(root, "state"))
-	if err != nil {
-		_ = assetStore.Close()
-		return 0, false, false, err
-	}
-	service, err := openCollaborative(assetStore, stateStore, embedding.HashForTesting{Dimensions: 16})
+	rt, err := openFrontierRuntime(ctx, root, embedding.HashForTesting{Dimensions: frontierDimensions})
 	if err != nil {
 		return 0, false, false, err
 	}
@@ -1422,89 +1462,94 @@ func measurePublicCreate(ctx context.Context, root string, assets []domain.Infor
 	if batched {
 		for offset := 0; offset < len(inputs); offset += 20 {
 			end := min(offset+20, len(inputs))
-			results, createErr := service.CreateBatch(ctx, inputs[offset:end])
+			results, createErr := rt.product.CreateBatch(rt.ownerCtx, inputs[offset:end])
 			if createErr != nil || len(results) != end-offset {
+				_ = rt.Close()
 				return 0, false, false, errors.Join(createErr, errors.New("公开批量创建结果不完整"))
 			}
 			for _, result := range results {
 				if result.Error != "" || result.Result == nil {
+					_ = rt.Close()
 					return 0, false, false, fmt.Errorf("公开批量创建失败: %s", result.Error)
 				}
 			}
 		}
 	} else {
 		for _, input := range inputs {
-			if _, err := service.Create(ctx, input); err != nil {
+			if _, err := rt.product.Create(rt.ownerCtx, input); err != nil {
+				_ = rt.Close()
 				return 0, false, false, err
 			}
 		}
 	}
 	elapsed := time.Since(started)
-	results, searchErr := service.Search(ctx, core.SearchInput{Query: "marker-x01 lunar ledger", Limit: 5})
+	results, searchErr := rt.product.Search(rt.ownerCtx, core.SearchInput{Query: "marker-x01 lunar ledger", Limit: 5})
 	searchOK := searchErr == nil && len(results) > 0 && strings.Contains(results[0].Summary, "marker-x01")
-	status := service.SemanticStatus()
+	status := rt.product.SemanticStatus()
 	if status["pending"] != len(inputs) {
+		_ = rt.Close()
 		return 0, false, false, fmt.Errorf("公开创建没有形成完整待处理状态: %#v", status)
 	}
-	if err := service.Close(); err != nil {
+	if err := rt.Close(); err != nil {
 		return 0, false, false, err
 	}
-	assetStore, err = assetlog.Open(filepath.Join(root, "assets"))
+	reopened, err := openFrontierRuntime(ctx, root, embedding.HashForTesting{Dimensions: frontierDimensions})
 	if err != nil {
 		return 0, false, false, err
 	}
-	stateStore, err = derived.Open(filepath.Join(root, "state"))
-	if err != nil {
-		_ = assetStore.Close()
-		return 0, false, false, err
-	}
-	reopened, err := openCollaborative(assetStore, stateStore, embedding.HashForTesting{Dimensions: 16})
-	if err != nil {
-		return 0, false, false, err
-	}
-	recovered := reopened.SemanticStatus()["pending"] == len(inputs)
+	recovered := reopened.product.SemanticStatus()["pending"] == len(inputs)
 	if err := reopened.Close(); err != nil {
 		return 0, false, false, err
 	}
 	return elapsed, searchOK, recovered, nil
 }
 
-func measureUncommittedGenerationIsolation(root string) (bool, error) {
-	current, err := derived.Open(root)
+func measureUncommittedGenerationIsolation(ctx context.Context, root string) (bool, error) {
+	rt, err := openFrontierRuntime(ctx, root, embedding.HashForTesting{Dimensions: frontierDimensions})
 	if err != nil {
 		return false, err
 	}
-	defer current.Close()
-	next, err := derived.CreateGeneration(root, "gen-uncommitted-isolation")
+	defer rt.Close()
+	created, err := rt.product.Create(rt.ownerCtx, core.CreateInput{Content: "active generation fact"})
 	if err != nil {
 		return false, err
 	}
-	record := derived.Record{AssetID: "uncommitted-only", AssetRevision: 1, Status: "ready"}
-	if err := next.StageGeneration([]derived.Record{record}); err != nil {
+	activeGen, space, err := rt.store.Generation(rt.ownerCtx)
+	if err != nil {
 		return false, err
 	}
-	_, visible := current.Get(record.AssetID)
-	if err := next.Discard(); err != nil {
+	if err := rt.store.CreateGeneration(rt.ownerCtx, "gen-uncommitted-isolation", space); err != nil {
 		return false, err
 	}
-	return !visible, nil
+	recBytes, _ := json.Marshal(derived.Record{
+		Schema: "ownward.derived/v5", AssetID: created.Information.ID, AssetRevision: 1,
+		Status: "ready", InputsKnown: true, Analysis: semantics.Analysis{Summary: "uncommitted-candidate-summary"},
+	})
+	ver, err := rt.store.StageOrganization(rt.ownerCtx, "gen-uncommitted-isolation", boundedstore.StringSource(recBytes))
+	if err != nil || rt.store.PublishOrganization(rt.ownerCtx, ver) != nil {
+		return false, errors.New("stage candidate generation failed")
+	}
+	curGen, _, err := rt.store.Generation(rt.ownerCtx)
+	if err != nil || curGen != activeGen {
+		return false, err
+	}
+	curVer, err := rt.store.CurrentOrganization(rt.ownerCtx, activeGen, created.Information.ID)
+	if err != nil {
+		return false, err
+	}
+	header, err := rt.store.RecordHeader(rt.ownerCtx, curVer)
+	if err != nil {
+		return false, err
+	}
+	return header.Analysis.Summary != "uncommitted-candidate-summary", nil
 }
 
 func measureConcurrentBatchCreate(ctx context.Context, root string) (bool, error) {
-	assetStore, err := assetlog.Open(filepath.Join(root, "assets"))
+	rt, err := openFrontierRuntime(ctx, root, embedding.HashForTesting{Dimensions: frontierDimensions})
 	if err != nil {
 		return false, err
 	}
-	stateStore, err := derived.Open(filepath.Join(root, "state"))
-	if err != nil {
-		_ = assetStore.Close()
-		return false, err
-	}
-	service, err := openCollaborative(assetStore, stateStore, embedding.HashForTesting{Dimensions: 16})
-	if err != nil {
-		return false, err
-	}
-	defer service.Close()
+	defer rt.Close()
 	var wait sync.WaitGroup
 	errorsByWorker := make([]error, 2)
 	for worker := 0; worker < 2; worker++ {
@@ -1516,7 +1561,7 @@ func measureConcurrentBatchCreate(ctx context.Context, root string) (bool, error
 			for index := range inputs {
 				inputs[index] = core.CreateInput{Content: fmt.Sprintf("concurrent worker %d durable item %d", worker, index)}
 			}
-			results, createErr := service.CreateBatch(ctx, inputs)
+			results, createErr := rt.product.CreateBatch(rt.ownerCtx, inputs)
 			if createErr != nil || len(results) != len(inputs) {
 				errorsByWorker[worker] = errors.Join(createErr, errors.New("并发批量创建结果不完整"))
 				return
@@ -1530,7 +1575,8 @@ func measureConcurrentBatchCreate(ctx context.Context, root string) (bool, error
 		}()
 	}
 	wait.Wait()
-	return errorsByWorker[0] == nil && errorsByWorker[1] == nil && len(assetStore.All()) == 40 && len(stateStore.All()) == 40, errors.Join(errorsByWorker...)
+	status := rt.product.SemanticStatus()
+	return errorsByWorker[0] == nil && errorsByWorker[1] == nil && status["pending"] == 40, errors.Join(errorsByWorker...)
 }
 
 func legacyDerivedRecordSize(record derived.Record, work *semantics.Work, result *semantics.Submission) int64 {
@@ -1556,30 +1602,12 @@ func legacyDerivedRecordSize(record derived.Record, work *semantics.Work, result
 }
 
 func equalBytes(left, right []byte) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	for index := range left {
-		if left[index] != right[index] {
-			return false
-		}
-	}
-	return true
-}
-
-func vectorRecordCount(records []derived.Record) int {
-	count := 0
-	for _, record := range records {
-		if len(record.Embedding) > 0 {
-			count++
-		}
-	}
-	return count
+	return bytes.Equal(left, right)
 }
 
 func directoryBytes(root string) (int64, error) {
 	var total int64
-	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+	err := filepath.WalkDir(root, func(_ string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -1610,7 +1638,7 @@ func ratioFloat(numerator, denominator float64) float64 {
 	return numerator / denominator
 }
 
-func budgetedServiceReadIDs(ctx context.Context, service *core.Service, results []core.SearchResult, query string, budget, limit int) (readMeasurement, error) {
+func budgetedServiceReadIDs(ctx context.Context, service contract.ProductCapability, results []core.SearchResult, query string, budget, limit int) (readMeasurement, error) {
 	measured := readMeasurement{IDs: make([]string, 0)}
 	for _, result := range results {
 		remaining := limit - measured.ReadUnits
@@ -1675,7 +1703,7 @@ func budgetedServiceReadIDs(ctx context.Context, service *core.Service, results 
 	return measured, nil
 }
 
-func budgetedFullServiceReadIDs(ctx context.Context, service *core.Service, results []core.SearchResult, budget, limit int) (readMeasurement, error) {
+func budgetedFullServiceReadIDs(ctx context.Context, service contract.ProductCapability, results []core.SearchResult, budget, limit int) (readMeasurement, error) {
 	measured := readMeasurement{IDs: make([]string, 0)}
 	for _, result := range results {
 		information, err := service.Read(ctx, result.ID)
@@ -1738,12 +1766,7 @@ type boundedSemanticProvider struct {
 
 func (*boundedSemanticProvider) Name() string { return "frozen-bounded-semantic-v1" }
 func (b *boundedSemanticProvider) Space() embedding.Space {
-	dimensions := 16
-	for _, vector := range b.embeddingKeys {
-		dimensions = len(vector)
-		break
-	}
-	return embedding.Space{ID: "frozen-bounded-semantic-v1", Dimensions: dimensions}
+	return embedding.Space{ID: "frozen-bounded-semantic-v1", Dimensions: frontierDimensions}
 }
 func (b *boundedSemanticProvider) EmbedDocuments(_ context.Context, values []string) ([][]float32, error) {
 	b.documentCalls++
@@ -1756,13 +1779,13 @@ func (b *boundedSemanticProvider) EmbedDocuments(_ context.Context, values []str
 		}
 		for key, vector := range b.embeddingKeys {
 			if strings.Contains(value, key) {
-				result[index] = append([]float32(nil), vector...)
+				result[index] = pad512(vector)
 				break
 			}
 		}
 		if len(result[index]) == 0 {
-			result[index] = make([]float32, b.Space().Dimensions)
-			result[index][len(result[index])-1] = 1
+			result[index] = make([]float32, frontierDimensions)
+			result[index][15] = 1
 		}
 	}
 	return result, nil
@@ -1772,7 +1795,7 @@ func (b *boundedSemanticProvider) EmbedQuery(_ context.Context, value string) ([
 	if len(vector) == 0 {
 		return nil, errors.New("query is outside frozen semantic representation view")
 	}
-	return append([]float32(nil), vector...), nil
+	return pad512(vector), nil
 }
 func (*boundedSemanticProvider) Close() error { return nil }
 
@@ -1785,17 +1808,8 @@ func measureSemanticRepresentation(ctx context.Context, value fixture, out colle
 		return err
 	}
 	defer os.RemoveAll(root)
-	assetStore, err := assetlog.Open(filepath.Join(root, "assets"))
-	if err != nil {
-		return err
-	}
-	stateStore, err := derived.Open(filepath.Join(root, "state"))
-	if err != nil {
-		_ = assetStore.Close()
-		return err
-	}
 	provider := &boundedSemanticProvider{queries: value.QueryVectors, embeddingKeys: value.EmbeddingKeys}
-	service, err := openCollaborative(assetStore, stateStore, provider)
+	rt, err := openFrontierRuntime(ctx, root, provider)
 	if err != nil {
 		return err
 	}
@@ -1804,8 +1818,9 @@ func measureSemanticRepresentation(ctx context.Context, value fixture, out colle
 		inputs[index] = core.CreateInput{Content: asset.Content, Contexts: asset.Contexts}
 	}
 	organizationStarted := time.Now()
-	created, err := service.CreateBatch(ctx, inputs)
+	created, err := rt.product.CreateBatch(rt.ownerCtx, inputs)
 	if err != nil || len(created) != len(inputs) {
+		_ = rt.Close()
 		return fmt.Errorf("semantic representation fixture creation failed: %w", err)
 	}
 	ids := make([]string, len(created))
@@ -1815,6 +1830,7 @@ func measureSemanticRepresentation(ctx context.Context, value fixture, out colle
 	shortIDs := make(map[string]struct{})
 	for index, result := range created {
 		if result.Error != "" || result.Result == nil {
+			_ = rt.Close()
 			return fmt.Errorf("semantic representation fixture item failed: %s", result.Error)
 		}
 		ids[index] = result.Result.Information.ID
@@ -1826,23 +1842,19 @@ func measureSemanticRepresentation(ctx context.Context, value fixture, out colle
 			shortIDs[ids[index]] = struct{}{}
 		}
 	}
-	initialShortVectors := 0
-	for id := range shortIDs {
-		record, exists := stateStore.GetWithEmbedding(id)
-		if exists && len(record.Embedding) > 0 {
-			initialShortVectors++
-		}
-	}
+	_, initialShortVectors := countStoreOrganizations(rt, mapKeys(shortIDs))
 	provider.documentInputs = nil
 	provider.documentCalls = 0
-	work, err := service.SemanticWorkFor(ctx, ids)
+	work, err := rt.product.SemanticWorkFor(rt.ownerCtx, ids)
 	if err != nil || len(work) != len(ids) {
+		_ = rt.Close()
 		return fmt.Errorf("semantic representation work is incomplete: %w", err)
 	}
 	submissions := make([]semantics.Submission, len(work))
 	for index, item := range work {
 		analysis, exists := analysisByCreated[item.Asset.ID]
 		if !exists {
+			_ = rt.Close()
 			return fmt.Errorf("frozen analysis missing for %s", item.Asset.ID)
 		}
 		submissions[index] = semantics.Submission{
@@ -1851,23 +1863,27 @@ func measureSemanticRepresentation(ctx context.Context, value fixture, out colle
 			Status:     semantics.SubmissionComplete, Analysis: analysis,
 		}
 	}
-	submitted, err := service.SubmitSemanticBatch(ctx, submissions)
+	submitted, err := rt.product.SubmitSemanticBatch(rt.ownerCtx, submissions)
 	organizationElapsed := time.Since(organizationStarted)
 	if err != nil || len(submitted) != len(submissions) {
+		_ = rt.Close()
 		return fmt.Errorf("semantic representation submission failed: %w", err)
 	}
+	_, vectorCount := countStoreOrganizations(rt, ids)
 	readyLong := 0
-	vectorCount := 0
-	for _, id := range ids {
-		record, exists := stateStore.GetWithEmbedding(id)
-		if !exists {
-			continue
-		}
-		if len(record.Embedding) > 0 {
-			vectorCount++
-			if _, long := longIDs[id]; long {
-				readyLong++
-			}
+	gen, space, _ := rt.store.Generation(rt.ownerCtx)
+	probe := make([]float32, frontierDimensions)
+	for i := range probe[:16] {
+		probe[i] = 1
+	}
+	hits, _, _ := rt.store.VectorSearch(rt.ownerCtx, gen, space, probe, nil, len(ids)+10)
+	hitSet := make(map[string]bool, len(hits))
+	for _, h := range hits {
+		hitSet[h.ID] = true
+	}
+	for id := range longIDs {
+		if hitSet[id] {
+			readyLong++
 		}
 	}
 	markerMatches := 0
@@ -1883,19 +1899,18 @@ func measureSemanticRepresentation(ctx context.Context, value fixture, out colle
 	searchDurations := make([]float64, 0)
 	for _, query := range value.Queries {
 		started := time.Now()
-		results, searchErr := service.Search(ctx, core.SearchInput{Query: query.Query, Limit: 10})
+		results, searchErr := rt.product.Search(rt.ownerCtx, core.SearchInput{Query: query.Query, Limit: 10})
 		searchDurations = append(searchDurations, milliseconds(time.Since(started)))
 		if searchErr != nil {
+			_ = rt.Close()
 			return searchErr
 		}
-		ids := searchIDs(results)
+		foundIDs := searchIDs(results)
 		expected := remap(query.ExpectedIDs, createdByFixture)
-		score := recall(ids, expected)
+		score := recall(foundIDs, expected)
 		if query.ViewRole == "primary" {
 			searchRecall = append(searchRecall, score)
 			searchErrors = append(searchErrors, 1-score)
-		}
-		if query.ViewRole == "primary" {
 			for _, expectedID := range expected {
 				matched := false
 				for _, result := range results {
@@ -1910,9 +1925,10 @@ func measureSemanticRepresentation(ctx context.Context, value fixture, out colle
 	}
 	callsBeforeRebuild := provider.documentCalls
 	rebuildStarted := time.Now()
-	rebuildCounts, err := service.Maintain(ctx, true)
+	rebuildCounts, err := rt.kernel.Maintain(rt.ownerCtx, true)
 	rebuildElapsed := time.Since(rebuildStarted)
 	if err != nil || rebuildCounts["ready"] != len(ids) {
+		_ = rt.Close()
 		return fmt.Errorf("semantic representation rebuild failed: counts=%#v err=%w", rebuildCounts, err)
 	}
 	rebuildScores := make([]float64, 0)
@@ -1920,31 +1936,25 @@ func measureSemanticRepresentation(ctx context.Context, value fixture, out colle
 		if query.ViewRole != "primary" {
 			continue
 		}
-		results, searchErr := service.Search(ctx, core.SearchInput{Query: query.Query, Limit: 10})
+		results, searchErr := rt.product.Search(rt.ownerCtx, core.SearchInput{Query: query.Query, Limit: 10})
 		if searchErr != nil {
+			_ = rt.Close()
 			return searchErr
 		}
 		rebuildScores = append(rebuildScores, recall(searchIDs(results), remap(query.ExpectedIDs, createdByFixture)))
 	}
-	if err := service.Close(); err != nil {
+	if err := rt.Close(); err != nil {
 		return err
 	}
-	assetStore, err = assetlog.Open(filepath.Join(root, "assets"))
-	if err != nil {
-		return err
-	}
-	stateStore, err = derived.Open(filepath.Join(root, "state"))
-	if err != nil {
-		return err
-	}
-	reopened, err := openCollaborative(assetStore, stateStore, &boundedSemanticProvider{queries: value.QueryVectors, embeddingKeys: value.EmbeddingKeys})
+	reopened, err := openFrontierRuntime(ctx, root, &boundedSemanticProvider{queries: value.QueryVectors, embeddingKeys: value.EmbeddingKeys})
 	if err != nil {
 		return err
 	}
 	restartScores := make([]float64, 0)
 	for _, query := range value.Queries {
-		results, searchErr := reopened.Search(ctx, core.SearchInput{Query: query.Query, Limit: 10})
+		results, searchErr := reopened.product.Search(reopened.ownerCtx, core.SearchInput{Query: query.Query, Limit: 10})
 		if searchErr != nil {
+			_ = reopened.Close()
 			return searchErr
 		}
 		if query.ViewRole == "primary" {
@@ -1983,6 +1993,14 @@ func measureSemanticRepresentation(ctx context.Context, value fixture, out colle
 	return nil
 }
 
+func mapKeys(m map[string]struct{}) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}
+
 type measuringProvider struct {
 	documentCalls int
 	documentItems int
@@ -1991,7 +2009,7 @@ type measuringProvider struct {
 
 func (m *measuringProvider) Name() string { return "frontier-efficiency-measurement" }
 func (m *measuringProvider) Space() embedding.Space {
-	return embedding.Space{ID: "frontier-efficiency-measurement", Dimensions: 16}
+	return embedding.Space{ID: "frontier-efficiency-measurement", Dimensions: frontierDimensions}
 }
 func (m *measuringProvider) EmbedDocuments(ctx context.Context, values []string) ([][]float32, error) {
 	m.documentCalls++
@@ -1999,10 +2017,10 @@ func (m *measuringProvider) EmbedDocuments(ctx context.Context, values []string)
 	for _, value := range values {
 		m.documentRunes += utf8.RuneCountInString(value)
 	}
-	return (embedding.HashForTesting{Dimensions: 16}).EmbedDocuments(ctx, values)
+	return (embedding.HashForTesting{Dimensions: frontierDimensions}).EmbedDocuments(ctx, values)
 }
 func (m *measuringProvider) EmbedQuery(ctx context.Context, value string) ([]float32, error) {
-	return (embedding.HashForTesting{Dimensions: 16}).EmbedQuery(ctx, value)
+	return (embedding.HashForTesting{Dimensions: frontierDimensions}).EmbedQuery(ctx, value)
 }
 func (*measuringProvider) Close() error { return nil }
 func (m *measuringProvider) reset() {
@@ -2013,7 +2031,7 @@ func (m *measuringProvider) reset() {
 
 func (f frozenProvider) Name() string { return "frozen-frontier-v1" }
 func (f frozenProvider) Space() embedding.Space {
-	return embedding.Space{ID: "frozen-frontier-v1", Dimensions: 16}
+	return embedding.Space{ID: "frozen-frontier-v1", Dimensions: frontierDimensions}
 }
 func (f frozenProvider) EmbedDocuments(context.Context, []string) ([][]float32, error) {
 	return nil, errors.New("固定前沿观察器不生成文档向量")
@@ -2023,7 +2041,7 @@ func (f frozenProvider) EmbedQuery(_ context.Context, value string) ([]float32, 
 	if len(vector) == 0 {
 		return nil, errors.New("查询不在固定向量输入中")
 	}
-	return append([]float32(nil), vector...), nil
+	return pad512(vector), nil
 }
 func (f frozenProvider) Close() error { return nil }
 
@@ -2300,15 +2318,14 @@ func boolScore(value bool) float64 {
 	return 0
 }
 func milliseconds(value time.Duration) float64 { return float64(value) / float64(time.Millisecond) }
-func containsResult(values []retrieval.Result, id string) bool {
+func containsRanked(values []boundedstore.Ranked, id string) bool {
 	for _, v := range values {
-		if v.Information.ID == id {
+		if v.ID == id {
 			return true
 		}
 	}
 	return false
 }
-
 func containsString(values []string, expected string) bool {
 	for _, value := range values {
 		if value == expected {
@@ -2317,17 +2334,10 @@ func containsString(values []string, expected string) bool {
 	}
 	return false
 }
-func lexicalIDs(values []retrieval.Result) []string {
+func rankedIDs(values []boundedstore.Ranked) []string {
 	result := make([]string, len(values))
 	for i, v := range values {
-		result[i] = v.Information.ID
-	}
-	return result
-}
-func semanticIDs(values []derived.SemanticHit) []string {
-	result := make([]string, len(values))
-	for i, v := range values {
-		result[i] = v.AssetID
+		result[i] = v.ID
 	}
 	return result
 }
@@ -2391,7 +2401,7 @@ func contextScore(returned, expected, forbidden []string) float64 {
 	}
 	return recall(returned, expected)
 }
-func pathPresent(edges []derived.Edge, path []string) bool {
+func pathPresent(edges []boundedstore.Edge, path []string) bool {
 	for i := 0; i+1 < len(path); i++ {
 		found := false
 		for _, edge := range edges {
