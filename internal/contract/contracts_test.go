@@ -3,13 +3,10 @@ package contract_test
 import (
 	"testing"
 
-	"github.com/HJSunDev/ownward/internal/authorityport"
 	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/embedding"
 )
 
-var _ contract.AssetAuthority = (*authorityport.Current)(nil)
-var _ contract.AssetRestore = authorityport.Restore
 var _ contract.VectorCapability = embedding.Unavailable{}
 
 func TestContractCatalogIsVersionedAndDeterministic(t *testing.T) {

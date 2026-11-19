@@ -9,25 +9,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HJSunDev/ownward/internal/authoritysubstrate"
 	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/core"
 	"github.com/HJSunDev/ownward/internal/informationcontrol"
 )
 
 type interruptedKernel struct {
-	*core.Service
+	*core.StreamingAssets
 	stage string
 }
 
 func TestForgetDuringFrozenMigrationStopsUseBeforeOfflineCopyCleanup(t *testing.T) {
-	a, c, owner, _ := setup(t)
-	kernel, err := core.NewWithAuthority(a.Assets())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer kernel.Close()
-	product := informationcontrol.NewProduct(kernel, c)
+	env, c, owner, _ := setup(t)
+	product := informationcontrol.NewProduct(env.kernel, c)
 	defer product.Close()
 	value, err := product.Create(owner, contract.CreateInput{Content: "must stop being used during migration"})
 	if err != nil {
@@ -90,7 +84,7 @@ func TestForgetDuringFrozenMigrationStopsUseBeforeOfflineCopyCleanup(t *testing.
 }
 
 func (k interruptedKernel) StopUsing(targets, affected []contract.AssetVersion, id string, persist func([]contract.AssetVersion) error) error {
-	return k.Service.StopUsing(targets, affected, id, func(v []contract.AssetVersion) error {
+	return k.StreamingAssets.StopUsing(targets, affected, id, func(v []contract.AssetVersion) error {
 		if err := persist(v); err != nil {
 			return err
 		}
@@ -100,22 +94,19 @@ func (k interruptedKernel) StopUsing(targets, affected []contract.AssetVersion, 
 		return nil
 	})
 }
+
 func (k interruptedKernel) CleanForgotten() error {
 	if k.stage == "cleaning" {
 		return os.ErrPermission
 	}
-	return k.Service.CleanForgotten()
+	return k.StreamingAssets.CleanForgotten()
 }
 
 func TestForgetRecoversDurableBarrierAndCleanupAfterRestart(t *testing.T) {
 	for _, stage := range []string{"stopping", "cleaning"} {
 		t.Run(stage, func(t *testing.T) {
-			a, c, owner, root := setup(t)
-			s, err := core.NewWithAuthority(a.Assets())
-			if err != nil {
-				t.Fatal(err)
-			}
-			p := informationcontrol.NewProduct(interruptedKernel{s, stage}, c)
+			env, c, owner, root := setup(t)
+			p := informationcontrol.NewProduct(interruptedKernel{env.kernel, stage}, c)
 			value, err := p.Create(owner, contract.CreateInput{Content: "forget after interruption"})
 			if err != nil {
 				t.Fatal(err)
@@ -144,20 +135,13 @@ func TestForgetRecoversDurableBarrierAndCleanupAfterRestart(t *testing.T) {
 				}
 			}
 			p.Close()
-			s.Close()
-			a.Close()
-			reopened, err := authoritysubstrate.Open(root, initial)
-			if err != nil {
+			_ = env.kernel.Close()
+			if err := env.store.Close(); err != nil {
 				t.Fatal(err)
 			}
-			defer reopened.Close()
-			control := informationcontrol.New(reopened.Control())
-			service, err := core.NewWithAuthority(reopened.Assets())
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer service.Close()
-			product := informationcontrol.NewProduct(service, control)
+
+			reopenedEnv, control := openControlEnv(t, root, true)
+			product := informationcontrol.NewProduct(reopenedEnv.kernel, control)
 			defer product.Close()
 			deadline := time.Now().Add(3 * time.Second)
 			for time.Now().Before(deadline) {
@@ -184,13 +168,8 @@ func TestForgetRecoversDurableBarrierAndCleanupAfterRestart(t *testing.T) {
 }
 
 func TestConfirmationTargetChangeAndReceiptIsolation(t *testing.T) {
-	a, c, owner, _ := setup(t)
-	s, err := core.NewWithAuthority(a.Assets())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	p := informationcontrol.NewProduct(s, c)
+	env, c, owner, _ := setup(t)
+	p := informationcontrol.NewProduct(env.kernel, c)
 	defer p.Close()
 	_, token, err := c.Enroll(owner, "requester")
 	if err != nil {
@@ -225,13 +204,8 @@ func TestConfirmationTargetChangeAndReceiptIsolation(t *testing.T) {
 }
 
 func TestUserControlPreservesSearchResultsAndHasNoModelRound(t *testing.T) {
-	a, c, owner, _ := setup(t)
-	s, err := core.NewWithAuthority(a.Assets())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	p := informationcontrol.NewProduct(s, c)
+	env, c, owner, _ := setup(t)
+	p := informationcontrol.NewProduct(env.kernel, c)
 	defer p.Close()
 	for _, text := range []string{"travel train booking", "travel hotel address", "recipe vegetables"} {
 		if _, err := p.Create(owner, contract.CreateInput{Content: text}); err != nil {
@@ -239,7 +213,7 @@ func TestUserControlPreservesSearchResultsAndHasNoModelRound(t *testing.T) {
 		}
 	}
 	input := contract.SearchInput{Query: "travel", Limit: 10}
-	raw, err := s.Search(context.Background(), input)
+	raw, err := env.kernel.Search(owner, input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,7 +230,7 @@ func TestUserControlPreservesSearchResultsAndHasNoModelRound(t *testing.T) {
 		}
 	}
 	t.Logf("100 guarded searches: %s; per call: %s; external model calls: 0", time.Since(started), time.Since(started)/100)
-	if err := a.Backup(filepath.Join(t.TempDir(), "authorized.zip")); err != nil {
+	if err := env.store.ExportArchive(owner, filepath.Join(t.TempDir(), "authorized.zip")); err != nil {
 		t.Fatal(err)
 	}
 }

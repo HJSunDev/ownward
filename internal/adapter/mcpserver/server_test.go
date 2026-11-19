@@ -4,17 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
-	"github.com/HJSunDev/ownward/internal/assetlog"
-	"github.com/HJSunDev/ownward/internal/authorityport"
+	"github.com/HJSunDev/ownward/internal/boundedstore"
 	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/core"
-	"github.com/HJSunDev/ownward/internal/derived"
+	"github.com/HJSunDev/ownward/internal/domain"
 	"github.com/HJSunDev/ownward/internal/embedding"
+	"github.com/HJSunDev/ownward/internal/informationcontrol"
+	"github.com/HJSunDev/ownward/internal/resourcebudget"
 	"github.com/HJSunDev/ownward/internal/semantics"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -56,21 +58,7 @@ func TestServerDependsOnlyOnProductCapabilityAndUsesItsRules(t *testing.T) {
 
 func TestServerExposesUnifiedCoreOperations(t *testing.T) {
 	ctx := context.Background()
-	root := t.TempDir()
-	store, err := assetlog.Open(filepath.Join(root, "assets"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
-	state, err := derived.Open(filepath.Join(root, "state"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	service, err := openCollaborativeForTest(store, state)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer service.Close()
+	service := openCollaborativeForTest(t)
 	clientTransport, serverTransport := mcp.NewInMemoryTransports()
 	server := New(service, "test")
 	serverSession, err := server.MCP().Connect(ctx, serverTransport, nil)
@@ -144,11 +132,14 @@ func TestServerExposesUnifiedCoreOperations(t *testing.T) {
 	if err != nil || created.IsError {
 		t.Fatalf("create failed: result=%#v error=%v", created, err)
 	}
-	values := store.All()
-	if len(values) != 1 {
-		t.Fatalf("create did not reach the authoritative store: %#v", values)
+	var createdOut CreateOutput
+	if err := json.Unmarshal([]byte(created.Content[0].(*mcp.TextContent).Text), &createdOut); err != nil {
+		t.Fatal(err)
 	}
-	id := values[0].ID
+	id := createdOut.Result.Information.ID
+	if _, err := service.Read(ctx, id); err != nil {
+		t.Fatalf("create did not reach the authoritative store: %v", err)
+	}
 	read, err := clientSession.CallTool(ctx, &mcp.CallToolParams{Name: "ownward_read", Arguments: map[string]any{"id": id}})
 	if err != nil || read.IsError {
 		t.Fatalf("read failed: result=%#v error=%v", read, err)
@@ -159,9 +150,9 @@ func TestServerExposesUnifiedCoreOperations(t *testing.T) {
 	if err != nil || updated.IsError {
 		t.Fatalf("update failed: result=%#v error=%v", updated, err)
 	}
-	current, ok := store.Get(id)
-	if !ok || current.Revision != 2 {
-		t.Fatalf("update did not reach the authoritative store: %#v", current)
+	current, err := service.Read(ctx, id)
+	if err != nil || current.Revision != 2 {
+		t.Fatalf("update did not reach the authoritative store: %#v %v", current, err)
 	}
 	searched, err := clientSession.CallTool(ctx, &mcp.CallToolParams{
 		Name:      "ownward_search",
@@ -296,21 +287,7 @@ func assertStringEnum(t *testing.T, properties map[string]any, name string, expe
 
 func TestStreamableHTTPUsesTheSameCore(t *testing.T) {
 	ctx := context.Background()
-	root := t.TempDir()
-	store, err := assetlog.Open(filepath.Join(root, "assets"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
-	state, err := derived.Open(filepath.Join(root, "state"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	service, err := openCollaborativeForTest(store, state)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer service.Close()
+	service := openCollaborativeForTest(t)
 	httpServer := httptest.NewServer(New(service, "test").HTTPHandler())
 	defer httpServer.Close()
 	client := mcp.NewClient(&mcp.Implementation{Name: "streamable-http-test"}, nil)
@@ -325,15 +302,120 @@ func TestStreamableHTTPUsesTheSameCore(t *testing.T) {
 	if err != nil || created.IsError {
 		t.Fatalf("streamable HTTP create failed: result=%#v error=%v", created, err)
 	}
-	if len(store.All()) != 1 {
-		t.Fatalf("streamable HTTP did not reach the shared core: %#v", store.All())
+	var out CreateOutput
+	if err := json.Unmarshal([]byte(created.Content[0].(*mcp.TextContent).Text), &out); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := service.Read(ctx, out.Result.Information.ID); err != nil || got.Content != "同一常驻内核服务多个独立智能体会话。" {
+		t.Fatalf("streamable HTTP did not reach the shared core: %#v %v", got, err)
 	}
 }
 
-func openCollaborativeForTest(store *assetlog.Store, state *derived.Store) (*core.Service, error) {
-	authority, err := authorityport.Bind(store)
-	if err != nil {
-		return nil, err
+type preAuthenticatedProduct struct {
+	product *informationcontrol.Product
+	token   string
+}
+
+func (p preAuthenticatedProduct) auth(ctx context.Context) context.Context {
+	return informationcontrol.Authenticate(ctx, p.token)
+}
+func (p preAuthenticatedProduct) Rules(ctx context.Context) string { return p.product.Rules(ctx) }
+func (p preAuthenticatedProduct) Create(ctx context.Context, in contract.CreateInput) (contract.MutationResult, error) {
+	return p.product.Create(p.auth(ctx), in)
+}
+func (p preAuthenticatedProduct) CreateBatch(ctx context.Context, in []contract.CreateInput) ([]contract.MutationBatchResult, error) {
+	return p.product.CreateBatch(p.auth(ctx), in)
+}
+func (p preAuthenticatedProduct) Read(ctx context.Context, id string) (domain.Information, error) {
+	return p.product.Read(p.auth(ctx), id)
+}
+func (p preAuthenticatedProduct) ReadInformation(ctx context.Context, id string, opt ...contract.ReadOptions) (contract.InformationRead, error) {
+	return p.product.ReadInformation(p.auth(ctx), id, opt...)
+}
+func (p preAuthenticatedProduct) SearchEvidence(ctx context.Context, in contract.EvidenceSearchInput) ([]domain.EvidenceReference, error) {
+	return p.product.SearchEvidence(p.auth(ctx), in)
+}
+func (p preAuthenticatedProduct) ReadEvidence(ctx context.Context, id string) (domain.Evidence, error) {
+	return p.product.ReadEvidence(p.auth(ctx), id)
+}
+func (p preAuthenticatedProduct) ReadEvidenceWithBasis(ctx context.Context, id string) (contract.EvidenceRead, error) {
+	return p.product.ReadEvidenceWithBasis(p.auth(ctx), id)
+}
+func (p preAuthenticatedProduct) CheckInformation(ctx context.Context, bases []string) ([]contract.InformationCheck, error) {
+	return p.product.CheckInformation(p.auth(ctx), bases)
+}
+func (p preAuthenticatedProduct) Update(ctx context.Context, in contract.UpdateInput) (contract.MutationResult, error) {
+	return p.product.Update(p.auth(ctx), in)
+}
+func (p preAuthenticatedProduct) Organization(id string) (contract.OrganizationState, error) {
+	return p.product.Organization(id)
+}
+func (p preAuthenticatedProduct) Search(ctx context.Context, in contract.SearchInput) ([]contract.SearchResult, error) {
+	return p.product.Search(p.auth(ctx), in)
+}
+func (p preAuthenticatedProduct) Navigate(ctx context.Context, start, rel []string, depth, limit int) (contract.NavigationResult, error) {
+	return p.product.Navigate(p.auth(ctx), start, rel, depth, limit)
+}
+func (p preAuthenticatedProduct) SemanticWork(ctx context.Context, limit int) ([]semantics.Work, error) {
+	return p.product.SemanticWork(p.auth(ctx), limit)
+}
+func (p preAuthenticatedProduct) SemanticWorkFor(ctx context.Context, ids []string) ([]semantics.Work, error) {
+	return p.product.SemanticWorkFor(p.auth(ctx), ids)
+}
+func (p preAuthenticatedProduct) SubmitSemantic(ctx context.Context, sub semantics.Submission) (contract.OrganizationState, error) {
+	return p.product.SubmitSemantic(p.auth(ctx), sub)
+}
+func (p preAuthenticatedProduct) SubmitSemanticBatch(ctx context.Context, subs []semantics.Submission) ([]contract.SemanticSubmissionResult, error) {
+	return p.product.SubmitSemanticBatch(p.auth(ctx), subs)
+}
+func (p preAuthenticatedProduct) SemanticStatus() map[string]int {
+	return p.product.SemanticStatus()
+}
+
+func openCollaborativeForTest(t *testing.T) contract.ProductCapability {
+	t.Helper()
+	ctx := context.Background()
+	root := filepath.Join(t.TempDir(), "data")
+	scratch := filepath.Join(root, "scratch")
+	if err := os.MkdirAll(scratch, 0o700); err != nil {
+		t.Fatal(err)
 	}
-	return core.NewCollaborativeWithAuthority(authority, state, embedding.HashForTesting{Dimensions: 64})
+	budget, err := resourcebudget.New(20*resourcebudget.MiB, 4*resourcebudget.MiB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	embedder := embedding.HashForTesting{Dimensions: 512}
+	initState := contract.ControlState{Schema: contract.ControlStateSchema, Revision: 1, ActiveComposition: "test", ActiveKernelGeneration: "test"}
+	store, err := boundedstore.OpenDeployment(ctx, root, boundedstore.DeploymentOptions{
+		Options:     boundedstore.Options{Budget: budget},
+		VectorSpace: embedder.Space().ID,
+		Initialize: func(ctx context.Context, s *boundedstore.Store, _ string) error {
+			if _, err := s.OpenControlAuthority(ctx, initState); err != nil {
+				return err
+			}
+			return s.InitializeDeploymentSpace(ctx, embedder.Space().ID)
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := store.OpenControlAuthority(ctx, initState)
+	if err != nil {
+		_ = store.Close()
+		t.Fatal(err)
+	}
+	c := informationcontrol.New(a)
+	token, err := c.InitializeOwner("owner")
+	if err != nil {
+		_ = store.Close()
+		t.Fatal(err)
+	}
+	kernel := &core.StreamingAssets{Store: store, Budget: budget, Scratch: scratch, DiskBytes: 256 * resourcebudget.MiB, Embedder: embedder}
+	product := informationcontrol.NewProduct(kernel, c)
+	t.Cleanup(func() {
+		product.Close()
+		_ = kernel.Close()
+		_ = store.Close()
+	})
+	return preAuthenticatedProduct{product: product, token: token}
 }

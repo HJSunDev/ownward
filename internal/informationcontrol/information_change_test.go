@@ -2,19 +2,15 @@ package informationcontrol_test
 
 import (
 	"context"
-	"github.com/HJSunDev/ownward/internal/contract"
-	"github.com/HJSunDev/ownward/internal/core"
-	"github.com/HJSunDev/ownward/internal/informationcontrol"
 	"testing"
+
+	"github.com/HJSunDev/ownward/internal/contract"
+	"github.com/HJSunDev/ownward/internal/informationcontrol"
 )
 
 func TestInformationBasisUsesCurrentPrincipalAndForgetBarrier(t *testing.T) {
-	a, c, owner, _ := setup(t)
-	k, err := core.NewWithAuthority(a.Assets())
-	if err != nil {
-		t.Fatal(err)
-	}
-	p := informationcontrol.NewProduct(k, c)
+	env, c, owner, _ := setup(t)
+	p := informationcontrol.NewProduct(env.kernel, c)
 	defer p.Close()
 	created, err := p.Create(owner, contract.CreateInput{Content: "可授权的信息"})
 	if err != nil {

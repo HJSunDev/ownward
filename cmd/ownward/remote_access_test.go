@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -14,17 +15,18 @@ import (
 	"github.com/HJSunDev/ownward/internal/adapter/localowner"
 	"github.com/HJSunDev/ownward/internal/adapter/mcpserver"
 	"github.com/HJSunDev/ownward/internal/adapter/remote"
-	"github.com/HJSunDev/ownward/internal/authoritysubstrate"
+	"github.com/HJSunDev/ownward/internal/boundedstore"
 	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/core"
 	"github.com/HJSunDev/ownward/internal/informationcontrol"
+	"github.com/HJSunDev/ownward/internal/resourcebudget"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type remoteFixture struct {
 	c        *informationcontrol.Control
 	p        *informationcontrol.Product
-	kernel   *core.Service
+	kernel   *core.StreamingAssets
 	identity remote.Identity
 	client   *http.Client
 	owner    string
@@ -32,23 +34,45 @@ type remoteFixture struct {
 
 func newRemoteFixture(t *testing.T) remoteFixture {
 	t.Helper()
-	a, err := authoritysubstrate.Open(filepath.Join(t.TempDir(), "data"), contract.ControlState{Schema: contract.ControlStateSchema, Revision: 1, ActiveComposition: "test", ActiveKernelGeneration: "test"})
+	ctx := context.Background()
+	root := filepath.Join(t.TempDir(), "data")
+	scratch := filepath.Join(root, "scratch")
+	if err := os.MkdirAll(scratch, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	budget, err := resourcebudget.New(20*resourcebudget.MiB, 4*resourcebudget.MiB)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { a.Close() })
-	kernel, err := core.NewWithAuthority(a.Assets())
+	initState := contract.ControlState{Schema: contract.ControlStateSchema, Revision: 1, ActiveComposition: "test", ActiveKernelGeneration: "test"}
+	store, err := boundedstore.OpenDeployment(ctx, root, boundedstore.DeploymentOptions{
+		Options: boundedstore.Options{Budget: budget},
+		Initialize: func(ctx context.Context, s *boundedstore.Store, _ string) error {
+			_, err := s.OpenControlAuthority(ctx, initState)
+			return err
+		},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { kernel.Close() })
-	c := informationcontrol.New(a.Control())
+	a, err := store.OpenControlAuthority(ctx, initState)
+	if err != nil {
+		_ = store.Close()
+		t.Fatal(err)
+	}
+	kernel := &core.StreamingAssets{Store: store, Budget: budget, Scratch: scratch, DiskBytes: 256 * resourcebudget.MiB}
+	c := informationcontrol.New(a)
 	owner, err := c.InitializeOwner("owner")
 	if err != nil {
+		_ = store.Close()
 		t.Fatal(err)
 	}
 	p := informationcontrol.NewProduct(kernel, c)
-	t.Cleanup(p.Close)
+	t.Cleanup(func() {
+		p.Close()
+		_ = kernel.Close()
+		_ = store.Close()
+	})
 	srv := httptest.NewUnstartedServer(nil)
 	identity, err := remote.NewIdentity("https://"+srv.Listener.Addr().String(), "test")
 	if err != nil {
@@ -60,7 +84,10 @@ func newRemoteFixture(t *testing.T) remoteFixture {
 		t.Fatal(err)
 	}
 	srv.TLS = &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS13}
-	srv.Config.Handler = remoteHandler(identity.Location, controlHTTPServer{server: mcpserver.New(p, "test"), control: c, product: p, kernel: kernel, generation: kernel.OperationGeneration})
+	srv.Config.Handler = remoteHandler(identity.Location, controlHTTPServer{
+		server: mcpserver.New(p, "test"), control: c, product: p, kernel: kernel,
+		generation: func() uint64 { g, _ := store.OperationGeneration(context.Background()); return g },
+	})
 	srv.StartTLS()
 	t.Cleanup(srv.Close)
 	client, err := remote.Client(identity.Location, nil)

@@ -3,13 +3,14 @@ package core
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 
-	"github.com/HJSunDev/ownward/internal/assetlog"
-	"github.com/HJSunDev/ownward/internal/authorityport"
-	"github.com/HJSunDev/ownward/internal/derived"
+	"github.com/HJSunDev/ownward/internal/boundedstore"
+	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/domain"
 	"github.com/HJSunDev/ownward/internal/embedding"
+	"github.com/HJSunDev/ownward/internal/resourcebudget"
 	"github.com/HJSunDev/ownward/internal/semantics"
 )
 
@@ -52,8 +53,26 @@ func TestSemanticSubmissionBindingRejectsEveryUntrustedIdentity(t *testing.T) {
 	}
 }
 
+type testSemanticCapability struct{ provider semantics.Provider }
+
+func (value testSemanticCapability) Identity() semantics.Capability {
+	return semantics.Capability{ID: value.provider.Name(), Version: "test-provider-v1", Execution: "in-process"}
+}
+
+func (value testSemanticCapability) Analyze(ctx context.Context, work semantics.Work) (semantics.Submission, error) {
+	analysis, err := value.provider.Analyze(ctx, work.Asset, work.Candidates)
+	if err != nil {
+		return semantics.Submission{}, err
+	}
+	return semantics.Submission{
+		Schema: semantics.SubmissionSchema, WorkID: work.ID, AssetID: work.Asset.ID,
+		Revision: work.Asset.Revision, Capability: value.Identity(), Status: semantics.SubmissionComplete,
+		Analysis: analysis,
+	}, nil
+}
+
 func TestLegacySemanticAdapterRemainsBindingEquivalent(t *testing.T) {
-	semantic, _ := adaptProvider(semantics.Heuristic{})
+	semantic := testSemanticCapability{provider: semantics.Heuristic{}}
 	asset := domain.Information{
 		ID: "asset-current", Revision: 1,
 		Relations: []domain.ExplicitRelation{{Type: "supports", TargetID: "candidate-current"}},
@@ -71,73 +90,92 @@ func TestLegacySemanticAdapterRemainsBindingEquivalent(t *testing.T) {
 	}
 }
 
-type adversarialSemantic struct {
-	identity semantics.Capability
-	attack   bool
+func openAuthenticatedStreaming(t *testing.T) (context.Context, *StreamingAssets, *boundedstore.Store) {
+	t.Helper()
+	ctx := context.Background()
+	root := t.TempDir()
+	budget, err := resourcebudget.New(20*resourcebudget.MiB, 4*resourcebudget.MiB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := boundedstore.Open(ctx, filepath.Join(root, "test.sqlite"), boundedstore.Options{Budget: budget})
+	if err != nil {
+		t.Fatal(err)
+	}
+	embedder := embedding.HashForTesting{Dimensions: 512}
+	if _, err := store.InitializeGeneration(ctx, embedder.Space().ID); err != nil {
+		store.Close()
+		t.Fatal(err)
+	}
+	digest := strings.Repeat("a", 64)
+	principal := contract.Principal{
+		ID: "owner", Revision: 1, CredentialDigest: digest,
+		Permissions: []contract.Permission{contract.ReadPermission, contract.MaintainPermission},
+	}
+	if err := store.PublishAccess(ctx, boundedstore.AccessHeader{System: "test-system", Revision: 1}, 0, []contract.Principal{principal}); err != nil {
+		store.Close()
+		t.Fatal(err)
+	}
+	authCtx := contract.WithAuthenticationDigest(ctx, digest)
+	t.Cleanup(func() { _ = store.Close() })
+	return authCtx, &StreamingAssets{
+		Store: store, Budget: budget, Scratch: root, DiskBytes: 128 * resourcebudget.MiB, Embedder: embedder,
+	}, store
 }
 
-func (value *adversarialSemantic) Identity() semantics.Capability { return value.identity }
-
-func (value *adversarialSemantic) Analyze(_ context.Context, work semantics.Work) (semantics.Submission, error) {
-	submission := semantics.Submission{
-		Schema: semantics.SubmissionSchema, WorkID: work.ID, AssetID: work.Asset.ID,
-		Revision: work.Asset.Revision, Capability: value.identity, Status: semantics.SubmissionComplete,
-		Analysis: semantics.Analysis{Summary: "legal summary"},
+func withOp(t *testing.T, ctx context.Context, store *boundedstore.Store, id string) context.Context {
+	t.Helper()
+	gen, err := store.OperationGeneration(ctx)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if value.attack {
-		submission.Analysis = semantics.Analysis{Summary: "looks valid", Relations: []semantics.Relation{{
-			Type: "supports", TargetID: "forged-target", Confidence: 1, Evidence: "looks valid",
-		}}}
-	}
-	return submission, nil
+	return contract.WithOperation(ctx, contract.OperationIdentity{
+		ID: id, System: "test-system", Principal: "owner", Generation: gen,
+	})
 }
 
 func TestRejectedSemanticSubmissionCannotWriteDerivedOrganization(t *testing.T) {
-	root := t.TempDir()
-	assets, err := assetlog.Open(filepath.Join(root, "assets"))
+	ctx, service, store := openAuthenticatedStreaming(t)
+	target, err := service.Create(withOp(t, ctx, store, "op-target"), CreateInput{Kind: domain.KindKnowledge, Content: "trusted target"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer assets.Close()
-	authority, err := authorityport.Bind(assets)
-	if err != nil {
-		t.Fatal(err)
-	}
-	state, err := derived.Open(filepath.Join(root, "state"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	semantic := &adversarialSemantic{identity: semantics.Capability{ID: "adversarial", Version: "v1", Execution: "in-process"}}
-	service, err := NewOrganizedWithCapabilities(authority, state, semantic, embedding.HashForTesting{Dimensions: 32})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer service.Close()
-	target, err := service.Create(context.Background(), CreateInput{Kind: domain.KindKnowledge, Content: "trusted target"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	semantic.attack = true
-	source, err := service.Create(context.Background(), CreateInput{
+	source, err := service.Create(withOp(t, ctx, store, "op-source"), CreateInput{
 		Kind: domain.KindKnowledge, Content: "trusted source",
 		Relations: []domain.ExplicitRelation{{Type: "related_to", TargetID: target.Information.ID}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if source.Organization.Status != "pending" {
-		t.Fatalf("untrusted result did not use safe degradation: %#v", source.Organization)
+	works, err := service.SemanticWorkFor(ctx, []string{source.Information.ID})
+	if err != nil || len(works) != 1 {
+		t.Fatalf("expected pending semantic work, got %#v err=%v", works, err)
 	}
-	record, exists := state.Get(source.Information.ID)
-	if !exists || record.Status != "pending" || record.Analysis.Summary != "" || len(record.Analysis.Relations) != 1 ||
-		record.Analysis.Relations[0].Type != "related_to" || record.Analysis.Relations[0].TargetID != target.Information.ID {
-		t.Fatalf("untrusted analysis reached derived organization: %#v", record)
+	work := works[0]
+	forged := semantics.Submission{
+		Schema: semantics.SubmissionSchema, WorkID: work.ID, AssetID: work.Asset.ID,
+		Revision:   work.Asset.Revision,
+		Capability: semantics.Capability{ID: "adversarial", Version: "v1", Execution: "external"},
+		Status:     semantics.SubmissionComplete,
+		Analysis: semantics.Analysis{
+			Summary: "looks valid",
+			Relations: []semantics.Relation{{
+				Type: "supports", TargetID: "forged-target", Confidence: 1, Evidence: "looks valid",
+			}},
+		},
 	}
-	authoritative, err := service.Read(context.Background(), source.Information.ID)
+	if _, err := service.SubmitSemantic(ctx, forged); err == nil {
+		t.Fatal("forged non-candidate target relation was accepted")
+	}
+	orgState, err := service.Organization(source.Information.ID)
+	if err != nil || orgState.Status != "pending" {
+		t.Fatalf("rejected semantic submission altered pending organization state: %#v err=%v", orgState, err)
+	}
+	authoritative, err := service.Read(ctx, source.Information.ID)
 	if err != nil || authoritative.Content != "trusted source" || len(authoritative.Relations) != 1 || authoritative.Relations[0].TargetID != target.Information.ID {
-		t.Fatalf("semantic result changed authoritative asset: %#v %v", authoritative, err)
+		t.Fatalf("semantic submission changed authoritative asset: %#v %v", authoritative, err)
 	}
-	if _, exists := authority.ReadCurrent("forged-target"); exists {
-		t.Fatal("semantic result created an authoritative target")
+	if _, err := service.Read(ctx, "forged-target"); err == nil {
+		t.Fatal("semantic submission created an authoritative target")
 	}
 }

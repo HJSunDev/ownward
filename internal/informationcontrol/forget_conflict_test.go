@@ -5,18 +5,12 @@ import (
 	"testing"
 
 	"github.com/HJSunDev/ownward/internal/contract"
-	"github.com/HJSunDev/ownward/internal/core"
 	"github.com/HJSunDev/ownward/internal/informationcontrol"
 )
 
-func TestForgetConflictEndsWithLegacyKernel(t *testing.T) {
-	a, c, owner, _ := setup(t)
-	k, e := core.NewWithAuthority(a.Assets())
-	if e != nil {
-		t.Fatal(e)
-	}
-	defer k.Close()
-	p := informationcontrol.NewProduct(k, c)
+func TestForgetConflictEndsWithStreamingKernel(t *testing.T) {
+	env, c, owner, _ := setup(t)
+	p := informationcontrol.NewProduct(env.kernel, c)
 	defer p.Close()
 	value, e := p.Create(owner, contract.CreateInput{Content: "before edit"})
 	if e != nil {

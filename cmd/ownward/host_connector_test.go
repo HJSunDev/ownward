@@ -4,16 +4,18 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/HJSunDev/ownward/internal/adapter/mcpserver"
-	"github.com/HJSunDev/ownward/internal/authoritysubstrate"
+	"github.com/HJSunDev/ownward/internal/boundedstore"
 	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/core"
 	"github.com/HJSunDev/ownward/internal/informationcontrol"
+	"github.com/HJSunDev/ownward/internal/resourcebudget"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -26,24 +28,47 @@ type hostFixture struct {
 
 func newHostFixture(t *testing.T) hostFixture {
 	t.Helper()
+	ctx := context.Background()
 	configuration := t.TempDir()
 	t.Setenv("APPDATA", configuration)
 	t.Setenv("XDG_CONFIG_HOME", configuration)
 	root := filepath.Join(t.TempDir(), "data")
-	a, err := authoritysubstrate.Open(root, contract.ControlState{Schema: contract.ControlStateSchema, Revision: 1, ActiveComposition: "test", ActiveKernelGeneration: "test"})
+	scratch := filepath.Join(root, "scratch")
+	if err := os.MkdirAll(scratch, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	budget, err := resourcebudget.New(20*resourcebudget.MiB, 4*resourcebudget.MiB)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = a.Close() })
-	kernel, err := core.NewWithAuthority(a.Assets())
+	initState := contract.ControlState{Schema: contract.ControlStateSchema, Revision: 1, ActiveComposition: "test", ActiveKernelGeneration: "test"}
+	store, err := boundedstore.OpenDeployment(ctx, root, boundedstore.DeploymentOptions{
+		Options: boundedstore.Options{Budget: budget},
+		Initialize: func(ctx context.Context, s *boundedstore.Store, _ string) error {
+			_, err := s.OpenControlAuthority(ctx, initState)
+			return err
+		},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = kernel.Close() })
-	c := informationcontrol.New(a.Control())
+	a, err := store.OpenControlAuthority(ctx, initState)
+	if err != nil {
+		_ = store.Close()
+		t.Fatal(err)
+	}
+	kernel := &core.StreamingAssets{Store: store, Budget: budget, Scratch: scratch, DiskBytes: 256 * resourcebudget.MiB}
+	c := informationcontrol.New(a)
 	p := informationcontrol.NewProduct(kernel, c)
-	t.Cleanup(p.Close)
-	service := controlHTTPServer{server: mcpserver.New(p, "test"), control: c, product: p, kernel: kernel}
+	t.Cleanup(func() {
+		p.Close()
+		_ = kernel.Close()
+		_ = store.Close()
+	})
+	service := controlHTTPServer{
+		server: mcpserver.New(p, "test"), control: c, product: p, kernel: kernel,
+		generation: func() uint64 { g, _ := store.OperationGeneration(context.Background()); return g },
+	}
 	if err := service.prepareRecovery(ownerRecoveryScope(root)); err != nil {
 		t.Fatal(err)
 	}

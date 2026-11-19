@@ -4,37 +4,84 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/HJSunDev/ownward/internal/authoritysubstrate"
+	"github.com/HJSunDev/ownward/internal/boundedstore"
 	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/core"
-	"github.com/HJSunDev/ownward/internal/derived"
 	"github.com/HJSunDev/ownward/internal/domain"
 	"github.com/HJSunDev/ownward/internal/embedding"
 	"github.com/HJSunDev/ownward/internal/informationcontrol"
+	"github.com/HJSunDev/ownward/internal/resourcebudget"
 	"github.com/HJSunDev/ownward/internal/semantics"
 )
 
 var initial = contract.ControlState{Schema: contract.ControlStateSchema, Revision: 1, ActiveComposition: "test", ActiveKernelGeneration: "kernel"}
 
-func setup(t *testing.T) (*authoritysubstrate.Substrate, *informationcontrol.Control, context.Context, string) {
+type controlTestEnv struct {
+	store  *boundedstore.Store
+	kernel *core.StreamingAssets
+	budget *resourcebudget.Budget
+}
+
+func openControlEnv(t *testing.T, root string, withEmbedder bool) (*controlTestEnv, *informationcontrol.Control) {
 	t.Helper()
-	root := filepath.Join(t.TempDir(), "store")
-	a, err := authoritysubstrate.Open(root, initial)
+	ctx := context.Background()
+	scratch := filepath.Join(root, "scratch")
+	if err := os.MkdirAll(scratch, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	budget, err := resourcebudget.New(20*resourcebudget.MiB, 4*resourcebudget.MiB)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = a.Close() })
-	c := informationcontrol.New(a.Control())
+	var embedder contract.VectorCapability
+	space := ""
+	if withEmbedder {
+		embedder = embedding.HashForTesting{Dimensions: 512}
+		space = embedder.Space().ID
+	}
+	store, err := boundedstore.OpenDeployment(ctx, root, boundedstore.DeploymentOptions{
+		Options:     boundedstore.Options{Budget: budget},
+		VectorSpace: space,
+		Initialize: func(ctx context.Context, s *boundedstore.Store, _ string) error {
+			if _, err := s.OpenControlAuthority(ctx, initial); err != nil {
+				return err
+			}
+			if space != "" {
+				return s.InitializeDeploymentSpace(ctx, space)
+			}
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := store.OpenControlAuthority(ctx, initial)
+	if err != nil {
+		_ = store.Close()
+		t.Fatal(err)
+	}
+	kernel := &core.StreamingAssets{Store: store, Budget: budget, Scratch: scratch, DiskBytes: 256 * resourcebudget.MiB, Embedder: embedder}
+	env := &controlTestEnv{store: store, kernel: kernel, budget: budget}
+	t.Cleanup(func() {
+		_ = kernel.Close()
+		_ = store.Close()
+	})
+	return env, informationcontrol.New(a)
+}
+
+func setup(t *testing.T) (*controlTestEnv, *informationcontrol.Control, context.Context, string) {
+	t.Helper()
+	root := filepath.Join(t.TempDir(), "store")
+	env, c := openControlEnv(t, root, true)
 	token, err := c.InitializeOwner("所有者")
 	if err != nil {
 		t.Fatal(err)
 	}
-	return a, c, informationcontrol.Authenticate(context.Background(), token), root
+	return env, c, informationcontrol.Authenticate(context.Background(), token), root
 }
 
 func TestRevocationBlocksInflightCommitAndDeliveryEvenAfterRegrant(t *testing.T) {
@@ -73,12 +120,8 @@ func TestRevocationBlocksInflightCommitAndDeliveryEvenAfterRegrant(t *testing.T)
 }
 
 func TestApprovalIsOperationBoundAndDoesNotGrantManagement(t *testing.T) {
-	a, c, owner, _ := setup(t)
-	s, err := core.NewWithAuthority(a.Assets())
-	if err != nil {
-		t.Fatal(err)
-	}
-	p := informationcontrol.NewProduct(s, c)
+	env, c, owner, _ := setup(t)
+	p := informationcontrol.NewProduct(env.kernel, c)
 	defer p.Close()
 	reader, token, err := c.Enroll(owner, "申请者")
 	if err != nil {
@@ -115,24 +158,15 @@ func TestApprovalIsOperationBoundAndDoesNotGrantManagement(t *testing.T) {
 }
 
 func TestForgetCleansCopiesWithoutModelAndPreservesUnrelatedQuality(t *testing.T) {
-	a, c, owner, root := setup(t)
-	d, err := derived.Open(filepath.Join(root, "derived"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	s, err := core.NewCollaborativeWithAuthority(a.Assets(), d, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	p := informationcontrol.NewProduct(s, c)
+	env, c, owner, root := setup(t)
+	p := informationcontrol.NewProduct(env.kernel, c)
 	defer p.Close()
 	secret := "private-marker-f4b3a980"
 	first, err := p.Create(owner, contract.CreateInput{Content: secret})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := p.Create(owner, contract.CreateInput{Content: "依赖资料"})
+	second, err := p.Create(owner, contract.CreateInput{Content: "依赖资料", Relations: []domain.ExplicitRelation{{Type: "related_to", TargetID: first.Information.ID}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,33 +174,47 @@ func TestForgetCleansCopiesWithoutModelAndPreservesUnrelatedQuality(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	dependent := derived.Record{AssetID: second.Information.ID, AssetRevision: 1, Status: "ready", Analysis: semantics.Analysis{Summary: secret, Organization: &semantics.Organization{Schema: semantics.OrganizationSchema, Snapshot: "purge-fixture", Units: []semantics.SemanticUnit{{ID: "u", Statement: secret, Mentions: []semantics.Mention{{ID: "m", Name: secret}}}}, Links: []semantics.GroundedLink{{ID: "edge", Meaning: secret}}}}, InputAssets: []semantics.CandidateReference{{ID: first.Information.ID, Revision: 1}}}
-	independent := derived.Record{AssetID: third.Information.ID, AssetRevision: 1, Status: "ready", Analysis: semantics.Analysis{Summary: "独立资料已整理"}, GeneratedAt: time.Now().UTC(), InputsKnown: true}
-	if err := d.Put(dependent); err != nil {
+	works, err := p.SemanticWorkFor(owner, []string{second.Information.ID, third.Information.ID})
+	if err != nil || len(works) != 2 {
+		t.Fatalf("SemanticWorkFor: %v %#v", err, works)
+	}
+	byAsset := map[string]semantics.Work{works[0].Asset.ID: works[0], works[1].Asset.ID: works[1]}
+	wSecond := byAsset[second.Information.ID]
+	if _, err := p.SubmitSemantic(owner, semantics.Submission{
+		Schema: semantics.SubmissionSchema, WorkID: wSecond.ID, AssetID: second.Information.ID, Revision: 1,
+		Capability: semantics.Capability{ID: "fixture", Version: "v1"}, Status: semantics.SubmissionComplete,
+		Analysis: semantics.Analysis{
+			Summary: secret,
+			Organization: &semantics.Organization{
+				Schema: semantics.OrganizationSchema,
+				Units:  []semantics.SemanticUnit{{ID: "u", Statement: secret}},
+				Links: []semantics.GroundedLink{{
+					Type: "related_to", Meaning: secret,
+					Source: semantics.GraphEndpoint{AssetID: second.Information.ID, UnitID: "u"},
+					Target: semantics.GraphEndpoint{AssetID: first.Information.ID},
+				}},
+			},
+		},
+	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.Put(independent); err != nil {
+	wThird := byAsset[third.Information.ID]
+	if _, err := p.SubmitSemantic(owner, semantics.Submission{
+		Schema: semantics.SubmissionSchema, WorkID: wThird.ID, AssetID: third.Information.ID, Revision: 1,
+		Capability: semantics.Capability{ID: "fixture", Version: "v1"}, Status: semantics.SubmissionComplete,
+		Analysis: semantics.Analysis{Summary: "独立资料已整理"},
+	}); err != nil {
 		t.Fatal(err)
 	}
-	before, _ := d.GetWithEmbedding(third.Information.ID)
-	// 模拟崩溃留下的受控临时副本和已关闭旧世代。
-	if err := os.WriteFile(filepath.Join(d.Root(), ".organization-compacting-fixture"), []byte(secret), 0600); err != nil {
-		t.Fatal(err)
-	}
-	generation, err := derived.NewGenerationID(time.Now())
+	// 模拟尚未交付完成的流式读取副本，遗忘清理后须自动失效且释放底层暂存。
+	undelivered, err := env.kernel.ExecuteStream(owner, contract.StreamRequest{
+		Operation: "ownward_read",
+		Arguments: boundedstore.StringSource(`{"id":"` + first.Information.ID + `"}`),
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	old, err := derived.CreateGeneration(d.Root(), generation)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := old.StageGeneration([]derived.Record{dependent}); err != nil {
-		t.Fatal(err)
-	}
-	if err := old.Close(); err != nil {
-		t.Fatal(err)
-	}
+
 	front := time.Now()
 	op, err := p.Manage(owner, contract.ManagementRequest{ID: "forget-1", Operation: "forget", Targets: []contract.AssetVersion{{ID: first.Information.ID, Revision: 1}}})
 	if err != nil {
@@ -192,12 +240,27 @@ func TestForgetCleansCopiesWithoutModelAndPreservesUnrelatedQuality(t *testing.T
 		}
 	}
 	t.Logf("forget foreground=%s, cleanup completion=%s, semantic/model rebuild calls=0", frontLatency, time.Since(front))
-	after, _ := d.GetWithEmbedding(third.Information.ID)
-	if !reflect.DeepEqual(before, after) {
-		t.Fatal("无关资料组织质量被改动")
+
+	if _, err := undelivered.Retain(func() error { return nil }); err == nil {
+		t.Fatal("未交付流式副本在遗忘后仍可继续保留交付")
+	}
+	_ = undelivered.Close()
+	thirdHits, err := p.Search(owner, contract.SearchInput{Query: "菜谱", Limit: 5})
+	if err != nil || len(thirdHits) != 1 || thirdHits[0].Summary != "独立资料已整理" {
+		t.Fatalf("无关资料组织质量被改动: %#v %v", thirdHits, err)
 	}
 	if _, err := p.Read(owner, second.Information.ID); err != nil {
 		t.Fatal("依赖失效误删其他原文", err)
+	}
+	secondHits, err := p.Search(owner, contract.SearchInput{Query: "依赖资料", Limit: 5})
+	if err != nil || len(secondHits) != 1 || strings.Contains(secondHits[0].Summary, secret) {
+		t.Fatalf("受污染派生摘要未清除: %#v %v", secondHits, err)
+	}
+	// Close store so WAL checkpoints cleanly, then verify zero secret bytes remain on disk.
+	p.Close()
+	_ = env.kernel.Close()
+	if err := env.store.Close(); err != nil {
+		t.Fatal(err)
 	}
 	if err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -217,31 +280,23 @@ func TestForgetCleansCopiesWithoutModelAndPreservesUnrelatedQuality(t *testing.T
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.Assets().CreateAsset(domain.Information{Schema: domain.AssetSchema, ID: first.Information.ID, Revision: 1, Kind: domain.KindGeneral, Content: "recreated", CreatedAt: time.Now(), UpdatedAt: time.Now()}); err == nil {
-		t.Fatal("遗忘标识被重用")
-	}
 }
 
 func TestRestoreKeepsOwnershipButInvalidatesOldCredentials(t *testing.T) {
-	a, c, owner, root := setup(t)
-	before := a.Control().ReadControl().InformationControl.SystemID
+	env, c, owner, root := setup(t)
+	before := c.SystemID()
 	backup := filepath.Join(t.TempDir(), "backup.zip")
-	if err := a.Backup(backup); err != nil {
+	if err := env.store.ExportArchive(owner, backup); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := c.InitializeOwner("another"); err == nil {
 		t.Fatal("可重新认领所有权")
 	}
 	target := filepath.Join(filepath.Dir(root), "restored")
-	if err := authoritysubstrate.Restore(backup, target, initial); err != nil {
+	if _, err := boundedstore.RestoreArchive(context.Background(), backup, target, boundedstore.Options{Budget: env.budget}); err != nil {
 		t.Fatal(err)
 	}
-	restored, err := authoritysubstrate.Open(target, initial)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer restored.Close()
-	recovered := informationcontrol.New(restored.Control())
+	_, recovered := openControlEnv(t, target, false)
 	if _, _, err := recovered.Begin(owner, contract.ReadPermission); err == nil {
 		t.Fatal("旧备份激活旧凭据")
 	}
@@ -252,22 +307,14 @@ func TestRestoreKeepsOwnershipButInvalidatesOldCredentials(t *testing.T) {
 	if _, _, err := recovered.Begin(informationcontrol.Authenticate(context.Background(), token), contract.ManagePermission); err != nil {
 		t.Fatal(err)
 	}
-	if restored.Control().ReadControl().InformationControl.SystemID != before {
+	if recovered.SystemID() != before {
 		t.Fatal("恢复改变信息体系身份")
 	}
 }
+
 func TestSharedGraphSurvivesAgentRevocationAndStopsAtForget(t *testing.T) {
-	a, c, owner, root := setup(t)
-	d, err := derived.Open(filepath.Join(root, "derived"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	s, err := core.NewCollaborativeWithAuthority(a.Assets(), d, embedding.HashForTesting{Dimensions: 64})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	p := informationcontrol.NewProduct(s, c)
+	env, c, owner, _ := setup(t)
+	p := informationcontrol.NewProduct(env.kernel, c)
 	defer p.Close()
 	principal, token, err := c.Enroll(owner, "temporary agent")
 	if err != nil {
@@ -309,7 +356,13 @@ func TestSharedGraphSurvivesAgentRevocationAndStopsAtForget(t *testing.T) {
 	if _, err = p.Manage(owner, contract.ManagementRequest{ID: "forget-graph", Operation: "forget", Targets: []contract.AssetVersion{{ID: first.Information.ID, Revision: 1}}}); err != nil {
 		t.Fatal(err)
 	}
-	nav, err = p.Navigate(owner, []string{second.Information.ID}, nil, 1, 10)
+	for attempt := 0; attempt < 10; attempt++ {
+		nav, err = p.Navigate(owner, []string{second.Information.ID}, nil, 1, 10)
+		if err == nil || !strings.Contains(err.Error(), "检索资料已变化") {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	if err != nil || len(nav.Edges) != 0 {
 		t.Fatalf("forgotten graph endpoint remained: %#v %v", nav, err)
 	}

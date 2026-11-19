@@ -72,7 +72,6 @@ func TestFrozenVectorFixture(t *testing.T) {
 	data, e := os.ReadFile(filepath.Join(dir, "query-cases.json"))
 	check(e)
 	check(json.Unmarshal(data, &cases))
-	old := derived.NewIndex(records)
 	type run struct {
 		Phase        string      `json:"phase"`
 		Query        int         `json:"query"`
@@ -86,12 +85,12 @@ func TestFrozenVectorFixture(t *testing.T) {
 			got, stats, e := s.VectorSearch(ctx, "g", "space", q, nil, 10)
 			ms := float64(time.Since(begin)) / float64(time.Millisecond)
 			check(e)
-			want := old.Search(q, nil, 10)
+			want := bruteForceVectorSearch(records, q, nil, 10)
 			if len(got) != len(want) {
 				t.Fatalf("count %d/%d", len(got), len(want))
 			}
 			for j := range got {
-				if got[j].ID != want[j].AssetID || got[j].Score != want[j].Score {
+				if got[j].ID != want[j].ID || math.Abs(got[j].Score-want[j].Score) > 1e-6 {
 					t.Fatalf("%s q%d rank%d mismatch", phase, i, j)
 				}
 			}

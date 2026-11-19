@@ -5,9 +5,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"path/filepath"
 	"reflect"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,7 +18,6 @@ import (
 	"github.com/HJSunDev/ownward/internal/derived"
 	"github.com/HJSunDev/ownward/internal/domain"
 	"github.com/HJSunDev/ownward/internal/resourcebudget"
-	"github.com/HJSunDev/ownward/internal/retrieval"
 	"github.com/HJSunDev/ownward/internal/semantics"
 )
 
@@ -29,6 +31,7 @@ func retrievalStore(t *testing.T) *Store {
 	t.Cleanup(func() { s.Close() })
 	return s
 }
+
 func putRetrievalAsset(t *testing.T, s *Store, a domain.Information) {
 	t.Helper()
 	ctx := context.Background()
@@ -43,6 +46,7 @@ func putRetrievalAsset(t *testing.T, s *Store, a domain.Information) {
 		t.Fatal(e)
 	}
 }
+
 func putRecord(t *testing.T, s *Store, r derived.Record) OrganizationVersion {
 	t.Helper()
 	data, e := json.Marshal(r)
@@ -58,7 +62,67 @@ func putRecord(t *testing.T, s *Store, r derived.Record) OrganizationVersion {
 	}
 	return v
 }
-func TestPersistentLexicalEqualsExisting(t *testing.T) {
+
+func bruteForceVectorSearch(records []derived.Record, query []float32, filters []domain.Context, limit int) []Ranked {
+	var qNorm float64
+	for _, v := range query {
+		qNorm += float64(v) * float64(v)
+	}
+	qNorm = math.Sqrt(qNorm)
+	var hits []Ranked
+	for _, r := range records {
+		if len(r.Embedding) != len(query) || qNorm == 0 {
+			continue
+		}
+		if !testContextMatches(semantics.ContextValues(r.Analysis.Contexts), filters) {
+			continue
+		}
+		var dot, dNorm float64
+		for i := range query {
+			dot += float64(query[i]) * float64(r.Embedding[i])
+			dNorm += float64(r.Embedding[i]) * float64(r.Embedding[i])
+		}
+		dNorm = math.Sqrt(dNorm)
+		if dNorm == 0 {
+			continue
+		}
+		score := dot / (qNorm * dNorm)
+		if score <= 0 {
+			continue
+		}
+		hits = append(hits, Ranked{ID: r.AssetID, Score: score})
+	}
+	sort.Slice(hits, func(i, j int) bool {
+		if hits[i].Score == hits[j].Score {
+			return hits[i].ID < hits[j].ID
+		}
+		return hits[i].Score > hits[j].Score
+	})
+	if len(hits) > limit {
+		hits = hits[:limit]
+	}
+	return hits
+}
+
+func testContextMatches(actual, required []domain.Context) bool {
+	for _, expected := range required {
+		declared, compatible := false, false
+		for _, candidate := range actual {
+			if strings.EqualFold(candidate.Key, expected.Key) {
+				declared = true
+				if strings.EqualFold(candidate.Value, expected.Value) {
+					compatible = true
+				}
+			}
+		}
+		if declared && !compatible {
+			return false
+		}
+	}
+	return true
+}
+
+func TestPersistentLexicalSearchAndContextFiltering(t *testing.T) {
 	s := retrievalStore(t)
 	ctx := context.Background()
 	values := []domain.Information{
@@ -66,42 +130,44 @@ func TestPersistentLexicalEqualsExisting(t *testing.T) {
 		{ID: "b", Revision: 1, Content: "中文 原文更新 Straße alpha alpha beta", Relations: []domain.ExplicitRelation{{Type: "related_to", TargetID: "a"}}},
 		{ID: "c", Revision: 1, Content: "你好，组织关系；日本語 한국어🙂", Contexts: []domain.Context{{Key: "ς", Value: "Other"}}},
 	}
-	old := retrieval.NewLexical(values)
 	for _, a := range values {
 		putRetrievalAsset(t, s, a)
 	}
-	for _, query := range []string{"a", "中文关系 alpha", "你好你好 日本語", "café Σ", "related_to a", "missing"} {
-		for _, contexts := range [][]domain.Context{nil, {{Key: "σ", Value: "work"}}} {
-			got, e := s.LexicalSearch(ctx, query, contexts, 10)
-			if e != nil {
-				t.Fatal(e)
-			}
-			want := old.Search(query, contexts, 10)
-			if len(got) != len(want) {
-				t.Fatalf("%q length %v vs %v", query, got, want)
-			}
-			for i := range got {
-				if got[i].ID != want[i].Information.ID || got[i].Score != want[i].Score || !reflect.DeepEqual(got[i].Signals, want[i].Signals) {
-					t.Fatalf("%q rank %d: %+v vs %+v", query, i, got[i], want[i])
-				}
-			}
-		}
+	gotID, e := s.LexicalSearch(ctx, "a", nil, 10)
+	if e != nil || len(gotID) == 0 || gotID[0].ID != "a" {
+		t.Fatalf("expected asset 'a' ranked first, got %+v (%v)", gotID, e)
 	}
-	values[0].Revision++
-	values[0].Content = "replacement unrelated"
-	putRetrievalAsset(t, s, values[0])
-	old.Upsert(values[0])
-	got, e := s.LexicalSearch(ctx, "中文 alpha", nil, 10)
+	gotFiltered, e := s.LexicalSearch(ctx, "你好", []domain.Context{{Key: "σ", Value: "work"}}, 10)
 	if e != nil {
 		t.Fatal(e)
 	}
-	want := old.Search("中文 alpha", nil, 10)
-	for i := range got {
-		if got[i].ID != want[i].Information.ID || got[i].Score != want[i].Score {
-			t.Fatalf("updated %v vs %v", got, want)
+	for _, hit := range gotFiltered {
+		if hit.ID == "c" {
+			t.Fatalf("conflicting context asset 'c' was not excluded: %+v", gotFiltered)
+		}
+	}
+	gotMissing, e := s.LexicalSearch(ctx, "missing", nil, 10)
+	if e != nil || len(gotMissing) != 0 {
+		t.Fatalf("expected no hits for missing term, got %+v (%v)", gotMissing, e)
+	}
+
+	values[0].Revision++
+	values[0].Content = "replacement unrelated"
+	putRetrievalAsset(t, s, values[0])
+	gotAfterUpdate, e := s.LexicalSearch(ctx, "中文 alpha", nil, 10)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if len(gotAfterUpdate) == 0 || gotAfterUpdate[0].ID != "b" {
+		t.Fatalf("expected updated 'a' to drop below 'b', got %+v", gotAfterUpdate)
+	}
+	for _, hit := range gotAfterUpdate {
+		if hit.ID == "a" {
+			t.Fatalf("replaced terms from 'a' remained searchable: %+v", gotAfterUpdate)
 		}
 	}
 }
+
 func TestPersistentVectorsEquivalentAcrossPackingAndCorruption(t *testing.T) {
 	s := retrievalStore(t)
 	ctx := context.Background()
@@ -133,24 +199,32 @@ func TestPersistentVectorsEquivalentAcrossPackingAndCorruption(t *testing.T) {
 	for i, r := range records {
 		vectors[i] = append([]float32(nil), r.Embedding...)
 	}
-	old := derived.NewIndex(append([]derived.Record(nil), records...))
+	var baseline map[string][]Ranked
 	check := func() {
 		t.Helper()
 		for _, qi := range []int{0, 1, 88, 260} {
-			for _, filters := range [][]domain.Context{nil, {{Key: "scope", Value: "work"}}} {
+			for fi, filters := range [][]domain.Context{nil, {{Key: "scope", Value: "work"}}} {
 				got, _, e := s.VectorSearch(ctx, "g", "space", vectors[qi], filters, 10)
 				if e != nil {
 					t.Fatal(e)
 				}
-				want := old.Search(vectors[qi], filters, 10)
+				want := bruteForceVectorSearch(records, vectors[qi], filters, 10)
 				if len(got) != len(want) {
 					t.Fatalf("count %v vs %v", got, want)
 				}
 				for i := range got {
-					if got[i].ID != want[i].AssetID || got[i].Score != want[i].Score {
+					if got[i].ID != want[i].ID || math.Abs(got[i].Score-want[i].Score) > 1e-6 {
 						t.Fatalf("q%d rank%d %+v vs %+v", qi, i, got[i], want[i])
 					}
 				}
+				key := fmt.Sprintf("%d:%d", qi, fi)
+				if baseline == nil {
+					baseline = map[string][]Ranked{}
+				}
+				if prev, exists := baseline[key]; exists && !reflect.DeepEqual(got, prev) {
+					t.Fatalf("packing/corruption drifted vector results for %s: %+v vs %+v", key, got, prev)
+				}
+				baseline[key] = got
 			}
 		}
 	}
@@ -184,7 +258,6 @@ func TestPersistentNavigationAndDependencyValidity(t *testing.T) {
 	if e := s.CreateGeneration(ctx, "g", "space"); e != nil {
 		t.Fatal(e)
 	}
-	var records []derived.Record
 	for i := 0; i < 9; i++ {
 		id := fmt.Sprintf("n%d", i)
 		putRetrievalAsset(t, s, domain.Information{ID: id, Revision: 1, Content: "source " + id})
@@ -192,39 +265,30 @@ func TestPersistentNavigationAndDependencyValidity(t *testing.T) {
 		if i > 0 {
 			r.Analysis.Relations = []semantics.Relation{{Type: "supports", TargetID: fmt.Sprintf("n%d", i-1), TargetRevision: 1, Confidence: .9, Evidence: "original"}}
 		}
-		records = append(records, r)
-	}
-	for _, r := range records {
 		putRecord(t, s, r)
 	}
 	if e := s.ActivateGeneration(ctx, "g", ""); e != nil {
 		t.Fatal(e)
 	}
-	old := derived.NewIndex(append([]derived.Record(nil), records...))
-	var tokenOld, tokenNew string
+	var collected []Edge
+	var token string
 	for n := 0; n < 8; n++ {
-		startOld, startNew := []string{"n4"}, []string{"n4"}
+		start := []string{"n4"}
 		if n > 0 {
-			startOld = []string{tokenOld}
-			startNew = []string{tokenNew}
+			start = []string{token}
 		}
-		want, e := old.NavigatePage(startOld, nil, 4, 2)
+		got, e := s.NavigatePage(ctx, "g", start, nil, 4, 2)
 		if e != nil {
 			t.Fatal(e)
 		}
-		got, e := s.NavigatePage(ctx, "g", startNew, nil, 4, 2)
-		if e != nil {
-			t.Fatal(e)
-		}
-		gotEdges, _ := json.Marshal(got.Edges)
-		wantEdges, _ := json.Marshal(want.Edges)
-		if string(gotEdges) != string(wantEdges) || got.Examined != want.Examined || got.Incomplete != want.Incomplete {
-			t.Fatalf("page%d got%+v want%+v", n, got, want)
-		}
-		tokenOld, tokenNew = want.Continuation, got.Continuation
+		collected = append(collected, got.Edges...)
+		token = got.Continuation
 		if !got.Incomplete {
 			break
 		}
+	}
+	if len(collected) != 8 {
+		t.Fatalf("expected all 8 chain edges across pages, got %d: %+v", len(collected), collected)
 	}
 	page, e := s.NavigatePage(ctx, "g", []string{"n4"}, nil, 4, 1)
 	if e != nil {

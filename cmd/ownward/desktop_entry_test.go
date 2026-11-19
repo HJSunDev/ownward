@@ -12,9 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HJSunDev/ownward/internal/authoritysubstrate"
+	"github.com/HJSunDev/ownward/internal/boundedstore"
 	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/desktop"
+	"github.com/HJSunDev/ownward/internal/resourcebudget"
 )
 
 type entryReadBusy struct{}
@@ -100,11 +101,22 @@ func TestOwnerEntryNeverInitializesMissingOrUnfinishedData(t *testing.T) {
 		t.Fatal("opening created a substitute library", err)
 	}
 	root := t.TempDir()
-	a, err := authoritysubstrate.Open(root, contract.ControlState{Schema: contract.ControlStateSchema, Revision: 1, ActiveComposition: "test", ActiveKernelGeneration: "test"})
+	budget, err := resourcebudget.New(16*resourcebudget.MiB, 4*resourcebudget.MiB)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer a.Close()
+	initState := contract.ControlState{Schema: contract.ControlStateSchema, Revision: 1, ActiveComposition: "test", ActiveKernelGeneration: "test"}
+	s, err := boundedstore.OpenDeployment(context.Background(), root, boundedstore.DeploymentOptions{
+		Options: boundedstore.Options{Budget: budget},
+		Initialize: func(ctx context.Context, s *boundedstore.Store, _ string) error {
+			_, err := s.OpenControlAuthority(ctx, initState)
+			return err
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
 	if err = openOwnerWindow(context.Background(), root, "unused", io.Discard, io.Discard); err == nil || !strings.Contains(err.Error(), "首次启用") {
 		t.Fatal(err)
 	}

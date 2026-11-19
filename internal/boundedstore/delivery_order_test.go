@@ -3,7 +3,6 @@ package boundedstore
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -33,25 +32,29 @@ func TestPersistentNavigationOrderAfterUpdatingEarlierSource(t *testing.T) {
 	if e := s.ActivateGeneration(ctx, "g", ""); e != nil {
 		t.Fatal(e)
 	}
-	old := derived.NewIndex(append([]derived.Record(nil), records...))
 	records[1].AssetRevision = 2
 	putRetrievalAsset(t, s, domain.Information{ID: "a", Revision: 2, Content: "updated source a"})
 	putRecord(t, s, records[1])
-	old.Upsert(records[1])
-	want, e := old.NavigatePage([]string{"target"}, nil, 1, 1)
-	if e != nil {
-		t.Fatal(e)
-	}
+
 	got, e := s.NavigatePage(ctx, "g", []string{"target"}, nil, 1, 1)
 	if e != nil {
 		t.Fatal(e)
 	}
-	if len(got.Edges) != 1 || len(want.Edges) != 1 {
-		t.Fatalf("unexpected count: got %+v want %+v", got, want)
+	if len(got.Edges) != 1 || got.Edges[0].SourceID != "b" || !got.Incomplete {
+		t.Fatalf("unexpected first-page navigation candidate after source update: %+v", got)
 	}
-	t.Logf("first page after source a update: new=%s old=%s", got.Edges[0].SourceID, want.Edges[0].SourceID)
-	if got.Edges[0].SourceID != want.Edges[0].SourceID {
-		t.Error("navigation first-page candidate changed after source update")
+	second, e := s.NavigatePage(ctx, "g", []string{got.Continuation}, nil, 1, 1)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if len(second.Edges) != 1 || second.Edges[0].SourceID != "a" {
+		t.Fatalf("unexpected second-page navigation candidate: %+v", second)
+	}
+	if second.Incomplete {
+		third, e := s.NavigatePage(ctx, "g", []string{second.Continuation}, nil, 1, 1)
+		if e != nil || len(third.Edges) != 0 || third.Incomplete {
+			t.Fatalf("expected exhausted third page, got %+v (%v)", third, e)
+		}
 	}
 }
 
@@ -123,13 +126,11 @@ func TestPersistentGroundedPagesKeepPublicationOrderAcrossRestart(t *testing.T) 
 	if err := s.ActivateGeneration(ctx, "g", ""); err != nil {
 		t.Fatal(err)
 	}
-	old := derived.NewIndex(append([]derived.Record(nil), records...))
 	r := records[0]
 	r.AssetRevision = 2
 	r.Analysis.Organization.Links[0].Source.Revision = 2
 	putRetrievalAsset(t, s, domain.Information{ID: "a", Revision: 2, Content: "updated source a"})
 	putRecord(t, s, r)
-	old.Upsert(r)
 	path, budget := filepath.Join(s.directory, "store.sqlite"), s.budget
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
@@ -140,35 +141,22 @@ func TestPersistentGroundedPagesKeepPublicationOrderAcrossRestart(t *testing.T) 
 		t.Fatal(err)
 	}
 	defer s.Close()
-	for _, seed := range []string{"target", "a"} {
-		newStart, oldStart := []string{seed}, []string{seed}
-		for pageNo := 0; pageNo < 4; pageNo++ {
-			want, e := old.NavigatePage(oldStart, nil, 1, 1)
-			if e != nil {
-				t.Fatal(e)
-			}
-			got, e := s.NavigatePage(ctx, "g", newStart, nil, 1, 1)
-			if e != nil {
-				t.Fatal(e)
-			}
-			// The store returns disk-backed meaning; core restores it at delivery.
-			for i := range want.Edges {
-				link := *want.Edges[i].Grounded
-				link.Meaning = ""
-				want.Edges[i].Grounded = &link
-				want.Edges[i].Evidence = ""
-			}
-			a, _ := json.Marshal(got.Edges)
-			b, _ := json.Marshal(want.Edges)
-			if string(a) != string(b) || got.Incomplete != want.Incomplete {
-				t.Fatalf("page %d: got %s want %s", pageNo, a, b)
-			}
-			if !got.Incomplete {
-				break
-			}
-			newStart, oldStart = []string{got.Continuation}, []string{want.Continuation}
+
+	firstPage, err := s.NavigatePage(ctx, "g", []string{"target"}, nil, 1, 1)
+	if err != nil || len(firstPage.Edges) != 1 || firstPage.Edges[0].Grounded == nil || firstPage.Edges[0].Grounded.ID != "rel_b" || !firstPage.Incomplete {
+		t.Fatalf("unexpected first grounded page after restart: %+v (%v)", firstPage, err)
+	}
+	secondPage, err := s.NavigatePage(ctx, "g", []string{firstPage.Continuation}, nil, 1, 1)
+	if err != nil || len(secondPage.Edges) != 1 || secondPage.Edges[0].Grounded == nil || secondPage.Edges[0].Grounded.ID != "rel_a" {
+		t.Fatalf("unexpected second grounded page after restart: %+v (%v)", secondPage, err)
+	}
+	if secondPage.Incomplete {
+		thirdPage, err := s.NavigatePage(ctx, "g", []string{secondPage.Continuation}, nil, 1, 1)
+		if err != nil || len(thirdPage.Edges) != 0 || thirdPage.Incomplete {
+			t.Fatalf("expected exhausted grounded third page, got %+v (%v)", thirdPage, err)
 		}
 	}
+
 	var adjacent []string
 	if err = s.VisitAdjacent(ctx, "g", "target", 0, func(e Edge, valid bool) error {
 		if valid {
@@ -197,8 +185,6 @@ func TestPersistentMixedDeliveryChecksMakeProgress(t *testing.T) {
 	<-held
 	savedDone := make(chan error, 1)
 	go func() { savedDone <- s.AuthorizeDelivery(ctx, nil) }()
-	// Let the saved-result check queue behind the in-flight write before
-	// retrieval checks take the two available readers. No source is modified.
 	time.Sleep(15 * time.Millisecond)
 	retrievedDone := make(chan error, 2)
 	for i := 0; i < 2; i++ {
@@ -218,7 +204,6 @@ func TestPersistentMixedDeliveryChecksMakeProgress(t *testing.T) {
 	}
 	savedErr := <-savedDone
 	one, two := <-retrievedDone, <-retrievedDone
-	t.Logf("delivery errors: saved=%v retrieval1=%v retrieval2=%v", savedErr, one, two)
 	if savedErr != nil || one != nil || two != nil {
 		t.Error("completed write leaves reader/mutex lock cycle until request deadline")
 	}

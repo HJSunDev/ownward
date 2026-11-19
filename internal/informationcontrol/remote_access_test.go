@@ -7,19 +7,36 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/HJSunDev/ownward/internal/authoritysubstrate"
+	"github.com/HJSunDev/ownward/internal/boundedstore"
 	"github.com/HJSunDev/ownward/internal/contract"
+	"github.com/HJSunDev/ownward/internal/resourcebudget"
 )
 
 func accessControl(t *testing.T) (*Control, context.Context, string) {
 	t.Helper()
+	ctx := context.Background()
 	dir := filepath.Join(t.TempDir(), "data")
-	a, err := authoritysubstrate.Open(dir, contract.ControlState{Schema: contract.ControlStateSchema, Revision: 1, ActiveComposition: "test", ActiveKernelGeneration: "test"})
+	budget, err := resourcebudget.New(16*resourcebudget.MiB, 4*resourcebudget.MiB)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { a.Close() })
-	c := New(a.Control())
+	initState := contract.ControlState{Schema: contract.ControlStateSchema, Revision: 1, ActiveComposition: "test", ActiveKernelGeneration: "test"}
+	store, err := boundedstore.OpenDeployment(ctx, dir, boundedstore.DeploymentOptions{
+		Options: boundedstore.Options{Budget: budget},
+		Initialize: func(ctx context.Context, s *boundedstore.Store, _ string) error {
+			_, err := s.OpenControlAuthority(ctx, initState)
+			return err
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	a, err := store.OpenControlAuthority(ctx, initState)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := New(a)
 	token, err := c.InitializeOwner("owner")
 	if err != nil {
 		t.Fatal(err)
@@ -155,8 +172,8 @@ func TestRetirementRejectsOldCallsAndSurvivesReload(t *testing.T) {
 	if _, err := c.Propose(owner, contract.ManagementRequest{ID: "forget", Operation: "forget", Targets: []contract.AssetVersion{{ID: "x", Revision: 1}}}); !errors.Is(err, ErrInactive) {
 		t.Fatal("retired source accepted control decision", err)
 	}
-	state, err := authoritysubstrate.ReadControlAt(dir)
-	if err != nil || state.Access.Handoff.Phase != "retired" {
-		t.Fatal("retirement not durable", err)
+	state, err := boundedstore.ReadDeploymentIdentity(context.Background(), dir)
+	if err != nil || state.Access == nil || state.Access.Handoff == nil || state.Access.Handoff.Phase != "retired" {
+		t.Fatal("retirement not durable", state, err)
 	}
 }
