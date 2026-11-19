@@ -76,7 +76,7 @@ flowchart LR
 ## 依据
 
 - [产品需求](../../product/requirements.md)
-- [架构总纲](../../architecture/overview.md)
+- [Ownward 架构概述](../../architecture/overview.md)
 - [向量能力架构](../embedding/README.md)
 - [检索体系演进](../retrieval/README.md)
 - [第一版交付定义](../../delivery/first-version-delivery-definition.md)

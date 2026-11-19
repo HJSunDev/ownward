@@ -126,7 +126,7 @@ Ownward 的存储首先服务于产品本质，而不是服务于某一种数据
 
 ## 依据
 
-- [架构总纲](../../architecture/overview.md)
+- [Ownward 架构概述](../../architecture/overview.md)
 - [产品需求](../../product/requirements.md)
 - [第一版交付定义](../../delivery/first-version-delivery-definition.md)
 - [当前存储状态与体积](README.md)

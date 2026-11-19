@@ -2,12 +2,15 @@
 
 ## 工作依据
 
+- [愿景](vision.md)：指导产品与架构的长期目标。
+- [架构演进方向](architecture/evolution-direction.md)：指导全局结构划分与长期演进取舍。
 - [项目哲学](philosophy.md)：产品、架构与使用体验的长期取舍依据。
 - [要什么](delivery/goal.md)：开发智能体首先读取的凝练目标，已封版。
 - [产品需求](product/requirements.md)：产品判断的唯一权威。
 - [长期能力渐进支持需求](product/future-capabilities.md)：长期待做需求、用户价值及产品定位依据。
-- [架构总纲](architecture/overview.md)：整体结构、职责边界与长期不变量。
+- [Ownward 架构概述](architecture/overview.md)：当前生产结构、职责、运行关系与模块设计入口。
 - [开发规范](engineering/development-collaboration-guidelines.md)：代码设计、实现与验证约束。
+- [架构变更约束](engineering/architecture-change-rules.md)：跨组件契约、安全替换与制品、证据身份边界。
 - [Antigravity高效工作方法](engineering/antigravity-gemini-4-carbon-high-efficiency.md)
 - [阶段式交付](engineering/staged-delivery.md) · [整轮耗时优化](engineering/latency-optimization.md)
 - [协作体系设计方法](engineering/multi-agent-collaboration-design-method.md) · [临时资源收尾](engineering/temporary-resource-cleanup.md)

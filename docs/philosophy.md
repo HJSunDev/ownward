@@ -7,4 +7,4 @@
 3. **面向未来，稳定本质。** 以长期成立的用户需求和业务关系为基础，容纳使用方式的变化；具体场景用于检验设计，不直接固化为角色体系或功能清单。
 4. **复杂度也有成本。** 内部承担复杂度不等于无限增加机制；质量、使用体验与持续成本共同决定方案价值，以最简单的完整实现履行已经明确的产品承诺。
 
-具体产品要求见[产品需求](product/requirements.md)，结构与职责约束见[架构总纲](architecture/overview.md)。
+具体产品要求见[产品需求](product/requirements.md)，当前结构见[Ownward 架构概述](architecture/overview.md)，跨组件设计与替换遵循[架构变更约束](engineering/architecture-change-rules.md)。

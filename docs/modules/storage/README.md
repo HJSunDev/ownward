@@ -77,7 +77,7 @@
 
 ## 依据
 
-- [架构总纲](../../architecture/overview.md)
+- [Ownward 架构概述](../../architecture/overview.md)
 - [第一版交付定义](../../delivery/first-version-delivery-definition.md)
 - [当前持久化资产](../../../internal/boundedstore/assets.go)
 - [当前组织及索引](../../../internal/boundedstore/retrieval_schema.go)

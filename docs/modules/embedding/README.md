@@ -85,7 +85,7 @@ flowchart LR
 ## 依据
 
 - [产品需求](../../product/requirements.md)
-- [架构总纲](../../architecture/overview.md)
+- [Ownward 架构概述](../../architecture/overview.md)
 - [检索体系演进](../retrieval/README.md)
 - [语义理解架构](../semantics/README.md)
 - [存储架构](../storage/architecture.md)

@@ -1,6 +1,6 @@
 # 信息使用协作
 
-产品定位见[产品需求](../../product/requirements.md#信息使用能力)，运行职责及宿主适配见[架构总纲](../../architecture/overview.md#信息使用层的运行边界)。
+产品定位见[产品需求](../../product/requirements.md#信息使用能力)，运行职责及宿主适配见[Ownward 架构概述](../../architecture/overview.md#信息使用层的运行边界)。
 
 正式输入及中文对照见[正式流程提示词](prompts.md)。
 
@@ -75,3 +75,5 @@
 ## 验证依据
 
 四包整合后的质量、等待和修复验证见[历史排查与探索](../../workbench/four-package-quality.md)，当前问题见[当前版本质量改进](../../tasks/task-quality-improvement.md)；低等待方案的历史验证见[低等待探索记录](../../research/low-latency-exploration.md)，旧多阶段方案见[实现记录](../../research/information-use-multistage.md)。不把离线回放当作新的模型成绩，不将固定题集通过外推为任意任务保证。
+
+不同宿主须分别核验实际接入与使用效果，不能把单一模型或宿主的成绩外推为所有宿主的效果。
