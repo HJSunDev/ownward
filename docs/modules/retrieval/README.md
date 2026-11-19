@@ -87,6 +87,6 @@ V1 已证明混合召回与关系扩展能够共同工作，固定候选 `50238d
 ## 依据
 
 - [Ownward 架构概述](../../architecture/overview.md)
-- [当前检索实现](../../../internal/core/service.go)
+- [流式检索编排](../../../internal/core/streaming_search.go)与[有界存储检索实现](../../../internal/boundedstore/query.go)
 - [Ownward Acceptance Suite v1](../../../benchmarks/acceptance/suite/README.md)
 - [关键工作留痕](../../records/work-log-0001.md)

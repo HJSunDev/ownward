@@ -132,19 +132,19 @@ flowchart TB
 
 ## 当前替换与研发边界
 
-生产服务的正式装配主链为 `cmd/ownward` → `assembly.Open` → `core.StreamingAssets`（信息执行内核）与 `boundedstore`（有界存储）。仓库仍保留旧内存核心 `core.Service`、旧文件存储及相关候选实现；部分值结构、目录锁和导入逻辑仍被复用，但旧核心与旧索引不是日常请求的活动路径。
+生产服务的唯一正式装配主链为 `cmd/ownward` → `assembly.Open` → `core.StreamingAssets`（信息执行内核）与 `boundedstore`（有界存储）。生产不可达的旧内存核心 `core.Service`、旧文件日志 `assetlog` 及旧派生存储索引 `derived.Store`／`derived.Index` 已清退；仓库仅在 `boundedstore` 内部保留首次打开旧目录或恢复早期 `ownward.backup/v1` 备份所需的一次性导入能力，并在 `derived`、`retrieval` 中保留无状态证据区间计算、记录值结构与查询词评分器。
 
 当前重建在既有组合与向量空间内建立语义、关系和向量候选，校验资产与派生状态后切换世代，不切换词法索引。重建期间若相关状态发生变化，切换会被拒绝并保留原世代；当前路径没有自动追平并发变更再晋升的机制。
 
 标准发布在构建时封存接入（含窗口和宿主组件）、装配、权威存储、内核、产品规则、语义及平台向量制品的内容身份，任一受封存内容变化都会改变组合身份；启动校验内嵌声明自洽和实际向量制品，不回读源码仓库。数据库另保存活动组合与内核身份，正常打开与普通备份恢复后打开在不兼容时都会拒绝。因此，接入或窗口修改同样可能影响存量库的打开；更新构建身份或更换向量模型后，资料库的跨组合升级还需要匹配的迁移能力，不能把直接重新编译或普通备份恢复当成升级闭环。
 
-仓库中的旧权威、派生生命周期工具及组合生命周期命令仍绑定 SQLite 之前的文件格式，不能直接用于现役库的跨代切换。它们与打包、评测工具均不在普通请求路径中；当前服务不是任意实现在线热替换的平台。跨组件设计与替换要求见[架构变更约束](../engineering/architecture-change-rules.md)，优化与验证方法见[内核持续演进体系](../engineering/kernel-evolution-system.md)及[验收体系](../delivery/acceptance-system.md)。
+绑定 SQLite 之前旧目录格式的权威、派生生命周期工具及组合生命周期子命令已清退；`cmd/ownward-composition` 仅承担组合封存与校验。打包与评测工具均不在普通请求路径中；当前服务不是任意实现在线热替换的平台。跨组件设计与替换要求见[架构变更约束](../engineering/architecture-change-rules.md)，优化与验证方法见[内核持续演进体系](../engineering/kernel-evolution-system.md)及[验收体系](../delivery/acceptance-system.md)。
 
 ## 模块设计入口
 
 | 需要深入的问题 | 现行设计入口 |
 | --- | --- |
-| 资产持久化、有界读写、索引及恢复 | [存储入口](../modules/storage/README.md)、[存储架构](../modules/storage/architecture.md)、[有界存储实现](../modules/storage/bounded-runtime-design.md) |
+| 资产持久化、有界读写、流式内存预算、索引及恢复 | [存储入口](../modules/storage/README.md)、[存储架构](../modules/storage/architecture.md)、[有界存储实现](../modules/storage/bounded-runtime-design.md) |
 | 存入、更新与延后组织的衔接 | [存取与派生处理](../modules/storage/ingestion-and-derived-data.md) |
 | 语义工作、来源依赖及关系组织 | [语义理解](../modules/semantics/README.md)、[关系组织](../modules/semantics/graph-organization.md) |
 | 检索、证据定位及多路候选 | [检索体系](../modules/retrieval/README.md) |
@@ -155,9 +155,9 @@ flowchart TB
 | 宿主侧信息使用组件 | [信息使用协作](../modules/information-use/README.md) |
 | 物主窗口、私有草稿与智能体协作 | [物主窗口设计](../tasks/owner-window.md)（现行详细设计仍在该任务文档中） |
 
-第四层分册同时承载长期设计约束与历史演进记录；凡涉及**现役活动路径、表格式、运行时触发条件及跨代切换能力**，均以本文与现役生产实现为准，分册中未同步的旧核心／日志（`core.Service`、`assetlog`、`derived`）描述及长期目标不代表当前已落地路径。阅读时须重点区分以下已知口径差异：
+第四层分册同时承载长期设计约束与历史演进记录；凡涉及**现役活动路径、表格式、运行时触发条件及跨代切换能力**，均以本文与现役生产实现为准，分册中未同步的历史旧核心／日志（已清退的 `core.Service`、`assetlog`、`derived.Store`）描述及长期目标不代表当前已落地路径。阅读时须重点区分以下已知口径差异：
 
 - **检索与向量**：检索分册的 V1 代码与验证记录属于历史基线，不能据其待接入记录判断当前能力；向量分册中的跨向量空间原子世代切换属于长期目标设计，现役 SQLite 重建仅支持在既有组合与向量空间内切换世代。
-- **存储与关系**：存储架构分册仍将词法索引一并描述为世代数据，现役词法随资产事务维护；有界存储设计仍停留在早期 SQLite 表结构，尚未涵盖现役 `schemaVersion = 6` 新增的物主草稿、来源原件与延后组织执行表（存取分册中的“格式 5”亦已落后于现役格式 6），现役表布局以[存储实现](../../internal/boundedstore/store.go)为准；关系组织分册中将图持久化归属旧 `derived` 包的表述已由 `boundedstore` 替代。
-- **用户控制与接入**：用户控制与接入分册中的“统一产品入口”、旧 `internal/core/forget.go` 链接、旧 `assetlog` 现行日志描述及“不建设独立管理界面”等表述均滞后于现役流式与物主窗口实现；现役流式存取与遗忘直接在有界存储执行共享授权与停止使用屏障，对应入口见[流式存取](../../internal/core/streaming.go)、[流式遗忘](../../internal/core/streaming_forget.go)与[存储授权检查](../../internal/boundedstore/access.go)。
+- **存储与关系**：存储架构分册仍将词法索引一并描述为世代数据，现役词法随资产事务维护；有界存储设计仍停留在早期 SQLite 表结构，尚未涵盖现役 `schemaVersion = 6` 新增的物主草稿、来源原件与延后组织执行表（存取分册中的“格式 5”亦已落后于现役格式 6），现役表布局以[存储实现](../../internal/boundedstore/store.go)及同包[控制权威建表](../../internal/boundedstore/control_authority.go)为准；关系组织分册中将图持久化归属旧 `derived` 包的表述已由 `boundedstore` 替代。
+- **用户控制与接入**：用户控制与接入分册中的“统一产品入口”及“不建设独立管理界面”等表述均滞后于现役流式与物主窗口实现；现役流式存取与遗忘直接在有界存储执行共享授权与停止使用屏障，对应入口见[流式存取](../../internal/core/streaming.go)、[流式遗忘](../../internal/core/streaming_forget.go)与[存储授权检查](../../internal/boundedstore/access.go)。
 - **信息变化与延后写入**：信息变化分册中“后台组织执行器验证通过后才自动选择延后协议”的表述已过时；现役连接器由 `OWNWARD_DEFERRED_WRITE=1` 独立启用延后写入，与后台执行器是否就绪无关，见[连接器写入控制](../../cmd/ownward/connector_operation.go)。
