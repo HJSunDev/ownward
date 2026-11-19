@@ -90,8 +90,9 @@ class EvidenceIdentityTests(unittest.TestCase):
             self.assertIn("input", deps)
             self.assertIn("acceptance-tool", deps)
             self.assertNotIn("acceptance-lifecycle", deps)
+            self.assertEqual({"evidence"}, set(self.lifecycle))
             self.assertTrue(
-                {self.lifecycle[kind]["identity"] for kind in ("stateless", "derived", "authority")}.isdisjoint(
+                {item["identity"] for item in self.lifecycle.values()}.isdisjoint(
                     value["scopes"][name]["direct_dependencies"].values()
                 )
             )

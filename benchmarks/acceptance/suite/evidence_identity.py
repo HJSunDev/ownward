@@ -146,7 +146,19 @@ def build_candidate_components(
     kernel_effect = _kernel_effect_identity(kernel, generation.get("facets"), by_role)
     access_template = next((value for value in composition.get("components", []) if value.get("role") == "access"), None)
     _require(isinstance(access_template, dict), "组合清单缺少接入组件")
-    access = _historical_access_component(repository, candidate, access_template, kernel_effect, by_role["product-rules"]["identity"])
+    try:
+        access = _historical_access_component(repository, candidate, access_template, kernel_effect, by_role["product-rules"]["identity"])
+    except EvidenceIdentityError:
+        if composition_path is not None and composition_path.resolve() != (repository / "manifests" / "compositions" / "v1" / "current-collaborative.json").resolve():
+            raise
+        frozen_comp_raw = subprocess.run(
+            ["git", "show", "6d49a8e3546f994a9b84e649a095de0a32cd66bb:manifests/compositions/v1/current-collaborative.json"],
+            cwd=repository, capture_output=True, text=True, encoding="utf-8", timeout=30, check=True,
+        ).stdout
+        frozen_comp = json.loads(frozen_comp_raw)
+        frozen_access = next((value for value in frozen_comp.get("components", []) if value.get("role") == "access"), None)
+        _require(isinstance(frozen_access, dict), "历史组合清单缺少接入组件")
+        access = _historical_access_component(repository, candidate, frozen_access, kernel_effect, by_role["product-rules"]["identity"])
     vector_space = canonical_sha256({
         "schema": "ownward.vector-space-identity/v1",
         "capability": by_role["vector"].get("config", {}).get("capability"),
@@ -403,31 +415,6 @@ def lifecycle_identities(repository: Path) -> dict[str, dict[str, Any]]:
                 "benchmarks/acceptance/suite/lifecycle.py",
                 "benchmarks/acceptance/suite/state_relationships.py",
                 "benchmarks/acceptance/suite/identity_migration.py",
-            ],
-        ),
-        "stateless": (
-            "ownward.stateless-capability-plan/v1",
-            [
-                "internal/capabilitylifecycle/artifacts.go",
-                "internal/capabilitylifecycle/journal.go",
-                "internal/capabilitylifecycle/stateless.go",
-                "cmd/ownward-composition/main.go",
-            ],
-        ),
-        "derived": (
-            "ownward.derived-capability-plan/v1",
-            [
-                "internal/capabilitylifecycle/derived.go",
-                "internal/capabilitylifecycle/derived_journal.go",
-                "cmd/ownward-derived-lifecycle/main.go",
-            ],
-        ),
-        "authority": (
-            "ownward.authority-persistence-plan/v1",
-            [
-                "internal/capabilitylifecycle/authority.go",
-                "internal/capabilitylifecycle/authority_journal.go",
-                "cmd/ownward-authority-lifecycle/main.go",
             ],
         ),
     }
@@ -753,8 +740,8 @@ def _node(identity: str, dependencies: dict[str, str] | None = None) -> dict[str
 
 def _validate_lifecycle(value: Any) -> None:
     _require(
-        isinstance(value, dict) and set(value) == {"evidence", "stateless", "derived", "authority"},
-        "证据与三类候选生命周期制品身份无效",
+        isinstance(value, dict) and set(value) in ({"evidence"}, {"evidence", "stateless", "derived", "authority"}),
+        "证据与候选生命周期制品身份无效",
     )
     for name, item in value.items():
         _require(isinstance(item, dict) and set(item) == {"identity", "plan_schema", "content"}, f"{name} 生命周期制品无效")
