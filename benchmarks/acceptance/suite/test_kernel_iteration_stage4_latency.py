@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -324,14 +325,22 @@ class Stage4RetrievalLatencyTests(unittest.TestCase):
         self.assertNotIn("question_id", serialized)
 
     def test_candidate_transform_is_exact_and_keeps_current_source_unchanged(self) -> None:
-        source = REPOSITORY / "internal" / "core" / "service.go"
-        original = source.read_bytes()
+        v2_base_commit = "0c6bba6ecccf5a7436c6f0c2eb167a1e6af2fa19"
         transform = REPOSITORY / "manifests" / "kernel-candidates" / "v2" / "retrieval-latency" / "service-transform.json"
         with tempfile.TemporaryDirectory(dir=REPOSITORY) as temporary:
+            temp_repo = Path(temporary) / "base"
+            base_service = temp_repo / "internal" / "core" / "service.go"
+            base_service.parent.mkdir(parents=True, exist_ok=True)
+            base_bytes = subprocess.run(
+                ["git", "show", f"{v2_base_commit}:internal/core/service.go"],
+                cwd=REPOSITORY, capture_output=True, check=True,
+            ).stdout
+            base_service.write_bytes(base_bytes)
+            original = base_service.read_bytes()
             output = Path(temporary) / "service.go"
-            candidate._render_transformed_source(REPOSITORY, transform, output)
+            candidate._render_transformed_source(temp_repo, transform, output)
             rendered = output.read_text(encoding="utf-8")
-        self.assertEqual(original, source.read_bytes())
+            self.assertEqual(original, base_service.read_bytes())
         self.assertNotIn("RankOrganizedSemantics", rendered)
         self.assertIn("EmbedQuery(ctx, input.Query)", rendered)
         self.assertIn("ProbeEvidence", rendered)
@@ -342,14 +351,21 @@ class Stage4RetrievalLatencyTests(unittest.TestCase):
         self.assertIn("ReadCached", rendered)
         self.assertIn("evidencePlans.Reset()", rendered)
 
-        runtime_source = REPOSITORY / "internal" / "embedding" / "llama.go"
-        runtime_original = runtime_source.read_bytes()
         runtime_transform = REPOSITORY / "manifests" / "kernel-candidates" / "v2" / "retrieval-latency" / "managed-runtime-transform.json"
         with tempfile.TemporaryDirectory(dir=REPOSITORY) as temporary:
+            temp_repo = Path(temporary) / "base"
+            runtime_source = temp_repo / "internal" / "embedding" / "llama.go"
+            runtime_source.parent.mkdir(parents=True, exist_ok=True)
+            runtime_bytes = subprocess.run(
+                ["git", "show", f"{v2_base_commit}:internal/embedding/llama.go"],
+                cwd=REPOSITORY, capture_output=True, check=True,
+            ).stdout
+            runtime_source.write_bytes(runtime_bytes)
+            runtime_original = runtime_source.read_bytes()
             runtime_output = Path(temporary) / "llama.go"
-            candidate._render_transformed_source(REPOSITORY, runtime_transform, runtime_output)
+            candidate._render_transformed_source(temp_repo, runtime_transform, runtime_output)
             runtime_rendered = runtime_output.read_text(encoding="utf-8")
-        self.assertEqual(runtime_original, runtime_source.read_bytes())
+            self.assertEqual(runtime_original, runtime_source.read_bytes())
         self.assertIn("OpenManagedBundleWithRuntime", runtime_rendered)
         self.assertIn("case m.slots <- struct{}{}", runtime_rendered)
         self.assertIn("for m.active > 0", runtime_rendered)

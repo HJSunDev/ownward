@@ -18,8 +18,12 @@ def verify_files(repository: Path, items: list[dict]) -> None:
 
 
 def _matches(data: bytes, digest: str) -> bool:
-    return digest in (hashlib.sha256(data).hexdigest(),
-                      hashlib.sha256(data.replace(b"\r\n", b"\n")).hexdigest())
+    lf = data.replace(b"\r\n", b"\n")
+    return digest in (
+        hashlib.sha256(data).hexdigest(),
+        hashlib.sha256(lf).hexdigest(),
+        hashlib.sha256(lf.replace(b"\n", b"\r\n")).hexdigest(),
+    )
 
 
 def read_text(repository: Path, relative: str, digest: str) -> str:

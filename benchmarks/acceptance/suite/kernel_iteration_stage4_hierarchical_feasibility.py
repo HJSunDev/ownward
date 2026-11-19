@@ -79,7 +79,11 @@ def validate_contract(repository: Path, contract: dict[str, Any]) -> None:
     _require(contract.get("candidate_implementation_allowed_before_pass") is False, "可行性通过前不得实现候选")
     fusion = contract["fusion_contract"]
     _require(fusion["rrf_offset"] == 60 and fusion["lexical_weight"] == fusion["semantic_weight"] == 1.0, "融合上界合同漂移")
-    _require(evidence.file_sha256(repository / "internal/core/service.go") == fusion["source_sha256"], "正式融合实现身份漂移")
+    import frozen_inputs
+    try:
+        frozen_inputs.read_text(repository, "internal/core/service.go", fusion["source_sha256"])
+    except ValueError as error:
+        raise KernelIterationError("正式融合实现身份漂移") from error
     gates = contract["gates"]
     _require(gates["retrieval_mean_ms_maximum"] == 41.201 and gates["retrieval_p95_ms_maximum"] == 78.001, "正式检索门槛漂移")
     _require(gates["representative_safe_bypass_fraction_minimum"] >= 0.95, "p95 安全覆盖门槛不足")

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -32,14 +33,22 @@ class Stage4MultisourceTests(unittest.TestCase):
         self.assertTrue(route["frozen_before_new_candidate_results"])
 
     def test_candidate_source_transform_is_exact_and_does_not_edit_current_source(self) -> None:
-        source = REPOSITORY / "internal" / "core" / "service.go"
-        original = source.read_bytes()
+        v2_base_commit = "e997db2343afbd0bf3bf5c1927f5a52c0d19fe4d"
         transform = REPOSITORY / "manifests" / "kernel-candidates" / "v2" / "multisource-complete" / "service-transform.json"
         with tempfile.TemporaryDirectory(dir=REPOSITORY) as temporary:
+            temp_repo = Path(temporary) / "base"
+            source = temp_repo / "internal" / "core" / "service.go"
+            source.parent.mkdir(parents=True, exist_ok=True)
+            source_bytes = subprocess.run(
+                ["git", "show", f"{v2_base_commit}:internal/core/service.go"],
+                cwd=REPOSITORY, capture_output=True, check=True,
+            ).stdout
+            source.write_bytes(source_bytes)
+            original = source.read_bytes()
             output = Path(temporary) / "core-service.go"
-            candidate._render_transformed_source(REPOSITORY, transform, output)
+            candidate._render_transformed_source(temp_repo, transform, output)
             rendered = output.read_text(encoding="utf-8")
-        self.assertEqual(original, source.read_bytes())
+            self.assertEqual(original, source.read_bytes())
         self.assertIn("evidencePlans *kernelv2candidate.EvidencePlans", rendered)
         self.assertIn("s.evidencePlans.ObserveSearch(input.Query, sourceIDs)", rendered)
         self.assertIn("s.evidencePlans.References", rendered)

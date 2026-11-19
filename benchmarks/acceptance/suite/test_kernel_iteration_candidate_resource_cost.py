@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -18,13 +19,31 @@ import kernel_iteration_evidence as iteration_evidence  # noqa: E402
 import semantic_representation  # noqa: E402
 
 
+V2_BASE_COMMIT = "0c6bba6ecccf5a7436c6f0c2eb167a1e6af2fa19"
+
+
+def _stage_v2_base_sources(repository: Path, root: Path, *relative_paths: str) -> Path:
+    base_root = root / "v2-base"
+    for rel in relative_paths:
+        target = base_root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        raw = subprocess.run(
+            ["git", "show", f"{V2_BASE_COMMIT}:{rel}"],
+            cwd=repository, capture_output=True, check=True,
+        ).stdout
+        target.write_bytes(raw)
+    return base_root
+
+
 class ResourceCostCandidateTests(unittest.TestCase):
     def test_transform_adds_only_quiescent_lossless_compaction(self) -> None:
         repository = HERE.parents[2]
         transform = repository / "manifests/kernel-candidates/v2/resource-cost/collaboration-transform.json"
         with tempfile.TemporaryDirectory() as directory:
-            output = Path(directory) / "collaboration.go"
-            latency_candidate._render_transformed_source(repository, transform, output)
+            root = Path(directory)
+            base_repo = _stage_v2_base_sources(repository, root, "internal/core/collaboration.go")
+            output = root / "collaboration.go"
+            latency_candidate._render_transformed_source(base_repo, transform, output)
             rendered = output.read_text(encoding="utf-8")
         self.assertIn("remaining, err := s.SemanticWork(ctx, 1)", rendered)
         self.assertIn("s.derivedStore.Compact()", rendered)
@@ -41,6 +60,14 @@ class ResourceCostCandidateTests(unittest.TestCase):
         repository = HERE.parents[2]
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            base_repo = _stage_v2_base_sources(
+                repository,
+                root,
+                "internal/core/service.go",
+                "internal/core/collaboration.go",
+                "internal/core/generation.go",
+                "internal/retrieval/lexical.go",
+            )
             stage_service = root / "service-stage.go"
             stage_collaboration = root / "collaboration-stage.go"
             service = root / "service.go"
@@ -48,7 +75,7 @@ class ResourceCostCandidateTests(unittest.TestCase):
             generation = root / "generation.go"
             lexical = root / "lexical.go"
             latency_candidate._render_transformed_source(
-                repository,
+                base_repo,
                 repository / "manifests/kernel-candidates/v2/retrieval-latency/service-transform.json",
                 stage_service,
             )
@@ -68,7 +95,7 @@ class ResourceCostCandidateTests(unittest.TestCase):
                 service,
             )
             latency_candidate._render_transformed_source(
-                repository,
+                base_repo,
                 repository / "manifests/kernel-candidates/v2/resource-cost/collaboration-transform.json",
                 stage_collaboration,
             )
@@ -78,12 +105,12 @@ class ResourceCostCandidateTests(unittest.TestCase):
                 collaboration,
             )
             latency_candidate._render_transformed_source(
-                repository,
+                base_repo,
                 repository / "manifests/kernel-candidates/v2/resource-cost/representation-generation-transform.json",
                 generation,
             )
             latency_candidate._render_transformed_source(
-                repository,
+                base_repo,
                 repository / "manifests/kernel-candidates/v2/read-frontier/lexical-transform.json",
                 lexical,
             )
@@ -122,8 +149,17 @@ class ResourceCostCandidateTests(unittest.TestCase):
         repository = HERE.parents[2]
         transform = repository / "manifests/kernel-candidates/v2/final-answer-sufficiency/mcpserver-transform.json"
         with tempfile.TemporaryDirectory() as directory:
-            output = Path(directory) / "server.go"
-            latency_candidate._render_transformed_source(repository, transform, output)
+            root = Path(directory)
+            base_server = root / "v2-access" / "internal" / "adapter" / "mcpserver" / "server.go"
+            base_server.parent.mkdir(parents=True, exist_ok=True)
+            base_server.write_bytes(
+                subprocess.run(
+                    ["git", "show", "595edec6a7872ddf65cb6a95e4f3c62a7008ce84:internal/adapter/mcpserver/server.go"],
+                    cwd=repository, capture_output=True, check=True,
+                ).stdout
+            )
+            output = root / "server.go"
+            latency_candidate._render_transformed_source(root / "v2-access", transform, output)
             rendered = output.read_text(encoding="utf-8")
         self.assertIn('SourcePreludeStartRune', rendered)
         self.assertIn('json:"source_prelude_start_rune"', rendered)
@@ -132,7 +168,7 @@ class ResourceCostCandidateTests(unittest.TestCase):
         self.assertIn("probeLimit := min(limit+1, 8)", rendered)
         self.assertIn("result.SourceRunes = utf8.RuneCountInString(source.Content)", rendered)
         self.assertIn("source.Revision != value.SourceRevision", rendered)
-        self.assertIn("endRune := min(128, value.StartRune)", rendered)
+        self.assertIn("endRune := min(max(128, width), value.StartRune)", rendered)
         self.assertIn("result.SourcePrelude = source.Content[:endByte]", rendered)
         self.assertNotIn("candidateEvidenceRead", (repository / "internal/adapter/mcpserver/server.go").read_text(encoding="utf-8"))
 
