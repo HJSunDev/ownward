@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/HJSunDev/ownward/internal/assetlog"
 	"github.com/HJSunDev/ownward/internal/resourcebudget"
 )
 
@@ -125,7 +124,7 @@ func OpenDeployment(ctx context.Context, root string, options DeploymentOptions)
 	if err := os.MkdirAll(assets, 0700); err != nil {
 		return nil, err
 	}
-	lock, err := assetlog.LockDirectory(filepath.Join(assets, ".ownward.lock"))
+	lock, err := LockDirectory(filepath.Join(assets, ".ownward.lock"))
 	if err != nil {
 		return nil, err
 	}

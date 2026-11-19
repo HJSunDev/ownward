@@ -1,6 +1,7 @@
 package assembly
 
 import (
+	"archive/zip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -9,19 +10,17 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"sort"
 	"strings"
 	"testing"
+	"time"
 
-	"github.com/HJSunDev/ownward/internal/assetlog"
-	"github.com/HJSunDev/ownward/internal/authorityport"
-	"github.com/HJSunDev/ownward/internal/authoritysubstrate"
+	"github.com/HJSunDev/ownward/internal/boundedstore"
 	"github.com/HJSunDev/ownward/internal/composition"
 	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/core"
-	"github.com/HJSunDev/ownward/internal/derived"
 	"github.com/HJSunDev/ownward/internal/domain"
 	"github.com/HJSunDev/ownward/internal/embedding"
+	"github.com/HJSunDev/ownward/internal/informationcontrol"
 	"github.com/HJSunDev/ownward/internal/semantics"
 )
 
@@ -33,17 +32,16 @@ func TestInvalidCompositionFailsBeforeEveryRuntimeSideEffect(t *testing.T) {
 	writeAbsoluteFile(t, acceptance, "unchanged")
 	calls := []string{}
 	resource := resources{
-		restore: func(_, _ string, _ contract.ControlState) error { calls = append(calls, "restore"); return nil },
-		openAuthority: func(string, contract.ControlState) (contract.AuthoritySubstrate, error) {
-			calls = append(calls, "assets")
-			return nil, errors.New("must not open")
+		restore: func(context.Context, string, string, boundedstore.Options) error {
+			calls = append(calls, "restore")
+			return nil
 		},
 		openVector: func(string, composition.Manifest) (contract.VectorCapability, error) {
 			calls = append(calls, "vector")
 			return embedding.Unavailable{}, nil
 		},
 	}
-	_, err := openWith(Request{
+	_, err := openBoundedWith(Request{
 		DataDir: dataDir, RestoreBackup: filepath.Join(t.TempDir(), "backup"), ProductSemantics: Collaborative,
 		VectorBundleDir: filepath.Join(t.TempDir(), "embedding"),
 	}, manifest, resource)
@@ -65,14 +63,13 @@ func TestInvalidPackagedVectorFailsBeforeProductResources(t *testing.T) {
 	manifest := testManifest(t, Collaborative)
 	dataDir := filepath.Join(t.TempDir(), "data")
 	calls := []string{}
-	_, err := openWith(Request{
+	_, err := openBoundedWith(Request{
 		DataDir: dataDir, ProductSemantics: Collaborative,
 		VectorBundleDir: filepath.Join(t.TempDir(), "embedding"),
 	}, manifest, resources{
-		restore: func(_, _ string, _ contract.ControlState) error { calls = append(calls, "restore"); return nil },
-		openAuthority: func(string, contract.ControlState) (contract.AuthoritySubstrate, error) {
-			calls = append(calls, "assets")
-			return nil, errors.New("must not open")
+		restore: func(context.Context, string, string, boundedstore.Options) error {
+			calls = append(calls, "restore")
+			return nil
 		},
 		openVector: func(string, composition.Manifest) (contract.VectorCapability, error) {
 			calls = append(calls, "vector")
@@ -148,43 +145,43 @@ func TestSharedConnectorPreflightDoesNotHashTechnicalArtifacts(t *testing.T) {
 	}
 }
 
-func TestExplicitAssemblyMatchesDirectStableProductSemantics(t *testing.T) {
-	for _, mode := range []ProductSemantics{Basic, Organized, Collaborative} {
+func TestExplicitAssemblyExercisesBoundedModesAndVectorDegradation(t *testing.T) {
+	for _, mode := range []ProductSemantics{Basic, Collaborative} {
 		t.Run(string(mode), func(t *testing.T) {
 			manifest := testManifest(t, mode)
-			oldDir := filepath.Join(t.TempDir(), "old")
-			newDir := filepath.Join(t.TempDir(), "new")
-			direct := openDirectStable(t, mode, oldDir, semantics.Heuristic{}, embedding.HashForTesting{Dimensions: 32})
-			t.Cleanup(func() { _ = direct.Close() })
-			request := Request{
-				DataDir: newDir, ProductSemantics: mode,
-			}
-			if mode == Organized {
-				request.OrganizedProvider, request.OrganizedVector = adaptProvider(semantics.Heuristic{})
-			}
+			dataDir := filepath.Join(t.TempDir(), "data")
+			request := Request{DataDir: dataDir, ProductSemantics: mode}
 			if mode == Collaborative {
 				request.VectorBundleDir = filepath.Join(t.TempDir(), "embedding")
 			}
-			runtime, err := openWith(request, manifest, resources{
-				restore: authoritysubstrate.Restore, openAuthority: openTestAuthority,
+			runtime, err := openBoundedWith(request, manifest, resources{
+				restore: boundedstore.RestoreLegacyAssetArchive,
 				openVector: func(string, composition.Manifest) (contract.VectorCapability, error) {
-					return embedding.HashForTesting{Dimensions: 32}, nil
+					return embedding.HashForTesting{Dimensions: 512}, nil
 				},
 			})
 			if err != nil {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _ = runtime.Close() })
-			directSnapshot := exerciseProduct(t, direct.Service)
-			assembledSnapshot := exerciseProduct(t, runtime.Service())
-			if !reflect.DeepEqual(directSnapshot, assembledSnapshot) {
-				t.Fatalf("new assembly changed %s semantics:\ndirect=%#v\nassembled=%#v", mode, directSnapshot, assembledSnapshot)
+			ownerToken, err := runtime.UserControl().InitializeOwner("owner")
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx := informationcontrol.Authenticate(context.Background(), ownerToken)
+			created, err := runtime.Product().Create(ctx, core.CreateInput{
+				Kind: domain.KindGeneral, Content: "装配必须显式且可校验",
+				Contexts: []domain.Context{{Key: "scope", Value: "assembly"}},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			read, err := runtime.Product().Read(ctx, created.Information.ID)
+			if err != nil || read.Content != "装配必须显式且可校验" {
+				t.Fatalf("unexpected read result: %#v %v", read, err)
 			}
 			if runtime.ProductSemantics() != mode || runtime.Composition().Composition == "" {
 				t.Fatalf("runtime did not retain explicit identity: %#v", runtime.Composition())
-			}
-			if err := direct.Close(); err != nil {
-				t.Fatal(err)
 			}
 			if err := runtime.Close(); err != nil {
 				t.Fatal(err)
@@ -192,49 +189,31 @@ func TestExplicitAssemblyMatchesDirectStableProductSemantics(t *testing.T) {
 			if err := runtime.Close(); err != nil {
 				t.Fatalf("runtime close was not idempotent: %v", err)
 			}
-			assertPersistedEquivalent(t, oldDir, newDir, directSnapshot.Content)
 		})
 	}
-}
 
-func TestExplicitAssemblyPreservesOrganizedAndVectorDegradation(t *testing.T) {
-	for _, test := range []struct {
-		name     string
-		mode     ProductSemantics
-		provider semantics.Provider
-		vector   embedding.Provider
-	}{
-		{name: "organized", mode: Organized, provider: failingProvider{}},
-		{name: "collaborative", mode: Collaborative, vector: embedding.Unavailable{Reason: "vector unavailable"}},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			manifest := testManifest(t, test.mode)
-			if test.mode == Organized {
-				semantic, vector := adaptProvider(test.provider)
-				manifest = testManifestWithCapabilities(t, test.mode, semantic, vector)
-			}
-			direct := openDirectStable(t, test.mode, filepath.Join(t.TempDir(), "direct"), test.provider, test.vector)
-			defer direct.Close()
-			request := Request{DataDir: filepath.Join(t.TempDir(), "new"), ProductSemantics: test.mode}
-			if test.mode == Organized {
-				request.OrganizedProvider, request.OrganizedVector = adaptProvider(test.provider)
-			} else {
-				request.VectorBundleDir = filepath.Join(t.TempDir(), "embedding")
-			}
-			runtime, err := openWith(request, manifest, resources{
-				restore: authoritysubstrate.Restore, openAuthority: openTestAuthority,
-				openVector: func(string, composition.Manifest) (contract.VectorCapability, error) { return test.vector, nil },
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer runtime.Close()
-			directResult, directErr := direct.Create(context.Background(), core.CreateInput{Kind: domain.KindGeneral, Content: "明确保留既有退化语义"})
-			newResult, newErr := runtime.Service().Create(context.Background(), core.CreateInput{Kind: domain.KindGeneral, Content: "明确保留既有退化语义"})
-			if errorText(directErr) != errorText(newErr) || directResult.Organization.Status != newResult.Organization.Status || directResult.Organization.Error != newResult.Organization.Error || directResult.Organization.RequiredAction != newResult.Organization.RequiredAction {
-				t.Fatalf("degradation changed: direct=%#v/%v new=%#v/%v", directResult, directErr, newResult, newErr)
-			}
-		})
+	manifest := testManifest(t, Collaborative)
+	degraded, err := openBoundedWith(Request{
+		DataDir: filepath.Join(t.TempDir(), "degraded"), ProductSemantics: Collaborative,
+		VectorBundleDir: filepath.Join(t.TempDir(), "embedding"),
+	}, manifest, resources{
+		restore: boundedstore.RestoreLegacyAssetArchive,
+		openVector: func(string, composition.Manifest) (contract.VectorCapability, error) {
+			return embedding.Unavailable{Reason: "vector unavailable"}, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer degraded.Close()
+	ownerToken, err := degraded.UserControl().InitializeOwner("owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := informationcontrol.Authenticate(context.Background(), ownerToken)
+	res, err := degraded.Product().Create(ctx, core.CreateInput{Kind: domain.KindGeneral, Content: "明确保留既有退化语义"})
+	if err != nil || res.Organization.Status != "pending" || !strings.Contains(res.Organization.Error, "vector unavailable") {
+		t.Fatalf("unexpected vector degradation state: %#v err=%v", res, err)
 	}
 }
 
@@ -242,38 +221,35 @@ func TestOrganizedCapabilityMismatchFailsBeforeProductResources(t *testing.T) {
 	manifest := testManifest(t, Organized)
 	semantic, vector := adaptProvider(failingProvider{})
 	dataDir := filepath.Join(t.TempDir(), "product")
-	opened := false
-	_, err := openWith(Request{
+	_, err := openBoundedWith(Request{
 		DataDir: dataDir, ProductSemantics: Organized,
 		OrganizedProvider: semantic, OrganizedVector: vector,
 	}, manifest, resources{
-		restore: authoritysubstrate.Restore,
-		openAuthority: func(string, contract.ControlState) (contract.AuthoritySubstrate, error) {
-			opened = true
-			return nil, errors.New("must not open")
-		},
+		restore: boundedstore.RestoreLegacyAssetArchive,
 	})
 	if err == nil || !strings.Contains(err.Error(), "语义能力身份") {
 		t.Fatalf("mismatched semantic capability was accepted: %v", err)
-	}
-	if opened {
-		t.Fatal("capability mismatch opened the authority substrate")
 	}
 	if _, err := os.Stat(dataDir); !os.IsNotExist(err) {
 		t.Fatalf("capability mismatch created product state: %v", err)
 	}
 }
 
-func TestAssemblyBackupRestoresAssetsAndControlTogether(t *testing.T) {
+func TestAssemblyBackupRestoresSQLiteAndLegacyAssetArchives(t *testing.T) {
 	manifest := testManifest(t, Basic)
 	source := filepath.Join(t.TempDir(), "source")
-	runtime, err := openWith(Request{DataDir: source, ProductSemantics: Basic}, manifest, resources{
-		restore: authoritysubstrate.Restore, openAuthority: openTestAuthority,
+	runtime, err := openBoundedWith(Request{DataDir: source, ProductSemantics: Basic}, manifest, resources{
+		restore: boundedstore.RestoreLegacyAssetArchive,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	created, err := runtime.Service().Create(context.Background(), core.CreateInput{Kind: domain.KindGeneral, Content: "组合备份必须覆盖权威资产和控制状态。"})
+	ownerToken, err := runtime.UserControl().InitializeOwner("owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := informationcontrol.Authenticate(context.Background(), ownerToken)
+	created, err := runtime.Product().Create(ctx, core.CreateInput{Kind: domain.KindGeneral, Content: "组合备份必须覆盖权威资产和控制状态。"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,21 +260,104 @@ func TestAssemblyBackupRestoresAssetsAndControlTogether(t *testing.T) {
 	if err := runtime.Close(); err != nil {
 		t.Fatal(err)
 	}
+
 	destination := filepath.Join(t.TempDir(), "restored")
-	restored, err := openWith(Request{DataDir: destination, RestoreBackup: backup, ProductSemantics: Basic}, manifest, resources{
-		restore: authoritysubstrate.Restore, openAuthority: openTestAuthority,
+	restored, err := openBoundedWith(Request{DataDir: destination, RestoreBackup: backup, ProductSemantics: Basic}, manifest, resources{
+		restore: boundedstore.RestoreLegacyAssetArchive,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer restored.Close()
-	actual, err := restored.Service().Read(context.Background(), created.Information.ID)
+	reconnectedToken, err := restored.UserControl().RecoverOwner()
+	if err != nil {
+		t.Fatal(err)
+	}
+	restoredCtx := informationcontrol.Authenticate(context.Background(), reconnectedToken)
+	actual, err := restored.Product().Read(restoredCtx, created.Information.ID)
 	if err != nil || actual.Content != created.Information.Content {
 		t.Fatalf("restored asset mismatch: %#v %v", actual, err)
 	}
-	control, err := os.ReadFile(filepath.Join(destination, "authority", "control.json"))
-	if err != nil || !strings.Contains(string(control), manifest.Identity) {
-		t.Fatalf("restored control state missing composition identity: %v", err)
+	if err := restored.Close(); err != nil {
+		t.Fatal(err)
+	}
+	controlState, err := ReadControlAt(destination)
+	if err != nil || controlState.ActiveComposition != manifest.Identity {
+		t.Fatalf("restored control state missing composition identity: %#v %v", controlState, err)
+	}
+
+	// Verify legacy ownward.backup/v1 archive restore through assembly.
+	legacyZip := filepath.Join(t.TempDir(), "legacy-v1.zip")
+	writeLegacyBackupV1Zip(t, legacyZip, domain.Information{
+		Schema: domain.AssetSchema, ID: "legacy-1", Revision: 1,
+		CreatedAt: time.Unix(1700000000, 0).UTC(), UpdatedAt: time.Unix(1700000000, 0).UTC(),
+		Kind: domain.KindGeneral, Content: "早期纯资产归档恢复成功。",
+	})
+	legacyDest := filepath.Join(t.TempDir(), "legacy-restored")
+	legacyRuntime, err := openBoundedWith(Request{DataDir: legacyDest, RestoreBackup: legacyZip, ProductSemantics: Basic}, manifest, resources{
+		restore: boundedstore.RestoreLegacyAssetArchive,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer legacyRuntime.Close()
+	legacyToken, err := legacyRuntime.UserControl().InitializeOwner("owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyRead, err := legacyRuntime.Product().Read(informationcontrol.Authenticate(context.Background(), legacyToken), "legacy-1")
+	if err != nil || legacyRead.Content != "早期纯资产归档恢复成功。" {
+		t.Fatalf("legacy backup v1 restore mismatch: %#v %v", legacyRead, err)
+	}
+}
+
+func writeLegacyBackupV1Zip(t *testing.T, archivePath string, asset domain.Information) {
+	t.Helper()
+	manifestBytes := []byte("{\"format\":\"ownward.asset-log/v3\",\"created_at\":\"2026-01-01T00:00:00Z\"}\n")
+	lineObj := map[string]any{"operation": "create", "recorded_at": asset.CreatedAt, "value": asset}
+	lineBytes, err := json.Marshal(lineObj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lineBytes = append(lineBytes, '\n')
+	sumM := sha256.Sum256(manifestBytes)
+	sumL := sha256.Sum256(lineBytes)
+	backupMeta, err := json.Marshal(map[string]any{
+		"format": "ownward.backup/v1",
+		"files": map[string]string{
+			"manifest.json":     hex.EncodeToString(sumM[:]),
+			"information.jsonl": hex.EncodeToString(sumL[:]),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Create(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zw := zip.NewWriter(f)
+	for _, item := range []struct {
+		name string
+		data []byte
+	}{
+		{"manifest.json", manifestBytes},
+		{"information.jsonl", lineBytes},
+		{"backup.json", backupMeta},
+	} {
+		w, err := zw.Create(item.name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write(item.data); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -321,11 +380,8 @@ func TestExplicitModeRejectsNilAndManifestMismatchBeforeOpen(t *testing.T) {
 			return value
 		}(),
 	} {
-		_, err := openWith(request, manifest, resources{
-			restore: authoritysubstrate.Restore, openAuthority: func(string, contract.ControlState) (contract.AuthoritySubstrate, error) {
-				t.Fatal("opened assets")
-				return nil, nil
-			},
+		_, err := openBoundedWith(request, manifest, resources{
+			restore: boundedstore.RestoreLegacyAssetArchive,
 			openVector: func(string, composition.Manifest) (contract.VectorCapability, error) {
 				return embedding.Unavailable{}, nil
 			},
@@ -333,134 +389,6 @@ func TestExplicitModeRejectsNilAndManifestMismatchBeforeOpen(t *testing.T) {
 		if err == nil {
 			t.Fatalf("ambiguous or mismatched semantics were accepted: %#v", request)
 		}
-	}
-}
-
-type productSnapshot struct {
-	Rules           string
-	CreateStatus    string
-	UpdateStatus    string
-	Revision        uint64
-	Content         string
-	SearchCount     int
-	SearchSummary   string
-	SearchSignals   []string
-	NavigationNodes int
-	NavigationEdges int
-	NavigationError string
-	Maintain        map[string]int
-	MaintainError   string
-	Rebuild         map[string]int
-	RebuildError    string
-}
-
-func exerciseProduct(t *testing.T, service *core.Service) productSnapshot {
-	t.Helper()
-	ctx := context.Background()
-	created, err := service.Create(ctx, core.CreateInput{Kind: domain.KindGeneral, Content: "装配必须显式且可校验", Contexts: []domain.Context{{Key: "scope", Value: "assembly"}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	updatedContent := "装配必须在资源打开前完成校验"
-	updated, err := service.Update(ctx, core.UpdateInput{ID: created.Information.ID, ExpectedRevision: 1, Content: &updatedContent})
-	if err != nil {
-		t.Fatal(err)
-	}
-	read, err := service.Read(ctx, created.Information.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	search, err := service.Search(ctx, core.SearchInput{Query: "资源打开前 校验", Limit: 10})
-	if err != nil {
-		t.Fatal(err)
-	}
-	navigation, navigationErr := service.Navigate(ctx, []string{created.Information.ID}, nil, 1, 10)
-	maintain, maintainErr := service.Maintain(ctx, false)
-	rebuild, rebuildErr := service.Maintain(ctx, true)
-	signals := []string(nil)
-	summary := ""
-	if len(search) > 0 {
-		signals = append(signals, search[0].Signals...)
-		sort.Strings(signals)
-		summary = search[0].Summary
-	}
-	return productSnapshot{
-		Rules: service.Rules(ctx), CreateStatus: created.Organization.Status, UpdateStatus: updated.Organization.Status,
-		Revision: read.Revision, Content: read.Content, SearchCount: len(search), SearchSummary: summary, SearchSignals: signals,
-		NavigationNodes: len(navigation.Nodes), NavigationEdges: len(navigation.Edges), NavigationError: errorText(navigationErr), Maintain: maintain,
-		MaintainError: errorText(maintainErr), Rebuild: rebuild, RebuildError: errorText(rebuildErr),
-	}
-}
-
-type ownedTestService struct {
-	*core.Service
-	store *assetlog.Store
-}
-
-func (service *ownedTestService) Close() error {
-	first := service.Service.Close()
-	if err := service.store.Close(); first == nil {
-		first = err
-	}
-	return first
-}
-
-func openDirectStable(t *testing.T, mode ProductSemantics, dataDir string, provider semantics.Provider, vector embedding.Provider) *ownedTestService {
-	t.Helper()
-	store, err := assetlog.Open(filepath.Join(dataDir, "assets"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	authority, err := authorityport.Bind(store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if mode == Basic {
-		service, openErr := core.NewWithAuthority(authority)
-		if openErr != nil {
-			t.Fatal(openErr)
-		}
-		return &ownedTestService{Service: service, store: store}
-	}
-	derivedStore, err := derived.Open(filepath.Join(dataDir, "state"))
-	if err != nil {
-		_ = store.Close()
-		t.Fatal(err)
-	}
-	var service *core.Service
-	if mode == Organized {
-		semantic, vectorCapability := adaptProvider(provider)
-		service, err = core.NewOrganizedWithCapabilities(authority, derivedStore, semantic, vectorCapability)
-	} else {
-		service, err = core.NewCollaborativeWithAuthority(authority, derivedStore, vector)
-	}
-	if err != nil {
-		_ = derivedStore.Close()
-		_ = store.Close()
-		t.Fatal(err)
-	}
-	return &ownedTestService{Service: service, store: store}
-}
-
-func openTestAuthority(path string, initial contract.ControlState) (contract.AuthoritySubstrate, error) {
-	return authoritysubstrate.Open(path, initial)
-}
-
-func assertPersistedEquivalent(t *testing.T, oldDir, newDir, expected string) {
-	t.Helper()
-	oldStore, err := assetlog.Open(filepath.Join(oldDir, "assets"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer oldStore.Close()
-	newStore, err := assetlog.Open(filepath.Join(newDir, "assets"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer newStore.Close()
-	oldAssets, newAssets := oldStore.All(), newStore.All()
-	if len(oldAssets) != 1 || len(newAssets) != 1 || oldAssets[0].Content != expected || newAssets[0].Content != expected || oldAssets[0].Revision != newAssets[0].Revision {
-		t.Fatalf("persisted authority differs: old=%#v new=%#v", oldAssets, newAssets)
 	}
 }
 
@@ -581,11 +509,4 @@ func writeAbsoluteFile(t *testing.T, path, value string) {
 	if err := os.WriteFile(path, []byte(value), 0o644); err != nil {
 		t.Fatal(err)
 	}
-}
-
-func errorText(err error) string {
-	if err == nil {
-		return ""
-	}
-	return err.Error()
 }

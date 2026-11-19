@@ -429,14 +429,14 @@
       "dependencies": [
         {
           "role": "kernel",
-          "identity": "8f864c02997052fb4d096bb7861b200560d17d3f89241de73f1c463d18aa15b5"
+          "identity": "a084fe221c0a6afca1a7121dcb7d9909e4d2deecfe2aa79b16fb7417943a2a8c"
         },
         {
           "role": "product-rules",
           "identity": "1eb81993761504bd72d76fc2c0dc380e697cf9d1e1827845da552803e2b71fce"
         }
       ],
-      "identity": "8ac543ef6c08bd5e28817809ad68b1653cfb30e868f86ad74a75ad4657d4eceb"
+      "identity": "e9a3864e11b7308fb85c7103d22dcce36134adf9449f933f4affc20bf2fe6f90"
     },
     {
       "role": "assembly",
@@ -471,7 +471,7 @@
         {
           "name": "cmd-ownward-service_runtime",
           "path": "cmd/ownward/service_runtime.go",
-          "sha256": "639b102c1a8ec2ac0adf07eed96d19f6ce1f3189a88343f9ef58cbc9ba3fa7ed"
+          "sha256": "48af2113fd93fe4517f2384214e5062df43da2272e64d018d665672d3b7fab3c"
         },
         {
           "name": "cmd-ownward-service_space_other",
@@ -496,7 +496,7 @@
         {
           "name": "explicit-assembly",
           "path": "internal/assembly/assembly.go",
-          "sha256": "5dff54f700add83b83a834d81e55e11378cb32a15e699b5c069baeb353a0c3e7"
+          "sha256": "83ec10cc708dc3eb2a597a1fd01b60ac09169fbf8aa7b88985c8bc3f400df466"
         },
         {
           "name": "go-mod",
@@ -511,12 +511,12 @@
         {
           "name": "internal-assembly-bounded-go",
           "path": "internal/assembly/bounded.go",
-          "sha256": "0cb3eb35f6468402a033a1df2a6e0834dc4cb5a1b53ab94c03e0d32821340a04"
+          "sha256": "3df124ed8bc087f48ebda9603e4ea952cc17a34333efac3167631314ac2ed066"
         },
         {
           "name": "internal-assembly-handoff",
           "path": "internal/assembly/handoff.go",
-          "sha256": "2ca6fb0fec524758a443cd38a372e700aea664c28169617e51d733f3cfb1ab38"
+          "sha256": "856abcca29894662cfc58281b86c2e5c0dea9e2b216112f2c859f890401af390"
         },
         {
           "name": "internal-releasebundle-build-go",
@@ -532,11 +532,6 @@
           "name": "internal-releasebundle-icons-go",
           "path": "internal/releasebundle/icons.go",
           "sha256": "176e9caf8f29fe00af2722cebf7ae8a2bd9133d1abb3f6c3ea2806df0dfbf76c"
-        },
-        {
-          "name": "kernel-generation-runtime",
-          "path": "internal/kernelgeneration/runtime.go",
-          "sha256": "cae51b4e5a2499d0c171eaf420071791369ecce3bdb3d673b855db69e31fda64"
         },
         {
           "name": "release-composition-embed",
@@ -559,15 +554,15 @@
       "dependencies": [
         {
           "role": "access",
-          "identity": "8ac543ef6c08bd5e28817809ad68b1653cfb30e868f86ad74a75ad4657d4eceb"
+          "identity": "e9a3864e11b7308fb85c7103d22dcce36134adf9449f933f4affc20bf2fe6f90"
         },
         {
           "role": "authority-substrate",
-          "identity": "8bf98c7c9d6f08873c6169c74c1c362973e0f5394c88455f321e946d2ffd5856"
+          "identity": "f226443ea7e1c50f3822a25036e88d3725b6592a0d9d92d01b1082c94d2dfb18"
         },
         {
           "role": "kernel",
-          "identity": "8f864c02997052fb4d096bb7861b200560d17d3f89241de73f1c463d18aa15b5"
+          "identity": "a084fe221c0a6afca1a7121dcb7d9909e4d2deecfe2aa79b16fb7417943a2a8c"
         },
         {
           "role": "product-rules",
@@ -582,7 +577,7 @@
           "identity": "c0af8126f2d9b51e70d27299b7f0cd2024ceab7a75789fffdc730be96b711a38"
         }
       ],
-      "identity": "860a8182f80dfbfce81ac6e8450ca80b75e209b5bc6dee03153768705af2250f"
+      "identity": "29d318f11cc35e14090961a91d94dd8d888c3fad69a76d5fbae4bee4f07acc4f"
     },
     {
       "role": "authority-substrate",
@@ -605,69 +600,9 @@
       ],
       "content": [
         {
-          "name": "asset-authority-port",
-          "path": "internal/authorityport/current.go",
-          "sha256": "00db4ee9ba2bdb4b3eb8477dbc954811bed7687c00b15cd9fc6a0e87f60cbcec"
-        },
-        {
-          "name": "asset-backup-stream",
-          "path": "internal/assetlog/backup_stream.go",
-          "sha256": "c12a12a46d86bd191d14ca3e6b1f83fa727db7392b1fcfd423a2fc1830c74fe4"
-        },
-        {
           "name": "asset-domain",
           "path": "internal/domain/information.go",
           "sha256": "7d59fc1f0f0f4134a99deba6ade601faa8770bba9fb0d60ada4ce9854a9be507"
-        },
-        {
-          "name": "asset-store",
-          "path": "internal/assetlog/store.go",
-          "sha256": "9356ffdc501baed00a70e49f2e6bbe8d6da04b8827d812eba5fa211f1bdd2640"
-        },
-        {
-          "name": "authority-backup",
-          "path": "internal/authoritysubstrate/backup.go",
-          "sha256": "ac4ef90fc05b9bdfcc605080f63edc9285c60f1aae8cea6a0ebe55427530b63c"
-        },
-        {
-          "name": "authority-control",
-          "path": "internal/authoritysubstrate/substrate.go",
-          "sha256": "f8420b840429ec60962934de904c121e419358c5c9e6bf37faa8ac90ca148914"
-        },
-        {
-          "name": "directory-lock-unix",
-          "path": "internal/assetlog/directory_lock_unix.go",
-          "sha256": "cd08587eb171c5225fda2103b0bf3939fc4a5715daf5a4ac5e3a400cf7e12824"
-        },
-        {
-          "name": "directory-lock-windows",
-          "path": "internal/assetlog/directory_lock_windows.go",
-          "sha256": "2ed618e808ab9144973f8af00856c9365a1885858862ff75e09a43362c742388"
-        },
-        {
-          "name": "internal-assetlog-forget",
-          "path": "internal/assetlog/forget.go",
-          "sha256": "25e6035fa23d317239958464a748b6df3925ac407003d78d3a48baf1183f5dba"
-        },
-        {
-          "name": "internal-assetlog-lock-go",
-          "path": "internal/assetlog/lock.go",
-          "sha256": "8c4ede9d1be4c886322d5110cf981cc8813c618b20653bc2ad2c2cbfdbe3c367"
-        },
-        {
-          "name": "internal-assetlog-operation",
-          "path": "internal/assetlog/operation.go",
-          "sha256": "8042a4cc789c4d6930ca5058aab8111aeb4b5a376345069dc6bfdfbd979d9dbe"
-        },
-        {
-          "name": "internal-assetlog-source-go",
-          "path": "internal/assetlog/source.go",
-          "sha256": "d72dee0569eab4ad03a4883b7609ecf1f713b166ff12d4193a8ab8b163428a1f"
-        },
-        {
-          "name": "internal-authoritysubstrate-handoff",
-          "path": "internal/authoritysubstrate/handoff.go",
-          "sha256": "aeacc2bd864afe5f590a89d28a295473484ba80c94fc65008f95af74a980d36b"
         },
         {
           "name": "internal-boundedstore-access-go",
@@ -722,17 +657,17 @@
         {
           "name": "internal-boundedstore-deployment-go",
           "path": "internal/boundedstore/deployment.go",
-          "sha256": "a73dc895b1c61c579c99d798241938837f420a2b2913b5c02c73f0a27a239c84"
+          "sha256": "849073f524d142e9196a988d4264a0ba8694e17f87e14c3cf3484b02c5cef801"
         },
         {
           "name": "internal-boundedstore-deployment_archive-go",
           "path": "internal/boundedstore/deployment_archive.go",
-          "sha256": "447ec04cdf5a680f9c7a633ba6f17129dccdf3f09335c802ef5879115e5e45e8"
+          "sha256": "f3f1d52dc0725a7f762e5c8f1265775e9342895159789f17e5884f6c2041a6cb"
         },
         {
           "name": "internal-boundedstore-deployment_cancel-go",
           "path": "internal/boundedstore/deployment_cancel.go",
-          "sha256": "b9700fd942d29ed2bf21dcbf6683886e9d6f470e43da7e711dbb7ae9b7d2e366"
+          "sha256": "7d9cf1c688c6e5155f82ce042a88a3cfbbf118dff4875db10b1c7b1659732847"
         },
         {
           "name": "internal-boundedstore-deployment_retired-go",
@@ -743,6 +678,21 @@
           "name": "internal-boundedstore-deployment_space-go",
           "path": "internal/boundedstore/deployment_space.go",
           "sha256": "c6ef1ebe3c8fe1506530e95c3bb0342c3ff35082a69c228a32bb97e92ce99231"
+        },
+        {
+          "name": "internal-boundedstore-directory_lock-go",
+          "path": "internal/boundedstore/directory_lock.go",
+          "sha256": "881472f025ae4e6e0e4a53abdb462c2e64a816bd10becad301b05836c9339d0d"
+        },
+        {
+          "name": "internal-boundedstore-directory_lock_unix-go",
+          "path": "internal/boundedstore/directory_lock_unix.go",
+          "sha256": "eed5bbfb311fd84c8672ba795c6a45e8106710a9392e8295f1388398aeb75632"
+        },
+        {
+          "name": "internal-boundedstore-directory_lock_windows-go",
+          "path": "internal/boundedstore/directory_lock_windows.go",
+          "sha256": "cc3a451b80c6c2f89f3629041ae0022a83a0727d75063e00dd246751f2921558"
         },
         {
           "name": "internal-boundedstore-effective_contexts-go",
@@ -962,7 +912,7 @@
         {
           "name": "internal-boundedstore-store-go",
           "path": "internal/boundedstore/store.go",
-          "sha256": "431d99924015bd2f1fe4235ad8a1ce99339707fbe96bc48a545233980fa1ef28"
+          "sha256": "04c2d567758744cdf447431cde7a6adf6fe82b6f01b9c498316fc8755a80f909"
         },
         {
           "name": "internal-boundedstore-summary-go",
@@ -1128,26 +1078,6 @@
           "name": "internal-streamjson-validate-go",
           "path": "internal/streamjson/validate.go",
           "sha256": "58249bd3aacbcc3e63fe00908ddf8f86d1a22a5b87d9cbcae85ce5f963c3d0f0"
-        },
-        {
-          "name": "replace-other",
-          "path": "internal/assetlog/replace_other.go",
-          "sha256": "e254edde043d3b2d5234cfd61021e06889779db945ca350078ccbc04100f425e"
-        },
-        {
-          "name": "replace-windows",
-          "path": "internal/assetlog/replace_windows.go",
-          "sha256": "eab8313b69f978263b1c55c39bda28add18c85c7516291f8c506265370cd0bba"
-        },
-        {
-          "name": "substrate-replace-other",
-          "path": "internal/authoritysubstrate/replace_other.go",
-          "sha256": "ccf97e67c219a64acde45a65aedd9ca29ba23f80ef941430d8e32919ea335e0c"
-        },
-        {
-          "name": "substrate-replace-windows",
-          "path": "internal/authoritysubstrate/replace_windows.go",
-          "sha256": "ae4f67ba9b9e2ae3eb2c7a6c344990846a3efc9d82052122b5e0ccae631e3cbf"
         }
       ],
       "config": {
@@ -1158,7 +1088,7 @@
         "storage_format": "ownward.sqlite-storage/v1"
       },
       "dependencies": [],
-      "identity": "8bf98c7c9d6f08873c6169c74c1c362973e0f5394c88455f321e946d2ffd5856"
+      "identity": "f226443ea7e1c50f3822a25036e88d3725b6592a0d9d92d01b1082c94d2dfb18"
     },
     {
       "role": "kernel",
@@ -1176,54 +1106,9 @@
       ],
       "content": [
         {
-          "name": "core-collaboration",
-          "path": "internal/core/collaboration.go",
-          "sha256": "6956bd777e3aa56e5e6a2f2ef0736266e441a85a451765b575ec9ee92cacf6ec"
-        },
-        {
-          "name": "core-evidence",
-          "path": "internal/core/evidence.go",
-          "sha256": "2407705ae0954a7a4d39322c4a74d5e2e654558d99bc4e1128d1347ca1717f53"
-        },
-        {
-          "name": "core-generation",
-          "path": "internal/core/generation.go",
-          "sha256": "888a15fc9fa2903b7cfed07995acc881263bf2bd542c1611985f76f5fe6cbe8c"
-        },
-        {
-          "name": "core-service",
-          "path": "internal/core/service.go",
-          "sha256": "0611251d46e2c893ed8d56d7cf8caa5b085c8ddb95984c41993af337914524a4"
-        },
-        {
           "name": "derived-evidence",
           "path": "internal/derived/evidence.go",
           "sha256": "34829d8b60358a9fd3b088cf132e171c6cd2af9833a04c13c32510698a049521"
-        },
-        {
-          "name": "derived-generation",
-          "path": "internal/derived/generation.go",
-          "sha256": "2cbf344403c10627634bb793334ce137d02061e69c106a064a6d6ea7c04891f8"
-        },
-        {
-          "name": "derived-index",
-          "path": "internal/derived/index.go",
-          "sha256": "907ca136771be850056e52a9ba5e82fc5f3dd546df1f146db82c038273da31a0"
-        },
-        {
-          "name": "derived-replace-other",
-          "path": "internal/derived/replace_other.go",
-          "sha256": "e06c7daffcae31aa9fe5a35755c0a0ef0996e77bcd82e2eb71561a20b4994f3e"
-        },
-        {
-          "name": "derived-replace-windows",
-          "path": "internal/derived/replace_windows.go",
-          "sha256": "26528ac232e27eb74d4ce7ebb0c8105cd562ce7a6bc2c0c9749ecf3c4e44abfc"
-        },
-        {
-          "name": "derived-store",
-          "path": "internal/derived/store.go",
-          "sha256": "0438536f96745e7d7b60eeddabbc5cff15bb297d1f9fde964fc6dfab11c70e1c"
         },
         {
           "name": "evidence-domain",
@@ -1234,36 +1119,6 @@
           "name": "internal-contract-information-change-go",
           "path": "internal/contract/information_change.go",
           "sha256": "c23dac85d20644a4287163e69362375f225cf1c2d405529468720cb5b4228e42"
-        },
-        {
-          "name": "internal-core-derived_lifecycle-go",
-          "path": "internal/core/derived_lifecycle.go",
-          "sha256": "d4613a32d9b669eabea197b9df63e9c8ee2ff27d9690be9d2d5fffc1f383d9bd"
-        },
-        {
-          "name": "internal-core-forget",
-          "path": "internal/core/forget.go",
-          "sha256": "5fc70ad272a35264fb198e2b7721d784a4d4d08d23dffd94c66c3d536d302852"
-        },
-        {
-          "name": "internal-core-information-change-go",
-          "path": "internal/core/information_change.go",
-          "sha256": "95efb152406eb8a3b6272d9a8613dabda48a65ecaafe6163a1c5f4c16b8e82ca"
-        },
-        {
-          "name": "internal-core-operation",
-          "path": "internal/core/operation.go",
-          "sha256": "a4ade54df24ca16807306657a3d1a193ea19db0926af91b1d4c996d0bb781470"
-        },
-        {
-          "name": "internal-core-organization-go",
-          "path": "internal/core/organization.go",
-          "sha256": "7370a84a875f25abf874281536dd4f40385b42ff2fe4c71120c361bd13eb9f8d"
-        },
-        {
-          "name": "internal-core-snapshot",
-          "path": "internal/core/snapshot.go",
-          "sha256": "3d50b474db5f9cd068263fe8a988db8ec150c5c83cdccf197640c7423f24f33b"
         },
         {
           "name": "internal-core-streaming-go",
@@ -1371,34 +1226,19 @@
           "sha256": "355aad668e28ff8480cda5103c6c8d7259e322f57ac8f07443fdeff55cc09804"
         },
         {
+          "name": "internal-core-types-go",
+          "path": "internal/core/types.go",
+          "sha256": "80f276cbb80cd237c9253cca080a5accb09d2d63da081f25b744dac971cd6877"
+        },
+        {
           "name": "internal-derived-evidence_stream-go",
           "path": "internal/derived/evidence_stream.go",
           "sha256": "aaa18ccf9c4f98dbea4846d32489a162a0b17755b145e657e70121c437ef3059"
         },
         {
-          "name": "internal-derived-forget",
-          "path": "internal/derived/forget.go",
-          "sha256": "b06861e417c1dd2ece342d308a89d5077bd8cba8ea49a06ffa76302673a7635f"
-        },
-        {
-          "name": "internal-derived-lifecycle-go",
-          "path": "internal/derived/lifecycle.go",
-          "sha256": "47c1b82b2e58fdbf4a1e73c557afd5aaa018dbe9bbdba1144558a39e392dd62a"
-        },
-        {
-          "name": "internal-derived-navigation-go",
-          "path": "internal/derived/navigation.go",
-          "sha256": "f8781b538f7d45fac25c306221df8924824e4a340abb64b1c3dc9c9b51807060"
-        },
-        {
-          "name": "internal-derived-organization-go",
-          "path": "internal/derived/organization.go",
-          "sha256": "382553d63ba70cfcab783472f174587010f703d079412feefe8a6c266301a453"
-        },
-        {
-          "name": "internal-derived-snapshot",
-          "path": "internal/derived/snapshot.go",
-          "sha256": "b7a277c44bbd2bf216fe63313e41527741ef51863663aff5594f9ab28c9916df"
+          "name": "internal-derived-record-go",
+          "path": "internal/derived/record.go",
+          "sha256": "00ef364b6d8ed714d9dc74ce12184afb73c95a9270099b75417ec3c756d43b56"
         },
         {
           "name": "internal-retrieval-passage_stream-go",
@@ -1413,7 +1253,7 @@
         {
           "name": "lexical-retrieval",
           "path": "internal/retrieval/lexical.go",
-          "sha256": "b5f7118798aada59f24eb54136e3c1effefd6aeedaab62d7c57240f65fd01469"
+          "sha256": "3f95ace8f939eb2869c6c272ada3f280636de52ac95bffa42a0b328373d014f8"
         }
       ],
       "config": {
@@ -1425,7 +1265,7 @@
       "dependencies": [
         {
           "role": "authority-substrate",
-          "identity": "8bf98c7c9d6f08873c6169c74c1c362973e0f5394c88455f321e946d2ffd5856"
+          "identity": "f226443ea7e1c50f3822a25036e88d3725b6592a0d9d92d01b1082c94d2dfb18"
         },
         {
           "role": "product-rules",
@@ -1440,7 +1280,7 @@
           "identity": "c0af8126f2d9b51e70d27299b7f0cd2024ceab7a75789fffdc730be96b711a38"
         }
       ],
-      "identity": "8f864c02997052fb4d096bb7861b200560d17d3f89241de73f1c463d18aa15b5"
+      "identity": "a084fe221c0a6afca1a7121dcb7d9909e4d2deecfe2aa79b16fb7417943a2a8c"
     },
     {
       "role": "product-rules",
@@ -1719,7 +1559,7 @@
       "identity": "c0af8126f2d9b51e70d27299b7f0cd2024ceab7a75789fffdc730be96b711a38"
     }
   ],
-  "identity": "985fe58349765f7a1906752b3e27c96e6a3a23743b0e1521daf6ce68e76aba26",
+  "identity": "50ed81de16516e3f79ccd403ff4be4b5b9c6e06b99d2c0864f208cb482a622e7",
   "audit": {
     "described_product_candidate": "3e712f22f0529b4eef81b8826f8bb201bf9f6bf8",
     "migration_source_git": "dc2c7a09e67f06cfaacbe0a201c7ff27b20d6182"

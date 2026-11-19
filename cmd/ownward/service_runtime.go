@@ -19,7 +19,6 @@ import (
 
 	"github.com/HJSunDev/ownward/internal/adapter/remote"
 	"github.com/HJSunDev/ownward/internal/assembly"
-	"github.com/HJSunDev/ownward/internal/authoritysubstrate"
 	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/informationcontrol"
 )
@@ -647,7 +646,7 @@ func (h *serviceHost) executeHandoff(ctx context.Context, runtime *assembly.Runt
 			return result, err
 		}
 		hash := sha256.New()
-		err = authoritysubstrate.WriteHandoffArchive(stage, io.MultiWriter(file, hash))
+		err = assembly.WriteHandoffArchive(stage, io.MultiWriter(file, hash))
 		if err == nil {
 			err = file.Sync()
 		}

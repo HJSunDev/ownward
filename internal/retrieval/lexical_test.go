@@ -1,77 +1,11 @@
 package retrieval
 
 import (
-	"fmt"
+	"crypto/sha256"
+	"sort"
 	"strings"
 	"testing"
-
-	"github.com/HJSunDev/ownward/internal/domain"
 )
-
-func TestSearchTreatsUnscopedInformationAsGenerallyApplicable(t *testing.T) {
-	index := NewLexical([]domain.Information{
-		{ID: "general", Content: "删除目录前校验绝对路径"},
-		{ID: "windows", Content: "Windows 删除目录使用 LiteralPath", Contexts: []domain.Context{{Key: "platform", Value: "windows"}}},
-		{ID: "linux", Content: "Linux 删除目录使用 rm", Contexts: []domain.Context{{Key: "platform", Value: "linux"}}},
-	})
-	results := index.Search("删除目录", []domain.Context{{Key: "platform", Value: "windows"}}, 10)
-	if len(results) != 2 {
-		t.Fatalf("unexpected results: %#v", results)
-	}
-	for _, result := range results {
-		if result.Information.ID == "linux" {
-			t.Fatal("incompatible scoped information leaked into results")
-		}
-	}
-}
-
-func TestUpsertRemovesStaleTermsWithoutRebuildingWholeIndex(t *testing.T) {
-	index := NewLexical([]domain.Information{{ID: "one", Content: "旧线索 alpha"}})
-	index.Upsert(domain.Information{ID: "one", Content: "新线索 beta"})
-	if results := index.Search("alpha", nil, 10); len(results) != 0 {
-		t.Fatalf("stale term remained searchable: %#v", results)
-	}
-	results := index.Search("beta", nil, 10)
-	if len(results) != 1 || results[0].Information.ID != "one" {
-		t.Fatalf("updated term is not searchable: %#v", results)
-	}
-}
-
-func TestGenerationRolloverKeepsOnlyCurrentTermsSearchable(t *testing.T) {
-	index := NewLexical([]domain.Information{{ID: "one", Content: "旧线索 alpha"}})
-	index.generation = ^uint32(0)
-	index.Upsert(domain.Information{ID: "one", Content: "新线索 beta"})
-	if results := index.Search("alpha", nil, 10); len(results) != 0 {
-		t.Fatalf("stale term survived generation rollover: %#v", results)
-	}
-	results := index.Search("beta", nil, 10)
-	if len(results) != 1 || results[0].Information.ID != "one" {
-		t.Fatalf("current term was lost during generation rollover: %#v", results)
-	}
-}
-
-func TestSearchPrioritizesNamedTermsOverGenericQuestionWording(t *testing.T) {
-	index := NewLexical([]domain.Information{
-		{ID: "fiber", Content: "Fiber 是 React 协调器的工作单元结构，使渲染工作能够被拆分、排序、暂停和恢复。"},
-		{ID: "generic", Content: "复杂问题应根据中间证据改变线索并继续搜索。"},
-		{ID: "react", Content: "React 使用声明式组件描述界面。"},
-	})
-	results := index.Search("Fiber 在 React 中解决什么问题？", nil, 10)
-	if len(results) == 0 || results[0].Information.ID != "fiber" {
-		t.Fatalf("named terms did not dominate generic question wording: %#v", results)
-	}
-}
-
-func TestLegacyInformationKindDoesNotActAsOrganizationMetadata(t *testing.T) {
-	index := NewLexical([]domain.Information{{
-		ID:      "one",
-		Kind:    domain.KindKnowledge,
-		Content: "arbitrary durable content",
-	}})
-	if results := index.Search("knowledge", nil, 10); len(results) != 0 {
-		t.Fatalf("legacy information kind influenced retrieval: %#v", results)
-	}
-}
 
 func TestQueryTextScorePrefersSpecificFactOverRepeatedBoilerplate(t *testing.T) {
 	query := "星砂档案的霜叶校验码是什么"
@@ -82,32 +16,52 @@ func TestQueryTextScorePrefersSpecificFactOverRepeatedBoilerplate(t *testing.T) 
 	}
 }
 
-func BenchmarkSearch100K(b *testing.B) {
-	values := make([]domain.Information, 100_000)
-	for index := range values {
-		values[index] = domain.Information{
-			ID:      fmt.Sprintf("I%06d", index),
-			Kind:    domain.KindKnowledge,
-			Content: fmt.Sprintf("个人信息长期记录 %d，属于主题分组 %d，并包含可复用的实践经验。", index, index%100),
+func TestStreamAndMemoryQueryTermsAndPassageScoringMatch(t *testing.T) {
+	query := "Fiber 在 React 中解决什么问题 group42"
+	var streamed []TermPosition
+	if err := VisitQueryTerms(strings.NewReader(query), func(p TermPosition) error {
+		streamed = append(streamed, p)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sort.Slice(streamed, func(i, j int) bool {
+		if streamed[i].Group != streamed[j].Group {
+			return streamed[i].Group < streamed[j].Group
+		}
+		if streamed[i].Plane != streamed[j].Plane {
+			return streamed[i].Plane < streamed[j].Plane
+		}
+		return streamed[i].Position < streamed[j].Position
+	})
+	terms := QueryTerms(query)
+	if len(streamed) != len(terms) {
+		t.Fatalf("term count mismatch: streamed=%d memory=%d", len(streamed), len(terms))
+	}
+	for i, term := range terms {
+		if streamed[i].Digest != sha256.Sum256([]byte(term)) {
+			t.Fatalf("term %d digest mismatch for %q", i, term)
 		}
 	}
-	index := NewLexical(values)
-	b.Run("explicit_identity", func(b *testing.B) {
-		for iteration := 0; iteration < b.N; iteration++ {
-			_ = index.Search("I099999", nil, 10)
-		}
-	})
-	b.Run("broad_common_terms", func(b *testing.B) {
-		for iteration := 0; iteration < b.N; iteration++ {
-			_ = index.Search("主题分组 group42", nil, 10)
-		}
-	})
-	b.Run("parallel_8", func(b *testing.B) {
-		b.SetParallelism(8)
-		b.RunParallel(func(pb *testing.PB) {
-			for pb.Next() {
-				_ = index.Search("主题分组 group42", nil, 10)
+	passages := []string{"React 组件背景说明", "Fiber 协调器工作单元可拆分、暂停与恢复"}
+	memScorer := NewPassageTextScorer(query, passages)
+	streamScorer, err := NewStreamPassageTextScorer(query, func(visit func(string) error) error {
+		for _, p := range passages {
+			if e := visit(p); e != nil {
+				return e
 			}
-		})
+		}
+		return nil
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := streamScorer.ScoreReader(strings.NewReader(passages[1]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := memScorer.Score(passages[1])
+	if got != want {
+		t.Fatalf("passage score mismatch: got %v want %v", got, want)
+	}
 }

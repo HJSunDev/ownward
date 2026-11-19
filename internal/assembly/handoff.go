@@ -3,43 +3,24 @@ package assembly
 import (
 	"archive/zip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
-	"github.com/HJSunDev/ownward/internal/authoritysubstrate"
 	"github.com/HJSunDev/ownward/internal/boundedstore"
 	"github.com/HJSunDev/ownward/internal/contract"
-	"github.com/HJSunDev/ownward/internal/derived"
 	"github.com/HJSunDev/ownward/internal/resourcebudget"
 )
 
-// Verify the selected kernel's derived format at the composition boundary;
-// the authority store does not depend on any particular kernel implementation.
 func ValidateHandoffData(destination string) error {
-	if _, e := os.Stat(filepath.Join(destination, "storage.json")); e == nil {
-		_, e = ReadControlAt(destination)
-		return e
-	} else if !errors.Is(e, os.ErrNotExist) {
-		return e
-	}
-	path := filepath.Join(destination, "state")
-	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
-		return nil
-	} else if err != nil {
-		return err
-	}
-	d, err := derived.Open(path)
-	if err != nil {
-		return err
-	}
-	defer d.Close()
-	if d.RecoveredCorruption() {
-		return errors.New("迁移派生状态不完整")
-	}
-	_, err = d.AllWithEmbeddings()
-	return err
+	_, e := ReadControlAt(destination)
+	return e
 }
 
 func controlOptions() boundedstore.Options {
@@ -70,7 +51,34 @@ func ReadControlAtContext(ctx context.Context, root string) (contract.ControlSta
 	if _, e := os.Stat(filepath.Join(root, "migration.json")); e == nil {
 		return contract.ControlState{}, errors.New("存储迁移尚未完成")
 	}
-	return authoritysubstrate.ReadControlAt(root)
+	return readLegacyControlFile(root)
+}
+
+func readLegacyControlFile(root string) (contract.ControlState, error) {
+	data, err := os.ReadFile(filepath.Join(root, "authority", "control.json"))
+	if err != nil {
+		return contract.ControlState{}, err
+	}
+	var envelope struct {
+		Schema string                `json:"schema"`
+		State  contract.ControlState `json:"state"`
+		SHA256 string                `json:"sha256"`
+	}
+	if err := json.Unmarshal(data, &envelope); err != nil {
+		return contract.ControlState{}, fmt.Errorf("解析权威控制状态: %w", err)
+	}
+	if envelope.Schema != "ownward.control-state-envelope/v1" || envelope.State.Validate() != nil {
+		return contract.ControlState{}, errors.New("权威控制状态格式无效")
+	}
+	stateJSON, err := json.Marshal(envelope.State)
+	if err != nil {
+		return contract.ControlState{}, err
+	}
+	digest := sha256.Sum256(stateJSON)
+	if envelope.SHA256 != hex.EncodeToString(digest[:]) {
+		return contract.ControlState{}, errors.New("权威控制状态完整性校验失败")
+	}
+	return envelope.State, nil
 }
 
 func CleanRetiredData(ctx context.Context, root string) error {
@@ -79,7 +87,7 @@ func CleanRetiredData(ctx context.Context, root string) error {
 	} else if !errors.Is(e, os.ErrNotExist) {
 		return e
 	}
-	state, e := authoritysubstrate.ReadControlAt(root)
+	state, e := readLegacyControlFile(root)
 	if e != nil {
 		return e
 	}
@@ -95,12 +103,13 @@ func CleanRetiredData(ctx context.Context, root string) error {
 }
 
 func ActivateHandoff(root string, permit contract.Handoff) error {
-	if _, e := os.Stat(filepath.Join(root, "storage.json")); e == nil {
-		return boundedstore.ActivateDeploymentHandoff(context.Background(), root, permit, controlOptions())
-	} else if !errors.Is(e, os.ErrNotExist) {
+	if _, e := os.Stat(filepath.Join(root, "storage.json")); e != nil {
+		if errors.Is(e, os.ErrNotExist) {
+			return errors.New("迁移接收目录缺少 SQLite 部署存储")
+		}
 		return e
 	}
-	return authoritysubstrate.ActivateHandoff(root, permit)
+	return boundedstore.ActivateDeploymentHandoff(context.Background(), root, permit, controlOptions())
 }
 
 func StageHandoff(path, destination string) (contract.ControlState, error) {
@@ -121,6 +130,9 @@ func StageHandoff(path, destination string) (contract.ControlState, error) {
 	}
 	if authority == nil {
 		return zero, errors.New("迁移包缺少唯一权威")
+	}
+	if len(z.File) != 1 || authority.Mode()&os.ModeSymlink != 0 {
+		return zero, errors.New("SQLite迁移包包含非交接文件")
 	}
 	if e = os.MkdirAll(filepath.Dir(destination), 0700); e != nil {
 		return zero, e
@@ -145,10 +157,7 @@ func StageHandoff(path, destination string) (contract.ControlState, error) {
 		return zero, e
 	}
 	if !native {
-		return authoritysubstrate.StageHandoff(path, destination)
-	}
-	if len(z.File) != 1 || authority.Mode()&os.ModeSymlink != 0 {
-		return zero, errors.New("SQLite迁移包包含非交接文件")
+		return zero, errors.New("不支持旧目录格式交接包")
 	}
 	state, e := boundedstore.RestoreArchive(context.Background(), f.Name(), destination, controlOptions(), true)
 	if e != nil {
@@ -158,4 +167,51 @@ func StageHandoff(path, destination string) (contract.ControlState, error) {
 		return zero, errors.New("迁移包不是冻结中的权威快照")
 	}
 	return state, nil
+}
+
+func WriteHandoffArchive(root string, destination io.Writer) error {
+	archive := zip.NewWriter(destination)
+	buf := make([]byte, 64*1024)
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if path == root || entry.IsDir() {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			return errors.New("迁移快照包含非普通文件")
+		}
+		name, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		name = filepath.ToSlash(name)
+		if name != "authority.zip" && !strings.HasPrefix(name, "state/") {
+			return errors.New("迁移快照包含未声明文件")
+		}
+		writer, err := archive.CreateHeader(&zip.FileHeader{Name: name, Method: zip.Store})
+		if err != nil {
+			return err
+		}
+		f, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		_, err = io.CopyBuffer(writer, f, buf)
+		closeErr := f.Close()
+		if err != nil {
+			return err
+		}
+		return closeErr
+	})
+	if err != nil {
+		_ = archive.Close()
+		return err
+	}
+	return archive.Close()
 }

@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/HJSunDev/ownward/internal/assetlog"
 	"github.com/HJSunDev/ownward/internal/resourcebudget"
 	_ "modernc.org/sqlite"
 )
@@ -125,7 +124,7 @@ func Open(ctx context.Context, path string, options Options) (*Store, error) {
 	lock := options.lease
 	if lock == nil {
 		var err error
-		lock, err = assetlog.LockDirectory(options.LockPath)
+		lock, err = LockDirectory(options.LockPath)
 		if err != nil {
 			return nil, err
 		}

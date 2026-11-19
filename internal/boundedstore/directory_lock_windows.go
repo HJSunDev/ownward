@@ -1,6 +1,6 @@
 //go:build windows
 
-package assetlog
+package boundedstore
 
 import (
 	"errors"

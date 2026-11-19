@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"github.com/HJSunDev/ownward/internal/authoritysubstrate"
 	"io"
 	"os"
 	"path/filepath"
@@ -151,7 +150,7 @@ func TestBoundedHandoffKeepsIdentityAndReceipts(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if e = authoritysubstrate.WriteHandoffArchive(stage, file); e != nil {
+	if e = WriteHandoffArchive(stage, file); e != nil {
 		t.Fatal(e)
 	}
 	file.Close()

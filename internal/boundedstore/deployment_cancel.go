@@ -6,8 +6,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-
-	"github.com/HJSunDev/ownward/internal/assetlog"
 )
 
 var ErrMigrationCancelled = errors.New("迁移已取消，原资料入口已恢复")
@@ -19,7 +17,7 @@ func CancelDeployment(ctx context.Context, root string) error {
 		return errors.New("资料路径必须为绝对路径")
 	}
 	root = filepath.Clean(root)
-	lock, e := assetlog.LockDirectory(filepath.Join(root, "assets", ".ownward.lock"))
+	lock, e := LockDirectory(filepath.Join(root, "assets", ".ownward.lock"))
 	if e != nil {
 		return e
 	}

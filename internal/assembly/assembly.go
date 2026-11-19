@@ -14,23 +14,22 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/HJSunDev/ownward/internal/authoritysubstrate"
+	"github.com/HJSunDev/ownward/internal/boundedstore"
 	"github.com/HJSunDev/ownward/internal/composition"
 	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/core"
 	"github.com/HJSunDev/ownward/internal/embedding"
 	"github.com/HJSunDev/ownward/internal/informationcontrol"
-	"github.com/HJSunDev/ownward/internal/kernelgeneration"
 	"github.com/HJSunDev/ownward/internal/semantics"
 	compositionv1 "github.com/HJSunDev/ownward/manifests/compositions/v1"
 )
 
-type ProductSemantics = kernelgeneration.Mode
+type ProductSemantics string
 
 const (
-	Basic         = kernelgeneration.Basic
-	Organized     = kernelgeneration.Organized
-	Collaborative = kernelgeneration.Collaborative
+	Basic         ProductSemantics = "basic"
+	Organized     ProductSemantics = "organized"
+	Collaborative ProductSemantics = "collaborative"
 )
 
 const (
@@ -53,22 +52,13 @@ type Request struct {
 type Runtime struct {
 	streaming    *core.StreamingAssets
 	vector       contract.VectorCapability
-	service      *core.Service
 	product      *informationcontrol.Product
 	userControl  *informationcontrol.Control
-	authority    contract.AuthoritySubstrate
 	backup       func(string) error
 	verification composition.Verification
 	semantics    ProductSemantics
 	closeOnce    sync.Once
 	closeErr     error
-}
-
-func (r *Runtime) Service() *core.Service {
-	if r == nil {
-		return nil
-	}
-	return r.service
 }
 
 // Product exposes only the stable product waist to access adapters.
@@ -83,14 +73,11 @@ func (r *Runtime) UserControl() *informationcontrol.Control { return r.userContr
 func (r *Runtime) Management() *informationcontrol.Product  { return r.product }
 
 func (r *Runtime) OperationGeneration() uint64 {
-	if r.streaming != nil {
-		g, _ := r.streaming.Store.OperationGeneration(context.Background())
-		return g
+	if r == nil || r.streaming == nil {
+		return 0
 	}
-	if a, ok := r.authority.Assets().(contract.MutationAuthority); ok {
-		return a.OperationGeneration()
-	}
-	return 0
+	g, _ := r.streaming.Store.OperationGeneration(context.Background())
+	return g
 }
 
 // Kernel exposes only the stable lifecycle waist to operational commands.
@@ -98,10 +85,7 @@ func (r *Runtime) Kernel() contract.KernelLifecycle {
 	if r == nil {
 		return nil
 	}
-	if r.streaming != nil {
-		return r.streaming
-	}
-	return r.service
+	return r.streaming
 }
 
 func (r *Runtime) Composition() composition.Verification {
@@ -126,10 +110,10 @@ func (r *Runtime) Backup(destination string) error {
 }
 
 func (r *Runtime) ExportHandoff(destination string) error {
-	if r.streaming != nil {
-		return r.streaming.Store.ExportDeploymentArchive(context.Background(), filepath.Join(destination, "authority.zip"))
+	if r == nil || r.streaming == nil {
+		return errors.New("装配运行时尚未打开资产权威")
 	}
-	return r.service.ExportSnapshot(destination, func() error { return r.Backup(filepath.Join(destination, "authority.zip")) })
+	return r.streaming.Store.ExportDeploymentArchive(context.Background(), filepath.Join(destination, "authority.zip"))
 }
 
 func (r *Runtime) Close() error {
@@ -140,35 +124,23 @@ func (r *Runtime) Close() error {
 		if r.product != nil {
 			r.product.Close()
 		}
-		if r.service != nil {
-			r.closeErr = r.service.Close()
-		}
 		if r.streaming != nil {
 			r.closeErr = errors.Join(r.closeErr, r.streaming.Close())
 		}
 		if r.vector != nil {
 			r.closeErr = errors.Join(r.closeErr, r.vector.Close())
 		}
-		if r.authority != nil {
-			if err := r.authority.Close(); r.closeErr == nil {
-				r.closeErr = err
-			}
-		}
 	})
 	return r.closeErr
 }
 
 type resources struct {
-	restore       contract.AuthorityRestore
-	openAuthority contract.AuthorityOpen
-	openVector    func(string, composition.Manifest) (contract.VectorCapability, error)
+	restore    func(context.Context, string, string, boundedstore.Options) error
+	openVector func(string, composition.Manifest) (contract.VectorCapability, error)
 }
 
 var productionResources = resources{
-	restore: authoritysubstrate.Restore,
-	openAuthority: func(path string, initial contract.ControlState) (contract.AuthoritySubstrate, error) {
-		return authoritysubstrate.Open(path, initial)
-	},
+	restore:    boundedstore.RestoreLegacyAssetArchive,
 	openVector: openProductionVector,
 }
 
@@ -218,74 +190,6 @@ func PreflightSharedConnector(productSemantics ProductSemantics, vectorBundleDir
 	return verification, nil
 }
 
-func openWith(request Request, manifest composition.Manifest, resource resources) (*Runtime, error) {
-	normalized, err := validateRequest(request, resource)
-	if err != nil {
-		return nil, err
-	}
-	verification, err := verifyComposition(manifest, normalized.ProductSemantics)
-	if err != nil {
-		return nil, err
-	}
-	if err := validateDeclaredCapabilities(manifest, normalized); err != nil {
-		return nil, err
-	}
-	initial, err := authorityInitial(manifest)
-	if err != nil {
-		return nil, err
-	}
-
-	var vector contract.VectorCapability
-	vectorOwned := false
-	if normalized.ProductSemantics == Collaborative {
-		vector, err = resource.openVector(normalized.VectorBundleDir, manifest)
-		if err != nil {
-			return nil, err
-		}
-		if vector == nil {
-			return nil, errors.New("显式 collaborative 向量能力不能为空")
-		}
-		defer func() {
-			if !vectorOwned {
-				_ = vector.Close()
-			}
-		}()
-	}
-
-	if normalized.RestoreBackup != "" {
-		if err := resource.restore(normalized.RestoreBackup, normalized.DataDir, initial); err != nil {
-			return nil, err
-		}
-	}
-	authority, err := resource.openAuthority(normalized.DataDir, initial)
-	if err != nil {
-		return nil, err
-	}
-	if state := authority.Control().ReadControl(); state.Access != nil && state.Access.Handoff != nil && state.Access.Handoff.Phase == "retired" {
-		_ = authority.Close()
-		return nil, informationcontrol.ErrInactive
-	}
-	closeAuthority := true
-	defer func() {
-		if closeAuthority {
-			_ = authority.Close()
-		}
-	}()
-
-	service, err := kernelgeneration.Open(manifest, kernelgeneration.OpenRequest{
-		DataDir: normalized.DataDir, Mode: normalized.ProductSemantics, Authority: authority.Assets(),
-		SemanticProvider: normalized.OrganizedProvider, VectorProvider: firstVector(normalized.OrganizedVector, vector),
-	})
-	if err != nil {
-		return nil, err
-	}
-	closeAuthority = false
-	vectorOwned = normalized.ProductSemantics == Collaborative
-	userControl := informationcontrol.New(authority.Control())
-	product := informationcontrol.NewProduct(service, userControl)
-	return &Runtime{service: service, product: product, userControl: userControl, authority: authority, backup: authority.Backup, verification: verification, semantics: normalized.ProductSemantics}, nil
-}
-
 func currentManifest() (composition.Manifest, error) {
 	manifest, err := composition.Parse(compositionv1.CurrentCollaborative())
 	if err != nil {
@@ -320,7 +224,7 @@ func validateRequest(request Request, resource resources) (Request, error) {
 			return Request{}, err
 		}
 	}
-	if resource.restore == nil || resource.openAuthority == nil {
+	if resource.restore == nil {
 		return Request{}, errors.New("装配资源实现不完整")
 	}
 	switch request.ProductSemantics {
@@ -488,13 +392,6 @@ func configInt(config map[string]any, key string) int {
 	default:
 		return 0
 	}
-}
-
-func firstVector(primary, fallback contract.VectorCapability) contract.VectorCapability {
-	if primary != nil {
-		return primary
-	}
-	return fallback
 }
 
 func fileSHA256(path string) (string, error) {

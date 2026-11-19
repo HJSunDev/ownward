@@ -8,13 +8,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/HJSunDev/ownward/internal/assetlog"
 	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/resourcebudget"
 )
@@ -253,7 +253,7 @@ func RestoreArchive(ctx context.Context, path, destination string, options Optio
 	if e = os.MkdirAll(filepath.Join(destination, "assets"), 0700); e != nil {
 		return zero, e
 	}
-	lock, e := assetlog.LockDirectory(filepath.Join(destination, "assets", ".ownward.lock"))
+	lock, e := LockDirectory(filepath.Join(destination, "assets", ".ownward.lock"))
 	if e != nil {
 		return zero, e
 	}
@@ -315,6 +315,149 @@ func RestoreArchive(ctx context.Context, path, destination string, options Optio
 		return zero, e
 	}
 	return zero, nil
+}
+
+// RestoreLegacyAssetArchive 安全校验并解压早期纯资产备份 ownward.backup/v1 至空白目标目录的 assets/ 下，
+// 随后由 OpenDeployment 一次性导入为有界 SQLite 存储。
+func RestoreLegacyAssetArchive(ctx context.Context, path, destination string, options Options) error {
+	if !filepath.IsAbs(destination) || !filepath.IsAbs(path) || options.Budget == nil {
+		return errors.New("恢复路径必须为绝对路径且包含共享预算")
+	}
+	destination = filepath.Clean(destination)
+	if info, err := os.Lstat(destination); err == nil {
+		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return errors.New("恢复目标不是普通目录")
+		}
+		entries, err := os.ReadDir(destination)
+		if err != nil {
+			return err
+		}
+		if len(entries) > 0 {
+			return errors.New("恢复目标必须为空")
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	z, err := zip.OpenReader(path)
+	if err != nil {
+		return fmt.Errorf("打开备份归档: %w", err)
+	}
+	defer z.Close()
+	entries := make(map[string]*zip.File, 3)
+	for _, f := range z.File {
+		if f.Mode()&os.ModeSymlink != 0 || f.FileInfo().IsDir() {
+			return errors.New("备份条目无效")
+		}
+		if f.Name != "manifest.json" && f.Name != "information.jsonl" && f.Name != "backup.json" {
+			return fmt.Errorf("备份归档包含未知文件 %q", f.Name)
+		}
+		if _, dup := entries[f.Name]; dup {
+			return fmt.Errorf("备份归档重复包含文件 %q", f.Name)
+		}
+		entries[f.Name] = f
+	}
+	if len(entries) != 3 {
+		return errors.New("备份归档不完整")
+	}
+	metaFile := entries["backup.json"]
+	if metaFile.UncompressedSize64 > 1<<20 {
+		return errors.New("备份元数据超过允许大小")
+	}
+	metaReader, err := metaFile.Open()
+	if err != nil {
+		return err
+	}
+	metaBytes, readErr := io.ReadAll(io.LimitReader(metaReader, (1<<20)+1))
+	_ = metaReader.Close()
+	if readErr != nil || int64(len(metaBytes)) > 1<<20 {
+		return errors.New("读取备份元数据失败或超过允许大小")
+	}
+	var metadata struct {
+		Format string            `json:"format"`
+		Files  map[string]string `json:"files"`
+	}
+	if err := json.Unmarshal(metaBytes, &metadata); err != nil {
+		return fmt.Errorf("解析备份清单: %w", err)
+	}
+	if metadata.Format != "ownward.backup/v1" || len(metadata.Files) != 2 || len(metadata.Files["manifest.json"]) != 64 || len(metadata.Files["information.jsonl"]) != 64 {
+		return errors.New("不支持或不完整的备份格式")
+	}
+	parent := filepath.Dir(destination)
+	if err := os.MkdirAll(parent, 0o700); err != nil {
+		return err
+	}
+	stage, err := os.MkdirTemp(parent, ".legacy-restore-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(stage)
+	checkRoot, err := os.MkdirTemp(parent, ".legacy-restore-check-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(checkRoot)
+	for _, root := range []string{stage, checkRoot} {
+		if err := os.MkdirAll(filepath.Join(root, "assets"), 0o700); err != nil {
+			return err
+		}
+	}
+	for _, name := range []string{"manifest.json", "information.jsonl"} {
+		zf := entries[name]
+		in, err := zf.Open()
+		if err != nil {
+			return err
+		}
+		outStage, err := os.OpenFile(filepath.Join(stage, "assets", name), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err != nil {
+			_ = in.Close()
+			return err
+		}
+		outCheck, err := os.OpenFile(filepath.Join(checkRoot, "assets", name), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err != nil {
+			_ = in.Close()
+			_ = outStage.Close()
+			return err
+		}
+		hasher := sha256.New()
+		written, copyErr := copyContext(ctx, io.MultiWriter(outStage, outCheck, hasher), in)
+		err = errors.Join(copyErr, in.Close(), outStage.Sync(), outStage.Close(), outCheck.Sync(), outCheck.Close())
+		if err != nil {
+			return err
+		}
+		if uint64(written) != zf.UncompressedSize64 || !strings.EqualFold(hex.EncodeToString(hasher.Sum(nil)), metadata.Files[name]) {
+			return fmt.Errorf("备份文件 %q 校验失败", name)
+		}
+		if name == "information.jsonl" && written > 0 {
+			f, err := os.Open(filepath.Join(stage, "assets", name))
+			if err != nil {
+				return err
+			}
+			var tail [1]byte
+			_, readErr := f.ReadAt(tail[:], written-1)
+			_ = f.Close()
+			if readErr != nil || tail[0] != '\n' {
+				return errors.New("备份资产日志尾部不完整")
+			}
+		}
+	}
+	checkStore, err := OpenDeployment(ctx, checkRoot, DeploymentOptions{Options: options})
+	if err != nil {
+		return fmt.Errorf("验证恢复资产: %w", err)
+	}
+	if err := checkStore.Close(); err != nil {
+		return err
+	}
+	if entriesAt, err := os.ReadDir(destination); err == nil {
+		if len(entriesAt) != 0 {
+			return errors.New("恢复目标在验证期间发生变化")
+		}
+		if err := os.Remove(destination); err != nil {
+			return err
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return os.Rename(stage, destination)
 }
 
 func ReadDeploymentControl(ctx context.Context, root string, options Options) (contract.ControlState, error) {

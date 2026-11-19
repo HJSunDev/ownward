@@ -9,7 +9,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/HJSunDev/ownward/internal/authoritysubstrate"
+	"github.com/HJSunDev/ownward/internal/boundedstore"
 	"github.com/HJSunDev/ownward/internal/composition"
 	"github.com/HJSunDev/ownward/internal/contract"
 	"github.com/HJSunDev/ownward/internal/domain"
@@ -21,11 +21,14 @@ func TestHandoffPreservesAuthorityDerivedWorkAndMutationReceipt(t *testing.T) {
 	manifest := testManifest(t, Collaborative)
 	source := filepath.Join(t.TempDir(), "source")
 	target := filepath.Join(t.TempDir(), "target")
-	resources := resources{restore: authoritysubstrate.Restore, openAuthority: openTestAuthority, openVector: func(string, composition.Manifest) (contract.VectorCapability, error) {
-		return embedding.Unavailable{}, nil
-	}}
+	res := resources{
+		restore: boundedstore.RestoreLegacyAssetArchive,
+		openVector: func(string, composition.Manifest) (contract.VectorCapability, error) {
+			return embedding.Unavailable{}, nil
+		},
+	}
 	open := func(path string) (*Runtime, error) {
-		return openWith(Request{DataDir: path, ProductSemantics: Collaborative, VectorBundleDir: filepath.Join(t.TempDir(), "bundle")}, manifest, resources)
+		return openBoundedWith(Request{DataDir: path, ProductSemantics: Collaborative, VectorBundleDir: filepath.Join(t.TempDir(), "bundle")}, manifest, res)
 	}
 	r, err := open(source)
 	if err != nil {
@@ -45,19 +48,19 @@ func TestHandoffPreservesAuthorityDerivedWorkAndMutationReceipt(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := informationcontrol.Authenticate(context.Background(), token)
-	op := contract.OperationIdentity{ID: "saved-create", Generation: 1, Kind: "create", Digest: "original-input"}
+	op := contract.OperationIdentity{ID: "saved-create", Generation: r.OperationGeneration(), Kind: "create", Digest: "original-input"}
 	operation := contract.WithOperation(ctx, op)
 	first, err := r.Product().Create(operation, contract.CreateInput{Kind: domain.KindGeneral, Content: "current information"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	workBefore, err := r.Product().SemanticWork(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
 	assetBefore, readErr := r.Product().Read(ctx, first.Information.ID)
 	if readErr != nil {
 		t.Fatal(readErr)
-	}
-	if err != nil {
-		t.Fatal(err)
 	}
 	location := contract.Location{SystemID: r.UserControl().SystemID(), ServiceID: "target", Endpoint: "https://target.test", Certificate: "test", Composition: manifest.Identity}
 	if _, err := r.UserControl().PrepareHandoff(owner, "migration", location); err != nil {
@@ -71,7 +74,9 @@ func TestHandoffPreservesAuthorityDerivedWorkAndMutationReceipt(t *testing.T) {
 		t.Fatal(err)
 	}
 	stage := filepath.Join(t.TempDir(), "snapshot")
-	os.MkdirAll(stage, 0700)
+	if err := os.MkdirAll(stage, 0700); err != nil {
+		t.Fatal(err)
+	}
 	if err := r.ExportHandoff(stage); err != nil {
 		t.Fatal(err)
 	}
@@ -80,18 +85,21 @@ func TestHandoffPreservesAuthorityDerivedWorkAndMutationReceipt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := authoritysubstrate.WriteHandoffArchive(stage, file); err != nil {
+	if err := WriteHandoffArchive(stage, file); err != nil {
 		t.Fatal(err)
 	}
 	file.Close()
 	data, _ := os.ReadFile(archivePath)
 	digest := sha256.Sum256(data)
-	prepared, err := authoritysubstrate.StageHandoff(archivePath, target)
+	prepared, err := StageHandoff(archivePath, target)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if prepared.Access.Handoff.Phase != "frozen" {
 		t.Fatal("candidate became active before source retirement")
+	}
+	if err := ValidateHandoffData(target); err != nil {
+		t.Fatal(err)
 	}
 	permit, err := r.UserControl().RetireHandoff(owner, h.ID, hex.EncodeToString(digest[:]), h.Revision)
 	if err != nil {
@@ -100,10 +108,10 @@ func TestHandoffPreservesAuthorityDerivedWorkAndMutationReceipt(t *testing.T) {
 	if _, err := r.Product().Read(ctx, first.Information.ID); err == nil {
 		t.Fatal("old source still delivered information")
 	}
-	if err := authoritysubstrate.ActivateHandoff(target, permit); err != nil {
+	if err := ActivateHandoff(target, permit); err != nil {
 		t.Fatal(err)
 	}
-	if err := authoritysubstrate.ActivateHandoff(target, permit); err != nil {
+	if err := ActivateHandoff(target, permit); err != nil {
 		t.Fatal("activation resume failed", err)
 	}
 	next, err := open(target)

@@ -1,6 +1,6 @@
 //go:build aix || darwin || dragonfly || freebsd || linux || netbsd || openbsd || solaris
 
-package assetlog
+package boundedstore
 
 import (
 	"errors"

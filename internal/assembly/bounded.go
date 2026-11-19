@@ -45,10 +45,12 @@ func openBoundedWith(request Request, manifest composition.Manifest, resource re
 		if vector == nil {
 			return nil, errors.New("缺少已声明的向量能力")
 		}
+	} else if request.OrganizedVector != nil {
+		vector = request.OrganizedVector
 	}
 	owned := false
 	defer func() {
-		if !owned && vector != nil {
+		if !owned && request.ProductSemantics == Collaborative && vector != nil {
 			vector.Close()
 		}
 	}()
@@ -60,7 +62,7 @@ func openBoundedWith(request Request, manifest composition.Manifest, resource re
 		if native {
 			_, e = boundedstore.RestoreArchive(context.Background(), request.RestoreBackup, request.DataDir, options)
 		} else {
-			e = resource.restore(request.RestoreBackup, request.DataDir, initial)
+			e = resource.restore(context.Background(), request.RestoreBackup, request.DataDir, options)
 		}
 		if e != nil {
 			return nil, e
@@ -109,7 +111,11 @@ func openBoundedWith(request Request, manifest composition.Manifest, resource re
 	kernel := &core.StreamingAssets{Store: store, Budget: budget, Scratch: scratch, DiskBytes: 256 * resourcebudget.MiB, Embedder: vector}
 	c := informationcontrol.New(a)
 	product := informationcontrol.NewProduct(kernel, c)
-	r := &Runtime{streaming: kernel, product: product, userControl: c, verification: verification, semantics: request.ProductSemantics, vector: vector}
+	var ownedVector contract.VectorCapability
+	if request.ProductSemantics == Collaborative {
+		ownedVector = vector
+	}
+	r := &Runtime{streaming: kernel, product: product, userControl: c, verification: verification, semantics: request.ProductSemantics, vector: ownedVector}
 	r.backup = func(path string) error { return store.ExportArchive(context.Background(), path) }
 	owned = true
 	return r, nil
@@ -117,8 +123,8 @@ func openBoundedWith(request Request, manifest composition.Manifest, resource re
 
 func (r *Runtime) Streaming() *core.StreamingAssets { return r.streaming }
 func (r *Runtime) UnderlyingKernel() contract.ProductCapability {
-	if r.streaming != nil {
-		return r.streaming
+	if r == nil {
+		return nil
 	}
-	return r.service
+	return r.streaming
 }
